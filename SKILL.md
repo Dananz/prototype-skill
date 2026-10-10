@@ -342,7 +342,7 @@ user makes one (next section).
 The user chooses in chat ("go with A", "A it is", "build B", "let's move forward with C") or in
 the page, where each variant has Pick (the check button in the bar, or P; on a phone, the top of
 the variant sheet). A pick made in the page is already marked when you hear of it, as a comment
-with `action: pick` (see Comments from the page): don't run `proto pick` again, reply to it.
+with `action: pick` (see Comments from the page): don't run `proto pick` again.
 
 As soon as the user chooses in chat, run `proto pick <slug> <letter>` before anything else,
 without asking. If they don't
@@ -417,8 +417,8 @@ no element; the user's optional note follows a colon in the text.
 
 | `action:` | Already done | You |
 |---|---|---|
-| `pick` | marked, and it is the working variant | reply `--done` in a line, then do what the note asks |
-| `unpick` | the pick is off | reply `--done` |
+| `pick` | marked, the working variant, and the comment done | do what the note asks, if anything; a reply is only a note |
+| `unpick` | the pick is off, and the comment done | nothing |
 | `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you added |
 | `build` | nothing | `proto pick` it if it isn't the pick, then step 7; reply when it is in |
 
