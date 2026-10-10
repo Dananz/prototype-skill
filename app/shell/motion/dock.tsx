@@ -58,7 +58,7 @@ function useSize<T extends HTMLElement>() {
 /* ---------- the dock's state: the player's, plus what is chosen here ---------- */
 function useDock(player: Player) {
   const p: PlayState = useSyncExternalStore(player.subscribe, player.get)
-  const { store, act } = useCtx()
+  const { store, act, copyAct } = useCtx()
   const { s, rows } = useRows()
   const D = Math.max(1, p.duration)
   const clamp = (t: number) => Math.min(D, Math.max(0, t))
@@ -125,6 +125,8 @@ function useDock(player: Player) {
     setMenu(false)
     if (composing) return act.close()
     if (p.playing) player.pause()
+    // Commenting and the copy picker act on the design one at a time, as from the bar.
+    copyAct.off()
     act.beginTime(time())
   }
   const openPoint = (id: string) => {

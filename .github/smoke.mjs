@@ -56,10 +56,10 @@ const proto = (args, { ok = true, stdout = false } = {}) => {
 }
 const answers = async url => { try { return (await fetch(url, { signal: AbortSignal.timeout(2000) })).ok } catch { return false } }
 const pngs = dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.png')) : []
-// A page in headless Chrome at 1440x900, once it says it is ready, as shoot.mjs does: run evaluates
-// an expression in it (awaiting a promise), as often as needed, and it stays open until closed, so
-// the page can carry on while proto runs beside it.
-async function openPage(url) {
+// A page in headless Chrome (1440x900, or a phone's size), once it says it is ready, as shoot.mjs
+// does: run evaluates an expression in it (awaiting a promise), as often as needed, and it stays
+// open until closed, so the page can carry on while proto runs beside it.
+async function openPage(url, { width = 1440, height = 900, phone = false } = {}) {
   const profile = mkdtempSync(join(tmpdir(), 'proto-smoke-'))
   const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run'])
   let ws
@@ -89,7 +89,8 @@ async function openPage(url) {
     const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
     await send('Inspector.enable', {}, sessionId)
-    await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId)
+    await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: phone ? 2 : 1, mobile: phone }, sessionId)
+    if (phone) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
     await send('Page.navigate', { url }, sessionId)
     // A page that stops answering (a render loop) fails the check instead of hanging the run.
     const run = async (expr, ms = 30_000) => {
@@ -831,6 +832,76 @@ if (!pngs(shots).includes('words-A-desktop-copy.png') || sizeOf('words-A-desktop
 const noCopy = proto(['shoot', 'words/B', '--copy'])
 if (!/words\/B has no copy options/.test(noCopy) || pngs(shots).includes('words-B-desktop-copy.png') || !noCopy.includes('words-B-desktop.png')) fail(`proto shoot --copy on a variant without copy options should say so and name the shot words-B-desktop.png: ${noCopy}`)
 if ((await postJson('comments', { comments: [{ route: 'words', text: 'x', action: 'copy' }] })).status !== 400) fail('a copy choice on no variant was accepted')
+
+// Both bars at once: a variant with copy options and motion. With copy mode on, the copy bar sits
+// over the motion dock, which keeps its place above the pill; the stage clears both, and neither
+// covers the other. On a 360 px phone the pill still holds Comment and T, and the dock's buttons
+// keep their size.
+proto(['add', 'both', '--title', 'Both', '--variants', 'A:Words and motion'])
+writeFileSync(join(app, 'src', 'protos', 'both', 'A.tsx'), `import { useState } from 'react'
+import { useCopy } from '../../copy'
+import { useMotion } from '../../motion'
+export default function A() {
+  const [open, setOpen] = useState(false)
+  const copy = useCopy([{ id: 'title', label: 'Title', options: ['Your order', 'Ready to pay'] }])
+  useMotion({ start: () => setOpen(true), reset: () => setOpen(false) })
+  return <div className="h-full p-8">
+    <h1 data-copy="title" className="text-2xl">{copy.title}</h1>
+    <div data-shoot="sheet" style={{ height: 160, background: '#4f46e5', transform: open ? 'translateY(0px)' : 'translateY(80px)', opacity: open ? 1 : 0, transition: 'transform 400ms ease-out, opacity 300ms linear' }} />
+  </div>
+}
+`)
+const stacked = `(async () => {
+    ${until}
+    if (!await until(() => window.__protoMotion?.state()?.status === 'ready', 15000)) return 'the motion dock recorded no take'
+    ${copyOn}
+    if (!await until(() => document.querySelector('[data-copy-bar]').offsetHeight > 0 && document.querySelector('[data-copy-mark=title]'))) return 'copy mode showed no bar'
+    await new Promise(r => setTimeout(r, 300))
+    const box = s => document.querySelector(s).getBoundingClientRect()
+    const zone = box('[data-zone]'), layers = box('[data-layers]'), copyBar = box('[data-copy-bar]'), dock = box('[data-motion-dock]')
+    const pill = document.querySelector('[data-pill] > div')?.getBoundingClientRect().height || 0
+    const near = (a, b) => Math.abs(a - b) <= 1
+    if (!(copyBar.height > 20 && dock.height > 40)) return 'both bars should show: copy bar ' + copyBar.height + ', dock ' + dock.height
+    if (!near(dock.bottom, zone.bottom - pill)) return 'the dock should sit just above the pill: ' + dock.bottom + ' vs ' + (zone.bottom - pill)
+    if (!near(copyBar.bottom, dock.top)) return 'the copy bar should sit on the dock: ' + copyBar.bottom + ' vs ' + dock.top
+    if (!near(layers.bottom, copyBar.top)) return 'the stage should end at the copy bar: ' + layers.bottom + ' vs ' + copyBar.top
+    if (layers.height < 200) return 'the stage kept ' + layers.height + ' px'
+    return 'ok'
+  })()`
+const deskBoth = await openPage(`${local}?theme=light#/both/A`)
+try {
+  const r = await deskBoth.run(stacked)
+  if (r !== 'ok') fail(`copy mode on a design with motion, desktop: ${r}`)
+  // Focus mode keeps the copy bar (copy mode was turned on) and hides the dock, letting the design go.
+  const focused = await deskBoth.run(`(async () => {
+    ${until}
+    document.querySelector('[data-act=focus]').click()
+    if (!await until(() => document.querySelector('[data-motion-dock]').hidden && window.__protoMotion.state().live)) return 'the dock should hide and let the design go'
+    const bar = document.querySelector('[data-copy-bar]').getBoundingClientRect()
+    if (!(bar.height > 20) || Math.abs(bar.bottom - innerHeight) > 1) return 'the copy bar should stay, at the bottom: ' + bar.height + ' px, bottom ' + bar.bottom
+    document.querySelector('[data-act=unfocus]').click()
+    if (!await until(() => !document.querySelector('[data-motion-dock]').hidden && document.querySelector('[data-copy-bar]').getBoundingClientRect().bottom <= document.querySelector('[data-motion-dock]').getBoundingClientRect().top + 1)) return 'after focus mode both bars should be back, stacked'
+    return 'ok'
+  })()`)
+  if (focused !== 'ok') fail(`focus mode with copy mode on and motion: ${focused}`)
+} finally { deskBoth.close() }
+const phoneBoth = await openPage(`${local}?theme=light#/both/A`, { width: 360, height: 740, phone: true })
+try {
+  const r = await phoneBoth.run(stacked.replace("document.querySelector('[data-bar] [data-act=copymode]')", "document.querySelector('[data-pill] [data-act=copymode]')"))
+  if (r !== 'ok') fail(`copy mode on a design with motion, 360 px phone: ${r}`)
+  const fits = await phoneBoth.run(`(() => {
+    const bar = document.querySelector('[data-pill-bar]'), r = bar.getBoundingClientRect()
+    if (!bar.querySelector('[data-act="comment:tap"]') || !bar.querySelector('[data-act=copymode]')) return 'the pill should hold Comment and T'
+    if (r.left < 0 || r.right > innerWidth || bar.scrollWidth > bar.clientWidth + 1) return 'the pill overflows 360 px: ' + r.left + '-' + r.right + ', ' + bar.scrollWidth + '/' + bar.clientWidth
+    if (document.querySelector('[data-pill-handle]').offsetWidth < 100) return 'the pill handle was squeezed to ' + document.querySelector('[data-pill-handle]').offsetWidth + ' px'
+    const tight = [...document.querySelectorAll('[data-motion-bar] button')].filter(b => b.offsetParent && b.offsetWidth < 32).map(b => (b.dataset.motion || b.getAttribute('aria-label')) + ' ' + b.offsetWidth)
+    if (tight.length) return 'dock buttons squeezed: ' + tight.join(', ')
+    const row = document.querySelector('[data-motion-bar] > div')
+    if (row.scrollWidth > row.clientWidth + 1) return 'the dock overflows: ' + row.scrollWidth + '/' + row.clientWidth
+    return 'ok'
+  })()`)
+  if (fits !== 'ok') fail(`the phone at 360 px with both bars: ${fits}`)
+} finally { phoneBoth.close() }
 
 proto(['stop'])
 for (let i = 0; i < 40 && await answers(`${local}__proto/status`); i++) await new Promise(r => setTimeout(r, 250))
