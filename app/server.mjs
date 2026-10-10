@@ -176,6 +176,7 @@ function receive(data) {
     if (typeof c.route !== 'string' || !/^[a-z0-9][a-z0-9-]*(\/[A-Z]{1,2}(\/[\w-]+)?)?$/.test(c.route)) throw bad(i, ': route is <slug>[/<letter>[/<state>]]')
     const time = timeOf(c)
     if (time === false) throw bad(i, `: a moment of the motion is at (and to, for a range) in ms inside the take, and take, its length in ms (up to ${MAX_TAKE})`)
+    if (time && (!/^[^/]+\/[A-Z]{1,2}(\/|$)/.test(c.route) || c.action !== undefined || c.point !== undefined)) throw bad(i, ': a comment on the motion is on a variant (<slug>/<letter>), with no action and no point')
     if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
       if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build or copy, on a variant (<slug>/<letter>)')

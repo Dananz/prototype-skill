@@ -555,7 +555,8 @@ try {
   await run(`(() => { const b = document.querySelector('[data-motion=play]'); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true })); b.click() })()`)
   await until(`!window.__protoMotion.state().playing && ${shown}`, 'pausing the loop put the comment on the motion away', 3000)
   // A moment, posted as the page does; one outside the take, or a range that ends before it starts, is refused.
-  for (const bad of [{ at: 600, take: 500 }, { at: 300, to: 100, take: 500 }, { at: 'x', take: 500 }, { at: 100 }]) {
+  // A time also needs a variant, and goes with no action and no point.
+  for (const bad of [{ at: 600, take: 500 }, { at: 300, to: 100, take: 500 }, { at: 'x', take: 500 }, { at: 100 }, { route: 'move', at: 100, take: 500 }, { action: 'more', at: 100, take: 500 }, { point: { x: 1, y: 1 }, at: 100, take: 500 }]) {
     if ((await postJson('comments', { comments: [{ route: 'move/A', text: 'x', ...bad }] })).status !== 400) fail(`a comment with ${JSON.stringify(bad)} was accepted`)
   }
   await send([{ route: 'move/A', text: 'Hold the panel longer', at: 350, take: 500 }])
