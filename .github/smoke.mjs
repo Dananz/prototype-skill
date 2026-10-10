@@ -25,10 +25,17 @@ mkdirSync(real, { recursive: true })
 symlinkSync(real, project, 'junction')
 writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'proto-smoke', private: true, dependencies: { react: '^19.2.0' } }))
 
+// A failure says why, then stops and removes its session (after dev.log, which is in it), so no
+// dev server or tailnet rule outlives the run. Straight through spawnSync: proto() fails by itself.
+let failing = false
 const fail = msg => {
   console.error(`\nFAILED: ${msg}`)
   const log = join(app, '.proto', 'dev.log')
   if (existsSync(log)) console.error(`\n--- dev.log ---\n${readFileSync(log, 'utf8')}`)
+  if (!failing && existsSync(join(app, 'session.json'))) {
+    failing = true
+    spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'rm', '--project', project, '--session', 'smoke'], { stdio: 'ignore', timeout: 60_000 })
+  }
   process.exit(1)
 }
 const proto = (args, { ok = true } = {}) => {
