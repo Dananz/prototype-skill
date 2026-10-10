@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client'
 import type { Inbox } from '../shell'
 import { createActions } from './actions'
 import { CommentsCtx, type Ctx, type Host } from './ctx'
-import { CopyBar, CopyLayer, CopySheet, createCopyActions, createCopyStore } from './copy'
+import { CopyBar, CopyMarks, CopySheet, createCopyActions, createCopyStore } from './copy'
 import { Decide, DecidePop, type DecidePopProps, type Subject } from './decide'
 import { Layer } from './layer'
 import { PhoneSheet, Rail } from './rail'
@@ -22,7 +22,7 @@ export function createComments(host: Host, sessionId: string) {
   const copyAct = createCopyActions(copyStore, host, store, () => act.stop())
   const ctx: Ctx = { store, host, act, copyStore, copyAct }
   const wrap = (el: JSX.Element) => <CommentsCtx.Provider value={ctx}>{el}</CommentsCtx.Provider>
-  createRoot(host.layer).render(wrap(<><Layer /><CopyLayer /></>))
+  createRoot(host.layer).render(wrap(<><Layer /><CopyMarks /></>))
   return {
     store,
     act,

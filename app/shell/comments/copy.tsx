@@ -8,7 +8,7 @@
 // changed line to Claude as one batch through the comments inbox, each a comment with action copy
 // on the line's element; Claude's reply shows in the bar. T or Esc closes copy mode, and the
 // choices stay: they are the page's (shell/copy.ts), kept by their words across reloads.
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type PointerEvent as RPointerEvent } from 'react'
+import { Component, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
 import { Drawer } from '@base-ui/react/drawer'
 import { copy, type Choice, type CopyLine } from '../copy'
 import { useCtx, type Host } from './ctx'
@@ -318,7 +318,21 @@ function Badge({ m, n, changed }: { m: Mark; n: number; changed: boolean }) {
 }
 
 // ---------- over the stage: the marks, and the list on a wide page ----------
-export function CopyLayer() {
+/** The marks share a root with the comment layer: a fault in them must not take commenting down
+ *  with them. They start over the next time copy mode opens. */
+class Contained extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  componentDidCatch(e: unknown) { console.error('copy picker:', e) }
+  render() { return this.state.failed ? null : this.props.children }
+}
+export function CopyMarks() {
+  const { copyStore } = useCtx()
+  const s = useCopyState(copyStore)
+  return <Contained key={`${s.route}:${s.on}`}><CopyLayer /></Contained>
+}
+
+function CopyLayer() {
   const { host, copyStore, copyAct } = useCtx()
   const s = useCopyState(copyStore)
   const { stage, on, open } = s
@@ -409,6 +423,11 @@ export function CopyLayer() {
     return () => document.removeEventListener('click', out, true)
   }, [open, copyAct])
 
+  // A list whose line went away (its component unmounted) closes.
+  useEffect(() => {
+    if (open && !ids.split('\n').includes(open)) copyAct.close()
+  }, [open, ids, copyAct])
+
   // A new choice flashes its line (not in a shot, which would catch it halfway).
   useEffect(() => {
     if (!s.flash || s.still) return
@@ -424,7 +443,11 @@ export function CopyLayer() {
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       {light.length > 0 && <style>{`${[...new Set(light)].join(', ')} { text-decoration-color: rgb(255 255 255 / .45) }`}</style>}
       {marks.map(m => {
-        const line = byId.get(m.id)!, isOpen = open === m.id && !m.key.includes('\n'), ch = changed.has(m.id)
+        // A component that declared lines can unmount (a tab inside the design, a line Claude took
+        // out) a frame before the marks are measured again: its marks wait for that frame.
+        const line = byId.get(m.id)
+        if (!line) return null
+        const isOpen = open === m.id && !m.key.includes('\n'), ch = changed.has(m.id)
         return (
           <div key={m.key}>
             <button ref={b => { if (b) btns.current.set(m.key, b); else btns.current.delete(m.key) }} type="button" data-copy-mark={m.key}

@@ -425,25 +425,40 @@ if (/A\.tsx:[2467] /.test(rtl)) fail('the rtl check listed a logical side, centr
 if (!pngs(shots).includes('phone-A-mobile.png') || pngs(shots).includes('phone-A-desktop.png')) fail('a phone variant should be shot at phone size only')
 
 // Copy options: a variant that declares them (useCopy, from the app's own src/copy.ts) gets a T
-// button with its count, here from two components that each declare a line; copy mode marks its
+// button with its count, here from two components that each declare lines; copy mode marks its
 // lines, a pick puts the words in place, and Send posts one comment per changed line with action
 // copy, on the line's element and where it is written. Claude's reply reaches the bar, and going
-// back to today's words after a send can be sent too. A variant that declares none has no T button.
+// back to today's words after a send can be sent too. A component that unmounts while copy mode is
+// on takes its lines with it, and commenting still works. A variant that declares none has no T
+// button.
 if (!existsSync(join(app, 'src', 'copy.ts'))) fail('the app has no src/copy.ts')
 proto(['add', 'words', '--title', 'Words', '--variants', 'A:Options,B:Plain'])
-writeFileSync(join(app, 'src', 'protos', 'words', 'A.tsx'), [
+writeFileSync(join(app, 'src', 'protos', 'words', 'parts.tsx'), [
   'import { useCopy } from \'../../copy\'',
-  'function Go() {',
-  '  const copy = useCopy([{ id: \'go\', label: \'Button\', options: [\'Start\', \'Hi {name}, go [now]\'] }])',
-  '  return <button data-copy="go" className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-white">{copy.go}</button>',
+  'export function Go() {',
+  '  const copy = useCopy([',
+  '    { id: \'go\', label: \'Button\', options: [\'Start\', \'Hi {name}, go [now]\'] },',
+  '    { id: \'note\', label: \'Note\', options: [\'Free\', \'No fee\'] },',
+  '  ])',
+  '  return <div>',
+  '    <button data-copy="go" className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-white">{copy.go}</button>',
+  '    <p data-copy="note">{copy.note}</p>',
+  '  </div>',
   '}',
+].join('\n'))
+writeFileSync(join(app, 'src', 'protos', 'words', 'A.tsx'), [
+  'import { useState } from \'react\'',
+  'import { useCopy } from \'../../copy\'',
+  'import { Go } from \'./parts\'',
   'export default function A() {',
+  '  const [go, setGo] = useState(true)',
   '  const copy = useCopy([',
   '    { id: \'title\', label: \'Title\', options: [\'Save more\', \'Pay less\', \'Keep more\'] },',
   '  ])',
   '  return <div className="h-full p-8">',
   '    <h1 data-copy="title" className="text-2xl">{copy.title}</h1>',
-  '    <Go />',
+  '    <button data-hide-go onClick={() => setGo(false)}>Hide the button</button>',
+  '    {go && <Go />}',
   '  </div>',
   '}',
 ].join('\n'))
@@ -452,8 +467,14 @@ const plain = await inPage(`${local}?theme=light#/words/B`, 'new Promise(r => se
 if (plain !== 0) fail(`a variant without copy options shows ${plain} T buttons`)
 const words = await openPage(`${local}?theme=light#/words/A`).catch(e => fail(`copy options in the page: ${e.message}`))
 const until = `const until = async (f, ms = 4000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } return null }`
+// Turns copy mode on (after a reload it starts off).
+const copyOn = `{
+    const t = await until(() => document.querySelector('[data-bar] [data-act=copymode]'))
+    if (!t) return 'no T button'
+    if (t.getAttribute('aria-pressed') !== 'true') t.click()
+  }`
 // Clicks a line's mark, then its option i (0 is today's words); the line should then read words.
-const choose = (id, i, words) => `
+const pick = (id, i, words) => `
     const mark = await until(() => document.querySelector('[data-copy-mark=${id}]'))
     if (!mark) return 'copy mode marked no ${id} line'
     mark.click()
@@ -461,7 +482,8 @@ const choose = (id, i, words) => `
     if (!option) return 'clicking the ${id} line listed no options'
     option.click()
     const line = () => document.querySelector('[data-mount] [data-copy=${id}]')?.textContent
-    if (!await until(() => line() === '${words}')) return 'the ${id} line should read ${words}, reads ' + line()
+    if (!await until(() => line() === '${words}')) return 'the ${id} line should read ${words}, reads ' + line()`
+const sendOne = `
     const send = await until(() => document.querySelector('[data-shoot=send-copy]:not([disabled])'))
     if (!send || !/Send 1 choice/.test(send.textContent)) return 'no Send 1 choice: ' + send?.textContent
     send.click()
@@ -470,15 +492,16 @@ try {
   const step = await words.run(`(async () => {
     ${until}
     const t = await until(() => document.querySelector('[data-bar] [data-act=copymode]'))
-    if (!t || t.title !== 'Copy options for 2 lines' || t.textContent.trim() !== '2') return 'the T button should say 2 lines, one from each component: ' + (t ? t.title + ' / ' + t.textContent : 'none')
-    t.click()
-    ${choose('title', 1, 'Pay less')}
+    if (!t || t.title !== 'Copy options for 3 lines' || t.textContent.trim() !== '3') return 'the T button should say 3 lines, from both components: ' + (t ? t.title + ' / ' + t.textContent : 'none')
+    ${copyOn}
+    ${pick('title', 1, 'Pay less')}
+    ${sendOne}
     return 'ok'
   })()`)
   if (step !== 'ok') fail(`copy options in the page: ${step}`)
   const told = proto(['inbox'])
   if (!/^ {3}action: copy \(make this the line's text/m.test(told) || !/“Pay less”, option 2 of 3/.test(told)) fail(`proto inbox should print the copy choice with action: copy: ${told}`)
-  if (!told.includes('src/protos/words/A.tsx:11 (A)')) fail(`the copy choice should be on the line's element, words/A.tsx:11: ${told}`)
+  if (!told.includes('src/protos/words/A.tsx:10 (A)')) fail(`the copy choice should be on the line's element, words/A.tsx:10: ${told}`)
   proto(['reply', told.match(/^batch (\S+)/m)[1], 'Title is now Pay less', '--done'])
   const replied = await words.run(`(async () => {
     for (const end = Date.now() + 5000; Date.now() < end; await new Promise(r => setTimeout(r, 100))) if (document.querySelector('[data-copy-bar]').innerText.includes('Title is now Pay less')) return true
@@ -488,18 +511,36 @@ try {
   // Back to today's words after the send: that is a change to send as well.
   const back = await words.run(`(async () => {
     ${until}
-    ${choose('title', 0, 'Save more')}
+    ${pick('title', 0, 'Save more')}
+    ${sendOne}
     return 'ok'
   })()`)
   if (back !== 'ok') fail(`going back to today's words after a send: ${back}`)
   const toldBack = proto(['inbox'])
   if (!/“Save more”, back to today's words \(option 1 of 3\)/.test(toldBack)) fail(`proto inbox should print the way back to today's words: ${toldBack}`)
+  // A component that declared lines unmounts while copy mode is on: its lines go, the rest stay
+  // marked (also after closing and opening copy mode again), and ⌥-click still opens a comment.
+  const gone = await words.run(`(async () => {
+    ${until}
+    document.querySelector('[data-mount] [data-hide-go]').click()
+    if (!await until(() => !document.querySelector('[data-copy-mark=go], [data-copy-mark=note]'))) return 'the hidden lines are still marked'
+    const t = () => document.querySelector('[data-bar] [data-act=copymode]')
+    t().click()
+    if (!await until(() => t().title === 'Copy options for 1 line')) return 'the T button should say 1 line: ' + t().title
+    t().click()
+    if (!await until(() => document.querySelector('[data-copy-mark=title]'))) return 'copy mode marks nothing after it opens again'
+    document.querySelector('[data-mount] [data-hide-go]').dispatchEvent(new MouseEvent('click', { altKey: true, bubbles: true, cancelable: true }))
+    if (!await until(() => document.querySelector('[data-composer]'))) return 'an option-click opened no comment'
+    return 'ok'
+  })()`)
+  if (gone !== 'ok') fail(`a component with lines unmounting in copy mode: ${gone}`)
 } finally { words.close() }
 // The checklist names each line, whichever component declares it and whatever brackets its words
 // hold, and what the build ships; a shot in copy mode is the stage's own size.
 const handed = proto(['handoff', 'words/A'])
-if (!/^- \[ \] Title \(`title`\) ships "Save more", not its 2 other options · A\.tsx:8$/m.test(handed)) fail('proto handoff did not list the Title line and what ships')
-if (!/^- \[ \] Button \(`go`\) ships "Start", not its 1 other option · A\.tsx:3$/m.test(handed)) fail('proto handoff did not list the Button line, whose other option has brackets')
+if (!/^- \[ \] Title \(`title`\) ships "Save more", not its 2 other options · A\.tsx:7$/m.test(handed)) fail('proto handoff did not list the Title line and what ships')
+if (!/^- \[ \] Button \(`go`\) ships "Start", not its 1 other option · parts\.tsx:4$/m.test(handed)) fail('proto handoff did not list the Button line, whose other option has brackets')
+if (!/^- \[ \] Note \(`note`\) ships "Free", not its 1 other option · parts\.tsx:5$/m.test(handed)) fail('proto handoff did not list the Note line')
 proto(['shoot', 'words/A'])
 proto(['shoot', 'words/A', '--copy'])
 const sizeOf = f => { const h = readFileSync(join(shots, f)); return `${h.readUInt32BE(16)}x${h.readUInt32BE(20)}` }
