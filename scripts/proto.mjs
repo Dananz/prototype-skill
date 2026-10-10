@@ -837,13 +837,15 @@ function copyOptionsIn(files) {
   // JSX do (Don't).
   const opens = (text, i) => text[i] === '`' || ((text[i] === '"' || text[i] === '\'') && !/[\p{L}\p{N}]/u.test(text[i - 1] || ''))
   // The file with its comments blanked out, at the same length and on the same lines: a quote in a
-  // comment ("the user's headline") opens no string, and nothing in one is read as code.
+  // comment ("the user's headline") opens no string, and nothing in one is read as code. A comment
+  // starts only where code can: at a line's start, or after a space or one of ,;{}()[]= (so
+  // `<code>src/*.ts</code>` or a URL in JSX words starts none).
   const blank = text => {
     let out = '', quote = ''
     for (let i = 0; i < text.length; i++) {
       const c = text[i]
       if (quote) { out += c; if (c === '\\') out += text[++i] ?? ''; else if (c === quote) quote = ''; continue }
-      if (c === '/' && (text[i + 1] === '/' || text[i + 1] === '*')) {
+      if (c === '/' && (text[i + 1] === '/' || text[i + 1] === '*') && (i === 0 || /[\s,;{}()[\]=]/.test(text[i - 1]))) {
         const line = text[i + 1] === '/', e = line ? text.indexOf('\n', i) : text.indexOf('*/', i + 2)
         const to = e < 0 ? text.length : line ? e : e + 2
         out += text.slice(i, to).replace(/[^\n]/g, ' ')

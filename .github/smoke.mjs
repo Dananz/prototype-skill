@@ -435,6 +435,7 @@ if (!existsSync(join(app, 'src', 'copy.ts'))) fail('the app has no src/copy.ts')
 proto(['add', 'words', '--title', 'Words', '--variants', 'A:Options,B:Plain'])
 writeFileSync(join(app, 'src', 'protos', 'words', 'parts.tsx'), [
   'import { useCopy } from \'../../copy\'',
+  'export const Path = () => <code>src/*.ts</code>',
   'export function Go() {',
   '  const copy = useCopy([',
   '    // the user\'s button',
@@ -558,13 +559,13 @@ try {
   })()`)
   if (gone !== 'ok') fail(`a component with lines unmounting in copy mode: ${gone}`)
 } finally { words.close() }
-// The checklist names each line, whichever component declares it, whatever brackets, comments or
-// escaped quotes are around its words, and what the build ships; a shot in copy mode is the
-// stage's own size.
+// The checklist names each line, whichever component declares it, whatever brackets, comments,
+// escaped quotes or JSX words with a /* are around its words, and what the build ships; a shot in
+// copy mode is the stage's own size.
 const handed = proto(['handoff', 'words/A'])
 if (!/^- \[ \] Title \(`title`\) ships "Save more", not its 2 other options · A\.tsx:7$/m.test(handed)) fail('proto handoff did not list the Title line and what ships')
-if (!/^- \[ \] Button \(`go`\) ships "Let's go", not its 1 other option · parts\.tsx:5$/m.test(handed)) fail('proto handoff did not list the Button line, with a comment above it and brackets and an escaped quote in its words')
-if (!/^- \[ \] Note \(`note`\) ships "Free", not its 1 other option · parts\.tsx:6$/m.test(handed)) fail('proto handoff did not list the Note line, after a comment with a quote')
+if (!/^- \[ \] Button \(`go`\) ships "Let's go", not its 1 other option · parts\.tsx:6$/m.test(handed)) fail('proto handoff did not list the Button line, after JSX words with src/*.ts, with a comment above it and brackets and an escaped quote in its words')
+if (!/^- \[ \] Note \(`note`\) ships "Free", not its 1 other option · parts\.tsx:7$/m.test(handed)) fail('proto handoff did not list the Note line, after a comment with a quote')
 proto(['shoot', 'words/A'])
 proto(['shoot', 'words/A', '--copy'])
 const sizeOf = f => { const h = readFileSync(join(shots, f)); return `${h.readUInt32BE(16)}x${h.readUInt32BE(20)}` }
