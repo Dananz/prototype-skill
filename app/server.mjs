@@ -226,7 +226,8 @@ export function prototypeServer(session) {
     return { lastEdit: lastEdit(), keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, inbox: inboxStatus() }
   }
   const stop = reason => {
-    write({ stoppedAt: new Date().toISOString(), stopReason: reason, pid: null })
+    // An unreadable session.json must not keep it from stopping, or the tailnet port stays served.
+    try { write({ stoppedAt: new Date().toISOString(), stopReason: reason, pid: null }) } catch {}
     const exit = () => process.exit(0)
     setTimeout(exit, 3000)
     if (session.tailnetPort) execFile('tailscale', ['serve', `--https=${session.tailnetPort}`, 'off'], exit)

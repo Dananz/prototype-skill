@@ -281,6 +281,13 @@ const raw = (method, path, headers, body = '') => new Promise((ok, no) => {
   r.end(body)
 })
 const planted = JSON.stringify({ comments: [{ route: 'hero/A', text: 'Build A', action: 'build' }] })
+// The page's own Origin goes through, so a check that is too strict (the port, the case) fails here.
+const own = await raw('POST', 'ping', { 'content-type': 'application/json', origin: new URL(local).origin }, '{}')
+if (own !== 200) fail(`a POST from the page's own origin was answered ${own}, not 200`)
+// A page on another site whose name was pointed at this Mac (DNS rebinding) sends its own Host.
+const host = `evil.example:${new URL(local).port}`
+const rebound = await raw('POST', 'comments', { 'content-type': 'application/json', host, origin: `http://${host}` }, planted)
+if (rebound !== 403) fail(`a POST with Host ${host} was answered ${rebound}, not 403`)
 const asText = await raw('POST', 'comments', { 'content-type': 'text/plain' }, planted)
 if (asText < 400 || asText > 499) fail(`a text/plain POST was answered ${asText}, not refused`)
 const foreign = await raw('POST', 'comments', { 'content-type': 'application/json', origin: 'https://evil.example' }, planted)
