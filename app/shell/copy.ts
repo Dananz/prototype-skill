@@ -44,7 +44,15 @@ const bump = () => { version++; subs.forEach(f => f()) }
 const persist = () => {
   try { sessionStorage.setItem(store, JSON.stringify(saved)); sessionStorage.setItem(`${store}-sent`, JSON.stringify(went)) } catch { /* private mode or full: they last until a reload */ }
 }
-const load = (key: string) => { try { const v = JSON.parse(sessionStorage.getItem(key) ?? '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {} } catch { return {} } }
+// What comes back from sessionStorage is checked entry by entry (another tab's older shape, a hand
+// edit): what doesn't fit is dropped, so it can never break the picker.
+const isMap = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+const load = (key: string) => { try { const v = JSON.parse(sessionStorage.getItem(key) ?? '{}'); return isMap(v) ? v : {} } catch { return {} } }
+const keep = <T>(map: Record<string, unknown>, fits: (v: unknown) => T | null) => Object.fromEntries(Object.entries(map).flatMap(([k, v]) => { const x = fits(v); return x ? [[k, x]] : [] })) as Record<string, T>
+const choiceFits = (v: unknown): Choice | null => isMap(v) && typeof v.text === 'string' ? { text: v.text, ...(v.own === true ? { own: true } : {}), ...(v.back === true ? { back: true } : {}) } : null
+const sentFits = (v: unknown): Sent | null => isMap(v) && typeof v.batch === 'string' && isMap(v.texts) && Array.isArray(v.ids)
+  ? { batch: v.batch, texts: keep(v.texts, t => (typeof t === 'string' ? t : null)), ids: v.ids.filter((x): x is string => typeof x === 'string') }
+  : null
 // What a variant passes is taken as it comes, so a line without options or a label is skipped.
 const clean = (list: unknown): CopyLine[] => (Array.isArray(list) ? list : []).filter(l => l && typeof l.id === 'string' && l.id && Array.isArray(l.options) && l.options.length && l.options.every((o: unknown) => typeof o === 'string'))
   .map(l => ({ id: l.id, label: typeof l.label === 'string' && l.label ? l.label : l.id, options: l.options }))
@@ -69,8 +77,8 @@ export const copy = {
   /** Where the choices are kept: one key per session (proto-copy-<id>, and -sent for what was sent). */
   configure(session: string) {
     store = `proto-copy-${session}`
-    saved = load(store)
-    went = load(`${store}-sent`)
+    saved = keep(load(store), v => (isMap(v) ? keep(v, choiceFits) : null))
+    went = keep(load(`${store}-sent`), sentFits)
   },
   /** The variant a host is about to mount ("today/C"), set by the shell before it mounts. */
   bind(host: Element, route: string) { routes.set(host, route) },
