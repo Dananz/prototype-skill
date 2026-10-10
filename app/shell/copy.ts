@@ -1,7 +1,9 @@
 // Copy options: other words for a design's lines, offered when the user asks for other copy. A
 // variant declares its lines (src/copy.ts, useCopy): an id, a label, and options whose first is
 // the line as it reads today. It shows what this store says for each line, and marks the line's
-// element `data-copy="<id>"` so the page's picker (comments/copy.tsx) can find it.
+// element `data-copy="<id>"` so the page's picker (comments/copy.tsx) can find it. Any component
+// of the design may declare its own lines (the variant, a part in parts.tsx): the design's lines
+// are all of theirs together, in the order the page shows them.
 //
 // The choices are the page's, not the design's: kept per session and variant ("today/C") by their
 // words, so a hot reload (Claude editing the file) keeps them, and every place the variant is
@@ -15,6 +17,9 @@ export type CopyLine = { id: string; label: string; options: string[] }
 /** What was chosen for a line: one of its options, or the user's own words. */
 export type Choice = { text: string; own?: boolean }
 
+// Per design: each component's lines (keyed by the component, so one declaring again replaces its
+// own), and all of them together, with the JSON that tells a real change from a re-render.
+const callers = new Map<Element, Map<unknown, CopyLine[]>>()
 const lines = new Map<Element, CopyLine[]>()
 const keys = new Map<Element, string>()
 const routes = new WeakMap<Element, string>()
@@ -32,6 +37,19 @@ const clean = (list: unknown): CopyLine[] => (Array.isArray(list) ? list : []).f
   .map(l => ({ id: l.id, label: typeof l.label === 'string' && l.label ? l.label : l.id, options: l.options }))
 /** A choice still stands while it differs from the first option and, unless it is the user's own, is one of the options. */
 const stands = (line: CopyLine, c?: Choice | null): c is Choice => !!c && typeof c.text === 'string' && !!c.text.trim() && c.text !== line.options[0] && (!!c.own || line.options.includes(c.text))
+/** The design's lines from all its components: a line two of them declare (a part used twice)
+ *  counts once, and they follow the order their elements have in the design. True when that changed. */
+function merge(host: Element) {
+  const seen = new Set<string>(), all: CopyLine[] = []
+  for (const list of callers.get(host)?.values() ?? []) for (const line of list) if (!seen.has(line.id)) { seen.add(line.id); all.push(line) }
+  const order = [...new Set([...host.querySelectorAll<HTMLElement>('[data-copy]')].map(el => el.dataset.copy))]
+  const at = (id: string) => { const i = order.indexOf(id); return i < 0 ? order.length : i }
+  all.sort((a, b) => at(a.id) - at(b.id))
+  const k = JSON.stringify(all)
+  if (keys.get(host) === k) return false
+  if (all.length) { lines.set(host, all); keys.set(host, k) } else { lines.delete(host); keys.delete(host) }
+  return true
+}
 
 export const copy = {
   /** Where the choices are kept: one key per session. */
@@ -44,24 +62,29 @@ export const copy = {
   bind(host: Element, route: string) { routes.set(host, route) },
   routeOf: (host: Element | null | undefined) => (host && routes.get(host)) || '',
 
-  /** The design mounted in host declares its lines (on every render). Choices the lines no longer
-   *  allow are dropped here; a line it doesn't declare right now keeps its choice. */
-  set(host: Element, list: CopyLine[]) {
-    const next = clean(list), k = JSON.stringify(next)
-    const changed = keys.get(host) !== k
-    lines.set(host, next)
-    keys.set(host, k)
-    const route = copy.routeOf(host), mine = saved[route]
-    const gone = next.filter(line => mine?.[line.id] && !stands(line, mine[line.id]))
-    for (const line of gone) delete mine![line.id]
-    if (mine && !Object.keys(mine).length) delete saved[route]
+  /** A component of the design mounted in host declares its lines (on every render); `caller` is
+   *  that component, the same on each call. Choices the lines no longer allow are dropped here; a
+   *  line nobody declares right now keeps its choice. Only a real change re-renders the designs. */
+  set(host: Element, caller: unknown, list: CopyLine[]) {
+    const next = clean(list)
+    let mine = callers.get(host)
+    if (!mine) callers.set(host, mine = new Map())
+    mine.set(caller, next)
+    const changed = merge(host)
+    const route = copy.routeOf(host), kept = saved[route]
+    const gone = next.filter(line => kept?.[line.id] && !stands(line, kept[line.id]))
+    for (const line of gone) delete kept![line.id]
+    if (kept && !Object.keys(kept).length) delete saved[route]
     if (gone.length) persist()
     if (changed || gone.length) bump()
   },
-  drop(host: Element) {
-    keys.delete(host)
-    if (peeked?.host === host) peeked = null
-    if (lines.delete(host)) bump()
+  /** The component unmounted: its lines go with it. */
+  drop(host: Element, caller: unknown) {
+    const mine = callers.get(host)
+    if (!mine?.delete(caller)) return
+    if (!mine.size) callers.delete(host)
+    if (peeked?.host === host && !callers.has(host)) peeked = null
+    if (merge(host)) bump()
   },
   of: (host: Element | null | undefined) => (host && lines.get(host)) || [],
 

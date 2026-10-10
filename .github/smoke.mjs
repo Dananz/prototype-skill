@@ -66,7 +66,14 @@ async function openPage(url) {
     const send = (method, params, sessionId) => new Promise(ok => { waiting.set(++n, ok); ws.send(JSON.stringify({ id: n, method, params, sessionId })) })
     const { targetId } = await send('Target.createTarget', { url })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
-    const run = async expr => (await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }, sessionId))?.result?.value
+    // A page that stops answering (a render loop) fails the check instead of hanging the run.
+    const run = async (expr, ms = 30_000) => {
+      let timer
+      const r = await Promise.race([send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }, sessionId), new Promise(ok => { timer = setTimeout(() => ok('hung'), ms) })])
+      clearTimeout(timer)
+      if (r === 'hung') throw new Error(`the page did not answer in ${ms / 1000} s: it is stuck, as in a render loop`)
+      return r?.result?.value
+    }
     for (let i = 0; i < 150 && !await run('document.documentElement.dataset.ready === "1"'); i++) await new Promise(r => setTimeout(r, 100))
     return { run, close }
   } catch (e) { close(); throw e }
@@ -418,52 +425,60 @@ if (/A\.tsx:[2467] /.test(rtl)) fail('the rtl check listed a logical side, centr
 if (!pngs(shots).includes('phone-A-mobile.png') || pngs(shots).includes('phone-A-desktop.png')) fail('a phone variant should be shot at phone size only')
 
 // Copy options: a variant that declares them (useCopy, from the app's own src/copy.ts) gets a T
-// button with its count; copy mode marks its lines, a pick puts the words in place, and Send posts
-// one comment per changed line with action copy, on the line's element and where it is written.
-// Claude's reply reaches the bar. A variant that declares none has no T button.
+// button with its count, here from two components that each declare a line; copy mode marks its
+// lines, a pick puts the words in place, and Send posts one comment per changed line with action
+// copy, on the line's element and where it is written. Claude's reply reaches the bar. A variant
+// that declares none has no T button.
 if (!existsSync(join(app, 'src', 'copy.ts'))) fail('the app has no src/copy.ts')
 proto(['add', 'words', '--title', 'Words', '--variants', 'A:Options,B:Plain'])
 writeFileSync(join(app, 'src', 'protos', 'words', 'A.tsx'), [
   'import { useCopy } from \'../../copy\'',
+  'function Go() {',
+  '  const copy = useCopy([{ id: \'go\', label: \'Button\', options: [\'Start\', \'Begin\'] }])',
+  '  return <button data-copy="go" className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-white">{copy.go}</button>',
+  '}',
   'export default function A() {',
   '  const copy = useCopy([',
   '    { id: \'title\', label: \'Title\', options: [\'Save more\', \'Pay less\', \'Keep more\'] },',
-  '    { id: \'go\', label: \'Button\', options: [\'Start\', \'Begin\'] },',
   '  ])',
   '  return <div className="h-full p-8">',
   '    <h1 data-copy="title" className="text-2xl">{copy.title}</h1>',
-  '    <button data-copy="go" className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-white">{copy.go}</button>',
+  '    <Go />',
   '  </div>',
   '}',
 ].join('\n'))
 writeFileSync(join(app, 'src', 'protos', 'words', 'B.tsx'), 'export default function B() {\n  return <h1 className="p-8 text-2xl">Save more</h1>\n}\n')
 const plain = await inPage(`${local}?theme=light#/words/B`, 'new Promise(r => setTimeout(r, 800)).then(() => document.querySelectorAll("[data-act=copymode]").length)')
 if (plain !== 0) fail(`a variant without copy options shows ${plain} T buttons`)
-const words = await openPage(`${local}?theme=light#/words/A`)
-try {
-  const step = await words.run(`(async () => {
-    const until = async (f, ms = 4000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } return null }
-    const t = await until(() => document.querySelector('[data-bar] [data-act=copymode]'))
-    if (!t || t.title !== 'Copy options for 2 lines' || t.textContent.trim() !== '2') return 'the T button should say 2 lines: ' + (t ? t.title + ' / ' + t.textContent : 'none')
-    t.click()
-    const mark = await until(() => document.querySelector('[data-copy-mark=title]'))
-    if (!mark) return 'copy mode marked no line'
+const words = await openPage(`${local}?theme=light#/words/A`).catch(e => fail(`copy options in the page: ${e.message}`))
+const until = `const until = async (f, ms = 4000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } return null }`
+// Clicks a line's mark, then its option i (0 is today's words); the line should then read words.
+const choose = (id, i, words) => `
+    const mark = await until(() => document.querySelector('[data-copy-mark=${id}]'))
+    if (!mark) return 'copy mode marked no ${id} line'
     mark.click()
-    const option = await until(() => document.querySelector('[data-copy-list] [data-copy-option="1"]'))
-    if (!option) return 'clicking the line listed no options'
+    const option = await until(() => document.querySelector('[data-copy-list] [data-copy-option="${i}"]'))
+    if (!option) return 'clicking the ${id} line listed no options'
     option.click()
-    const line = () => document.querySelector('[data-mount] [data-copy=title]')?.textContent
-    if (!await until(() => line() === 'Pay less')) return 'the line should read Pay less, reads ' + line()
+    const line = () => document.querySelector('[data-mount] [data-copy=${id}]')?.textContent
+    if (!await until(() => line() === '${words}')) return 'the ${id} line should read ${words}, reads ' + line()
     const send = await until(() => document.querySelector('[data-shoot=send-copy]:not([disabled])'))
     if (!send || !/Send 1 choice/.test(send.textContent)) return 'no Send 1 choice: ' + send?.textContent
     send.click()
-    if (!await until(() => /Sent/.test(document.querySelector('[data-shoot=send-copy]')?.textContent ?? ''))) return 'the bar never said Sent'
+    if (!await until(() => /Sent/.test(document.querySelector('[data-shoot=send-copy]')?.textContent ?? ''))) return 'the bar never said Sent'`
+try {
+  const step = await words.run(`(async () => {
+    ${until}
+    const t = await until(() => document.querySelector('[data-bar] [data-act=copymode]'))
+    if (!t || t.title !== 'Copy options for 2 lines' || t.textContent.trim() !== '2') return 'the T button should say 2 lines, one from each component: ' + (t ? t.title + ' / ' + t.textContent : 'none')
+    t.click()
+    ${choose('title', 1, 'Pay less')}
     return 'ok'
   })()`)
   if (step !== 'ok') fail(`copy options in the page: ${step}`)
   const told = proto(['inbox'])
   if (!/^ {3}action: copy \(make this the line's text/m.test(told) || !/“Pay less”, option 2 of 3/.test(told)) fail(`proto inbox should print the copy choice with action: copy: ${told}`)
-  if (!told.includes('src/protos/words/A.tsx:8 (A)')) fail(`the copy choice should be on the line's element, words/A.tsx:8: ${told}`)
+  if (!told.includes('src/protos/words/A.tsx:11 (A)')) fail(`the copy choice should be on the line's element, words/A.tsx:11: ${told}`)
   proto(['reply', told.match(/^batch (\S+)/m)[1], 'Title is now Pay less', '--done'])
   const replied = await words.run(`(async () => {
     for (const end = Date.now() + 5000; Date.now() < end; await new Promise(r => setTimeout(r, 100))) if (document.querySelector('[data-copy-bar]').innerText.includes('Title is now Pay less')) return true
@@ -471,8 +486,10 @@ try {
   })()`)
   if (replied !== true) fail(`Claude's reply never reached the copy bar: ${replied}`)
 } finally { words.close() }
-// The checklist names each line and what the build ships; a shot in copy mode is the stage's own size.
-if (!/^- \[ \] Title \(`title`\) ships "Save more", not its 2 other options · A\.tsx:4$/m.test(proto(['handoff', 'words/A']))) fail('proto handoff did not list the Title line and what ships')
+// The checklist names each line, whichever component declares it, and what the build ships; a
+// shot in copy mode is the stage's own size.
+const handed = proto(['handoff', 'words/A'])
+if (!/^- \[ \] Title \(`title`\) ships "Save more", not its 2 other options · A\.tsx:8$/m.test(handed)) fail('proto handoff did not list the Title line and what ships')
 proto(['shoot', 'words/A'])
 proto(['shoot', 'words/A', '--copy'])
 const sizeOf = f => { const h = readFileSync(join(shots, f)); return `${h.readUInt32BE(16)}x${h.readUInt32BE(20)}` }

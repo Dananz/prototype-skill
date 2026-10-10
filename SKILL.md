@@ -294,6 +294,8 @@ const copy = useCopy([
   same as any copy in a variant.
 - `useCopy` returns the words to show per line (the user's pick, or the first option). Put
   `data-copy="<id>"` on the element that holds those words, so the page can mark it.
+- Call it in the component that shows the lines: each component may declare its own (the variant
+  its headline, a part in `parts.tsx` its button), and the page counts them all as the design's.
 - Vue: `const copy = useCopy([...])` in `<script setup>`, then `{{ copy.headline }}`.
 
 **Build the variants in parallel when you can.** When there are 3 or more variants to write, the
