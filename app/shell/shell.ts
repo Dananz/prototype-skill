@@ -11,6 +11,7 @@
 import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } from './ui'
 import { dock, edge, smooth, runDock, restoreEdgeLabels, stageHover, installPointerTracking, fadeOut } from './motion'
 import { hints, fillField, type Hint } from './hints'
+import { copy } from './copy'
 import { createSheet, createMenuSheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
 import { createComments, type Subject } from './comments/index'
@@ -124,6 +125,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const { mount } = opts
   let protos = opts.protos
   let session = opts.session
+  copy.configure(session.id)
   const q = new URLSearchParams(location.search)
   const stored = localStorage.getItem('proto-theme')
   const st = {
@@ -321,7 +323,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- skeleton ----------
   // A comment being written lifts its layer over the side panel and its edge tabs (z-20), which
-  // otherwise cover the composer's buttons where it docks at the bottom of a phone.
+  // otherwise cover the composer's buttons where it docks at the bottom of a phone. The copy
+  // picker's bar sits under the stage and takes its height from it (--copy-h); its phone sheet
+  // covers both.
   root.innerHTML = `<div class="flex h-dvh bg-white text-[13px] text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
     <aside data-side></aside>
     <div data-grip role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0" title="Drag to resize · double-click to reset" class="group relative z-40 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none outline-none">
@@ -330,9 +334,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div class="flex min-w-0 flex-1 flex-col">
       <header data-bar class="relative z-30 flex h-12 shrink-0 items-center gap-1 border-b border-black/[.07] px-2 dark:border-white/10"></header>
       <div data-zone>
-        <div data-layers class="absolute inset-0 overflow-hidden" style="right:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
-        <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="right:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
-        <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="right:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
+        <div data-layers class="absolute inset-0 overflow-hidden" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--copy-h,0px))"></div>
+        <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--copy-h,0px))"></div>
+        <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--copy-h,0px))"></div>
+        <div data-copy-bar class="absolute left-0 z-[14]" style="right:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
+        <div data-copy-sheet class="pointer-events-none absolute inset-0 z-[19] overflow-hidden" style="right:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-overlay></div>
         <div data-pill></div>
         <div data-scale-card></div>
@@ -368,6 +374,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const v = proto.variants.find(v => v.id === p.variant)!
     return [proto.kind, v.file, p.state, p.tool, p.tool === 'compare' ? otherOf(proto, v.id) : '', JSON.stringify(proto.states), ...(p.tool === 'compare' ? proto.variants.map(x => x.file) : [])]
   }
+  /** A variant's file (/src/protos/today/C.tsx) as its route, today/C. */
+  const routeOfFile = (file: string) => { const [, , , slug = '', name = ''] = file.split('/'); return `${slug}/${name.replace(/\.\w+$/, '')}` }
   // What a variant is compared with: the one chosen, else the reference (else the next one).
   const otherOf = (p: Proto, v: string) => {
     const want = st.vs.get(p.id)
@@ -434,6 +442,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const start = (host: HTMLElement, v: Variant, s?: State): Promise<unknown> => {
       if (live.has(host)) return Promise.resolve()
       live.set(host, () => {})
+      // Copy choices are kept per variant, so every place it is mounted reads the same words.
+      copy.bind(host, routeOfFile(v.file))
       const here = () => !gone && live.has(host)
       return load(v).then(
         c => {
@@ -826,8 +836,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <div class="relative shrink-0"><button data-act="open:session" aria-label="Session" aria-expanded="${st.open === 'session'}" title="${esc(session.name)}" class="${IB} ${st.open === 'session' ? ON : ''}"><span class="relative grid size-5 shrink-0 place-items-center rounded bg-zinc-900 text-[10px] font-bold text-white dark:bg-white dark:text-zinc-900">${initial}<span class="absolute -right-1 -top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-2', st.live && !st.stopped)}</span></span></button>${pop(st.open === 'session', sessionMenu, 'left-0 top-11 w-[22rem] max-w-[calc(100vw-1rem)]')}</div>
       ${switcher}
       <div class="ml-auto flex shrink-0 items-center gap-1">
-        ${stepper}${stepper && (commentHost() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${commentBtn()}${decideBtn()}
+        ${stepper}${stepper && (commentHost() || copyCounts().lines || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
+        ${commentBtn()}${copyBtn()}${decideBtn()}
         ${phones ? `<div class="relative"><button data-act="open:scale" aria-expanded="${st.open === 'scale'}" class="${IB} text-xs tabular-nums ${st.open === 'scale' ? 'bg-zinc-900/5 text-zinc-900 dark:bg-white/10 dark:text-white' : ''}">${ic('phone')}<span data-scale-label>${scaleLabel()}</span></button>${pop(st.open === 'scale', scaleMenu, 'right-0 top-11 w-72')}</div>` : ''}
       </div></div>`)
     menus = { protos: drill(), session: sessionBody }
@@ -883,7 +893,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
       ${!st.focus ? `<button data-act="focus" data-focus-btn title="Focus mode · F" class="absolute right-[calc(var(--hw,0px)+1rem)] top-3 z-10 hidden h-9 [@media(hover:hover)]:inline-flex items-center gap-1.5 rounded-full bg-zinc-900/80 px-3 text-xs font-medium text-white shadow-lg backdrop-blur transition-opacity duration-200 focus-visible:!opacity-100" style="opacity:${stageHover.on ? 1 : 0}">${ic('grow', 'size-3.5')}Focus</button>` : `
       ${st.open === 'fproto' ? `<div data-pop class="fixed bottom-[76px] left-1/2 z-20 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">${protoMenu}</div>` : ''}
-      <div class="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex justify-center pb-[env(safe-area-inset-bottom)]">
+      <div class="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex justify-center pb-[env(safe-area-inset-bottom)]" style="bottom:var(--copy-h,0px)">
         <div data-dock data-locked="${st.open === 'fproto' ? 1 : 0}" class="pointer-events-auto relative overflow-hidden rounded-full shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur" style="width:72px;height:6px;margin-bottom:4px;background-color:rgb(24 24 27/.35)">
           <div data-dock-full class="absolute left-1/2 top-1/2 flex w-max items-center gap-0.5 px-1 text-white" style="opacity:0;transform:translate(-50%,-50%)">
             <button data-act="unfocus" class="${dockBtn}" aria-label="Exit focus (Esc)" title="Exit focus · Esc">${ic('shrink')}</button>${dockSep}
@@ -891,6 +901,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             ${many ? `<button data-act="step:-1" class="${dockBtn} w-7" aria-label="Previous">${ic('left', 'size-3.5')}</button>` : ''}
             ${shown.map(x => `<button data-act="variant:${x.id}" title="${esc(x.name)}" class="relative grid size-9 shrink-0 place-items-center rounded-full text-xs font-semibold ${vid === x.id ? 'bg-white text-zinc-900' : 'text-white/70 hover:bg-white/10'}">${x.id}${editing(p.id, x.id) ? `<span class="absolute right-1 top-1">${pulse('size-1.5')}</span>` : ''}</button>`).join('')}
             ${many ? `<button data-act="step:1" class="${dockBtn} w-7" aria-label="Next">${ic('right', 'size-3.5')}</button><span class="px-1.5 text-xs tabular-nums text-white/60">${at + 1}/${vs.length}</span>` : ''}${dockSep}
+            ${(c => c.lines ? `<button data-act="copymode" aria-pressed="${c.on}" aria-label="Copy options" title="${copySay(c)}" class="${dockBtn} relative ${c.on ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic('text')}${copyCount(c, 'ring-zinc-900')}</button>` : '')(copyCounts())}
             ${phones ? `<button data-act="scale:${[0, 100, 75, 50][([0, 100, 75, 50].indexOf(st.scale) + 1) % 4]}" class="h-9 shrink-0 rounded-full px-2 text-xs tabular-nums text-white/70 hover:bg-white/10" title="Phone scale">${scaleLabel()}</button>` : ''}
             <button data-act="theme:${st.dark ? 'light' : 'dark'}" class="${dockBtn}" aria-label="Theme">${ic(st.dark ? 'sun' : 'moon')}</button>
           </div>
@@ -943,7 +954,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const vs = p ? visible(p) : []
     const vid = st.place.view === 'variant' ? st.place.variant : ''
     const at = vs.findIndex(v => v.id === vid)
-    const key = pillOn() ? JSON.stringify([p!.id, p!.kind, vid, vs.map(v => [v.id, v.name]), p!.variants.length, editing(p!.id, vid), st.sheet, pillComments()]) : ''
+    const key = pillOn() ? JSON.stringify([p!.id, p!.kind, vid, vs.map(v => [v.id, v.name]), p!.variants.length, editing(p!.id, vid), st.sheet, pillComments(), copyKeyOf()]) : ''
     if (key !== pillKey) {
       pillKey = key
       if (!key) { pill.innerHTML = ''; closeCard(true) }
@@ -951,17 +962,19 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const v = vs[at]
         const prev = vs[at <= 0 ? vs.length - 1 : at - 1], next = vs[at < 0 || at === vs.length - 1 ? 0 : at + 1]
         pill.innerHTML = `<div class="absolute inset-x-0 bottom-0 z-10 flex h-[var(--pill-h,0px)] items-start justify-center pt-2 sm:hidden">
-          <div data-pill-bar class="relative flex h-12 items-center gap-0.5 rounded-full bg-zinc-900/90 p-1 text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/90">
+          <div data-pill-bar class="relative flex h-12 max-w-[calc(100%-1rem)] items-center gap-0.5 rounded-full bg-zinc-900/90 p-1 text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/90">
             <div data-ruler hidden class="pointer-events-none absolute bottom-full left-1/2 mb-2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-zinc-900/90 shadow-lg ring-1 ring-white/10 [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)] dark:bg-zinc-800/90"></div>
             <button data-act="lobby:proto" aria-label="All variants" aria-pressed="${st.place.view === 'proto'}" class="${pillBtn} ${st.place.view === 'proto' ? '!bg-white !text-zinc-900' : ''}">${ic('grid')}</button>
             <span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span>
             <button data-act="variant:${prev.id}" aria-label="Previous variant: ${prev.id} ${esc(prev.name)}" class="${pillBtn}">${ic('left')}</button>
-            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? `${v.id} ${esc(v.name)}, ${at + 1} of ${vs.length}. ` : ''}Show all variants" class="flex h-10 ${commentHost() ? 'w-28' : 'w-40'} min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 active:bg-white/10">
+            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? `${v.id} ${esc(v.name)}, ${at + 1} of ${vs.length}. ` : ''}Show all variants" class="flex h-10 ${commentHost() || copyCounts().lines ? 'w-28' : 'w-40'} min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 active:bg-white/10">
               ${v ? `<b data-pill-id class="shrink-0 text-[15px]">${v.id}</b><span data-pill-name dir="auto" class="min-w-0 truncate text-white/70">${esc(v.name)}</span><span data-pill-n class="shrink-0 text-[11px] tabular-nums text-white/40">${at + 1}/${vs.length}</span>${editing(p!.id, v.id) ? pulse('size-1.5') : ''}`
                 : `<span class="truncate font-medium">All variants</span><span class="shrink-0 text-[11px] tabular-nums text-white/40">${vs.length}</span>`}
             </div>
             <button data-act="variant:${next.id}" aria-label="Next variant: ${next.id} ${esc(next.name)}" class="${pillBtn}">${ic('right')}</button>
-            ${commentHost() ? (c => `<span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span><button data-act="comment:tap" data-shoot="comment" aria-label="Comments" aria-pressed="${c.picking}" class="${pillBtn} relative ${c.picking ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.picking ? 'x' : 'comment', 'size-5')}${c.drafts && !c.picking ? `<span class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold text-proto-primary-fg ring-2 ring-zinc-900">${c.drafts}</span>` : ''}</button>`)(comments.counts()) : ''}
+            ${commentHost() || copyCounts().lines ? '<span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span>' : ''}
+            ${commentHost() ? (c => `<button data-act="comment:tap" data-shoot="comment" aria-label="Comments" aria-pressed="${c.picking}" class="${pillBtn} relative ${c.picking ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.picking ? 'x' : 'comment', 'size-5')}${c.drafts && !c.picking ? `<span class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold text-proto-primary-fg ring-2 ring-zinc-900">${c.drafts}</span>` : ''}</button>`)(comments.counts()) : ''}
+            ${(c => c.lines ? `<button data-act="copymode" data-shoot="copy-mode" aria-label="Copy options" aria-pressed="${c.on}" class="${pillBtn} relative ${c.on ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.on ? 'x' : 'text', 'size-5')}${copyCount(c, 'ring-zinc-900')}</button>` : '')(copyCounts())}
             ${p!.kind === 'phone' ? `<span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span><button data-pill-scale aria-label="Phone scale" aria-expanded="false" class="h-10 min-w-12 shrink-0 rounded-full px-2.5 text-xs font-medium tabular-nums text-white/70 transition-colors duration-200 active:bg-white/10"><span data-scale-label>${scaleLabel()}</span></button>` : ''}
           </div>
         </div>`
@@ -1303,7 +1316,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const p = cur()
     const here = st.place.view === 'variant' ? st.place : null
     switch (name) {
-      case 'comment': return arg === 'tap' ? comments.tap() : toggleComment()
+      case 'comment': if (arg === 'tap') { comments.copy.off(); return comments.tap() } return toggleComment()
+      case 'copymode': return comments.copy.toggle()
       // A state leaf: that variant in that state. Comparing keeps comparing.
       case 'pvs': {
         const keep = here?.tool === 'compare' && here.proto === arg && here.variant === arg2
@@ -1402,6 +1416,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
     if (e.key === 'Escape') {
       if (tryEsc()) return
+      if (comments.copy.escape()) return
       if (comments.escape()) return
       if (card && card.phase !== 'exit') return closeCard()
       if (st.open) { st.open = null; return render() }
@@ -1507,6 +1522,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   /** Tells the comment layer where the page is and what the server says; repaints the chrome that shows counts. */
   function syncComments() {
     const host = commentHost(), pl = st.place, p = cur()
+    comments.copy.setStage(copyHost(), copy.routeOf(copyHost()))
     comments.setPlace(host && pl.view === 'variant' && p ? { proto: pl.proto, variant: pl.variant, ...(pl.state ? { state: pl.state } : {}), phone: phoneMq.matches, title: p.title } : null)
     if (st.status?.inbox !== seenInbox) { seenInbox = st.status?.inbox; comments.setInbox(seenInbox) }
     zone.toggleAttribute('data-picking', !!host && comments.counts().picking)
@@ -1520,6 +1536,31 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     render()
   })
   phoneMq.addEventListener('change', () => paintHints())
+
+  // ---------- copy options: a T button wherever the design on the stage declares them ----------
+  // Only a design that declares copy options (useCopy) has one: beside Comment in the bar, in the
+  // pill on a phone, in the dock in focus mode. Its count is how many lines have options; pressed,
+  // copy mode is on (comments/copy.tsx). The picker works in focus mode and in shots too, so it
+  // follows the stage, not commentHost.
+  const copyHost = () => hintHost()
+  const copyCounts = () => { const h = copyHost(), c = comments.copy.store.get(); return { lines: copy.of(h).length, changed: copy.changed(h).length, on: !!h && c.on && c.stage === h } }
+  const copySay = (c: ReturnType<typeof copyCounts>) => c.on ? 'Close copy options · Esc' : `Copy options for ${c.lines} line${c.lines === 1 ? '' : 's'}${c.changed ? `, ${c.changed} changed` : ''}`
+  const copyCount = (c: ReturnType<typeof copyCounts>, ring: string) => c.on ? '' : `<span aria-hidden="true" class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold tabular-nums text-proto-primary-fg ring-2 ${ring}">${c.lines}</span>`
+  const copyBtn = () => {
+    const c = copyCounts()
+    if (!c.lines || st.focus) return ''
+    return `<button data-act="copymode" data-shoot="copy-mode" aria-pressed="${c.on}" aria-label="Copy options" title="${copySay(c)}" class="relative hidden h-9 min-w-9 items-center justify-center gap-1.5 rounded-lg text-xs font-medium sm:inline-flex ${c.on ? 'bg-proto-primary px-2.5 text-proto-primary-fg hover:bg-proto-primary-hover' : 'text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'}">${ic('text')}${c.on ? '<kbd class="rounded bg-white/20 px-1 font-sans text-[11px]">Esc</kbd>' : ''}${copyCount(c, 'ring-white dark:ring-zinc-950')}</button>`
+  }
+  let copyKey = ''
+  const copyKeyOf = () => JSON.stringify(copyCounts())
+  // A preview changes the words on every pointer move; the chrome only shows the counts.
+  const repaintCopy = () => { const k = copyKeyOf(); if (k !== copyKey) { copyKey = k; render() } }
+  copy.subscribe(repaintCopy)
+  comments.copy.store.subscribe(repaintCopy)
+  // The bar under the stage takes its height from it, so the design is never under the bar.
+  const copyBar = zone.querySelector<HTMLElement>('[data-copy-bar]')!
+  comments.mountCopy(copyBar, zone.querySelector<HTMLElement>('[data-copy-sheet]')!)
+  new ResizeObserver(() => { zone.style.setProperty('--copy-h', `${copyBar.offsetHeight}px`); fit() }).observe(copyBar)
 
   // ---------- deciding: Pick, More like this, Build it ----------
   // The variant on screen can be picked, or followed by more like it, or built, from the page
@@ -1571,6 +1612,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // Starting to comment opens the Comments tab beside the design, where the new one lands. Only
   // where the panel docks: narrower, it would cover what you're about to click on.
   function toggleComment() {
+    comments.copy.off()
     comments.act.toggle()
     if (!comments.counts().picking || !railOn() || !wideMq.matches) return
     tab = 'comments'
@@ -1807,6 +1849,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   if (location.hash !== hashOf(start)) history.replaceState(null, '', hashOf(start))
   arrive(start, false)
   if (q.has('focus')) act('focus', '', '')
+  // ?copy=1 (proto shoot --copy): copy mode opens once the design on the stage declares its lines.
+  if (q.has('copy')) comments.copy.want()
   refreshStatus()
   Promise.all([document.fonts.ready, Promise.race([(layer as Layer | null)?.ready, wait(5000)])]).then(() => requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1' })))
 

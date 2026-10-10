@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 import type { CommentBatch, Sent } from '../shell'
 import type { Actions } from './actions'
+import type { CopyActions, CopyStore } from './copy'
 import type { Store } from './store'
 
 /** What the shell gives the comment layer: where the design is, how to move, how to send. */
@@ -14,6 +15,7 @@ export type Host = {
   send: (batch: CommentBatch) => Promise<Sent>
   dark: () => boolean
 }
-export type Ctx = { store: Store; host: Host; act: Actions }
+/** The comment layer's store and actions, and the copy picker's, which sends through it. */
+export type Ctx = { store: Store; host: Host; act: Actions; copyStore: CopyStore; copyAct: CopyActions }
 export const CommentsCtx = createContext<Ctx>(null as unknown as Ctx)
 export const useCtx = () => useContext(CommentsCtx)

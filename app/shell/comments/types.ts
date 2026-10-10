@@ -21,9 +21,10 @@ export type Held = Draft & { target: Target }
 
 /**
  * A decision on a variant, made in the page: pick it (or take the pick back), more like it, build
- * it. It goes to Claude as a comment with this and no element; its body is the optional note.
+ * it. It goes to Claude as a comment with this and no element; its body is the optional note. A
+ * copy choice (copy.tsx) is one too, on the element of the line it changes.
  */
-export type Action = 'pick' | 'unpick' | 'more' | 'build'
+export type Action = 'pick' | 'unpick' | 'more' | 'build' | 'copy'
 
 export type Item = Draft & {
   id: string

@@ -81,6 +81,7 @@ export const ACTION: Record<Action, { say: (v: string) => string; icon: string }
   unpick: { say: v => `Unpicked ${v}`, icon: 'undo' },
   more: { say: v => `More like ${v}`, icon: 'more' },
   build: { say: v => `Build ${v}`, icon: 'code' },
+  copy: { say: v => `Copy for ${v}`, icon: 'text' },
 }
 /** What a row of the list is about: the element a comment is on, or what a decision asked. */
 export const aboutOf = (i: Item) => i.action ? ACTION[i.action].say(i.variant) : i.target?.label ?? ''

@@ -47,5 +47,15 @@ body { margin: 0; }
   --color-proto-primary-ring: var(--proto-primary-ring);
 }
 
+/* Copy mode (comments/copy.tsx): each line with options gets a dotted underline. A line in light
+   words (on a dark button) gets a light one, from a rule the picker writes for it. */
+[data-copy-on] [data-copy] {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+  text-decoration-color: color-mix(in oklab, var(--proto-primary) 50%, transparent);
+}
+
 /* While commenting, the design is only looked at: a crosshair over all of it. */
 [data-picking] [data-mount] * { cursor: crosshair !important; }

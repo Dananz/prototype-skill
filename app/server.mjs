@@ -138,8 +138,9 @@ const element = t => t && typeof t === 'object' ? {
 } : undefined
 
 // A decision on a variant made in the page (its Pick, More like this and Build it) comes as a
-// comment with one of these and no element.
-const ACTIONS = new Set(['pick', 'unpick', 'more', 'build'])
+// comment with one of these and no element. A copy choice (the copy picker's Send) is one too, on
+// the element of the line it changes.
+const ACTIONS = new Set(['pick', 'unpick', 'more', 'build', 'copy'])
 
 /**
  * Writes one send from the page as a new batch; images come as data URLs and are stored as files.
@@ -160,7 +161,7 @@ function receive(data) {
     if (typeof c.route !== 'string' || !/^[a-z0-9][a-z0-9-]*(\/[A-Z]{1,2}(\/[\w-]+)?)?$/.test(c.route)) throw bad(i, ': route is <slug>[/<letter>[/<state>]]')
     if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
-      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more or build, on a variant (<slug>/<letter>)')
+      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build or copy, on a variant (<slug>/<letter>)')
       if (c.action === 'pick' || c.action === 'unpick') {
         let meta
         try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { throw bad(i, `: src/protos/${slug}/meta.ts is missing or isn't plain JSON, so a pick can't be marked in it`) }
