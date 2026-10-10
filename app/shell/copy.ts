@@ -11,11 +11,16 @@
 // reload keeps them, and each tab, so each shot `proto shoot` takes, starts from the design as
 // written. A choice Claude has made the line's first option is done, so it goes; so does one whose
 // words are no longer among the options. The user's own words stay until they are the first option.
+// What was last sent to Claude for each line is kept the same way, beside them, so a reload neither
+// sends a line twice nor forgets a change made since; it goes with its line's choice.
 
 /** One line with options. options[0] is the line as it reads today. */
 export type CopyLine = { id: string; label: string; options: string[] }
 /** What was chosen for a line: one of its options, or the user's own words. */
 export type Choice = { text: string; own?: boolean }
+/** What was sent from one variant: the last batch, the words each line was last sent with, and
+ *  every line sent (the bar names them while Claude answers). */
+export type Sent = { batch: string; texts: Record<string, string>; ids: string[] }
 
 // Per design: each component's lines (keyed by the component, so one declaring again replaces its
 // own), and all of them together, with the JSON that tells a real change from a re-render.
@@ -26,12 +31,16 @@ const routes = new WeakMap<Element, string>()
 const subs = new Set<() => void>()
 let store = ''
 let saved: Record<string, Record<string, Choice>> = {}
+let went: Record<string, Sent> = {}
 // A preview while an option is pointed at: shown on that one design only, never kept.
 let peeked: { host: Element; id: string; text: string } | null = null
 let version = 0
 
 const bump = () => { version++; subs.forEach(f => f()) }
-const persist = () => { try { sessionStorage.setItem(store, JSON.stringify(saved)) } catch { /* private mode or full: the choices last until a reload */ } }
+const persist = () => {
+  try { sessionStorage.setItem(store, JSON.stringify(saved)); sessionStorage.setItem(`${store}-sent`, JSON.stringify(went)) } catch { /* private mode or full: they last until a reload */ }
+}
+const load = (key: string) => { try { const v = JSON.parse(sessionStorage.getItem(key) ?? '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {} } catch { return {} } }
 // What a variant passes is taken as it comes, so a line without options or a label is skipped.
 const clean = (list: unknown): CopyLine[] => (Array.isArray(list) ? list : []).filter(l => l && typeof l.id === 'string' && l.id && Array.isArray(l.options) && l.options.length && l.options.every((o: unknown) => typeof o === 'string'))
   .map(l => ({ id: l.id, label: typeof l.label === 'string' && l.label ? l.label : l.id, options: l.options }))
@@ -52,19 +61,20 @@ function merge(host: Element) {
 }
 
 export const copy = {
-  /** Where the choices are kept: one key per session. */
+  /** Where the choices are kept: one key per session (proto-copy-<id>, and -sent for what was sent). */
   configure(session: string) {
     store = `proto-copy-${session}`
-    try { saved = JSON.parse(sessionStorage.getItem(store) ?? '{}') ?? {} } catch { saved = {} }
-    if (typeof saved !== 'object' || Array.isArray(saved)) saved = {}
+    saved = load(store)
+    went = load(`${store}-sent`)
   },
   /** The variant a host is about to mount ("today/C"), set by the shell before it mounts. */
   bind(host: Element, route: string) { routes.set(host, route) },
   routeOf: (host: Element | null | undefined) => (host && routes.get(host)) || '',
 
   /** A component of the design mounted in host declares its lines (on every render); `caller` is
-   *  that component, the same on each call. Choices the lines no longer allow are dropped here; a
-   *  line nobody declares right now keeps its choice. Only a real change re-renders the designs. */
+   *  that component, the same on each call. Choices the lines no longer allow are dropped here,
+   *  with what was sent for them; a line nobody declares right now keeps its choice. Only a real
+   *  change re-renders the designs. */
   set(host: Element, caller: unknown, list: CopyLine[]) {
     const next = clean(list)
     let mine = callers.get(host)
@@ -73,7 +83,7 @@ export const copy = {
     const changed = merge(host)
     const route = copy.routeOf(host), kept = saved[route]
     const gone = next.filter(line => kept?.[line.id] && !stands(line, kept[line.id]))
-    for (const line of gone) delete kept![line.id]
+    for (const line of gone) { delete kept![line.id]; delete went[route]?.texts?.[line.id] }
     if (kept && !Object.keys(kept).length) delete saved[route]
     if (gone.length) persist()
     if (changed || gone.length) bump()
@@ -117,6 +127,22 @@ export const copy = {
     if (stands(line, c)) mine[id] = c
     else delete mine[id]
     if (!Object.keys(mine).length) delete saved[route]
+    persist()
+    bump()
+  },
+  /** What was last sent from a variant, if anything since copy mode last closed after Claude's answer. */
+  sentOf: (route: string): Sent | null => went[route] ?? null,
+  /** A batch went: each line's words as sent. */
+  sent(route: string, batch: string, texts: Record<string, string>) {
+    const w = went[route]
+    went[route] = { batch, texts: { ...w?.texts, ...texts }, ids: [...new Set([...w?.ids ?? [], ...Object.keys(texts)])] }
+    persist()
+    bump()
+  },
+  /** Claude is done with what was sent, and copy mode closed: the bar starts over. */
+  unsend(route: string) {
+    if (!went[route]) return
+    delete went[route]
     persist()
     bump()
   },

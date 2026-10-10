@@ -16,8 +16,6 @@ import { describe } from './dom'
 import { useStore, type Store } from './store'
 import { IB, Icon, Listening, PRIMARY, Reply } from './ui'
 
-/** What was sent from one variant: its batch, and the words each line went with. */
-type Sent = { batch: string; texts: Record<string, string> }
 export type CopyState = {
   /** The design on the stage and its variant ("today/C"); null in a lobby or a tool. */
   stage: HTMLElement | null
@@ -34,13 +32,12 @@ export type CopyState = {
   flash: { id: string; n: number } | null
   /** The last change, so one tap puts it back. */
   was: { id: string; choice: Choice | null } | null
-  sent: Record<string, Sent>
   sending: boolean
   error: string
 }
 
 export function createCopyStore() {
-  let state: CopyState = { stage: null, route: '', on: false, wanted: false, still: false, open: null, sheet: null, flash: null, was: null, sent: {}, sending: false, error: '' }
+  let state: CopyState = { stage: null, route: '', on: false, wanted: false, still: false, open: null, sheet: null, flash: null, was: null, sending: false, error: '' }
   const listeners = new Set<() => void>()
   return {
     get: () => state,
@@ -65,7 +62,7 @@ export function createCopyActions(cs: CopyStore, host: Host, comments: Store, st
     /** What Send posts: each line whose words differ from those it was last sent with (from today's,
      *  if it was never sent). A line put back to today's words after a send goes too, with no choice. */
     pending: () => {
-      const s = get(), went = s.sent[s.route]?.texts ?? {}
+      const s = get(), went = copy.sentOf(s.route)?.texts ?? {}
       return lines().flatMap(line => {
         const choice = copy.choiceOf(s.stage, line.id), text = choice?.text ?? line.options[0]
         return (went[line.id] ?? line.options[0]) === text ? [] : [{ line, choice, text }]
@@ -88,9 +85,9 @@ export function createCopyActions(cs: CopyStore, host: Host, comments: Store, st
       if (!s.on && !lines().length) return
       unpeek()
       // Closed once Claude is done with what was sent: the bar starts over the next time.
-      const sent = s.sent[s.route], done = !!sent && comments.get().inbox?.batches.find(b => b.id === sent.batch)?.state === 'done'
-      const { [s.route]: _, ...rest } = s.sent
-      set({ on: !s.on, open: null, error: '', ...(s.on && done ? { sent: rest } : {}) })
+      const sent = copy.sentOf(s.route), done = !!sent && comments.get().inbox?.batches.find(b => b.id === sent.batch)?.state === 'done'
+      if (s.on && done) copy.unsend(s.route)
+      set({ on: !s.on, open: null, error: '' })
       if (!s.on) stopPicking()
     },
     off() { if (get().on) act.toggle() },
@@ -135,8 +132,8 @@ export function createCopyActions(cs: CopyStore, host: Host, comments: Store, st
       set({ sending: true, error: '' })
       try {
         const { id } = await host.send({ theme: host.dark() ? 'dark' : 'light', viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 }, comments })
-        const texts = { ...get().sent[s.route]?.texts, ...Object.fromEntries(list.map(c => [c.line.id, c.text])) }
-        set(x => ({ sending: false, was: null, sent: { ...x.sent, [s.route]: { batch: id, texts } } }))
+        copy.sent(s.route, id, Object.fromEntries(list.map(c => [c.line.id, c.text])))
+        set({ sending: false, was: null })
       } catch (e) {
         set({ sending: false, error: e instanceof Error ? e.message : 'Could not send' })
       }
@@ -600,7 +597,7 @@ export function CopyBar() {
   const narrow = useNarrow()
   const on = s.on && lines.length > 0
   const pending = copyAct.pending()
-  const sent = s.sent[s.route]
+  const sent = copy.sentOf(s.route)
   const reply = sent ? replyTo(sent.batch, store) : null
   const listening = !!inbox?.listening
   const quiet = !pending.length && !sent
@@ -617,7 +614,7 @@ export function CopyBar() {
   )
   const send = (cls: string) => <SendChoices n={pending.length} sending={s.sending} sent={!!sent} reply={reply} listening={listening} onSend={copyAct.send} className={cls} />
   // What Send would post, in the page's order; sent and nothing new since: what went, until the next change.
-  const shown = pending.length ? pending.map(c => c.line.label) : Object.keys(sent?.texts ?? {}).map(label)
+  const shown = pending.length ? pending.map(c => c.line.label) : (sent?.ids ?? []).filter(id => lines.some(l => l.id === id)).map(label)
   const oops = s.error && <p role="alert" className="mb-2 rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300">{s.error}</p>
 
   return (

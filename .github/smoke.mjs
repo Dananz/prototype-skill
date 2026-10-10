@@ -427,17 +427,18 @@ if (!pngs(shots).includes('phone-A-mobile.png') || pngs(shots).includes('phone-A
 // Copy options: a variant that declares them (useCopy, from the app's own src/copy.ts) gets a T
 // button with its count, here from two components that each declare lines; copy mode marks its
 // lines, a pick puts the words in place, and Send posts one comment per changed line with action
-// copy, on the line's element and where it is written. Claude's reply reaches the bar, and going
-// back to today's words after a send can be sent too. A component that unmounts while copy mode is
-// on takes its lines with it, and commenting still works. A variant that declares none has no T
-// button.
+// copy, on the line's element and where it is written. Claude's reply reaches the bar. What was
+// sent survives a reload (nothing goes twice), and so does a way back to today's words, which can
+// be sent too. A component that unmounts while copy mode is on takes its lines with it, and
+// commenting still works. A variant that declares none has no T button.
 if (!existsSync(join(app, 'src', 'copy.ts'))) fail('the app has no src/copy.ts')
 proto(['add', 'words', '--title', 'Words', '--variants', 'A:Options,B:Plain'])
 writeFileSync(join(app, 'src', 'protos', 'words', 'parts.tsx'), [
   'import { useCopy } from \'../../copy\'',
   'export function Go() {',
   '  const copy = useCopy([',
-  '    { id: \'go\', label: \'Button\', options: [\'Start\', \'Hi {name}, go [now]\'] },',
+  '    // the user\'s button',
+  '    { id: \'go\', label: \'Button\', options: [\'Let\\\'s go\', \'Hi {name}, go [now]\'] }, // isn\'t it',
   '    { id: \'note\', label: \'Note\', options: [\'Free\', \'No fee\'] },',
   '  ])',
   '  return <div>',
@@ -488,6 +489,11 @@ const sendOne = `
     if (!send || !/Send 1 choice/.test(send.textContent)) return 'no Send 1 choice: ' + send?.textContent
     send.click()
     if (!await until(() => /Sent/.test(document.querySelector('[data-shoot=send-copy]')?.textContent ?? ''))) return 'the bar never said Sent'`
+const reload = async () => {
+  await words.run('setTimeout(() => location.reload(), 0), 1')
+  await new Promise(r => setTimeout(r, 500))
+  for (let i = 0; i < 100 && !await words.run('document.documentElement.dataset.ready === "1"').catch(() => false); i++) await new Promise(r => setTimeout(r, 100))
+}
 try {
   const step = await words.run(`(async () => {
     ${until}
@@ -508,14 +514,31 @@ try {
     return document.querySelector('[data-copy-bar]').innerText
   })()`)
   if (replied !== true) fail(`Claude's reply never reached the copy bar: ${replied}`)
-  // Back to today's words after the send: that is a change to send as well.
+  // After a reload, what was sent is still sent: nothing to send again, and the reply is there.
+  await reload()
+  const kept = await words.run(`(async () => {
+    ${until}
+    ${copyOn}
+    if (!await until(() => document.querySelector('[data-copy-bar]').innerText.includes('Title is now Pay less'))) return 'the reply is gone: ' + document.querySelector('[data-copy-bar]').innerText
+    if (document.querySelector('[data-shoot=send-copy]:not([disabled])')) return 'after a reload the sent line is offered again'
+    return 'ok'
+  })()`)
+  if (kept !== 'ok') fail(`what was sent, after a reload: ${kept}`)
+  // Back to today's words after the send is a change to send as well, and a reload keeps it.
   const back = await words.run(`(async () => {
     ${until}
     ${pick('title', 0, 'Save more')}
-    ${sendOne}
     return 'ok'
   })()`)
   if (back !== 'ok') fail(`going back to today's words after a send: ${back}`)
+  await reload()
+  const backSent = await words.run(`(async () => {
+    ${until}
+    ${copyOn}
+    ${sendOne}
+    return 'ok'
+  })()`)
+  if (backSent !== 'ok') fail(`the way back to today's words, after a reload: ${backSent}`)
   const toldBack = proto(['inbox'])
   if (!/“Save more”, back to today's words \(option 1 of 3\)/.test(toldBack)) fail(`proto inbox should print the way back to today's words: ${toldBack}`)
   // A component that declared lines unmounts while copy mode is on: its lines go, the rest stay
@@ -535,12 +558,13 @@ try {
   })()`)
   if (gone !== 'ok') fail(`a component with lines unmounting in copy mode: ${gone}`)
 } finally { words.close() }
-// The checklist names each line, whichever component declares it and whatever brackets its words
-// hold, and what the build ships; a shot in copy mode is the stage's own size.
+// The checklist names each line, whichever component declares it, whatever brackets, comments or
+// escaped quotes are around its words, and what the build ships; a shot in copy mode is the
+// stage's own size.
 const handed = proto(['handoff', 'words/A'])
 if (!/^- \[ \] Title \(`title`\) ships "Save more", not its 2 other options · A\.tsx:7$/m.test(handed)) fail('proto handoff did not list the Title line and what ships')
-if (!/^- \[ \] Button \(`go`\) ships "Start", not its 1 other option · parts\.tsx:4$/m.test(handed)) fail('proto handoff did not list the Button line, whose other option has brackets')
-if (!/^- \[ \] Note \(`note`\) ships "Free", not its 1 other option · parts\.tsx:5$/m.test(handed)) fail('proto handoff did not list the Note line')
+if (!/^- \[ \] Button \(`go`\) ships "Let's go", not its 1 other option · parts\.tsx:5$/m.test(handed)) fail('proto handoff did not list the Button line, with a comment above it and brackets and an escaped quote in its words')
+if (!/^- \[ \] Note \(`note`\) ships "Free", not its 1 other option · parts\.tsx:6$/m.test(handed)) fail('proto handoff did not list the Note line, after a comment with a quote')
 proto(['shoot', 'words/A'])
 proto(['shoot', 'words/A', '--copy'])
 const sizeOf = f => { const h = readFileSync(join(shots, f)); return `${h.readUInt32BE(16)}x${h.readUInt32BE(20)}` }

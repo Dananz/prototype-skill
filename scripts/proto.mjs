@@ -833,7 +833,29 @@ function copyIn(line) {
 // or from the list it names when that is declared in the variant's files (`const LINES = [ … ]`),
 // with the keys in any order.
 function copyOptionsIn(files) {
-  const texts = files.map(f => ({ f, text: readFileSync(f, 'utf8') }))
+  // A quote opens a string unless it follows a letter: in code a string never does, while words in
+  // JSX do (Don't).
+  const opens = (text, i) => text[i] === '`' || ((text[i] === '"' || text[i] === '\'') && !/[\p{L}\p{N}]/u.test(text[i - 1] || ''))
+  // The file with its comments blanked out, at the same length and on the same lines: a quote in a
+  // comment ("the user's headline") opens no string, and nothing in one is read as code.
+  const blank = text => {
+    let out = '', quote = ''
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i]
+      if (quote) { out += c; if (c === '\\') out += text[++i] ?? ''; else if (c === quote) quote = ''; continue }
+      if (c === '/' && (text[i + 1] === '/' || text[i + 1] === '*')) {
+        const line = text[i + 1] === '/', e = line ? text.indexOf('\n', i) : text.indexOf('*/', i + 2)
+        const to = e < 0 ? text.length : line ? e : e + 2
+        out += text.slice(i, to).replace(/[^\n]/g, ' ')
+        i = to - 1
+        continue
+      }
+      if (opens(text, i)) quote = c
+      out += c
+    }
+    return out
+  }
+  const texts = files.map(f => ({ f, text: blank(readFileSync(f, 'utf8')) }))
   const calls = [], lines = []
   const lineAt = (text, i) => text.slice(0, i).split('\n').length
   // From an opening bracket, the index of the one that closes it; brackets inside strings don't count.
@@ -842,7 +864,7 @@ function copyOptionsIn(files) {
     for (; i < text.length; i++) {
       const c = text[i]
       if (quote) { if (c === '\\') i++; else if (c === quote) quote = ''; continue }
-      if (c === '"' || c === '\'' || c === '`') quote = c
+      if (opens(text, i)) quote = c
       else if ('([{'.includes(c)) depth++
       else if (')]}'.includes(c) && --depth === 0) break
     }
@@ -856,7 +878,7 @@ function copyOptionsIn(files) {
     for (let i = open + 1; i < end; i++) {
       const c = text[i]
       if (quote) { if (c === '\\') i++; else if (c === quote) quote = ''; continue }
-      if (c === '"' || c === '\'' || c === '`') quote = c
+      if (opens(text, i)) quote = c
       else if ('([{'.includes(c)) depth++
       else if (')]}'.includes(c)) depth--
       else if (c === ',' && !depth) { out.push([start, i]); start = i + 1 }
@@ -865,7 +887,10 @@ function copyOptionsIn(files) {
     return out.flatMap(([a, b]) => { const lead = text.slice(a, b).search(/\S/); return lead < 0 ? [] : [[a + lead, b]] })
   }
   const STR = String.raw`(['"\`])((?:\\.|(?!\1)[^\\])*)\1`
+  // A string literal's words, with its escapes read: 'It\'s' is It's.
+  const ESC = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', v: '\v', 0: '\0' }
   const literal = v => new RegExp(String.raw`^${STR}\s*$`).exec(v)?.[2]
+    .replace(/\\(u\{[\da-f]+\}|u[\da-f]{4}|x[\da-f]{2}|[\s\S])/gi, (_, e) => e.length > 1 ? String.fromCodePoint(parseInt(e.replace(/[ux{}]/gi, ''), 16)) : ESC[e] ?? e)
   // Each { id, label, options } of a list, from its opening bracket. The words may hold any
   // bracket ("Hi {name}"): each object and list ends where its own bracket closes.
   const objects = ({ f, text }, open) => {
