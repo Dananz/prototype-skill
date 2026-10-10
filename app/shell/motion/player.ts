@@ -2,7 +2,7 @@
 // it through window.__protoMotion. It records a take (from rest), holds it at its end, seeks, plays
 // at a speed, loops a range, and lets the design go when someone uses it.
 import { motion, type Moment } from './registry'
-import { frame, hold, record, release, seek, settle, type Take } from './take'
+import { clock, errorOf, frame, hold, record, release, seek, settle, type Take } from './take'
 import { tracksOf, type Track } from './curves'
 
 /** off: nothing recorded yet; taking: recording now; ready: held; empty: it recorded no motion. */
@@ -21,15 +21,21 @@ export type PlayState = {
   span: [number, number] | null
   /** Someone used the design since the take was held, so it runs live; the next move takes it back. */
   live: boolean
+  /** Why the take is empty when the sequence's start (or reset) threw. */
+  error: string | null
+  /** When something started after the take had ended (ms of the take): a step it missed. */
+  late: number | null
 }
 
 // How long a looped range rests on its last frame before it runs again.
 const REST = 360
 // How long a design just put on the stage is left alone before its sequence starts.
 const ARRIVE = 350
+// How long after a take ends something starting in the design is taken for a step it missed.
+const LATE = 3000
 
 export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unknown> }) {
-  let s: PlayState = { status: 'off', take: null, tracks: [], t: 0, duration: 0, playing: false, speed: 1, loop: false, span: null, live: false }
+  let s: PlayState = { status: 'off', take: null, tracks: [], t: 0, duration: 0, playing: false, speed: 1, loop: false, span: null, live: false, error: null, late: null }
   const subs = new Set<() => void>()
   const set = (patch: Partial<PlayState>) => { s = { ...s, ...patch }; subs.forEach(f => f()) }
   let run = 0, raf = 0, last = 0, rest = 0
@@ -67,16 +73,19 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
     watch.disconnect()
     changed = false
     const before = s.duration
-    set({ status: 'taking', playing: true, span: null, live: false, t: 0 })
+    set({ status: 'taking', playing: true, span: null, live: false, t: 0, error: null, late: null })
     const alive = () => my === run && host.isConnected
     const spec = motion.of(host)
     let go: () => unknown = () => {}
+    const empty = (error: string | null) => set({ status: 'empty', take: null, tracks: [], playing: false, duration: 0, t: 0, error })
     if (spec?.start) {
       // Just mounted, a design may still be laying itself out (a size it measures first), and the
       // page is fading the last design out over it: the sequence starts once both are done.
       if (fresh) await new Promise(r => setTimeout(r, ARRIVE))
-      else if (spec.reset) { spec.reset(); await frame(); await frame() }
-      else await again()
+      else if (spec.reset) {
+        try { spec.reset() } catch (e) { return empty(`reset() threw ${errorOf(e)}`) }
+        await frame(); await frame()
+      } else await again()
       if (!alive()) return
       // At rest: what reset set moving back, or an entrance, ends now.
       settle(host)
@@ -88,10 +97,37 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
     requestAnimationFrame(follow)
     const got = await record(host, go, alive)
     if (!got || !alive()) return
-    if (!got.parts.length) return set({ status: 'empty', take: null, tracks: [], playing: false, duration: 0, t: 0 })
+    if (got.error) return empty(`start() threw ${got.error}`)
+    if (!got.parts.length) return empty(null)
     hold(got)
     seek(got, got.duration)
     set({ status: 'ready', take: got, tracks: tracksOf(got, host.firstElementChild), duration: got.duration, t: got.duration, playing: false })
+    void lateStep(my, got)
+  }
+  // A step that starts after the take ended (a setTimeout longer than the quiet that ends a take)
+  // runs live under the held take: say so. A pointer moving over the design starts hover
+  // transitions; those aren't steps.
+  async function lateStep(my: number, got: Take) {
+    const known = new Set(got.parts.map(p => p.anim)), began = performance.now()
+    let moved = -1e9
+    const mark = (e: PointerEvent) => { if (e.isTrusted) moved = performance.now() }
+    host.addEventListener('pointermove', mark, true)
+    host.addEventListener('pointerover', mark, true)
+    try {
+      while (my === run && s.take === got && !s.live && performance.now() - began < LATE) {
+        await frame()
+        const now = performance.now()
+        for (const a of host.getAnimations({ subtree: true })) {
+          if (known.has(a) || a.playState !== 'running' || !Number.isFinite(Number(a.effect?.getComputedTiming().activeDuration))) continue
+          known.add(a)
+          if (now - moved < 300) continue
+          return set({ late: Math.round((a.startTime === null ? clock() : Number(a.startTime)) - (got.t0 ?? 0)) })
+        }
+      }
+    } finally {
+      host.removeEventListener('pointermove', mark, true)
+      host.removeEventListener('pointerover', mark, true)
+    }
   }
   // The design mounted again, its entrance starting; done once the new mount has declared its motion.
   async function again() {

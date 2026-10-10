@@ -19,6 +19,8 @@ export type MotionHost = {
   stage: () => HTMLElement | null
   /** Whether the dock may show: not in focus mode, not in a shot. */
   show: () => boolean
+  /** Focus mode: the dock hides and lets the design go, so it plays live, and comes back as it was. */
+  focused: () => boolean
   /** Mounts the design on the stage again; resolves once it is mounted. */
   remount: () => Promise<unknown>
   comments: Comments
@@ -49,18 +51,24 @@ export function createMotion(o: MotionHost) {
     if (player && (h !== host || (!declared && !taking))) { unwire(); player.dispose(); player = null }
     host = h
     if (h && declared && !player) {
-      player = createPlayer(h, { remount: o.remount })
+      const p = player = createPlayer(h, { remount: o.remount })
       gen++
-      unwire = wire(h, player)
+      const unwireUse = wire(h, p)
+      // In focus mode a take that ends (or a move that held it) lets the design go at once.
+      const unsub = p.subscribe(() => { if (o.focused()) p.letGo() })
+      unwire = () => { unwireUse(); unsub() }
       // The first take: the design was just mounted, so it is at rest and its entrance is running.
-      if (o.show()) void player.take(true)
+      if (o.show()) void p.take(true)
     }
-    const want = !!player && o.show()
+    const want = !!player && o.show(), focus = !!player && o.focused()
+    if (focus) player!.letGo()
     // Shown later (out of focus mode), with nothing recorded yet: record it now.
     if (want && !shown && player!.get().status === 'off') void player!.take()
     shown = want
+    o.el.hidden = !shown
     room()
-    root.render(shown && player ? o.comments.wrap(<Dock key={gen} player={player} />) : null)
+    // Hidden in focus mode, the dock stays mounted, so it comes back with what was chosen on it.
+    root.render(player && (shown || focus) ? o.comments.wrap(<Dock key={gen} player={player} />) : null)
   }
   motion.subscribe(sync)
 
@@ -73,12 +81,13 @@ export function createMotion(o: MotionHost) {
       const s = player.get()
       return {
         status: s.status, duration: Math.round(s.duration),
+        ...(s.error ? { error: `useMotion's ${s.error}` } : {}), late: s.late,
         parts: s.take?.parts.map(p => ({ prop: p.prop, start: Math.round(p.start), end: Math.round(p.end), shoot: (p.target as HTMLElement | null)?.dataset?.shoot ?? null })) ?? [],
         tracks: s.tracks.map(tr => ({ name: tr.name, props: tr.props, start: Math.round(tr.start), end: Math.round(tr.end) })),
       }
     },
     async seek(t: number) { await player?.seek(t); await frame(); await frame(); return Math.round(player?.get().t ?? -1) },
-    state: () => { const s = player?.get(); return s ? { status: s.status, t: Math.round(s.t), playing: s.playing, span: s.span, live: s.live, duration: Math.round(s.duration) } : null },
+    state: () => { const s = player?.get(); return s ? { status: s.status, t: Math.round(s.t), playing: s.playing, span: s.span, live: s.live, duration: Math.round(s.duration), error: s.error, late: s.late } : null },
     curves(steps = 160) {
       const s = player?.get()
       return s ? { duration: s.duration, tracks: s.tracks.map(tr => ({ name: tr.name, props: tr.props, color: tr.color, lines: tr.lines.map(l => l.pts.filter((_, i) => i % Math.max(1, Math.round(l.pts.length / steps)) === 0 || i === l.pts.length - 1)) })) } : null

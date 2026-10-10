@@ -321,11 +321,17 @@ useMotion({
   design again before each run. Vue: the same call in `<script setup>`.
 - The dock records a take through the browser's own animation API, so **write the motion in CSS
   transitions, CSS keyframes or `element.animate()`**: a spring as a `linear()` easing sampled from
-  its curve, a stagger as delays. The take's 0 is when its first part starts, so a wait before the
-  first move goes in a `transition-delay`, not a `setTimeout`. Motion run from script (a `requestAnimationFrame` loop,
+  its curve, a stagger as delays. Motion run from script (a `requestAnimationFrame` loop,
   react-spring, GSAP's core, Framer Motion's JS springs) can't be recorded; the dock says the take
   caught no motion. DOM changes that aren't animated (an element added, a class swapped without a
   transition) show their final state at every moment of the take.
+- **Waits go in delays, not `setTimeout`.** A take's 0 is when its first part starts, and it ends
+  once nothing has moved for 0.5 s. A step that a `setTimeout` starts later than that is missed and
+  runs live over the held take (the dock and `proto shoot` say so). Write each wait as a
+  `transition-delay`, an `animation-delay` or `element.animate`'s `delay`, or start the next step
+  within 0.5 s of the last one ending. A take is at most 20 s.
+- `start()` (and `reset()`) must not throw: the dock and `proto shoot` print the error, and the
+  take is empty.
 - Name the moving parts with `data-shoot`: the curves are labelled by it.
 - Pressing anything in the design lets it run live; the dock's next move takes it back. An edit
   to the variant records the take again.

@@ -1545,7 +1545,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   comments.mountSheet(root.querySelector<HTMLElement>('[data-comments-sheet]')!)
   // ---------- the motion dock: under a design that declared its motion (useMotion) ----------
   const motionDock = createMotion({
-    el: zone.querySelector<HTMLElement>('[data-motion-dock]')!, zone, stage: hintHost, show: () => !!commentHost(),
+    el: zone.querySelector<HTMLElement>('[data-motion-dock]')!, zone, stage: hintHost, show: () => !!commentHost(), focused: () => st.focus,
     remount: () => layer?.remount?.() ?? Promise.resolve(), comments,
   })
   // The chrome shows counts (the bar's button, the pill, the tree): repaint it when they change.

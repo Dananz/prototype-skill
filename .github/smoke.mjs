@@ -445,7 +445,7 @@ if (!/Woke you up/.test(heard)) fail(`the listener exited without the batch: ${h
 // design to any moment. A comment on a range of it goes out through the page's own composer, the
 // inbox prints its times, and a reply reaches its point. A variant without useMotion has no dock.
 if (!existsSync(join(app, 'src', 'motion.ts'))) fail('the app has no src/motion.ts')
-proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still,C:Twice,D:Chained'])
+proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still,C:Twice,D:Chained,E:Broken,F:Late'])
 writeFileSync(join(app, 'src', 'protos', 'move', 'A.tsx'), `import { useState } from 'react'
 import { useMotion } from '../../motion'
 export default function A() {
@@ -461,7 +461,8 @@ export default function A() {
 writeFileSync(join(app, 'src', 'protos', 'move', 'B.tsx'), 'export default function B() { return <div className="h-full p-8">Still</div> }\n')
 // One property moved twice: a toast in (CSS transition), then out once a timer runs; and a box moved
 // by two element.animate() calls filling forwards, the second after the first (the browser drops
-// the first once the second covers it).
+// the first once the second covers it). Then a start() that throws, and a step a timer starts after
+// the take has ended.
 writeFileSync(join(app, 'src', 'protos', 'move', 'C.tsx'), `import { useState } from 'react'
 import { useMotion } from '../../motion'
 export default function C() {
@@ -482,6 +483,23 @@ export default function D() {
     reset: () => box.current!.getAnimations().forEach(a => a.cancel()),
   })
   return <div className="h-full p-8"><div ref={box} data-shoot="box" style={{ width: 80, height: 80, background: '#4f46e5' }} /></div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'E.tsx'), `import { useMotion } from '../../motion'
+export default function E() {
+  useMotion({ start: () => { throw new Error('boom') } })
+  return <div className="h-full p-8">Broken</div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'F.tsx'), `import { useState } from 'react'
+import { useMotion } from '../../motion'
+export default function F() {
+  const [step, setStep] = useState(0)
+  useMotion({ start: () => { setStep(1); setTimeout(() => setStep(2), 1200) }, reset: () => setStep(0) })
+  return <div className="h-full p-8">
+    <p data-shoot="one" style={{ opacity: step >= 1 ? 1 : 0, transition: 'opacity 200ms linear' }}>One</p>
+    <p data-shoot="two" style={{ opacity: step >= 2 ? 1 : 0, transition: 'opacity 200ms linear' }}>Two</p>
+  </div>
 }
 `)
 const near = (a, b, by) => typeof a === 'number' && Math.abs(a - b) <= by
@@ -542,6 +560,12 @@ try {
   }
   await send([{ route: 'move/A', text: 'Hold the panel longer', at: 350, take: 500 }])
   if (!/^ {3}at: 0\.35 s of the motion \(its take is 0\.50 s\): see it with proto shoot move\/A --at 350$/m.test(proto(['inbox']))) fail('proto inbox should print a moment as at: 0.35 s')
+  // Focus mode: the dock hides and lets the design go (it plays live); it comes back as it was.
+  await run(`document.querySelector('[data-motion=curves]').click()`)
+  await run(`document.querySelector('[data-act=focus]').click()`)
+  await until(`window.__protoMotion.state().live && getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h').trim() === '0px' && document.querySelector('[data-motion-dock]').hidden`, 'focus mode should hide the dock and let the design go', 5000)
+  await run(`document.querySelector('[data-act=unfocus]').click()`)
+  await until(`parseFloat(getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h')) > 40 && document.querySelector('[data-motion=curves]')?.getAttribute('aria-pressed') === 'true'`, 'after focus mode the dock should come back as it was (curves on)', 5000)
   // One property moved twice: the toast fades in over 0-300 ms (and out from about 367), and at
   // each moment it shows that moment, not the later fade's first frame.
   const design = (route, sel) => run(`(async () => {
@@ -559,6 +583,12 @@ try {
   if (chained.parts?.length !== 2) fail(`move/D's take should have both of the box's moves: ${JSON.stringify(chained)}`)
   const moves = [await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 0), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 150), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 450)]
   if (!near(moves[0], 0, 3) || !near(moves[1], 50, 5) || !near(moves[2], 150, 5)) fail(`the box moved twice by element.animate should be at 0, 50 and 150 px at 0, 150 and 450 ms: ${moves}`)
+  // A start() that throws: the take is empty and says why, and the dock isn't left recording.
+  await run(`location.hash = '#/move/E'`)
+  await until(`window.__protoMotion.state()?.status === 'empty' && /boom/.test(window.__protoMotion.state().error) && /start\\(\\) threw Error: boom/.test(document.querySelector('[data-motion=error]')?.textContent)`, 'a start() that throws should end the take with its error in the dock')
+  // A step a timer starts 1.2 s in, after the take has ended: the dock says it was missed.
+  await run(`location.hash = '#/move/F'`)
+  await until(`(() => { const s = window.__protoMotion.state(); return s?.status === 'ready' && s.late > 800 && s.late < 1600 && !!document.querySelector('[data-motion=late]') })()`, 'a step started after the take ended should be named in the dock')
   // No useMotion, no dock, and the stage has its full height back.
   await run(`location.hash = '#/move/B'`)
   await until(`!document.querySelector('[data-motion-bar]') && getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h').trim() === '0px'`, 'move/B declares no motion but has a dock', 5000)
@@ -571,6 +601,7 @@ if (!pngs(shots).includes('move-A-frames.png') || !/^4 frames in /m.test(strip))
 const frame = t => readFileSync(join(shots, `move-A-desktop-at-${t}.png`))
 if (frame(0).equals(frame(500)) || frame(167).equals(frame(333))) fail('the frames of the take are the same picture')
 if (!/no motion|declares no motion/.test(proto(['shoot', 'move/B', '--at', '100'], { ok: false }))) fail('proto shoot --at on a design without useMotion should say it has no motion')
+if (!/start\(\) threw Error: boom/.test(proto(['shoot', 'move/E', '--at', '100'], { ok: false }))) fail('proto shoot --at should print the error a start() threw')
 // Frames across a property moved twice differ, frame to frame.
 for (const v of ['C', 'D']) {
   proto(['shoot', `move/${v}`, '--frames', '3', '--at', '0-300'])

@@ -239,6 +239,8 @@ try {
         if (!many) console.log(file)
       }
       const curves = many && await page('window.__protoMotion.curves(120)')
+      const late = await page('window.__protoMotion.state()?.late ?? null')
+      if (late !== null) console.error(`shoot: ${route}: something started ${late} ms in, after the take had ended (it ends after 0.5 s with nothing moving), so these shots miss it: put the wait before it in a delay (transition-delay, animation-delay or element.animate's delay)`)
       await send('Target.closeTarget', { targetId })
       if (!many) continue
       // The sheet: the frames in order with their times, then the take's curves on the same clock,

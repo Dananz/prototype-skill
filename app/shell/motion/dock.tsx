@@ -580,14 +580,18 @@ function DockComposer({ ctl }: { ctl: Ctl }) {
     initial={item ?? (s.held?.time ? s.held : undefined)} />
 }
 
-/** What the take has to say instead of the slider: it is recording, or it saw no motion. */
+/** What the take has to say over the slider: its start threw, it saw no motion, or it missed a step. */
 function Note({ ctl }: { ctl: Ctl }) {
-  if (ctl.p.status !== 'empty') return null
-  return (
-    <p data-motion="empty" className="px-1 pt-2.5 text-xs leading-[18px] text-zinc-500 dark:text-zinc-400">
-      <b className="font-medium text-zinc-700 dark:text-zinc-200">This take caught no motion.</b> Only CSS transitions, CSS animations and element.animate() can be recorded; motion run from script (requestAnimationFrame, react-spring, GSAP) can’t. Play runs it again.
+  const { status, error, late } = ctl.p
+  const say = (kind: string, head: string, body: string) => (
+    <p data-motion={kind} className="px-1 pt-2.5 text-xs leading-[18px] text-zinc-500 dark:text-zinc-400">
+      <b className="font-medium text-zinc-700 dark:text-zinc-200">{head}</b> {body}
     </p>
   )
+  if (status === 'empty' && error) return say('error', `useMotion’s ${error}.`, 'Nothing was recorded. Play runs it again.')
+  if (status === 'empty') return say('empty', 'This take caught no motion.', 'Only CSS transitions, CSS animations and element.animate() can be recorded; motion run from script (requestAnimationFrame, react-spring, GSAP) can’t. Play runs it again.')
+  if (status === 'ready' && late !== null) return say('late', `Something started at ${fmt(late)}, after this take ended.`, 'A take ends after 0.5 s with nothing moving, so that step runs live over it. To record it, put the wait before it in a delay (transition-delay, animation-delay or element.animate’s delay).')
+  return null
 }
 
 export function Dock({ player }: { player: Player }) {

@@ -28,15 +28,18 @@ export type Part = {
   pseudo: string | null
   copy: boolean
 }
-export type Take = { duration: number; parts: Part[]; held: boolean }
+/** t0: the take's 0 on the document's timeline. error: the sequence's start threw (or rejected). */
+export type Take = { duration: number; parts: Part[]; held: boolean; t0?: number; error?: string }
 
 // How long nothing new must start, after the last thing started or finished, for a take to end.
-const QUIET = 500
+export const QUIET = 500
+// The longest take: recording stops there, and a part running past it is cut there (so a take is
+// never longer than a comment on it may say).
 const LONGEST = 20_000
 
 // A frame, or 50 ms where frames stop (a tab in the background).
 export const frame = () => new Promise<void>(r => { const t = setTimeout(r, 50); requestAnimationFrame(() => { clearTimeout(t); r() }) })
-const clock = () => (document.timeline.currentTime as number | null) ?? performance.now()
+export const clock = () => (document.timeline.currentTime as number | null) ?? performance.now()
 const endless = (a: Animation) => !Number.isFinite(Number(a.effect?.getComputedTiming().activeDuration ?? 0))
 const isTransition = (a: Animation) => typeof CSSTransition !== 'undefined' && a instanceof CSSTransition
 const kebab = (p: string) => p.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)
@@ -54,16 +57,22 @@ export function settle(host: HTMLElement) {
   for (const a of host.getAnimations({ subtree: true })) if (!endless(a)) try { a.finish() } catch { /* no end to go to */ }
 }
 
+export const errorOf = (e: unknown) => e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+
 /**
  * Starts the sequence (go) and records it. Null when it was given up (alive turned false); a take
- * with no parts when nothing animated.
+ * with no parts when nothing animated, or with the error when go threw.
  */
 export async function record(host: HTMLElement, go: () => unknown, alive: () => boolean): Promise<Take | null> {
   const seen = new Set<Animation>(), over = new Set<Animation>()
   const began = performance.now()
-  let last = began
-  go()
+  let last = began, error: string | null = null
+  try {
+    const r = go() as { then?: unknown; catch?: (f: (e: unknown) => void) => unknown } | undefined
+    if (r && typeof r.then === 'function') r.catch?.(e => { error = errorOf(e) })
+  } catch (e) { error = errorOf(e) }
   for (;;) {
+    if (error) return { duration: 0, parts: [], held: false, error }
     await frame()
     if (!alive()) return null
     const now = performance.now()
@@ -93,12 +102,12 @@ export async function record(host: HTMLElement, go: () => unknown, alive: () => 
     const offset = zero(a) - t0, delay = Number(c.delay ?? 0)
     return {
       anim: a, fill: null, offset, rate,
-      start: offset + delay / rate, end: offset + (delay + Number(c.activeDuration ?? 0)) / rate,
+      start: Math.min(LONGEST, offset + delay / rate), end: Math.min(LONGEST, offset + (delay + Number(c.activeDuration ?? 0)) / rate),
       target: effect.target, prop: propOf(a), timing: effect.getTiming(), keyframes: effect.getKeyframes(),
       pseudo: effect.pseudoElement, copy: isTransition(a),
     }
   }).sort((x, y) => x.start - y.start)
-  return { duration: Math.max(0, ...parts.map(p => p.end)), parts, held: false }
+  return { duration: Math.max(0, ...parts.map(p => p.end)), parts, held: false, t0 }
 }
 
 const propsOf = (p: Part) => new Set(p.keyframes.flatMap(k => Object.keys(k)).filter(k => !NOT_PROPS.has(k)))
