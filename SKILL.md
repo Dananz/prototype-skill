@@ -417,8 +417,8 @@ no element; the user's optional note follows a colon in the text.
 
 | `action:` | Already done | You |
 |---|---|---|
-| `pick` | marked, the working variant, and the comment done | do what the note asks, if anything; a reply is only a note |
-| `unpick` | the pick is off, and the comment done | nothing |
+| `pick` | marked, the working variant, and the comment done, unless its line says otherwise | do what the note asks, if anything; a reply is only a note. When the line says it wasn't marked or the working variant didn't move, run the `proto pick` it names |
+| `unpick` | the pick is off, and the comment done | nothing. When the line says nothing changed (that variant wasn't the pick), say so in a reply with `--done`; when it says it wasn't taken off, run the `proto pick … --off` it names |
 | `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you added |
 | `build` | nothing | `proto pick` it if it isn't the pick, then step 7; reply when it is in |
 
