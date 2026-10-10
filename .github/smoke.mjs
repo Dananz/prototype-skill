@@ -434,7 +434,7 @@ proto(['add', 'words', '--title', 'Words', '--variants', 'A:Options,B:Plain'])
 writeFileSync(join(app, 'src', 'protos', 'words', 'A.tsx'), [
   'import { useCopy } from \'../../copy\'',
   'function Go() {',
-  '  const copy = useCopy([{ id: \'go\', label: \'Button\', options: [\'Start\', \'Begin\'] }])',
+  '  const copy = useCopy([{ id: \'go\', label: \'Button\', options: [\'Start\', \'Hi {name}, go [now]\'] }])',
   '  return <button data-copy="go" className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-white">{copy.go}</button>',
   '}',
   'export default function A() {',
@@ -495,14 +495,18 @@ try {
   const toldBack = proto(['inbox'])
   if (!/“Save more”, back to today's words \(option 1 of 3\)/.test(toldBack)) fail(`proto inbox should print the way back to today's words: ${toldBack}`)
 } finally { words.close() }
-// The checklist names each line, whichever component declares it, and what the build ships; a
-// shot in copy mode is the stage's own size.
+// The checklist names each line, whichever component declares it and whatever brackets its words
+// hold, and what the build ships; a shot in copy mode is the stage's own size.
 const handed = proto(['handoff', 'words/A'])
 if (!/^- \[ \] Title \(`title`\) ships "Save more", not its 2 other options · A\.tsx:8$/m.test(handed)) fail('proto handoff did not list the Title line and what ships')
+if (!/^- \[ \] Button \(`go`\) ships "Start", not its 1 other option · A\.tsx:3$/m.test(handed)) fail('proto handoff did not list the Button line, whose other option has brackets')
 proto(['shoot', 'words/A'])
 proto(['shoot', 'words/A', '--copy'])
 const sizeOf = f => { const h = readFileSync(join(shots, f)); return `${h.readUInt32BE(16)}x${h.readUInt32BE(20)}` }
 if (!pngs(shots).includes('words-A-desktop-copy.png') || sizeOf('words-A-desktop-copy.png') !== sizeOf('words-A-desktop.png')) fail('proto shoot --copy should write words-A-desktop-copy.png at the size of words-A-desktop.png')
+// A variant without copy options is shot as it is, named so, and says why.
+const noCopy = proto(['shoot', 'words/B', '--copy'])
+if (!/words\/B has no copy options/.test(noCopy) || pngs(shots).includes('words-B-desktop-copy.png') || !noCopy.includes('words-B-desktop.png')) fail(`proto shoot --copy on a variant without copy options should say so and name the shot words-B-desktop.png: ${noCopy}`)
 if ((await postJson('comments', { comments: [{ route: 'words', text: 'x', action: 'copy' }] })).status !== 400) fail('a copy choice on no variant was accepted')
 
 proto(['stop'])

@@ -960,6 +960,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (!key) { pill.innerHTML = ''; closeCard(true) }
       else {
         const v = vs[at]
+        // With Comment, T and the phone scale all in the pill, the handle drops its count (3/5) so
+        // the variant's name keeps room on a 360px phone.
+        const count = !(p!.kind === 'phone' && copyCounts().lines)
         const prev = vs[at <= 0 ? vs.length - 1 : at - 1], next = vs[at < 0 || at === vs.length - 1 ? 0 : at + 1]
         pill.innerHTML = `<div class="absolute inset-x-0 bottom-0 z-10 flex h-[var(--pill-h,0px)] items-start justify-center pt-2 sm:hidden">
           <div data-pill-bar class="relative flex h-12 max-w-[calc(100%-1rem)] items-center gap-0.5 rounded-full bg-zinc-900/90 p-1 text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/90">
@@ -968,7 +971,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             <span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span>
             <button data-act="variant:${prev.id}" aria-label="Previous variant: ${prev.id} ${esc(prev.name)}" class="${pillBtn}">${ic('left')}</button>
             <div data-pill-handle role="button" tabindex="0" aria-label="${v ? `${v.id} ${esc(v.name)}, ${at + 1} of ${vs.length}. ` : ''}Show all variants" class="flex h-10 ${commentHost() || copyCounts().lines ? 'w-28' : 'w-40'} min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 active:bg-white/10">
-              ${v ? `<b data-pill-id class="shrink-0 text-[15px]">${v.id}</b><span data-pill-name dir="auto" class="min-w-0 truncate text-white/70">${esc(v.name)}</span><span data-pill-n class="shrink-0 text-[11px] tabular-nums text-white/40">${at + 1}/${vs.length}</span>${editing(p!.id, v.id) ? pulse('size-1.5') : ''}`
+              ${v ? `<b data-pill-id class="shrink-0 text-[15px]">${v.id}</b><span data-pill-name dir="auto" class="min-w-0 truncate text-white/70">${esc(v.name)}</span>${count ? `<span data-pill-n class="shrink-0 text-[11px] tabular-nums text-white/40">${at + 1}/${vs.length}</span>` : ''}${editing(p!.id, v.id) ? pulse('size-1.5') : ''}`
                 : `<span class="truncate font-medium">All variants</span><span class="shrink-0 text-[11px] tabular-nums text-white/40">${vs.length}</span>`}
             </div>
             <button data-act="variant:${next.id}" aria-label="Next variant: ${next.id} ${esc(next.name)}" class="${pillBtn}">${ic('right')}</button>

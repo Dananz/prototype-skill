@@ -25,6 +25,8 @@ export type CopyState = {
   on: boolean
   /** Turn copy mode on as soon as the design on the stage declares lines (?copy=1, for proto shoot). */
   wanted: boolean
+  /** For a shot (?copy=1): a change shows at once, without its flash. */
+  still: boolean
   /** The line whose options are listed. */
   open: string | null
   /** The phone sheet's line, kept while the sheet slides away. */
@@ -38,7 +40,7 @@ export type CopyState = {
 }
 
 export function createCopyStore() {
-  let state: CopyState = { stage: null, route: '', on: false, wanted: false, open: null, sheet: null, flash: null, was: null, sent: {}, sending: false, error: '' }
+  let state: CopyState = { stage: null, route: '', on: false, wanted: false, still: false, open: null, sheet: null, flash: null, was: null, sent: {}, sending: false, error: '' }
   const listeners = new Set<() => void>()
   return {
     get: () => state,
@@ -80,7 +82,7 @@ export function createCopyActions(cs: CopyStore, host: Host, comments: Store, st
       }
       if (get().wanted && stage && copy.of(stage).length) set({ on: true, wanted: false })
     },
-    want() { set({ wanted: true }) },
+    want() { set({ wanted: true, still: true }) },
     toggle() {
       const s = get()
       if (!s.on && !lines().length) return
@@ -407,9 +409,9 @@ export function CopyLayer() {
     return () => document.removeEventListener('click', out, true)
   }, [open, copyAct])
 
-  // A new choice flashes its line.
+  // A new choice flashes its line (not in a shot, which would catch it halfway).
   useEffect(() => {
-    if (!s.flash) return
+    if (!s.flash || s.still) return
     for (const [k, b] of btns.current) if (k.split('\n')[0] === s.flash.id) b.animate([{ backgroundColor: 'rgb(99 102 241 / .2)' }, { backgroundColor: 'rgb(99 102 241 / 0)' }], { duration: 1400, easing: 'ease-out' })
   }, [s.flash])
 

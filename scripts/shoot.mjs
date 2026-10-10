@@ -122,17 +122,27 @@ try {
   const sleep = ms => new Promise(r => setTimeout(r, ms))
   // A --click reaches inside the stage, and the copy picker's list of a line's options.
   const clickIn = sel => `(() => { const el = document.querySelector('[data-layers]').querySelector(${JSON.stringify(sel)}) ?? document.querySelector('[data-copy-list]')?.querySelector(${JSON.stringify(sel)}); el?.click(); return !!el })()`
-  // With --copy, waits until the bar under the stage has slid in and stopped growing (at most 2 s).
-  const copied = sessionId => flags.copy && send('Runtime.evaluate', { awaitPromise: true, expression: `(async () => {
-    const frame = () => new Promise(r => requestAnimationFrame(r)), end = performance.now() + 2000
-    let h = -1, still = 0
-    while (performance.now() < end && still < 6) {
-      const b = document.querySelector('[data-copy-bar]')?.getBoundingClientRect().height ?? 0
-      still = b > 0 && b === h ? still + 1 : 0
-      h = b
-      await frame()
-    }
-  })()` }, sessionId)
+  // With --copy, waits until the bar under the stage has slid in and stopped growing (at most 2 s),
+  // and says whether copy mode is on. A design with no copy options (no [data-copy]) has no copy
+  // mode: no wait, and its shot is named as one at rest, with one line saying so.
+  const plain = new Set()
+  const copied = async (sessionId, route) => {
+    if (!flags.copy) return false
+    const { result } = await send('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: `(async () => {
+      if (!document.querySelector('[data-layers] [data-copy]')) return false
+      const frame = () => new Promise(r => requestAnimationFrame(r)), end = performance.now() + 2000
+      let h = -1, still = 0
+      while (performance.now() < end && still < 6) {
+        const b = document.querySelector('[data-copy-bar]')?.getBoundingClientRect().height ?? 0
+        still = b > 0 && b === h ? still + 1 : 0
+        h = b
+        await frame()
+      }
+      return true
+    })()` }, sessionId)
+    if (!result.value && !plain.has(route)) { plain.add(route); console.error(`shoot: ${route} has no copy options (no [data-copy]), so it is shot without --copy`) }
+    return result.value
+  }
   // Waits, at most 400 ms, until the page's images are in and nothing is still moving (the
   // first crossfade, a design's entrance), then two frames. The first 200 ms always pass, so a
   // reveal a design starts from a timer has begun by the time it is looked for. Looping
@@ -188,7 +198,7 @@ try {
         if (!(ready = result.value)) await sleep(100)
       }
       at.push(performance.now())
-      await copied(sessionId)
+      const copyOn = await copied(sessionId, route)
       await settle(sessionId)
       at.push(performance.now())
       // A state route whose clicks found nothing still shoots, but says so.
@@ -210,7 +220,7 @@ try {
         return { x: r.x, y: r.y, width: r.width, height: r.height + bar, scale: 1 }
       })()` }, sessionId)
       const { data } = await send('Page.captureScreenshot', { format: 'png', clip: stage.value }, sessionId)
-      const file = resolve(outDir, `${fileOf(route)}-${size.name}${suffix}.png`)
+      const file = resolve(outDir, `${fileOf(route)}-${size.name}${flags.copy && !copyOn ? suffix.replace('-copy', '') : suffix}.png`)
       writeFileSync(file, Buffer.from(data, 'base64'))
       // For a sheet, the singles are kept for it and summed up in one line after it. A phone
       // prototype's sheet shows the phone alone, cut from its shot: in a phone-size page it sits
@@ -249,7 +259,7 @@ try {
         if (result.value) break
         await sleep(100)
       }
-      await copied(sessionId)
+      await copied(sessionId, route)
       await settle(sessionId)
       for (const sel of clicks) {
         await send('Runtime.evaluate', { expression: clickIn(sel) }, sessionId)

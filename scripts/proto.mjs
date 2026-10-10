@@ -848,13 +848,37 @@ function copyOptionsIn(files) {
     }
     return i
   }
+  // The entries of a list or object literal, from its opening bracket: where each starts (past its
+  // spaces) and ends, split at the commas outside brackets and strings.
+  const parts = (text, open) => {
+    const end = close(text, open), out = []
+    let depth = 0, quote = '', start = open + 1
+    for (let i = open + 1; i < end; i++) {
+      const c = text[i]
+      if (quote) { if (c === '\\') i++; else if (c === quote) quote = ''; continue }
+      if (c === '"' || c === '\'' || c === '`') quote = c
+      else if ('([{'.includes(c)) depth++
+      else if (')]}'.includes(c)) depth--
+      else if (c === ',' && !depth) { out.push([start, i]); start = i + 1 }
+    }
+    out.push([start, end])
+    return out.flatMap(([a, b]) => { const lead = text.slice(a, b).search(/\S/); return lead < 0 ? [] : [[a + lead, b]] })
+  }
   const STR = String.raw`(['"\`])((?:\\.|(?!\1)[^\\])*)\1`
-  const objects = ({ f, text }, from, to) => {
-    for (const o of text.slice(from, to).matchAll(/\{[^{}]*\}/g)) {
-      const key = k => o[0].match(new RegExp(String.raw`\b${k}\s*:\s*${STR}`))?.[2]
-      const options = [...(o[0].match(/\boptions\s*:\s*\[([^\]]*)\]/)?.[1] ?? '').matchAll(new RegExp(STR, 'g'))].map(x => x[2])
-      const id = key('id'), at = o[0].search(/\bid\s*:/)
-      if (id && options.length) lines.push({ f, id, label: key('label') || id, first: options[0], n: options.length, line: lineAt(text, from + o.index + Math.max(0, at)) })
+  const literal = v => new RegExp(String.raw`^${STR}\s*$`).exec(v)?.[2]
+  // Each { id, label, options } of a list, from its opening bracket. The words may hold any
+  // bracket ("Hi {name}"): each object and list ends where its own bracket closes.
+  const objects = ({ f, text }, open) => {
+    for (const [o] of parts(text, open)) {
+      if (text[o] !== '{') continue
+      const props = {}
+      for (const [a, b] of parts(text, o)) {
+        const m = text.slice(a, b).match(/^['"]?([\w$]+)['"]?\s*:\s*/)
+        if (m) props[m[1]] = { at: a, value: text.slice(a + m[0].length, b) }
+      }
+      const id = props.id && literal(props.id.value), list = props.options?.value
+      const options = list?.startsWith('[') ? parts(list, 0).map(([a, b]) => literal(list.slice(a, b))).filter(x => x !== undefined) : []
+      if (id && options.length) lines.push({ f, id, label: (props.label && literal(props.label.value)) || id, first: options[0], n: options.length, line: lineAt(text, props.id.at) })
     }
   }
   for (const t of texts) {
@@ -862,10 +886,10 @@ function copyOptionsIn(files) {
       const open = m.index + m[0].length - 1, end = close(t.text, open)
       calls.push({ f: t.f, line: lineAt(t.text, m.index) })
       const arg = t.text.slice(open + 1, end).trim().replace(/^\(\s*\)\s*=>\s*/, '')
-      if (!/^[A-Za-z_$][\w$]*$/.test(arg)) { objects(t, open, end); continue }
+      if (!/^[A-Za-z_$][\w$]*$/.test(arg)) { const at = t.text.indexOf('[', open); if (at > open && at < end) objects(t, at); continue }
       for (const u of texts) {
         const d = u.text.match(new RegExp(String.raw`\b(?:const|let|var)\s+${arg.replace(/\$/g, '\\$')}\b[^=;]*=\s*\[`))
-        if (d) { const at = d.index + d[0].length - 1; objects(u, at, close(u.text, at)); break }
+        if (d) { objects(u, d.index + d[0].length - 1); break }
       }
     }
   }
@@ -936,7 +960,7 @@ function handoff() {
   const offered = copyOptionsIn(files.map(x => x.file))
   section('Copy options', [
     ...offered.lines.map(x => `${x.label} (${code(x.id)}) ships "${x.first}"${x.n > 1 ? `, not its ${x.n - 1} other option${x.n === 2 ? '' : 's'}` : ''} · ${rel(x.f)}:${x.line}`),
-    ...offered.calls.map(x => `${code('useCopy')} · ${rel(x.f)}:${x.line}: the build ships each line's first option as plain copy; the options and the page's picker stay in the prototype`),
+    ...offered.calls.length ? [`${code('useCopy')} · ${offered.calls.map(x => `${rel(x.f)}:${x.line}`).join(', ')}: the build ships each line's first option as plain copy; the options and the page's picker stay in the prototype`] : [],
   ])
   const route = `${t.proto}/${t.variant}`, ref = x => `.proto/ref/${t.proto}/built-${t.variant}${x ? `-${x}` : ''}.png`
   section('Then', [
