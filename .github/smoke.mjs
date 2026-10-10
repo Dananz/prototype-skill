@@ -2,7 +2,7 @@
 // add prototypes (one built from another, one from two at once, one from the picks), screenshot
 // them (one by one and on a contact sheet) and snapshot them, open a state listed in meta.ts,
 // print a variant's handoff checklist, send comments, decisions and copy choices from the page,
-// then stop and delete the session. Run by
+// record, scrub and comment on a variant's motion, then stop and delete the session. Run by
 // .github/workflows/smoke.yml on Windows, Linux and macOS.
 import { spawn, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -56,8 +56,9 @@ const proto = (args, { ok = true, stdout = false } = {}) => {
 }
 const answers = async url => { try { return (await fetch(url, { signal: AbortSignal.timeout(2000) })).ok } catch { return false } }
 const pngs = dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.png')) : []
-// Opens the page in headless Chrome and waits until it says it is ready, as shoot.mjs does. run()
-// evaluates an expression there (a promise is awaited), as often as needed; close() ends it all.
+// A page in headless Chrome at 1440x900, once it says it is ready, as shoot.mjs does: run evaluates
+// an expression in it (awaiting a promise), as often as needed, and it stays open until closed, so
+// the page can carry on while proto runs beside it.
 async function openPage(url) {
   const profile = mkdtempSync(join(tmpdir(), 'proto-smoke-'))
   const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run'])
@@ -85,9 +86,11 @@ async function openPage(url) {
       waiting.get(m.id)?.(m.result); waiting.delete(m.id)
     }
     const send = (method, params, sessionId) => new Promise(ok => { waiting.set(++n, ok); ws.send(JSON.stringify({ id: n, method, params, sessionId })) })
-    const { targetId } = await send('Target.createTarget', { url })
+    const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
     await send('Inspector.enable', {}, sessionId)
+    await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId)
+    await send('Page.navigate', { url }, sessionId)
     // A page that stops answering (a render loop) fails the check instead of hanging the run.
     const run = async (expr, ms = 30_000) => {
       let timer
@@ -436,6 +439,95 @@ await send([{ route: 'hero/A', text: 'Woke you up', point: { x: 1, y: 1 } }])
 const code = await Promise.race([exited, new Promise(r => setTimeout(() => r('timeout'), 20_000))])
 if (code === 'timeout') { waiter.kill(); fail('proto inbox --wait did not wake for a new batch') }
 if (!/Woke you up/.test(heard)) fail(`the listener exited without the batch: ${heard}`)
+
+// The motion dock: a variant that declares its motion (useMotion) gets the dock under it, and the
+// take records its CSS transitions with when each starts (one staggered), holds them, and sets the
+// design to any moment. A comment on a range of it goes out through the page's own composer, the
+// inbox prints its times, and a reply reaches its point. A variant without useMotion has no dock.
+if (!existsSync(join(app, 'src', 'motion.ts'))) fail('the app has no src/motion.ts')
+proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still'])
+writeFileSync(join(app, 'src', 'protos', 'move', 'A.tsx'), `import { useState } from 'react'
+import { useMotion } from '../../motion'
+export default function A() {
+  const [open, setOpen] = useState(false)
+  useMotion({ start: () => setOpen(true), reset: () => setOpen(false), moments: [{ label: 'Rows', at: 100 }] })
+  return <div className="h-full p-8">
+    <div data-shoot="panel" style={{ height: 240, background: '#4f46e5', transform: open ? 'translateY(0px)' : 'translateY(100px)', transition: 'transform 400ms linear' }}>
+      {['One', 'Two', 'Three'].map((n, i) => <p key={n} data-shoot="row" style={{ opacity: open ? 1 : 0, transition: \`opacity 200ms linear \${open ? 100 + i * 100 : 0}ms\` }}>{n}</p>)}
+    </div>
+  </div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'B.tsx'), 'export default function B() { return <div className="h-full p-8">Still</div> }\n')
+const near = (a, b, by) => typeof a === 'number' && Math.abs(a - b) <= by
+const motionPage = await openPage(`${local}?theme=light#/move/A`)
+try {
+  const run = motionPage.run
+  const until = async (expr, what, ms = 15_000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 100))) if (await run(expr)) return
+    fail(`${what} (waited ${ms / 1000} s)`)
+  }
+  // The dock shows under the design, and the first take is recorded as the design arrives.
+  await until(`window.__protoMotion?.state()?.status === 'ready'`, 'the motion dock never recorded a take of move/A')
+  const dock = await run(`[!!document.querySelector('[data-motion-bar]'), parseFloat(getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h'))]`)
+  if (!dock[0] || !(dock[1] > 40)) fail(`move/A should have the motion dock under it, with the stage giving up its height: ${JSON.stringify(dock)}`)
+  // A take from rest: the panel from 0 to 400 ms, the rows 100, 200 and 300 ms in, as one stagger.
+  const take = await run('window.__protoMotion.take()')
+  const panel = take.parts?.find(p => p.shoot === 'panel'), rows = (take.parts || []).filter(p => p.shoot === 'row').map(p => p.start)
+  if (!near(panel?.start, 0, 50) || !near(panel?.end, 400, 50) || rows.length !== 3 || !rows.every((t, i) => near(t, 100 + 100 * i, 50)) || !near(take.duration, 500, 50)) fail(`the take's parts are off: ${JSON.stringify(take)}`)
+  if (!take.tracks?.some(t => t.name === 'Row ×3')) fail(`the three rows should be one staggered group in the curves: ${JSON.stringify(take.tracks)}`)
+  // Scrubbing sets the design to that moment: the panel halfway at 200 ms, the second row a quarter in at 250.
+  const at = t => run(`window.__protoMotion.seek(${t}).then(() => [new DOMMatrix(getComputedStyle(document.querySelector('[data-shoot=panel]')).transform).m42, +getComputedStyle(document.querySelectorAll('[data-shoot=row]')[1]).opacity])`)
+  const [y200] = await at(200), [, o250] = await at(250), [y0, o0] = await at(0)
+  if (!near(y200, 50, 2) || !near(o250, 0.25, 0.05) || !near(y0, 100, 2) || !near(o0, 0, 0.01)) fail(`scrubbing didn't set the design: at 200 ms the panel is ${y200}px down (50), at 250 the row's opacity ${o250} (0.25), at 0 ${y0}px and ${o0}`)
+  // A comment on the range 0.10–0.30 s, drawn on the track and written in the page's own composer.
+  const D = (await run('window.__protoMotion.state()')).duration
+  await run(`document.querySelector('[data-motion=mode-range]').click()`)
+  await run(`(async () => {
+    const track = document.querySelector('[data-motion=track]'), r = track.getBoundingClientRect(), y = r.top + r.height / 2
+    const x = t => r.left + 12 + (t / ${D}) * (r.width - 24)
+    const fire = (type, t) => track.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x(t), clientY: y, button: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true }))
+    fire('pointerdown', 100); fire('pointermove', 200); fire('pointermove', 300); fire('pointerup', 300)
+    await new Promise(r => setTimeout(r, 100))
+    document.querySelector('[data-motion=compose]').click()
+    await new Promise(r => setTimeout(r, 300))
+    const ed = document.querySelector('[data-composer] [role=textbox]')
+    ed.textContent = 'The rows come in too late'
+    ed.dispatchEvent(new Event('input', { bubbles: true }))
+    await new Promise(r => setTimeout(r, 100))
+    ;[...document.querySelectorAll('[data-composer] button')].find(b => /Add/.test(b.textContent)).click()
+    await new Promise(r => setTimeout(r, 200))
+    document.querySelector('[data-shoot=send]').click()
+  })()`)
+  await until(`document.querySelector('[data-motion-bar] [data-point]')?.dataset.state === 'sent'`, 'the comment on the range never showed as sent on the track')
+  const heard = proto(['inbox'])
+  if (!/The rows come in too late\n {3}at: 0\.10–0\.30 s of the motion \(its take is 0\.50 s\): see it with proto shoot move\/A --frames 8 --at 100-300/.test(heard)) fail(`proto inbox should print the range as at: 0.10–0.30 s, with the shoot that shows it: ${heard}`)
+  proto(['reply', `${heard.match(/^batch (\S+)/m)[1]}/1`, 'Rows start at 40 ms apart now', '--done'])
+  await until(`document.querySelector('[data-motion-bar] [data-point]')?.dataset.state === 'done'`, 'the reply never reached the comment\'s point on the track')
+  // Tapping the point loops its range and shows the comment with the reply.
+  await run(`document.querySelector('[data-motion-bar] [data-point]').click()`)
+  await until(`(() => { const s = window.__protoMotion.state(); return s.playing && s.span?.join() === '100,300' && /Rows start at 40 ms apart now/.test(document.querySelector('[data-thread]')?.textContent) })()`, 'tapping the point should loop 0.10–0.30 s and show the reply', 5000)
+  // A moment, posted as the page does; one outside the take, or a range that ends before it starts, is refused.
+  for (const bad of [{ at: 600, take: 500 }, { at: 300, to: 100, take: 500 }, { at: 'x', take: 500 }, { at: 100 }]) {
+    if ((await postJson('comments', { comments: [{ route: 'move/A', text: 'x', ...bad }] })).status !== 400) fail(`a comment with ${JSON.stringify(bad)} was accepted`)
+  }
+  await send([{ route: 'move/A', text: 'Hold the panel longer', at: 350, take: 500 }])
+  if (!/^ {3}at: 0\.35 s of the motion \(its take is 0\.50 s\): see it with proto shoot move\/A --at 350$/m.test(proto(['inbox']))) fail('proto inbox should print a moment as at: 0.35 s')
+  // No useMotion, no dock, and the stage has its full height back.
+  await run(`location.hash = '#/move/B'`)
+  await until(`!document.querySelector('[data-motion-bar]') && getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h').trim() === '0px'`, 'move/B declares no motion but has a dock', 5000)
+} finally { motionPage.close() }
+// The same take headlessly: one moment of it, and frames of it on one sheet, each frame its own.
+proto(['shoot', 'move/A', '--at', '200'])
+for (const want of ['move-A-desktop-at-200.png', 'move-A-mobile-at-200.png']) if (!pngs(shots).includes(want)) fail(`proto shoot --at 200 wrote no ${want}`)
+const strip = proto(['shoot', 'move/A', '--frames', '4'])
+if (!pngs(shots).includes('move-A-frames.png') || !/^4 frames in /m.test(strip)) fail(`proto shoot --frames 4 wrote no move-A-frames.png: ${strip}`)
+const frame = t => readFileSync(join(shots, `move-A-desktop-at-${t}.png`))
+if (frame(0).equals(frame(500)) || frame(167).equals(frame(333))) fail('the frames of the take are the same picture')
+if (!/no motion|declares no motion/.test(proto(['shoot', 'move/B', '--at', '100'], { ok: false }))) fail('proto shoot --at on a design without useMotion should say it has no motion')
+proto(['shoot', 'move', '--frames', '4'], { ok: false })
+// The build drops the dock: the handoff lists useMotion as the page's own.
+if (!/## Motion review\n- \[ \] Its motion dock \(`useMotion`\) · A\.tsx:5\b/.test(proto(['handoff', 'move/A']))) fail('proto handoff should list useMotion under Motion review')
 
 // A right-to-left variant: physical sides are listed, while sides chosen per direction,
 // centring and logical sides are not.

@@ -212,7 +212,7 @@ try {
         console.error(`shoot: ${route}: ${take?.error || 'the take caught no motion. Only CSS transitions, CSS animations and element.animate() can be recorded, not motion run from script (requestAnimationFrame, react-spring, GSAP)'}`)
         process.exitCode = 1
         await send('Target.closeTarget', { targetId })
-        continue
+        break
       }
       const D = take.duration
       const a = Math.min(from ?? 0, D), b = Math.min(to ?? D, D)
