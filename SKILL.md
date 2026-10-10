@@ -300,6 +300,35 @@ const copy = useCopy([
   (`plan-${id}-title`): one id is one line, with one set of options.
 - Vue: `const copy = useCopy([...])` in `<script setup>`, then `{{ copy.headline }}`.
 
+**Let the motion be reviewed.** When the request is about motion (how a sheet opens, a list
+enters, a toast lands, the feel of a spring), call `useMotion` from `src/motion.ts` once, in the
+variant's own component. The page then docks a slim bar under the design: play, the time, a
+slider to scrub forward and back, the curves of every animation, speed and loop, and comments on a
+moment or a range, which reach you like any comment (below). The design makes room for it; it is
+never covered.
+
+```
+import { useMotion } from '../../motion'
+
+useMotion({
+  start: () => setOpen(true),      // runs the sequence from rest (a tap on Checkout)
+  reset: () => setOpen(false),     // puts the design back at rest; optional
+  moments: [{ label: 'Overshoot', at: 350 }, { label: 'Toast', at: 1250 }],  // ms from start, for Go to; optional
+})
+```
+
+- Without `start`, the sequence is the design's entrance; without `reset`, the page mounts the
+  design again before each run. Vue: the same call in `<script setup>`.
+- The dock records a take through the browser's own animation API, so **write the motion in CSS
+  transitions, CSS keyframes or `element.animate()`**: a spring as a `linear()` easing sampled from
+  its curve, a stagger as delays. Motion run from script (a `requestAnimationFrame` loop,
+  react-spring, GSAP's core, Framer Motion's JS springs) can't be recorded; the dock says the take
+  caught no motion. DOM changes that aren't animated (an element added, a class swapped without a
+  transition) show their final state at every moment of the take.
+- Name the moving parts with `data-shoot`: the curves are labelled by it.
+- Pressing anything in the design lets it run live; the dock's next move takes it back. An edit
+  to the variant records the take again.
+
 **Build the variants in parallel when you can.** When there are 3 or more variants to write, the
 harness has subagents, and Current matches its reference (for a new product: once the tokens and
 `parts.tsx` exist), give each variant its own subagent. First write everything shared yourself
@@ -331,6 +360,8 @@ proto shoot <slug>/B --click "[data-shoot=add]" # a state reached by clicking (r
 proto shoot <slug>/A --ref <screenshot.png>     # beside and over a screenshot of the real screen
 proto shoot <slug>/B --copy                     # copy mode on (useCopy): each line's mark, and the bar
 proto shoot <slug>/B --copy --click "[data-copy=headline]" --click "[data-copy-option='2']"   # its third option in place
+proto shoot <slug>/B --at 350                   # a variant with useMotion, 350 ms into its motion
+proto shoot <slug>/B --frames 12 [--at 300-620] # 12 moments of its motion (or of that range) on one sheet
 ```
 
 `--sheet` shoots every variant (a web one at 1440×900 and 390×844, a `--kind phone` one at
@@ -342,6 +373,14 @@ comparing layout, hierarchy and how far apart the directions are; desktop shows 
 of its size, the phone row close to full size. Open a single shot only for what the sheet can't
 show (small copy, an alignment, a clipped edge), and only that one. Past about 12 variants it
 goes on to `-sheet-2.png`; read each.
+
+You can't watch motion, so read it in frames. A plain shot of a variant with `useMotion` shows it
+before `start`. `--at` and `--frames` record its take from rest, the way the dock does, then shoot
+those moments: `--at 350` writes `<slug>-<letter>-desktop-at-350.png` (and `-mobile-`), `--frames 12`
+writes `<slug>-<letter>-frames.png`, the moments in order with their times, cut to where the motion
+happens, and every animation's curve under them on the same clock. Read the frames sheet whenever
+you write or change motion: an overshoot, a stagger's rhythm, something landing early all show
+there.
 
 For a right-to-left prototype, `proto shoot` first lists any physical left or right in its files
 (see Right to left). For states behind an interaction, put `data-shoot="…"` on the elements and
@@ -445,6 +484,14 @@ element. Read every screenshot. Then, per comment:
    comment. A comment you can't act on gets a reply without `--done` saying why.
 3. When the batch is handled, listen again.
 
+**A comment on the motion** (written in the motion dock, under a variant with `useMotion`) is on a
+moment or a range of its take rather than an element: its `at:` is a time, `at: 0.35 s` or
+`at: 0.30–0.62 s`, with the take's length and the shoot that shows it. Run that shoot (`--at 350`,
+or `--frames 8 --at 300-620` for a range) and read it, change the motion, shoot it again to see the
+change landed, and reply with the new timing in numbers ("damping 0.75 now: the sheet overshoots
+4 px instead of 14 and settles by 0.50 s"). The page records the take again after your edit, and
+the reply shows on the comment's point on the slider.
+
 **Decisions from the page** arrive in the same batches, as comments with an `action:` line and
 no element (a `copy` choice is on its line's element); the user's optional note follows a colon in
 the text.
@@ -467,9 +514,11 @@ proto handoff <slug>/<letter>
 
 It lists everything the variant has, each with its file and line: its files, states, marked
 elements, motion, materials, interactions, assets, copy, copy options (the build ships each line's
-first option as plain copy, without the options or the picker) and where its Try it list is. A build
-loses what nobody listed (a drag's tilt, the shade behind a sheet, a glass material), so put every
-line on your task list and tick it as the build gets it, or say why it doesn't apply.
+first option as plain copy, without the options or the picker) and where its Try it list and
+`useMotion` call are. A build loses what nobody listed (a drag's tilt, the shade behind a sheet, a
+glass material), so put every line on your task list and tick it as the build gets it, or say why
+it doesn't apply. `useMotion` is the page's own and the build drops it; the motion it reviewed, its
+durations, delays and easings, is what ships.
 
 Build it in the real codebase with the project's own components and patterns; the variant file is
 a starting point, not a paste. Then screenshot the built screen the way Current's references were
@@ -520,6 +569,8 @@ Each module is roughly 4 to 30 KB and goes through your tool calls, so snap only
 | Copy choices sent from the page (`action: copy`) | the table under Comments from the page |
 | A change to the variant being worked on ("make the price bigger") | `proto ask "…"`, then edit it |
 | A change to another variant ("now D, same idea") | `proto work <slug>/<letter> --ask "…"`, then edit it |
+| To review an animation ("how should the sheet open?", "the toast lands too hard") | the motion in CSS or `element.animate()`, `useMotion` in each variant, then `proto shoot <slug>/<letter> --frames 12` |
+| A comment on the motion (`at: 0.30–0.62 s` in a batch) | the shoot its line names, change the motion, reply with the new timing (Comments from the page) |
 | To drop a direction or prototype | `proto archive <slug>` (still reachable under Archived) |
 | The prototypes in a doc to share | `proto snap`, then a Claude Doc (section above) |
 | Comments sent from the page (a `proto inbox --wait` exited) | handle each, `proto reply … --done`, listen again |
@@ -548,6 +599,6 @@ menu in the page.
 - **A variant shows a red error box:** that variant threw. Fix the file; it re-renders.
 - **`proto shoot` prints `slow …`:** a shot took over 3 s, and the line says which step took
   the time. Pass the line on to the user.
-- **Don't edit** the app's `shell/`, `src/main.ts`, `src/registry.ts`, `src/mount.*`, `src/hints.ts` or `src/copy.ts`. If the
+- **Don't edit** the app's `shell/`, `src/main.ts`, `src/registry.ts`, `src/mount.*`, `src/hints.ts`, `src/copy.ts` or `src/motion.ts`. If the
   shell itself misbehaves, say so; the template is `${CLAUDE_SKILL_DIR}/app/` (replaced on
   every plugin update, so a fix belongs upstream).
