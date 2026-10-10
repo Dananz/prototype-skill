@@ -16,8 +16,13 @@ export type Target = { label: string; selector: string; shoot?: string; src?: st
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
 export type Seg = string | { tag: number }
 export type Draft = { body: Seg[]; tags: Target[]; shot?: string }
-/** An unfinished new comment, and the element it was started on. */
-export type Held = Draft & { target: Target }
+/**
+ * A moment of the design's motion, in ms of its take (the motion dock, motion/), or a range of it
+ * from `at` to `to`; `take` is how long the take is.
+ */
+export type Time = { at: number; to?: number; take: number }
+/** An unfinished new comment, and the element (or the moment of the motion) it was started on. */
+export type Held = Draft & { target?: Target; time?: Time }
 
 /**
  * A decision on a variant, made in the page: pick it (or take the pick back), more like it, build
@@ -36,6 +41,8 @@ export type Item = Draft & {
   /** What it is on; an action has none. */
   target?: Target
   action?: Action
+  /** The moment or range of the motion it is on, when it was written in the motion dock. */
+  time?: Time
   at: number
   /** Once sent: the batch, and its place in it (1-based, as `proto reply` counts). */
   sent?: { batch: string; i: number }
@@ -47,6 +54,8 @@ export type Mode =
   | { kind: 'pick' }
   | { kind: 'compose'; target: Target; id?: string }
   | { kind: 'tag'; target: Target; id?: string }
+  /** Writing on a moment or a range of the motion, in the dock; tagging: picking an element to tag. */
+  | { kind: 'time'; time: Time; id?: string; tagging?: boolean }
 
 /** Where the page is, when it is on a single variant that can be commented on. */
 export type Place = { proto: string; variant: string; state?: string; phone: boolean; title: string }

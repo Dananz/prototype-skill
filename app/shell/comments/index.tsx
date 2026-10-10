@@ -30,6 +30,8 @@ export function createComments(host: Host, sessionId: string) {
     copy: { store: copyStore, ...copyAct },
     /** Its bar under the stage, and the sheet a phone lists a line's options in (over the stage and the bar). */
     mountCopy(bar: HTMLElement, sheet: HTMLElement) { createRoot(bar).render(wrap(<><CopyBar /><CopySheet container={sheet} /></>)) },
+    /** Something drawn in a root of its own (the motion dock) with the comment layer's context. */
+    wrap,
     mountRail(el: HTMLElement) { createRoot(el).render(wrap(<Rail />)) },
     mountSheet(el: HTMLElement) { createRoot(el).render(wrap(<PhoneSheet />)) },
     /** The bar's Pick, More and Build menu, mounted once; the returned function draws it with new props. */
@@ -49,13 +51,13 @@ export function createComments(host: Host, sessionId: string) {
         const k = `${i.proto}/${i.variant}`
         by.set(k, (by.get(k) ?? 0) + 1)
       }
-      return { drafts, total: s.items.length, by, picking: s.mode.kind === 'pick' || s.mode.kind === 'tag', held: !!s.held }
+      return { drafts, total: s.items.length, by, picking: s.mode.kind === 'pick' || s.mode.kind === 'tag' || (s.mode.kind === 'time' && !!s.mode.tagging), held: !!s.held }
     },
     /** Esc, from the shell's own key handling: true when it put something away. */
     escape(): boolean {
       const s = store.get()
       if (s.sheet) { act.openSheet(false); return true }
-      if (s.mode.kind === 'tag') { act.tagDone(null); return true }
+      if (s.mode.kind === 'tag' || (s.mode.kind === 'time' && s.mode.tagging)) { act.tagDone(null); return true }
       if (s.mode.kind !== 'idle' || s.active) { act.close(); return true }
       return false
     },

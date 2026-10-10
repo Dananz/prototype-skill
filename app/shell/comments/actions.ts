@@ -7,7 +7,7 @@ import { find } from './dom'
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import type { Store } from './store'
-import type { Action, Draft, Item, Place, Target } from './types'
+import type { Action, Draft, Item, Place, Target, Time } from './types'
 import { routeOf } from './types'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
@@ -35,23 +35,26 @@ export function createActions(store: Store, host: Host) {
     stop() { set({ mode: { kind: 'idle' } }) },
     close() { set({ mode: { kind: 'idle' }, active: null, pendingTag: null }) },
     begin(target: Target) { set({ mode: { kind: 'compose', target }, active: null }) },
+    /** A comment on a moment or a range of the motion, written in the motion dock. */
+    beginTime(time: Time) { set({ mode: { kind: 'time', time }, active: null }) },
     /** Pick an element to tag from the open composer; it comes back to it with the pick. */
-    tagPick() { set(s => s.mode.kind === 'compose' ? { mode: { kind: 'tag', target: s.mode.target, id: s.mode.id } } : {}) },
+    tagPick() { set(s => s.mode.kind === 'compose' ? { mode: { kind: 'tag', target: s.mode.target, id: s.mode.id } } : s.mode.kind === 'time' ? { mode: { ...s.mode, tagging: true } } : {}) },
     tagDone(picked: Target | null) {
-      set(s => s.mode.kind === 'tag' ? { mode: { kind: 'compose', target: s.mode.target, id: s.mode.id }, pendingTag: picked } : {})
+      set(s => s.mode.kind === 'tag' ? { mode: { kind: 'compose', target: s.mode.target, id: s.mode.id }, pendingTag: picked }
+        : s.mode.kind === 'time' && s.mode.tagging ? { mode: { ...s.mode, tagging: false }, pendingTag: picked } : {})
     },
     tagTaken() { set({ pendingTag: null }) },
     open(id: string) {
       const i = get().items.find(x => x.id === id)
       if (!i) return
       if (!here(i)) { host.go(i.proto, i.variant, i.state); set({ active: id }); return }
-      set({ active: id, mode: i.sent || !i.target ? { kind: 'idle' } : { kind: 'compose', target: i.target, id } })
+      set({ active: id, mode: i.sent ? { kind: 'idle' } : i.time ? { kind: 'time', time: i.time, id } : i.target ? { kind: 'compose', target: i.target, id } : { kind: 'idle' } })
       if (i.target) find(host.mount(), i.target)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     },
-    resume() { const h = get().held; if (h) set({ active: null, mode: { kind: 'compose', target: h.target } }) },
+    resume() { const h = get().held; if (h) set({ active: null, mode: h.time ? { kind: 'time', time: h.time } : { kind: 'compose', target: h.target! } }) },
     discardHeld() { set({ held: null }) },
     /** Called as a new comment is written, so it survives being put away. */
-    hold(d: Draft, target: Target) { set({ held: hasWords(d) ? { ...d, target } : null }) },
+    hold(d: Draft, target?: Target, time?: Time) { set({ held: hasWords(d) ? { ...d, ...(time ? { time } : { target }) } : null }) },
     /** Acting on the design while a comment is open: an empty one moves to the new element, a written one says no. */
     guard(el: Target) {
       const m = get().mode
@@ -60,13 +63,13 @@ export function createActions(store: Store, host: Host) {
       else set({ mode: { kind: 'compose', target: el } })
     },
 
-    save(d: Draft, target: Target, id?: string) {
+    save(d: Draft, target: Target | undefined, id?: string, time?: Time) {
       const p = get().place
       if (!p) return
       if (id) set(s => ({ items: s.items.map(i => i.id === id ? { ...i, ...d } : i), held: null, mode: { kind: 'idle' }, active: null }))
       else {
         const n = Math.max(0, ...get().items.filter(i => i.proto === p.proto && i.variant === p.variant).map(i => i.n)) + 1
-        const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, ...d, target, at: Date.now() }
+        const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, ...d, ...(time ? { time } : { target }), at: Date.now() }
         set(s => ({ items: [...s.items, item], held: null, mode: { kind: 'idle' }, active: null }))
       }
     },
@@ -86,6 +89,8 @@ export function createActions(store: Store, host: Host) {
           text: plain(i),
           ...(i.target?.point ? { point: i.target.point } : {}),
           target: i.target,
+          // On the motion: a moment or a range, in ms of the take, and how long the take is.
+          ...(i.time ? { at: i.time.at, ...(i.time.to !== undefined ? { to: i.time.to } : {}), take: i.time.take } : {}),
           ...(i.tags.length ? { tags: i.tags } : {}),
           ...(i.shot ? { images: [{ dataUrl: i.shot, name: 'marked up' }] } : {}),
         })),

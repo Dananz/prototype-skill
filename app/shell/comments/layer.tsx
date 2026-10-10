@@ -37,16 +37,18 @@ export function Layer() {
   const { host, act } = useCtx()
   const { s, rows } = useRows()
   const m = s.mode
-  const picking = m.kind === 'pick' || m.kind === 'tag'
+  // Tagging an element from a comment on the motion, which is written in the motion dock.
+  const tagging = m.kind === 'tag' || (m.kind === 'time' && !!m.tagging)
+  const picking = m.kind === 'pick' || tagging
   const editing = m.kind === 'compose' || m.kind === 'tag' ? m : null
   const editedItem = editing?.id ? s.items.find(x => x.id === editing.id) : undefined
 
   const { hover, hold, confirm, up } = usePick(picking && !!s.place, m.kind === 'compose' && !!s.place, {
-    onPick: t => (m.kind === 'tag' ? act.tagDone(t) : act.begin(t)),
-    onCancel: () => (m.kind === 'tag' ? act.tagDone(null) : act.stop()),
+    onPick: t => (tagging ? act.tagDone(t) : act.begin(t)),
+    onCancel: () => (tagging ? act.tagDone(null) : act.stop()),
     onGuard: act.guard,
   })
-  const verb = m.kind === 'tag' ? 'Tag' : m.kind === 'compose' ? 'Comment here instead' : s.held ? 'Continue your comment' : 'Comment'
+  const verb = tagging ? 'Tag' : m.kind === 'compose' ? 'Comment here instead' : s.held ? 'Continue your comment' : 'Comment'
 
   // ⌥-click comments on one element without turning comment mode on.
   useEffect(() => {
@@ -83,7 +85,7 @@ export function Layer() {
       {editing && (
         <Composer key={editing.id ?? editing.target.selector} target={editing.target} n={editedItem?.n ?? nextN} place={boxes[editing.id ?? '__new'] ?? null}
           sheet={phone} tagging={m.kind === 'tag'} editing={!!editedItem} id={editedItem?.id}
-          initial={editedItem ?? s.held ?? undefined} />
+          initial={editedItem ?? (s.held?.target ? s.held : undefined)} />
       )}
       {opened && <ReadCard row={opened} box={boxes[opened.item.id]} />}
     </>

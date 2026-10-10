@@ -1,14 +1,15 @@
-// Writing a comment on one element. `@` (or the @ button) offers the design's named parts, or
-// picking any element on the page; the camera captures the design around the element and opens
-// the editor; ⌘↩ adds it. Whatever is written is held by the store as it is typed, so putting
-// the composer away any way but Cancel or Add loses nothing.
+// Writing a comment on one element, or on a moment or a range of the design's motion (in the motion
+// dock, with the time where the element's name would be). `@` (or the @ button) offers the design's
+// named parts, or picking any element on the page; the camera captures the design around the
+// element (all of it, on a moment) and opens the editor; ⌘↩ adds it. Whatever is written is held by
+// the store as it is typed, so putting the composer away any way but Cancel or Add loses nothing.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { useCtx } from './ctx'
 import { find, groupOf, parts } from './dom'
 import { EASE, GLIDE_MS, Glide, useBoxes } from './inspect'
 import { capture, ShotEditor } from './shot'
-import type { Box, Draft, Seg, Target } from './types'
-import { IB, Icon, MOD, PinDot, PRIMARY, SrcTag, srcOf } from './ui'
+import type { Box, Draft, Seg, Target, Time } from './types'
+import { IB, Icon, MOD, PinDot, PRIMARY, spanOf, SrcTag, srcOf } from './ui'
 
 function readEditor(el: HTMLElement): Seg[] {
   const out: Seg[] = []
@@ -33,7 +34,11 @@ const chipNode = (t: Target | undefined, i: number) => {
 const endRange = (el: HTMLElement) => { const x = document.createRange(); x.selectNodeContents(el); x.collapse(false); return x }
 
 type Props = {
-  target: Target
+  /** The element it is on; a comment on the motion has a time instead. */
+  target?: Target
+  time?: Time
+  /** Laid out in the motion dock, under the design, instead of beside the element. */
+  docked?: boolean
   n: number
   initial?: Draft
   place: Box | null
@@ -44,7 +49,12 @@ type Props = {
   id?: string
 }
 
-export function Composer({ target, n, initial, place, sheet, tagging, editing, id }: Props) {
+// The design's root, for a screenshot of all of it at the moment a comment on the motion is on.
+const WHOLE: Target = { label: '', selector: ':scope > *', tag: '', text: '', rect: { x: 0, y: 0, w: 0, h: 0 } }
+// The moment and the range as icons, in the stroke the page's icons use.
+const TIME_PATH = { at: 'M12 9.5V20M9 4h6l-3 4z', range: 'M5 5v14M19 5v14M8.5 12h7' }
+
+export function Composer({ target, time, docked, n, initial, place, sheet, tagging, editing, id }: Props) {
   const { host, store, act } = useCtx()
   const nudge = store.get().nudge
   const pending = store.get().pendingTag
@@ -63,11 +73,11 @@ export function Composer({ target, n, initial, place, sheet, tagging, editing, i
   const box = useRef<HTMLDivElement>(null)
   const list = useRef<HTMLDivElement>(null)
 
-  const all = menu ? parts(host.mount()).filter(p => p.t.selector !== target.selector && !tags.some(t => t.selector === p.t.selector)) : []
+  const all = menu ? parts(host.mount()).filter(p => p.t.selector !== target?.selector && !tags.some(t => t.selector === p.t.selector)) : []
   const ql = q.toLowerCase()
   const hits = all.filter(p => !ql || p.t.label.toLowerCase().includes(ql) || p.group.toLowerCase().includes(ql))
   // The commented element's own group comes first: what sits next to it is what gets tagged most.
-  const el0 = find(host.mount(), target)
+  const el0 = target ? find(host.mount(), target) : null
   const mine = el0 ? groupOf(el0) : 'Top of the page'
   const groups = [...new Set([mine, ...hits.map(p => p.group)])].map(g => ({ g, here: g === mine, parts: hits.filter(p => p.group === g) })).filter(x => x.parts.length)
   const flat = groups.flatMap(x => x.parts)
@@ -102,7 +112,7 @@ export function Composer({ target, n, initial, place, sheet, tagging, editing, i
   }
 
   const [empty, setEmpty] = useState(!initial || !initial.body.some(s => typeof s !== 'string' || s.trim()))
-  const emit = () => { if (!editing && ed.current) act.hold({ body: readEditor(ed.current), tags: tagsRef.current, shot: shotRef.current }, target) }
+  const emit = () => { if (!editing && ed.current) act.hold({ body: readEditor(ed.current), tags: tagsRef.current, shot: shotRef.current }, target, time) }
   useEffect(emit, [tags, shot]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (nudge) box.current?.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(-3px)' }, { transform: 'translateX(0)' }], { duration: 320, easing: 'ease-out' })
@@ -118,7 +128,7 @@ export function Composer({ target, n, initial, place, sheet, tagging, editing, i
     el.focus({ preventScroll: true })
     const sel = getSelection(); sel?.selectAllChildren(el); sel?.collapseToEnd()
     // On a phone the composer is a sheet over the bottom: the element moves up into view above it.
-    if (sheet) find(host.mount(), target)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    if (sheet && target) find(host.mount(), target)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -152,17 +162,17 @@ export function Composer({ target, n, initial, place, sheet, tagging, editing, i
   const submit = () => {
     const body = readEditor(ed.current!)
     if (!body.some(s => typeof s !== 'string' || s.trim()) && !tags.length) return
-    act.save({ body, tags, shot }, target, id)
+    act.save({ body, tags, shot }, target, id, time)
   }
   const shoot = async () => {
     setCapturing(true)
-    try { const url = await capture(host.mount(), target, host.dark()); if (url) setMarking(url) } finally { setCapturing(false) }
+    try { const url = await capture(host.mount(), target ?? WHOLE, host.dark()); if (url) setMarking(url) } finally { setCapturing(false) }
   }
 
   const W = 312
   const lay = host.layer.getBoundingClientRect()
   let style: CSSProperties = {}
-  if (!sheet && place) {
+  if (!sheet && !docked && place) {
     const right = place.x + place.w + 12 + W < lay.width - 8
     const left = place.x - 12 - W > 8
     const x = right ? place.x + place.w + 12 : left ? place.x - 12 - W : Math.min(Math.max(8, place.x), lay.width - W - 8)
@@ -185,11 +195,12 @@ export function Composer({ target, n, initial, place, sheet, tagging, editing, i
       <Glide item={peek && peekBox ? { box: peekBox, label: peek.t.label } : null} pad={4} className="rounded-lg ring-2 ring-proto-primary-ring" style={{ boxShadow: '0 0 0 9999px rgb(9 9 11 / 0.32)' }}>
         {h => <span className="absolute -top-7 left-0 whitespace-nowrap rounded-md bg-proto-primary px-1.5 py-0.5 text-[11px] font-medium text-proto-primary-fg shadow">@{h.label}</span>}
       </Glide>
-      <div ref={box} data-composer onKeyDown={keys} className={`pointer-events-auto z-30 flex flex-col rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-2xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 ${sheet ? 'absolute inset-x-2 bottom-2' : 'absolute'} ${tagging ? 'opacity-60' : ''}`} style={style}>
+      <div ref={box} data-composer onKeyDown={keys} className={`pointer-events-auto z-30 flex flex-col text-[13px] text-zinc-900 dark:text-zinc-100 ${docked ? 'relative' : `rounded-2xl border border-black/10 bg-white shadow-2xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900 ${sheet ? 'absolute inset-x-2 bottom-2' : 'absolute'}`} ${tagging ? 'opacity-60' : ''}`} style={style}>
         <div className="flex items-center gap-2 px-3 pt-2.5">
           <PinDot n={n} size="sm" />
-          <span dir="auto" className="min-w-0 flex-1 truncate text-xs font-medium">{target.label}</span>
-          <SrcTag t={target} />
+          {time
+            ? <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[11px] font-semibold tabular-nums text-proto-primary-soft-fg"><svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={time.to === undefined ? TIME_PATH.at : TIME_PATH.range} /></svg>{time.to === undefined ? `At ${spanOf(time)}` : spanOf(time)}</span>
+            : <><span dir="auto" className="min-w-0 flex-1 truncate text-xs font-medium">{target?.label}</span><SrcTag t={target} /></>}
         </div>
         <div className="relative px-3 pt-1.5">
           <div ref={ed} contentEditable suppressContentEditableWarning role="textbox" aria-label="Comment" aria-multiline="true" dir="auto"
@@ -201,7 +212,7 @@ export function Composer({ target, n, initial, place, sheet, tagging, editing, i
             }}
             onKeyUp={saveRange} onMouseUp={saveRange} onBlur={saveRange}
             className="max-h-40 min-h-[52px] overflow-y-auto whitespace-pre-wrap break-words py-1 leading-5 outline-none [@media(pointer:coarse)]:min-h-[60px] [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6" />
-          {empty && <span className="pointer-events-none absolute left-3 top-2.5 text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">What should change? @ tags another element</span>}
+          {empty && <span className="pointer-events-none absolute left-3 top-2.5 text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">{time ? `What should change ${time.to === undefined ? 'at this moment' : 'over this range'}? @ tags an element` : 'What should change? @ tags another element'}</span>}
           {menu && (
             <div ref={menuBox} className={`absolute inset-x-2 z-10 flex max-h-[min(22rem,60vh)] flex-col overflow-hidden rounded-xl border border-black/10 bg-white shadow-xl dark:border-white/10 dark:bg-zinc-900 ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
               {hl && <div className="pointer-events-none absolute inset-x-1 rounded-lg bg-proto-primary-soft" style={{ top: hl.top, height: hl.height, transition: hl.still ? 'none' : ['top', 'height'].map(k => `${k} ${GLIDE_MS}ms ${EASE}`).join(', ') }} />}

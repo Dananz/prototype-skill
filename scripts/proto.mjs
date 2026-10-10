@@ -8,6 +8,8 @@
 //   proto shoot [route…] [--theme dark] [--focus] [--copy] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
 //             [--ref <png>]   instead, the variant's screen beside that screenshot of the real one
 //             [--as built]    with --ref: the png is the variant built in the codebase (<route>-vs-built.png)
+//             [--at <ms>]     instead, the variant's motion (useMotion) at that moment of its take
+//             [--frames <n>] [--at <ms>-<ms>]   n frames of the take on one sheet, with its curves
 //   proto shoot [slug…] --sheet [--state <id>] [--theme dark]   every variant on one contact sheet per prototype
 //   proto handoff <slug>/<letter>   a checklist of what that variant has, for building it into the codebase
 //   proto snap <slug>[/<letter>]… [--width 672]   static HTML snapshots for a Claude Doc
@@ -44,8 +46,8 @@ const BASE = { vite: '^8.3.0', tailwindcss: '^4.3.0', '@tailwindcss/vite': '^4.3
 // modern-screenshot).
 const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.9.0', 'modern-screenshot': '^4.7.0' }
 const STACKS = {
-  react: { deps: {}, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', stub: 'react.tsx' },
-  vue: { deps: { vue: '^3.5.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', stub: 'vue.vue' },
+  react: { deps: {}, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', stub: 'react.tsx' },
+  vue: { deps: { vue: '^3.5.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue' },
 }
 
 // ---------- arguments ----------
@@ -205,6 +207,7 @@ function scaffold(dir, project) {
   cpSync(join(APP, 'adapters', kit.adapter), join(dir, 'src', `mount.${kit.adapter.split('.').pop()}`))
   cpSync(join(APP, 'adapters', kit.hints), join(dir, 'src', 'hints.ts'))
   cpSync(join(APP, 'adapters', kit.copy), join(dir, 'src', 'copy.ts'))
+  cpSync(join(APP, 'adapters', kit.motion), join(dir, 'src', 'motion.ts'))
   writeJson(join(dir, 'package.json'), {
     name: `prototype-${basename(dir)}`, private: true, type: 'module',
     dependencies: { ...SHELL, ...kit.deps }, devDependencies: { ...BASE, ...kit.dev },
@@ -543,6 +546,21 @@ async function shoot() {
     if (flags.as !== 'built') die('--as has one value: --as built')
     if (!flags.ref) die('--as built compares with a screenshot of the built screen: --ref <png> --as built')
     extra.push('--as=built')
+  }
+  // The motion of a variant that declares it (useMotion), recorded from rest as the page's dock does:
+  // one moment of its take (--at 350), or n frames of it on one sheet (--frames 12), over a range of
+  // it with --at 300-620.
+  if (flags.at !== undefined || flags.frames !== undefined) {
+    if (flags.sheet || flags.ref) die('--at and --frames shoot one variant\'s motion: not with --sheet or --ref')
+    const at = String(flags.at ?? '').match(/^(\d+)(?:-(\d+))?$/)
+    if (flags.at !== undefined && !at) die('--at is a moment of the take in ms (--at 350), or a range with --frames (--at 300-620)')
+    if (at?.[2] !== undefined && +at[2] <= +at[1]) die(`--at ${flags.at}: a range ends after it starts`)
+    const frames = flags.frames === undefined ? (at?.[2] !== undefined ? 6 : 0) : Number(flags.frames)
+    if (flags.frames !== undefined && !(Number.isInteger(frames) && frames >= 2 && frames <= 24)) die('--frames is how many frames, 2 to 24: --frames 12')
+    const bare = routes.find(r => r.split('/').filter(Boolean).length < 2)
+    if (bare !== undefined) die(`--at and --frames shoot a variant: proto shoot <slug>/<letter> --frames 12 (not "${bare || 'the session'}")`)
+    if (flags.at !== undefined) extra.push(`--at=${flags.at}`)
+    if (frames) extra.push(`--frames=${frames}`)
   }
   // --click can repeat: each selector is clicked in order before the shot.
   argv.forEach((a, i) => { if (a === '--click' && argv[i + 1]) extra.push(`--click=${argv[i + 1]}`); else if (a.startsWith('--click=')) extra.push(a) })
@@ -934,7 +952,7 @@ function handoff() {
   const files = variantFiles(join(dir, 'src', 'protos'), file)
   const rel = f => relative(pdir, f).split(sep).join('/')
   // Each finding once, with every place it is: the same classes on twelve lines are one line to tick.
-  const found = { mark: new Map(), motion: new Map(), material: new Map(), interaction: new Map(), asset: new Map(), copy: new Map(), hints: new Map() }
+  const found = { mark: new Map(), motion: new Map(), material: new Map(), interaction: new Map(), asset: new Map(), copy: new Map(), hints: new Map(), review: new Map() }
   const note = (group, tokens, f, n) => {
     const key = tokens.join('\n'), g = found[group]
     if (!g.has(key)) g.set(key, { tokens, at: new Map() })
@@ -952,6 +970,7 @@ function handoff() {
       }
       if (shown) copyIn(line).forEach(text => note('copy', [text.length > 80 ? `${text.slice(0, 79)}…` : text], rel(f), n))
       if (/\buseHints\s*\(/.test(line)) note('hints', ['useHints'], rel(f), n)
+      if (/\buseMotion\s*\(/.test(line)) note('review', ['useMotion'], rel(f), n)
     })
   }
 
@@ -989,6 +1008,7 @@ function handoff() {
     ...offered.lines.map(x => `${x.label} (${code(x.id)}) ships "${x.first}"${x.n > 1 ? `, not its ${x.n - 1} other option${x.n === 2 ? '' : 's'}` : ''} · ${rel(x.f)}:${x.line}`),
     ...offered.calls.length ? [`${code('useCopy')} · ${offered.calls.map(x => `${rel(x.f)}:${x.line}`).join(', ')}: the build ships each line's first option as plain copy; the options and the page's picker stay in the prototype`] : [],
   ])
+  section('Motion review', [...found.review.values()].map(({ at }) => `Its motion dock (${code('useMotion')}) · ${where(at)}: the page's alone, so the build drops it; the motion it reviewed (Motion above) is what ships, its timings and easings as they are`))
   const route = `${t.proto}/${t.variant}`, ref = x => `.proto/ref/${t.proto}/built-${t.variant}${x ? `-${x}` : ''}.png`
   section('Then', [
     'Build it with the project\'s own components and patterns: the variant shows what to build, its code is not the code to ship',
@@ -1051,6 +1071,8 @@ const FAILED = {
   pick: (c, why) => c.marked ? `marked in the page, but the working variant didn't move (${why}): run proto pick ${c.route.replace('/', ' ')}` : `not marked (${why}): run proto pick ${c.route.replace('/', ' ')}`,
   unpick: (c, why) => c.nothing ? `nothing changed: ${c.route.split('/')[1]} wasn't the pick, so there was nothing to take back; tell the user` : `not taken off (${why}): run proto pick ${c.route.split('/')[0]} --off`,
 }
+const secs = ms => `${(ms / 1000).toFixed(2)} s`
+const spanOf = c => c.to === undefined ? secs(c.at) : `${(c.at / 1000).toFixed(2)}–${secs(c.to)}`
 function printBatch(dir, b) {
   const vp = b.viewport ? ` · page ${b.viewport.w}x${b.viewport.h}${b.viewport.phone ? ' (phone)' : ''}` : ''
   console.log(`batch ${b.id} · ${b.comments.length} comment${b.comments.length === 1 ? '' : 's'}${vp} · ${b.theme}`)
@@ -1060,6 +1082,8 @@ function printBatch(dir, b) {
     if (c.action) console.log(`   action: ${c.action} (${c.failed && FAILED[c.action] ? FAILED[c.action](c, c.failed) : ACTIONS[c.action] || ''})`)
     // A comment pinned with a long press is on a spot; its element is only where that spot is.
     if (c.point) console.log(`   at: ${c.point.x},${c.point.y} (a spot, pinned with a long press)`)
+    // On the motion (the page's motion dock): a moment or a range of its take, and how to see it.
+    if (c.take) console.log(`   at: ${spanOf(c)} of the motion (its take is ${secs(c.take)}): see it with proto shoot ${c.route} ${c.to !== undefined ? `--frames 8 --at ${c.at}-${c.to}` : `--at ${c.at}`}`)
     if (c.target) console.log(`   ${c.point ? 'in' : 'on'}: ${where(c.target)}`)
     for (const t of c.tags || []) console.log(`   with: ${where(t)}`)
     for (const img of c.images || []) console.log(`   image: ${join(inboxDir(dir), 'taken', b.id, img.file)}${img.name ? `  (${img.name})` : ''}`)

@@ -136,6 +136,17 @@ const element = t => t && typeof t === 'object' ? {
   selector: clip(t.selector, 500), shoot: clip(t.shoot, 100), src: clip(t.src, 300), component: clip(t.component, 100),
   tag: clip(t.tag, 40), text: clip(t.text, 300), rect: box(t.rect),
 } : undefined
+// A comment on the design's motion (the page's motion dock) is on a moment of its take, `at`, or a
+// range of it, `at` to `to`, in ms, and says how long the take is: whole numbers of ms inside it.
+// Null when the comment has none; false when what it has isn't that.
+const MAX_TAKE = 60_000
+const timeOf = c => {
+  if (c.at === undefined && c.to === undefined && c.take === undefined) return null
+  const ms = x => typeof x === 'number' && Number.isFinite(x) ? Math.round(x) : NaN
+  const at = ms(c.at), to = c.to === undefined ? undefined : ms(c.to), take = ms(c.take)
+  if (!(take > 0 && take <= MAX_TAKE && at >= 0 && at <= take) || (to !== undefined && !(to > at && to <= take))) return false
+  return { at, ...(to !== undefined ? { to } : {}), take }
+}
 
 // A decision on a variant made in the page (its Pick, More like this and Build it) comes as a
 // comment with one of these and no element. A copy choice (the copy picker's Send) is one too, on
@@ -163,6 +174,8 @@ function receive(data) {
   const list = comments.map((c, i) => {
     if (typeof c?.text !== 'string' || !c.text.trim()) throw bad(i, ' has no text')
     if (typeof c.route !== 'string' || !/^[a-z0-9][a-z0-9-]*(\/[A-Z]{1,2}(\/[\w-]+)?)?$/.test(c.route)) throw bad(i, ': route is <slug>[/<letter>[/<state>]]')
+    const time = timeOf(c)
+    if (time === false) throw bad(i, `: a moment of the motion is at (and to, for a range) in ms inside the take, and take, its length in ms (up to ${MAX_TAKE})`)
     if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
       if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build or copy, on a variant (<slug>/<letter>)')
@@ -183,6 +196,7 @@ function receive(data) {
       n: i + 1, route: c.route, text: c.text.trim().slice(0, 4000),
       ...(c.action ? { action: c.action } : {}),
       point: c.point && { x: Math.round(+c.point.x || 0), y: Math.round(+c.point.y || 0) },
+      ...time,
       target: element(c.target),
       tags: (Array.isArray(c.tags) ? c.tags : []).map(element).filter(Boolean).slice(0, 20),
       images,

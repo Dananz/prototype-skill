@@ -22,6 +22,11 @@
 // the bar under the stage, which the shot takes in. A --click on a line ([data-copy=headline]) lists
 // its options, and a --click on one of them ([data-copy-option="1"]) puts it in place.
 //
+// --at=<ms> (a variant that declares its motion with useMotion) records its take from rest, the way
+// the page's motion dock does, and shoots that moment of it (hero-A-desktop-at-350.png). --frames=<n>
+// shoots n moments evenly over the take (or over --at=<a>-<b>), cut to where the motion happens, and
+// lays them out on one sheet with their times and the take's curves under them (hero-A-frames.png).
+//
 // --phone lists the phone prototypes: their variants are shot at phone size only, where the phone
 // shows larger than in the desktop shell. Their lobbies still get both.
 //
@@ -73,11 +78,11 @@ const esc = s => String(s).replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`)
 // The widest column n variants can have: every row count is tried, and each is held to what the
 // sheet's width and its height allow. ratio is a column's image height per px of its width,
 // fixed its label and gaps, most the narrowest shot's own width (never scaled up).
-const fit = (n, ratio, fixed, most) => {
+const fit = (n, ratio, fixed, most, high = SHEET) => {
   let best = { w: 0, cols: 1 }
   for (let rows = 1; rows <= n; rows++) {
     const cols = Math.ceil(n / rows)
-    const w = Math.floor(Math.min(most, (SHEET - 2 * PAD - (cols - 1) * GAP) / cols, (SHEET - 2 * PAD - HEAD - rows * fixed - (rows - 1) * GAP) / rows / ratio))
+    const w = Math.floor(Math.min(most, (SHEET - 2 * PAD - (cols - 1) * GAP) / cols, (high - 2 * PAD - HEAD - rows * fixed - (rows - 1) * GAP) / rows / ratio))
     if (w > best.w) best = { w, cols }
   }
   return best
@@ -178,7 +183,92 @@ try {
     await send('Target.closeTarget', { targetId: t.targetId })
   }
 
-  for (const size of flags.ref ? [] : SIZES) {
+  // The motion: a take recorded in the page, then set to each moment and shot.
+  const motion = flags.at !== undefined || flags.frames !== undefined
+  for (const route of motion ? routes : []) {
+    const many = Number(flags.frames || 0)
+    const [from, to] = flags.at === undefined ? [] : String(flags.at).split('-').map(Number)
+    // One moment is shot as any shot is; frames at one size (a phone prototype's phone, else desktop).
+    for (const size of many ? [phoneOnly(route) ? SIZES[1] : SIZES[0]] : SIZES.filter(z => z.mobile || !phoneOnly(route))) {
+      const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
+      const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+      await send('Emulation.setDeviceMetricsOverride', { width: size.width, height: size.height, deviceScaleFactor: size.deviceScaleFactor, mobile: size.mobile }, sessionId)
+      if (size.mobile) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
+      const url = new URL(base)
+      url.hash = '/' + route.replace(/^\/+/, '')
+      await send('Page.navigate', { url: url.href }, sessionId)
+      for (let i = 0; i < 100; i++) {
+        const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement.dataset.ready === "1"', returnByValue: true }, sessionId)
+        if (result.value) break
+        await sleep(100)
+      }
+      await settle(sessionId)
+      const page = async expression => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)).result?.value
+      for (const sel of clicks) { await page(`document.querySelector('[data-layers]').querySelector(${JSON.stringify(sel)})?.click()`); await sleep(400) }
+      // The design declares its motion once it is mounted: wait for that, a moment at most.
+      for (let i = 0; i < 20 && !await page('!!window.__protoMotion?.state()'); i++) await sleep(100)
+      const take = await page('window.__protoMotion ? window.__protoMotion.take() : { error: "this page has no motion dock (a session app made before it?)" }')
+      if (take?.error || take?.status !== 'ready') {
+        console.error(`shoot: ${route}: ${take?.error || 'the take caught no motion. Only CSS transitions, CSS animations and element.animate() can be recorded, not motion run from script (requestAnimationFrame, react-spring, GSAP)'}`)
+        process.exitCode = 1
+        await send('Target.closeTarget', { targetId })
+        continue
+      }
+      const D = take.duration
+      const a = Math.min(from ?? 0, D), b = Math.min(to ?? D, D)
+      if ((from ?? 0) > D || (to ?? 0) > D) console.error(`shoot: ${route}: its take is ${D} ms, so ${flags.at} is held at its end`)
+      const times = many ? Array.from({ length: many }, (_, i) => Math.round(a + (i * (b - a)) / (many - 1))) : [a]
+      // What is shot: the stage (as any shot), or for frames where the motion happens in it: a phone
+      // prototype's phone, else every moving part's box at its start, middle and end, with a margin.
+      const stage = await page(`(() => { document.querySelector('[data-overlay]')?.style.setProperty('display', 'none'); const r = document.querySelector('[data-layers]').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } })()`)
+      let cut = stage
+      if (many) {
+        const box = phoneOnly(route) ? await page(`(() => { const r = document.querySelector('[data-layers] [data-phone]')?.getBoundingClientRect(); return r && { x: r.x, y: r.y, w: r.width, h: r.height } })()`) : await page('window.__protoMotion.box()')
+        if (box) {
+          const m = 24, x0 = Math.max(stage.x, box.x - m), y0 = Math.max(stage.y, box.y - m)
+          cut = { x: x0, y: y0, w: Math.min(stage.x + stage.w, box.x + box.w + m) - x0, h: Math.min(stage.y + stage.h, box.y + box.h + m) - y0 }
+        }
+      }
+      const shots = []
+      for (const t of times) {
+        await page(`window.__protoMotion.seek(${t})`)
+        const { data } = await send('Page.captureScreenshot', { format: 'png', clip: { x: cut.x, y: cut.y, width: cut.w, height: cut.h, scale: 1 } }, sessionId)
+        const file = resolve(outDir, `${fileOf(route)}-${size.name}-at-${t}${suffix}.png`)
+        writeFileSync(file, Buffer.from(data, 'base64'))
+        shots.push({ t, file })
+        if (!many) console.log(file)
+      }
+      const curves = many && await page('window.__protoMotion.curves(120)')
+      await send('Target.closeTarget', { targetId })
+      if (!many) continue
+      // The sheet: the frames in order with their times, then the take's curves on the same clock,
+      // the frames' moments marked on it, and the range they cover shaded when it is one.
+      const CURVES = 330, { w, cols } = fit(shots.length, cut.h / cut.w, LABEL + INNER, cut.w * size.deviceScaleFactor, SHEET - CURVES - GAP)
+      const width = cols * w + (cols - 1) * GAP, plotW = width - 260, top = 22, floor = CURVES - 30
+      const ymax = Math.max(1.15, ...curves.tracks.flatMap(tr => tr.lines.flatMap(l => l.map(([, v]) => v + 0.05))))
+      const X = t => 8 + (t / D) * (plotW - 16), Y = v => floor - (v / ymax) * (floor - top)
+      const path = pts => `M${pts.map(([t, v]) => `${X(t).toFixed(1)},${Y(v).toFixed(1)}`).join('L')}`
+      const svg = `<svg width="${plotW}" height="${CURVES}" style="flex:none;display:block;overflow:visible">
+        ${flags.at === undefined ? '' : `<rect x="${X(a)}" y="${top - 10}" width="${Math.max(2, X(b) - X(a))}" height="${floor - top + 10}" fill="#6366f1" fill-opacity=".14"/>`}
+        <line x1="${X(0)}" x2="${X(D)}" y1="${Y(1)}" y2="${Y(1)}" stroke="#52525b" stroke-dasharray="4 4"/>
+        <line x1="${X(0)}" x2="${X(D)}" y1="${Y(0)}" y2="${Y(0)}" stroke="#3f3f46"/>
+        ${shots.map(({ t }, i) => `<line x1="${X(t)}" x2="${X(t)}" y1="${top - 10}" y2="${floor}" stroke="#a1a1aa" stroke-opacity=".45"/><text x="${X(t)}" y="${floor + 22}" fill="#a1a1aa" font-size="15" text-anchor="middle">${i + 1}</text>`).join('')}
+        ${curves.tracks.map(tr => tr.lines.map((l, i) => `<path d="${path(l)}" fill="none" stroke="${tr.color}" stroke-width="${i ? 2 : 3}" stroke-opacity="${i ? 0.55 : 1}" stroke-linecap="round" stroke-linejoin="round"/>`).join('')).join('')}
+        <text x="${X(0)}" y="${top - 2}" fill="#a1a1aa" font-size="15">0 s</text><text x="${X(D)}" y="${top - 2}" fill="#a1a1aa" font-size="15" text-anchor="end">${(D / 1000).toFixed(2)} s</text></svg>`
+      const legend = curves.tracks.map(tr => `<div style="display:flex;gap:8px;align-items:center;white-space:nowrap;overflow:hidden"><span style="flex:none;width:16px;height:3px;border-radius:2px;background:${tr.color}"></span><span dir="auto" style="overflow:hidden;text-overflow:ellipsis">${esc(tr.name)} <span style="color:#a1a1aa">${esc(tr.props)}</span></span></div>`).join('')
+      const cell = ({ t, file }, i) => `<figure style="margin:0;width:${w}px"><figcaption style="height:${LABEL}px;display:flex;align-items:center;gap:10px"><b>${i + 1}</b><span style="color:#d4d4d8">${(t / 1000).toFixed(2)} s</span></figcaption><img src="${pathToFileURL(file).href}" style="display:block;width:${w}px;margin-top:${INNER}px;outline:1px solid #3f3f46"></figure>`
+      const head = `${route} · ${many} frames, ${(a / 1000).toFixed(2)}–${(b / 1000).toFixed(2)} s of a ${(D / 1000).toFixed(2)} s take`
+      const html = `<!doctype html><meta charset="utf-8"><body style="margin:0;padding:${PAD}px;width:max-content;background:#18181b;color:#fafafa;font:500 22px/1.2 system-ui,sans-serif">
+        <div style="width:${width}px;height:${HEAD}px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${esc(head)}</div>
+        <div style="display:grid;grid-template-columns:repeat(${cols},${w}px);gap:${GAP}px;align-items:start">${shots.map(cell).join('')}</div>
+        <div style="display:flex;gap:16px;margin-top:${GAP}px;width:${width}px;font-size:16px">${svg}<div style="display:flex;flex-direction:column;gap:10px;min-width:0;padding-top:${top}px">${legend}</div></div></body>`
+      const file = resolve(outDir, `${fileOf(route)}-frames${flags.at === undefined ? '' : `-${a}-${b}`}${suffix}.png`)
+      await compose(html, file, width + 2 * PAD, SHEET)
+      console.log(file)
+      console.log(`${shots.length} frames in ${resolve(outDir)} (${basename(shots[0].file)} …): open one only for a detail`)
+    }
+  }
+  for (const size of flags.ref || motion ? [] : SIZES) {
     for (const route of routes.filter(r => size.mobile || !phoneOnly(r))) {
       // A fresh tab per shot: the page reads its route and theme only at load.
       const at = [performance.now()]
