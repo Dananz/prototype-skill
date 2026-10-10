@@ -296,6 +296,8 @@ const copy = useCopy([
   `data-copy="<id>"` on the element that holds those words, so the page can mark it.
 - Call it in the component that shows the lines: each component may declare its own (the variant
   its headline, a part in `parts.tsx` its button), and the page counts them all as the design's.
+  A part used more than once with different words (a card per plan) needs an id per use
+  (`plan-${id}-title`): one id is one line, with one set of options.
 - Vue: `const copy = useCopy([...])` in `<script setup>`, then `{{ copy.headline }}`.
 
 **Build the variants in parallel when you can.** When there are 3 or more variants to write, the

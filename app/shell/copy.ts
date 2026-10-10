@@ -72,17 +72,17 @@ export const copy = {
   routeOf: (host: Element | null | undefined) => (host && routes.get(host)) || '',
 
   /** A component of the design mounted in host declares its lines (on every render); `caller` is
-   *  that component, the same on each call. Choices the lines no longer allow are dropped here,
-   *  with what was sent for them; a line nobody declares right now keeps its choice. Only a real
-   *  change re-renders the designs. */
+   *  that component, the same on each call. Choices the lines no longer allow are dropped here, as
+   *  the design has the line (the first component to declare it), with what was sent for them; a
+   *  line nobody declares right now keeps its choice. Only a real change re-renders the designs. */
   set(host: Element, caller: unknown, list: CopyLine[]) {
     const next = clean(list)
     let mine = callers.get(host)
     if (!mine) callers.set(host, mine = new Map())
     mine.set(caller, next)
     const changed = merge(host)
-    const route = copy.routeOf(host), kept = saved[route]
-    const gone = next.filter(line => kept?.[line.id] && !stands(line, kept[line.id]))
+    const route = copy.routeOf(host), kept = saved[route], ids = new Set(next.map(l => l.id))
+    const gone = copy.of(host).filter(line => ids.has(line.id) && kept?.[line.id] && !stands(line, kept[line.id]))
     for (const line of gone) { delete kept![line.id]; delete went[route]?.texts?.[line.id] }
     if (kept && !Object.keys(kept).length) delete saved[route]
     if (gone.length) persist()
