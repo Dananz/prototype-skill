@@ -313,7 +313,7 @@ import { useMotion } from '../../motion'
 useMotion({
   start: () => setOpen(true),      // runs the sequence from rest (a tap on Checkout)
   reset: () => setOpen(false),     // puts the design back at rest; optional
-  moments: [{ label: 'Overshoot', at: 350 }, { label: 'Toast', at: 1250 }],  // ms from start, for Go to; optional
+  moments: [{ label: 'Overshoot', at: 350 }, { label: 'Toast', at: 1250 }],  // ms into the take, for Go to; optional
 })
 ```
 
@@ -321,7 +321,8 @@ useMotion({
   design again before each run. Vue: the same call in `<script setup>`.
 - The dock records a take through the browser's own animation API, so **write the motion in CSS
   transitions, CSS keyframes or `element.animate()`**: a spring as a `linear()` easing sampled from
-  its curve, a stagger as delays. Motion run from script (a `requestAnimationFrame` loop,
+  its curve, a stagger as delays. The take's 0 is when its first part starts, so a wait before the
+  first move goes in a `transition-delay`, not a `setTimeout`. Motion run from script (a `requestAnimationFrame` loop,
   react-spring, GSAP's core, Framer Motion's JS springs) can't be recorded; the dock says the take
   caught no motion. DOM changes that aren't animated (an element added, a class swapped without a
   transition) show their final state at every moment of the take.

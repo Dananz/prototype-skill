@@ -33,9 +33,6 @@ export type Take = { duration: number; parts: Part[]; held: boolean }
 // How long nothing new must start, after the last thing started or finished, for a take to end.
 const QUIET = 500
 const LONGEST = 20_000
-// The first animation starting this soon after the sequence was started is the take's 0, so the
-// frame or two before the browser starts it doesn't show up as a delay.
-const SNAP = 100
 
 // A frame, or 50 ms where frames stop (a tab in the background).
 export const frame = () => new Promise<void>(r => { const t = setTimeout(r, 50); requestAnimationFrame(() => { clearTimeout(t); r() }) })
@@ -63,7 +60,7 @@ export function settle(host: HTMLElement) {
  */
 export async function record(host: HTMLElement, go: () => unknown, alive: () => boolean): Promise<Take | null> {
   const seen = new Set<Animation>(), over = new Set<Animation>()
-  const called = clock(), began = performance.now()
+  const began = performance.now()
   let last = began
   go()
   for (;;) {
@@ -87,8 +84,10 @@ export async function record(host: HTMLElement, go: () => unknown, alive: () => 
   const kept = [...seen].filter(a => a.playState !== 'idle' && a.effect)
   kept.forEach(a => { if (a.playState === 'running') try { a.finish() } catch { /* no end */ } })
   const zero = (a: Animation) => a.startTime !== null ? Number(a.startTime) : clock() - Number(a.currentTime ?? 0) / (a.playbackRate || 1)
-  const first = Math.min(...kept.map(zero))
-  const t0 = kept.length && first < called + SNAP ? first : called
+  // The take's 0 is when the first part started, not when go() was called: the render and the frame
+  // before the browser starts it take longer on a slow machine, and the same moment must be at the
+  // same time in every take. A delay written in the motion (a transition-delay) is inside its part.
+  const t0 = kept.length ? Math.min(...kept.map(zero)) : 0
   const parts: Part[] = kept.map(a => {
     const effect = a.effect as KeyframeEffect, c = effect.getComputedTiming(), rate = a.playbackRate || 1
     const offset = zero(a) - t0, delay = Number(c.delay ?? 0)
