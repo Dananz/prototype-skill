@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { CommentBatch } from '../shell'
+import type { CommentBatch, Sent } from '../shell'
 import type { Actions } from './actions'
 import type { Store } from './store'
 
@@ -10,8 +10,8 @@ export type Host = {
   /** The mounted design of the variant on screen; null where comments are off (a lobby, a tool). */
   mount: () => HTMLElement | null
   go: (proto: string, variant: string, state?: string) => void
-  /** Posts a batch; resolves the batch's id. */
-  send: (batch: CommentBatch) => Promise<string>
+  /** Posts a batch; resolves the batch's id, and how each decision in it went. */
+  send: (batch: CommentBatch) => Promise<Sent>
   dark: () => boolean
 }
 export type Ctx = { store: Store; host: Host; act: Actions }

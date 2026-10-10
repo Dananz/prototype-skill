@@ -36,13 +36,18 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
 
   const send = async (a: Action, words = '') => {
     if (busy) return
+    const flip = a === 'pick' || a === 'unpick'
     setBusy(true); setError('')
+    // A pick shows at once, and goes back with the reason when the server couldn't make it.
+    if (flip) setWant(a === 'pick')
     try {
       await act.decide(subject, a, words)
-      if (a === 'more' || a === 'build') { setAsk(null); setNote(''); setSaid(a) }
-      else { setWant(a === 'pick'); onDone?.() }
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not send') }
-    finally { setBusy(false) }
+      if (flip) onDone?.()
+      else { setAsk(null); setNote(''); setSaid(a as Ask) }
+    } catch (e) {
+      if (flip) setWant(null)
+      setError(e instanceof Error ? e.message : 'Could not send')
+    } finally { setBusy(false) }
   }
   // What was asked is said for a moment, then the menu goes away (the sheet goes back to its choices).
   useEffect(() => {

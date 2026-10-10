@@ -23,6 +23,7 @@
 // (default: $CLAUDE_CODE_SESSION_ID).
 
 import { spawn, spawnSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { homedir } from 'node:os'
@@ -64,7 +65,31 @@ for (let i = 1; i < argv.length; i++) {
 
 const die = msg => { console.error(`proto: ${msg}`); process.exit(1) }
 const readJson = (f, fallback) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return fallback } }
-const writeJson = (f, v) => { mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, JSON.stringify(v, null, 2) + '\n') }
+// Windows keeps a directory busy while a scanner or a watcher has a file in it, so a rename can
+// fail with EPERM or EBUSY for a moment. Try again for a couple of seconds, and copy as the last resort.
+const BUSY = new Set(['EPERM', 'EBUSY', 'EACCES'])
+function moveDir(from, to) {
+  for (let i = 0; ; i++) {
+    try { return renameSync(from, to) } catch (e) {
+      if (!BUSY.has(e.code)) throw e
+      if (i >= 40) { cpSync(from, to, { recursive: true }); rmSync(from, { recursive: true, force: true }); return }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+    }
+  }
+}
+// A file the dev server reads too (session.json, meta.ts) is written whole or not at all: into a
+// scratch file, then renamed over the old one, so the page and the server never read half of one.
+// In a session the scratch file waits in its .proto/, which the dev server doesn't watch; one next
+// to meta.ts would look like an edit to the prototype.
+const scratchOf = dir => join(dir, '.proto', 'tmp')
+function writeWhole(f, text, scratch = dirname(f)) {
+  mkdirSync(dirname(f), { recursive: true })
+  mkdirSync(scratch, { recursive: true })
+  const tmp = join(scratch, `.${basename(f)}.${process.pid}.${randomBytes(4).toString('hex')}`)
+  writeFileSync(tmp, text)
+  try { moveDir(tmp, f) } catch (e) { rmSync(tmp, { force: true }); throw e }
+}
+const writeJson = (f, v, scratch) => writeWhole(f, JSON.stringify(v, null, 2) + '\n', scratch)
 const tilde = p => p.replace(homedir(), '~')
 const WIN = process.platform === 'win32'
 const run = (bin, a, opts = {}) => spawnSync(bin, a, { encoding: 'utf8', ...opts })
@@ -90,10 +115,11 @@ const short = id => (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(id) ? id.slice(0, 8) : id
 const sessionDir = () => join(projectRoot(), '.prototypes', short(sessionId()))
 const sessionFile = dir => join(dir, 'session.json')
 const readSession = dir => readJson(sessionFile(dir), null)
-// The page hot-reloads session.json, so a write that changes nothing is skipped.
+// The page hot-reloads session.json, so a write that changes nothing is skipped. Read right
+// before it is written, since the dev server writes it too (a pick made in the page).
 function patchSession(dir, patch) {
   const was = readSession(dir), s = { ...was, ...patch }
-  if (JSON.stringify(s) !== JSON.stringify(was)) writeJson(sessionFile(dir), s)
+  if (JSON.stringify(s) !== JSON.stringify(was)) writeJson(sessionFile(dir), s, scratchOf(dir))
   return s
 }
 function need(dir) { if (!existsSync(sessionFile(dir))) die(`no prototype session here yet (${tilde(dir)}). Run: proto up`); return readSession(dir) }
@@ -251,19 +277,23 @@ function add() {
   const kit = STACKS[s.stack]
   const pdir = join(dir, 'src', 'protos', slug)
   const metaFile = join(pdir, 'meta.ts')
-  let meta = { title: slug, ask: '', kind: 'web', created: new Date().toISOString(), variants: {} }
-  if (existsSync(metaFile)) {
-    try { meta = { ...meta, ...JSON.parse(readFileSync(metaFile, 'utf8').replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, '')) } }
+  const start = { title: slug, ask: '', kind: 'web', created: new Date().toISOString(), variants: {} }
+  const current = () => {
+    if (!existsSync(metaFile)) return { ...start }
+    try { return { ...start, ...JSON.parse(readFileSync(metaFile, 'utf8').replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, '')) } }
     catch { die(`${tilde(metaFile)} is not plain JSON any more; edit it by hand instead`) }
   }
-  if (flags.title) meta.title = flags.title
-  if (flags.ask) meta.ask = flags.ask
-  if (flags.kind) meta.kind = flags.kind === 'phone' ? 'phone' : 'web'
+  current()
+  // What this command changes, written over meta.ts as it is at the end (see below).
+  const set = {}, drop = [], added = {}
+  if (flags.title) set.title = flags.title
+  if (flags.ask) set.ask = flags.ask
+  if (flags.kind) set.kind = flags.kind === 'phone' ? 'phone' : 'web'
   // The phone frame's screen in points, read off the reference (an iPhone 17 shot is 1206×2622 at 3x: 402x874).
   if (flags.screen) {
     const m = String(flags.screen).match(/^(\d+)x(\d+)$/)
     if (!m) die('--screen is the screen in points, like 402x874')
-    meta.screen = [+m[1], +m[2]]
+    set.screen = [+m[1], +m[2]]
   }
   // Built from other prototypes (or some of their variants): the page nests it under the first
   // one and lists it as built from the others too. The first stays a plain "from" string and the
@@ -290,14 +320,11 @@ function add() {
         todo.push(...parentsOf(dir, up))
       }
     }
-    meta.from = refs[0]
-    if (refs.length > 1) meta.also = refs.slice(1)
-    else delete meta.also
+    set.from = refs[0]
+    if (refs.length > 1) set.also = refs.slice(1)
+    else drop.push('also')
     if (flags['from-picks']) console.log(`from ${refs.join(', ')}`)
   }
-  // Keep the variant list last in meta.ts, where it is easiest to read.
-  const { variants: names, ...head } = meta
-  meta = { ...head, variants: names }
   const list = String(flags.variants || '').split(',').map(x => x.trim()).filter(Boolean)
   mkdirSync(pdir, { recursive: true })
   const stub = readFileSync(join(APP, 'stubs', kit.stub), 'utf8')
@@ -305,12 +332,17 @@ function add() {
     const [id, ...rest] = entry.split(':')
     if (!/^[A-Z]{1,2}$/.test(id)) die(`variant ids are capital letters (A, B … AA): "${id}"`)
     const name = rest.join(':').trim() || id
-    meta.variants[id] = name
+    added[id] = name
     const file = join(pdir, `${id}.${kit.ext}`)
     if (!existsSync(file)) writeFileSync(file, stub.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name))
   }
-  // meta.ts goes last, so the page sees the prototype with all its variants at once.
-  writeFileSync(metaFile, `// Prototype: ${meta.title}. Variant files are named by their letter; names live here.\nexport default ${JSON.stringify(meta, null, 2)}\n`)
+  // meta.ts goes last, so the page sees the prototype with all its variants at once. It is read
+  // again just before: a pick made in the page meanwhile is written by the dev server, and stays.
+  // The variant list goes last, where it is easiest to read.
+  const { variants, ...head } = { ...current(), ...set }
+  for (const k of drop) delete head[k]
+  const meta = { ...head, variants: { ...variants, ...added } }
+  writeWhole(metaFile, `// Prototype: ${meta.title}. Variant files are named by their letter; names live here.\nexport default ${JSON.stringify(meta, null, 2)}\n`, scratchOf(dir))
   console.log(`${pdir}: ${Object.keys(meta.variants).map(id => `${id}.${kit.ext}`).join(' ') || 'no variants'}`)
   if (s.url) console.log(`${s.url}#/${slug}`)
 }
@@ -332,7 +364,7 @@ function pick() {
   if (flags.off) delete meta.picked
   else if (!id || !meta.variants?.[id]) die(`which variant of ${slug}? (${Object.keys(meta.variants || {}).join(', ')})`)
   else meta.picked = id
-  writeFileSync(metaFile, withMeta(text, meta))
+  writeWhole(metaFile, withMeta(text, meta), scratchOf(dir))
   // The pick is what gets worked on next; its history starts here.
   if (!flags.off) setWork(dir, { proto: slug, variant: id }, `Picked ${id}`)
   console.log(flags.off ? `${slug}: no pick` : `${slug}: picked ${id} · ${meta.variants[id]}`)
@@ -419,7 +451,7 @@ function archive() {
   const text = readFileSync(metaFile, 'utf8')
   const meta = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
   meta.archived = !flags.off
-  writeFileSync(metaFile, withMeta(text, meta))
+  writeWhole(metaFile, withMeta(text, meta), scratchOf(dir))
   if (meta.archived && readSession(dir).work?.proto === args[0]) patchSession(dir, { work: null })
   console.log(`${args[0]} ${meta.archived ? 'archived' : 'restored'}`)
 }
@@ -871,18 +903,6 @@ function handoff() {
 // them whole). Taking a batch moves it to taken/, so it is handed out once. `--wait` is meant to
 // run in the background: it exits when a batch arrives, which wakes the agent.
 const inboxDir = dir => join(dir, '.proto', 'inbox')
-// Windows keeps a directory busy while a scanner or a watcher has a file in it, so a rename can
-// fail with EPERM or EBUSY for a moment. Try again for a couple of seconds, and copy as the last resort.
-const BUSY = new Set(['EPERM', 'EBUSY', 'EACCES'])
-function moveDir(from, to) {
-  for (let i = 0; ; i++) {
-    try { return renameSync(from, to) } catch (e) {
-      if (!BUSY.has(e.code)) throw e
-      if (i >= 40) { cpSync(from, to, { recursive: true }); rmSync(from, { recursive: true, force: true }); return }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
-    }
-  }
-}
 const batchesIn = (dir, sub) => { try { return readdirSync(join(inboxDir(dir), sub)).filter(f => !f.startsWith('.')).sort() } catch { return [] } }
 const waiterFile = dir => join(inboxDir(dir), 'waiter.json')
 
@@ -909,7 +929,8 @@ const where = e => {
 }
 // A decision made on a variant in the page comes as a comment with an action and no element; the
 // line under it says what is already done and what is left for the agent. A pick or unpick is made
-// by the server as it arrives, so it comes done (a reply is only a note), unless it failed.
+// by the server as it arrives, so it comes done (a reply is only a note), unless it failed or, for
+// an unpick, there was no pick there to take back.
 const ACTIONS = {
   pick: 'done: marked in the page and now the working variant; a reply is only a note',
   unpick: 'done: the pick is off in the page; a reply is only a note',
@@ -917,8 +938,10 @@ const ACTIONS = {
   build: 'build this variant into the codebase',
 }
 const FAILED = {
-  pick: (c, why) => `not marked (${why}): run proto pick ${c.route.replace('/', ' ')}`,
-  unpick: (c, why) => `not taken off (${why}): run proto pick ${c.route.split('/')[0]} --off`,
+  // Marked: meta.ts has the pick and only the working variant didn't move; proto pick does both and
+  // changes nothing that is already so.
+  pick: (c, why) => c.marked ? `marked in the page, but the working variant didn't move (${why}): run proto pick ${c.route.replace('/', ' ')}` : `not marked (${why}): run proto pick ${c.route.replace('/', ' ')}`,
+  unpick: (c, why) => c.nothing ? `nothing changed: ${c.route.split('/')[1]} wasn't the pick, so there was nothing to take back; tell the user` : `not taken off (${why}): run proto pick ${c.route.split('/')[0]} --off`,
 }
 function printBatch(dir, b) {
   const vp = b.viewport ? ` · page ${b.viewport.w}x${b.viewport.h}${b.viewport.phone ? ' (phone)' : ''}` : ''

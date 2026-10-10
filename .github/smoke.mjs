@@ -285,6 +285,27 @@ const asText = await raw('POST', 'comments', { 'content-type': 'text/plain' }, p
 if (asText < 400 || asText > 499) fail(`a text/plain POST was answered ${asText}, not refused`)
 const foreign = await raw('POST', 'comments', { 'content-type': 'application/json', origin: 'https://evil.example' }, planted)
 if (foreign !== 403) fail(`a POST from another origin was answered ${foreign}, not 403`)
+// Nor from another page on this Mac (another dev server on localhost): X-Forwarded-Host, which the
+// sender writes itself, doesn't make it this page, and a preflight gets no CORS answer at all.
+for (const forwarded of [null, 'localhost:3000']) {
+  const near = await raw('POST', 'comments', { 'content-type': 'application/json', origin: 'http://localhost:3000', ...(forwarded ? { 'x-forwarded-host': forwarded } : {}) }, planted)
+  if (near !== 403) fail(`a POST from http://localhost:3000${forwarded ? ' with X-Forwarded-Host' : ''} was answered ${near}, not 403`)
+}
+// Anywhere on the server: Vite's own CORS, which would answer a localhost page, is off.
+for (const path of ['__proto/comments', '']) {
+  const preflight = await new Promise((ok, no) => {
+    const r = request(`${local}${path}`, { method: 'OPTIONS', headers: { origin: 'http://localhost:3000', 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type,x-forwarded-host' }, agent: false }, res => { res.resume(); res.on('end', () => ok(res)) })
+    r.on('error', no)
+    r.end()
+  })
+  const cors = Object.keys(preflight.headers).filter(h => h.startsWith('access-control-'))
+  if (cors.length || (path && preflight.statusCode < 400)) fail(`a preflight to /${path} from http://localhost:3000 was answered ${preflight.statusCode} with ${cors.join(', ') || 'no CORS headers'}`)
+}
+// A body that is JSON but not an object, or comments that aren't, is a 400, never a crash.
+for (const [path, body] of [['comments', '[]'], ['comments', 'null'], ['comments', '"x"'], ['comments', '{"comments":"x"}'], ['comments', '{"comments":[null]}'], ['keep', 'null'], ['work', '[1]'], ['ping', '7']]) {
+  const answer = (await postJson(path, body)).status
+  if (answer !== 400) fail(`POST /__proto/${path} with ${body} was answered ${answer}, not 400`)
+}
 if ((await raw('GET', 'stop', {})) !== 405) fail('a GET to /stop was not refused')
 await new Promise(r => setTimeout(r, 400))
 if (!await answers(`${local}__proto/status`)) fail('a GET to /stop stopped the server')
@@ -301,9 +322,25 @@ if (pickSent.inbox.batches.find(b => b.id === pickSent.sent)?.state !== 'done') 
 const picked = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
 if (picked.work?.proto !== 'hero' || picked.work.variant !== 'B' || picked.asks?.['hero/B']?.at(-1)?.text !== 'Picked B') fail(`a pick from the page should make hero/B the working variant with "Picked B": ${JSON.stringify(picked.work)} ${JSON.stringify(picked.asks?.['hero/B'])}`)
 if (!/^ {3}action: pick \(done/m.test(proto(['inbox']))) fail('proto inbox did not print the pick as done (action: pick (done …))')
-await send([{ route: 'hero/B', text: 'Unpicked B', action: 'unpick' }, { route: 'hero/B', text: 'More like B: warmer', action: 'more' }])
+// The answer says how each decision went, and where the working variant is now.
+if (JSON.stringify(pickSent.results) !== '[{"n":1,"action":"pick","done":true}]' || pickSent.work?.variant !== 'B') fail(`the answer to a pick should say it was done and work is hero/B: ${JSON.stringify(pickSent.results)} ${JSON.stringify(pickSent.work)}`)
+const unpickSent = await send([{ route: 'hero/B', text: 'Unpicked B', action: 'unpick' }, { route: 'hero/B', text: 'More like B: warmer', action: 'more' }])
 if (readFileSync(heroMeta, 'utf8').includes('"picked"')) fail('taking the pick back in the page left it in hero/meta.ts')
+if (JSON.stringify(unpickSent.results) !== '[{"n":1,"action":"unpick","done":true},{"n":2,"action":"more","done":false}]') fail(`the answer should say the unpick was done and More waits: ${JSON.stringify(unpickSent.results)}`)
 if (!/action: more/.test(proto(['inbox']))) fail('proto inbox did not print action: more')
+// Taking back a pick that isn't there changes nothing, so it isn't done: it arrives saying so.
+const noop = await send([{ route: 'hero/A', text: 'Unpicked A', action: 'unpick' }])
+if (noop.results?.[0]?.done !== false || !noop.results[0].nothing || noop.inbox.batches.find(b => b.id === noop.sent)?.state === 'done') fail(`an unpick of a variant that wasn't picked arrived done: ${JSON.stringify(noop.results)}`)
+if (!/^ {3}action: unpick \(nothing changed/m.test(proto(['inbox']))) fail('proto inbox did not say an unpick changed nothing')
+// A pick that is marked but can't move the working variant (session.json unreadable for a moment)
+// says so, apart from one that wasn't marked at all.
+const sessionText = readFileSync(join(app, 'session.json'), 'utf8')
+writeFileSync(join(app, 'session.json'), '{ "half')
+const half = await send([{ route: 'hero/A', text: 'Picked A', action: 'pick' }])
+writeFileSync(join(app, 'session.json'), sessionText)
+if (half.results?.[0]?.done !== false || !half.results[0].marked || !readFileSync(heroMeta, 'utf8').includes('"picked": "A"')) fail(`a pick marked in meta.ts whose move failed should answer marked, not done: ${JSON.stringify(half.results)}`)
+if (!/^ {3}action: pick \(marked in the page, but the working variant didn't move/m.test(proto(['inbox']))) fail('proto inbox did not say the pick was marked and only the move failed')
+proto(['pick', 'hero', '--off'])
 for (const bad of [{ route: 'hero/Z', text: 'x', action: 'pick' }, { route: 'hero/B', text: 'x', action: 'dance' }, { route: 'hero', text: 'x', action: 'build' }]) {
   if ((await postJson('comments', { comments: [bad] })).status !== 400) fail(`an action that can't be done was accepted: ${JSON.stringify(bad)}`)
 }
@@ -312,6 +349,8 @@ for (const bad of [{ route: 'hero/Z', text: 'x', action: 'pick' }, { route: 'her
 const heroText = readFileSync(heroMeta, 'utf8')
 writeFileSync(heroMeta, heroText.replace('export default {', 'export default { oops'))
 if ((await postJson('comments', { comments: [{ route: 'hero/B', text: 'Picked B', action: 'pick' }] })).status !== 400) fail('a pick on a meta.ts that does not read was accepted')
+// More and Build write nothing there, so they only need the variant's file.
+if ((await postJson('comments', { comments: [{ route: 'hero/B', text: 'Build B', action: 'build' }] })).status !== 200) fail('Build on a variant whose meta.ts does not read was refused')
 writeFileSync(heroMeta, heroText)
 const incoming = join(app, '.proto', 'inbox', '.incoming')
 if (existsSync(incoming) && readdirSync(incoming).length) fail(`a refused send left ${readdirSync(incoming).join(', ')} in .incoming`)
@@ -328,6 +367,9 @@ if (tiers().variants.A !== '$$ tier $&' || tiers().picked !== 'B' || !tiers().ar
 if (!readFileSync(join(app, 'src', 'protos', 'tiers', 'A.tsx'), 'utf8').includes('$$ tier $&')) fail('the placeholder for a $ name was written wrong')
 proto(['archive', 'tiers', '--off'])
 proto(['inbox'])
+// Every write went through a scratch file renamed into place, and none is left behind.
+const leftover = join(app, '.proto', 'tmp')
+if (existsSync(leftover) && readdirSync(leftover).length) fail(`scratch files were left in .proto/tmp: ${readdirSync(leftover).join(', ')}`)
 // Listening: --wait exits, printing the batch, once another one lands.
 const waiter = spawn(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'inbox', '--wait', '--project', project, '--session', 'smoke'], { stdio: ['ignore', 'pipe', 'pipe'] })
 let heard = ''

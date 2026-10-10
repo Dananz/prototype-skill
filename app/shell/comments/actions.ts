@@ -92,7 +92,7 @@ export function createActions(store: Store, host: Host) {
       }
       set({ sending: true, error: '' })
       try {
-        const batchId = await host.send(batch)
+        const { id: batchId } = await host.send(batch)
         const at = new Map(drafts.map((d, k) => [d.id, k + 1]))
         set(s => ({ sending: false, items: s.items.map(i => at.has(i.id) ? { ...i, sent: { batch: batchId, i: at.get(i.id)! } } : i) }))
       } catch (e) {
@@ -103,17 +103,23 @@ export function createActions(store: Store, host: Host) {
      * A decision on a variant (Pick, More like this, Build it), sent at once as a batch of its own:
      * a comment with the action and no element, the note as its words. It joins the list as already
      * sent, so it waits with Claude until answered like any comment, and drafts are left for their
-     * own send. Throws with the server's reason.
+     * own send. Throws with the server's reason, also when the batch arrived but a pick in it
+     * couldn't be made (it waits with Claude then, saying why).
      */
     async decide(to: { proto: string; variant: string }, action: Action, note = '') {
       const say = ACTION[action].say(to.variant), words = note.trim()
-      const batch = await host.send({
+      const sent = await host.send({
         theme: host.dark() ? 'dark' : 'light',
         viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 },
         comments: [{ route: `${to.proto}/${to.variant}`, text: words ? `${say}: ${words}` : say, action }],
       })
-      const item: Item = { id: uid(), proto: to.proto, variant: to.variant, n: 0, body: words ? [words] : [], tags: [], action, at: Date.now(), sent: { batch, i: 1 } }
+      const item: Item = { id: uid(), proto: to.proto, variant: to.variant, n: 0, body: words ? [words] : [], tags: [], action, at: Date.now(), sent: { batch: sent.id, i: 1 } }
       set(s => ({ items: [...s.items, item] }))
+      const r = sent.results[0]
+      if (!r?.failed) return
+      if (r.nothing) throw new Error(`${to.variant} isn’t picked any more, so there was nothing to take back.`)
+      if (r.marked) throw new Error(`Picked ${to.variant}, but your requests still change the variant they did (${r.failed}). Claude is told.`)
+      throw new Error(`Couldn’t ${action === 'pick' ? `pick ${to.variant}` : 'take the pick back'}: ${r.failed}. Claude is told.`)
     },
     clearError() { set({ error: '' }) },
     openSheet(open: boolean) { set({ sheet: open }) },

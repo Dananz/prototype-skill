@@ -14,6 +14,7 @@ import { hints, fillField, type Hint } from './hints'
 import { createSheet, createMenuSheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
 import { createComments, type Subject } from './comments/index'
+import type { Action } from './comments/types'
 import { tabIcon } from './favicon'
 
 export type Variant = { id: string; name: string; file: string; load: () => Promise<unknown> }
@@ -45,11 +46,15 @@ export type Pinned = { selector?: string; shoot?: string; src?: string; componen
 /** One send: route is <slug>/<letter>[/<state>]; images are data URLs (png, jpeg, webp). A decision
  *  on a variant (pick, unpick, more, build) is a comment with an action and no target. */
 export type CommentBatch = {
-  comments: { route: string; text: string; action?: 'pick' | 'unpick' | 'more' | 'build'; point?: { x: number; y: number }; target?: Pinned; tags?: Pinned[]; images?: { dataUrl: string; name?: string }[] }[]
+  comments: { route: string; text: string; action?: Action; point?: { x: number; y: number }; target?: Pinned; tags?: Pinned[]; images?: { dataUrl: string; name?: string }[] }[]
   viewport?: { w: number; h: number; phone?: boolean }
   theme?: 'light' | 'dark'
 }
-type Status = { lastEdit: number; keep: boolean; idleHours: number; deleteDays: number; inbox?: Inbox }
+/** How a send went: its batch, and for each decision in it whether the server made it, or why not
+ *  (marked: the pick is in meta.ts and only the working variant didn't move; nothing: an unpick of a
+ *  variant that wasn't the pick). */
+export type Sent = { id: string; results: { n: number; action: Action; done: boolean; failed?: string; marked?: boolean; nothing?: boolean }[] }
+type Status = { lastEdit: number; keep: boolean; idleHours: number; deleteDays: number; work?: Ref | null; inbox?: Inbox }
 
 const PHONE = 'shrink-0 overflow-hidden rounded-[55px] border-[10px] border-zinc-900 bg-white text-zinc-900 shadow-xl dark:border-zinc-700 dark:bg-black dark:text-white'
 // The phone scale: Fit (0) or a percentage. The menu offers these in a row and a slider for
@@ -149,6 +154,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // (offered back for a few seconds).
     asks: false,
     moved: null as Ref | null,
+    // A Keep, Stop or Undo the server turned down, said where it was asked for.
+    failed: null as null | { at: 'session' | 'work'; text: string },
     // The sidebar's level shown as columns (null: the last two), and the phone sheet's column.
     pairAt: null as number | null,
     drill: null as number | null,
@@ -768,7 +775,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${lifecycle() ? row(ic('clock', 'size-4 self-start mt-0.5 text-zinc-400'), esc(lifecycle()).replace(' · ', '<span class="block text-xs leading-5 text-zinc-400">') + '</span>') : ''}
       </div>${SEP}
       <div class="flex h-14 items-center justify-between px-4"><span class="text-zinc-700 dark:text-zinc-300">Appearance</span><div class="flex rounded-lg bg-zinc-900/[.04] p-0.5 dark:bg-white/[.06]">${([['light', 'sun', 'Light'], ['dark', 'moon', 'Dark']] as const).map(([m, i, l]) => { const on = st.dark === (m === 'dark'); return `<button data-act="theme:${m}" aria-pressed="${on}" class="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs ${on ? TAB_ON : TAB_OFF}">${ic(i, 'size-3.5')}${l}</button>` }).join('')}</div></div>${SEP}
-      <div class="flex gap-2 p-3"><button data-act="keep" ${st.stopped ? 'disabled' : ''} class="h-9 flex-1 rounded-lg border border-black/10 text-xs font-medium hover:bg-zinc-900/[.03] disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5">${keep ? 'Don’t keep' : 'Keep forever'}</button><button data-act="stop" ${st.stopped ? 'disabled' : ''} class="h-9 flex-1 rounded-lg text-xs text-zinc-500 hover:bg-zinc-900/5 disabled:opacity-40 dark:hover:bg-white/10">Stop server</button></div>`
+      <div class="flex gap-2 p-3"><button data-act="keep" ${st.stopped ? 'disabled' : ''} class="h-9 flex-1 rounded-lg border border-black/10 text-xs font-medium hover:bg-zinc-900/[.03] disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5">${keep ? 'Don’t keep' : 'Keep forever'}</button><button data-act="stop" ${st.stopped ? 'disabled' : ''} class="h-9 flex-1 rounded-lg text-xs text-zinc-500 hover:bg-zinc-900/5 disabled:opacity-40 dark:hover:bg-white/10">Stop server</button></div>${st.failed?.at === 'session' ? `<p role="alert" class="-mt-1 mx-3 mb-3 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-xs text-rose-700 dark:text-rose-300">${esc(st.failed.text)}</p>` : ''}`
     const sessionMenu = sessionHead + sessionBody
 
     const protoRow = ({ p: q, depth }: { p: Proto; depth: number }) => { const on = q.id === p?.id && view !== 'session'; return `<button data-act="proto:${esc(q.id)}" aria-current="${on}" class="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left ${on ? 'bg-zinc-900/[.05] dark:bg-white/[.08]' : 'hover:bg-zinc-900/[.03] dark:hover:bg-white/5'}" style="padding-left:${10 + nestIndent(depth)}px">
@@ -1266,6 +1273,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             <span class="mt-0.5 flex min-w-0 items-center gap-1 font-semibold"><span dir="auto" class="min-w-0 truncate">${esc(w.p.title)}</span><span class="shrink-0 font-normal text-zinc-400">·</span><span class="shrink-0">${w.v.id}</span><span dir="auto" class="min-w-0 truncate">${esc(w.v.name)}</span></span></span>
         </button>
         ${here ? '' : `<button data-act="work:go" class="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-white text-[11px] font-medium shadow-sm ring-1 ring-black/10 hover:bg-zinc-50 dark:bg-zinc-800 dark:ring-white/10 dark:hover:bg-zinc-700">Go to it<span class="font-normal text-zinc-400">· or keep looking here</span><kbd class="ml-1 hidden rounded px-1 font-sans text-[10px] font-normal text-zinc-400 ring-1 ring-inset ring-black/10 [@media(hover:hover)]:inline dark:ring-white/15">W</kbd></button>`}
+        ${st.failed?.at === 'work' ? `<p role="alert" class="mt-2 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-[11px] text-rose-700 dark:text-rose-300">${esc(st.failed.text)}</p>` : ''}
         ${mv ? `<div class="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-500/[.08] px-2 py-1 text-[11px]"><span class="text-amber-600">${ic('from', 'size-3.5')}</span><span class="min-w-0 flex-1 truncate text-zinc-600 dark:text-zinc-300">Moved here from <b class="font-semibold">${mv.v.id}</b> · ${bd(mv.v.name)}${mv.p !== w.p ? ` <span class="text-zinc-400">in ${bd(mv.p.title)}</span>` : ''}</span><button data-act="work:undo" class="h-6 shrink-0 rounded-md px-1.5 font-medium text-zinc-900 hover:bg-zinc-900/[.06] dark:text-white dark:hover:bg-white/10">Undo</button></div>` : ''}
         ${asks.length ? `<button data-act="asks" aria-expanded="${st.asks}" class="mt-1.5 flex h-7 w-full items-center gap-1.5 rounded-md px-1 text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-white">${ic('clock', 'size-3.5')}${n} change${n === 1 ? '' : 's'} you asked for${ic('chev', `ml-auto size-3.5 transition-transform ${st.asks ? 'rotate-180' : ''}`)}</button>
           ${st.asks ? `<ol class="max-h-48 space-y-1.5 overflow-y-auto overscroll-contain px-1 pb-1 pt-1">${asks.map(a => { const pk = picked(a.text), t = Date.parse(a.at); return `<li class="flex gap-2 text-[11px] leading-[15px]"><span class="mt-px grid size-3.5 shrink-0 place-items-center rounded-full ${pk ? 'bg-emerald-500 text-white' : 'bg-zinc-900/[.08] text-zinc-500 dark:bg-white/10 dark:text-zinc-400'}">${ic('check', 'size-2.5')}</span><span dir="auto" class="min-w-0 flex-1 ${pk ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-700 dark:text-zinc-300'}">${pk ? `You picked ${esc(a.text.trim().slice(7))}` : esc(a.text)}</span>${t ? `<span class="shrink-0 text-[10px] text-zinc-400" data-ago="${t}">${ago(t)}</span>` : ''}</li>` }).join('')}</ol>` : ''}` : ''}
@@ -1330,13 +1338,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'asks': st.asks = !st.asks; return render()
       case 'variant': return go(keepIn(p!, arg))
       case 'step': return step(Number(arg))
-      case 'open': st.open = st.open === arg ? null : arg; st.copied = false; recenter = true; if (arg === 'session' || arg === 'decide') refreshStatus(); return render()
+      case 'open': st.open = st.open === arg ? null : arg; st.copied = false; st.failed = null; recenter = true; if (arg === 'session' || arg === 'decide') refreshStatus(); return render()
       case 'archived': st.archived = !st.archived; return render()
       case 'work': {
         const w = workOf()
         if (arg === 'go') return w && go({ view: 'variant', proto: w.p.id, variant: w.v.id })
         // The page's own moves come back through session.json; they aren't Claude's to undo.
-        if (arg === 'undo') { const m = st.moved; st.moved = null; clearTimeout(movedTimer); render(); if (m) { selfMove = true; post('work', { ...m, undo: true }) } return }
+        if (arg === 'undo') {
+          const m = st.moved
+          st.moved = null; clearTimeout(movedTimer); render()
+          if (m) { expected = m; post('work', { ...m, undo: true }, 'work').then(got => { expected = got && same(got.work, m) && !same(session.work, m) ? m : null }) }
+          return
+        }
         return
       }
       // Wide windows dock the sidebar (remembered); narrower ones open it as a drawer.
@@ -1350,8 +1363,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'focus': if (st.place.view !== 'variant') return; st.focus = true; st.open = null; dock.hold = performance.now() + 1600; edge.hover = {}; render(); return fit()
       case 'unfocus': st.focus = false; st.open = null; edge.hover = {}; render(); return fit()
       case 'copy': navigator.clipboard?.writeText(session.url || location.href); st.copied = true; return render()
-      case 'keep': return post('keep', { keep: !st.status?.keep })
-      case 'stop': return post('stop').then(() => { st.stopped = true; render() })
+      case 'keep': return post('keep', { keep: !st.status?.keep }, 'session')
+      case 'stop': return post('stop', {}, 'session').then(got => { if (got) { st.stopped = true; render() } })
     }
   }
 
@@ -1737,27 +1750,47 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       paintLifecycle()
     } catch { /* the server is gone; the live dot already says so */ }
   }
-  async function post(path: string, body: unknown = {}) {
+  /**
+   * A change sent to the server. Resolves to its status, or null when it was turned down; the status
+   * shown stays as it was then. Keep, Stop and Undo say why where they were asked for (at), the way
+   * a send of comments does; the minute's ping fails quietly (the live dot says the server is gone).
+   */
+  async function post(path: string, body: unknown = {}, at?: 'session' | 'work'): Promise<Status | null> {
     try {
       const res = await fetch(`/__proto/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-      if (path !== 'stop') { st.status = await res.json(); render(); paintLifecycle() }
-    } catch { /* see refreshStatus */ }
-  }
-  /** Sends comments to the session's agent. Resolves to the batch's id; throws with the server's reason. */
-  async function sendBatch(batch: CommentBatch): Promise<string> {
-    const res = await fetch('/__proto/comments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ theme: st.dark ? 'dark' : 'light', ...batch }) })
-    const body: { error?: string; sent: string; moved?: boolean } & Status = await res.json()
-    if (!res.ok) throw new Error(body.error || `the server answered ${res.status}`)
-    // A pick made here can move the working variant, and the server says when it did. That move is
-    // the user's own, so the strip doesn't offer it back as one Claude made: whichever arrives first,
-    // this answer or the new session.json, the other one knows.
-    if (body.moved) {
-      if (st.moved) { st.moved = null; clearTimeout(movedTimer) }
-      else selfMove = true
+      const got = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(got.error || `the server answered ${res.status}`)
+      if (at) st.failed = null
+      if (path !== 'stop') { st.status = got; paintLifecycle() }
+      render()
+      return got
+    } catch (e) {
+      if (at) { st.failed = { at, text: e instanceof TypeError ? 'The server didn’t answer. Is it still running?' : `Couldn’t do that: ${e instanceof Error ? e.message : e}` }; render() }
+      return null
     }
-    st.status = body
-    render()
-    return body.sent
+  }
+  /** Sends comments to the session's agent. Resolves to the batch's id and how each decision in it
+   *  went; throws with the server's reason when the batch itself was turned down. */
+  async function sendBatch(batch: CommentBatch): Promise<Sent> {
+    // A pick made here moves the working variant. That move is the user's own, so the strip doesn't
+    // offer it back as one Claude made: where it goes is known before sending, since session.json
+    // can arrive before the answer does.
+    const pick = batch.comments.filter(c => c.action === 'pick').at(-1)
+    if (pick) { const [proto, variant] = pick.route.split('/'); expected = { proto, variant } }
+    try {
+      const res = await fetch('/__proto/comments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ theme: st.dark ? 'dark' : 'light', ...batch }) })
+      const body: { error?: string; sent: string; moved?: boolean; results?: Sent['results'] } & Status = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.error || `the server answered ${res.status}`)
+      // The answer says where the working variant is now. A move session.json hasn't brought yet is
+      // still expected; one it already brought (or none) is not.
+      if (pick) expected = body.moved && body.work && !same(session.work, body.work) ? body.work : null
+      st.status = body
+      render()
+      return { id: body.sent, results: body.results ?? [] }
+    } catch (e) {
+      if (pick) expected = null
+      throw e
+    }
   }
   // While the page is open and visible it counts as activity, so the server isn't stopped
   // as idle under someone who is looking at it.
@@ -1777,7 +1810,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   refreshStatus()
   Promise.all([document.fonts.ready, Promise.race([(layer as Layer | null)?.ready, wait(5000)])]).then(() => requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1' })))
 
-  let editTimer = 0, movedTimer = 0, selfMove = false
+  // The working variant the page itself just moved to (a pick, Undo), until session.json brings it.
+  let editTimer = 0, movedTimer = 0, expected: Ref | null = null
   return {
     // New prototypes and new variants are followed; edits to existing ones only light the
     // editing dot, so the view never jumps while someone is looking at something.
@@ -1813,12 +1847,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const was = session.work
       session = next
       if (!same(was, next.work)) {
-        if (was && next.work && !selfMove && refOk(was)) {
+        // Any move ends the wait: one that isn't the expected one is Claude's.
+        const own = same(next.work, expected)
+        expected = null
+        // A move Claude made just before no longer says where this one came from.
+        if (own && st.moved) { st.moved = null; clearTimeout(movedTimer) }
+        if (was && next.work && !own && refOk(was)) {
           st.moved = { proto: was.proto, variant: was.variant }
           clearTimeout(movedTimer)
           movedTimer = window.setTimeout(() => { st.moved = null; render() }, 8000)
         }
-        selfMove = false
       }
       render()
     },

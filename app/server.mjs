@@ -2,8 +2,8 @@
 // buttons, and stopping by itself after hours with no edits and nobody looking.
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { cpSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync, watch } from 'node:fs'
-import { join } from 'node:path'
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync, watch } from 'node:fs'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const dir = fileURLToPath(new URL('.', import.meta.url))
@@ -12,11 +12,13 @@ const file = join(dir, 'session.json')
 const slash = p => p.replaceAll('\\', '/')
 const stylesheet = slash(join(dir, 'shell', 'shell.css'))
 const read = () => JSON.parse(readFileSync(file, 'utf8'))
-const write = patch => writeFileSync(file, JSON.stringify({ ...read(), ...patch }, null, 2) + '\n')
+// Read again right before writing (`proto` writes session.json too), and written whole.
+const write = patch => writeWhole(file, JSON.stringify({ ...read(), ...patch }, null, 2) + '\n')
 
 // Newest change to any prototype file; the session's own start time if there are none.
 export function lastEdit(root = dir) {
-  let newest = Date.parse(JSON.parse(readFileSync(join(root, 'session.json'), 'utf8')).createdAt) || 0
+  let newest = 0
+  try { newest = Date.parse(JSON.parse(readFileSync(join(root, 'session.json'), 'utf8')).createdAt) || 0 } catch { /* being rewritten by hand */ }
   const walk = d => {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, e.name)
@@ -34,7 +36,7 @@ export function decided() {
   const metas = []
   try {
     for (const slug of readdirSync(join(dir, 'src', 'protos'))) {
-      try { metas.push(JSON.parse(readFileSync(join(dir, 'src', 'protos', slug, 'meta.ts'), 'utf8').replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))) } catch { /* not a prototype */ }
+      try { metas.push(metaOf(readFileSync(metaFile(slug), 'utf8'))) } catch { /* not a prototype */ }
     }
   } catch { /* none yet */ }
   return metas.length > 0 && metas.every(m => m.archived || m.picked)
@@ -58,22 +60,28 @@ function work({ proto, variant, undo, ask }) {
 }
 
 // meta.ts is `export default` and plain JSON, which is how `proto` reads and rewrites it too.
-const metaFile = slug => join(dir, 'src', 'protos', slug, 'meta.ts')
-const metaOf = text => JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
+function metaFile(slug) { return join(dir, 'src', 'protos', slug, 'meta.ts') }
+function metaOf(text) { return JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, '')) }
 // Through a function: a replacement string would read `$&` or `$$` in a variant's name as a pattern.
 const withMeta = (text, meta) => text.replace(/export default[\s\S]*$/, () => `export default ${JSON.stringify(meta, null, 2)}\n`)
+// A variant is its file, as the page finds it (registry.ts): <letter>.tsx, .jsx, .vue or .svelte.
+const hasVariant = (slug, id) => ['tsx', 'jsx', 'vue', 'svelte'].some(x => existsSync(join(dir, 'src', 'protos', slug, `${id}.${x}`)))
 // A pick made in the page is what `proto pick` does, done at once instead of when the agent next
 // looks: the variant is marked in its meta.ts and becomes the working variant, its history starting
 // with "Picked <letter>" (the page's strip knows those words). Taking the pick back unmarks it only
-// while it is still on that variant. True when the working variant moved.
+// while it is still on that variant. Says what it did: 'moved' (the working variant moved too),
+// 'done', or 'nothing' (an unpick of a variant that isn't the pick). A failure once meta.ts is
+// written is marked as such, so nobody is told to mark it again.
 function pick(route, off) {
   const [slug, id] = route.split('/')
   const text = readFileSync(metaFile(slug), 'utf8'), meta = metaOf(text)
-  if (off && meta.picked !== id) return false
+  if (off && meta.picked !== id) return 'nothing'
   if (off) delete meta.picked
   else meta.picked = id
-  writeFileSync(metaFile(slug), withMeta(text, meta))
-  return off ? false : work({ proto: slug, variant: id, ask: `Picked ${id}` })
+  writeWhole(metaFile(slug), withMeta(text, meta))
+  if (off) return 'done'
+  try { return work({ proto: slug, variant: id, ask: `Picked ${id}` }) ? 'moved' : 'done' }
+  catch (e) { throw Object.assign(e instanceof Error ? e : new Error(String(e)), { marked: true }) }
 }
 
 // ---------- the inbox: comments from the page, for the agent running the session ----------
@@ -93,6 +101,17 @@ function moveDir(from, to) {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
     }
   }
+}
+// session.json and meta.ts are written whole or not at all: into a scratch file, then renamed over
+// the old one, so nobody (the page, `proto`) reads half of one and a failed write leaves the old one.
+// The scratch file waits in .proto/, which the dev server doesn't watch; one next to meta.ts would
+// look like an edit to the prototype.
+const scratch = join(dir, '.proto', 'tmp')
+function writeWhole(to, text) {
+  mkdirSync(scratch, { recursive: true })
+  const tmp = join(scratch, `${basename(to)}.${process.pid}.${randomBytes(4).toString('hex')}`)
+  writeFileSync(tmp, text)
+  try { moveDir(tmp, to) } catch (e) { rmSync(tmp, { force: true }); throw e }
 }
 const alive = pid => { if (!pid) return false; try { process.kill(pid, 0); return true } catch { return false } }
 const readJson = (f, fallback) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return fallback } }
@@ -124,12 +143,13 @@ const ACTIONS = new Set(['pick', 'unpick', 'more', 'build'])
 
 /**
  * Writes one send from the page as a new batch; images come as data URLs and are stored as files.
- * All of it is checked before anything is written (an action's prototype must have a meta.ts that
- * reads). Picks are made next, each on its own, so one that fails says why in its comment and never
- * keeps the batch from arriving. Returns the batch, and whether the working variant moved.
+ * All of it is checked before anything is written: an action's variant must be there, and a pick's
+ * prototype must have a meta.ts that reads, since the pick is written into it. Picks are made next,
+ * each on its own, so one that fails says why in its comment and never keeps the batch from
+ * arriving. Returns the batch, and whether the working variant moved.
  */
 function receive(data) {
-  const comments = Array.isArray(data?.comments) ? data.comments : []
+  const comments = Array.isArray(data.comments) ? data.comments : []
   if (!comments.length) throw Object.assign(new Error('no comments'), { status: 400 })
   const bad = (i, why) => Object.assign(new Error(`comment ${i + 1}${why}`), { status: 400 })
   const at = new Date().toISOString()
@@ -141,9 +161,11 @@ function receive(data) {
     if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
       if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more or build, on a variant (<slug>/<letter>)')
-      let meta
-      try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { throw bad(i, `: src/protos/${slug}/meta.ts is missing or isn't plain JSON`) }
-      if (!meta?.variants?.[letter]) throw bad(i, `: ${slug} has no variant ${letter}`)
+      if (c.action === 'pick' || c.action === 'unpick') {
+        let meta
+        try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { throw bad(i, `: src/protos/${slug}/meta.ts is missing or isn't plain JSON, so a pick can't be marked in it`) }
+        if (!meta?.variants?.[letter]) throw bad(i, `: ${slug} has no variant ${letter}`)
+      } else if (!hasVariant(slug, letter)) throw bad(i, `: ${slug} has no variant ${letter}`)
     }
     const images = (Array.isArray(c.images) ? c.images : []).map(img => {
       const m = String(img?.dataUrl ?? img).match(/^data:image\/(png|jpeg|webp);base64,(.+)$/)
@@ -162,11 +184,20 @@ function receive(data) {
     }
   })
   // A pick is made before the batch is seen, so the agent reads about one already made, and it is
-  // done: nothing is left to do but note it. One that can't be made stays open and says why.
+  // done: nothing is left to do but note it. One that can't be made stays open and says why (marked:
+  // meta.ts has it, only the working variant didn't move), and so does an unpick that changed nothing.
   let moved = false
   for (const c of list) {
     if (c.action !== 'pick' && c.action !== 'unpick') continue
-    try { moved = pick(c.route, c.action === 'unpick') || moved; c.done = true } catch (e) { c.failed = String(e?.message || e).slice(0, 300) }
+    const [slug, letter] = c.route.split('/')
+    try {
+      const did = pick(c.route, c.action === 'unpick')
+      if (did === 'nothing') Object.assign(c, { nothing: true, failed: `${letter} isn't the pick of ${slug}, so there was nothing to take back` })
+      else { c.done = true; moved = did === 'moved' || moved }
+    } catch (e) {
+      c.failed = String(e?.message || e).slice(0, 300)
+      if (e?.marked) c.marked = true
+    }
   }
   const batch = {
     id, at,
@@ -187,9 +218,12 @@ function receive(data) {
 
 export function prototypeServer(session) {
   let activity = Date.now()
+  // With the working variant as the server left it, so the page knows a move it asked for when
+  // session.json brings it.
   const status = () => {
-    const s = read()
-    return { lastEdit: lastEdit(), keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, inbox: inboxStatus() }
+    let s = {}
+    try { s = read() } catch { /* being rewritten by hand; the rest still answers */ }
+    return { lastEdit: lastEdit(), keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, inbox: inboxStatus() }
   }
   const stop = reason => {
     write({ stoppedAt: new Date().toISOString(), stopReason: reason, pid: null })
@@ -209,10 +243,11 @@ export function prototypeServer(session) {
       })
       // Anything but /status changes something, so it must come from the page itself: a POST with a
       // JSON body (which a page on another site can only send after a CORS preflight, and none is
-      // ever answered) and, when the browser names its origin, this server's own host: 127.0.0.1,
-      // localhost or the tailnet name, whichever the page was opened on (behind `tailscale serve`,
-      // the name it was asked for comes as X-Forwarded-Host). Otherwise any site open in the browser
+      // ever answered: Vite's own CORS is off too) and, when the browser names its origin, the host
+      // this request came to: 127.0.0.1 or the tailnet name, whichever the page was opened on
+      // (`tailscale serve` passes the tailnet name as Host). Otherwise any site open in the browser
       // could plant a pick or a build order with a no-cors POST, or stop the server with an <img>.
+      // X-Forwarded-Host isn't asked: whoever sends the request can write it.
       const refused = (req, route) => {
         if (route === '/status') return req.method === 'GET' || req.method === 'HEAD' ? null : [405, '/status is read with GET']
         if (req.method !== 'POST') return [405, 'POST only']
@@ -220,36 +255,48 @@ export function prototypeServer(session) {
         if (req.headers.origin === undefined) return null
         let host = ''
         try { host = new URL(req.headers.origin).host } catch { /* "null", or not a URL */ }
-        const own = [req.headers.host, ...String(req.headers['x-forwarded-host'] || '').split(',')].map(h => h?.trim().toLowerCase()).filter(Boolean)
-        return host && own.includes(host) ? null : [403, 'only the prototype page itself can do this']
+        return host && host === String(req.headers.host || '').trim().toLowerCase() ? null : [403, 'only the prototype page itself can do this']
       }
       server.middlewares.use('/__proto', (req, res) => {
         const chunks = []
         let size = 0
-        const fail = (code, error) => { res.statusCode = code; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ error })) }
+        const fail = (code, error) => {
+          if (res.headersSent) return res.end()
+          res.statusCode = code; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ error }))
+        }
+        // A client that goes away mid-send is its own business; it must not take the server down.
+        req.on('error', () => {})
         const no = refused(req, req.url.split('?')[0])
         if (no) { req.resume(); return fail(...no) }
         req.on('data', c => {
           size += c.length
           if (size <= MAX_BODY) chunks.push(c)
         })
+        // Whatever one request does wrong (a body that is valid JSON but no object, a file that
+        // can't be written), it gets an error back and the server keeps running.
         req.on('end', () => {
-          if (size > MAX_BODY) return fail(413, `over ${MAX_BODY / 1048576} MB; send fewer or smaller screenshots`)
-          const route = req.url.split('?')[0]
-          let data = {}
-          try { if (size) data = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { return fail(400, 'not JSON') }
-          if (route === '/ping') activity = Date.now()
-          if (route === '/keep') write({ keep: !!data.keep })
-          if (route === '/work' && data.proto && data.variant) work({ proto: data.proto, variant: data.variant, undo: data.undo })
-          let got
-          if (route === '/comments') {
-            activity = Date.now()
-            try { got = receive(data) } catch (e) { return fail(e.status || 500, e.message) }
-          }
-          res.setHeader('content-type', 'application/json')
-          // A send answers with its batch, and whether a pick in it moved the working variant.
-          res.end(JSON.stringify(got ? { ...status(), sent: got.batch.id, moved: got.moved } : status()))
-          if (route === '/stop') setTimeout(() => stop('stopped from the page'), 100)
+          try {
+            if (size > MAX_BODY) return fail(413, `over ${MAX_BODY / 1048576} MB; send fewer or smaller screenshots`)
+            const route = req.url.split('?')[0]
+            let data = {}
+            try { if (size) data = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { return fail(400, 'not JSON') }
+            if (!data || typeof data !== 'object' || Array.isArray(data)) return fail(400, 'send a JSON object')
+            if (route === '/ping') activity = Date.now()
+            if (route === '/keep') write({ keep: !!data.keep })
+            if (route === '/work' && typeof data.proto === 'string' && typeof data.variant === 'string') work({ proto: data.proto, variant: data.variant, undo: data.undo })
+            let got
+            if (route === '/comments') {
+              activity = Date.now()
+              try { got = receive(data) } catch (e) { return fail(e.status || 500, e.message) }
+            }
+            // A send answers with its batch, whether a pick in it moved the working variant, and how
+            // each decision in it went: done, or failed and why.
+            const results = got && got.batch.comments.filter(c => c.action).map(c => ({ n: c.n, action: c.action, done: !!c.done, ...(c.failed ? { failed: c.failed } : {}), ...(c.marked ? { marked: true } : {}), ...(c.nothing ? { nothing: true } : {}) }))
+            const body = JSON.stringify(got ? { ...status(), sent: got.batch.id, moved: got.moved, results } : status())
+            res.setHeader('content-type', 'application/json')
+            res.end(body)
+            if (route === '/stop') setTimeout(() => stop('stopped from the page'), 100)
+          } catch (e) { fail(500, String(e?.message || e).slice(0, 300)) }
         })
       })
       // .proto/ is outside Vite's watcher, so the inbox is watched here: a batch taken, a
@@ -267,9 +314,10 @@ export function prototypeServer(session) {
     // Tailwind rescans only when a file it has already read changes, and Vite gives it nothing
     // for a new one, so a new prototype folder's classes stayed missing until a restart. A new
     // file refreshes the stylesheet, which rescans. A copy that can't take a hot update is only
-    // marked stale, since updating it would reload the page.
-    hotUpdate({ type, modules }) {
-      if (type !== 'create') return
+    // marked stale, since updating it would reload the page. session.json and meta.ts are written
+    // whole, by a rename the watcher can report as a new file; they hold no classes.
+    hotUpdate({ type, file, modules }) {
+      if (type !== 'create' || /[/\\](session\.json|meta\.ts)$/.test(file)) return
       const graph = this.environment.moduleGraph
       const sheets = [...graph.getModulesByFile(stylesheet) ?? []]
       for (const m of sheets) if (!m.isSelfAccepting) graph.invalidateModule(m)

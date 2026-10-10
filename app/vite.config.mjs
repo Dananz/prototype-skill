@@ -26,6 +26,9 @@ export default defineConfig({
     strictPort: true,
     // Reached through `tailscale serve` as <machine>.<tailnet>.ts.net.
     allowedHosts: ['.ts.net'],
+    // Only the page itself calls this server. Vite's default CORS answers a preflight from any
+    // localhost page, which would let another dev server on this Mac send JSON to /__proto.
+    cors: false,
     // Vite checks a file's real path, so a project reached through a link (macOS /tmp is
     // /private/tmp) is allowed by both names.
     fs: { allow: [session.project, realpathSync(session.project)] },
