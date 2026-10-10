@@ -467,7 +467,8 @@ writeFileSync(join(app, 'src', 'protos', 'move', 'C.tsx'), `import { useState } 
 import { useMotion } from '../../motion'
 export default function C() {
   const [step, setStep] = useState(0)
-  useMotion({ start: () => { setStep(1); setTimeout(() => setStep(2), 367) }, reset: () => setStep(0) })
+  // Out at 0.7 s: on a slow runner the fade in starts late, and a timer firing during it would turn it around.
+  useMotion({ start: () => { setStep(1); setTimeout(() => setStep(2), 700) }, reset: () => setStep(0) })
   return <div className="h-full p-8"><p data-shoot="toast" style={{ width: 160, height: 60, background: '#4f46e5', opacity: step === 1 ? 1 : 0, transition: 'opacity 300ms linear' }} /></div>
 }
 `)
@@ -567,7 +568,7 @@ try {
   await until(`window.__protoMotion.state().live && getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h').trim() === '0px' && document.querySelector('[data-motion-dock]').hidden`, 'focus mode should hide the dock and let the design go', 5000)
   await run(`document.querySelector('[data-act=unfocus]').click()`)
   await until(`parseFloat(getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h')) > 40 && document.querySelector('[data-motion=curves]')?.getAttribute('aria-pressed') === 'true'`, 'after focus mode the dock should come back as it was (curves on)', 5000)
-  // One property moved twice: the toast fades in over 0-300 ms (and out from about 367), and at
+  // One property moved twice: the toast fades in over 0-300 ms (and out from about 700), and at
   // each moment it shows that moment, not the later fade's first frame.
   const design = (route, sel) => run(`(async () => {
     location.hash = '#/${route}'
