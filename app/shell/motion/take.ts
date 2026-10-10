@@ -101,25 +101,41 @@ export async function record(host: HTMLElement, go: () => unknown, alive: () => 
   return { duration: Math.max(0, ...parts.map(p => p.end)), parts, held: false }
 }
 
+const propsOf = (p: Part) => new Set(p.keyframes.flatMap(k => Object.keys(k)).filter(k => !NOT_PROPS.has(k)))
+
 /**
- * Pauses every part where it can be set to any moment. Each is filled both ways, so a part not
- * started yet shows its first keyframe rather than the design at rest after it. A CSS transition is
- * held as a copy made with element.animate's API (its keyframes and timing): WebKit starts a new
- * transition when a finished one is set back, Chrome doesn't, and a copy behaves the same in both.
+ * Pauses every part where it can be set to any moment. The first part to move a property of an
+ * element is filled both ways, so before it starts it shows its first keyframe rather than the design
+ * at rest after the take. A later part on that property (a toast in, then out) is filled forwards
+ * only: filled backwards, it would sit over the earlier one, being later in the stack, and show its
+ * own first keyframe while the earlier one moves. A CSS transition is held as a copy made with
+ * element.animate's API (its keyframes and timing): WebKit starts a new transition when a finished
+ * one is set back, Chrome doesn't, and a copy behaves the same in both. The design's own animations
+ * are persisted: the browser drops one that a later one filling forwards covers (element.animate
+ * chained), and a dropped one is never drawn again.
  */
 export function hold(take: Take) {
   if (take.held) return
+  const moved = new Map<Element | null, Map<string | null, Set<string>>>()
   for (const p of take.parts) {
+    const byPseudo = moved.get(p.target) ?? new Map<string | null, Set<string>>()
+    moved.set(p.target, byPseudo)
+    const done = byPseudo.get(p.pseudo) ?? new Set<string>()
+    byPseudo.set(p.pseudo, done)
+    const props = propsOf(p)
+    const fill: FillMode = [...props].some(k => done.has(k)) ? 'forwards' : 'both'
+    props.forEach(k => done.add(k))
     if (p.copy) {
       const was = p.anim
-      p.anim = new Animation(new KeyframeEffect(p.target, p.keyframes as Keyframe[], { ...p.timing, fill: 'both', ...(p.pseudo ? { pseudoElement: p.pseudo } : {}) }), document.timeline)
+      p.anim = new Animation(new KeyframeEffect(p.target, p.keyframes as Keyframe[], { ...p.timing, fill, ...(p.pseudo ? { pseudoElement: p.pseudo } : {}) }), document.timeline)
       p.anim.playbackRate = p.rate
       p.anim.pause()
       // The transition itself, finished, goes (or the copy before this one): the copy holds what it showed.
       if (was.playState !== 'idle') try { was.cancel() } catch { /* gone */ }
     } else {
       p.fill = p.anim.effect!.getTiming().fill as FillMode
-      p.anim.effect!.updateTiming({ fill: 'both' })
+      p.anim.effect!.updateTiming({ fill })
+      try { p.anim.persist() } catch { /* not in this browser */ }
       p.anim.pause()
     }
   }

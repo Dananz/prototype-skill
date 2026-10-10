@@ -445,7 +445,7 @@ if (!/Woke you up/.test(heard)) fail(`the listener exited without the batch: ${h
 // design to any moment. A comment on a range of it goes out through the page's own composer, the
 // inbox prints its times, and a reply reaches its point. A variant without useMotion has no dock.
 if (!existsSync(join(app, 'src', 'motion.ts'))) fail('the app has no src/motion.ts')
-proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still'])
+proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still,C:Twice,D:Chained'])
 writeFileSync(join(app, 'src', 'protos', 'move', 'A.tsx'), `import { useState } from 'react'
 import { useMotion } from '../../motion'
 export default function A() {
@@ -459,6 +459,31 @@ export default function A() {
 }
 `)
 writeFileSync(join(app, 'src', 'protos', 'move', 'B.tsx'), 'export default function B() { return <div className="h-full p-8">Still</div> }\n')
+// One property moved twice: a toast in (CSS transition), then out once a timer runs; and a box moved
+// by two element.animate() calls filling forwards, the second after the first (the browser drops
+// the first once the second covers it).
+writeFileSync(join(app, 'src', 'protos', 'move', 'C.tsx'), `import { useState } from 'react'
+import { useMotion } from '../../motion'
+export default function C() {
+  const [step, setStep] = useState(0)
+  useMotion({ start: () => { setStep(1); setTimeout(() => setStep(2), 367) }, reset: () => setStep(0) })
+  return <div className="h-full p-8"><p data-shoot="toast" style={{ width: 160, height: 60, background: '#4f46e5', opacity: step === 1 ? 1 : 0, transition: 'opacity 300ms linear' }} /></div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'D.tsx'), `import { useRef } from 'react'
+import { useMotion } from '../../motion'
+export default function D() {
+  const box = useRef<HTMLDivElement>(null)
+  useMotion({
+    start: () => {
+      box.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(100px)' }], { duration: 300, fill: 'forwards' })
+      box.current!.animate([{ transform: 'translateX(100px)' }, { transform: 'translateX(200px)' }], { duration: 300, delay: 300, fill: 'forwards' })
+    },
+    reset: () => box.current!.getAnimations().forEach(a => a.cancel()),
+  })
+  return <div className="h-full p-8"><div ref={box} data-shoot="box" style={{ width: 80, height: 80, background: '#4f46e5' }} /></div>
+}
+`)
 const near = (a, b, by) => typeof a === 'number' && Math.abs(a - b) <= by
 const motionPage = await openPage(`${local}?theme=light#/move/A`)
 try {
@@ -517,6 +542,23 @@ try {
   }
   await send([{ route: 'move/A', text: 'Hold the panel longer', at: 350, take: 500 }])
   if (!/^ {3}at: 0\.35 s of the motion \(its take is 0\.50 s\): see it with proto shoot move\/A --at 350$/m.test(proto(['inbox']))) fail('proto inbox should print a moment as at: 0.35 s')
+  // One property moved twice: the toast fades in over 0-300 ms (and out from about 367), and at
+  // each moment it shows that moment, not the later fade's first frame.
+  const design = (route, sel) => run(`(async () => {
+    location.hash = '#/${route}'
+    for (let i = 0; i < 100 && !document.querySelector('[data-layers] ${sel}'); i++) await new Promise(r => setTimeout(r, 100))
+    for (let i = 0; i < 100 && window.__protoMotion.state()?.status === 'taking'; i++) await new Promise(r => setTimeout(r, 100))
+    return window.__protoMotion.take()
+  })()`)
+  const value = (sel, read, t) => run(`window.__protoMotion.seek(${t}).then(() => { const cs = getComputedStyle(document.querySelector('[data-layers] ${sel}')); return ${read} })`)
+  const twice = await design('move/C', '[data-shoot=toast]')
+  if (twice.parts?.filter(p => p.shoot === 'toast').length !== 2) fail(`move/C's take should have the toast's two fades: ${JSON.stringify(twice)}`)
+  const fades = [await value('[data-shoot=toast]', '+cs.opacity', 0), await value('[data-shoot=toast]', '+cs.opacity', 150), await value('[data-shoot=toast]', '+cs.opacity', 300)]
+  if (!near(fades[0], 0, 0.05) || !near(fades[1], 0.5, 0.1) || !near(fades[2], 1, 0.05)) fail(`the toast fading in, then out, should read 0, 0.5 and 1 at 0, 150 and 300 ms: ${fades}`)
+  const chained = await design('move/D', '[data-shoot=box]')
+  if (chained.parts?.length !== 2) fail(`move/D's take should have both of the box's moves: ${JSON.stringify(chained)}`)
+  const moves = [await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 0), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 150), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 450)]
+  if (!near(moves[0], 0, 3) || !near(moves[1], 50, 5) || !near(moves[2], 150, 5)) fail(`the box moved twice by element.animate should be at 0, 50 and 150 px at 0, 150 and 450 ms: ${moves}`)
   // No useMotion, no dock, and the stage has its full height back.
   await run(`location.hash = '#/move/B'`)
   await until(`!document.querySelector('[data-motion-bar]') && getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h').trim() === '0px'`, 'move/B declares no motion but has a dock', 5000)
@@ -529,6 +571,12 @@ if (!pngs(shots).includes('move-A-frames.png') || !/^4 frames in /m.test(strip))
 const frame = t => readFileSync(join(shots, `move-A-desktop-at-${t}.png`))
 if (frame(0).equals(frame(500)) || frame(167).equals(frame(333))) fail('the frames of the take are the same picture')
 if (!/no motion|declares no motion/.test(proto(['shoot', 'move/B', '--at', '100'], { ok: false }))) fail('proto shoot --at on a design without useMotion should say it has no motion')
+// Frames across a property moved twice differ, frame to frame.
+for (const v of ['C', 'D']) {
+  proto(['shoot', `move/${v}`, '--frames', '3', '--at', '0-300'])
+  const f = t => readFileSync(join(shots, `move-${v}-desktop-at-${t}.png`))
+  if (f(0).equals(f(150)) || f(150).equals(f(300))) fail(`the frames of move/${v} from 0 to 300 ms are the same picture`)
+}
 proto(['shoot', 'move', '--frames', '4'], { ok: false })
 // The build drops the dock: the handoff lists useMotion as the page's own.
 if (!/## Motion review\n- \[ \] Its motion dock \(`useMotion`\) · A\.tsx:5\b/.test(proto(['handoff', 'move/A']))) fail('proto handoff should list useMotion under Motion review')
