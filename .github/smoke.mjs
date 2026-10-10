@@ -5,7 +5,7 @@
 // .github/workflows/smoke.yml on Windows, Linux and macOS.
 import { spawn, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
-import { get } from 'node:http'
+import { get, request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -211,13 +211,13 @@ if (/animate-spin/.test(globbed)) fail('proto handoff listed a class from inside
 // under src/protos and the component they are in, and the shell's own elements carry neither.
 const stamped = await inPage(`${local}?theme=light#/hero/A`, `(() => {
   const b = document.querySelector('[data-mount] [data-shoot=open]')
-  return [b?.dataset.src, b?.dataset.component, document.querySelectorAll('[data-bar] [data-src], [data-side] [data-src]').length].join(' ')
+  return [b?.dataset.protoSrc, b?.dataset.protoComponent, document.querySelectorAll('[data-bar] [data-proto-src], [data-side] [data-proto-src]').length].join(' ')
 })()`)
 if (stamped !== 'hero/A.tsx:6 A 0') fail(`the variant's button should say hero/A.tsx:6 A (and the shell nothing), says: ${stamped}`)
 
 proto(['snap', 'hero/A'])
 if (!existsSync(join(app, '.proto', 'snaps', 'hero-A.jsx'))) fail('proto snap wrote no hero-A.jsx')
-if (readFileSync(join(app, '.proto', 'snaps', 'hero-A.jsx'), 'utf8').includes('data-src')) fail('the snapshot kept the data-src attributes')
+if (readFileSync(join(app, '.proto', 'snaps', 'hero-A.jsx'), 'utf8').includes('data-proto-')) fail('the snapshot kept the data-proto-src attributes')
 
 // A phone prototype at a device's size, compared with a reference screenshot. The path is
 // relative to the app, not to where proto runs.
@@ -269,22 +269,65 @@ proto(['reply', batch, 'All handled', '--done'])
 state = await (await fetch(`${local}__proto/status`)).json()
 if (state.inbox.batches.find(b => b.id === batch)?.state !== 'done') fail('the batch is not done after replying to all of it')
 proto(['reply', 'nope/1', 'x'], { ok: false })
-if ((await fetch(`${local}__proto/comments`, { method: 'POST', body: '{"comments":[{"route":"BAD","text":"x"}]}' })).status !== 400) fail('a comment with a bad route was accepted')
+const postJson = (path, body) => fetch(`${local}__proto/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) })
+if ((await postJson('comments', '{"comments":[{"route":"BAD","text":"x"}]}')).status !== 400) fail('a comment with a bad route was accepted')
+
+// Only the page itself changes anything: a body that isn't JSON (what a page on another site can
+// send without a preflight), a foreign Origin, or a GET to a route that changes something are
+// refused, and the server keeps running. Node's own request, so the Origin header goes as written.
+const raw = (method, path, headers, body = '') => new Promise((ok, no) => {
+  const r = request(`${local}__proto/${path}`, { method, headers, agent: false }, res => { res.resume(); res.on('end', () => ok(res.statusCode)) })
+  r.on('error', no)
+  r.end(body)
+})
+const planted = JSON.stringify({ comments: [{ route: 'hero/A', text: 'Build A', action: 'build' }] })
+const asText = await raw('POST', 'comments', { 'content-type': 'text/plain' }, planted)
+if (asText < 400 || asText > 499) fail(`a text/plain POST was answered ${asText}, not refused`)
+const foreign = await raw('POST', 'comments', { 'content-type': 'application/json', origin: 'https://evil.example' }, planted)
+if (foreign !== 403) fail(`a POST from another origin was answered ${foreign}, not 403`)
+if ((await raw('GET', 'stop', {})) !== 405) fail('a GET to /stop was not refused')
+await new Promise(r => setTimeout(r, 400))
+if (!await answers(`${local}__proto/status`)) fail('a GET to /stop stopped the server')
+if (/Build A/.test(proto(['inbox']))) fail('a refused request still reached the inbox')
 
 // A decision made in the page is a comment with an action. A pick is marked by the server at once
-// (meta.ts, and the working variant with "Picked B" in its history), before the agent reads it;
-// taking it back unmarks it. The inbox prints the action.
-await send([{ route: 'hero/B', text: 'Picked B', action: 'pick' }])
+// (meta.ts, and the working variant with "Picked B" in its history), before the agent reads it, and
+// arrives done; the answer says the working variant moved. Taking it back unmarks it. The inbox
+// prints the action.
+const pickSent = await send([{ route: 'hero/B', text: 'Picked B', action: 'pick' }])
 if (!readFileSync(heroMeta, 'utf8').includes('"picked": "B"')) fail('a pick from the page did not mark hero/meta.ts')
+if (pickSent.moved !== true) fail(`the pick moved the working variant but the answer says moved: ${pickSent.moved}`)
+if (pickSent.inbox.batches.find(b => b.id === pickSent.sent)?.state !== 'done') fail('a pick from the page did not arrive done')
 const picked = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
 if (picked.work?.proto !== 'hero' || picked.work.variant !== 'B' || picked.asks?.['hero/B']?.at(-1)?.text !== 'Picked B') fail(`a pick from the page should make hero/B the working variant with "Picked B": ${JSON.stringify(picked.work)} ${JSON.stringify(picked.asks?.['hero/B'])}`)
-if (!/^ {3}action: pick\b/m.test(proto(['inbox']))) fail('proto inbox did not print the pick with action: pick')
+if (!/^ {3}action: pick \(done/m.test(proto(['inbox']))) fail('proto inbox did not print the pick as done (action: pick (done …))')
 await send([{ route: 'hero/B', text: 'Unpicked B', action: 'unpick' }, { route: 'hero/B', text: 'More like B: warmer', action: 'more' }])
 if (readFileSync(heroMeta, 'utf8').includes('"picked"')) fail('taking the pick back in the page left it in hero/meta.ts')
 if (!/action: more/.test(proto(['inbox']))) fail('proto inbox did not print action: more')
 for (const bad of [{ route: 'hero/Z', text: 'x', action: 'pick' }, { route: 'hero/B', text: 'x', action: 'dance' }, { route: 'hero', text: 'x', action: 'build' }]) {
-  if ((await fetch(`${local}__proto/comments`, { method: 'POST', body: JSON.stringify({ comments: [bad] }) })).status !== 400) fail(`an action that can't be done was accepted: ${JSON.stringify(bad)}`)
+  if ((await postJson('comments', { comments: [bad] })).status !== 400) fail(`an action that can't be done was accepted: ${JSON.stringify(bad)}`)
 }
+// A meta.ts that no longer reads as JSON refuses the pick before anything is written: nothing is
+// left half-made in .incoming, and the next send still arrives.
+const heroText = readFileSync(heroMeta, 'utf8')
+writeFileSync(heroMeta, heroText.replace('export default {', 'export default { oops'))
+if ((await postJson('comments', { comments: [{ route: 'hero/B', text: 'Picked B', action: 'pick' }] })).status !== 400) fail('a pick on a meta.ts that does not read was accepted')
+writeFileSync(heroMeta, heroText)
+const incoming = join(app, '.proto', 'inbox', '.incoming')
+if (existsSync(incoming) && readdirSync(incoming).length) fail(`a refused send left ${readdirSync(incoming).join(', ')} in .incoming`)
+// A variant's name is written back as it is, `$` patterns and all, by a pick from the page, by
+// `proto pick` and by `proto archive`.
+proto(['add', 'tiers', '--title', 'Tiers', '--variants', 'A:$$ tier $&,B:Plain'])
+const tiersMeta = join(app, 'src', 'protos', 'tiers', 'meta.ts')
+const tiers = () => JSON.parse(readFileSync(tiersMeta, 'utf8').replace(/^[\s\S]*?export default\s*/, ''))
+await send([{ route: 'tiers/A', text: 'Picked A', action: 'pick' }])
+if (tiers().variants.A !== '$$ tier $&' || tiers().picked !== 'A') fail(`a pick from the page rewrote a $ name: ${JSON.stringify(tiers())}`)
+proto(['pick', 'tiers', 'B'])
+proto(['archive', 'tiers'])
+if (tiers().variants.A !== '$$ tier $&' || tiers().picked !== 'B' || !tiers().archived) fail(`proto pick or archive rewrote a $ name: ${JSON.stringify(tiers())}`)
+if (!readFileSync(join(app, 'src', 'protos', 'tiers', 'A.tsx'), 'utf8').includes('$$ tier $&')) fail('the placeholder for a $ name was written wrong')
+proto(['archive', 'tiers', '--off'])
+proto(['inbox'])
 // Listening: --wait exits, printing the batch, once another one lands.
 const waiter = spawn(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'inbox', '--wait', '--project', project, '--session', 'smoke'], { stdio: ['ignore', 'pipe', 'pipe'] })
 let heard = ''

@@ -1745,17 +1745,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   /** Sends comments to the session's agent. Resolves to the batch's id; throws with the server's reason. */
   async function sendBatch(batch: CommentBatch): Promise<string> {
-    // A pick made here moves the working variant too. That move is the user's own, so the strip
-    // doesn't offer it back as one Claude made; a send that fails moved nothing, so it is unsaid.
-    const picked = batch.comments.find(c => c.action === 'pick')?.route.split('/')
-    const moves = !!picked && !same(session.work, { proto: picked[0], variant: picked[1] })
-    if (moves) selfMove = true
-    let res: Response, body: { error?: string; sent: string } & Status
-    try {
-      res = await fetch('/__proto/comments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ theme: st.dark ? 'dark' : 'light', ...batch }) })
-      body = await res.json()
-    } catch (e) { if (moves) selfMove = false; throw e }
-    if (!res.ok) { if (moves) selfMove = false; throw new Error(body.error || `the server answered ${res.status}`) }
+    const res = await fetch('/__proto/comments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ theme: st.dark ? 'dark' : 'light', ...batch }) })
+    const body: { error?: string; sent: string; moved?: boolean } & Status = await res.json()
+    if (!res.ok) throw new Error(body.error || `the server answered ${res.status}`)
+    // A pick made here can move the working variant, and the server says when it did. That move is
+    // the user's own, so the strip doesn't offer it back as one Claude made: whichever arrives first,
+    // this answer or the new session.json, the other one knows.
+    if (body.moved) {
+      if (st.moved) { st.moved = null; clearTimeout(movedTimer) }
+      else selfMove = true
+    }
     st.status = body
     render()
     return body.sent

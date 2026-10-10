@@ -37,8 +37,7 @@ export function createComments(host: Host, sessionId: string) {
       let drafts = 0
       for (const i of s.items) {
         if (!i.sent) drafts++
-        // A pick is made the moment it is sent; only what still needs Claude counts as open.
-        if (progress(i, s.inbox).state === 'done' || i.action === 'pick' || i.action === 'unpick') continue
+        if (progress(i, s.inbox).state === 'done') continue
         const k = `${i.proto}/${i.variant}`
         by.set(k, (by.get(k) ?? 0) + 1)
       }

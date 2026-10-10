@@ -1,7 +1,8 @@
 // Where each part of a design is written, for comments to point at code. Every DOM element the
 // session's own prototype files write (src/protos/**, not the shell, not an @project import)
-// carries `data-src`, its file under src/protos and line (`today/parts.tsx:30`), and
-// `data-component`, the component it is written in. The comment layer reads both off the element
+// carries `data-proto-src`, its file under src/protos and line (`today/parts.tsx:30`), and
+// `data-proto-component`, the component it is written in (names of their own, since a design can
+// have a `data-src` of its own, like a lazy-loaded image). The comment layer reads both off the element
 // a comment is on, and `proto inbox` prints them for the agent.
 import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
@@ -43,8 +44,8 @@ export function vueSource(node, context) {
   if (node.type !== 1 || node.tagType !== 0 || !inProtos(context.filename || '')) return
   // plugin-vue can hand the same parsed template over again (a script-only update reuses it), so
   // an element that already has the attribute is left as it is.
-  if (node.props.some(p => p.type === 6 && p.name === 'data-src')) return
+  if (node.props.some(p => p.type === 6 && p.name === 'data-proto-src')) return
   const attr = (name, content) => ({ type: 6, name, nameLoc: node.loc, value: { type: 2, content, loc: node.loc }, loc: node.loc })
-  node.props.push(attr('data-src', `${relative(context.filename)}:${node.loc.start.line}`))
-  if (context.selfName) node.props.push(attr('data-component', context.selfName))
+  node.props.push(attr('data-proto-src', `${relative(context.filename)}:${node.loc.start.line}`))
+  if (context.selfName) node.props.push(attr('data-proto-component', context.selfName))
 }

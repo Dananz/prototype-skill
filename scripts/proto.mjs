@@ -307,13 +307,17 @@ function add() {
     const name = rest.join(':').trim() || id
     meta.variants[id] = name
     const file = join(pdir, `${id}.${kit.ext}`)
-    if (!existsSync(file)) writeFileSync(file, stub.replaceAll('__ID__', id).replaceAll('__NAME__', name))
+    if (!existsSync(file)) writeFileSync(file, stub.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name))
   }
   // meta.ts goes last, so the page sees the prototype with all its variants at once.
   writeFileSync(metaFile, `// Prototype: ${meta.title}. Variant files are named by their letter; names live here.\nexport default ${JSON.stringify(meta, null, 2)}\n`)
   console.log(`${pdir}: ${Object.keys(meta.variants).map(id => `${id}.${kit.ext}`).join(' ') || 'no variants'}`)
   if (s.url) console.log(`${s.url}#/${slug}`)
 }
+
+// meta.ts with its object replaced. Through a function: a replacement string would read `$&` or `$$`
+// in a variant's name as a pattern and write something else.
+const withMeta = (text, meta) => text.replace(/export default[\s\S]*$/, () => `export default ${JSON.stringify(meta, null, 2)}\n`)
 
 // The user chose a variant ("go with A"): the page marks it and lists it first. The other
 // variants stay, and so does everything built from this prototype.
@@ -328,7 +332,7 @@ function pick() {
   if (flags.off) delete meta.picked
   else if (!id || !meta.variants?.[id]) die(`which variant of ${slug}? (${Object.keys(meta.variants || {}).join(', ')})`)
   else meta.picked = id
-  writeFileSync(metaFile, text.replace(/export default[\s\S]*$/, `export default ${JSON.stringify(meta, null, 2)}\n`))
+  writeFileSync(metaFile, withMeta(text, meta))
   // The pick is what gets worked on next; its history starts here.
   if (!flags.off) setWork(dir, { proto: slug, variant: id }, `Picked ${id}`)
   console.log(flags.off ? `${slug}: no pick` : `${slug}: picked ${id} · ${meta.variants[id]}`)
@@ -415,7 +419,7 @@ function archive() {
   const text = readFileSync(metaFile, 'utf8')
   const meta = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
   meta.archived = !flags.off
-  writeFileSync(metaFile, text.replace(/export default[\s\S]*$/, `export default ${JSON.stringify(meta, null, 2)}\n`))
+  writeFileSync(metaFile, withMeta(text, meta))
   if (meta.archived && readSession(dir).work?.proto === args[0]) patchSession(dir, { work: null })
   console.log(`${args[0]} ${meta.archived ? 'archived' : 'restored'}`)
 }
@@ -904,12 +908,17 @@ const where = e => {
   return [`<${e.tag || '?'}>`, e.text && `"${e.text.replace(/\s+/g, ' ').slice(0, 80)}"`, name].filter(Boolean).join(' ') + r + code
 }
 // A decision made on a variant in the page comes as a comment with an action and no element; the
-// line under it says what is already done and what is left for the agent.
+// line under it says what is already done and what is left for the agent. A pick or unpick is made
+// by the server as it arrives, so it comes done (a reply is only a note), unless it failed.
 const ACTIONS = {
-  pick: 'already marked in the page, and now the working variant',
-  unpick: 'the pick is already taken off in the page',
+  pick: 'done: marked in the page and now the working variant; a reply is only a note',
+  unpick: 'done: the pick is off in the page; a reply is only a note',
   more: 'new variants in this prototype, named after this one',
   build: 'build this variant into the codebase',
+}
+const FAILED = {
+  pick: (c, why) => `not marked (${why}): run proto pick ${c.route.replace('/', ' ')}`,
+  unpick: (c, why) => `not taken off (${why}): run proto pick ${c.route.split('/')[0]} --off`,
 }
 function printBatch(dir, b) {
   const vp = b.viewport ? ` · page ${b.viewport.w}x${b.viewport.h}${b.viewport.phone ? ' (phone)' : ''}` : ''
@@ -917,7 +926,7 @@ function printBatch(dir, b) {
   for (const c of b.comments) {
     console.log(`\n${c.n}. ${c.route}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
-    if (c.action) console.log(`   action: ${c.action}${ACTIONS[c.action] ? ` (${ACTIONS[c.action]})` : ''}`)
+    if (c.action) console.log(`   action: ${c.action} (${c.failed && FAILED[c.action] ? FAILED[c.action](c, c.failed) : ACTIONS[c.action] || ''})`)
     // A comment pinned with a long press is on a spot; its element is only where that spot is.
     if (c.point) console.log(`   at: ${c.point.x},${c.point.y} (a spot, pinned with a long press)`)
     if (c.target) console.log(`   ${c.point ? 'in' : 'on'}: ${where(c.target)}`)

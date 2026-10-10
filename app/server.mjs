@@ -42,7 +42,7 @@ export function decided() {
 
 // The page moves the working variant three ways: back to one under Before (the one it leaves goes
 // to Before, as with `proto work`), Undo of a move it was just told about (nothing is kept), or a
-// pick made in the page, which also adds what was asked to that variant's history.
+// pick made in the page, which also adds what was asked to that variant's history. True when it moved.
 const same = (a, b) => !!a && !!b && a.proto === b.proto && a.variant === b.variant
 function work({ proto, variant, undo, ask }) {
   const s = read(), t = { proto: String(proto), variant: String(variant) }
@@ -54,23 +54,26 @@ function work({ proto, variant, undo, ask }) {
   }
   if (ask) { const key = `${t.proto}/${t.variant}`; patch.asks = { ...s.asks, [key]: [...(s.asks?.[key] || []), { at, text: ask }] } }
   if (Object.keys(patch).length) write(patch)
+  return !!patch.work
 }
 
 // meta.ts is `export default` and plain JSON, which is how `proto` reads and rewrites it too.
 const metaFile = slug => join(dir, 'src', 'protos', slug, 'meta.ts')
 const metaOf = text => JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
+// Through a function: a replacement string would read `$&` or `$$` in a variant's name as a pattern.
+const withMeta = (text, meta) => text.replace(/export default[\s\S]*$/, () => `export default ${JSON.stringify(meta, null, 2)}\n`)
 // A pick made in the page is what `proto pick` does, done at once instead of when the agent next
 // looks: the variant is marked in its meta.ts and becomes the working variant, its history starting
 // with "Picked <letter>" (the page's strip knows those words). Taking the pick back unmarks it only
-// while it is still on that variant.
+// while it is still on that variant. True when the working variant moved.
 function pick(route, off) {
   const [slug, id] = route.split('/')
   const text = readFileSync(metaFile(slug), 'utf8'), meta = metaOf(text)
-  if (off && meta.picked !== id) return
+  if (off && meta.picked !== id) return false
   if (off) delete meta.picked
   else meta.picked = id
-  writeFileSync(metaFile(slug), text.replace(/export default[\s\S]*$/, `export default ${JSON.stringify(meta, null, 2)}\n`))
-  if (!off) work({ proto: slug, variant: id, ask: `Picked ${id}` })
+  writeFileSync(metaFile(slug), withMeta(text, meta))
+  return off ? false : work({ proto: slug, variant: id, ask: `Picked ${id}` })
 }
 
 // ---------- the inbox: comments from the page, for the agent running the session ----------
@@ -119,52 +122,67 @@ const element = t => t && typeof t === 'object' ? {
 // comment with one of these and no element.
 const ACTIONS = new Set(['pick', 'unpick', 'more', 'build'])
 
-/** Writes one send from the page as a new batch. Images come as data URLs and are stored as files. */
+/**
+ * Writes one send from the page as a new batch; images come as data URLs and are stored as files.
+ * All of it is checked before anything is written (an action's prototype must have a meta.ts that
+ * reads). Picks are made next, each on its own, so one that fails says why in its comment and never
+ * keeps the batch from arriving. Returns the batch, and whether the working variant moved.
+ */
 function receive(data) {
   const comments = Array.isArray(data?.comments) ? data.comments : []
   if (!comments.length) throw Object.assign(new Error('no comments'), { status: 400 })
+  const bad = (i, why) => Object.assign(new Error(`comment ${i + 1}${why}`), { status: 400 })
   const at = new Date().toISOString()
   const id = `${at.replace(/[-:]/g, '').replace(/\..*/, '')}-${randomBytes(2).toString('hex')}`
-  const folder = join(inbox, '.incoming', id)
-  mkdirSync(folder, { recursive: true })
-  let n = 0
+  const files = []
+  const list = comments.map((c, i) => {
+    if (typeof c?.text !== 'string' || !c.text.trim()) throw bad(i, ' has no text')
+    if (typeof c.route !== 'string' || !/^[a-z0-9][a-z0-9-]*(\/[A-Z]{1,2}(\/[\w-]+)?)?$/.test(c.route)) throw bad(i, ': route is <slug>[/<letter>[/<state>]]')
+    if (c.action !== undefined) {
+      const [slug, letter, more] = c.route.split('/')
+      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more or build, on a variant (<slug>/<letter>)')
+      let meta
+      try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { throw bad(i, `: src/protos/${slug}/meta.ts is missing or isn't plain JSON`) }
+      if (!meta?.variants?.[letter]) throw bad(i, `: ${slug} has no variant ${letter}`)
+    }
+    const images = (Array.isArray(c.images) ? c.images : []).map(img => {
+      const m = String(img?.dataUrl ?? img).match(/^data:image\/(png|jpeg|webp);base64,(.+)$/)
+      if (!m) return null
+      const file = `${files.length + 1}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`
+      files.push([file, Buffer.from(m[2], 'base64')])
+      return { file, name: clip(img?.name, 100) }
+    }).filter(Boolean)
+    return {
+      n: i + 1, route: c.route, text: c.text.trim().slice(0, 4000),
+      ...(c.action ? { action: c.action } : {}),
+      point: c.point && { x: Math.round(+c.point.x || 0), y: Math.round(+c.point.y || 0) },
+      target: element(c.target),
+      tags: (Array.isArray(c.tags) ? c.tags : []).map(element).filter(Boolean).slice(0, 20),
+      images,
+    }
+  })
+  // A pick is made before the batch is seen, so the agent reads about one already made, and it is
+  // done: nothing is left to do but note it. One that can't be made stays open and says why.
+  let moved = false
+  for (const c of list) {
+    if (c.action !== 'pick' && c.action !== 'unpick') continue
+    try { moved = pick(c.route, c.action === 'unpick') || moved; c.done = true } catch (e) { c.failed = String(e?.message || e).slice(0, 300) }
+  }
   const batch = {
     id, at,
     viewport: data.viewport && { w: +data.viewport.w || 0, h: +data.viewport.h || 0, phone: !!data.viewport.phone },
     theme: data.theme === 'dark' ? 'dark' : 'light',
-    comments: comments.map((c, i) => {
-      if (typeof c?.text !== 'string' || !c.text.trim()) throw Object.assign(new Error(`comment ${i + 1} has no text`), { status: 400 })
-      if (typeof c.route !== 'string' || !/^[a-z0-9][a-z0-9-]*(\/[A-Z]{1,2}(\/[\w-]+)?)?$/.test(c.route)) throw Object.assign(new Error(`comment ${i + 1}: route is <slug>[/<letter>[/<state>]]`), { status: 400 })
-      if (c.action !== undefined) {
-        const [slug, id] = c.route.split('/')
-        let meta = null
-        try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { /* no such prototype */ }
-        if (!ACTIONS.has(c.action) || !id || c.route.split('/').length !== 2 || !meta?.variants?.[id]) throw Object.assign(new Error(`comment ${i + 1}: an action is pick, unpick, more or build, on a variant that exists (<slug>/<letter>)`), { status: 400 })
-      }
-      const images = (Array.isArray(c.images) ? c.images : []).map(img => {
-        const m = String(img?.dataUrl ?? img).match(/^data:image\/(png|jpeg|webp);base64,(.+)$/)
-        if (!m) return null
-        const file = `${++n}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`
-        writeFileSync(join(folder, file), Buffer.from(m[2], 'base64'))
-        return { file, name: clip(img?.name, 100) }
-      }).filter(Boolean)
-      return {
-        n: i + 1, route: c.route, text: c.text.trim().slice(0, 4000),
-        ...(c.action ? { action: c.action } : {}),
-        point: c.point && { x: Math.round(+c.point.x || 0), y: Math.round(+c.point.y || 0) },
-        target: element(c.target),
-        tags: (Array.isArray(c.tags) ? c.tags : []).map(element).filter(Boolean).slice(0, 20),
-        images,
-      }
-    }),
+    comments: list,
+    ...(list.every(c => c.done) ? { done: true } : {}),
   }
+  const folder = join(inbox, '.incoming', id)
+  mkdirSync(folder, { recursive: true })
+  for (const [file, bytes] of files) writeFileSync(join(folder, file), bytes)
   writeFileSync(join(folder, 'batch.json'), JSON.stringify(batch, null, 2) + '\n')
-  // A pick is marked before the batch is seen, so the agent reads about one that is already made.
-  for (const c of batch.comments) if (c.action === 'pick' || c.action === 'unpick') pick(c.route, c.action === 'unpick')
   // Complete before anyone can see it: a waiter only ever finds a whole batch in new/.
   mkdirSync(join(inbox, 'new'), { recursive: true })
   moveDir(folder, join(inbox, 'new', id))
-  return batch
+  return { batch, moved }
 }
 
 export function prototypeServer(session) {
@@ -189,10 +207,28 @@ export function prototypeServer(session) {
         activity = Date.now()
         if (slash(path).startsWith(`${src}/protos/`)) server.ws.send({ type: 'custom', event: 'proto:edit', data: { path: slash(path).slice(slash(dir).length - 1) } })
       })
+      // Anything but /status changes something, so it must come from the page itself: a POST with a
+      // JSON body (which a page on another site can only send after a CORS preflight, and none is
+      // ever answered) and, when the browser names its origin, this server's own host: 127.0.0.1,
+      // localhost or the tailnet name, whichever the page was opened on (behind `tailscale serve`,
+      // the name it was asked for comes as X-Forwarded-Host). Otherwise any site open in the browser
+      // could plant a pick or a build order with a no-cors POST, or stop the server with an <img>.
+      const refused = (req, route) => {
+        if (route === '/status') return req.method === 'GET' || req.method === 'HEAD' ? null : [405, '/status is read with GET']
+        if (req.method !== 'POST') return [405, 'POST only']
+        if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) return [415, 'send JSON, with content-type: application/json']
+        if (req.headers.origin === undefined) return null
+        let host = ''
+        try { host = new URL(req.headers.origin).host } catch { /* "null", or not a URL */ }
+        const own = [req.headers.host, ...String(req.headers['x-forwarded-host'] || '').split(',')].map(h => h?.trim().toLowerCase()).filter(Boolean)
+        return host && own.includes(host) ? null : [403, 'only the prototype page itself can do this']
+      }
       server.middlewares.use('/__proto', (req, res) => {
         const chunks = []
         let size = 0
         const fail = (code, error) => { res.statusCode = code; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ error })) }
+        const no = refused(req, req.url.split('?')[0])
+        if (no) { req.resume(); return fail(...no) }
         req.on('data', c => {
           size += c.length
           if (size <= MAX_BODY) chunks.push(c)
@@ -205,13 +241,14 @@ export function prototypeServer(session) {
           if (route === '/ping') activity = Date.now()
           if (route === '/keep') write({ keep: !!data.keep })
           if (route === '/work' && data.proto && data.variant) work({ proto: data.proto, variant: data.variant, undo: data.undo })
-          let sent
+          let got
           if (route === '/comments') {
             activity = Date.now()
-            try { sent = receive(data).id } catch (e) { return fail(e.status || 500, e.message) }
+            try { got = receive(data) } catch (e) { return fail(e.status || 500, e.message) }
           }
           res.setHeader('content-type', 'application/json')
-          res.end(JSON.stringify(sent ? { ...status(), sent } : status()))
+          // A send answers with its batch, and whether a pick in it moved the working variant.
+          res.end(JSON.stringify(got ? { ...status(), sent: got.batch.id, moved: got.moved } : status()))
           if (route === '/stop') setTimeout(() => stop('stopped from the page'), 100)
         })
       })

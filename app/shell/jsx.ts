@@ -1,7 +1,8 @@
 // The JSX runtime of the session's prototype files (source.mjs points their
 // `react/jsx-dev-runtime` here; the shell and the project's files keep React's). It is React's,
-// plus where each DOM element is written: `data-src` is its file under src/protos and its line
-// (`today/parts.tsx:30`), `data-component` the component it is written in. The dev transform
+// plus where each DOM element is written: `data-proto-src` is its file under src/protos and its line
+// (`today/parts.tsx:30`), `data-proto-component` the component it is written in. Names of their own,
+// so a design's own `data-src` (a lazy-loaded image) is neither read as a place nor left unstamped. The dev transform
 // passes every tag's file and line as jsxDEV's fifth argument, which React itself no longer reads.
 import { Fragment, jsxDEV as reactJsxDEV } from 'react/jsx-dev-runtime'
 
@@ -41,10 +42,10 @@ export function jsxDEV(type: unknown, props: Record<string, unknown>, key: unkno
   const file = source?.fileName?.replaceAll('\\', '/') ?? ''
   const at = file.lastIndexOf('/src/protos/')
   // Only DOM elements: a component would get a prop it doesn't expect.
-  if (typeof type === 'string' && at >= 0 && source?.lineNumber && !('data-src' in props)) {
+  if (typeof type === 'string' && at >= 0 && source?.lineNumber && !('data-proto-src' in props)) {
     const src = `${file.slice(at + 12)}:${source.lineNumber}`
     const component = componentOf(file.slice(at), `${src}:${source.columnNumber ?? 0}`)
-    props = { ...props, 'data-src': src, ...(component ? { 'data-component': component } : {}) }
+    props = { ...props, 'data-proto-src': src, ...(component ? { 'data-proto-component': component } : {}) }
   }
   return (reactJsxDEV as (...a: unknown[]) => unknown)(type, props, key, isStatic, source, self)
 }
