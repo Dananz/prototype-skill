@@ -227,11 +227,15 @@ export function prototypeServer(session) {
     return { lastEdit: lastEdit(), keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, inbox: inboxStatus() }
   }
   const stop = reason => {
+    // The tailnet port as session.json has it now: on a session's first run, `proto up` gives it one
+    // only after this server started, so the copy read at startup has none.
+    let tport = session.tailnetPort
+    try { tport = read().tailnetPort ?? tport } catch {}
     // An unreadable session.json must not keep it from stopping, or the tailnet port stays served.
     try { write({ stoppedAt: new Date().toISOString(), stopReason: reason, pid: null }) } catch {}
     const exit = () => process.exit(0)
     setTimeout(exit, 3000)
-    if (session.tailnetPort) execFile('tailscale', ['serve', `--https=${session.tailnetPort}`, 'off'], exit)
+    if (tport) execFile('tailscale', ['serve', `--https=${tport}`, 'off'], exit)
     else exit()
   }
   return {
