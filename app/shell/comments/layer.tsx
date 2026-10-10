@@ -74,7 +74,7 @@ export function Layer() {
   // What a new comment is on stays outlined while it is written (an existing one is outlined by its pin).
   const onNew = editing && !editing.id ? boxes['__new'] : undefined
   const onSpot = !!editing?.target.point
-  const opened = !editing && s.active ? rows.find(r => r.item.id === s.active && r.here) : undefined
+  const opened = !editing && s.active ? rows.find(r => r.item.id === s.active && r.here && !r.item.time) : undefined
   return (
     <>
       <HoverBox hover={hover} verb={verb} onConfirm={confirm} onUp={up} />

@@ -506,7 +506,11 @@ try {
   await until(`document.querySelector('[data-motion-bar] [data-point]')?.dataset.state === 'done'`, 'the reply never reached the comment\'s point on the track')
   // Tapping the point loops its range and shows the comment with the reply.
   await run(`document.querySelector('[data-motion-bar] [data-point]').click()`)
-  await until(`(() => { const s = window.__protoMotion.state(); return s.playing && s.span?.join() === '100,300' && /Rows start at 40 ms apart now/.test(document.querySelector('[data-thread]')?.textContent) })()`, 'tapping the point should loop 0.10–0.30 s and show the reply', 5000)
+  const shown = `(() => { const t = document.querySelector('[data-motion-bar] [data-thread]'); return !!t && !t.closest('[inert]') && /Rows start at 40 ms apart now/.test(t.textContent) })()`
+  await until(`window.__protoMotion.state().playing && window.__protoMotion.state().span?.join() === '100,300' && ${shown}`, 'tapping the point should loop 0.10–0.30 s and show the reply', 5000)
+  // Pausing it is a press in the dock, which keeps the comment open.
+  await run(`(() => { const b = document.querySelector('[data-motion=play]'); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true })); b.click() })()`)
+  await until(`!window.__protoMotion.state().playing && ${shown}`, 'pausing the loop put the comment on the motion away', 3000)
   // A moment, posted as the page does; one outside the take, or a range that ends before it starts, is refused.
   for (const bad of [{ at: 600, take: 500 }, { at: 300, to: 100, take: 500 }, { at: 'x', take: 500 }, { at: 100 }]) {
     if ((await postJson('comments', { comments: [{ route: 'move/A', text: 'x', ...bad }] })).status !== 400) fail(`a comment with ${JSON.stringify(bad)} was accepted`)

@@ -258,7 +258,7 @@ const Plot = memo(function Plot({ tracks, D, w, top, base, ymax, clip, emph }: {
         {grid.map(t => <line key={t} x1={Math.round(X(t)) + 0.5} x2={Math.round(X(t)) + 0.5} y1={top - 4} y2={base} />)}
       </g>
       <g className="fill-zinc-400 dark:fill-zinc-500" fontSize={10} style={{ fontVariantNumeric: 'tabular-nums' }}>
-        {grid.map((t, i) => <text key={t} x={X(t) + 4} y={top + 6}>{i === grid.length - 1 ? `${t / 1000} s` : (t / 1000).toFixed(1)}</text>)}
+        {grid.map((t, i) => <text key={t} x={X(t) + 4} y={top + 6}>{i === grid.length - 1 ? `${(t / 1000).toFixed(1)} s` : (t / 1000).toFixed(1)}</text>)}
       </g>
       <line x1={X(0)} x2={X(D)} y1={y1} y2={y1} strokeDasharray="3 3" className="stroke-zinc-300 dark:stroke-zinc-600" />
       <g clipPath={`url(#${clip})`}>
