@@ -138,8 +138,9 @@ const element = t => t && typeof t === 'object' ? {
 } : undefined
 
 // A decision on a variant made in the page (its Pick, More like this and Build it) comes as a
-// comment with one of these and no element.
-const ACTIONS = new Set(['pick', 'unpick', 'more', 'build'])
+// comment with one of these and no element. A copy choice (the copy picker's Send) is one too, on
+// the element of the line it changes.
+const ACTIONS = new Set(['pick', 'unpick', 'more', 'build', 'copy'])
 
 /**
  * Writes one send from the page as a new batch; images come as data URLs and are stored as files.
@@ -160,7 +161,7 @@ function receive(data) {
     if (typeof c.route !== 'string' || !/^[a-z0-9][a-z0-9-]*(\/[A-Z]{1,2}(\/[\w-]+)?)?$/.test(c.route)) throw bad(i, ': route is <slug>[/<letter>[/<state>]]')
     if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
-      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more or build, on a variant (<slug>/<letter>)')
+      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build or copy, on a variant (<slug>/<letter>)')
       if (c.action === 'pick' || c.action === 'unpick') {
         let meta
         try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { throw bad(i, `: src/protos/${slug}/meta.ts is missing or isn't plain JSON, so a pick can't be marked in it`) }
@@ -226,11 +227,15 @@ export function prototypeServer(session) {
     return { lastEdit: lastEdit(), keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, inbox: inboxStatus() }
   }
   const stop = reason => {
+    // The tailnet port as session.json has it now: on a session's first run, `proto up` gives it one
+    // only after this server started, so the copy read at startup has none.
+    let tport = session.tailnetPort
+    try { tport = read().tailnetPort ?? tport } catch {}
     // An unreadable session.json must not keep it from stopping, or the tailnet port stays served.
     try { write({ stoppedAt: new Date().toISOString(), stopReason: reason, pid: null }) } catch {}
     const exit = () => process.exit(0)
     setTimeout(exit, 3000)
-    if (session.tailnetPort) execFile('tailscale', ['serve', `--https=${session.tailnetPort}`, 'off'], exit)
+    if (tport) execFile('tailscale', ['serve', `--https=${tport}`, 'off'], exit)
     else exit()
   }
   return {

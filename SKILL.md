@@ -270,6 +270,36 @@ useHints([
   visit); a different design is a variant.
 - Vue: `useHints(() => [...])` in `<script setup>`. A variant with nothing to say makes no call.
 
+**Offer other copy when asked.** When the user asks for other words ("better headlines", "try other
+button text"), don't write a variant per wording: give the lines they asked about options with
+`useCopy` from `src/copy.ts`, in the variant being worked on. The page then shows a T button beside
+Comment; in copy mode each of those lines is marked, a click lists its options and points one into
+place, and the user sends the choices back (`action: copy`, below). A variant without `useCopy` shows
+none of it.
+
+```
+import { useCopy } from '../../copy'
+
+const copy = useCopy([
+  { id: 'headline', label: 'Headline', options: ['עוד אימון מאחוריך', 'עשית את זה', 'עוד צעד אל היעד'] },
+  { id: 'cta', label: 'Button', options: ['לסיכום האימון', 'סיימתי'] },
+])
+<h1 data-copy="headline">{copy.headline}</h1>
+<button data-copy="cta">{copy.cta}</button>
+```
+
+- The first option is the line as it reads today; then 2 to 4 others. Only the lines they asked
+  about, never every string on the screen.
+- Real copy in the product's language and rules (its locale files, gender, register, length), the
+  same as any copy in a variant.
+- `useCopy` returns the words to show per line (the user's pick, or the first option). Put
+  `data-copy="<id>"` on the element that holds those words, so the page can mark it.
+- Call it in the component that shows the lines: each component may declare its own (the variant
+  its headline, a part in `parts.tsx` its button), and the page counts them all as the design's.
+  A part used more than once with different words (a card per plan) needs an id per use
+  (`plan-${id}-title`): one id is one line, with one set of options.
+- Vue: `const copy = useCopy([...])` in `<script setup>`, then `{{ copy.headline }}`.
+
 **Build the variants in parallel when you can.** When there are 3 or more variants to write, the
 harness has subagents, and Current matches its reference (for a new product: once the tokens and
 `parts.tsx` exist), give each variant its own subagent. First write everything shared yourself
@@ -299,6 +329,8 @@ proto shoot <slug> --sheet --state row-menu     # a state from meta.ts, across t
 proto shoot <slug>/B <slug>/B/row-menu          # single shots of routes (no route: the session lobby)
 proto shoot <slug>/B --click "[data-shoot=add]" # a state reached by clicking (repeatable)
 proto shoot <slug>/A --ref <screenshot.png>     # beside and over a screenshot of the real screen
+proto shoot <slug>/B --copy                     # copy mode on (useCopy): each line's mark, and the bar
+proto shoot <slug>/B --copy --click "[data-copy=headline]" --click "[data-copy-option='2']"   # its third option in place
 ```
 
 `--sheet` shoots every variant (a web one at 1440×900 and 390×844, a `--kind phone` one at
@@ -314,7 +346,8 @@ goes on to `-sheet-2.png`; read each.
 For a right-to-left prototype, `proto shoot` first lists any physical left or right in its files
 (see Right to left). For states behind an interaction, put `data-shoot="…"` on the elements and
 list the state in `meta.ts`, or pass one `--click` per step; if a state's clicks match nothing,
-`proto shoot` says so. For each variant, note what breaks: alignment, hierarchy, clipped text,
+`proto shoot` says so. With copy options, shoot each line's longest option once (`--copy` and the
+two clicks above) to see that it fits. For each variant, note what breaks: alignment, hierarchy, clipped text,
 overflow on the phone row, weak affordance, too many steps. Fix it and push each variant further
 in its own direction instead of letting them converge. Do 2 rounds unless the user asked for
 more, and shoot the sheet again after the last round.
@@ -413,7 +446,8 @@ element. Read every screenshot. Then, per comment:
 3. When the batch is handled, listen again.
 
 **Decisions from the page** arrive in the same batches, as comments with an `action:` line and
-no element; the user's optional note follows a colon in the text.
+no element (a `copy` choice is on its line's element); the user's optional note follows a colon in
+the text.
 
 | `action:` | Already done | You |
 |---|---|---|
@@ -421,6 +455,7 @@ no element; the user's optional note follows a colon in the text.
 | `unpick` | the pick is off, and the comment done | nothing. When the line says nothing changed (that variant wasn't the pick), say so in a reply with `--done`; when it says it wasn't taken off, run the `proto pick … --off` it names |
 | `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you added |
 | `build` | nothing | `proto pick` it if it isn't the pick, then step 7; reply when it is in |
+| `copy` | nothing (one comment per line changed since the last send, on that line's element; the text says option k of n, their own words, or back to today's words) | put the chosen words first in that line's `useCopy` options and keep the rest; then one `proto reply <batch> "…" --done` for the batch, in one line. The page drops its own choice once the words are first |
 
 ## 7. Only if asked: build it
 
@@ -431,7 +466,8 @@ proto handoff <slug>/<letter>
 ```
 
 It lists everything the variant has, each with its file and line: its files, states, marked
-elements, motion, materials, interactions, assets, copy and where its Try it list is. A build
+elements, motion, materials, interactions, assets, copy, copy options (the build ships each line's
+first option as plain copy, without the options or the picker) and where its Try it list is. A build
 loses what nobody listed (a drag's tilt, the shade behind a sheet, a glass material), so put every
 line on your task list and tick it as the build gets it, or say why it doesn't apply.
 
@@ -480,6 +516,8 @@ Each module is roughly 4 to 30 KB and goes through your tool calls, so snap only
 | A choice in chat ("go with A", "build B") | `proto pick <slug> <letter>` first, then what they asked |
 | The winner built into the codebase ("build B", "ship it") | `proto pick` if not yet, then `proto handoff <slug>/<letter>` and step 7 |
 | A pick, More like this or Build it from the page (`action:` in a batch) | the table under Comments from the page |
+| Other copy for some lines ("better headlines", "other button text") | `proto ask "…"`, then `useCopy` on those lines (Offer other copy when asked) |
+| Copy choices sent from the page (`action: copy`) | the table under Comments from the page |
 | A change to the variant being worked on ("make the price bigger") | `proto ask "…"`, then edit it |
 | A change to another variant ("now D, same idea") | `proto work <slug>/<letter> --ask "…"`, then edit it |
 | To drop a direction or prototype | `proto archive <slug>` (still reachable under Archived) |
@@ -510,6 +548,6 @@ menu in the page.
 - **A variant shows a red error box:** that variant threw. Fix the file; it re-renders.
 - **`proto shoot` prints `slow …`:** a shot took over 3 s, and the line says which step took
   the time. Pass the line on to the user.
-- **Don't edit** the app's `shell/`, `src/main.ts`, `src/registry.ts`, `src/mount.*` or `src/hints.ts`. If the
+- **Don't edit** the app's `shell/`, `src/main.ts`, `src/registry.ts`, `src/mount.*`, `src/hints.ts` or `src/copy.ts`. If the
   shell itself misbehaves, say so; the template is `${CLAUDE_SKILL_DIR}/app/` (replaced on
   every plugin update, so a fix belongs upstream).

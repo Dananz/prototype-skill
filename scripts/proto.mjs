@@ -5,7 +5,7 @@
 //   proto add <slug> --title "…" --variants "A:Name,B:Name" [--ask "…"] [--kind phone] [--screen 402x874]
 //             [--from <slug>/<letter>[,<slug>/<letter>…]]   built from those variants: nested under the first
 //             [--from-picks]   built from every variant the user picked in this session
-//   proto shoot [route…] [--theme dark] [--focus] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
+//   proto shoot [route…] [--theme dark] [--focus] [--copy] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
 //             [--ref <png>]   instead, the variant's screen beside that screenshot of the real one
 //             [--as built]    with --ref: the png is the variant built in the codebase (<route>-vs-built.png)
 //   proto shoot [slug…] --sheet [--state <id>] [--theme dark]   every variant on one contact sheet per prototype
@@ -44,8 +44,8 @@ const BASE = { vite: '^8.3.0', tailwindcss: '^4.3.0', '@tailwindcss/vite': '^4.3
 // modern-screenshot).
 const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.9.0', 'modern-screenshot': '^4.7.0' }
 const STACKS = {
-  react: { deps: {}, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', stub: 'react.tsx' },
-  vue: { deps: { vue: '^3.5.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', stub: 'vue.vue' },
+  react: { deps: {}, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', stub: 'react.tsx' },
+  vue: { deps: { vue: '^3.5.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', stub: 'vue.vue' },
 }
 
 // ---------- arguments ----------
@@ -55,7 +55,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus'])
+const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -204,6 +204,7 @@ function scaffold(dir, project) {
   renameSync(join(dir, 'gitignore'), join(dir, '.gitignore'))
   cpSync(join(APP, 'adapters', kit.adapter), join(dir, 'src', `mount.${kit.adapter.split('.').pop()}`))
   cpSync(join(APP, 'adapters', kit.hints), join(dir, 'src', 'hints.ts'))
+  cpSync(join(APP, 'adapters', kit.copy), join(dir, 'src', 'copy.ts'))
   writeJson(join(dir, 'package.json'), {
     name: `prototype-${basename(dir)}`, private: true, type: 'module',
     dependencies: { ...SHELL, ...kit.deps }, devDependencies: { ...BASE, ...kit.dev },
@@ -527,7 +528,7 @@ async function shoot() {
   const out = resolve(flags.out || join(dir, '.proto', 'shots'))
   const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
   let routes = args.filter(a => !clicked.has(a)).length ? args.filter(a => !clicked.has(a)) : ['']
-  const extra = ['theme', 'focus'].filter(k => flags[k]).map(k => `--${k}=${flags[k] === true ? '1' : flags[k]}`)
+  const extra = ['theme', 'focus', 'copy'].filter(k => flags[k]).map(k => `--${k}=${flags[k] === true ? '1' : flags[k]}`)
   if (flags.ref === true) die('--ref takes a screenshot of the real screen: --ref <png>')
   if (flags.ref && flags.sheet) die('--ref and --sheet are separate shots: run one, then the other')
   if (flags.state && !flags.sheet) die(`--state goes with --sheet; one variant in a state is proto shoot <slug>/<letter>/${flags.state === true ? '<state>' : flags.state}`)
@@ -827,6 +828,99 @@ function copyIn(line) {
   return out
 }
 
+// The lines a variant offers copy options for (useCopy): where each call is, and each line's id,
+// label, first option (what the build ships) and number of options. Read from the call's own text,
+// or from the list it names when that is declared in the variant's files (`const LINES = [ … ]`),
+// with the keys in any order.
+function copyOptionsIn(files) {
+  // A quote opens a string unless it follows a letter: in code a string never does, while words in
+  // JSX do (Don't).
+  const opens = (text, i) => text[i] === '`' || ((text[i] === '"' || text[i] === '\'') && !/[\p{L}\p{N}]/u.test(text[i - 1] || ''))
+  // The file with its comments blanked out, at the same length and on the same lines: a quote in a
+  // comment ("the user's headline") opens no string, and nothing in one is read as code.
+  const blank = text => {
+    let out = '', quote = ''
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i]
+      if (quote) { out += c; if (c === '\\') out += text[++i] ?? ''; else if (c === quote) quote = ''; continue }
+      if (c === '/' && (text[i + 1] === '/' || text[i + 1] === '*')) {
+        const line = text[i + 1] === '/', e = line ? text.indexOf('\n', i) : text.indexOf('*/', i + 2)
+        const to = e < 0 ? text.length : line ? e : e + 2
+        out += text.slice(i, to).replace(/[^\n]/g, ' ')
+        i = to - 1
+        continue
+      }
+      if (opens(text, i)) quote = c
+      out += c
+    }
+    return out
+  }
+  const texts = files.map(f => ({ f, text: blank(readFileSync(f, 'utf8')) }))
+  const calls = [], lines = []
+  const lineAt = (text, i) => text.slice(0, i).split('\n').length
+  // From an opening bracket, the index of the one that closes it; brackets inside strings don't count.
+  const close = (text, from) => {
+    let depth = 0, quote = '', i = from
+    for (; i < text.length; i++) {
+      const c = text[i]
+      if (quote) { if (c === '\\') i++; else if (c === quote) quote = ''; continue }
+      if (opens(text, i)) quote = c
+      else if ('([{'.includes(c)) depth++
+      else if (')]}'.includes(c) && --depth === 0) break
+    }
+    return i
+  }
+  // The entries of a list or object literal, from its opening bracket: where each starts (past its
+  // spaces) and ends, split at the commas outside brackets and strings.
+  const parts = (text, open) => {
+    const end = close(text, open), out = []
+    let depth = 0, quote = '', start = open + 1
+    for (let i = open + 1; i < end; i++) {
+      const c = text[i]
+      if (quote) { if (c === '\\') i++; else if (c === quote) quote = ''; continue }
+      if (opens(text, i)) quote = c
+      else if ('([{'.includes(c)) depth++
+      else if (')]}'.includes(c)) depth--
+      else if (c === ',' && !depth) { out.push([start, i]); start = i + 1 }
+    }
+    out.push([start, end])
+    return out.flatMap(([a, b]) => { const lead = text.slice(a, b).search(/\S/); return lead < 0 ? [] : [[a + lead, b]] })
+  }
+  const STR = String.raw`(['"\`])((?:\\.|(?!\1)[^\\])*)\1`
+  // A string literal's words, with its escapes read: 'It\'s' is It's.
+  const ESC = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', v: '\v', 0: '\0' }
+  const literal = v => new RegExp(String.raw`^${STR}\s*$`).exec(v)?.[2]
+    .replace(/\\(u\{[\da-f]+\}|u[\da-f]{4}|x[\da-f]{2}|[\s\S])/gi, (_, e) => e.length > 1 ? String.fromCodePoint(parseInt(e.replace(/[ux{}]/gi, ''), 16)) : ESC[e] ?? e)
+  // Each { id, label, options } of a list, from its opening bracket. The words may hold any
+  // bracket ("Hi {name}"): each object and list ends where its own bracket closes.
+  const objects = ({ f, text }, open) => {
+    for (const [o] of parts(text, open)) {
+      if (text[o] !== '{') continue
+      const props = {}
+      for (const [a, b] of parts(text, o)) {
+        const m = text.slice(a, b).match(/^['"]?([\w$]+)['"]?\s*:\s*/)
+        if (m) props[m[1]] = { at: a, value: text.slice(a + m[0].length, b) }
+      }
+      const id = props.id && literal(props.id.value), list = props.options?.value
+      const options = list?.startsWith('[') ? parts(list, 0).map(([a, b]) => literal(list.slice(a, b))).filter(x => x !== undefined) : []
+      if (id && options.length) lines.push({ f, id, label: (props.label && literal(props.label.value)) || id, first: options[0], n: options.length, line: lineAt(text, props.id.at) })
+    }
+  }
+  for (const t of texts) {
+    for (const m of t.text.matchAll(/\buseCopy\s*\(/g)) {
+      const open = m.index + m[0].length - 1, end = close(t.text, open)
+      calls.push({ f: t.f, line: lineAt(t.text, m.index) })
+      const arg = t.text.slice(open + 1, end).trim().replace(/^\(\s*\)\s*=>\s*/, '')
+      if (!/^[A-Za-z_$][\w$]*$/.test(arg)) { const at = t.text.indexOf('[', open); if (at > open && at < end) objects(t, at); continue }
+      for (const u of texts) {
+        const d = u.text.match(new RegExp(String.raw`\b(?:const|let|var)\s+${arg.replace(/\$/g, '\\$')}\b[^=;]*=\s*\[`))
+        if (d) { objects(u, d.index + d[0].length - 1); break }
+      }
+    }
+  }
+  return { calls, lines }
+}
+
 function handoff() {
   const dir = sessionDir()
   const s = need(dir)
@@ -887,6 +981,12 @@ function handoff() {
   const copy = [...found.copy.values()].map(({ tokens, at }) => `"${tokens[0]}" · ${where(at)}`)
   section('Copy', copy.length > 30 ? [...copy.slice(0, 30), `… ${copy.length - 30} more, in the files above`] : copy)
   section('Try it', [...found.hints.values()].map(({ at }) => `Its Try it list (${code('useHints')}) · ${where(at)}: every value, scenario and thing to try works in the build too`))
+  // Copy options are for choosing in the page: the build ships each line's first option as its copy.
+  const offered = copyOptionsIn(files.map(x => x.file))
+  section('Copy options', [
+    ...offered.lines.map(x => `${x.label} (${code(x.id)}) ships "${x.first}"${x.n > 1 ? `, not its ${x.n - 1} other option${x.n === 2 ? '' : 's'}` : ''} · ${rel(x.f)}:${x.line}`),
+    ...offered.calls.length ? [`${code('useCopy')} · ${offered.calls.map(x => `${rel(x.f)}:${x.line}`).join(', ')}: the build ships each line's first option as plain copy; the options and the page's picker stay in the prototype`] : [],
+  ])
   const route = `${t.proto}/${t.variant}`, ref = x => `.proto/ref/${t.proto}/built-${t.variant}${x ? `-${x}` : ''}.png`
   section('Then', [
     'Build it with the project\'s own components and patterns: the variant shows what to build, its code is not the code to ship',
@@ -936,6 +1036,7 @@ const ACTIONS = {
   unpick: 'done: the pick is off in the page; a reply is only a note',
   more: 'new variants in this prototype, named after this one',
   build: 'build this variant into the codebase',
+  copy: 'make this the line\'s text in the variant: put it first in that line\'s useCopy options',
 }
 const FAILED = {
   // Marked: meta.ts has the pick and only the working variant didn't move; proto pick does both and

@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import type { Inbox } from '../shell'
 import { createActions } from './actions'
 import { CommentsCtx, type Ctx, type Host } from './ctx'
+import { CopyBar, CopyMarks, CopySheet, createCopyActions, createCopyStore } from './copy'
 import { Decide, DecidePop, type DecidePopProps, type Subject } from './decide'
 import { Layer } from './layer'
 import { PhoneSheet, Rail } from './rail'
@@ -16,12 +17,19 @@ export type { DecidePopProps, Place, State, Subject }
 export function createComments(host: Host, sessionId: string) {
   const store = createStore(sessionId)
   const act = createActions(store, host)
-  const ctx: Ctx = { store, host, act }
+  // The copy picker and commenting both act on the design, so only one of them is on at a time.
+  const copyStore = createCopyStore()
+  const copyAct = createCopyActions(copyStore, host, store, () => act.stop())
+  const ctx: Ctx = { store, host, act, copyStore, copyAct }
   const wrap = (el: JSX.Element) => <CommentsCtx.Provider value={ctx}>{el}</CommentsCtx.Provider>
-  createRoot(host.layer).render(wrap(<Layer />))
+  createRoot(host.layer).render(wrap(<><Layer /><CopyMarks /></>))
   return {
     store,
     act,
+    /** The copy picker (copy.tsx): its state and actions, for the T buttons, Esc and the stage. */
+    copy: { store: copyStore, ...copyAct },
+    /** Its bar under the stage, and the sheet a phone lists a line's options in (over the stage and the bar). */
+    mountCopy(bar: HTMLElement, sheet: HTMLElement) { createRoot(bar).render(wrap(<><CopyBar /><CopySheet container={sheet} /></>)) },
     mountRail(el: HTMLElement) { createRoot(el).render(wrap(<Rail />)) },
     mountSheet(el: HTMLElement) { createRoot(el).render(wrap(<PhoneSheet />)) },
     /** The bar's Pick, More and Build menu, mounted once; the returned function draws it with new props. */

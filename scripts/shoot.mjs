@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Screenshot places in a prototype session at desktop and phone size: the stage only (the
 // design, or a lobby's grid), without the page's sidebar, bars and floating controls.
-// Usage: shoot.mjs <app-url> <out-dir> <route...> [--theme=dark] [--focus=1] [--click=<css>]... [--ref=<png> [--as=built]] [--phone=<slug,…>] [--sheet=<json>]
+// Usage: shoot.mjs <app-url> <out-dir> <route...> [--theme=dark] [--focus=1] [--copy=1] [--click=<css>]... [--ref=<png> [--as=built]] [--phone=<slug,…>] [--sheet=<json>]
 // Routes are the page's hash routes: "/" (session lobby), "hero" (a prototype's lobby),
 // "hero/A" (one variant), "hero/A/open" (a state from its meta). Files are named
 // hero-A-desktop.png, hero-A-mobile-dark.png …
@@ -17,6 +17,10 @@
 // routes. After the single shots, each prototype gets one contact sheet (hero-sheet.png): a
 // labelled column per variant, desktop above phone. It prints the sheets and one line about the
 // singles instead of every file, so a round is one image to read, not two per variant.
+//
+// --copy=1 opens copy mode on a design that declares copy options (useCopy): its lines' marks, and
+// the bar under the stage, which the shot takes in. A --click on a line ([data-copy=headline]) lists
+// its options, and a --click on one of them ([data-copy-option="1"]) puts it in place.
 //
 // --phone lists the phone prototypes: their variants are shot at phone size only, where the phone
 // shows larger than in the desktop shell. Their lobbies still get both.
@@ -50,7 +54,8 @@ base.hash = ''
 base.searchParams.set('theme', flags.theme === 'dark' ? 'dark' : 'light') // headless Chrome may report a dark system theme
 base.searchParams.set('hints', '0') // the Try it panel would narrow the design
 if (flags.focus) base.searchParams.set('focus', '1')
-const suffix = [flags.focus && 'focus', flags.theme === 'dark' && 'dark', clicks.length && 'clicked'].filter(Boolean).map(s => `-${s}`).join('')
+if (flags.copy) base.searchParams.set('copy', '1')
+const suffix = [flags.focus && 'focus', flags.copy && 'copy', flags.theme === 'dark' && 'dark', clicks.length && 'clicked'].filter(Boolean).map(s => `-${s}`).join('')
 const fileOf = route => route.replace(/^\/+|\/+$/g, '').replace(/\//g, '-') || 'session'
 const phones = new Set(String(flags.phone || '').split(',').filter(Boolean))
 const phoneOnly = route => { const [slug, variant] = route.replace(/^\/+/, '').split('/'); return !!variant && phones.has(slug) }
@@ -115,6 +120,29 @@ try {
     ws.send(JSON.stringify({ id, method, params, sessionId }))
   })
   const sleep = ms => new Promise(r => setTimeout(r, ms))
+  // A --click reaches inside the stage, and the copy picker's list of a line's options.
+  const clickIn = sel => `(() => { const el = document.querySelector('[data-layers]').querySelector(${JSON.stringify(sel)}) ?? document.querySelector('[data-copy-list]')?.querySelector(${JSON.stringify(sel)}); el?.click(); return !!el })()`
+  // With --copy, waits until the bar under the stage has slid in and stopped growing (at most 2 s),
+  // and says whether copy mode is on. A design with no copy options (no [data-copy]) has no copy
+  // mode: no wait, and its shot is named as one at rest, with one line saying so.
+  const plain = new Set()
+  const copied = async (sessionId, route) => {
+    if (!flags.copy) return false
+    const { result } = await send('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: `(async () => {
+      if (!document.querySelector('[data-layers] [data-copy]')) return false
+      const frame = () => new Promise(r => requestAnimationFrame(r)), end = performance.now() + 2000
+      let h = -1, still = 0
+      while (performance.now() < end && still < 6) {
+        const b = document.querySelector('[data-copy-bar]')?.getBoundingClientRect().height ?? 0
+        still = b > 0 && b === h ? still + 1 : 0
+        h = b
+        await frame()
+      }
+      return true
+    })()` }, sessionId)
+    if (!result.value && !plain.has(route)) { plain.add(route); console.error(`shoot: ${route} has no copy options (no [data-copy]), so it is shot without --copy`) }
+    return result.value
+  }
   // Waits, at most 400 ms, until the page's images are in and nothing is still moving (the
   // first crossfade, a design's entrance), then two frames. The first 200 ms always pass, so a
   // reveal a design starts from a timer has begun by the time it is looked for. Looping
@@ -170,6 +198,7 @@ try {
         if (!(ready = result.value)) await sleep(100)
       }
       at.push(performance.now())
+      const copyOn = await copied(sessionId, route)
       await settle(sessionId)
       at.push(performance.now())
       // A state route whose clicks found nothing still shoots, but says so.
@@ -177,18 +206,21 @@ try {
       if (miss.value) console.error(`shoot: ${miss.value} on ${route}`)
       // Interaction states: click each selector inside the design, in order.
       for (const sel of clicks) {
-        const { result } = await send('Runtime.evaluate', { expression: `(() => { const el = document.querySelector('[data-layers]').querySelector(${JSON.stringify(sel)}); el?.click(); return !!el })()`, returnByValue: true }, sessionId)
+        const { result } = await send('Runtime.evaluate', { expression: clickIn(sel), returnByValue: true }, sessionId)
         if (!result.value) console.error(`shoot: nothing matches ${sel} on ${route}`)
         await sleep(400)
       }
       at.push(performance.now())
+      // The stage, and the copy picker's bar under it when copy mode is on: together they are the
+      // stage's own size, so a shot in copy mode lines up with one at rest.
       const { result: stage } = await send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
         document.querySelector('[data-overlay]')?.style.setProperty('display', 'none')
         const r = document.querySelector('[data-layers]').getBoundingClientRect()
-        return { x: r.x, y: r.y, width: r.width, height: r.height, scale: 1 }
+        const bar = document.querySelector('[data-copy-bar]')?.getBoundingClientRect().height ?? 0
+        return { x: r.x, y: r.y, width: r.width, height: r.height + bar, scale: 1 }
       })()` }, sessionId)
       const { data } = await send('Page.captureScreenshot', { format: 'png', clip: stage.value }, sessionId)
-      const file = resolve(outDir, `${fileOf(route)}-${size.name}${suffix}.png`)
+      const file = resolve(outDir, `${fileOf(route)}-${size.name}${flags.copy && !copyOn ? suffix.replace('-copy', '') : suffix}.png`)
       writeFileSync(file, Buffer.from(data, 'base64'))
       // For a sheet, the singles are kept for it and summed up in one line after it. A phone
       // prototype's sheet shows the phone alone, cut from its shot: in a phone-size page it sits
@@ -227,9 +259,10 @@ try {
         if (result.value) break
         await sleep(100)
       }
+      await copied(sessionId, route)
       await settle(sessionId)
       for (const sel of clicks) {
-        await send('Runtime.evaluate', { expression: `document.querySelector('[data-layers]').querySelector(${JSON.stringify(sel)})?.click()` }, sessionId)
+        await send('Runtime.evaluate', { expression: clickIn(sel) }, sessionId)
         await sleep(400)
       }
       // The screen alone: the phone's rounded corners would hide what the reference shows there.

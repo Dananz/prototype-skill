@@ -1,7 +1,8 @@
 // End-to-end check of the skill on this machine: create a session app in a scratch project,
 // add prototypes (one built from another, one from two at once, one from the picks), screenshot
 // them (one by one and on a contact sheet) and snapshot them, open a state listed in meta.ts,
-// print a variant's handoff checklist, then stop and delete the session. Run by
+// print a variant's handoff checklist, send comments, decisions and copy choices from the page,
+// then stop and delete the session. Run by
 // .github/workflows/smoke.yml on Windows, Linux and macOS.
 import { spawn, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -41,11 +42,17 @@ const proto = (args, { ok = true } = {}) => {
 }
 const answers = async url => { try { return (await fetch(url, { signal: AbortSignal.timeout(2000) })).ok } catch { return false } }
 const pngs = dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.png')) : []
-// Runs an expression in the page in headless Chrome once the page says it is ready, as shoot.mjs does.
-async function inPage(url, expression) {
+// Opens the page in headless Chrome and waits until it says it is ready, as shoot.mjs does. run()
+// evaluates an expression there (a promise is awaited), as often as needed; close() ends it all.
+async function openPage(url) {
   const profile = mkdtempSync(join(tmpdir(), 'proto-smoke-'))
   const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run'])
   let ws
+  const close = () => {
+    ws?.close()
+    stopChrome(chrome)
+    try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) } catch { /* temp dir */ }
+  }
   try {
     ws = new WebSocket(await new Promise((ok, no) => {
       let b = ''
@@ -59,14 +66,21 @@ async function inPage(url, expression) {
     const send = (method, params, sessionId) => new Promise(ok => { waiting.set(++n, ok); ws.send(JSON.stringify({ id: n, method, params, sessionId })) })
     const { targetId } = await send('Target.createTarget', { url })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
-    const run = async expr => (await send('Runtime.evaluate', { expression: expr, returnByValue: true }, sessionId))?.result?.value
+    // A page that stops answering (a render loop) fails the check instead of hanging the run.
+    const run = async (expr, ms = 30_000) => {
+      let timer
+      const r = await Promise.race([send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }, sessionId), new Promise(ok => { timer = setTimeout(() => ok('hung'), ms) })])
+      clearTimeout(timer)
+      if (r === 'hung') throw new Error(`the page did not answer in ${ms / 1000} s: it is stuck, as in a render loop`)
+      return r?.result?.value
+    }
     for (let i = 0; i < 150 && !await run('document.documentElement.dataset.ready === "1"'); i++) await new Promise(r => setTimeout(r, 100))
-    return await run(expression)
-  } finally {
-    ws?.close()
-    stopChrome(chrome)
-    try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) } catch { /* temp dir */ }
-  }
+    return { run, close }
+  } catch (e) { close(); throw e }
+}
+async function inPage(url, expression) {
+  const page = await openPage(url)
+  try { return await page.run(expression) } finally { page.close() }
 }
 
 const out = proto(['up', '--name', 'Smoke'])
@@ -409,6 +423,156 @@ if (!/A\.tsx:5 +paddingRight:/.test(rtl)) fail('the rtl check did not list paddi
 if (/A\.tsx:[2467] /.test(rtl)) fail('the rtl check listed a logical side, centring, a per-direction class or an LTR island')
 // A phone prototype's variant is shot at phone size only.
 if (!pngs(shots).includes('phone-A-mobile.png') || pngs(shots).includes('phone-A-desktop.png')) fail('a phone variant should be shot at phone size only')
+
+// Copy options: a variant that declares them (useCopy, from the app's own src/copy.ts) gets a T
+// button with its count, here from two components that each declare lines; copy mode marks its
+// lines, a pick puts the words in place, and Send posts one comment per changed line with action
+// copy, on the line's element and where it is written. Claude's reply reaches the bar. What was
+// sent survives a reload (nothing goes twice), and so does a way back to today's words, which can
+// be sent too. A component that unmounts while copy mode is on takes its lines with it, and
+// commenting still works. A variant that declares none has no T button.
+if (!existsSync(join(app, 'src', 'copy.ts'))) fail('the app has no src/copy.ts')
+proto(['add', 'words', '--title', 'Words', '--variants', 'A:Options,B:Plain'])
+writeFileSync(join(app, 'src', 'protos', 'words', 'parts.tsx'), [
+  'import { useCopy } from \'../../copy\'',
+  'export function Go() {',
+  '  const copy = useCopy([',
+  '    // the user\'s button',
+  '    { id: \'go\', label: \'Button\', options: [\'Let\\\'s go\', \'Hi {name}, go [now]\'] }, // isn\'t it',
+  '    { id: \'note\', label: \'Note\', options: [\'Free\', \'No fee\'] },',
+  '  ])',
+  '  return <div>',
+  '    <button data-copy="go" className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-white">{copy.go}</button>',
+  '    <p data-copy="note">{copy.note}</p>',
+  '  </div>',
+  '}',
+].join('\n'))
+writeFileSync(join(app, 'src', 'protos', 'words', 'A.tsx'), [
+  'import { useState } from \'react\'',
+  'import { useCopy } from \'../../copy\'',
+  'import { Go } from \'./parts\'',
+  'export default function A() {',
+  '  const [go, setGo] = useState(true)',
+  '  const copy = useCopy([',
+  '    { id: \'title\', label: \'Title\', options: [\'Save more\', \'Pay less\', \'Keep more\'] },',
+  '  ])',
+  '  return <div className="h-full p-8">',
+  '    <h1 data-copy="title" className="text-2xl">{copy.title}</h1>',
+  '    <button data-hide-go onClick={() => setGo(false)}>Hide the button</button>',
+  '    {go && <Go />}',
+  '  </div>',
+  '}',
+].join('\n'))
+writeFileSync(join(app, 'src', 'protos', 'words', 'B.tsx'), 'export default function B() {\n  return <h1 className="p-8 text-2xl">Save more</h1>\n}\n')
+const plain = await inPage(`${local}?theme=light#/words/B`, 'new Promise(r => setTimeout(r, 800)).then(() => document.querySelectorAll("[data-act=copymode]").length)')
+if (plain !== 0) fail(`a variant without copy options shows ${plain} T buttons`)
+const words = await openPage(`${local}?theme=light#/words/A`).catch(e => fail(`copy options in the page: ${e.message}`))
+const until = `const until = async (f, ms = 4000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } return null }`
+// Turns copy mode on (after a reload it starts off).
+const copyOn = `{
+    const t = await until(() => document.querySelector('[data-bar] [data-act=copymode]'))
+    if (!t) return 'no T button'
+    if (t.getAttribute('aria-pressed') !== 'true') t.click()
+  }`
+// Clicks a line's mark, then its option i (0 is today's words); the line should then read words.
+const pick = (id, i, words) => `
+    const mark = await until(() => document.querySelector('[data-copy-mark=${id}]'))
+    if (!mark) return 'copy mode marked no ${id} line'
+    mark.click()
+    const option = await until(() => document.querySelector('[data-copy-list] [data-copy-option="${i}"]'))
+    if (!option) return 'clicking the ${id} line listed no options'
+    option.click()
+    const line = () => document.querySelector('[data-mount] [data-copy=${id}]')?.textContent
+    if (!await until(() => line() === '${words}')) return 'the ${id} line should read ${words}, reads ' + line()`
+const sendOne = `
+    const send = await until(() => document.querySelector('[data-shoot=send-copy]:not([disabled])'))
+    if (!send || !/Send 1 choice/.test(send.textContent)) return 'no Send 1 choice: ' + send?.textContent
+    send.click()
+    if (!await until(() => /Sent/.test(document.querySelector('[data-shoot=send-copy]')?.textContent ?? ''))) return 'the bar never said Sent'`
+const reload = async () => {
+  await words.run('setTimeout(() => location.reload(), 0), 1')
+  await new Promise(r => setTimeout(r, 500))
+  for (let i = 0; i < 100 && !await words.run('document.documentElement.dataset.ready === "1"').catch(() => false); i++) await new Promise(r => setTimeout(r, 100))
+}
+try {
+  const step = await words.run(`(async () => {
+    ${until}
+    const t = await until(() => document.querySelector('[data-bar] [data-act=copymode]'))
+    if (!t || t.title !== 'Copy options for 3 lines' || t.textContent.trim() !== '3') return 'the T button should say 3 lines, from both components: ' + (t ? t.title + ' / ' + t.textContent : 'none')
+    ${copyOn}
+    ${pick('title', 1, 'Pay less')}
+    ${sendOne}
+    return 'ok'
+  })()`)
+  if (step !== 'ok') fail(`copy options in the page: ${step}`)
+  const told = proto(['inbox'])
+  if (!/^ {3}action: copy \(make this the line's text/m.test(told) || !/“Pay less”, option 2 of 3/.test(told)) fail(`proto inbox should print the copy choice with action: copy: ${told}`)
+  if (!told.includes('src/protos/words/A.tsx:10 (A)')) fail(`the copy choice should be on the line's element, words/A.tsx:10: ${told}`)
+  proto(['reply', told.match(/^batch (\S+)/m)[1], 'Title is now Pay less', '--done'])
+  const replied = await words.run(`(async () => {
+    for (const end = Date.now() + 5000; Date.now() < end; await new Promise(r => setTimeout(r, 100))) if (document.querySelector('[data-copy-bar]').innerText.includes('Title is now Pay less')) return true
+    return document.querySelector('[data-copy-bar]').innerText
+  })()`)
+  if (replied !== true) fail(`Claude's reply never reached the copy bar: ${replied}`)
+  // After a reload, what was sent is still sent: nothing to send again, and the reply is there.
+  await reload()
+  const kept = await words.run(`(async () => {
+    ${until}
+    ${copyOn}
+    if (!await until(() => document.querySelector('[data-copy-bar]').innerText.includes('Title is now Pay less'))) return 'the reply is gone: ' + document.querySelector('[data-copy-bar]').innerText
+    if (document.querySelector('[data-shoot=send-copy]:not([disabled])')) return 'after a reload the sent line is offered again'
+    return 'ok'
+  })()`)
+  if (kept !== 'ok') fail(`what was sent, after a reload: ${kept}`)
+  // Back to today's words after the send is a change to send as well, and a reload keeps it.
+  const back = await words.run(`(async () => {
+    ${until}
+    ${pick('title', 0, 'Save more')}
+    return 'ok'
+  })()`)
+  if (back !== 'ok') fail(`going back to today's words after a send: ${back}`)
+  await reload()
+  const backSent = await words.run(`(async () => {
+    ${until}
+    ${copyOn}
+    ${sendOne}
+    return 'ok'
+  })()`)
+  if (backSent !== 'ok') fail(`the way back to today's words, after a reload: ${backSent}`)
+  const toldBack = proto(['inbox'])
+  if (!/“Save more”, back to today's words \(option 1 of 3\)/.test(toldBack)) fail(`proto inbox should print the way back to today's words: ${toldBack}`)
+  // A component that declared lines unmounts while copy mode is on: its lines go, the rest stay
+  // marked (also after closing and opening copy mode again), and ⌥-click still opens a comment.
+  const gone = await words.run(`(async () => {
+    ${until}
+    document.querySelector('[data-mount] [data-hide-go]').click()
+    if (!await until(() => !document.querySelector('[data-copy-mark=go], [data-copy-mark=note]'))) return 'the hidden lines are still marked'
+    const t = () => document.querySelector('[data-bar] [data-act=copymode]')
+    t().click()
+    if (!await until(() => t().title === 'Copy options for 1 line')) return 'the T button should say 1 line: ' + t().title
+    t().click()
+    if (!await until(() => document.querySelector('[data-copy-mark=title]'))) return 'copy mode marks nothing after it opens again'
+    document.querySelector('[data-mount] [data-hide-go]').dispatchEvent(new MouseEvent('click', { altKey: true, bubbles: true, cancelable: true }))
+    if (!await until(() => document.querySelector('[data-composer]'))) return 'an option-click opened no comment'
+    return 'ok'
+  })()`)
+  if (gone !== 'ok') fail(`a component with lines unmounting in copy mode: ${gone}`)
+} finally { words.close() }
+// The checklist names each line, whichever component declares it, whatever brackets, comments or
+// escaped quotes are around its words, and what the build ships; a shot in copy mode is the
+// stage's own size.
+const handed = proto(['handoff', 'words/A'])
+if (!/^- \[ \] Title \(`title`\) ships "Save more", not its 2 other options · A\.tsx:7$/m.test(handed)) fail('proto handoff did not list the Title line and what ships')
+if (!/^- \[ \] Button \(`go`\) ships "Let's go", not its 1 other option · parts\.tsx:5$/m.test(handed)) fail('proto handoff did not list the Button line, with a comment above it and brackets and an escaped quote in its words')
+if (!/^- \[ \] Note \(`note`\) ships "Free", not its 1 other option · parts\.tsx:6$/m.test(handed)) fail('proto handoff did not list the Note line, after a comment with a quote')
+proto(['shoot', 'words/A'])
+proto(['shoot', 'words/A', '--copy'])
+const sizeOf = f => { const h = readFileSync(join(shots, f)); return `${h.readUInt32BE(16)}x${h.readUInt32BE(20)}` }
+if (!pngs(shots).includes('words-A-desktop-copy.png') || sizeOf('words-A-desktop-copy.png') !== sizeOf('words-A-desktop.png')) fail('proto shoot --copy should write words-A-desktop-copy.png at the size of words-A-desktop.png')
+// A variant without copy options is shot as it is, named so, and says why.
+const noCopy = proto(['shoot', 'words/B', '--copy'])
+if (!/words\/B has no copy options/.test(noCopy) || pngs(shots).includes('words-B-desktop-copy.png') || !noCopy.includes('words-B-desktop.png')) fail(`proto shoot --copy on a variant without copy options should say so and name the shot words-B-desktop.png: ${noCopy}`)
+if ((await postJson('comments', { comments: [{ route: 'words', text: 'x', action: 'copy' }] })).status !== 400) fail('a copy choice on no variant was accepted')
 
 proto(['stop'])
 for (let i = 0; i < 40 && await answers(`${local}__proto/status`); i++) await new Promise(r => setTimeout(r, 250))

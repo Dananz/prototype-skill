@@ -79,6 +79,7 @@ Or just ask for "a few versions of the settings drawer". Keep talking in the sam
 |---|---|
 | "two more" | D and E next to A, B and C |
 | "B, but with a map" | new variants built from B |
+| "try other headlines" | options for those lines, picked on the design |
 | "go with A" | A marked as the pick |
 | "build it" | the real feature in your codebase |
 
@@ -97,6 +98,7 @@ Or just ask for "a few versions of the settings drawer". Keep talking in the sam
 - Open menus, drawers and steps from a list, autoplay them, or compare two variants in the same state.
 - A Try it panel tells you what to type and where to click.
 - Comment on any part of a design. Claude makes the change and replies.
+- Ask for other copy, then try Claude's options on the design itself and send back the ones you pick.
 
 ### A pick, not a pile
 - Claude screenshots every variant on desktop and phone, fixes what it sees over two rounds, then recommends one and says why.
