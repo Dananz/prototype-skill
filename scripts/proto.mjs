@@ -1013,9 +1013,11 @@ function take(dir) {
   mkdirSync(join(inboxDir(dir), 'taken'), { recursive: true })
   for (const id of batchesIn(dir, 'new')) {
     const from = join(inboxDir(dir), 'new', id)
-    try { moveDir(from, join(inboxDir(dir), 'taken', id)) } catch { continue /* another reader took it, or it is not whole yet */ }
+    // A batch that can't be taken or read is said so (on stderr), never skipped without a word.
+    try { moveDir(from, join(inboxDir(dir), 'taken', id)) } catch (e) { if (existsSync(from)) console.error(`batch ${id} could not be taken (${e?.code ?? e?.message ?? e})`); continue /* else another reader took it */ }
     const b = readJson(join(inboxDir(dir), 'taken', id, 'batch.json'), null)
     if (b) taken.push(b)
+    else console.error(`batch ${id}: its batch.json could not be read`)
   }
   return taken
 }

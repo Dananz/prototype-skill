@@ -154,7 +154,11 @@ function receive(data) {
   if (!comments.length) throw Object.assign(new Error('no comments'), { status: 400 })
   const bad = (i, why) => Object.assign(new Error(`comment ${i + 1}${why}`), { status: 400 })
   const at = new Date().toISOString()
-  const id = `${at.replace(/[-:]/g, '').replace(/\..*/, '')}-${randomBytes(2).toString('hex')}`
+  // Unique among the batches there are: two sends in one second that drew the same suffix would
+  // share a folder, and the second could never be taken.
+  let id
+  do id = `${at.replace(/[-:]/g, '').replace(/\..*/, '')}-${randomBytes(2).toString('hex')}`
+  while (['new', 'taken', '.incoming'].some(sub => existsSync(join(inbox, sub, id))))
   const files = []
   const list = comments.map((c, i) => {
     if (typeof c?.text !== 'string' || !c.text.trim()) throw bad(i, ' has no text')

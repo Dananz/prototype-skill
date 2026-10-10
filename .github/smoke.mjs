@@ -335,24 +335,33 @@ if (/Build A/.test(proto(['inbox']))) fail('a refused request still reached the 
 // A decision made in the page is a comment with an action. A pick is marked by the server at once
 // (meta.ts, and the working variant with "Picked B" in its history), before the agent reads it, and
 // arrives done; the answer says the working variant moved. Taking it back unmarks it. The inbox
-// prints the action.
+// prints the action. Each read waits for its batch in new/ (the answer only comes once it is
+// written there, so this never waits in practice) and must hand that batch out; a miss says where
+// the batch is.
+const inboxWith = async id => {
+  const at = sub => existsSync(join(app, '.proto', 'inbox', sub, id, 'batch.json'))
+  for (let i = 0; i < 40 && !at('new') && !at('taken'); i++) await new Promise(r => setTimeout(r, 50))
+  const out = proto(['inbox'])
+  if (!out.includes(`batch ${id} `)) fail(`proto inbox did not hand out batch ${id} (in new/: ${at('new')}, in taken/: ${at('taken')}):\n${out}`)
+  return out
+}
 const pickSent = await send([{ route: 'hero/B', text: 'Picked B', action: 'pick' }])
 if (!readFileSync(heroMeta, 'utf8').includes('"picked": "B"')) fail('a pick from the page did not mark hero/meta.ts')
 if (pickSent.moved !== true) fail(`the pick moved the working variant but the answer says moved: ${pickSent.moved}`)
 if (pickSent.inbox.batches.find(b => b.id === pickSent.sent)?.state !== 'done') fail('a pick from the page did not arrive done')
 const picked = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
 if (picked.work?.proto !== 'hero' || picked.work.variant !== 'B' || picked.asks?.['hero/B']?.at(-1)?.text !== 'Picked B') fail(`a pick from the page should make hero/B the working variant with "Picked B": ${JSON.stringify(picked.work)} ${JSON.stringify(picked.asks?.['hero/B'])}`)
-if (!/^ {3}action: pick \(done/m.test(proto(['inbox']))) fail('proto inbox did not print the pick as done (action: pick (done …))')
+if (!/^ {3}action: pick \(done/m.test(await inboxWith(pickSent.sent))) fail('proto inbox did not print the pick as done (action: pick (done …))')
 // The answer says how each decision went, and where the working variant is now.
 if (JSON.stringify(pickSent.results) !== '[{"n":1,"action":"pick","done":true}]' || pickSent.work?.variant !== 'B') fail(`the answer to a pick should say it was done and work is hero/B: ${JSON.stringify(pickSent.results)} ${JSON.stringify(pickSent.work)}`)
 const unpickSent = await send([{ route: 'hero/B', text: 'Unpicked B', action: 'unpick' }, { route: 'hero/B', text: 'More like B: warmer', action: 'more' }])
 if (readFileSync(heroMeta, 'utf8').includes('"picked"')) fail('taking the pick back in the page left it in hero/meta.ts')
 if (JSON.stringify(unpickSent.results) !== '[{"n":1,"action":"unpick","done":true},{"n":2,"action":"more","done":false}]') fail(`the answer should say the unpick was done and More waits: ${JSON.stringify(unpickSent.results)}`)
-if (!/action: more/.test(proto(['inbox']))) fail('proto inbox did not print action: more')
+if (!/action: more/.test(await inboxWith(unpickSent.sent))) fail('proto inbox did not print action: more')
 // Taking back a pick that isn't there changes nothing, so it isn't done: it arrives saying so.
 const noop = await send([{ route: 'hero/A', text: 'Unpicked A', action: 'unpick' }])
 if (noop.results?.[0]?.done !== false || !noop.results[0].nothing || noop.inbox.batches.find(b => b.id === noop.sent)?.state === 'done') fail(`an unpick of a variant that wasn't picked arrived done: ${JSON.stringify(noop.results)}`)
-if (!/^ {3}action: unpick \(nothing changed/m.test(proto(['inbox']))) fail('proto inbox did not say an unpick changed nothing')
+if (!/^ {3}action: unpick \(nothing changed/m.test(await inboxWith(noop.sent))) fail('proto inbox did not say an unpick changed nothing')
 // A pick that is marked but can't move the working variant (session.json unreadable for a moment)
 // says so, apart from one that wasn't marked at all.
 const sessionText = readFileSync(join(app, 'session.json'), 'utf8')
