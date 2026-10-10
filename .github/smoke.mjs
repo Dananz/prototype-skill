@@ -427,8 +427,8 @@ if (!pngs(shots).includes('phone-A-mobile.png') || pngs(shots).includes('phone-A
 // Copy options: a variant that declares them (useCopy, from the app's own src/copy.ts) gets a T
 // button with its count, here from two components that each declare a line; copy mode marks its
 // lines, a pick puts the words in place, and Send posts one comment per changed line with action
-// copy, on the line's element and where it is written. Claude's reply reaches the bar. A variant
-// that declares none has no T button.
+// copy, on the line's element and where it is written. Claude's reply reaches the bar, and going
+// back to today's words after a send can be sent too. A variant that declares none has no T button.
 if (!existsSync(join(app, 'src', 'copy.ts'))) fail('the app has no src/copy.ts')
 proto(['add', 'words', '--title', 'Words', '--variants', 'A:Options,B:Plain'])
 writeFileSync(join(app, 'src', 'protos', 'words', 'A.tsx'), [
@@ -485,6 +485,15 @@ try {
     return document.querySelector('[data-copy-bar]').innerText
   })()`)
   if (replied !== true) fail(`Claude's reply never reached the copy bar: ${replied}`)
+  // Back to today's words after the send: that is a change to send as well.
+  const back = await words.run(`(async () => {
+    ${until}
+    ${choose('title', 0, 'Save more')}
+    return 'ok'
+  })()`)
+  if (back !== 'ok') fail(`going back to today's words after a send: ${back}`)
+  const toldBack = proto(['inbox'])
+  if (!/“Save more”, back to today's words \(option 1 of 3\)/.test(toldBack)) fail(`proto inbox should print the way back to today's words: ${toldBack}`)
 } finally { words.close() }
 // The checklist names each line, whichever component declares it, and what the build ships; a
 // shot in copy mode is the stage's own size.

@@ -58,9 +58,17 @@ export function createCopyActions(cs: CopyStore, host: Host, comments: Store, st
   const unpeek = () => { const s = get().stage; if (s) copy.peek(s, '', null) }
   const act = {
     lines,
-    /** The lines that read other than today, and those of them not yet sent with these words. */
+    /** The lines that read other than today. */
     changed: () => copy.changed(get().stage),
-    pending: () => { const s = get(); return copy.changed(s.stage).filter(c => s.sent[s.route]?.texts[c.line.id] !== c.choice.text) },
+    /** What Send posts: each line whose words differ from those it was last sent with (from today's,
+     *  if it was never sent). A line put back to today's words after a send goes too, with no choice. */
+    pending: () => {
+      const s = get(), went = s.sent[s.route]?.texts ?? {}
+      return lines().flatMap(line => {
+        const choice = copy.choiceOf(s.stage, line.id), text = choice?.text ?? line.options[0]
+        return (went[line.id] ?? line.options[0]) === text ? [] : [{ line, choice, text }]
+      })
+    },
     /** The page moved, or redrew: the design on the stage now. Copy mode stays on through a remount of
      *  the same variant (a hot reload that renamed its component); anywhere else it starts closed. */
     setStage(stage: HTMLElement | null, route: string) {
@@ -107,17 +115,17 @@ export function createCopyActions(cs: CopyStore, host: Host, comments: Store, st
       copy.choose(s.stage, s.was.id, s.was.choice)
       set(x => ({ was: null, flash: { id: s.was!.id, n: (x.flash?.n ?? 0) + 1 } }))
     },
-    /** Every changed line not sent yet, as one batch: a comment per line with action copy, on its element. */
+    /** Every line changed since the last send, as one batch: a comment per line with action copy, on its element. */
     async send() {
       const s = get(), stage = s.stage
       const list = act.pending()
       if (!stage || !list.length || s.sending) return
-      const comments = list.map(({ line, choice }) => {
+      const comments = list.map(({ line, choice, text }) => {
         const el = stage.querySelector<HTMLElement>(`[data-copy="${CSS.escape(line.id)}"]`)
-        const k = line.options.indexOf(choice.text)
+        const which = !choice ? `back to today's words (option 1 of ${line.options.length})` : choice.own ? 'my own words' : `option ${line.options.indexOf(text) + 1} of ${line.options.length}`
         return {
           route: s.route,
-          text: `${line.label} (${line.id}): “${choice.text}”, ${choice.own ? 'my own words' : `option ${k + 1} of ${line.options.length}`}`,
+          text: `${line.label} (${line.id}): “${text}”, ${which}`,
           action: 'copy' as const,
           ...(el ? { target: describe(stage, el) } : {}),
         }
@@ -125,7 +133,7 @@ export function createCopyActions(cs: CopyStore, host: Host, comments: Store, st
       set({ sending: true, error: '' })
       try {
         const { id } = await host.send({ theme: host.dark() ? 'dark' : 'light', viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 }, comments })
-        const texts = { ...get().sent[s.route]?.texts, ...Object.fromEntries(list.map(c => [c.line.id, c.choice.text])) }
+        const texts = { ...get().sent[s.route]?.texts, ...Object.fromEntries(list.map(c => [c.line.id, c.text])) }
         set(x => ({ sending: false, was: null, sent: { ...x.sent, [s.route]: { batch: id, texts } } }))
       } catch (e) {
         set({ sending: false, error: e instanceof Error ? e.message : 'Could not send' })
@@ -566,7 +574,7 @@ export function CopyBar() {
   const lines = useLines(s.stage)
   const narrow = useNarrow()
   const on = s.on && lines.length > 0
-  const changed = copyAct.changed(), pending = copyAct.pending()
+  const pending = copyAct.pending()
   const sent = s.sent[s.route]
   const reply = sent ? replyTo(sent.batch, store) : null
   const listening = !!inbox?.listening
@@ -583,8 +591,8 @@ export function CopyBar() {
     </button>
   )
   const send = (cls: string) => <SendChoices n={pending.length} sending={s.sending} sent={!!sent} reply={reply} listening={listening} onSend={copyAct.send} className={cls} />
-  // Sent and nothing new since: what went, until the next change.
-  const shown = pending.length ? changed.map(c => c.line.label) : Object.keys(sent?.texts ?? {}).map(label)
+  // What Send would post, in the page's order; sent and nothing new since: what went, until the next change.
+  const shown = pending.length ? pending.map(c => c.line.label) : Object.keys(sent?.texts ?? {}).map(label)
   const oops = s.error && <p role="alert" className="mb-2 rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300">{s.error}</p>
 
   return (
