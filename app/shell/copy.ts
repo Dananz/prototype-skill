@@ -12,12 +12,16 @@
 // written. A choice Claude has made the line's first option is done, so it goes; so does one whose
 // words are no longer among the options. The user's own words stay until they are the first option.
 // What was last sent to Claude for each line is kept the same way, beside them, so a reload neither
-// sends a line twice nor forgets a change made since; it goes with its line's choice.
+// sends a line twice nor forgets a change made since; it goes with its line's choice. Going back to
+// today's words after other words went is a choice too (`back`), not none: when Claude's edit for
+// the earlier words lands and reorders the options, the line still reads what the user went back
+// to, and that is still there to send. It goes once Claude is done and copy mode closes.
 
 /** One line with options. options[0] is the line as it reads today. */
 export type CopyLine = { id: string; label: string; options: string[] }
-/** What was chosen for a line: one of its options, or the user's own words. */
-export type Choice = { text: string; own?: boolean }
+/** What was chosen for a line: one of its options, or the user's own words; `back` when it is the
+ *  way back to today's words after others were sent. */
+export type Choice = { text: string; own?: boolean; back?: boolean }
 /** What was sent from one variant: the last batch, the words each line was last sent with, and
  *  every line sent (the bar names them while Claude answers). */
 export type Sent = { batch: string; texts: Record<string, string>; ids: string[] }
@@ -44,8 +48,9 @@ const load = (key: string) => { try { const v = JSON.parse(sessionStorage.getIte
 // What a variant passes is taken as it comes, so a line without options or a label is skipped.
 const clean = (list: unknown): CopyLine[] => (Array.isArray(list) ? list : []).filter(l => l && typeof l.id === 'string' && l.id && Array.isArray(l.options) && l.options.length && l.options.every((o: unknown) => typeof o === 'string'))
   .map(l => ({ id: l.id, label: typeof l.label === 'string' && l.label ? l.label : l.id, options: l.options }))
-/** A choice still stands while it differs from the first option and, unless it is the user's own, is one of the options. */
-const stands = (line: CopyLine, c?: Choice | null): c is Choice => !!c && typeof c.text === 'string' && !!c.text.trim() && c.text !== line.options[0] && (!!c.own || line.options.includes(c.text))
+/** A choice still stands while it differs from the first option (or is the way back to it) and,
+ *  unless it is the user's own, is one of the options. */
+const stands = (line: CopyLine, c?: Choice | null): c is Choice => !!c && typeof c.text === 'string' && !!c.text.trim() && (c.text !== line.options[0] || !!c.back) && (!!c.own || line.options.includes(c.text))
 /** The design's lines from all its components: a line two of them declare (a part used twice)
  *  counts once, and they follow the order their elements have in the design. True when that changed. */
 function merge(host: Element) {
@@ -112,17 +117,18 @@ export const copy = {
   /** The choice that stands for a line of the design in host, if any. */
   choiceOf(host: Element | null | undefined, id: string): Choice | null {
     const line = copy.of(host).find(l => l.id === id), c = host ? saved[copy.routeOf(host)]?.[id] : undefined
-    return line && stands(line, c) ? { text: c.text, ...(c.own ? { own: true } : {}) } : null
+    return line && stands(line, c) ? { text: c.text, ...(c.own ? { own: true } : {}), ...(c.back ? { back: true } : {}) } : null
   },
   /** Lines of the design in host that read other than today, with what they read. */
-  changed: (host: Element | null | undefined) => copy.of(host).flatMap(line => { const c = copy.choiceOf(host, line.id); return c ? [{ line, choice: c }] : [] }),
+  changed: (host: Element | null | undefined) => copy.of(host).flatMap(line => { const c = copy.choiceOf(host, line.id); return c && c.text !== line.options[0] ? [{ line, choice: c }] : [] }),
   /** Choose for a line: an option, the user's own words, or null for today's. */
   choose(host: Element, id: string, choice: Choice | null) {
     const route = copy.routeOf(host), line = copy.of(host).find(l => l.id === id)
     if (!route || !line) return
-    const text = choice?.text.trim() ?? ''
-    // Own words that match an option are that option.
-    const c: Choice = { text, ...(choice?.own && !line.options.includes(text) ? { own: true } : {}) }
+    const text = choice?.text.trim() || line.options[0], sentAs = went[route]?.texts?.[id]
+    // Own words that match an option are that option; today's words, after others were sent, are
+    // the way back to them.
+    const c: Choice = { text, ...(choice?.own && !line.options.includes(text) ? { own: true } : {}), ...(text === line.options[0] && sentAs !== undefined && sentAs !== text ? { back: true } : {}) }
     const mine = saved[route] ??= {}
     if (stands(line, c)) mine[id] = c
     else delete mine[id]
@@ -141,7 +147,12 @@ export const copy = {
   },
   /** Claude is done with what was sent, and copy mode closed: the bar starts over. */
   unsend(route: string) {
-    if (!went[route]) return
+    const w = went[route]
+    if (!w) return
+    // A way back that went is done with it.
+    const mine = saved[route]
+    for (const [id, c] of Object.entries(mine ?? {})) if (c.back && w.texts?.[id] === c.text) delete mine![id]
+    if (mine && !Object.keys(mine).length) delete saved[route]
     delete went[route]
     persist()
     bump()

@@ -103,8 +103,8 @@ export function createCopyActions(cs: CopyStore, host: Host, comments: Store, st
     choose(id: string, choice: Choice | null) {
       const s = get()
       if (!s.stage) return
-      const before = copy.choiceOf(s.stage, id)
-      if ((before?.text ?? null) === (choice?.text ?? null) && !!before?.own === !!choice?.own) return
+      const before = copy.choiceOf(s.stage, id), today = copy.of(s.stage).find(l => l.id === id)?.options[0]
+      if ((before?.text ?? today) === (choice?.text ?? today) && !!before?.own === !!choice?.own) return
       copy.choose(s.stage, id, choice)
       set(x => ({ was: { id, choice: before }, flash: { id, n: (x.flash?.n ?? 0) + 1 }, error: '' }))
     },
@@ -121,7 +121,8 @@ export function createCopyActions(cs: CopyStore, host: Host, comments: Store, st
       if (!stage || !list.length || s.sending) return
       const comments = list.map(({ line, choice, text }) => {
         const el = stage.querySelector<HTMLElement>(`[data-copy="${CSS.escape(line.id)}"]`)
-        const which = !choice ? `back to today's words (option 1 of ${line.options.length})` : choice.own ? 'my own words' : `option ${line.options.indexOf(text) + 1} of ${line.options.length}`
+        const k = line.options.indexOf(text) + 1, n = line.options.length
+        const which = !choice || (choice.back && k === 1) ? `back to today's words (option 1 of ${n})` : choice.back ? `back to the words it had (option ${k} of ${n})` : choice.own ? 'my own words' : `option ${k} of ${n}`
         return {
           route: s.route,
           text: `${line.label} (${line.id}): “${text}”, ${which}`,

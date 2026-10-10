@@ -532,6 +532,21 @@ try {
     return 'ok'
   })()`)
   if (back !== 'ok') fail(`going back to today's words after a send: ${back}`)
+  // Claude's edit for the first send lands before the way back is sent: Pay less comes first, and
+  // the line still reads Save more, there to send.
+  const aFile = join(app, 'src', 'protos', 'words', 'A.tsx')
+  writeFileSync(aFile, readFileSync(aFile, 'utf8').replace("['Save more', 'Pay less', 'Keep more']", "['Pay less', 'Save more', 'Keep more']"))
+  const reordered = await words.run(`(async () => {
+    ${until}
+    document.querySelector('[data-copy-mark=title]').click()
+    if (!await until(() => document.querySelector('[data-copy-list] [data-copy-option="0"]')?.textContent.includes('Pay less'), 8000)) return 'the edit never reached the page'
+    document.querySelector('[data-copy-mark=title]').click()
+    const line = () => document.querySelector('[data-mount] [data-copy=title]')?.textContent
+    if (!await until(() => line() === 'Save more')) return 'the line should still read Save more, reads ' + line()
+    if (!await until(() => document.querySelector('[data-shoot=send-copy]:not([disabled])'))) return 'the way back is not there to send'
+    return 'ok'
+  })()`)
+  if (reordered !== 'ok') fail(`the way back to today's words, once Claude's edit for the earlier words lands: ${reordered}`)
   await reload()
   const backSent = await words.run(`(async () => {
     ${until}
@@ -541,7 +556,7 @@ try {
   })()`)
   if (backSent !== 'ok') fail(`the way back to today's words, after a reload: ${backSent}`)
   const toldBack = proto(['inbox'])
-  if (!/“Save more”, back to today's words \(option 1 of 3\)/.test(toldBack)) fail(`proto inbox should print the way back to today's words: ${toldBack}`)
+  if (!/“Save more”, back to the words it had \(option 2 of 3\)/.test(toldBack)) fail(`proto inbox should print the way back to today's words: ${toldBack}`)
   // A component that declared lines unmounts while copy mode is on: its lines go, the rest stay
   // marked (also after closing and opening copy mode again), and ⌥-click still opens a comment.
   const gone = await words.run(`(async () => {
@@ -550,7 +565,7 @@ try {
     if (!await until(() => !document.querySelector('[data-copy-mark=go], [data-copy-mark=note]'))) return 'the hidden lines are still marked'
     const t = () => document.querySelector('[data-bar] [data-act=copymode]')
     t().click()
-    if (!await until(() => t().title === 'Copy options for 1 line')) return 'the T button should say 1 line: ' + t().title
+    if (!await until(() => /^Copy options for 1 line(,|$)/.test(t().title))) return 'the T button should say 1 line: ' + t().title
     t().click()
     if (!await until(() => document.querySelector('[data-copy-mark=title]'))) return 'copy mode marks nothing after it opens again'
     document.querySelector('[data-mount] [data-hide-go]').dispatchEvent(new MouseEvent('click', { altKey: true, bubbles: true, cancelable: true }))
@@ -563,7 +578,7 @@ try {
 // escaped quotes or JSX words with a /* are around its words, and what the build ships; a shot in
 // copy mode is the stage's own size.
 const handed = proto(['handoff', 'words/A'])
-if (!/^- \[ \] Title \(`title`\) ships "Save more", not its 2 other options · A\.tsx:7$/m.test(handed)) fail('proto handoff did not list the Title line and what ships')
+if (!/^- \[ \] Title \(`title`\) ships "Pay less", not its 2 other options · A\.tsx:7$/m.test(handed)) fail('proto handoff did not list the Title line and what ships')
 if (!/^- \[ \] Button \(`go`\) ships "Let's go", not its 1 other option · parts\.tsx:6$/m.test(handed)) fail('proto handoff did not list the Button line, after JSX words with src/*.ts, with a comment above it and brackets and an escaped quote in its words')
 if (!/^- \[ \] Note \(`note`\) ships "Free", not its 1 other option · parts\.tsx:7$/m.test(handed)) fail('proto handoff did not list the Note line, after a comment with a quote')
 proto(['shoot', 'words/A'])
