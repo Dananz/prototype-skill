@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // proto: one live prototype app per Claude Code session, served on the tailnet.
 //
-//   proto up [--name "Session name"] [--stack react|vue]   create or restart, print the URL
+//   proto up [--name "Session name"] [--stack react|vue]   create or restart, print the URL; an existing
+//             session's copy of the app (shell, config, packages) is brought up to date first
 //   proto add <slug> --title "…" --variants "A:Name,B:Name" [--ask "…"] [--kind phone] [--screen 402x874]
 //             [--from <slug>/<letter>[,<slug>/<letter>…]]   built from those variants: nested under the first
 //             [--from-picks]   built from every variant the user picked in this session
@@ -223,6 +224,70 @@ function scaffold(dir, project) {
   console.log(`created ${tilde(dir)} (${stack}: ${why})`)
 }
 
+// ---------- update ----------
+// What a session's app takes from the template, by its path in the session: everything copied in
+// except the session's own work (its prototypes and theme), plus the stack's adapters.
+const OWN = new Set(['adapters', 'stubs', 'node_modules', join('src', 'protos'), join('src', 'theme.css')])
+function appFiles(stack) {
+  const kit = STACKS[stack] || die(`unknown stack "${stack}" in session.json`)
+  const out = new Map()
+  const walk = rel => {
+    for (const e of readdirSync(join(APP, rel), { withFileTypes: true })) {
+      const r = join(rel, e.name)
+      if (OWN.has(r)) continue
+      if (e.isDirectory()) walk(r)
+      else out.set(r === 'gitignore' ? '.gitignore' : r, join(APP, r))
+    }
+  }
+  walk('')
+  out.set(join('src', `mount.${kit.adapter.split('.').pop()}`), join(APP, 'adapters', kit.adapter))
+  out.set(join('src', 'hints.ts'), join(APP, 'adapters', kit.hints))
+  out.set(join('src', 'copy.ts'), join(APP, 'adapters', kit.copy))
+  out.set(join('src', 'motion.ts'), join(APP, 'adapters', kit.motion))
+  return out
+}
+
+/**
+ * Brings an existing session's app up to date with the template, so a fix to the shell reaches a
+ * session made before it. The shell is one piece, so every file of it is replaced, never some.
+ * Packages the shell needs are added or moved to the template's version; ones the session added
+ * stay. Vite picks up changed shell code by itself; new packages, its config and the server need
+ * the dev server started again, which `up` then does.
+ */
+async function update(dir) {
+  const s = readSession(dir)
+  const kit = STACKS[s.stack]
+  const files = appFiles(s.stack)
+  const changed = []
+  for (const [rel, from] of files) {
+    const to = join(dir, rel), next = readFileSync(from)
+    if (existsSync(to) && readFileSync(to).equals(next)) continue
+    mkdirSync(dirname(to), { recursive: true })
+    writeFileSync(to, next)
+    changed.push(rel)
+  }
+  // A shell file the template dropped or renamed would otherwise linger beside its replacement.
+  const sweep = rel => {
+    for (const e of readdirSync(join(dir, rel), { withFileTypes: true })) {
+      const r = join(rel, e.name)
+      if (e.isDirectory()) { sweep(r); if (!readdirSync(join(dir, r)).length) rmSync(join(dir, r), { recursive: true }) }
+      else if (!files.has(r)) { rmSync(join(dir, r)); changed.push(r) }
+    }
+  }
+  if (existsSync(join(dir, 'shell'))) sweep('shell')
+  const pkgFile = join(dir, 'package.json'), pkg = readJson(pkgFile, {})
+  let deps = false
+  for (const [key, want] of [['dependencies', { ...SHELL, ...kit.deps }], ['devDependencies', { ...BASE, ...kit.dev }]]) {
+    pkg[key] ||= {}
+    for (const [name, v] of Object.entries(want)) if (pkg[key][name] !== v) { pkg[key][name] = v; deps = true }
+  }
+  if (!changed.length && !deps) return
+  if (deps) writeJson(pkgFile, pkg)
+  console.log(`updated the app: ${changed.length} file${changed.length === 1 ? '' : 's'}${deps ? ', packages' : ''}`)
+  if (deps || changed.some(f => ['vite.config.mjs', 'server.mjs', 'source.mjs'].includes(f))) await stop(dir, 'updated')
+  if (deps) install(dir)
+}
+
 function install(dir) {
   const t = Date.now()
   const pnpm = has('pnpm')
@@ -239,6 +304,7 @@ async function up() {
   const project = projectRoot()
   const dir = sessionDir()
   if (!existsSync(sessionFile(dir))) scaffold(dir, project)
+  else await update(dir)
   let s = readSession(dir)
   if (flags.name && flags.name !== s.name) s = patchSession(dir, { name: flags.name })
   if (!existsSync(join(dir, 'node_modules', 'vite'))) install(dir)

@@ -640,4 +640,7 @@ menu in the page.
   the time. Pass the line on to the user.
 - **Don't edit** the app's `shell/`, `src/main.ts`, `src/registry.ts`, `src/mount.*`, `src/hints.ts`, `src/copy.ts` or `src/motion.ts`. If the
   shell itself misbehaves, say so; the template is `${CLAUDE_SKILL_DIR}/app/` (replaced on
-  every plugin update, so a fix belongs upstream).
+  every plugin update, so a fix belongs upstream). `proto up` copies the template over an
+  existing session's app files (everything except `src/protos/` and `src/theme.css`) and adds
+  the shell's packages, printing `updated the app: …` when it did; an edit to those files is
+  lost there.
