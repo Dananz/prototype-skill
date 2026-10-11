@@ -101,6 +101,7 @@ Or just ask for "a few versions of the settings drawer". Keep talking in the sam
 - See the page at a phone's, a tablet's or a desktop's size from any screen, and comment on that layout.
 - Ask for other copy, then try Claude's options on the design itself and send back the ones you pick.
 - Scrub an animation forward and back, see each part's curve, and comment on one moment of it or a stretch of it. Claude reads the frames, changes the timing and replies.
+- Tools stay out of the way until you ask for them: on a phone the pill holds the variants and Comment, and one menu holds the rest.
 
 ### A pick, not a pile
 - Claude screenshots every variant on desktop and phone, fixes what it sees over two rounds, then recommends one and says why.

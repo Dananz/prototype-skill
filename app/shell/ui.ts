@@ -36,6 +36,7 @@ const PATHS: Record<string, string> = {
   plus: 'M12 6v12M6 12h12',
   comment: 'M20 12a8 8 0 0 1-11.7 7.1L4 20l1-4.1A8 8 0 1 1 20 12z',
   text: 'M5 6h14M12 6v13M9 19h6',
+  curves: 'M3 19.5c3.6 0 4.6-14 9.2-14 2.6 0 3 3 5.6 3H21',
 }
 
 export const ic = (name: string, cls = 'size-4') =>

@@ -94,7 +94,7 @@ export type TrySheetProps = {
 
 const KEY = h('svg', { className: 'size-4 shrink-0 text-amber-500', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'M7.5 10a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM11.4 11.6 21 2M15.5 7.5l2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4' }))
 
-// Try it on a phone, opened from the key in the pill: the comments sheet's drawer, except that it
+// Try it on a phone, opened from the pill's menu: the comments sheet's drawer, except that it
 // leaves the pill's height free at its foot, since it rises from behind the pill, which stays on top.
 // Its list is the shell's own Try it HTML, written in by the shell (body), so the panel's handlers on
 // [data-hints], where this sheet renders, work in it as they do in the panel. The popup itself takes

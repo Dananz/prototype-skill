@@ -7,7 +7,7 @@
 // While a view is on, the page's own Comment button and C comment on the design in it: a layer
 // covers the frame, the comment layer's inspect looks through it (host.view().at), a drag on it
 // scrolls, and what is written is about that layout (comments/). The shell draws the controls (the
-// bar's three sizes, the pill's button and its card); this draws the view, in [data-view].
+// bar's three sizes, the Layout row of the pill's menu); this draws the view, in [data-view].
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type RefObject } from 'react'
 import { createRoot } from 'react-dom/client'
 import { useRows } from '../comments/list'
