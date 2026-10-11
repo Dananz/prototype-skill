@@ -20,6 +20,13 @@ export type Part = {
    *  cancelled it, as a class swap does to the animation it replaces). */
   start: number
   end: number
+  /** When it was cancelled for good (it was gone at the take's end), in ms of the take: from then on
+   *  it shows nothing, as on the page. */
+  gone: number | null
+  /** It adds to what is under it (composite add or accumulate): shown with the part under it, not
+   *  instead of it. */
+  add: boolean
+  composite: CompositeOperation
   target: Element | null
   /** What it animates: the property, or the animation's name. */
   prop: string
@@ -73,8 +80,9 @@ export const errorOf = (e: unknown) => e instanceof Error ? `${e.name}: ${e.mess
 // may be gone or changed by then.
 type Seen = {
   anim: Animation; target: Element | null; pseudo: string | null; keyframes: ComputedKeyframe[]; timing: EffectTiming
-  rate: number; prop: string; transition: boolean
-  /** Its start on the timeline, the last time it had one; when the browser cancelled it. */
+  composite: CompositeOperation; rate: number; prop: string; transition: boolean
+  /** Its start on the timeline, the last time it had one; since when it is cancelled (null while it
+   *  runs or rests at its end, and again once it plays again). */
   start: number | null; gone: number | null
 }
 
@@ -105,7 +113,7 @@ export async function record(host: HTMLElement, go: () => unknown, alive: () => 
       if (!e) continue
       const keyframes = e.getKeyframes()
       seen.set(a, {
-        anim: a, target: e.target, pseudo: e.pseudoElement, keyframes, timing: e.getTiming(), rate: a.playbackRate || 1,
+        anim: a, target: e.target, pseudo: e.pseudoElement, keyframes, timing: e.getTiming(), composite: e.composite, rate: a.playbackRate || 1,
         prop: propOf(a, keyframes), transition: isTransition(a), start: a.startTime === null ? null : Number(a.startTime), gone: null,
       })
       last = now
@@ -115,7 +123,10 @@ export async function record(host: HTMLElement, go: () => unknown, alive: () => 
       const a = s.anim
       if (a.playState !== 'idle' && a.startTime !== null) s.start = Number(a.startTime)
       if (a.playState === 'running') moving = true
-      else if (!over.has(a)) { over.add(a); last = now; if (a.playState === 'idle') s.gone = clock() }
+      else if (!over.has(a)) { over.add(a); last = now }
+      // Cancelled (whether it was running or resting at its end): from when, unless it plays again.
+      if (a.playState !== 'idle') s.gone = null
+      else if (s.gone === null) s.gone = clock()
     }
     if ((!moving && now - last >= QUIET) || now - began > LONGEST) break
   }
@@ -130,9 +141,12 @@ export async function record(host: HTMLElement, go: () => unknown, alive: () => 
     const c = new KeyframeEffect(null, [], s.timing).getComputedTiming(), rate = s.rate
     const offset = s.start! - t0, delay = Number(c.delay ?? 0)
     let end = Math.min(LONGEST, offset + (delay + Number(c.activeDuration ?? 0)) / rate)
-    if (s.gone !== null) end = Math.min(end, s.gone - t0)
+    // Cancelled during the take and not played again: it ends there, and shows nothing after.
+    const gone = s.anim.playState === 'idle' && s.gone !== null ? s.gone - t0 : null
+    if (gone !== null) end = Math.min(end, gone)
+    const add = s.composite !== 'replace' || s.keyframes.some(k => k.composite === 'add' || k.composite === 'accumulate')
     return {
-      anim: s.anim, fill: null, offset, rate, start: Math.min(end, offset + delay / rate), end,
+      anim: s.anim, fill: null, offset, rate, start: Math.min(end, offset + delay / rate), end, gone, add, composite: s.composite,
       target: s.target, prop: s.prop, props: propsIn(s.keyframes), timing: s.timing, keyframes: s.keyframes,
       pseudo: s.pseudo, copy: s.transition || s.anim.playState === 'idle', persisted: false, shown: null,
     }
@@ -162,7 +176,7 @@ export function hold(take: Take) {
   for (const p of take.parts) {
     if (p.copy) {
       const was = p.anim
-      p.anim = new Animation(new KeyframeEffect(p.target, p.keyframes as Keyframe[], { ...p.timing, fill: 'both', ...(p.pseudo ? { pseudoElement: p.pseudo } : {}) }), document.timeline)
+      p.anim = new Animation(new KeyframeEffect(p.target, p.keyframes as Keyframe[], { ...p.timing, fill: 'both', composite: p.composite, ...(p.pseudo ? { pseudoElement: p.pseudo } : {}) }), document.timeline)
       p.anim.playbackRate = p.rate
       p.anim.pause()
       // The transition itself, finished, goes (or the copy before this one): the copy holds what it showed.
@@ -183,19 +197,21 @@ export function hold(take: Take) {
  * started by t (the first, before any has), filled both ways so it holds its first frame before it
  * moves and its last after. Every other part on that property is set before its start, filled
  * neither way, so it shows nothing: which part the browser draws on top never matters (a copy is
- * made later than the design's own animations, so it would be on top).
+ * made later than the design's own animations, so it would be on top). A part that adds to what is
+ * under it (a shake over a slide) is shown too, filled as it was written; and a part cancelled for
+ * good shows nothing from then on.
  */
 export function seek(take: Take, t: number) {
   if (!take.held) return
   const shown = new Set<Part>()
   for (const g of take.groups) {
-    let pick = g[0]
-    for (const p of g) if (p.start <= t) pick = p
+    let pick = g.find(p => !p.add) ?? g[0]
+    for (const p of g) if (p.start <= t && !p.add) pick = p
     shown.add(pick)
   }
   for (const p of take.parts) {
-    const on = shown.has(p)
-    if (p.shown !== on) { p.anim.effect!.updateTiming({ fill: on ? 'both' : 'none' }); p.shown = on }
+    const on = (shown.has(p) || p.add) && !(p.gone !== null && t >= p.gone)
+    if (p.shown !== on) { p.anim.effect!.updateTiming({ fill: !on ? 'none' : p.add ? p.timing.fill ?? 'auto' : 'both' }); p.shown = on }
     p.anim.currentTime = on ? (t - p.offset) * p.rate : -1
   }
 }

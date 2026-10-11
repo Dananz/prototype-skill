@@ -446,7 +446,7 @@ if (!/Woke you up/.test(heard)) fail(`the listener exited without the batch: ${h
 // design to any moment. A comment on a range of it goes out through the page's own composer, the
 // inbox prints its times, and a reply reaches its point. A variant without useMotion has no dock.
 if (!existsSync(join(app, 'src', 'motion.ts'))) fail('the app has no src/motion.ts')
-proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still,C:Twice,D:Chained,E:Broken,F:Late,G:Again,H:Then keyframes,I:Then animate,J:Swap'])
+proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still,C:Twice,D:Chained,E:Broken,F:Late,G:Again,H:Then keyframes,I:Then animate,J:Swap,K:Nudge,L:Cancelled,M:Shake'])
 writeFileSync(join(app, 'src', 'protos', 'move', 'A.tsx'), `import { useState } from 'react'
 import { useMotion } from '../../motion'
 export default function A() {
@@ -548,6 +548,52 @@ export default function J() {
     <style>{'@keyframes j-in { from { opacity: 0 } to { opacity: 1 } } @keyframes j-out { from { opacity: 1 } to { opacity: 0 } } .j-in { animation: j-in 300ms linear both } .j-out { animation: j-out 300ms linear both }'}</style>
     <div data-shoot="note" className={state === 'in' ? 'j-in' : state === 'out' ? 'j-out' : ''} style={{ width: 160, height: 60, background: '#4f46e5', opacity: state === 'idle' ? 0 : undefined }} />
   </div>
+}
+`)
+// A sheet that enters (transform and opacity), then a class swap that nudges it (transform only):
+// the browser cancels the enter. A slide cancelled at 0.4 s, nothing taking its place, beside a bar
+// that runs on. And a shake added (composite add) to a slide that fills forwards.
+writeFileSync(join(app, 'src', 'protos', 'move', 'K.tsx'), `import { useState } from 'react'
+import { useMotion } from '../../motion'
+export default function K() {
+  const [state, setState] = useState('idle')
+  useMotion({ start: () => { setState('in'); setTimeout(() => setState('nudge'), 400) }, reset: () => setState('idle') })
+  return <div className="h-full p-8">
+    <style>{'@keyframes k-in { from { transform: translateY(100px); opacity: 0 } to { transform: translateY(0px); opacity: 1 } } @keyframes k-nudge { from { transform: translateY(0px) } to { transform: translateY(-40px) } } .k-in { animation: k-in 300ms linear both } .k-nudge { animation: k-nudge 200ms linear forwards }'}</style>
+    <div data-shoot="sheet" className={state === 'in' ? 'k-in' : state === 'nudge' ? 'k-nudge' : ''} style={{ width: 160, height: 60, marginTop: 60, background: '#4f46e5', opacity: state === 'idle' ? 0 : undefined }} />
+  </div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'L.tsx'), `import { useRef } from 'react'
+import { useMotion } from '../../motion'
+export default function L() {
+  const slide = useRef<HTMLDivElement>(null), bar = useRef<HTMLDivElement>(null)
+  useMotion({
+    start: () => {
+      const a = slide.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(200px)' }], { duration: 1000, fill: 'forwards' })
+      bar.current!.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1000, fill: 'forwards' })
+      setTimeout(() => a.cancel(), 400)
+    },
+    reset: () => [slide, bar].forEach(r => r.current!.getAnimations().forEach(a => a.cancel())),
+  })
+  return <div className="h-full p-8">
+    <div ref={slide} data-shoot="slide" style={{ width: 80, height: 80, background: '#4f46e5' }} />
+    <div ref={bar} data-shoot="bar" style={{ width: 160, height: 20, marginTop: 8, background: '#0ea5e9' }} />
+  </div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'M.tsx'), `import { useRef } from 'react'
+import { useMotion } from '../../motion'
+export default function M() {
+  const box = useRef<HTMLDivElement>(null)
+  useMotion({
+    start: () => {
+      box.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(100px)' }], { duration: 300, fill: 'forwards' })
+      box.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(40px)' }, { transform: 'translateX(0px)' }], { duration: 300, delay: 300, composite: 'add' })
+    },
+    reset: () => box.current!.getAnimations().forEach(a => a.cancel()),
+  })
+  return <div className="h-full p-8"><div ref={box} data-shoot="box" style={{ width: 80, height: 80, background: '#4f46e5' }} /></div>
 }
 `)
 const near = (a, b, by) => typeof a === 'number' && Math.abs(a - b) <= by
@@ -674,6 +720,24 @@ try {
   if (notes.length !== 2) fail(`move/J's take should have the enter and the exit that replaced it: ${JSON.stringify(swap)}`)
   const ops = [await value('[data-shoot=note]', '+cs.opacity', 0), await value('[data-shoot=note]', '+cs.opacity', 150), await value('[data-shoot=note]', '+cs.opacity', notes[1].start + 150), await value('[data-shoot=note]', '+cs.opacity', swap.duration)]
   if (!ops.every((o, i) => near(o, [0, 0.5, 0.5, 0][i], 0.06))) fail(`the note entering, then leaving by a class swap, should read 0, 0.5, 0.5 and 0: ${ops}`)
+  // A part the browser cancelled shows nothing from then on: the enter that the nudge's class swap
+  // cancelled doesn't cover the nudge (it set opacity too), and the slide cancelled with nothing in
+  // its place is back at 0, also where the take ends (where the dock rests and --at shoots).
+  const nudged = await design('move/K', '[data-shoot=sheet]')
+  const nudge = nudged.parts?.find(p => p.prop === 'k-nudge')
+  if (nudged.parts?.length !== 2 || !nudge) fail(`move/K's take should have the enter and the nudge: ${JSON.stringify(nudged)}`)
+  const ys = [await value('[data-shoot=sheet]', 'new DOMMatrix(cs.transform).m42', 150), await value('[data-shoot=sheet]', 'new DOMMatrix(cs.transform).m42', nudge.start + 100), await value('[data-shoot=sheet]', 'new DOMMatrix(cs.transform).m42', nudge.start + 200), await value('[data-shoot=sheet]', '+cs.opacity', nudge.start + 100)]
+  if (!ys.every((y, i) => near(y, [50, -20, -40, 1][i], i === 3 ? 0.05 : 4))) fail(`the sheet entering, then nudged, should be at 50, -20 and -40 px (opacity 1 while nudged): ${ys}`)
+  const cancelled = await design('move/L', '[data-shoot=slide]')
+  const slid = cancelled.parts?.find(p => p.shoot === 'slide')
+  if (!slid || !near(slid.end, 400, 120) || !(cancelled.duration > 800)) fail(`move/L's slide should end where it was cancelled, 0.4 s into a 1 s take: ${JSON.stringify(cancelled)}`)
+  const xs = [await value('[data-shoot=slide]', 'new DOMMatrix(cs.transform).m41', 200), await value('[data-shoot=slide]', 'new DOMMatrix(cs.transform).m41', 800), await value('[data-shoot=slide]', 'new DOMMatrix(cs.transform).m41', cancelled.duration)]
+  if (!near(xs[0], 40, 6) || !near(xs[1], 0, 1) || !near(xs[2], 0, 1)) fail(`the slide cancelled at 0.4 s should be at 40 px at 0.2 s, then back at 0 (0.8 s and the end): ${xs}`)
+  // A shake added to a slide: each moment shows both.
+  const shaken = await design('move/M', '[data-shoot=box]')
+  if (shaken.parts?.length !== 2) fail(`move/M's take should have the slide and the shake: ${JSON.stringify(shaken)}`)
+  const sx = [await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 150), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 375), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 450), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', shaken.duration)]
+  if (!sx.every((x, i) => near(x, [50, 120, 140, 100][i], 5))) fail(`the slide with a shake added should be at 50, 120, 140 and 100 px at 150, 375, 450 ms and the end: ${sx}`)
   // A start() that throws: the take is empty and says why, and the dock isn't left recording.
   await run(`location.hash = '#/move/E'`)
   await until(`window.__protoMotion.state()?.status === 'empty' && /boom/.test(window.__protoMotion.state().error) && /start\\(\\) threw Error: boom/.test(document.querySelector('[data-motion=error]')?.textContent)`, 'a start() that throws should end the take with its error in the dock')
@@ -695,11 +759,12 @@ const frame = t => readFileSync(join(shots, `move-A-desktop-at-${t}.png`))
 if (frame(0).equals(frame(500)) || frame(167).equals(frame(333))) fail('the frames of the take are the same picture')
 if (!/no motion|declares no motion/.test(proto(['shoot', 'move/B', '--at', '100'], { ok: false }))) fail('proto shoot --at on a design without useMotion should say it has no motion')
 if (!/start\(\) threw Error: boom/.test(proto(['shoot', 'move/E', '--at', '100'], { ok: false }))) fail('proto shoot --at should print the error a start() threw')
-// Frames across a property moved twice differ, frame to frame.
-for (const v of ['C', 'D', 'H', 'I', 'J']) {
-  proto(['shoot', `move/${v}`, '--frames', '3', '--at', '0-300'])
+// Frames across a property moved twice differ, frame to frame: also the nudge after a cancelled
+// enter, and a shake added to a slide.
+for (const [v, a, b] of [['C', 0, 300], ['D', 0, 300], ['H', 0, 300], ['I', 0, 300], ['J', 0, 300], ['K', 400, 600], ['M', 300, 450]]) {
+  proto(['shoot', `move/${v}`, '--frames', '3', '--at', `${a}-${b}`])
   const f = t => readFileSync(join(shots, `move-${v}-desktop-at-${t}.png`))
-  if (f(0).equals(f(150)) || f(150).equals(f(300))) fail(`the frames of move/${v} from 0 to 300 ms are the same picture`)
+  if (f(a).equals(f((a + b) / 2)) || f((a + b) / 2).equals(f(b))) fail(`the frames of move/${v} from ${a} to ${b} ms are the same picture`)
 }
 proto(['shoot', 'move', '--frames', '4'], { ok: false })
 // The build drops the dock: the handoff lists useMotion as the page's own.
