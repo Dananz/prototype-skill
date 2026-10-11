@@ -879,9 +879,14 @@ if (!/start\(\) threw Error: boom/.test(proto(['shoot', 'move/E', '--at', '100']
 // Frames across a property moved twice differ, frame to frame: also the nudge after a cancelled
 // enter, a shake added to a slide, and a sheet on <body>.
 for (const [v, a, b] of [['C', 0, 300], ['D', 0, 300], ['H', 0, 300], ['I', 0, 300], ['J', 0, 300], ['K', 400, 600], ['M', 300, 450], ['Q', 0, 400]]) {
-  proto(['shoot', `move/${v}`, '--frames', '3', '--at', `${a}-${b}`])
+  const out = proto(['shoot', `move/${v}`, '--frames', '3', '--at', `${a}-${b}`])
+  // A take is timed from its first part, and a slow first frame on a slow runner (macOS CI) starts
+  // that late while start()'s own timers don't: K's nudge, 400 ms after start(), lands sooner and its
+  // take comes out 500 or 550 ms, not 600. proto shoot then holds the range at the take's end and
+  // names the frames by it, so they are read where it put them.
+  const end = Math.min(b, Number(out.match(/its take is (\d+) ms/)?.[1] ?? b)), mid = Math.round((a + end) / 2)
   const f = t => readFileSync(join(shots, `move-${v}-desktop-at-${t}.png`))
-  if (f(a).equals(f((a + b) / 2)) || f((a + b) / 2).equals(f(b))) fail(`the frames of move/${v} from ${a} to ${b} ms are the same picture`)
+  if (f(a).equals(f(mid)) || f(mid).equals(f(end))) fail(`the frames of move/${v} from ${a} to ${end} ms are the same picture`)
 }
 proto(['shoot', 'move', '--frames', '4'], { ok: false })
 // The build drops the dock: the handoff lists useMotion as the page's own.
