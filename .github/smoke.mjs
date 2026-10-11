@@ -13,32 +13,46 @@ import { fileURLToPath } from 'node:url'
 import { startChrome, stopChrome } from '../scripts/chrome.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
-const scratch = process.env.RUNNER_TEMP || tmpdir()
+// Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
+// remove each other's session; the shots for the CI artifact stay at <base>/proto-shots.
+const base = process.env.RUNNER_TEMP || tmpdir()
+const scratch = mkdtempSync(join(base, 'proto-smoke-run-'))
 // The project is reached through a link, as /tmp is on macOS: the app must still serve its files.
 const real = join(scratch, 'proto-smoke')
 const project = join(scratch, 'proto-smoke-link')
-const keepShots = join(scratch, 'proto-shots')
+const keepShots = join(base, 'proto-shots')
 const app = join(project, '.prototypes', 'smoke')
-rmSync(project, { recursive: true, force: true })
-rmSync(real, { recursive: true, force: true })
 mkdirSync(real, { recursive: true })
 symlinkSync(real, project, 'junction')
 writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'proto-smoke', private: true, dependencies: { react: '^19.2.0' } }))
 
+// A failure says why, then closes the pages it opened and stops and removes its session (after
+// dev.log, which is in it), so no Chrome, dev server or tailnet rule outlives the run. Straight
+// through spawnSync: proto() fails by itself. So does anything thrown and not caught.
+let failing = false
+const pages = new Set()
 const fail = msg => {
   console.error(`\nFAILED: ${msg}`)
   const log = join(app, '.proto', 'dev.log')
   if (existsSync(log)) console.error(`\n--- dev.log ---\n${readFileSync(log, 'utf8')}`)
+  if (!failing) {
+    failing = true
+    for (const close of pages) try { close() } catch { /* already gone */ }
+    if (existsSync(join(app, 'session.json'))) spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'rm', '--project', project, '--session', 'smoke'], { stdio: 'ignore', timeout: 60_000 })
+    try { rmSync(scratch, { recursive: true, force: true }) } catch { /* temp dir */ }
+  }
   process.exit(1)
 }
-const proto = (args, { ok = true } = {}) => {
+process.on('unhandledRejection', e => fail(`unhandled rejection: ${e?.stack || e}`))
+process.on('uncaughtException', e => fail(`uncaught: ${e?.stack || e}`))
+const proto = (args, { ok = true, stdout = false } = {}) => {
   console.log(`\n$ proto ${args.join(' ')}`)
   const r = spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), ...args, '--project', project, '--session', 'smoke'], { encoding: 'utf8', timeout: 600_000 })
   process.stdout.write(r.stdout || '')
   process.stderr.write(r.stderr || '')
   if (ok && r.status !== 0) fail(`proto ${args[0]} exited ${r.status}`)
   if (!ok && r.status === 0) fail(`proto ${args.join(' ')} should have been refused`)
-  return (r.stdout || '') + (r.stderr || '')
+  return stdout ? r.stdout || '' : (r.stdout || '') + (r.stderr || '')
 }
 const answers = async url => { try { return (await fetch(url, { signal: AbortSignal.timeout(2000) })).ok } catch { return false } }
 const pngs = dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.png')) : []
@@ -49,10 +63,12 @@ async function openPage(url) {
   const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run'])
   let ws
   const close = () => {
+    pages.delete(close)
     ws?.close()
     stopChrome(chrome)
     try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) } catch { /* temp dir */ }
   }
+  pages.add(close)
   try {
     ws = new WebSocket(await new Promise((ok, no) => {
       let b = ''
@@ -62,10 +78,16 @@ async function openPage(url) {
     await new Promise((ok, no) => { ws.onopen = ok; ws.onerror = no })
     let n = 0
     const waiting = new Map()
-    ws.onmessage = e => { const m = JSON.parse(e.data); waiting.get(m.id)?.(m.result); waiting.delete(m.id) }
+    ws.onmessage = e => {
+      const m = JSON.parse(e.data)
+      // A page that crashes says so at once, instead of every check after it waiting out its time.
+      if (m.method === 'Inspector.targetCrashed') fail(`Chrome's page crashed (Inspector.targetCrashed) at ${url}`)
+      waiting.get(m.id)?.(m.result); waiting.delete(m.id)
+    }
     const send = (method, params, sessionId) => new Promise(ok => { waiting.set(++n, ok); ws.send(JSON.stringify({ id: n, method, params, sessionId })) })
     const { targetId } = await send('Target.createTarget', { url })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+    await send('Inspector.enable', {}, sessionId)
     // A page that stops answering (a render loop) fails the check instead of hanging the run.
     const run = async (expr, ms = 30_000) => {
       let timer
@@ -74,7 +96,10 @@ async function openPage(url) {
       if (r === 'hung') throw new Error(`the page did not answer in ${ms / 1000} s: it is stuck, as in a render loop`)
       return r?.result?.value
     }
-    for (let i = 0; i < 150 && !await run('document.documentElement.dataset.ready === "1"'); i++) await new Promise(r => setTimeout(r, 100))
+    // A check sent while the first navigation is still going can land on a half-loaded document and
+    // never be answered: each waits 2 s at most and is sent again, for 30 s in all.
+    const ready = () => run('document.documentElement.dataset.ready === "1"', 2000).catch(() => false)
+    for (const end = Date.now() + 30_000; Date.now() < end && !await ready();) await new Promise(r => setTimeout(r, 100))
     return { run, close }
   } catch (e) { close(); throw e }
 }
@@ -335,24 +360,33 @@ if (/Build A/.test(proto(['inbox']))) fail('a refused request still reached the 
 // A decision made in the page is a comment with an action. A pick is marked by the server at once
 // (meta.ts, and the working variant with "Picked B" in its history), before the agent reads it, and
 // arrives done; the answer says the working variant moved. Taking it back unmarks it. The inbox
-// prints the action.
+// prints the action. Each read waits for its batch in new/ (the answer only comes once it is
+// written there, so this never waits in practice) and must hand that batch out; a miss says where
+// the batch is.
+const inboxWith = async id => {
+  const at = sub => existsSync(join(app, '.proto', 'inbox', sub, id, 'batch.json'))
+  for (let i = 0; i < 40 && !at('new') && !at('taken'); i++) await new Promise(r => setTimeout(r, 50))
+  const out = proto(['inbox'], { stdout: true })
+  if (!out.includes(`batch ${id} ·`)) fail(`proto inbox did not hand out batch ${id} (in new/: ${at('new')}, in taken/: ${at('taken')}):\n${out}`)
+  return out
+}
 const pickSent = await send([{ route: 'hero/B', text: 'Picked B', action: 'pick' }])
 if (!readFileSync(heroMeta, 'utf8').includes('"picked": "B"')) fail('a pick from the page did not mark hero/meta.ts')
 if (pickSent.moved !== true) fail(`the pick moved the working variant but the answer says moved: ${pickSent.moved}`)
 if (pickSent.inbox.batches.find(b => b.id === pickSent.sent)?.state !== 'done') fail('a pick from the page did not arrive done')
 const picked = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
 if (picked.work?.proto !== 'hero' || picked.work.variant !== 'B' || picked.asks?.['hero/B']?.at(-1)?.text !== 'Picked B') fail(`a pick from the page should make hero/B the working variant with "Picked B": ${JSON.stringify(picked.work)} ${JSON.stringify(picked.asks?.['hero/B'])}`)
-if (!/^ {3}action: pick \(done/m.test(proto(['inbox']))) fail('proto inbox did not print the pick as done (action: pick (done …))')
+if (!/^ {3}action: pick \(done/m.test(await inboxWith(pickSent.sent))) fail('proto inbox did not print the pick as done (action: pick (done …))')
 // The answer says how each decision went, and where the working variant is now.
 if (JSON.stringify(pickSent.results) !== '[{"n":1,"action":"pick","done":true}]' || pickSent.work?.variant !== 'B') fail(`the answer to a pick should say it was done and work is hero/B: ${JSON.stringify(pickSent.results)} ${JSON.stringify(pickSent.work)}`)
 const unpickSent = await send([{ route: 'hero/B', text: 'Unpicked B', action: 'unpick' }, { route: 'hero/B', text: 'More like B: warmer', action: 'more' }])
 if (readFileSync(heroMeta, 'utf8').includes('"picked"')) fail('taking the pick back in the page left it in hero/meta.ts')
 if (JSON.stringify(unpickSent.results) !== '[{"n":1,"action":"unpick","done":true},{"n":2,"action":"more","done":false}]') fail(`the answer should say the unpick was done and More waits: ${JSON.stringify(unpickSent.results)}`)
-if (!/action: more/.test(proto(['inbox']))) fail('proto inbox did not print action: more')
+if (!/action: more/.test(await inboxWith(unpickSent.sent))) fail('proto inbox did not print action: more')
 // Taking back a pick that isn't there changes nothing, so it isn't done: it arrives saying so.
 const noop = await send([{ route: 'hero/A', text: 'Unpicked A', action: 'unpick' }])
 if (noop.results?.[0]?.done !== false || !noop.results[0].nothing || noop.inbox.batches.find(b => b.id === noop.sent)?.state === 'done') fail(`an unpick of a variant that wasn't picked arrived done: ${JSON.stringify(noop.results)}`)
-if (!/^ {3}action: unpick \(nothing changed/m.test(proto(['inbox']))) fail('proto inbox did not say an unpick changed nothing')
+if (!/^ {3}action: unpick \(nothing changed/m.test(await inboxWith(noop.sent))) fail('proto inbox did not say an unpick changed nothing')
 // A pick that is marked but can't move the working variant (session.json unreadable for a moment)
 // says so, apart from one that wasn't marked at all.
 const sessionText = readFileSync(join(app, 'session.json'), 'utf8')
@@ -435,6 +469,7 @@ if (!existsSync(join(app, 'src', 'copy.ts'))) fail('the app has no src/copy.ts')
 proto(['add', 'words', '--title', 'Words', '--variants', 'A:Options,B:Plain'])
 writeFileSync(join(app, 'src', 'protos', 'words', 'parts.tsx'), [
   'import { useCopy } from \'../../copy\'',
+  'export const Path = () => <code>src/*.ts</code>',
   'export function Go() {',
   '  const copy = useCopy([',
   '    // the user\'s button',
@@ -492,7 +527,7 @@ const sendOne = `
 const reload = async () => {
   await words.run('setTimeout(() => location.reload(), 0), 1')
   await new Promise(r => setTimeout(r, 500))
-  for (let i = 0; i < 100 && !await words.run('document.documentElement.dataset.ready === "1"').catch(() => false); i++) await new Promise(r => setTimeout(r, 100))
+  for (let i = 0; i < 100 && !await words.run('document.documentElement.dataset.ready === "1"', 2000).catch(() => false); i++) await new Promise(r => setTimeout(r, 100))
 }
 try {
   const step = await words.run(`(async () => {
@@ -531,6 +566,21 @@ try {
     return 'ok'
   })()`)
   if (back !== 'ok') fail(`going back to today's words after a send: ${back}`)
+  // Claude's edit for the first send lands before the way back is sent: Pay less comes first, and
+  // the line still reads Save more, there to send.
+  const aFile = join(app, 'src', 'protos', 'words', 'A.tsx')
+  writeFileSync(aFile, readFileSync(aFile, 'utf8').replace("['Save more', 'Pay less', 'Keep more']", "['Pay less', 'Save more', 'Keep more']"))
+  const reordered = await words.run(`(async () => {
+    ${until}
+    document.querySelector('[data-copy-mark=title]').click()
+    if (!await until(() => document.querySelector('[data-copy-list] [data-copy-option="0"]')?.textContent.includes('Pay less'), 8000)) return 'the edit never reached the page'
+    document.querySelector('[data-copy-mark=title]').click()
+    const line = () => document.querySelector('[data-mount] [data-copy=title]')?.textContent
+    if (!await until(() => line() === 'Save more')) return 'the line should still read Save more, reads ' + line()
+    if (!await until(() => document.querySelector('[data-shoot=send-copy]:not([disabled])'))) return 'the way back is not there to send'
+    return 'ok'
+  })()`)
+  if (reordered !== 'ok') fail(`the way back to today's words, once Claude's edit for the earlier words lands: ${reordered}`)
   await reload()
   const backSent = await words.run(`(async () => {
     ${until}
@@ -540,7 +590,38 @@ try {
   })()`)
   if (backSent !== 'ok') fail(`the way back to today's words, after a reload: ${backSent}`)
   const toldBack = proto(['inbox'])
-  if (!/“Save more”, back to today's words \(option 1 of 3\)/.test(toldBack)) fail(`proto inbox should print the way back to today's words: ${toldBack}`)
+  if (!/“Save more”, back to the words it had \(option 2 of 3\)/.test(toldBack)) fail(`proto inbox should print the way back to today's words: ${toldBack}`)
+  // A way back that never went: Keep more is sent and Claude is done with it without an edit, the
+  // user goes back to today's words, and copy mode closes. Nothing was sent to go back from, so when
+  // Claude later puts Keep more first, the line reads it, unchanged, with nothing to send.
+  const keepSent = await words.run(`(async () => {
+    ${until}
+    ${pick('title', 2, 'Keep more')}
+    ${sendOne}
+    return 'ok'
+  })()`)
+  if (keepSent !== 'ok') fail(`sending Keep more: ${keepSent}`)
+  proto(['reply', proto(['inbox']).match(/^batch (\S+)/m)[1], 'Title is now Keep more', '--done'])
+  const closed = await words.run(`(async () => {
+    ${until}
+    if (!await until(() => document.querySelector('[data-copy-bar]').innerText.includes('Title is now Keep more'), 5000)) return 'the reply never reached the bar'
+    ${pick('title', 0, 'Pay less')}
+    document.querySelector('[data-bar] [data-act=copymode]').click()
+    return 'ok'
+  })()`)
+  if (closed !== 'ok') fail(`a way back that never went: ${closed}`)
+  writeFileSync(aFile, readFileSync(aFile, 'utf8').replace("['Pay less', 'Save more', 'Keep more']", "['Keep more', 'Pay less', 'Save more']"))
+  const unsent = await words.run(`(async () => {
+    ${until}
+    const line = () => document.querySelector('[data-mount] [data-copy=title]')?.textContent
+    const t = () => document.querySelector('[data-bar] [data-act=copymode]')
+    if (!await until(() => line() === 'Keep more', 8000)) return 'the line should read Keep more once it is first, reads ' + line() + ' (' + t()?.title + ')'
+    if (t().title !== 'Copy options for 3 lines') return 'nothing should be changed: ' + t().title
+    t().click()
+    if (!await until(() => /Click a marked line/.test(document.querySelector('[data-copy-bar]').innerText))) return 'the bar should have nothing to send: ' + document.querySelector('[data-copy-bar]').innerText
+    return 'ok'
+  })()`)
+  if (unsent !== 'ok') fail(`a way back that never went, once Claude reorders the line: ${unsent}`)
   // A component that declared lines unmounts while copy mode is on: its lines go, the rest stay
   // marked (also after closing and opening copy mode again), and ⌥-click still opens a comment.
   const gone = await words.run(`(async () => {
@@ -549,7 +630,7 @@ try {
     if (!await until(() => !document.querySelector('[data-copy-mark=go], [data-copy-mark=note]'))) return 'the hidden lines are still marked'
     const t = () => document.querySelector('[data-bar] [data-act=copymode]')
     t().click()
-    if (!await until(() => t().title === 'Copy options for 1 line')) return 'the T button should say 1 line: ' + t().title
+    if (!await until(() => /^Copy options for 1 line(,|$)/.test(t().title))) return 'the T button should say 1 line: ' + t().title
     t().click()
     if (!await until(() => document.querySelector('[data-copy-mark=title]'))) return 'copy mode marks nothing after it opens again'
     document.querySelector('[data-mount] [data-hide-go]').dispatchEvent(new MouseEvent('click', { altKey: true, bubbles: true, cancelable: true }))
@@ -558,13 +639,13 @@ try {
   })()`)
   if (gone !== 'ok') fail(`a component with lines unmounting in copy mode: ${gone}`)
 } finally { words.close() }
-// The checklist names each line, whichever component declares it, whatever brackets, comments or
-// escaped quotes are around its words, and what the build ships; a shot in copy mode is the
-// stage's own size.
+// The checklist names each line, whichever component declares it, whatever brackets, comments,
+// escaped quotes or JSX words with a /* are around its words, and what the build ships; a shot in
+// copy mode is the stage's own size.
 const handed = proto(['handoff', 'words/A'])
-if (!/^- \[ \] Title \(`title`\) ships "Save more", not its 2 other options · A\.tsx:7$/m.test(handed)) fail('proto handoff did not list the Title line and what ships')
-if (!/^- \[ \] Button \(`go`\) ships "Let's go", not its 1 other option · parts\.tsx:5$/m.test(handed)) fail('proto handoff did not list the Button line, with a comment above it and brackets and an escaped quote in its words')
-if (!/^- \[ \] Note \(`note`\) ships "Free", not its 1 other option · parts\.tsx:6$/m.test(handed)) fail('proto handoff did not list the Note line, after a comment with a quote')
+if (!/^- \[ \] Title \(`title`\) ships "Keep more", not its 2 other options · A\.tsx:7$/m.test(handed)) fail('proto handoff did not list the Title line and what ships')
+if (!/^- \[ \] Button \(`go`\) ships "Let's go", not its 1 other option · parts\.tsx:6$/m.test(handed)) fail('proto handoff did not list the Button line, after JSX words with src/*.ts, with a comment above it and brackets and an escaped quote in its words')
+if (!/^- \[ \] Note \(`note`\) ships "Free", not its 1 other option · parts\.tsx:7$/m.test(handed)) fail('proto handoff did not list the Note line, after a comment with a quote')
 proto(['shoot', 'words/A'])
 proto(['shoot', 'words/A', '--copy'])
 const sizeOf = f => { const h = readFileSync(join(shots, f)); return `${h.readUInt32BE(16)}x${h.readUInt32BE(20)}` }
@@ -583,4 +664,5 @@ if (!gone) fail(`the dev server (pid ${pid}) is still running after proto stop`)
 
 proto(['rm'])
 if (existsSync(app)) fail('proto rm left the session folder')
+try { rmSync(scratch, { recursive: true, force: true }) } catch { /* temp dir */ }
 console.log(`\nOK: ${made.length} screenshots in ${keepShots}`)

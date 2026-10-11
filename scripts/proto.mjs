@@ -837,13 +837,15 @@ function copyOptionsIn(files) {
   // JSX do (Don't).
   const opens = (text, i) => text[i] === '`' || ((text[i] === '"' || text[i] === '\'') && !/[\p{L}\p{N}]/u.test(text[i - 1] || ''))
   // The file with its comments blanked out, at the same length and on the same lines: a quote in a
-  // comment ("the user's headline") opens no string, and nothing in one is read as code.
+  // comment ("the user's headline") opens no string, and nothing in one is read as code. A comment
+  // starts only where code can: at a line's start, or after a space or one of ,;{}()[]= (so
+  // `<code>src/*.ts</code>` or a URL in JSX words starts none).
   const blank = text => {
     let out = '', quote = ''
     for (let i = 0; i < text.length; i++) {
       const c = text[i]
       if (quote) { out += c; if (c === '\\') out += text[++i] ?? ''; else if (c === quote) quote = ''; continue }
-      if (c === '/' && (text[i + 1] === '/' || text[i + 1] === '*')) {
+      if (c === '/' && (text[i + 1] === '/' || text[i + 1] === '*') && (i === 0 || /[\s,;{}()[\]=]/.test(text[i - 1]))) {
         const line = text[i + 1] === '/', e = line ? text.indexOf('\n', i) : text.indexOf('*/', i + 2)
         const to = e < 0 ? text.length : line ? e : e + 2
         out += text.slice(i, to).replace(/[^\n]/g, ' ')
@@ -1006,14 +1008,19 @@ const inboxDir = dir => join(dir, '.proto', 'inbox')
 const batchesIn = (dir, sub) => { try { return readdirSync(join(inboxDir(dir), sub)).filter(f => !f.startsWith('.')).sort() } catch { return [] } }
 const waiterFile = dir => join(inboxDir(dir), 'waiter.json')
 
+// A batch that can't be taken or read is said so (on stderr), never skipped without a word, and
+// once: `--wait` takes again every few seconds and would say it each time.
+const told = new Set()
+const tell = (id, what) => { if (!told.has(id)) { told.add(id); console.error(`batch ${id} ${what}`) } }
 function take(dir) {
   const taken = []
   mkdirSync(join(inboxDir(dir), 'taken'), { recursive: true })
   for (const id of batchesIn(dir, 'new')) {
     const from = join(inboxDir(dir), 'new', id)
-    try { moveDir(from, join(inboxDir(dir), 'taken', id)) } catch { continue /* another reader took it, or it is not whole yet */ }
+    try { moveDir(from, join(inboxDir(dir), 'taken', id)) } catch (e) { if (existsSync(from)) tell(id, `could not be taken (${e?.code ?? e?.message ?? e})`); continue /* else another reader took it */ }
     const b = readJson(join(inboxDir(dir), 'taken', id, 'batch.json'), null)
     if (b) taken.push(b)
+    else tell(id, 'was taken, but its batch.json could not be read')
   }
   return taken
 }
