@@ -637,16 +637,19 @@ export default function P() {
 }
 `)
 // A sheet the design renders on <body> through a portal (as Base UI's Drawer does), sliding up,
-// with a Close in it.
+// with steps and a Close in it. It counts its starts.
 writeFileSync(join(app, 'src', 'protos', 'move', 'Q.tsx'), `import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMotion } from '../../motion'
 export default function Q() {
   const [open, setOpen] = useState(false)
-  useMotion({ start: () => setOpen(true), reset: () => setOpen(false) })
+  const [step, setStep] = useState(1)
+  useMotion({ start: () => { (window as any).__starts = ((window as any).__starts ?? 0) + 1; setOpen(true) }, reset: () => setOpen(false) })
   return <div className="h-full p-8">
     <p data-shoot="label">Sheet</p>
     {createPortal(<div data-shoot="sheet" style={{ position: 'fixed', left: 480, width: 400, top: 120, height: 200, background: '#4f46e5', transform: open ? 'translateY(0px)' : 'translateY(300px)', transition: 'transform 400ms linear' }}>
+      <p data-shoot="step">Step {step}</p>
+      <button data-shoot="next" onClick={() => setStep(step + 1)}>Next</button>
       <button data-shoot="close" onClick={() => setOpen(false)}>Close</button>
     </div>, document.body)}
   </div>
@@ -832,6 +835,15 @@ try {
   await motionPage.enter()
   const exit = await run(`document.querySelector('body > [data-shoot=sheet]').getAnimations().filter(a => a.playState === 'running').map(a => a.transitionProperty).join()`)
   if (exit !== 'transform' || !await run('window.__protoMotion.state().live')) fail(`the held sheet closed by Enter on its Close should let the design go and run its exit transition: ${exit || 'none'}`)
+  // A change inside the sheet while the design runs live (Next, to its second step) makes the
+  // dock's next move take it again, as a change in the stage does.
+  await run('window.__protoMotion.seek(400)')
+  const starts = await run('window.__starts')
+  const [nx, ny] = await run(`(() => { const r = document.querySelector('body > [data-shoot=sheet] [data-shoot=next]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
+  await motionPage.press(nx, ny)
+  await until(`window.__protoMotion.state().live && document.querySelector('[data-shoot=step]')?.textContent === 'Step 2'`, 'Next in the sheet on <body> should let the design go to its second step', 3000)
+  await run('window.__protoMotion.seek(100)')
+  if (!(await run('window.__starts') > starts)) fail(`after the sheet on <body> went to its second step, the dock's next move should take the design again (it held the old take)`)
   // A start() that throws: the take is empty and says why, and the dock isn't left recording.
   await run(`location.hash = '#/move/E'`)
   await until(`window.__protoMotion.state()?.status === 'empty' && /boom/.test(window.__protoMotion.state().error) && /start\\(\\) threw Error: boom/.test(document.querySelector('[data-motion=error]')?.textContent)`, 'a start() that throws should end the take with its error in the dock')

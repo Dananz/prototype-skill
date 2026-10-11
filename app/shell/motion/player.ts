@@ -43,8 +43,8 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
   const subs = new Set<() => void>()
   const set = (patch: Partial<PlayState>) => { s = { ...s, ...patch }; subs.forEach(f => f()) }
   let run = 0, raf = 0, last = 0, rest = 0
-  // Whether the design changed while it ran live (in its host, or a portal it renders on <body> came
-  // or went): then its take is out of date.
+  // Whether the design changed while it ran live (in its host, in a portal it renders on <body>, or
+  // such a portal came or went): then its take is out of date.
   let changed = false
   const watch = new MutationObserver(records => {
     if (records.some(r => r.target !== document.body || [...r.addedNodes, ...r.removedNodes].some(n => n instanceof Element && !n.hasAttribute('data-proto-ui')))) changed = true
@@ -199,6 +199,9 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
       changed = false
       watch.observe(host, { subtree: true, childList: true, attributes: true, characterData: true })
       watch.observe(document.body, { childList: true })
+      // What it renders on <body> through a portal (a sheet going to its next step), never the
+      // shell's root, where every design and the shell's chrome are.
+      for (const el of document.body.children) if (portaled(el)) watch.observe(el, { subtree: true, childList: true, attributes: true, characterData: true })
       set({ live: true, playing: false, span: null, t: s.duration })
     },
     /** The design's files changed: take it again (Fast Refresh keeps its state, not its old animations). */
