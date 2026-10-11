@@ -468,7 +468,9 @@ shows there as "You picked X".
 
 The user can leave comments on the design in the page (the Comment button, or C): click an
 element (or, on a phone, hold a finger on a spot), write, tag other elements with `@`, attach a
-screenshot and mark it up, then send every draft at once. The side panel's Comments tab lists
+screenshot and mark it up (or paste an image with Ctrl/⌘ V, or drop one on the comment), then send
+every draft at once. Commenting never reaches the design, so a menu or popover open in it stays
+open and what is in it can be commented on. The side panel's Comments tab lists
 them and shows what became of each. Name the things worth pointing at with `data-shoot="…"`: it
 is how a comment, and the `@` menu, call an element ("Pricing card"), and without it they fall
 back to its text or tag. Each send is a batch waiting for you in the app's inbox. You hear
@@ -487,10 +489,15 @@ something is listening.
 Each comment prints its route (`<slug>/<letter>[/<state>]`), the user's words, the element
 it is on (tag, text, `data-shoot` or selector, its box in CSS px from the variant's top left,
 and where it is written: its file from the app's folder, line and component, as
-`src/protos/today/parts.tsx:30 (PriceCard)`; open it there) and any elements it tags, and the absolute path of each screenshot attached to it. A comment
+`src/protos/today/parts.tsx:30 (PriceCard)`; open it there) and any elements it tags, and the absolute path of each image attached to it:
+`(marked up)` is a screenshot of the design, `(pasted by the user)` an image they pasted or
+dropped (a reference, another app, anything). A comment
 pinned to a spot with a long press (on a phone, where no element fit) prints `at:` the spot, in
 the same px, and `in:` the element under it: the change is about that spot, not the whole
-element. Read every screenshot. Then, per comment:
+element. The user can delete a comment after sending it: one deleted before you took its batch
+never reaches you, and one deleted after is withdrawn: `proto inbox` leaves it out (the batch
+line counts it, `(1 withdrawn in the page)`) and `proto reply` to it says so. Leave a withdrawn
+comment alone. Read every image. Then, per comment:
 
 1. The same as a request typed in chat: `proto ask` (or `proto work … --ask`) in the user's
    words, then edit the variant.
