@@ -446,7 +446,7 @@ if (!/Woke you up/.test(heard)) fail(`the listener exited without the batch: ${h
 // design to any moment. A comment on a range of it goes out through the page's own composer, the
 // inbox prints its times, and a reply reaches its point. A variant without useMotion has no dock.
 if (!existsSync(join(app, 'src', 'motion.ts'))) fail('the app has no src/motion.ts')
-proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still,C:Twice,D:Chained,E:Broken,F:Late,G:Again,H:Then keyframes,I:Then animate,J:Swap,K:Nudge,L:Cancelled,M:Shake'])
+proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still,C:Twice,D:Chained,E:Broken,F:Late,G:Again,H:Then keyframes,I:Then animate,J:Swap,K:Nudge,L:Cancelled,M:Shake,N:Reversed,P:Dropped'])
 writeFileSync(join(app, 'src', 'protos', 'move', 'A.tsx'), `import { useState } from 'react'
 import { useMotion } from '../../motion'
 export default function A() {
@@ -463,7 +463,7 @@ writeFileSync(join(app, 'src', 'protos', 'move', 'B.tsx'), 'export default funct
 // One property moved twice: a toast in (CSS transition), then out once a timer runs; and a box moved
 // by two element.animate() calls filling forwards, the second after the first (the browser drops
 // the first once the second covers it). Then a start() that throws, and a step a timer starts after
-// the take has ended.
+// the take has ended (only a color: a Save turning green).
 writeFileSync(join(app, 'src', 'protos', 'move', 'C.tsx'), `import { useState } from 'react'
 import { useMotion } from '../../motion'
 export default function C() {
@@ -500,7 +500,7 @@ export default function F() {
   useMotion({ start: () => { setStep(1); setTimeout(() => setStep(2), 1200) }, reset: () => setStep(0) })
   return <div className="h-full p-8">
     <p data-shoot="one" style={{ opacity: step >= 1 ? 1 : 0, transition: 'opacity 200ms linear' }}>One</p>
-    <p data-shoot="two" style={{ opacity: step >= 2 ? 1 : 0, transition: 'opacity 200ms linear' }}>Two</p>
+    <button data-shoot="save" style={{ background: step >= 2 ? '#10b981' : '#e4e4e7', transition: 'background-color 200ms linear' }}>Save</button>
   </div>
 }
 `)
@@ -592,6 +592,42 @@ export default function M() {
       box.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(40px)' }, { transform: 'translateX(0px)' }], { duration: 300, delay: 300, composite: 'add' })
     },
     reset: () => box.current!.getAnimations().forEach(a => a.cancel()),
+  })
+  return <div className="h-full p-8"><div ref={box} data-shoot="box" style={{ width: 80, height: 80, background: '#4f46e5' }} /></div>
+}
+`)
+// Played backwards (reverse()), beside one with a negative delay (it starts partway through). And
+// two element.animate() calls chained, filling forwards, with a reset that cancels neither: the
+// browser drops the first once the second covers it.
+writeFileSync(join(app, 'src', 'protos', 'move', 'N.tsx'), `import { useRef } from 'react'
+import { useMotion } from '../../motion'
+export default function N() {
+  const back = useRef<HTMLDivElement>(null), early = useRef<HTMLDivElement>(null)
+  useMotion({
+    start: () => {
+      back.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(100px)' }], { duration: 400, fill: 'forwards' }).reverse()
+      early.current!.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 600, delay: -300, fill: 'forwards' })
+    },
+    reset: () => [back, early].forEach(r => r.current!.getAnimations().forEach(a => a.cancel())),
+  })
+  return <div className="h-full p-8">
+    <div ref={back} data-shoot="back" style={{ width: 80, height: 80, background: '#4f46e5' }} />
+    <div ref={early} data-shoot="early" style={{ width: 80, height: 20, marginTop: 8, background: '#0ea5e9' }} />
+  </div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'P.tsx'), `import { useRef, useState } from 'react'
+import { useMotion } from '../../motion'
+export default function P() {
+  const box = useRef<HTMLDivElement>(null)
+  const [, setOpen] = useState(false)
+  useMotion({
+    start: () => {
+      setOpen(true)
+      box.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(100px)' }], { duration: 200, fill: 'forwards' })
+      box.current!.animate([{ transform: 'translateX(100px)' }, { transform: 'translateX(200px)' }], { duration: 200, delay: 200, fill: 'forwards' })
+    },
+    reset: () => setOpen(false),
   })
   return <div className="h-full p-8"><div ref={box} data-shoot="box" style={{ width: 80, height: 80, background: '#4f46e5' }} /></div>
 }
@@ -738,10 +774,33 @@ try {
   if (shaken.parts?.length !== 2) fail(`move/M's take should have the slide and the shake: ${JSON.stringify(shaken)}`)
   const sx = [await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 150), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 375), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 450), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', shaken.duration)]
   if (!sx.every((x, i) => near(x, [50, 120, 140, 100][i], 5))) fail(`the slide with a shake added should be at 50, 120, 140 and 100 px at 150, 375, 450 ms and the end: ${sx}`)
+  // Played backwards: 0.4 s, from 100 px back to 0. A negative delay starts at the take's 0, as its
+  // curve does (so Go to lists no time before 0).
+  const reversed = await design('move/N', '[data-shoot=back]')
+  if (!near(reversed.duration, 400, 40) || !reversed.parts?.every(p => p.start >= 0) || !reversed.tracks?.every(t => t.start >= 0)) fail(`move/N's take should be 0.40 s, nothing in it before 0: ${JSON.stringify(reversed)}`)
+  const bx = [await value('[data-shoot=back]', 'new DOMMatrix(cs.transform).m41', 0), await value('[data-shoot=back]', 'new DOMMatrix(cs.transform).m41', 200), await value('[data-shoot=back]', 'new DOMMatrix(cs.transform).m41', 400)]
+  if (!bx.every((x, i) => near(x, [100, 50, 0][i], 6))) fail(`the box played backwards should be at 100, 50 and 0 px at 0, 200 and 400 ms: ${bx}`)
+  const firsts = await run(`window.__protoMotion.curves().tracks.flatMap(t => t.lines.map(l => l[0][0]))`)
+  if (!firsts.length || !firsts.every(t => t >= 0)) fail(`no curve should start before 0: ${firsts}`)
+  // Held again after it ran live (focus mode lets it go), a take's dropped animation is still
+  // cancelled when it is let go: takes don't pile animations up on the element.
+  await design('move/P', '[data-shoot=box]')
+  for (let i = 0; i < 4; i++) {
+    await run('window.__protoMotion.take()')
+    await run(`document.querySelector('[data-act=focus]').click()`)
+    await until(`window.__protoMotion.state().live`, 'focus mode should let move/P go', 5000)
+    await run(`document.querySelector('[data-act=unfocus]').click()`)
+    await until(`!document.querySelector('[data-act=unfocus]') && !document.querySelector('[data-motion-dock]').hidden`, 'the dock should come back after focus mode', 5000)
+    await run('window.__protoMotion.seek(100)')
+  }
+  await run('window.__protoMotion.take()')
+  const left = await run(`document.querySelector('[data-layers] [data-shoot=box]').getAnimations().length`)
+  if (left > 2) fail(`five takes of move/P, let go and held again between them, left ${left} animations on the element`)
   // A start() that throws: the take is empty and says why, and the dock isn't left recording.
   await run(`location.hash = '#/move/E'`)
   await until(`window.__protoMotion.state()?.status === 'empty' && /boom/.test(window.__protoMotion.state().error) && /start\\(\\) threw Error: boom/.test(document.querySelector('[data-motion=error]')?.textContent)`, 'a start() that throws should end the take with its error in the dock')
-  // A step a timer starts 1.2 s in, after the take has ended: the dock says it was missed.
+  // A step a timer starts 1.2 s in, after the take has ended: the dock says it was missed, though
+  // it only turns a button green (a color is only taken for hover or focus right after a move).
   await run(`location.hash = '#/move/F'`)
   await until(`(() => { const s = window.__protoMotion.state(); return s?.status === 'ready' && s.late > 800 && s.late < 1600 && !!document.querySelector('[data-motion=late]') })()`, 'a step started after the take ended should be named in the dock')
   await run(`document.querySelector('[data-motion=late-close]').click()`)

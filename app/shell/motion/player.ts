@@ -34,7 +34,7 @@ const ARRIVE = 350
 // How long after a take ends something starting in the design is taken for a step it missed.
 const LATE = 3000
 // A transition of a color, an underline, a focus ring or a shadow: what hover, focus and copy mode
-// change, never a step of the sequence.
+// change, so one that starts up to 1.5 s after the pointer, focus or copy mode moved isn't a step.
 const chrome = (a: Animation) => typeof CSSTransition !== 'undefined' && a instanceof CSSTransition && /^(-webkit-)?(text-decoration|box-shadow|outline)|color$/.test(a.transitionProperty)
 
 export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unknown> }) {
@@ -126,7 +126,8 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
         for (const a of host.getAnimations({ subtree: true })) {
           if (known.has(a) || a.playState !== 'running' || !Number.isFinite(Number(a.effect?.getComputedTiming().activeDuration))) continue
           known.add(a)
-          if (now - moved < 300 || chrome(a)) continue
+          // A color alone can be a step (a Save turning green): it is only taken for chrome just after a move.
+          if (now - moved < 300 || (chrome(a) && now - moved < 1500)) continue
           return set({ late: Math.round((a.startTime === null ? clock() : Number(a.startTime)) - (got.t0 ?? 0)) })
         }
       }

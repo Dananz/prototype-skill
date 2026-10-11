@@ -81,8 +81,9 @@ export const errorOf = (e: unknown) => e instanceof Error ? `${e.name}: ${e.mess
 type Seen = {
   anim: Animation; target: Element | null; pseudo: string | null; keyframes: ComputedKeyframe[]; timing: EffectTiming
   composite: CompositeOperation; rate: number; prop: string; transition: boolean
-  /** Its start on the timeline, the last time it had one; since when it is cancelled (null while it
-   *  runs or rests at its end, and again once it plays again). */
+  /** Its start on the timeline (where its local time 0 falls) and its rate, the last time it had
+   *  one; since when it is cancelled (null while it runs or rests at its end, and again once it
+   *  plays again). */
   start: number | null; gone: number | null
 }
 
@@ -121,7 +122,7 @@ export async function record(host: HTMLElement, go: () => unknown, alive: () => 
     let moving = false
     for (const s of seen.values()) {
       const a = s.anim
-      if (a.playState !== 'idle' && a.startTime !== null) s.start = Number(a.startTime)
+      if (a.playState !== 'idle' && a.startTime !== null) { s.start = Number(a.startTime); s.rate = a.playbackRate || 1 }
       if (a.playState === 'running') moving = true
       else if (!over.has(a)) { over.add(a); last = now }
       // Cancelled (whether it was running or resting at its end): from when, unless it plays again.
@@ -133,20 +134,27 @@ export async function record(host: HTMLElement, go: () => unknown, alive: () => 
   // One cut short by the longest take still has an end, which it is held at past this point.
   const list = [...seen.values()].filter(s => s.start !== null)
   list.forEach(s => { if (s.anim.playState === 'running') try { s.anim.finish() } catch { /* no end */ } })
+  // Each one's local times on the timeline: local time x falls at its start + x / rate, so one played
+  // backwards (reverse(), a rate below 0) runs from its end, before its start, back to 0.
+  const spans = new Map(list.map(s => {
+    const c = new KeyframeEffect(null, [], s.timing).getComputedTiming(), delay = Number(c.delay ?? 0), moved = delay + Number(c.activeDuration ?? 0)
+    return [s, { delay, moved, from: Math.min(0, Number(c.endTime ?? moved) / s.rate) }]
+  }))
   // The take's 0 is when the first part started, not when go() was called: the render and the frame
   // before the browser starts it take longer on a slow machine, and the same moment must be at the
   // same time in every take. A delay written in the motion (a transition-delay) is inside its part.
-  const t0 = list.length ? Math.min(...list.map(s => s.start!)) : 0
+  const t0 = list.length ? Math.min(...list.map(s => s.start! + spans.get(s)!.from)) : 0
   const parts: Part[] = list.map(s => {
-    const c = new KeyframeEffect(null, [], s.timing).getComputedTiming(), rate = s.rate
-    const offset = s.start! - t0, delay = Number(c.delay ?? 0)
-    let end = Math.min(LONGEST, offset + (delay + Number(c.activeDuration ?? 0)) / rate)
+    const { delay, moved } = spans.get(s)!, rate = s.rate, offset = s.start! - t0
+    const a = offset + delay / rate, b = offset + moved / rate
+    let end = Math.max(0, Math.min(LONGEST, Math.max(a, b)))
     // Cancelled during the take and not played again: it ends there, and shows nothing after.
     const gone = s.anim.playState === 'idle' && s.gone !== null ? s.gone - t0 : null
     if (gone !== null) end = Math.min(end, gone)
     const add = s.composite !== 'replace' || s.keyframes.some(k => k.composite === 'add' || k.composite === 'accumulate')
     return {
-      anim: s.anim, fill: null, offset, rate, start: Math.min(end, offset + delay / rate), end, gone, add, composite: s.composite,
+      // A negative delay starts it partway through, at the take's 0.
+      anim: s.anim, fill: null, offset, rate, start: Math.max(0, Math.min(end, a, b)), end, gone, add, composite: s.composite,
       target: s.target, prop: s.prop, props: propsIn(s.keyframes), timing: s.timing, keyframes: s.keyframes,
       pseudo: s.pseudo, copy: s.transition || s.anim.playState === 'idle', persisted: false, shown: null,
     }
@@ -183,7 +191,8 @@ export function hold(take: Take) {
       if (was.playState !== 'idle') try { was.cancel() } catch { /* gone */ }
     } else {
       p.fill = p.anim.effect!.getTiming().fill as FillMode
-      p.persisted = p.anim.replaceState === 'removed'
+      // Held again after the design ran live, it is 'persisted' by now: still one to cancel on release.
+      p.persisted = p.persisted || p.anim.replaceState === 'removed'
       if (p.persisted) try { p.anim.persist() } catch { /* not in this browser */ }
       p.anim.pause()
     }
