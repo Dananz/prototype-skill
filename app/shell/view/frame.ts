@@ -1,0 +1,72 @@
+// The page inside a device view: this same page in a same-origin iframe, at the device's size. The
+// page in it knows it is framed (framed, below) and keeps to itself: it doesn't count as someone
+// looking (its pings only ask for the status), never writes where it is or what it chose to this
+// browser's storage, keeps its comments and copy choices apart, and offers no device view of its own.
+
+/** Whether this page is the one inside a device view: opened with ?dv (as the view loads it), or in a
+ *  frame of this page's own (same origin, with a view). Any other frame (an editor's preview pane, a
+ *  page on another origin) is someone looking at the page itself, with all of it. */
+export const framed = new URLSearchParams(location.search).has('dv') || (() => { try { return window.top !== window && !!window.parent.document.querySelector('[data-view]') } catch { return false } })()
+
+/** The page at a place, as a device view loads it: framed, in the theme of the page outside. */
+export const frameUrl = (hash: string, dark: boolean) => `${location.origin}${location.pathname}?dv=1&theme=${dark ? 'dark' : 'light'}${hash.startsWith('#') ? hash : `#${hash}`}`
+
+export type Frame = {
+  el: HTMLIFrameElement
+  /** The frame's document, once it is the page (not the blank one an iframe starts with). */
+  doc(): Document | null
+  /** Takes the frame to a place, without a reload; nothing when it is there already. */
+  go(hash: string): void
+  hash(): string
+  /** Loads it again where it is, from the url `next` makes of its place (a new theme). */
+  reload(next: (hash: string) => string): void
+  close(): void
+}
+
+/**
+ * Puts the page in an iframe in `host`. Its document is bound as soon as it is there, and bound
+ * again whenever it loads anew: `route` hears where it goes (its own chrome can move it), `bind`
+ * adds what the view listens for in it (two fingers, a pinch, a wheel), returning its undoing, and
+ * `bound` says it is there, for the page outside to take it where it is now (it may have moved
+ * while the frame loaded).
+ */
+export function openFrame(host: HTMLElement, url: string, on: { route: (hash: string) => void; bind: (d: Document) => () => void; bound: () => void }): Frame {
+  const el = document.createElement('iframe')
+  el.title = 'This page at another size'
+  el.className = 'absolute left-0 top-0 block origin-top-left border-0 bg-white dark:bg-zinc-950'
+  host.append(el)
+  let d: Document | null = null, unbind = () => {}, closed = false
+  const page = () => { try { const n = el.contentDocument; return n && n.URL !== 'about:blank' ? n : null } catch { return null } }
+  const route = () => { try { on.route(el.contentWindow!.location.hash) } catch { /* gone */ } }
+  // A load event comes late under a dev server (after every module), so the document is looked for
+  // a few times a second: a new one appears as soon as the frame starts loading the page.
+  const watch = () => {
+    const n = page()
+    if (closed || !n || n === d) return
+    unbind()
+    d = n
+    const w = n.defaultView!
+    w.addEventListener('hashchange', route)
+    const off = on.bind(n)
+    unbind = () => { off(); w.removeEventListener('hashchange', route) }
+    on.bound()
+  }
+  const timer = setInterval(watch, 250)
+  el.addEventListener('load', watch)
+  el.src = url
+  return {
+    el,
+    doc: () => (page() === d ? d : null),
+    go(hash) { try { const w = el.contentWindow!; if (w.location.hash !== hash) w.location.hash = hash } catch { /* gone */ } },
+    hash() { try { return el.contentWindow!.location.hash } catch { return '' } },
+    reload(next) { try { const w = el.contentWindow!; w.location.replace(next(w.location.hash)) } catch { /* gone */ } },
+    close() { if (closed) return; closed = true; clearInterval(timer); unbind(); el.remove() },
+  }
+}
+
+/** The design on the stage of the page in the frame: its mount, in the layer that isn't fading out
+ *  (not a lobby's card, not a tool's). */
+export function designIn(d: Document | null) {
+  const all = d ? [...d.querySelectorAll<HTMLElement>('[data-layers] > :not([inert]) [data-mount]')] : []
+  return all.find(m => !m.closest('[data-thumb], [data-stack-item], [data-play-box], [data-fit]')) ?? null
+}

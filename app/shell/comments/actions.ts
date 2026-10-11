@@ -9,6 +9,7 @@ import type { Ctx, Host } from './ctx'
 import { progress, type Store } from './store'
 import type { Action, Draft, Item, Place, Target, Time } from './types'
 import { routeOf } from './types'
+import { sameView } from '../view/sizes'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 const hasWords = (d: Draft) => d.body.some(s => typeof s !== 'string' || s.trim()) || d.tags.length > 0 || !!d.shot
@@ -26,6 +27,8 @@ export function createActions(store: Store, host: Host) {
     setPlace(place: Place | null) {
       const was = get().place
       const same = !!place && !!was && place.proto === was.proto && place.variant === was.variant && (place.state ?? '') === (was.state ?? '')
+      // Another device view (or none) is another layout: a comment open on the last one is held.
+      if (same && !sameView(place!.view, was!.view)) { set(s => ({ place, ...(s.mode.kind === 'compose' || s.mode.kind === 'tag' ? { mode: { kind: 'idle' as const }, pendingTag: null } : {}) })); return }
       if (same) { if (place!.title !== was!.title || place!.phone !== was!.phone) set({ place }); return }
       // A comment half-written stays held (it was kept as it was typed); picking just stops.
       set({ place, mode: { kind: 'idle' }, active: null, pendingTag: null })
@@ -47,6 +50,8 @@ export function createActions(store: Store, host: Host) {
     open(id: string) {
       const i = get().items.find(x => x.id === id)
       if (!i) return
+      // A comment on the design shows on the layout it was written on: its device view, or none.
+      if (i.target || i.time) host.setView?.(i.target?.view ?? null)
       if (!here(i)) { host.go(i.proto, i.variant, i.state); set({ active: id }); return }
       set({ active: id, mode: i.sent ? { kind: 'idle' } : i.time ? { kind: 'time', time: i.time, id } : i.target ? { kind: 'compose', target: i.target, id } : { kind: 'idle' } })
       if (i.target) find(host.mount(), i.target)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -103,6 +108,8 @@ export function createActions(store: Store, host: Host) {
           text: plain(i),
           ...(i.target?.point ? { point: i.target.point } : {}),
           target: i.target,
+          // Written in a device view: about that layout.
+          ...(i.target?.view ? { view: i.target.view } : {}),
           // On the motion: a moment or a range, in ms of the take, and how long the take is.
           ...(i.time ? { at: i.time.at, ...(i.time.to !== undefined ? { to: i.time.to } : {}), take: i.time.take } : {}),
           ...(i.tags.length ? { tags: i.tags } : {}),

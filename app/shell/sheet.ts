@@ -1,7 +1,8 @@
 // The variant sheet on a phone: every variant of the prototype, opened from the bottom pill.
 // It is Base UI's Drawer (swipe down to close, focus kept inside, the iOS 26 viewport handled),
-// written with createElement so it runs in Vue sessions too, which have no JSX transform.
-import { createElement as h, type ReactNode } from 'react'
+// written with createElement so it runs in Vue sessions too, which have no JSX transform. The
+// phone's menus and its Try it are sheets of the same kind.
+import { createElement as h, useCallback, useRef, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Drawer } from '@base-ui/react/drawer'
 import { uiBox } from './portals'
@@ -75,6 +76,59 @@ function MenuSheet(p: MenuSheetProps & { container: HTMLElement }) {
               h(Drawer.Title, { dir: 'auto', className: 'min-w-0 truncate text-[15px] font-semibold' }, p.title),
               h(Drawer.Close, { 'aria-label': 'Close', className: 'grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
             h('div', { dangerouslySetInnerHTML: { __html: p.html } }))))))
+}
+
+export type TrySheetProps = {
+  open: boolean
+  /** How many things it lists (the values, things to try, switches and events). */
+  count: number
+  /** Fill in as the panel draws it (its icon and its word), or null when nothing here can be filled. */
+  fill: string | null
+  /** The sheet's list and its foot (the caveats) as they appear, for the shell to fill; nulls once it is gone. */
+  body: (list: HTMLElement | null, foot: HTMLElement | null) => void
+  /** Asked to close (a drag down, the backdrop, Esc, Close); cancel keeps it up. */
+  onClose: (reason: string, event: Event | undefined, cancel: () => void) => void
+  /** Down and out of sight. */
+  onGone: () => void
+}
+
+const KEY = h('svg', { className: 'size-4 shrink-0 text-amber-500', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'M7.5 10a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM11.4 11.6 21 2M15.5 7.5l2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4' }))
+
+// Try it on a phone, opened from the pill's menu: the comments sheet's drawer, except that it
+// leaves the pill's height free at its foot, since it rises from behind the pill, which stays on top.
+// Its list is the shell's own Try it HTML, written in by the shell (body), so the panel's handlers on
+// [data-hints], where this sheet renders, work in it as they do in the panel. The popup itself takes
+// the focus as it opens: focus on a thing to try would light its spot.
+function TrySheet(p: TrySheetProps & { container: HTMLElement }) {
+  const popup = useRef<HTMLDivElement>(null)
+  const now = useRef(p)
+  now.current = p
+  const box = useCallback((el: HTMLElement | null) => { now.current.body(el?.querySelector<HTMLElement>('[data-try-list]') ?? null, el?.querySelector<HTMLElement>('[data-try-foot]') ?? null) }, [])
+  return h(Drawer.Root, {
+    open: p.open,
+    onOpenChange: (open: boolean, d: { reason: string; event?: Event; cancel: () => void }) => { if (!open) p.onClose(d.reason, d.event, d.cancel) },
+    onOpenChangeComplete: (open: boolean) => { if (!open) p.onGone() },
+  },
+    h(Drawer.Portal, { container: p.container },
+      h(Drawer.Backdrop, { className: '[--backdrop-opacity:0.3] [--bleed:3rem] dark:[--backdrop-opacity:0.6] fixed inset-0 z-[200] min-h-dvh bg-black opacity-[calc(var(--backdrop-opacity)*(1-var(--drawer-swipe-progress)))] transition-opacity duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:duration-0 data-ending-style:opacity-0 data-starting-style:opacity-0 data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] supports-[-webkit-touch-callout:none]:absolute' }),
+      h(Drawer.Viewport, { className: 'fixed inset-0 z-[200] flex items-end justify-center' },
+        h(Drawer.Popup, { ref: popup, initialFocus: popup, className: '-mb-[3rem] flex w-full max-h-[calc(82vh+3rem)] flex-col overflow-hidden rounded-t-3xl bg-white pb-[calc(var(--pill-h,0px)+0.5rem+3rem)] pt-2 text-[13px] text-zinc-900 shadow-2xl shadow-black/20 outline-none touch-auto [transform:translateY(var(--drawer-swipe-movement-y))] transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:select-none data-ending-style:[transform:translateY(calc(100%-3rem+2px))] data-starting-style:[transform:translateY(calc(100%-3rem+2px))] data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] dark:bg-zinc-900 dark:text-zinc-100' },
+          h('div', { className: 'mx-auto mb-1 h-1 w-10 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-700' }),
+          h(Drawer.Content, { ref: box, className: 'flex min-h-0 flex-1 flex-col px-3' },
+            h('div', { className: 'flex shrink-0 items-center gap-2 pb-1 pl-1 pt-1' },
+              h(Drawer.Title, { className: 'flex min-w-0 items-center gap-2 text-[17px] font-semibold' }, KEY, 'Try it',
+                p.count ? h('span', { className: 'text-[15px] font-normal tabular-nums text-zinc-400' }, String(p.count)) : null),
+              h('span', { className: 'ms-auto' }),
+              p.fill ? h('button', { type: 'button', 'data-hint': 'fill', title: 'Type the values into this design’s fields', className: 'inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-zinc-900/[.05] px-3.5 text-[13px] font-medium text-zinc-700 active:bg-zinc-900/10 dark:bg-white/[.08] dark:text-zinc-200 dark:active:bg-white/15', dangerouslySetInnerHTML: { __html: p.fill } }) : null,
+              h(Drawer.Close, { 'aria-label': 'Close', className: 'grid size-9 shrink-0 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
+            h('div', { 'data-try-list': '', className: '-mx-3 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1' }),
+            h('div', { 'data-try-foot': '', className: '-mx-3 shrink-0' }))))))
+}
+
+/** Mounts Try it's phone sheet once; call the returned function with new props to open, close or refresh it. */
+export function createTrySheet(host: HTMLElement) {
+  const root = createRoot(host)
+  return (props: TrySheetProps) => root.render(h(TrySheet, { ...props, container: host }))
 }
 
 export function createMenuSheet(host: HTMLElement) {

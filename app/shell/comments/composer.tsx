@@ -12,7 +12,7 @@ import { find, groupOf, parts } from './dom'
 import { EASE, GLIDE_MS, Glide, useBoxes } from './inspect'
 import { capture, ShotEditor } from './shot'
 import type { Box, Draft, Seg, Target, Time } from './types'
-import { IB, Icon, MOD, PinDot, PRIMARY, spanOf, SrcTag, srcOf, ImageChip } from './ui'
+import { IB, Icon, MOD, PinDot, PRIMARY, spanOf, SrcTag, srcOf, ImageChip, ViewChip } from './ui'
 
 function readEditor(el: HTMLElement): Seg[] {
   const out: Seg[] = []
@@ -211,7 +211,8 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   }
   const shoot = async () => {
     setCapturing('Capturing…')
-    try { const url = await capture(host.mount(), target ?? WHOLE, host.dark()); if (url) setMarking(url) } finally { setCapturing(null) }
+    // A design in a device view's frame may not draw from this window; then there is no picture.
+    try { const url = await capture(host.mount(), target ?? WHOLE, host.dark()); if (url) setMarking(url) } catch { /* nothing to mark up */ } finally { setCapturing(null) }
   }
   const attach = async (file: File) => {
     setCapturing('Adding…')
@@ -253,7 +254,8 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           <PinDot n={n} size="sm" />
           {time
             ? <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[11px] font-semibold tabular-nums text-proto-primary-soft-fg"><svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={time.to === undefined ? TIME_PATH.at : TIME_PATH.range} /></svg>{time.to === undefined ? `At ${spanOf(time)}` : spanOf(time)}</span>
-            : <><span dir="auto" className="min-w-0 flex-1 truncate text-xs font-medium">{target?.label}</span><SrcTag t={target} /></>}
+            // In a view the size takes the file's place: the list shows the file under the words.
+            : <><ViewChip v={target?.view} /><span dir="auto" className="min-w-0 flex-1 truncate text-xs font-medium">{target?.label}</span>{!target?.view && <SrcTag t={target} />}</>}
         </div>
         <div ref={anchor} className="relative px-3 pt-1.5">
           <div ref={ed} contentEditable suppressContentEditableWarning role="textbox" aria-label="Comment" aria-multiline="true" dir="auto"

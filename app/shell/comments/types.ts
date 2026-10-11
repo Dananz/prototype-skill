@@ -1,4 +1,5 @@
 import type { Inbox } from '../shell'
+import type { ViewSize } from '../view/sizes'
 
 /** A box in CSS px. Display boxes are measured from the comment layer; a Target's rect from the variant root. */
 export type Box = { x: number; y: number; w: number; h: number }
@@ -9,9 +10,10 @@ export type Box = { x: number; y: number; w: number; h: number }
  * variant root's top left, which is what the agent is told. A comment pinned with a long press
  * has a `point` too, in the same px: the spot itself, with the element under it for context.
  * `src` is where it is written, its file under src/protos and line (`today/parts.tsx:30`), and
- * `component` the component it is written in (both stamped by source.mjs).
+ * `component` the component it is written in (both stamped by source.mjs). One picked in a device
+ * view (view/) has its `view`: the layout it is on, which its rect is measured in.
  */
-export type Target = { label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; point?: { x: number; y: number } }
+export type Target = { label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; point?: { x: number; y: number }; view?: ViewSize }
 
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
 export type Seg = string | { tag: number }
@@ -58,8 +60,9 @@ export type Mode =
   /** Writing on a moment or a range of the motion, in the dock; tagging: picking an element to tag. */
   | { kind: 'time'; time: Time; id?: string; tagging?: boolean }
 
-/** Where the page is, when it is on a single variant that can be commented on. */
-export type Place = { proto: string; variant: string; state?: string; phone: boolean; title: string }
+/** Where the page is, when it is on a single variant that can be commented on; view: the device
+ *  view's layout while one is on, where comments are written and their pins shown. */
+export type Place = { proto: string; variant: string; state?: string; phone: boolean; title: string; view?: ViewSize }
 
 export type State = {
   items: Item[]

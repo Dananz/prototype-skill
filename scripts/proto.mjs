@@ -10,6 +10,7 @@
 //             [--as built]    with --ref: the png is the variant built in the codebase (<route>-vs-built.png)
 //             [--at <ms>]     instead, the variant's motion (useMotion) at that moment of its take
 //             [--frames <n>] [--at <ms>-<ms>]   n frames of the take on one sheet, with its curves
+//             [--size <w>x<h>]   instead of desktop and phone, that viewport (a layout from the page's device view)
 //   proto shoot [slug…] --sheet [--state <id>] [--theme dark]   every variant on one contact sheet per prototype
 //   proto handoff <slug>/<letter>   a checklist of what that variant has, for building it into the codebase
 //   proto snap <slug>[/<letter>]… [--width 672]   static HTML snapshots for a Claude Doc
@@ -562,6 +563,13 @@ async function shoot() {
     if (flags.at !== undefined) extra.push(`--at=${flags.at}`)
     if (frames) extra.push(`--frames=${frames}`)
   }
+  // One viewport instead of desktop and phone (a layout a comment from the page's device view is about).
+  if (flags.size !== undefined) {
+    const m = String(flags.size).match(/^(\d+)x(\d+)$/)
+    if (!m || +m[1] < 200 || +m[1] > 4000 || +m[2] < 200 || +m[2] > 4000) die('--size is a viewport in CSS px, 200 to 4000 each way: --size 834x1194')
+    if (flags.sheet || flags.ref || flags.at !== undefined || flags.frames !== undefined) die('--size shoots single shots: not with --sheet, --ref, --at or --frames')
+    extra.push(`--size=${m[1]}x${m[2]}`)
+  }
   // --click can repeat: each selector is clicked in order before the shot.
   argv.forEach((a, i) => { if (a === '--click' && argv[i + 1]) extra.push(`--click=${argv[i + 1]}`); else if (a.startsWith('--click=')) extra.push(a) })
   // `--sheet hero` reads as the flag's value, so a string there is one more prototype. The list
@@ -1087,6 +1095,8 @@ function printBatch(dir, b) {
     // On the motion (the page's motion dock): a moment or a range of its take, and how to see it.
     if (c.take) console.log(`   at: ${spanOf(c)} of the motion (its take is ${secs(c.take)}): see it with proto shoot ${c.route} ${c.to !== undefined ? `--frames 8 --at ${c.at}-${c.to}` : `--at ${c.at}`}`)
     if (c.target) console.log(`   ${c.point ? 'in' : 'on'}: ${where(c.target)}`)
+    // Written in the page's device view: about that layout, which a shot at that size shows.
+    if (c.view) console.log(`   view: ${c.view.size} ${c.view.w}x${c.view.h} (shoot it: proto shoot ${c.route} --size ${c.view.w}x${c.view.h})`)
     for (const t of c.tags || []) console.log(`   with: ${where(t)}`)
     for (const img of c.images || []) console.log(`   image: ${join(inboxDir(dir), 'taken', b.id, img.file)}${img.name ? `  (${img.name})` : ''}`)
   }

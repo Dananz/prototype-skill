@@ -14,13 +14,17 @@ import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } fro
 import { dock, edge, smooth, runDock, restoreEdgeLabels, stageHover, installPointerTracking, fadeOut } from './motion'
 import { hints, fillField, type Hint } from './hints'
 import { copy } from './copy'
-import { createSheet, createMenuSheet } from './sheet'
+import { createSheet, createMenuSheet, createTrySheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
 import { createComments, type Subject } from './comments/index'
 import { createMotion } from './motion/index'
+import { motion } from './motion/registry'
 import type { Action } from './comments/types'
 import { tabIcon } from './favicon'
 import { setShellRoot } from './portals'
+import { createView } from './view/index'
+import { framed } from './view/frame'
+import { dims, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
 
 export type Variant = { id: string; name: string; file: string; load: () => Promise<unknown> }
 /** Something behind clicks in a prototype's variants (a menu, a drawer, a dialog), reached by
@@ -53,7 +57,9 @@ export type Pinned = { selector?: string; shoot?: string; src?: string; componen
 export type CommentBatch = {
   comments: { route: string; text: string; action?: Action; point?: { x: number; y: number }; target?: Pinned; tags?: Pinned[]; images?: { dataUrl: string; name?: string }[]
     /** On the motion (motion/): a moment of its take in ms, or a range to `to`, and the take's length. */
-    at?: number; to?: number; take?: number }[]
+    at?: number; to?: number; take?: number
+    /** Written in a device view (view/): about that layout. */
+    view?: ViewSize }[]
   viewport?: { w: number; h: number; phone?: boolean }
   theme?: 'light' | 'dark'
 }
@@ -131,7 +137,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const { mount } = opts
   let protos = opts.protos
   let session = opts.session
-  copy.configure(session.id)
+  // The page inside a device view (view/frame.ts) shares this browser's storage with the page
+  // outside, so it keeps copy choices and comments under names of its own, and writes nothing else:
+  // what it chooses (its place, theme, sidebar, panel) lasts until it reloads.
+  copy.configure(framed ? `${session.id}~view` : session.id)
+  const remember = (key: string, value: string) => { if (!framed) localStorage.setItem(key, value) }
   setShellRoot(root)
   const q = new URLSearchParams(location.search)
   const stored = localStorage.getItem('proto-theme')
@@ -149,6 +159,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     menu: '' as '' | 'protos' | 'session',
     // On a phone the grid's phone cards open at half size; Fit leaves them tiny there.
     scale: matchMedia('(max-width: 639px)').matches ? 50 : 0,
+    // The motion dock, asked for (Motion in the pill's menu, the bar's curves): page tools stay out
+    // of the way until then, so a design with motion runs live and nothing sits under it.
+    motion: false,
     stack: q.has('stack') ? q.get('stack') !== '0' : localStorage.getItem('proto-lobby') === 'stack',
     dark: q.get('theme') ? q.get('theme') === 'dark' : stored ? stored === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches,
     copied: false,
@@ -168,6 +181,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // The sidebar's level shown as columns (null: the last two), and the phone sheet's column.
     pairAt: null as number | null,
     drill: null as number | null,
+    // The device view (view/): the page at another size in the stage. size null: none, the page as
+    // this screen is; zoom 0: Fit, else a percentage.
+    view: { size: null as Size | null, land: false, zoom: 0 },
   }
 
   // ---------- data helpers ----------
@@ -333,7 +349,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // otherwise cover the composer's buttons where it docks at the bottom of a phone. Two bars can
   // sit under the stage, each taking its height from it: the motion dock (--dock-h) just above the
   // pill, where it always is, and the copy picker's bar (--copy-h) over the dock while copy mode is
-  // on. The copy picker's phone sheet covers both.
+  // on. The copy picker's phone sheet covers both. A device view covers the stage, under the edge
+  // arrows and the Focus button, the spotlight and the comment layer.
   root.innerHTML = `<div class="flex h-dvh bg-white text-[13px] text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
     <aside data-side></aside>
     <div data-grip role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0" title="Drag to resize · double-click to reset" class="group relative z-40 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none outline-none">
@@ -343,6 +360,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <header data-bar class="relative z-30 flex h-12 shrink-0 items-center gap-1 border-b border-black/[.07] px-2 dark:border-white/10"></header>
       <div data-zone>
         <div data-layers class="absolute inset-0 overflow-hidden" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-view hidden class="absolute inset-0 z-[5]" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-motion-dock class="absolute left-0 z-[18]" style="right:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
@@ -684,9 +702,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     st.pairAt = null
     st.drill = null
     st.sheet = false
+    trySheet = 'closed'
     closeCard(true)
     if (p.view !== 'variant') st.focus = false
-    localStorage.setItem(`proto-place-${session.id}`, hashOf(p))
+    remember(`proto-place-${session.id}`, hashOf(p))
     if (moved) show(fade && !!layer)
     render()
     if (moved) side.querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'nearest' })
@@ -825,7 +844,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const line = p && view !== 'session' ? lineage(p) : []
     // On a phone the bar is back, title and session: back goes one level up (to the variant this
     // was built from, else the session), the title opens the prototypes, ⋯ the session. The
-    // variant and the scale are in the pill.
+    // variants and the page's tools are in the pill.
     const up = view === 'session' ? null : line.length
       ? (a => ({ act: a.p.variants.some(x => x.id === a.v) ? `pv:${esc(a.p.id)}:${esc(a.v)}` : `lobby:proto:${esc(a.p.id)}`, label: a.p.title }))(line.at(-1)!)
       : { act: 'lobby:session', label: session.name }
@@ -852,8 +871,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <div class="relative shrink-0"><button data-act="open:session" aria-label="Session" aria-expanded="${st.open === 'session'}" title="${esc(session.name)}" class="${IB} ${st.open === 'session' ? ON : ''}"><span class="relative grid size-5 shrink-0 place-items-center rounded bg-zinc-900 text-[10px] font-bold text-white dark:bg-white dark:text-zinc-900">${initial}<span class="absolute -right-1 -top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-2', st.live && !st.stopped)}</span></span></button>${pop(st.open === 'session', sessionMenu, 'left-0 top-11 w-[22rem] max-w-[calc(100vw-1rem)]')}</div>
       ${switcher}
       <div class="ml-auto flex shrink-0 items-center gap-1">
-        ${stepper}${stepper && (commentHost() || copyCounts().lines || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${commentBtn()}${copyBtn()}${decideBtn()}
+        ${stepper}${stepper && (viewOk() || commentHost() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
+        ${sizeTabs()}${commentBtn()}${copyBtn()}${motionBtn()}${decideBtn()}
         ${phones ? `<div class="relative"><button data-act="open:scale" aria-expanded="${st.open === 'scale'}" class="${IB} text-xs tabular-nums ${st.open === 'scale' ? 'bg-zinc-900/5 text-zinc-900 dark:bg-white/10 dark:text-white' : ''}">${ic('phone')}<span data-scale-label>${scaleLabel()}</span></button>${pop(st.open === 'scale', scaleMenu, 'right-0 top-11 w-72')}</div>` : ''}
       </div></div>`)
     menus = { protos: drill(), session: sessionBody }
@@ -943,6 +962,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     paintHints()
     paintPill()
     paintDecide()
+    paintView()
   }
 
   // ---------- the variant pill (phones) ----------
@@ -970,36 +990,44 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const vs = p ? visible(p) : []
     const vid = st.place.view === 'variant' ? st.place.variant : ''
     const at = vs.findIndex(v => v.id === vid)
-    const key = pillOn() ? JSON.stringify([p!.id, p!.kind, vid, vs.map(v => [v.id, v.name]), p!.variants.length, editing(p!.id, vid), st.sheet, pillComments(), copyKeyOf()]) : ''
+    const tryN = pillOn() && phoneMq.matches ? tryCount(hintList()) : 0
+    const key = pillOn() ? JSON.stringify([p!.id, vid, vs.map(v => [v.id, v.name]), editing(p!.id, vid), st.sheet, pillComments(), copyCounts().on, trySheet]) : ''
     if (key !== pillKey) {
       pillKey = key
       if (!key) { pill.innerHTML = ''; closeCard(true) }
       else {
         const v = vs[at]
-        // With Comment, T and the phone scale all in the pill, the handle drops its count (3/5) so
-        // the variant's name keeps room on a 360px phone.
-        const count = !(p!.kind === 'phone' && copyCounts().lines)
+        const sep = '<span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span>'
         const prev = vs[at <= 0 ? vs.length - 1 : at - 1], next = vs[at < 0 || at === vs.length - 1 ? 0 : at + 1]
+        const name = v ? `<b data-pill-id class="shrink-0 text-[15px]">${v.id}</b><span data-pill-name dir="auto" class="min-w-0 truncate text-white/70">${esc(v.name)}</span><span data-pill-n class="shrink-0 text-[11px] tabular-nums text-white/40">${at + 1}/${vs.length}</span>${editing(p!.id, v.id) ? pulse('size-1.5') : ''}`
+          : `<span class="truncate font-medium">All variants</span><span class="shrink-0 text-[11px] tabular-nums text-white/40">${vs.length}</span>`
+        // The pill holds the menu, the variants and Comment, never more: the page's other tools
+        // (All variants, copy options, Try it, motion, the layout or the phone scale) are in the
+        // menu, so the name keeps its room on a 360 px phone however many a design has. A tool
+        // opened from the menu makes its button the way out (an X), or, for Try it put away while
+        // a spot is lit, the key that brings it back.
+        const mode = copyCounts().on ? { act: 'copymode', icon: 'x', label: 'Close copy options' }
+          : trySheet === 'open' ? { act: 'try', icon: 'x', label: 'Close Try it' }
+          : trySheet === 'away' ? { act: 'try', icon: 'key', label: 'Bring Try it back' } : null
+        const menuBtn = mode
+          ? `<button data-pill-menu="mode" data-act="${mode.act}" data-shoot="menu" aria-label="${mode.label}" aria-pressed="true" class="${pillBtn} !bg-proto-primary !text-proto-primary-fg">${ic(mode.icon, 'size-5')}</button>`
+          : `<button data-pill-menu data-shoot="menu" aria-label="Menu" aria-haspopup="dialog" aria-expanded="false" class="${pillBtn} transition-colors ${cardBtnCls()}">${ic('menu', 'size-5')}</button>`
         pill.innerHTML = `<div class="absolute inset-x-0 bottom-0 z-10 flex h-[var(--pill-h,0px)] items-start justify-center pt-2 sm:hidden">
           <div data-pill-bar class="relative flex h-12 max-w-[calc(100%-1rem)] items-center gap-0.5 rounded-full bg-zinc-900/90 p-1 text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/90">
             <div data-ruler hidden class="pointer-events-none absolute bottom-full left-1/2 mb-2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-zinc-900/90 shadow-lg ring-1 ring-white/10 [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)] dark:bg-zinc-800/90"></div>
-            <button data-act="lobby:proto" aria-label="All variants" aria-pressed="${st.place.view === 'proto'}" class="${pillBtn} ${st.place.view === 'proto' ? '!bg-white !text-zinc-900' : ''}">${ic('grid')}</button>
-            <span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span>
+            ${menuBtn}${sep}
             <button data-act="variant:${prev.id}" aria-label="Previous variant: ${prev.id} ${esc(prev.name)}" class="${pillBtn}">${ic('left')}</button>
-            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? `${v.id} ${esc(v.name)}, ${at + 1} of ${vs.length}. ` : ''}Show all variants" class="flex h-10 ${commentHost() || copyCounts().lines ? 'w-28' : 'w-40'} min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 active:bg-white/10">
-              ${v ? `<b data-pill-id class="shrink-0 text-[15px]">${v.id}</b><span data-pill-name dir="auto" class="min-w-0 truncate text-white/70">${esc(v.name)}</span>${count ? `<span data-pill-n class="shrink-0 text-[11px] tabular-nums text-white/40">${at + 1}/${vs.length}</span>` : ''}${editing(p!.id, v.id) ? pulse('size-1.5') : ''}`
-                : `<span class="truncate font-medium">All variants</span><span class="shrink-0 text-[11px] tabular-nums text-white/40">${vs.length}</span>`}
+            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? `${v.id} ${esc(v.name)}, ${at + 1} of ${vs.length}. ` : ''}Show all variants" class="flex h-10 w-40 min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 active:bg-white/10">
+              ${name}
             </div>
             <button data-act="variant:${next.id}" aria-label="Next variant: ${next.id} ${esc(next.name)}" class="${pillBtn}">${ic('right')}</button>
-            ${commentHost() || copyCounts().lines ? '<span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span>' : ''}
-            ${commentHost() ? (c => `<button data-act="comment:tap" data-shoot="comment" aria-label="Comments" aria-pressed="${c.picking}" class="${pillBtn} relative ${c.picking ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.picking ? 'x' : 'comment', 'size-5')}${c.drafts && !c.picking ? `<span class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold text-proto-primary-fg ring-2 ring-zinc-900">${c.drafts}</span>` : ''}</button>`)(comments.counts()) : ''}
-            ${(c => c.lines ? `<button data-act="copymode" data-shoot="copy-mode" aria-label="Copy options" aria-pressed="${c.on}" class="${pillBtn} relative ${c.on ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.on ? 'x' : 'text', 'size-5')}${copyCount(c, 'ring-zinc-900')}</button>` : '')(copyCounts())}
-            ${p!.kind === 'phone' ? `<span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span><button data-pill-scale aria-label="Phone scale" aria-expanded="false" class="h-10 min-w-12 shrink-0 rounded-full px-2.5 text-xs font-medium tabular-nums text-white/70 transition-colors duration-200 active:bg-white/10"><span data-scale-label>${scaleLabel()}</span></button>` : ''}
+            ${commentHost() ? (c => `${sep}<button data-act="comment:tap" data-shoot="comment" aria-label="Comments" aria-pressed="${c.picking}" class="${pillBtn} relative ${c.picking ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.picking ? 'x' : 'comment', 'size-5')}${c.drafts && !c.picking ? `<span class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold text-proto-primary-fg ring-2 ring-zinc-900">${c.drafts}</span>` : ''}</button>`)(comments.counts()) : ''}
           </div>
         </div>`
+        raisePill()
       }
     }
-    if (card) pill.querySelector('[data-pill-scale]')?.setAttribute('aria-expanded', String(card.phase !== 'exit'))
+    if (card) markCardBtn()
     syncScale()
     paintMenu({
       open: !!st.menu,
@@ -1021,19 +1049,49 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   let menus = { protos: '', session: '' }
 
-  // ---------- the phone scale, in the pill ----------
-  // The pill's scale opens the same controls as the bar's scale menu (Fit and the sizes, then
-  // a slider), in the pill's dark. The card grows out of the button: it starts as the button,
-  // same place, size and round corners, opens into the card, and its controls fade in once
-  // there is room; closing folds it back. Turning it around halfway plays the running
-  // animation back from where it is.
-  const DARK_SEG = (on: boolean) => `h-9 flex-1 rounded-full text-xs font-medium tabular-nums ${on ? 'bg-white text-zinc-900' : 'text-white/70 hover:bg-white/10'}`
-  const cardHtml = () => `<div data-scale-backdrop class="fixed inset-0 z-20"></div>
-    <div data-card class="absolute z-30 w-[17.5rem] space-y-1 rounded-3xl bg-zinc-900/95 p-1.5 text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/95" style="transform-origin:0 0">
-      <div class="flex gap-0.5 rounded-full bg-white/[.06] p-0.5">${SCALES.map(s => `<button data-act="scale:${s}" data-scale-seg="${s}" data-dark aria-pressed="${st.scale === s}" class="${DARK_SEG(st.scale === s)}">${s ? s + '%' : 'Fit'}</button>`).join('')}</div>
-      <div class="flex items-center">${['minus', 'plus'].map((n, i) => `<button data-act="scalestep:${i ? 5 : -5}" aria-label="${i ? 'Bigger' : 'Smaller'}" class="${i ? 'order-3' : ''} grid size-10 shrink-0 place-items-center rounded-full text-white/60 hover:bg-white/10 hover:text-white">${ic(n)}</button>`).join('')}<input data-scale-range type="range" min="${SCALE_MIN}" max="${SCALE_MAX}" step="1" value="${st.scale || 50}" aria-label="Phone scale" class="order-2 ${RANGE} ${st.scale ? '' : 'opacity-40'}" style="--p:${rangeAt(st.scale || 50)}%;--fill:#fff;--rest:rgb(255 255 255/.15)"></div>
-    </div>`
+  // ---------- the pill's menu ----------
+  // The pill's menu holds the page's tools for the design on the stage: All variants, copy options,
+  // Try it, the motion dock, and the layout (a web prototype's device view) or the phone scale. Each
+  // row is there only when the design has it, with what it holds (lines with options, things to
+  // try). The card grows out of the button: it starts as the button, same place, size and round
+  // corners, opens into the card, and its rows fade in once there is room; choosing anything in it
+  // folds it back. Turning it around halfway plays the running animation back from where it is.
+  const DARK_SEG = (on: boolean) => `h-9 min-w-0 flex-1 rounded-full text-xs font-medium tabular-nums ${on ? 'bg-white text-zinc-900' : 'text-white/70 hover:bg-white/10'}`
+  const CARD_CLS = 'absolute z-30 w-[17.5rem] max-w-[calc(100vw-1rem)] space-y-1 rounded-3xl bg-zinc-900/95 p-1.5 text-[14px] text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/95'
+  const menuRow = (o: { act: string; shoot: string; icon: string; label: string; detail?: string; on?: boolean; tint?: string }) =>
+    `<button data-act="${o.act}" data-shoot="${o.shoot}" aria-pressed="${!!o.on}" class="flex h-11 w-full items-center gap-3 rounded-[18px] px-3 text-start hover:bg-white/10 active:bg-white/10 ${o.on ? 'bg-white/[.08]' : ''}">
+      <span class="grid size-7 shrink-0 place-items-center rounded-full ${o.on ? 'bg-proto-primary text-proto-primary-fg' : o.tint ?? 'text-white/70'}">${ic(o.icon, 'size-[18px]')}</span>
+      <span class="min-w-0 flex-1 truncate font-medium">${o.label}</span>${o.detail ? `<span class="shrink-0 text-xs tabular-nums text-white/45">${o.detail}</span>` : ''}</button>`
+  const menuSegs = (label: string, segs: string, after = '') =>
+    `<div class="flex items-center gap-1 ps-3"><span class="w-14 shrink-0 text-xs text-white/50">${label}</span><div class="flex min-w-0 flex-1 gap-0.5 rounded-full bg-white/[.06] p-0.5">${segs}</div>${after}</div>`
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
+  function cardHtml() {
+    const p = cur()!, c = copyCounts(), n = tryCount(hintList())
+    const rows = [
+      menuRow({ act: 'lobby:proto', shoot: 'all-variants', icon: 'grid', label: 'All variants', detail: String(visible(p).length), on: st.place.view === 'proto' }),
+      c.lines ? menuRow({ act: 'copymode', shoot: 'copy-mode', icon: 'text', label: 'Copy options', detail: plural(c.lines, 'line') }) : '',
+      n ? menuRow({ act: 'try', shoot: 'try-it', icon: 'key', tint: 'text-amber-300', label: 'Try it', detail: `${n} to try` }) : '',
+      hasMotion() ? menuRow({ act: 'motion', shoot: 'motion', icon: 'curves', label: st.motion ? 'Hide motion' : 'Motion', detail: st.motion ? '' : 'Timeline', on: st.motion }) : '',
+    ].join('')
+    const layout = viewOk() ? menuSegs('Layout', ORDER.map(s => `<button data-act="size:${s}:card" data-shoot="size-${s}" aria-label="${SIZES[s].name}" aria-pressed="${shownSize() === s}" class="grid place-items-center ${DARK_SEG(shownSize() === s)}">${ic(sizeIcon(s, s === 'tablet' && st.view.land), 'size-[18px]')}</button>`).join(''),
+      viewOn() && st.view.size === 'tablet' ? `<button data-act="turn" data-shoot="turn" aria-label="${st.view.land ? 'Turn upright' : 'Turn on its side'}" class="grid size-10 shrink-0 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white">${ic('rotate', 'size-5')}</button>` : '') : ''
+    const scale = p.kind === 'phone' ? menuSegs('Scale', SCALES.map(s => `<button data-act="scale:${s}" data-scale-seg="${s}" data-dark aria-pressed="${st.scale === s}" class="${DARK_SEG(st.scale === s)}">${s ? s + '%' : 'Fit'}</button>`).join('')) : ''
+    return `<div data-scale-backdrop class="fixed inset-0 z-20"></div>
+      <div data-card data-menu-card role="dialog" aria-label="Menu" class="${CARD_CLS}" style="transform-origin:0 0"><div class="space-y-px">${rows}</div>${layout}${scale}</div>`
+  }
   let card: { el: HTMLElement; phase: 'enter' | 'open' | 'exit'; anims: Animation[] } | null = null
+  /** The menu's button: white while its card is open. */
+  const cardBtnCls = () => card && card.phase !== 'exit' ? '!bg-white !text-zinc-900' : ''
+  // The menu's button, or the X a tool opened from the menu made of it (which the card folds back into).
+  const menuBtn = () => pill.querySelector<HTMLElement>('[data-pill-menu]')
+  function markCardBtn() {
+    const b = menuBtn()
+    if (!b || b.dataset.pillMenu === 'mode') return
+    b.classList.remove('!bg-white', '!text-zinc-900')
+    const c = cardBtnCls()
+    if (c) b.classList.add(...c.split(' '))
+    b.setAttribute('aria-expanded', String(!!card && card.phase !== 'exit'))
+  }
   const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches
   const CARD_EASE_OUT = 'cubic-bezier(0.32, 0.72, 0, 1)', CARD_EASE_IN = 'cubic-bezier(0.4, 0, 1, 1)'
 
@@ -1059,18 +1117,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     Promise.all(anims.map(a => a.finished)).then(() => { if (card === c && c.anims === anims && c.phase === phase) done() }, () => {})
   }
   function openCard() {
-    const btn = pill.querySelector<HTMLElement>('[data-pill-scale]'), bar = btn?.closest<HTMLElement>('[data-pill-bar]')
+    const btn = menuBtn(), bar = btn?.closest<HTMLElement>('[data-pill-bar]')
     if (!btn || !bar) return
-    btn.setAttribute('aria-expanded', 'true')
-    btn.classList.add('!bg-white', '!text-zinc-900')
-    if (card?.phase === 'exit') { card.el.style.pointerEvents = ''; cardHost.querySelector<HTMLElement>('[data-scale-backdrop]')!.style.pointerEvents = ''; card.anims.forEach(a => a.reverse()); card.phase = 'enter'; const c = card; settleCard(c, 'enter', () => { c.phase = 'open'; c.anims.forEach(a => a.cancel()); c.anims = [] }); return }
+    if (card?.phase === 'exit') { card.el.style.pointerEvents = ''; cardHost.querySelector<HTMLElement>('[data-scale-backdrop]')!.style.pointerEvents = ''; card.anims.forEach(a => a.reverse()); card.phase = 'enter'; const c = card; settleCard(c, 'enter', () => { c.phase = 'open'; c.anims.forEach(a => a.cancel()); c.anims = [] }); return markCardBtn() }
     if (card) return
     cardHost.innerHTML = cardHtml()
     const el = cardHost.querySelector<HTMLElement>('[data-card]')!
+    // Over the pill, from its start, where the button is.
     const z = zone.getBoundingClientRect(), b = bar.getBoundingClientRect()
-    el.style.right = `${z.right - b.right}px`
+    el.style.left = `${b.left - z.left}px`
     el.style.bottom = `${z.bottom - b.top + 8}px`
     card = { el, phase: 'open', anims: [] }
+    markCardBtn()
     if (reduceMotion()) return
     const from = asButton(el, btn)
     card.phase = 'enter'
@@ -1083,10 +1141,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   function closeCard(now = false) {
     if (!card) return
-    const btn = pill.querySelector<HTMLElement>('[data-pill-scale]')
-    btn?.setAttribute('aria-expanded', 'false')
-    btn?.classList.remove('!bg-white', '!text-zinc-900')
-    const drop = () => { cardHost.innerHTML = ''; card = null }
+    const btn = menuBtn()
+    const drop = () => { cardHost.innerHTML = ''; card = null; markCardBtn() }
     if (now || reduceMotion() || !btn) { card.anims.forEach(a => a.cancel()); return drop() }
     const c = card
     if (c.phase === 'exit') return
@@ -1101,20 +1157,28 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ]
     }
     c.phase = 'exit'
+    markCardBtn()
     // While it folds away, a tap goes through to the pill, so the button can open it again.
     c.el.style.pointerEvents = 'none'
     cardHost.querySelector<HTMLElement>('[data-scale-backdrop]')!.style.pointerEvents = 'none'
     settleCard(c, 'exit', drop)
   }
   pill.addEventListener('click', e => {
-    if (!(e.target as Element).closest('[data-pill-scale]')) return
+    const b = (e.target as Element).closest<HTMLElement>('[data-pill-menu]')
+    if (!b || b.dataset.pillMenu === 'mode') return
     card && card.phase !== 'exit' ? closeCard() : openCard()
   })
-  cardHost.addEventListener('click', e => { if ((e.target as Element).closest('[data-scale-backdrop]')) closeCard() })
-  // The phone's sheets and scale card belong to the phone layout; widening past it closes them.
+  // Anything chosen in the card folds it back, once the page has acted on it (the root's handler,
+  // after this one): a tool turned on makes the button its X first, and the card folds into that.
+  cardHost.addEventListener('click', e => {
+    const t = e.target as Element
+    if (t.closest('[data-scale-backdrop]')) closeCard()
+    else if (t.closest('[data-card] [data-act]')) queueMicrotask(() => closeCard())
+  })
+  // The phone's sheets and the menu belong to the phone layout; widening past it closes them.
   matchMedia('(min-width: 640px)').addEventListener('change', e => {
-    if (!e.matches || !(st.menu || st.sheet || card)) return
-    st.menu = ''; st.sheet = false; closeCard(true); render()
+    if (!e.matches || !(st.menu || st.sheet || card || trySheet !== 'closed')) return
+    st.menu = ''; st.sheet = false; trySheet = 'closed'; closeCard(true); render()
   })
 
   // The letters around the finger, above the pill, while it drags.
@@ -1336,7 +1400,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const here = st.place.view === 'variant' ? st.place : null
     switch (name) {
       case 'comment': if (arg === 'tap') { comments.copy.off(); return comments.tap() } return toggleComment()
+      // The phone's Try it key: the sheet up, or down. Brought back from away, the spot goes out.
+      case 'try': { const to = trySheet === 'open' ? 'closed' : 'open'; trySheet = to; setTry(null); return setTrySheet(to) }
       case 'copymode': return comments.copy.toggle()
+      case 'motion': st.motion = !st.motion; return render()
       // A state leaf: that variant in that state. Comparing keeps comparing.
       case 'pvs': {
         const keep = here?.tool === 'compare' && here.proto === arg && here.variant === arg2
@@ -1386,11 +1453,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         return
       }
       // Wide windows dock the sidebar (remembered); narrower ones open it as a drawer.
-      case 'side': recenter = true; if (!wide()) { st.drawer = arg === '1'; return render() } st.side = arg === '1'; localStorage.setItem('proto-side', st.side ? '1' : '0'); return render()
+      case 'side': recenter = true; if (!wide()) { st.drawer = arg === '1'; return render() } st.side = arg === '1'; remember('proto-side', st.side ? '1' : '0'); return render()
       case 'drawer': st.drawer = arg === '1'; return render()
       case 'menu': st.menu = arg as typeof st.menu; recenter = true; return render()
-      case 'stack': st.stack = arg === '1'; localStorage.setItem('proto-lobby', st.stack ? 'stack' : 'grid'); return show(true)
+      case 'stack': st.stack = arg === '1'; remember('proto-lobby', st.stack ? 'stack' : 'grid'); return show(true)
       case 'scale': st.scale = Number(arg); render(); return fit()
+      // The device view: a size, Fit or 100%, the tablet turned.
+      case 'size': return pickSize(arg as Size)
+      case 'zoom': return patchView({ zoom: Number(arg) })
+      case 'turn': return patchView({ land: !st.view.land, zoom: 0 })
       case 'scalestep': st.scale = Math.min(SCALE_MAX, Math.max(SCALE_MIN, Math.round(((st.scale || 50) + Number(arg)) / 5) * 5)); render(); return fit()
       case 'theme': return setTheme(arg === 'dark')
       case 'focus': if (st.place.view !== 'variant') return; st.focus = true; st.open = null; dock.hold = performance.now() + 1600; edge.hover = {}; render(); return fit()
@@ -1435,15 +1506,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
     if (e.key === 'Escape') {
       if (tryEsc()) return
+      if (trySheet === 'open') return setTrySheet('closed')
       if (comments.copy.escape()) return
       if (comments.escape()) return
       if (card && card.phase !== 'exit') return closeCard()
       if (st.open) { st.open = null; return render() }
       if (st.drawer) { st.drawer = false; return render() }
+      if (viewOn()) return patchView({ size: null, zoom: 0 })
       if (st.focus) return act('unfocus', '', '')
       if (st.place.view === 'variant' && st.place.tool) return go(untool(st.place))
     }
-    if (e.metaKey || e.ctrlKey || e.altKey || st.sheet || t.closest?.(INTERACTIVE)) return
+    if (e.metaKey || e.ctrlKey || e.altKey || st.sheet || trySheet === 'open' || t.closest?.(INTERACTIVE)) return
     // Esc on a variant goes up to its prototype's variants, unless the design used it first (a
     // design closing its own menu calls preventDefault). Its handlers may run after this one,
     // so the check waits a tick.
@@ -1466,7 +1539,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     st.sideW = Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, w)))
     side.style.width = `${st.sideW}px`
     grip.setAttribute('aria-valuenow', String(st.sideW))
-    if (save) localStorage.setItem('proto-side-w', String(st.sideW))
+    if (save) remember('proto-side-w', String(st.sideW))
   }
   grip.setAttribute('aria-valuemin', String(SIDE_MIN))
   grip.setAttribute('aria-valuemax', String(SIDE_MAX))
@@ -1503,7 +1576,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let hintsOpen = wideMq.matches && localStorage.getItem('proto-hints') !== '0'
   let hintSaid = '', hintCopied = -1, hintTimer = 0, hintsDocked = false
   const hintHost = () => st.place.view === 'variant' && !st.place.tool ? layer?.el.querySelector<HTMLElement>('[data-mount]') ?? null : null
-  const hintList = () => q.get('hints') === '0' ? [] : hints.of(hintHost())
+  // A device view covers the design out here, so what to try in it (and its copy options) step aside.
+  const hintList = () => q.get('hints') === '0' || viewOn() ? [] : hints.of(hintHost())
   const valueOf = (h: Extract<Hint, { kind: 'value' }>) => { try { return String(typeof h.value === 'function' ? h.value() : h.value) } catch { return '' } }
   const flash = () => { clearTimeout(hintTimer); hintTimer = window.setTimeout(() => { hintSaid = ''; hintCopied = -1; paintHints() }, 1400) }
 
@@ -1512,17 +1586,26 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // else: not a lobby, not a tool (all states, compare, autoplay), not focus mode, not a shot.
   const phoneMq = matchMedia('(max-width: 639px)')
   const HANDLE = 'flex h-9 items-center gap-1.5 rounded-l-lg bg-white/95 pl-2.5 pr-3 text-xs font-medium text-zinc-900 shadow-lg shadow-black/10 ring-1 ring-black/10 backdrop-blur hover:bg-white dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-white/15 dark:hover:bg-zinc-900'
-  const commentHost = () => !st.focus && q.get('hints') !== '0' ? hintHost() : null
+  // The page inside a device view has none of its own: the page outside comments on it.
+  const commentHost = () => !framed && !st.focus && q.get('hints') !== '0' ? hintHost() : null
   // The side panel carries the list; a phone has it as a sheet from the pill.
   const railOn = () => !!commentHost() && !phoneMq.matches
   const comments = createComments({
     layer: zone.querySelector<HTMLElement>('[data-comments]')!,
-    mount: commentHost,
+    // While a device view is on, comments are on the design in its frame, about that layout.
+    mount: () => viewOn() ? deviceView.mount() : commentHost(),
+    view: () => viewOn() ? { ...viewSize(), at: deviceView.at } : null,
+    setView: v => {
+      if (!v) { if (viewOn()) patchView({ size: null, zoom: 0 }); return }
+      if (!viewOk()) return
+      const land = v.size === 'tablet' && v.w > v.h
+      if (!viewOn() || st.view.size !== v.size || st.view.land !== land) patchView({ size: v.size, land, zoom: 0 })
+    },
     go: (proto, variant, state) => go({ view: 'variant', proto, variant, ...(state ? { state } : {}) }),
     send: sendBatch,
     withdraw: async (batch, n) => { await post('withdraw', { batch, n }) },
     dark: () => st.dark,
-  }, session.id)
+  }, framed ? `${session.id}~view` : session.id)
   // A design's own page listeners don't hear commenting: anything while picking or writing, a press
   // on the comment chrome, or the C that starts it. So a menu open in the design stays open, and
   // what is in it can be commented on.
@@ -1534,6 +1617,55 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const k = e as KeyboardEvent
     return (e.type === 'keydown' || e.type === 'keyup') && k.key === 'c' && !k.metaKey && !k.ctrlKey && !k.altKey && !st.sheet && !!commentHost() && !t?.closest(INTERACTIVE)
   })
+
+  // ---------- the device view: this page at another layout's size, in the stage (view/) ----------
+  // Three sizes in the bar on a wide screen, the Layout row of the pill's menu on a phone; the
+  // layout this window already is (its own breakpoints) is the one selected at rest, and choosing it
+  // leaves the view. Not in the page inside a view (no frames in frames), focus mode or a shot, and
+  // not for a phone prototype: its design is the same phone screen at every window size.
+  const native = () => nativeOf(innerWidth)
+  const viewOk = () => !framed && !st.focus && q.get('hints') !== '0' && st.place.view !== 'session' && cur()?.kind !== 'phone' && (!phoneMq.matches || pillOn())
+  const viewOn = () => !!st.view.size && viewOk()
+  const shownSize = (): Size => viewOn() ? st.view.size! : native()
+  const viewSize = (): ViewSize => { const s = st.view.size!, d = dims(s, st.view.land); return { size: s, w: d.w, h: d.h } }
+  const deviceView = createView(zone.querySelector<HTMLElement>('[data-view]')!, comments.wrap)
+  // The size selected at rest is this window's own layout, which a resize can change.
+  let nativeWas = native()
+  addEventListener('resize', () => { if (native() !== nativeWas) { nativeWas = native(); render() } })
+  function pickSize(s: Size) {
+    if (s === native()) { if (viewOn()) patchView({ size: null, zoom: 0 }); return }
+    patchView({ size: s, zoom: 0 })
+  }
+  /** Changes the view; what the chrome shows (its size, turned or not) redraws it, a zoom only the view. */
+  function patchView(p: Partial<typeof st.view>) {
+    const was = st.view
+    st.view = { ...was, ...p }
+    if (st.view.size !== was.size || st.view.land !== was.land) { render(); fit() }
+    else paintView()
+  }
+  function paintView() {
+    deviceView.paint({
+      view: viewOn() ? { size: st.view.size!, land: st.view.land, zoom: st.view.zoom } : null,
+      hash: hashOf(st.place),
+      dark: st.dark,
+      set: patchView,
+      // The page in the view moved (its own chrome): this page follows, unless it is there already.
+      route: h => { if (h && h !== location.hash) location.hash = h },
+      onKey: viewKey,
+    })
+  }
+  /** Keys pressed in the page inside the view: C comments on it, as it does out here, and Esc stops. */
+  function viewKey(e: KeyboardEvent) {
+    const t = e.target as Element
+    if (e.metaKey || e.ctrlKey || e.altKey || t.closest?.('input, textarea, select, [contenteditable]')) return
+    if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
+    else if (e.key === 'Escape' && comments.counts().picking) { e.preventDefault(); comments.escape() }
+  }
+  /** The bar's three sizes: icons, the name and size on hover. */
+  const sizeTabs = () => !viewOk() ? '' : `<div role="radiogroup" aria-label="Layout" data-size-tabs class="me-1 flex shrink-0 gap-0.5 rounded-xl bg-zinc-900/[.05] p-0.5 dark:bg-white/[.07]">${ORDER.map(s => {
+    const on = shownSize() === s, land = s === 'tablet' && st.view.land, d = dims(s, land)
+    return `<button type="button" role="radio" aria-checked="${on}" data-act="size:${s}" data-shoot="size-${s}" aria-label="${SIZES[s].name}" title="${SIZES[s].name} · ${d.w} × ${d.h}" class="grid h-8 w-9 flex-none place-items-center rounded-[10px] transition-colors ${on ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-black/[.04] dark:bg-zinc-700 dark:text-white dark:ring-0' : 'text-zinc-600 hover:text-zinc-900 active:bg-zinc-900/5 dark:text-zinc-400 dark:hover:text-white'}">${ic(sizeIcon(s, land))}</button>`
+  }).join('')}</div>`
   const commentsKeyOf = () => { const c = comments.counts(); return JSON.stringify([c.drafts, c.total, c.picking, c.held, [...c.by]]) }
   let commentsKey = commentsKeyOf()
   const pillComments = () => commentHost() ? commentsKeyOf() : ''
@@ -1554,16 +1686,24 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function syncComments() {
     const host = commentHost(), pl = st.place, p = cur()
     comments.copy.setStage(copyHost(), copy.routeOf(copyHost()))
-    comments.setPlace(host && pl.view === 'variant' && p ? { proto: pl.proto, variant: pl.variant, ...(pl.state ? { state: pl.state } : {}), phone: phoneMq.matches, title: p.title } : null)
+    comments.setPlace(host && pl.view === 'variant' && p ? { proto: pl.proto, variant: pl.variant, ...(pl.state ? { state: pl.state } : {}), phone: phoneMq.matches, title: p.title, ...(viewOn() ? { view: viewSize() } : {}) } : null)
     if (st.status?.inbox !== seenInbox) { seenInbox = st.status?.inbox; comments.setInbox(seenInbox) }
     zone.toggleAttribute('data-picking', !!host && comments.counts().picking)
   }
   comments.mountSheet(root.querySelector<HTMLElement>('[data-comments-sheet]')!)
   // ---------- the motion dock: under a design that declared its motion (useMotion) ----------
   const motionDock = createMotion({
-    el: zone.querySelector<HTMLElement>('[data-motion-dock]')!, zone, stage: hintHost, show: () => !!commentHost(), focused: () => st.focus,
+    el: zone.querySelector<HTMLElement>('[data-motion-dock]')!, zone, stage: hintHost, show: () => !!commentHost() && !viewOn(), on: () => st.motion, focused: () => st.focus,
     remount: () => layer?.remount?.() ?? Promise.resolve(), comments,
   })
+  /** The design on the stage declared its motion: the menu and the bar offer the dock. */
+  const hasMotion = () => !!commentHost() && !viewOn() && !!motion.of(hintHost())
+  // A design declares its motion as it renders, after the chrome was drawn for it: draw it again,
+  // once that's done, so the menu and the bar learn of it.
+  let motionKey = ''
+  motion.subscribe(() => queueMicrotask(() => { const k = String(hasMotion()); if (k !== motionKey) { motionKey = k; render() } }))
+  const motionBtn = () => !hasMotion() || st.focus ? ''
+    : `<button data-act="motion" data-shoot="motion" aria-pressed="${st.motion}" aria-label="Motion" title="${st.motion ? 'Hide the motion timeline' : 'Show the motion timeline: scrub it, see its curves, comment on a moment'}" class="hidden h-9 min-w-9 items-center justify-center rounded-lg sm:inline-flex ${st.motion ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'}">${ic('curves')}</button>`
   // The chrome shows counts (the bar's button, the pill, the tree): repaint it when they change.
   comments.store.subscribe(() => {
     const k = commentsKeyOf()
@@ -1575,10 +1715,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- copy options: a T button wherever the design on the stage declares them ----------
   // Only a design that declares copy options (useCopy) has one: beside Comment in the bar, in the
-  // pill on a phone, in the dock in focus mode. Its count is how many lines have options; pressed,
+  // pill's menu on a phone, in the dock in focus mode. Its count is how many lines have options; pressed,
   // copy mode is on (comments/copy.tsx). The picker works in focus mode and in shots too, so it
   // follows the stage, not commentHost.
-  const copyHost = () => hintHost()
+  const copyHost = () => viewOn() ? null : hintHost()
   const copyCounts = () => { const h = copyHost(), c = comments.copy.store.get(); return { lines: copy.of(h).length, changed: copy.changed(h).length, on: !!h && c.on && c.stage === h } }
   const copySay = (c: ReturnType<typeof copyCounts>) => c.on ? 'Close copy options · Esc' : `Copy options for ${c.lines} line${c.lines === 1 ? '' : 's'}${c.changed ? `, ${c.changed} changed` : ''}`
   const copyCount = (c: ReturnType<typeof copyCounts>, ring: string) => c.on ? '' : `<span aria-hidden="true" class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold tabular-nums text-proto-primary-fg ring-2 ${ring}">${c.lines}</span>`
@@ -1602,7 +1742,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // The variant on screen can be picked, or followed by more like it, or built, from the page
   // (comments/decide.tsx); each reaches Claude as a comment, and a pick is marked by the server at
   // once. A wide page has them behind the bar's check button (or P), next to Comment; a phone at the
-  // top of the variant sheet, since its pill has no room for one more button.
+  // top of the variant sheet, which its pill's name opens.
   function decideOf(): Subject | null {
     const p = cur(), pl = st.place
     const v = p && pl.view === 'variant' ? p.variants.find(x => x.id === pl.variant) : undefined
@@ -1625,16 +1765,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- the side panel: comments, and Try it ----------
   // One panel, two tabs. Docked it narrows the stage; narrower it is a sheet over the design;
-  // closed, a handle per tab on the edge (above the phone's pill). The comments tab is a React
-  // root made once: the panel's frame is made once too, and only the Try it body and the tab
-  // strip are repainted, so nothing the comment list is showing is ever rebuilt under it.
+  // closed, a handle per tab on the edge. The comments tab is a React root made once: the panel's
+  // frame is made once too, and only the Try it body and the tab strip are repainted, so nothing
+  // the comment list is showing is ever rebuilt under it. A phone has no panel: its comments are a
+  // sheet from the pill's Comment, and its Try it a sheet from the pill's menu (paintTry).
   hintBox.innerHTML = `<div data-handles></div>
     <div data-panel role="complementary" class="absolute inset-y-0 right-0 z-20 hidden flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div data-tabs class="flex h-11 shrink-0 items-center gap-0.5 border-b border-black/[.07] pl-1.5 pr-1 dark:border-white/10"></div>
       <div data-try class="min-h-0 flex-1 overflow-y-auto overscroll-contain" hidden></div>
       <div data-cbody class="min-h-0 flex-1" hidden></div>
       <div data-caveats></div>
-    </div>`
+    </div>
+    <div data-try-sheet></div>`
   const handles = hintBox.querySelector<HTMLElement>('[data-handles]')!
   const panel = hintBox.querySelector<HTMLElement>('[data-panel]')!
   const tabsEl = hintBox.querySelector<HTMLElement>('[data-tabs]')!
@@ -1652,22 +1794,23 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     comments.act.toggle()
     if (!comments.counts().picking || !railOn() || !wideMq.matches) return
     tab = 'comments'
-    if (!hintsOpen) { hintsOpen = true; localStorage.setItem('proto-hints', '1') }
+    if (!hintsOpen) { hintsOpen = true; remember('proto-hints', '1') }
     paintHints()
   }
   function paintPanel() {
     const list = hintList()
-    const tabs: ('comments' | 'try')[] = [...(railOn() ? ['comments' as const] : []), ...(list.length ? ['try' as const] : [])]
+    paintTry(list)
+    const tabs: ('comments' | 'try')[] = [...(railOn() ? ['comments' as const] : []), ...(list.length && !phoneMq.matches ? ['try' as const] : [])]
     const docked = tabs.length > 0 && hintsOpen && wideMq.matches
     zone.style.setProperty('--hw', docked ? `${HINTS_W}px` : '0px')
     if (docked !== hintsDocked) { hintsDocked = docked; requestAnimationFrame(fit) }
-    if (!tabs.length) { panel.className = 'hidden'; handles.innerHTML = ''; tryEl.innerHTML = ''; return }
+    if (!tabs.length) { panel.className = 'hidden'; handles.innerHTML = ''; tryEl.innerHTML = ''; caveatEl.innerHTML = ''; return }
     if (!tabs.includes(tab)) tab = tabs[0]
-    const count = list.filter(h => h.kind !== 'caveat').length
+    const count = tryCount(list)
     const c = comments.counts()
     if (!hintsOpen) {
       panel.className = 'hidden'
-      handles.innerHTML = `<div class="absolute bottom-[calc(var(--pill-h,0px)+var(--dock-h,0px)+var(--copy-h,0px)+1rem)] right-0 z-20 flex flex-col items-end gap-2">
+      handles.innerHTML = viewOn() ? '' : `<div class="absolute bottom-[calc(var(--pill-h,0px)+var(--dock-h,0px)+var(--copy-h,0px)+1rem)] right-0 z-20 flex flex-col items-end gap-2">
         ${tabs.includes('comments') ? `<button data-hint="open:comments" title="Comments on this design · C" class="${HANDLE}">${ic('comment', 'size-3.5 text-proto-primary-ring')}Comments${c.total ? `<span class="tabular-nums text-zinc-400">${c.total}</span>` : ''}</button>` : ''}
         ${tabs.includes('try') ? `<button data-hint="open:try" title="What to type and try in this design" class="${HANDLE}">${ic('key', 'size-3.5 text-amber-500')}Try it<span class="tabular-nums text-zinc-400">${count}</span></button>` : ''}
       </div>`
@@ -1678,22 +1821,33 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const wide = wideMq.matches
     panel.className = `absolute inset-y-0 right-0 z-20 flex flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 ${wide ? 'border-l border-black/[.07] dark:border-white/10' : 'w-[min(18rem,88%)] shadow-2xl shadow-black/30'}`
     panel.style.width = wide ? `${HINTS_W}px` : ''
+    // Never on two lines: docked, the panel is 264 px, which the two tabs and Fill in beside them
+    // overran. Fill in is at the head of the values it types, To type.
     const tabBtn = (t: 'comments' | 'try') => {
       const on = tab === t, n = t === 'comments' ? c.total : count
-      return `<button data-hint="tab:${t}" aria-pressed="${on}" class="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium ${on ? 'bg-zinc-900/[.06] text-zinc-900 dark:bg-white/10 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}">${ic(t === 'comments' ? 'comment' : 'key', `size-3.5 ${t === 'try' ? 'text-amber-500' : on ? 'text-proto-primary-ring' : ''}`)}${t === 'comments' ? 'Comments' : 'Try it'}${n ? `<span class="tabular-nums text-zinc-400">${n}</span>` : ''}</button>`
+      return `<button data-hint="tab:${t}" aria-pressed="${on}" class="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-medium ${on ? 'bg-zinc-900/[.06] text-zinc-900 dark:bg-white/10 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}">${ic(t === 'comments' ? 'comment' : 'key', `size-3.5 ${t === 'try' ? 'text-amber-500' : on ? 'text-proto-primary-ring' : ''}`)}${t === 'comments' ? 'Comments' : 'Try it'}${n ? `<span class="tabular-nums text-zinc-400">${n}</span>` : ''}</button>`
     }
-    const canFill = tab === 'try' && list.some(h => h.kind === 'value' && h.fill)
     tabsEl.innerHTML = `${tabs.map(tabBtn).join('')}<span class="ml-auto"></span>
-      ${canFill ? `<button data-hint="fill" title="Type the values into this design's fields" class="inline-flex h-7 items-center gap-1.5 rounded-md bg-zinc-900 px-2.5 text-xs font-medium text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">${ic(hintSaid === 'Filled' ? 'check' : 'fill', 'size-3.5')}${hintSaid || 'Fill in'}</button>` : ''}
-      <button data-hint="close" class="${IB} h-7 min-w-7 px-1" aria-label="Close panel" title="Close">${ic(wide ? 'right' : 'x', 'size-3.5')}</button>`
+      <button data-hint="close" class="${IB} h-7 min-w-7 shrink-0 px-1" aria-label="Close panel" title="Close">${ic(wide ? 'right' : 'x', 'size-3.5')}</button>`
     cbody.hidden = tab !== 'comments'
     tryEl.hidden = tab !== 'try'
     if (tab !== 'try') { tryEl.innerHTML = ''; caveatEl.innerHTML = ''; return }
+    const t = tryBody(list, false)
+    tryEl.innerHTML = t.list
+    caveatEl.innerHTML = t.foot
+  }
+  const tryCount = (list: Hint[]) => list.filter(h => h.kind !== 'caveat').length
+  const fillable = (list: Hint[]) => list.some(h => h.kind === 'value' && h.fill)
+  const fillLabel = () => `${ic(hintSaid === 'Filled' ? 'check' : 'fill', 'size-3.5')}${hintSaid || 'Fill in'}`
+  /** What Try it lists, as the panel draws it: the values to type, the things to try, the switches and
+   *  the events, then the caveats under them. Roomy is the phone's sheet: rows a finger can hit. */
+  function tryBody(list: Hint[], roomy: boolean) {
     const all = list.map((h, i) => ({ h, i }))
     const pick = <K extends Hint['kind']>(k: K) => all.filter(x => x.h.kind === k) as { h: Extract<Hint, { kind: K }>; i: number }[]
     const values = pick('value'), tries = pick('try'), switches = pick('switch'), events = pick('event'), caveats = pick('caveat')
-    const sec = (name: string, body: string, meta = '') => `<section class="border-b border-black/[.05] p-1 last:border-b-0 dark:border-white/[.07]"><h3 class="flex px-2 pb-0.5 pt-1 text-[11px] font-medium text-zinc-400">${bd(name)}<span class="ml-auto font-normal tabular-nums">${meta}</span></h3>${body}</section>`
-    const value = ({ h, i }: { h: Extract<Hint, { kind: 'value' }>; i: number }) => `<button data-hint="copy:${i}" title="Copy ${esc(h.label.toLowerCase())}" class="group/h flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">
+    const py = roomy ? 'py-2.5' : 'py-1.5'
+    const sec = (name: string, body: string, meta = '') => `<section class="border-b border-black/[.05] last:border-b-0 dark:border-white/[.07] ${roomy ? '-mx-1 px-2 py-1' : 'p-1'}"><h3 class="flex items-center px-2 pb-0.5 pt-1 text-[11px] font-medium text-zinc-400">${bd(name)}<span class="ml-auto flex font-normal tabular-nums">${meta}</span></h3>${body}</section>`
+    const value = ({ h, i }: { h: Extract<Hint, { kind: 'value' }>; i: number }) => `<button data-hint="copy:${i}" title="Copy ${esc(h.label.toLowerCase())}" class="group/h flex w-full min-w-0 items-start gap-2 rounded-md px-2 ${roomy ? 'py-2' : 'py-1.5'} text-left hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">
         <span dir="auto" class="w-[4.5rem] shrink-0 pt-px text-[11px] leading-4 text-zinc-500">${esc(h.label)}</span>
         <span class="min-w-0 flex-1"><span ${typeof h.value === 'function' ? `data-live="${i}" ` : ''}dir="auto" class="block break-all font-mono text-[12px] leading-[18px] text-zinc-900 dark:text-zinc-100">${esc(valueOf(h))}</span>${h.note ? `<span dir="auto" class="block text-[11px] leading-4 text-zinc-400">${esc(h.note)}</span>` : ''}</span>
         <span class="grid size-5 shrink-0 place-items-center ${hintCopied === i ? 'text-emerald-500' : 'text-zinc-400 opacity-0 group-hover/h:opacity-100 [@media(hover:none)]:opacity-100'}">${ic(hintCopied === i ? 'check' : 'copy', 'size-3.5')}</span></button>`
@@ -1701,18 +1855,66 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const tryRow = ({ h, i }: { h: Extract<Hint, { kind: 'try' }>; i: number }) => {
       const tick = `<span class="mt-px grid size-4 shrink-0 place-items-center rounded-full ${h.done ? 'bg-emerald-500 text-white' : 'ring-1 ring-inset ring-zinc-300 dark:ring-zinc-600'}">${h.done ? ic('check', 'size-3') : ''}</span>`
       const text = `<span dir="auto" class="${showable(h) ? 'block' : 'min-w-0 flex-1'} text-[12.5px] leading-[18px] ${h.done ? 'text-zinc-400 line-through decoration-zinc-300 dark:decoration-zinc-600' : ''}">${esc(h.text)}</span>`
-      if (!showable(h)) return `<div class="flex items-start gap-2 px-2 py-1.5">${tick}${text}</div>`
-      return `<div data-try-row="${i}" tabindex="0" title="Show where on the page" class="group/t flex cursor-default items-start gap-2 rounded-md px-2 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 data-on:bg-amber-400/[.12] not-data-on:hover:bg-zinc-900/[.04] dark:not-data-on:hover:bg-white/[.06]">${tick}<span class="min-w-0 flex-1">${text}<span class="hidden text-[11px] leading-4 text-zinc-400 group-data-gone/t:block">Not on the page right now</span></span>${showIcon('mt-0.5 text-zinc-400 opacity-0 transition-opacity group-hover/t:opacity-100 group-data-on/t:text-amber-500 group-data-on/t:opacity-100')}</div>`
+      if (!showable(h)) return `<div class="flex items-start gap-2 px-2 ${py}">${tick}${text}</div>`
+      return `<div data-try-row="${i}" tabindex="0" title="Show where on the page" class="group/t flex cursor-default items-start gap-2 rounded-md px-2 ${py} outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 data-on:bg-amber-400/[.12] not-data-on:hover:bg-zinc-900/[.04] dark:not-data-on:hover:bg-white/[.06]">${tick}<span class="min-w-0 flex-1">${text}<span class="hidden text-[11px] leading-4 text-zinc-400 group-data-gone/t:block">Not on the page right now</span></span>${showIcon('mt-0.5 text-zinc-400 opacity-0 transition-opacity group-hover/t:opacity-100 group-data-on/t:text-amber-500 group-data-on/t:opacity-100')}</div>`
     }
-    const switchRow = ({ h, i }: { h: Extract<Hint, { kind: 'switch' }>; i: number }) => `<div class="flex flex-wrap gap-1 px-2 py-1">${h.options.map((o, j) => `<button data-hint="switch:${i}:${j}" aria-pressed="${o === h.value}" class="h-7 rounded-md px-2.5 text-xs ${o === h.value ? 'bg-zinc-900 font-medium text-white dark:bg-white dark:text-zinc-900' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${bd(o)}</button>`).join('')}</div>`
-    const eventRow = ({ h, i }: { h: Extract<Hint, { kind: 'event' }>; i: number }) => `<button data-hint="event:${i}" class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">${ic('bolt', 'size-3.5 text-amber-500')}${bd(h.label)}</button>`
-    tryEl.innerHTML = `${values.length ? sec('To type', values.map(value).join('')) : ''}
+    const switchRow = ({ h, i }: { h: Extract<Hint, { kind: 'switch' }>; i: number }) => `<div class="flex flex-wrap gap-1 px-2 py-1">${h.options.map((o, j) => `<button data-hint="switch:${i}:${j}" aria-pressed="${o === h.value}" class="${roomy ? 'h-9 px-3' : 'h-7 px-2.5'} rounded-md text-xs ${o === h.value ? 'bg-zinc-900 font-medium text-white dark:bg-white dark:text-zinc-900' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${bd(o)}</button>`).join('')}</div>`
+    const eventRow = ({ h, i }: { h: Extract<Hint, { kind: 'event' }>; i: number }) => `<button data-hint="event:${i}" class="flex w-full items-center gap-2 rounded-md px-2 ${py} text-left text-[12.5px] hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">${ic('bolt', 'size-3.5 text-amber-500')}${bd(h.label)}</button>`
+    // The panel has Fill in at the head of the values; the sheet has it in its own head, by its name.
+    const fill = !roomy && fillable(list) ? `<button data-hint="fill" title="Type the values into this design's fields" class="-my-1 inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-zinc-900 px-2 text-[11px] font-medium text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">${fillLabel()}</button>` : ''
+    return {
+      list: `${values.length ? sec('To type', values.map(value).join(''), fill) : ''}
         ${tries.length ? sec('Things to try', tries.map(tryRow).join(''), `${tries.filter(x => x.h.done).length}/${tries.length}`) : ''}
         ${switches.map(x => sec(x.h.label, switchRow(x))).join('')}
-        ${events.length ? sec('Make it happen', events.map(eventRow).join('')) : ''}`
-    caveatEl.innerHTML = caveats.length ? `<div class="shrink-0 border-t border-black/[.06] px-3 py-2 text-[11px] leading-4 text-zinc-500 dark:border-white/10">${caveats.map(x => `<p dir="auto">${esc(x.h.text)}</p>`).join('')}</div>` : ''
+        ${events.length ? sec('Make it happen', events.map(eventRow).join('')) : ''}`,
+      foot: caveats.length ? `<div class="shrink-0 border-t border-black/[.06] px-3 py-2 text-[11px] leading-4 text-zinc-500 dark:border-white/10">${caveats.map(x => `<p dir="auto">${esc(x.h.text)}</p>`).join('')}</div>` : '',
+    }
   }
-  hints.subscribe(paintHints)
+
+  // ---------- Try it on a phone: a row in the pill's menu, and a sheet ----------
+  // The row opens Try it as a sheet rising from behind the pill, which stays on top (over the sheet's
+  // backdrop too, while the sheet is on screen). Tapping a thing to try puts the sheet away while its
+  // spot is lit, and brings it back once the spot goes out, unless the design was pressed meanwhile:
+  // then you are doing the thing, and Try it in the menu brings it back. A thing that isn't on the page right
+  // now keeps the sheet up, and its row says so.
+  const paintTrySheet = createTrySheet(hintBox.querySelector<HTMLElement>('[data-try-sheet]')!)
+  let trySheet: 'closed' | 'open' | 'away' = 'closed', tryPressed = false, tryUp = false
+  let tryIn: { list: HTMLElement | null; foot: HTMLElement | null } = { list: null, foot: null }
+  let tryNow = { list: '', foot: '' }
+  // Written in only when it changed, so a repaint keeps what the list shows (a lit row, its scroll).
+  const written = new WeakMap<HTMLElement, string>()
+  const fillTry = () => {
+    for (const k of ['list', 'foot'] as const) { const el = tryIn[k]; if (el && written.get(el) !== tryNow[k]) { el.innerHTML = tryNow[k]; written.set(el, tryNow[k]) } }
+  }
+  const raisePill = () => { const box = pill.firstElementChild as HTMLElement | null; if (box) box.style.zIndex = tryUp ? '210' : '' }
+  function setTrySheet(to: typeof trySheet) {
+    trySheet = to
+    if (to === 'open') { tryUp = true; tryPressed = false }
+    raisePill()
+    render()
+  }
+  function paintTry(list: Hint[]) {
+    const on = phoneMq.matches && list.length > 0
+    if (!on) trySheet = 'closed'
+    tryNow = on ? tryBody(list, true) : { list: '', foot: '' }
+    paintTrySheet({
+      open: on && trySheet === 'open',
+      count: tryCount(list),
+      fill: on && fillable(list) ? fillLabel() : null,
+      body: (l, f) => { tryIn = { list: l, foot: f }; fillTry(); syncSpot() },
+      onClose: (reason, event, cancel) => {
+        // The pill's button closes the sheet itself; a press on it is no press outside.
+        if (reason === 'outside-press' && (event?.target as Element | null)?.closest?.('[data-act="try"]')) return cancel()
+        // Esc puts the sheet away and stays on the variant (the page would go up a level).
+        if (reason === 'escape-key') event?.preventDefault()
+        if (trySheet === 'open') setTrySheet('closed')
+      },
+      onGone: () => { if (trySheet !== 'open') { tryUp = false; raisePill() } },
+    })
+    fillTry()
+  }
+  // The pill's menu button is Try it's way out while its sheet is up or away.
+  hints.subscribe(() => { paintHints(); paintPill() })
   wideMq.addEventListener('change', () => { hintsOpen = wideMq.matches && localStorage.getItem('proto-hints') !== '0'; paintHints() })
   // A live value (a code that changes every 30 seconds) is re-read every second, in place.
   setInterval(() => {
@@ -1722,8 +1924,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   hintBox.addEventListener('click', e => {
     const row = (e.target as Element).closest<HTMLElement>('[data-try-row]')
     if (row) {
-      setTry(Number(row.dataset.tryRow), 'tap', 4000)
-      if (!wideMq.matches) { hintsOpen = false; paintHints() }
+      const i = Number(row.dataset.tryRow)
+      setTry(i, 'tap', 4000)
+      // On a phone the sheet goes away while the spot is lit; between a phone and docked, the panel closes.
+      if (phoneMq.matches) {
+        const host = hintHost(), h = tryAt(i)
+        if (tryOn && host && h && whereIs(host, h, zone) !== 'gone') { trySheet = 'away'; tryPressed = false; render() }
+      } else if (!wideMq.matches) { hintsOpen = false; paintHints() }
       return
     }
     const b = (e.target as Element).closest<HTMLElement>('[data-hint]')
@@ -1731,7 +1938,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const [what, a, c] = b.dataset.hint!.split(':'), list = hintList(), h = list[Number(a)]
     try {
       if (what === 'tab') tab = a as typeof tab
-      else if (what === 'open' || what === 'close') { if (what === 'open' && (a === 'comments' || a === 'try')) tab = a; hintsOpen = what === 'open'; if (!hintsOpen) setTry(null); if (wideMq.matches) localStorage.setItem('proto-hints', hintsOpen ? '1' : '0') }
+      else if (what === 'open' || what === 'close') { if (what === 'open' && (a === 'comments' || a === 'try')) tab = a; hintsOpen = what === 'open'; if (!hintsOpen) setTry(null); if (wideMq.matches) remember('proto-hints', hintsOpen ? '1' : '0') }
       else if (what === 'copy' && h?.kind === 'value') { navigator.clipboard?.writeText(valueOf(h)); hintCopied = Number(a); flash() }
       else if (what === 'fill') {
         const host = hintHost()
@@ -1779,6 +1986,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       r.toggleAttribute('data-on', on)
       r.toggleAttribute('data-gone', on && !!host && !!h && whereIs(host, h, zone) === 'gone')
     }
+    // The phone's sheet, away for a spot that is now out, comes back, unless the design was pressed.
+    if (trySheet === 'away' && !tryOn) { const to = tryPressed ? 'closed' : 'open'; queueMicrotask(() => { if (trySheet === 'away') setTrySheet(to) }) }
   }
   function tryEsc() { if (!tryOn) return false; setTry(null); return true }
   hintBox.addEventListener('pointerover', e => {
@@ -1805,6 +2014,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if ((e.target as Element).closest('[data-try-row]') && tryOn?.via === 'focus') setTry(null)
   })
   layers.addEventListener('pointerdown', () => {
+    if (trySheet === 'away') tryPressed = true
     if (!tryOn) return
     if (tryAt(tryOn.i)?.steps?.length) { clearTimeout(tryTimer); tryOn.via = 'tap'; tryTimer = window.setTimeout(() => setTry(null), 8000) }
     else setTry(null)
@@ -1815,7 +2025,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     st.dark = dark
     document.documentElement.classList.toggle('dark', dark)
     document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
-    localStorage.setItem('proto-theme', dark ? 'dark' : 'light')
+    remember('proto-theme', dark ? 'dark' : 'light')
     render()
   }
   // The lobby is drawn once per visit, so its lifecycle line is updated in place.
@@ -1872,7 +2082,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   // While the page is open and visible it counts as activity, so the server isn't stopped
   // as idle under someone who is looking at it.
-  const ping = () => { if (document.visibilityState === 'visible' && !st.stopped) post('ping') }
+  // The page inside a device view only asks: the page outside is the one being looked at.
+  const ping = () => { if (document.visibilityState === 'visible' && !st.stopped) void (framed ? refreshStatus() : post('ping')) }
   setInterval(ping, 60_000)
   document.addEventListener('visibilitychange', ping)
   setInterval(() => document.querySelectorAll<HTMLElement>('[data-ago]').forEach(el => { el.textContent = ago(Number(el.dataset.ago)) }), 1000)

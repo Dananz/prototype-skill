@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useCtx } from './ctx'
 import { progress, useStore, type Said } from './store'
 import type { CState, Item } from './types'
-import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, Reply, since, spanOf, SrcTag, Working, ImageChip } from './ui'
+import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, Reply, since, spanOf, SrcTag, ViewChip, Working, ImageChip } from './ui'
 
 export function useRows() {
   const { store, act } = useCtx()
@@ -67,7 +67,7 @@ function Draft({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: b
         <Where item={item} here={r.here} />
         <button onClick={() => act.remove(item.id)} aria-label="Remove this comment" className="-me-1 grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10"><Icon name="trash" className="size-4" /></button>
       </div>
-      <button onClick={onOpen} className="mt-1 block w-full text-start"><Body c={item} className={`block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} /><Extras item={item} /></button>
+      <button onClick={onOpen} className="mt-1 block w-full text-start"><Body c={item} className={`block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} /><ViewChip v={item.target?.view} className="mt-1.5" /><Extras item={item} /></button>
     </div>
   )
 }
@@ -82,6 +82,7 @@ function WithClaude({ r, active, roomy, onOpen }: { r: Row; active: boolean; roo
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} /><span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? 'Claude is on it' : 'Sent'}</span></span>
           <Body c={item} className={`mt-0.5 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
+          <ViewChip v={item.target?.view} className="mt-1.5" />
           {item.shot && item.pasted && <span className="mt-2 flex"><ImageChip src={item.shot} size="sm" /></span>}
         </span>
       </button>
@@ -108,7 +109,8 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
       </div>
       {open && (
         <div className="space-y-2 pb-2 pe-1 ps-8">
-          <p className="flex items-center gap-2 text-xs text-zinc-400"><span className="min-w-0 truncate"><About item={item} /></span>{when && <span className="shrink-0">· {when === 'now' ? 'just now' : `${when} ago`}</span>}<button onClick={onShow} className="ms-auto shrink-0 font-medium text-proto-primary-soft-fg hover:underline">{item.time ? `Show ${spanOf(item.time)}` : item.target ? 'Show on design' : `Go to ${item.variant}`}</button></p>
+          <p className="flex items-center gap-2 text-xs text-zinc-400"><span className="min-w-0 truncate"><About item={item} /></span>{when &&<span className="shrink-0">· {when === 'now' ? 'just now' : `${when} ago`}</span>}<button onClick={onShow} className="ms-auto shrink-0 font-medium text-proto-primary-soft-fg hover:underline">{item.time ? `Show ${spanOf(item.time)}` : item.target ? 'Show on design' : `Go to ${item.variant}`}</button></p>
+          <ViewChip v={item.target?.view} />
           {reply ? <Reply text={reply.text} by={reply.by} small /> : <p className="text-xs text-zinc-400">Marked done, no note.</p>}
         </div>
       )}

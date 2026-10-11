@@ -99,13 +99,26 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     setHold(null)
     raised.current = false
     if (!on && !guard) return
-    // An SVG part (an icon, a chart) stands for the nearest HTML element around it.
+    // An SVG part (an icon, a chart) stands for the nearest HTML element around it. Asked of the
+    // node itself, not by instanceof: in a device view the design is another window's.
     const inDesign = (t: EventTarget | null) => {
-      let el = t instanceof Element ? t : null
-      while (el && !(el instanceof HTMLElement)) el = el.parentElement
+      let el = t && (t as Node).nodeType === 1 ? t as Element : null
+      while (el && el.namespaceURI !== 'http://www.w3.org/1999/xhtml') el = el.parentElement
       const m = host.mount()
       return m && el && m.contains(el) ? el as HTMLElement : null
     }
+    // A device view (view/) covers its frame with a layer while commenting: what a press there is on
+    // is what is under it in the frame, and where (in the frame's px, for a spot). The layer is the
+    // view's own, so a press on it is never stopped: its two-finger zoom and its drag still work.
+    const viewAt = (e: Event) => {
+      if (!(e.target as Element | null)?.closest?.('[data-view-pick]')) return null
+      const te = e as TouchEvent, p = te.touches ? te.touches[0] ?? te.changedTouches[0] : e as MouseEvent
+      const h = p && host.view?.()?.at(p.clientX, p.clientY)
+      return { el: h?.el ?? null, x: h?.x ?? 0, y: h?.y ?? 0 }
+    }
+    const targetOf = (e: Event) => viewAt(e)?.el ?? e.target
+    // What is picked carries the layout it was picked on, in a device view.
+    const onView = (t: Target): Target => { const v = host.view?.(); return v ? { ...t, view: { size: v.size, w: v.w, h: v.h } } : t }
     const part = (t: EventTarget | null) => { const el = inDesign(t); return el && el !== host.mount() ? el : null }
     const parentOf = (el: HTMLElement) => { const m = host.mount(), p = el.parentElement; return m && p && p !== m && m.contains(p) ? p : null }
     const show = (el: HTMLElement | null, touch: boolean) => {
@@ -125,7 +138,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     }
     act.current = el => {
       show(null, false)
-      const t = describe(host.mount()!, el)
+      const t = onView(describe(host.mount()!, el))
       if (on) cb.current.onPick(t); else cb.current.onGuard(t)
     }
     // Moving between elements is debounced: the outline waits for the pointer to settle, so
@@ -135,7 +148,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     const move = (e: PointerEvent) => {
       if (e.pointerType !== 'mouse') return
       if ((e.target as Element).closest?.('[data-inspect-ui]')) return settle()
-      const el = part(e.target)
+      const el = part(targetOf(e))
       if (el === cur.current) return settle()
       if (el === pending) return
       clearTimeout(timer)
@@ -150,27 +163,31 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     // A finger that stays put for HOLD_MS pins the comment where it is; moving lets it scroll.
     let holdTimer = 0
     const letGo = () => { clearTimeout(holdTimer); setHold(null) }
-    const justPinned = () => performance.now() - pinnedAt.current < 1500
+    // Never pinned is 0, which isn't "just" in a page's first moments either.
+    const justPinned = () => pinnedAt.current > 0 && performance.now() - pinnedAt.current < 1500
     const pin = (el: HTMLElement, x: number, y: number) => {
       pinnedAt.current = performance.now()
       setHold(null)
       show(null, true)
       navigator.vibrate?.(10)
-      const t = spot(host.mount()!, el, x, y)
+      const t = onView(spot(host.mount()!, el, x, y))
       if (on) cb.current.onPick(t); else cb.current.onGuard(t)
     }
     const touchStart = (e: TouchEvent) => {
-      if (!inDesign(e.target)) return
-      e.stopPropagation()
+      const v = viewAt(e)
+      if (!inDesign(v ? v.el : e.target)) return
+      if (!v) e.stopPropagation()
       letGo()
       pinnedAt.current = 0
       if (e.touches.length > 1) { start = null; return }
-      const t = e.touches[0], el = part(e.target)
+      const t = e.touches[0], el = part(v ? v.el : e.target)
       start = { x: t.clientX, y: t.clientY }
       if (!el) return
       const L = host.layer.getBoundingClientRect()
       setHold({ x: t.clientX - L.left, y: t.clientY - L.top })
-      holdTimer = window.setTimeout(() => pin(el, t.clientX, t.clientY), HOLD_MS)
+      // A spot is in the design's own px: the frame's, in a device view.
+      const [x, y] = v ? [v.x, v.y] : [t.clientX, t.clientY]
+      holdTimer = window.setTimeout(() => pin(el, x, y), HOLD_MS)
     }
     const touchMove = (e: TouchEvent) => {
       const t = e.touches[0]
@@ -179,25 +196,28 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     const touchCancel = () => { letGo(); start = null }
     const touchEnd = (e: TouchEvent) => {
       letGo()
-      if (justPinned()) { start = null; e.preventDefault(); e.stopPropagation(); return }
-      if (!inDesign(e.target) || !start) return
-      e.stopPropagation()
+      const over = !!(e.target as Element | null)?.closest?.('[data-view-pick]')
+      if (justPinned()) { start = null; e.preventDefault(); if (!over) e.stopPropagation(); return }
+      const target = targetOf(e)
+      if (!inDesign(target) || !start) return
+      if (!over) e.stopPropagation()
       const t = e.changedTouches[0], moved = Math.hypot(t.clientX - start.x, t.clientY - start.y) > 10
       start = null
       if (moved) return
       // A tap: no click follows it, so nothing in the design fires.
       e.preventDefault()
-      const el = part(e.target)
+      const el = part(target)
       if (!el) return show(null, true)
       if (cur.current === el) act.current(el)
       else show(el, true)
     }
     const click = (e: MouseEvent) => {
-      if (!inDesign(e.target)) return
+      const target = targetOf(e)
+      if (!inDesign(target)) return
       e.preventDefault(); e.stopPropagation()
       if (justPinned()) return
       settle()
-      const el = part(e.target)
+      const el = part(target)
       if (el) act.current(raised.current && cur.current?.contains(el) ? cur.current : el)
     }
     const key = (e: KeyboardEvent) => {

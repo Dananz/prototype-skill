@@ -1,6 +1,6 @@
 // The copy picker: other words for a design's lines, tried in place. Only a design that declares
 // copy options (useCopy, shell/copy.ts) gets any of it. At rest the design is clean, and one T
-// button waits in the page's bar beside Comment (the pill on a phone, the dock in focus mode).
+// button waits in the page's bar beside Comment (the pill's menu on a phone, the dock in focus mode).
 // Pressing it turns copy mode on: each line with options gets a dotted underline and a count after
 // its words, and a slim bar slides in under the stage. Clicking a line lists its options under it
 // (a sheet on a phone); pointing at one shows it in place, a click or a tap puts it there and

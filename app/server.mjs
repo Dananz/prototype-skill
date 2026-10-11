@@ -147,6 +147,15 @@ const timeOf = c => {
   if (!(take > 0 && take <= MAX_TAKE && at >= 0 && at <= take) || (to !== undefined && !(to > at && to <= take))) return false
   return { at, ...(to !== undefined ? { to } : {}), take }
 }
+// A comment written in the page's device view is about that layout: a phone's, a tablet's or a
+// desktop's, at the size it was shown, in whole CSS px. Null when the comment has none; false when
+// what it has isn't that.
+const VIEW_SIZES = new Set(['phone', 'tablet', 'desktop'])
+const viewOf = c => {
+  if (c.view === undefined) return null
+  const v = c.view, px = x => Number.isInteger(x) && x >= 200 && x <= 4000
+  return v && typeof v === 'object' && VIEW_SIZES.has(v.size) && px(v.w) && px(v.h) ? { size: v.size, w: v.w, h: v.h } : false
+}
 
 // A decision on a variant made in the page (its Pick, More like this and Build it) comes as a
 // comment with one of these and no element. A copy choice (the copy picker's Send) is one too, on
@@ -177,6 +186,9 @@ function receive(data) {
     const time = timeOf(c)
     if (time === false) throw bad(i, `: a moment of the motion is at (and to, for a range) in ms inside the take, and take, its length in ms (up to ${MAX_TAKE})`)
     if (time && (!/^[^/]+\/[A-Z]{1,2}(\/|$)/.test(c.route) || c.action !== undefined || c.point !== undefined)) throw bad(i, ': a comment on the motion is on a variant (<slug>/<letter>), with no action and no point')
+    const view = viewOf(c)
+    if (view === false) throw bad(i, ': view is { size: phone, tablet or desktop, w, h }, the layout\'s size in whole CSS px from 200 to 4000')
+    if (view && (c.action !== undefined || time)) throw bad(i, ': a comment in a device view is on the design, with no action and no moment of the motion')
     if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
       if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build or copy, on a variant (<slug>/<letter>)')
@@ -198,6 +210,7 @@ function receive(data) {
       ...(c.action ? { action: c.action } : {}),
       point: c.point && { x: Math.round(+c.point.x || 0), y: Math.round(+c.point.y || 0) },
       ...time,
+      ...(view ? { view } : {}),
       target: element(c.target),
       tags: (Array.isArray(c.tags) ? c.tags : []).map(element).filter(Boolean).slice(0, 20),
       images,

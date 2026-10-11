@@ -2,7 +2,8 @@
 // add prototypes (one built from another, one from two at once, one from the picks), screenshot
 // them (one by one and on a contact sheet) and snapshot them, open a state listed in meta.ts,
 // print a variant's handoff checklist, send comments, decisions and copy choices from the page,
-// record, scrub and comment on a variant's motion, then stop and delete the session. Run by
+// record, scrub and comment on a variant's motion, view and comment on it at another size, then
+// stop and delete the session. Run by
 // .github/workflows/smoke.yml on Windows, Linux and macOS.
 import { spawn, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -108,7 +109,9 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
     const press = async (x, y) => { for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }, sessionId) }
     // A real Enter (Input.dispatchKeyEvent), as a person's: on a focused button it clicks it.
     const enter = async () => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ...(type === 'keyDown' ? { text: '\r' } : {}) }, sessionId) }
-    return { run, close, press, enter }
+    // Real fingers (Input.dispatchTouchEvent): touchStart, touchMove or touchEnd, with [x, y] per finger.
+    const touch = (type, fingers) => send('Input.dispatchTouchEvent', { type, touchPoints: fingers.map(([x, y], id) => ({ x, y, id })) }, sessionId)
+    return { run, close, press, enter, touch }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {
@@ -673,7 +676,12 @@ try {
     for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 100))) if (await run(expr)) return
     fail(`${what} (waited ${ms / 1000} s)`)
   }
-  // The dock shows under the design, and the first take is recorded as the design arrives.
+  // The dock waits to be asked for: until then the design runs live, nothing is recorded and nothing
+  // sits under it; the bar offers it. Asked for, it shows under the design and records a take.
+  await until(`!!document.querySelector('[data-bar] [data-act=motion]')`, 'the bar offers no Motion for a design with motion')
+  const rest = await run(`[document.querySelector('[data-motion-dock]').hidden, window.__protoMotion?.state()?.status, getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h').trim()]`)
+  if (!rest[0] || rest[1] !== 'off' || rest[2] !== '0px') fail(`before it's asked for, the motion dock should be hidden, with no take and no room: ${JSON.stringify(rest)}`)
+  await run(`document.querySelector('[data-bar] [data-act=motion]').click()`)
   await until(`window.__protoMotion?.state()?.status === 'ready'`, 'the motion dock never recorded a take of move/A')
   const dock = await run(`[!!document.querySelector('[data-motion-bar]'), parseFloat(getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h'))]`)
   if (!dock[0] || !(dock[1] > 40)) fail(`move/A should have the motion dock under it, with the stage giving up its height: ${JSON.stringify(dock)}`)
@@ -881,9 +889,14 @@ if (!/start\(\) threw Error: boom/.test(proto(['shoot', 'move/E', '--at', '100']
 // Frames across a property moved twice differ, frame to frame: also the nudge after a cancelled
 // enter, a shake added to a slide, and a sheet on <body>.
 for (const [v, a, b] of [['C', 0, 300], ['D', 0, 300], ['H', 0, 300], ['I', 0, 300], ['J', 0, 300], ['K', 400, 600], ['M', 300, 450], ['Q', 0, 400]]) {
-  proto(['shoot', `move/${v}`, '--frames', '3', '--at', `${a}-${b}`])
+  const out = proto(['shoot', `move/${v}`, '--frames', '3', '--at', `${a}-${b}`])
+  // A take is timed from its first part, and a slow first frame on a slow runner (macOS CI) starts
+  // that late while start()'s own timers don't: K's nudge, 400 ms after start(), lands sooner and its
+  // take comes out 500 or 550 ms, not 600. proto shoot then holds the range at the take's end and
+  // names the frames by it, so they are read where it put them.
+  const end = Math.min(b, Number(out.match(/its take is (\d+) ms/)?.[1] ?? b)), mid = Math.round((a + end) / 2)
   const f = t => readFileSync(join(shots, `move-${v}-desktop-at-${t}.png`))
-  if (f(a).equals(f((a + b) / 2)) || f((a + b) / 2).equals(f(b))) fail(`the frames of move/${v} from ${a} to ${b} ms are the same picture`)
+  if (f(a).equals(f(mid)) || f(mid).equals(f(end))) fail(`the frames of move/${v} from ${a} to ${end} ms are the same picture`)
 }
 proto(['shoot', 'move', '--frames', '4'], { ok: false })
 // The build drops the dock: the handoff lists useMotion as the page's own.
@@ -955,6 +968,22 @@ const plain = await inPage(`${local}?theme=light#/words/B`, 'new Promise(r => se
 if (plain !== 0) fail(`a variant without copy options shows ${plain} T buttons`)
 const words = await openPage(`${local}?theme=light#/words/A`).catch(e => fail(`copy options in the page: ${e.message}`))
 const until = `const until = async (f, ms = 4000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } return null }`
+// Chooses a row of the pill's menu on a phone (copy options, Try it, Motion, a size).
+// The menu lists what the design has declared when it opens; one opened before the design declared
+// it is closed and opened again.
+const viaMenu = act => `{
+    let row = null
+    for (let i = 0; i < 6 && !row; i++) {
+      const m = await until(() => document.querySelector('[data-pill] [data-pill-menu=""]'))
+      if (!m) return 'the pill has no menu'
+      m.click()
+      row = await until(() => document.querySelector('[data-menu-card] [data-act="${act}"]'), 1500)
+      if (!row) { document.querySelector('[data-scale-backdrop]')?.click(); await until(() => !document.querySelector('[data-menu-card]'), 2000) }
+    }
+    if (!row) return 'the menu has no ${act}: ' + [...document.querySelectorAll('[data-menu-card] [data-act]')].map(b => b.dataset.act).join(' ')
+    row.click()
+    if (!await until(() => !document.querySelector('[data-menu-card]'), 3000)) return 'choosing ${act} should fold the menu back'
+  }`
 // Turns copy mode on (after a reload it starts off).
 const copyOn = `{
     const t = await until(() => document.querySelector('[data-bar] [data-act=copymode]'))
@@ -1109,8 +1138,10 @@ if ((await postJson('comments', { comments: [{ route: 'words', text: 'x', action
 
 // Both bars at once: a variant with copy options and motion. With copy mode on, the copy bar sits
 // over the motion dock, which keeps its place above the pill; the stage clears both, and neither
-// covers the other. On a 360 px phone the pill still holds Comment and T, and the dock's buttons
-// keep their size.
+// covers the other. The dock shows once asked for (the bar's Motion, the menu's on a phone). On a
+// 360 px phone the pill holds the menu, the variants and Comment, and the dock's buttons keep their
+// size. There the menu's button is copy mode's way out while it's on, and Hide motion puts the dock
+// away and lets the design go.
 proto(['add', 'both', '--title', 'Both', '--variants', 'A:Words and motion'])
 writeFileSync(join(app, 'src', 'protos', 'both', 'A.tsx'), `import { useState } from 'react'
 import { useCopy } from '../../copy'
@@ -1125,8 +1156,9 @@ export default function A() {
   </div>
 }
 `)
-const stacked = `(async () => {
+const stacked = (motionOn, copyOn) => `(async () => {
     ${until}
+    ${motionOn}
     if (!await until(() => window.__protoMotion?.state()?.status === 'ready', 15000)) return 'the motion dock recorded no take'
     ${copyOn}
     if (!await until(() => document.querySelector('[data-copy-bar]').offsetHeight > 0 && document.querySelector('[data-copy-mark=title]'))) return 'copy mode showed no bar'
@@ -1146,7 +1178,7 @@ const stacked = `(async () => {
   })()`
 const deskBoth = await openPage(`${local}?theme=light#/both/A`)
 try {
-  const r = await deskBoth.run(stacked)
+  const r = await deskBoth.run(stacked(`(await until(() => document.querySelector('[data-bar] [data-act=motion]')))?.click()`, copyOn))
   if (r !== 'ok') fail(`copy mode on a design with motion, desktop: ${r}`)
   // In copy mode a real press on a line opens its options over the moment held: the take isn't let go.
   await deskBoth.run('window.__protoMotion.seek(150)')
@@ -1175,11 +1207,12 @@ try {
 } finally { deskBoth.close() }
 const phoneBoth = await openPage(`${local}?theme=light#/both/A`, { width: 360, height: 740, phone: true })
 try {
-  const r = await phoneBoth.run(stacked.replace("document.querySelector('[data-bar] [data-act=copymode]')", "document.querySelector('[data-pill] [data-act=copymode]')"))
+  const r = await phoneBoth.run(stacked(viaMenu('motion'), viaMenu('copymode')))
   if (r !== 'ok') fail(`copy mode on a design with motion, 360 px phone: ${r}`)
   const fits = await phoneBoth.run(`(() => {
     const bar = document.querySelector('[data-pill-bar]'), r = bar.getBoundingClientRect()
-    if (!bar.querySelector('[data-act="comment:tap"]') || !bar.querySelector('[data-act=copymode]')) return 'the pill should hold Comment and T'
+    if (!bar.querySelector('[data-act="comment:tap"]') || !bar.querySelector('[data-pill-menu]')) return 'the pill should hold the menu and Comment'
+    if (bar.querySelectorAll(':scope > button').length !== 4) return 'the pill should hold four buttons (the menu, the arrows, Comment), not ' + bar.querySelectorAll(':scope > button').length
     if (r.left < 0 || r.right > innerWidth || bar.scrollWidth > bar.clientWidth + 1) return 'the pill overflows 360 px: ' + r.left + '-' + r.right + ', ' + bar.scrollWidth + '/' + bar.clientWidth
     if (document.querySelector('[data-pill-handle]').offsetWidth < 100) return 'the pill handle was squeezed to ' + document.querySelector('[data-pill-handle]').offsetWidth + ' px'
     const tight = [...document.querySelectorAll('[data-motion-bar] button')].filter(b => b.offsetParent && b.offsetWidth < 32).map(b => (b.dataset.motion || b.getAttribute('aria-label')) + ' ' + b.offsetWidth)
@@ -1189,6 +1222,18 @@ try {
     return 'ok'
   })()`)
   if (fits !== 'ok') fail(`the phone at 360 px with both bars: ${fits}`)
+  const modes = await phoneBoth.run(`(async () => {
+    ${until}
+    const m = () => document.querySelector('[data-pill] [data-pill-menu]')
+    if (m().dataset.pillMenu !== 'mode' || m().dataset.act !== 'copymode' || m().getAttribute('aria-label') !== 'Close copy options') return 'in copy mode the menu button should be its way out: ' + m().outerHTML.slice(0, 160)
+    m().click()
+    if (!await until(() => m().dataset.pillMenu === '' && !document.querySelector('[data-copy-mark]'))) return 'the X should close copy mode and give the menu back'
+    ${viaMenu('motion')}
+    if (!await until(() => document.querySelector('[data-motion-dock]').hidden && window.__protoMotion.state().live)) return 'Hide motion should put the dock away and let the design go'
+    if (getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h').trim() !== '0px') return 'the stage should get the dock\\'s room back'
+    return 'ok'
+  })()`)
+  if (modes !== 'ok') fail(`the pill's menu on a phone: ${modes}`)
 } finally { phoneBoth.close() }
 // A moment of the motion in copy mode is shot as copy mode is: once its bar is in, with the bar,
 // at the stage's own size; a variant without copy options is shot without and says so.
@@ -1197,6 +1242,261 @@ proto(['shoot', 'both/A', '--at', '200', '--copy'])
 if (!pngs(shots).includes('both-A-desktop-at-200-copy.png') || sizeOf('both-A-desktop-at-200-copy.png') !== sizeOf('both-A-desktop-at-200.png')) fail('proto shoot --at 200 --copy should write both-A-desktop-at-200-copy.png at the size of both-A-desktop-at-200.png')
 const motionNoCopy = proto(['shoot', 'move/A', '--at', '200', '--copy'])
 if (!/move\/A has no copy options/.test(motionNoCopy) || pngs(shots).includes('move-A-desktop-at-200-copy.png')) fail(`proto shoot --at --copy on a variant without copy options should say so and drop -copy from the name: ${motionNoCopy}`)
+
+// Try it on a phone: a row of the pill's menu (no handle over the design) with its count, opening a
+// sheet with the panel's list, the pill raised over its backdrop, the menu's button its X. A thing to
+// try puts the sheet away while its spot is lit (the button the key that brings it back) and brings
+// it back once the spot goes out; a press on the design meanwhile leaves it down. Esc puts it away
+// and stays on the variant. On a desktop the panel's tabs and Fill in stay on one line each.
+proto(['add', 'tryit', '--title', 'Try it', '--variants', 'A:Checkout'])
+writeFileSync(join(app, 'src', 'protos', 'tryit', 'A.tsx'), `import { useState } from 'react'
+import { useHints } from '../../hints'
+import { useCopy } from '../../copy'
+export default function A() {
+  const [code, setCode] = useState('')
+  const copy = useCopy([{ id: 'title', label: 'Title', options: ['Your order', 'Almost yours'] }])
+  useHints([
+    { kind: 'value', label: 'Promo code', value: 'BEAN10', fill: 'input[name=promo]' },
+    { kind: 'try', text: 'Pay for the order', at: '[data-shoot=pay]' },
+    { kind: 'switch', label: 'Scenario', options: ['Order', 'Empty'], value: 'Order', set: () => {} },
+    { kind: 'caveat', text: 'No payment is made.' },
+  ])
+  return <div className="h-full p-8">
+    <h1 data-copy="title" className="text-2xl">{copy.title}</h1>
+    <input name="promo" value={code} onChange={e => setCode(e.target.value)} placeholder="Promo code" />
+    <div style={{ height: 120 }} />
+    <button data-shoot="pay" className="rounded-full bg-zinc-900 px-6 py-3 text-white">Pay</button>
+  </div>
+}
+`)
+const tryPhone = await openPage(`${local}?theme=light#/tryit/A`, { width: 360, height: 740, phone: true })
+try {
+  const r = await tryPhone.run(`(async () => {
+    ${until}
+    if (document.querySelector('[data-handles] [data-hint="open:try"]')) return 'the Try it handle still floats over the design'
+    const bar = document.querySelector('[data-pill-bar]'), b = bar.getBoundingClientRect(), name = document.querySelector('[data-pill-name]')
+    if (b.left < 0 || b.right > innerWidth || bar.scrollWidth > bar.clientWidth + 1) return 'the pill overflows 360 px: ' + b.left + '-' + b.right
+    if (name.scrollWidth > name.clientWidth + 1) return 'the variant name is cut: ' + name.scrollWidth + '/' + name.clientWidth
+    const m = () => document.querySelector('[data-pill] [data-pill-menu]')
+    if (!await until(m, 8000)) return 'the pill has no menu'
+    m().click()
+    const row = await until(() => document.querySelector('[data-menu-card] [data-act=try]'))
+    if (!row) return 'the menu has no Try it'
+    if (!/3 to try/.test(row.textContent)) return 'Try it should count 3 things, says ' + row.textContent.trim()
+    const sheet = () => document.querySelector('[data-try-sheet] [data-try-list]')
+    row.click()
+    if (!await until(() => sheet()?.querySelector('[data-try-row]'))) return 'Try it opened no sheet with the things to try'
+    if (document.querySelector('[data-pill] > div').style.zIndex !== '210') return 'the pill should ride over the sheet'
+    if (m().dataset.act !== 'try' || m().getAttribute('aria-label') !== 'Close Try it') return 'the menu button should be the sheet\\'s X while it is up'
+    if (!document.querySelector('[data-try-sheet] [data-hint=fill]')) return 'the sheet has no Fill in'
+    sheet().querySelector('[data-try-row]').click()
+    if (!await until(() => !sheet())) return 'a thing to try should put the sheet away'
+    if (m().getAttribute('aria-label') !== 'Bring Try it back') return 'while the sheet is away the menu button should bring it back, says ' + m().getAttribute('aria-label')
+    if (!await until(() => sheet(), 7000)) return 'the sheet should come back once the spot goes out'
+    sheet().querySelector('[data-try-row]').click()
+    if (!await until(() => !sheet())) return 'the sheet should go away again'
+    return 'ok'
+  })()`, 30_000)
+  if (r !== 'ok') fail(`Try it on a phone: ${r}`)
+  // A real press on the design while the spot is lit: the sheet stays down, and the menu is back.
+  await tryPhone.press(180, 200)
+  const down = await tryPhone.run(`(async () => {
+    ${until}
+    await new Promise(r => setTimeout(r, 900))
+    if (document.querySelector('[data-try-sheet] [data-try-list]')) return 'a press on the design should leave the sheet down'
+    if (document.querySelector('[data-pill] [data-pill-menu]').getAttribute('aria-label') !== 'Menu') return 'the menu button should be the menu again'
+    ${viaMenu('try')}
+    if (!await until(() => document.querySelector('[data-try-sheet] [data-try-list]'))) return 'Try it in the menu should bring the sheet back'
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    if (!await until(() => !document.querySelector('[data-try-sheet] [data-try-list]'))) return 'Esc should put the sheet away'
+    await new Promise(r => setTimeout(r, 300))
+    return location.hash === '#/tryit/A' ? 'ok' : 'Esc left the variant for ' + location.hash
+  })()`, 20_000)
+  if (down !== 'ok') fail(`Try it on a phone: ${down}`)
+} finally { tryPhone.close() }
+const tryDesk = await openPage(`${local}?theme=light#/tryit/A`)
+try {
+  const r = await tryDesk.run(`(async () => {
+    ${until}
+    const tab = await until(() => document.querySelector('[data-hint="tab:try"]'), 8000)
+    if (!tab) return 'the desktop panel has no Try it tab'
+    tab.click()
+    if (!await until(() => document.querySelector('[data-hints] [data-hint=fill]'))) return 'no Fill in'
+    const strip = document.querySelector('[data-tabs]')
+    if (strip.scrollWidth > strip.clientWidth + 1) return 'the tabs overflow the panel: ' + strip.scrollWidth + '/' + strip.clientWidth
+    // A label on two lines is a text node drawn as two boxes.
+    const lines = n => { const r = document.createRange(); r.selectNodeContents(n); return r.getClientRects().length }
+    const two = [...strip.querySelectorAll('button'), document.querySelector('[data-hints] [data-hint=fill]')].flatMap(b => [...b.childNodes].filter(n => n.nodeType === 3 && n.textContent.trim() && lines(n) > 1).map(n => n.textContent.trim()))
+    if (two.length) return 'on two lines: ' + two.join(', ')
+    if (document.querySelector('[data-pill] [data-pill-menu]')?.offsetParent) return 'a desktop should have no pill'
+    return 'ok'
+  })()`)
+  if (r !== 'ok') fail(`Try it on a desktop: ${r}`)
+} finally { tryDesk.close() }
+
+// The device view: this page at a phone's, a tablet's or a desktop's size, in the stage. A desktop
+// has the three sizes in the bar before Comment, its own selected; a phone has them as a Layout row
+// in the pill's menu, which folds back once a size is chosen. The view is
+// the page in a frame (?dv), on the same place: the page in it pings nothing and writes nothing, and
+// where either goes the other follows. A comment written in it is about that layout, and says so in
+// the inbox. Two fingers on the device zoom it around the point between them, and switching sizes
+// and variants fast never freezes the page.
+const frameOf = `const frame = () => document.querySelector('[data-view] iframe')
+    const inFrame = () => { try { const d = frame()?.contentDocument; return d && d.URL !== 'about:blank' && d.documentElement.dataset.ready === '1' && d.querySelector('[data-layers] [data-mount] > *') ? d : null } catch { return null } }`
+const viewDesk = await openPage(`${local}?theme=light#/tryit/A`)
+try {
+  const r = await viewDesk.run(`(async () => {
+    ${until}
+    ${frameOf}
+    const tabs = await until(() => document.querySelector('[data-bar] [data-size-tabs]'), 8000)
+    if (!tabs) return 'the bar has no sizes'
+    const sizes = [...tabs.querySelectorAll('[role=radio]')].map(b => b.dataset.act + '=' + b.getAttribute('aria-checked'))
+    if (sizes.join() !== 'size:phone=false,size:tablet=false,size:desktop=true') return 'the bar should have phone, tablet and desktop, desktop selected: ' + sizes.join()
+    if (tabs.querySelector('[data-act="size:desktop"]').title !== 'Desktop · 1440 × 900') return 'the desktop size says ' + tabs.querySelector('[data-act="size:desktop"]').title
+    if (tabs.nextElementSibling?.dataset.act !== 'comment:toggle') return 'the sizes should come just before Comment'
+    tabs.querySelector('[data-act="size:phone"]').click()
+    if (!await until(() => inFrame(), 15000)) return 'no page in a view'
+    const url = new URL(frame().src)
+    if (!url.searchParams.has('dv') || url.hash !== '#/tryit/A') return 'the view should show this place, framed: ' + frame().src
+    if (!/^390 × 844 · 100%/.test(document.querySelector('[data-view-line]').textContent)) return 'the view line says ' + document.querySelector('[data-view-line]').textContent
+    const d = inFrame(), w = d.defaultView
+    if (d.querySelector('[data-size-tabs], [data-act="comment:toggle"], [data-act="comment:tap"]')) return 'the page in the view has sizes or a Comment of its own'
+    // What the page in the view writes and posts from here on.
+    w.__writes = []; w.__posts = []
+    const set = w.Storage.prototype.setItem, f = w.fetch
+    w.Storage.prototype.setItem = function (k, v) { w.__writes.push(k); return set.call(this, k, v) }
+    w.fetch = (u, o) => { if ((o?.method || 'GET') !== 'GET') w.__posts.push(String(u)); return f.call(w, u, o) }
+    d.dispatchEvent(new w.Event('visibilitychange'))
+    w.location.hash = '#/tryit'
+    if (!await until(() => location.hash === '#/tryit', 5000)) return 'the page should follow the view to #/tryit, is on ' + location.hash
+    location.hash = '#/tryit/A'
+    if (!await until(() => w.location.hash === '#/tryit/A' && inFrame(), 8000)) return 'the view should follow the page back to #/tryit/A, is on ' + w.location.hash
+    await new Promise(r => setTimeout(r, 300))
+    if (w.__posts.length) return 'the page in the view posted ' + w.__posts.join(', ')
+    if (w.__writes.length) return 'the page in the view wrote ' + w.__writes.join(', ')
+    document.querySelector('[data-act="comment:toggle"]').click()
+    if (!await until(() => document.querySelector('[data-view-banner]') && document.querySelector('[data-view-pick]'))) return 'Comment should turn the view line into its commenting line, over the frame'
+    if (!/what to change on phone/.test(document.querySelector('[data-view-banner]').textContent)) return 'the commenting line says ' + document.querySelector('[data-view-banner]').textContent
+    return 'ok'
+  })()`, 60_000)
+  if (r !== 'ok') fail(`a device view on a desktop: ${r}`)
+  // A real press on the heading in the frame, mapped out to this page.
+  const at = await viewDesk.run(`(() => {
+    const f = document.querySelector('[data-view] iframe'), h = f.contentDocument.querySelector('[data-layers] [data-mount] h1')
+    const r = h.getBoundingClientRect(), fr = f.getBoundingClientRect(), s = fr.width / f.offsetWidth
+    return [fr.left + (r.left + 10) * s, fr.top + (r.top + r.height / 2) * s]
+  })()`)
+  await viewDesk.press(...at)
+  const wrote = await viewDesk.run(`(async () => {
+    ${until}
+    const chip = await until(() => document.querySelector('[data-composer] [data-view-chip]'))
+    if (!chip) return 'a press on the design in the view opened no composer with its size'
+    if (chip.textContent !== 'Phone · 390 × 844') return 'the composer\\'s chip says ' + chip.textContent
+    const ed = document.querySelector('[data-composer] [role=textbox]')
+    ed.textContent = 'Smaller heading on a phone'
+    ed.dispatchEvent(new Event('input', { bubbles: true }))
+    await new Promise(r => setTimeout(r, 100))
+    ;[...document.querySelectorAll('[data-composer] button')].find(b => /Add/.test(b.textContent)).click()
+    if (!await until(() => document.querySelector('[data-hints] [data-view-chip]'))) return 'the comments list should show the size on the comment'
+    document.querySelector('[data-shoot=send]').click()
+    return 'ok'
+  })()`)
+  if (wrote !== 'ok') fail(`a comment in a device view: ${wrote}`)
+  let heard = ''
+  for (let i = 0; i < 40 && !/Smaller heading on a phone/.test(heard); i++) { await new Promise(r => setTimeout(r, 250)); heard = proto(['inbox'], { stdout: true }) }
+  if (!/Smaller heading on a phone\n(?: {3}.*\n)* {3}view: phone 390x844 \(shoot it: proto shoot tryit\/A --size 390x844\)$/m.test(heard)) fail(`proto inbox should print the comment's layout as view: phone 390x844: ${heard}`)
+  // Its pin is on the phone only: the tablet has a chip that goes back to it, and Esc leaves the view.
+  const pins = await viewDesk.run(`(async () => {
+    ${until}
+    const pins = () => [...document.querySelectorAll('[data-comments] button')].filter(b => /^\\d+$/.test(b.textContent.trim())).length
+    if (!await until(() => pins() === 1)) return 'the comment should have its pin over the phone, has ' + pins()
+    document.querySelector('[data-size-tabs] [data-act="size:tablet"]').click()
+    const chip = await until(() => document.querySelector('[data-view-other=phone]'))
+    if (!chip || pins()) return 'on the tablet the pin should go and a chip lead back to the phone (' + pins() + ' pins)'
+    chip.click()
+    if (!await until(() => /^390 × 844/.test(document.querySelector('[data-view-line]')?.textContent) && pins() === 1)) return 'the chip should go back to the phone, with its pin'
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    if (!await until(() => document.querySelector('[data-view]').hidden && !document.querySelector('[data-view] iframe'))) return 'Esc should leave the view'
+    return pins() ? 'out of the view the pin should go' : 'ok'
+  })()`)
+  if (pins !== 'ok') fail(`a comment's layout: ${pins}`)
+} finally { viewDesk.close() }
+for (const view of [{ size: 'watch', w: 390, h: 844 }, { size: 'phone', w: 390.5, h: 844 }, { size: 'phone', w: 390 }, { size: 'desktop', w: 99999, h: 900 }, 'phone']) {
+  const res = await postJson('comments', { comments: [{ route: 'tryit/A', text: 'x', view }] })
+  if (res.status !== 400 || !/view/.test(await res.text())) fail(`a comment with view ${JSON.stringify(view)} was answered ${res.status}, not refused`)
+}
+if ((await postJson('comments', { comments: [{ route: 'tryit/A', text: 'x', action: 'more', view: { size: 'phone', w: 390, h: 844 } }] })).status !== 400) fail('a decision with a view was accepted')
+const viewPhone = await openPage(`${local}?theme=dark#/tryit/A`, { width: 390, height: 844, phone: true })
+try {
+  const r = await viewPhone.run(`(async () => {
+    ${until}
+    ${frameOf}
+    const m = () => document.querySelector('[data-pill] [data-pill-menu]')
+    if (!await until(m, 8000)) return 'the pill has no menu'
+    m().click()
+    const card = await until(() => document.querySelector('[data-menu-card]'))
+    if (!card || m().getAttribute('aria-expanded') !== 'true' || !m().classList.contains('!bg-white')) return 'the menu button should open its card and turn white'
+    const sizes = [...card.querySelectorAll('[data-act^="size:"]')]
+    if (sizes.length !== 3 || card.querySelector('[data-act=turn]')) return 'with no view on, the Layout row has the three sizes only'
+    if (sizes[0].getAttribute('aria-pressed') !== 'true') return 'the phone, this window\\'s own size, should be the one chosen'
+    card.querySelector('[data-act="size:desktop:card"]').click()
+    if (!await until(() => !document.querySelector('[data-menu-card]'), 3000)) return 'choosing a size should fold the menu back'
+    if (!await until(() => inFrame(), 15000)) return 'no desktop in a view'
+    if (!/^1440 × 900 · \\d+%/.test(document.querySelector('[data-view-line]').textContent)) return 'the view line says ' + document.querySelector('[data-view-line]').textContent
+    ${viaMenu('size:tablet:card')}
+    if (!await until(() => /^834 × 1194/.test(document.querySelector('[data-view-line]')?.textContent ?? ''), 8000)) return 'no tablet in a view'
+    m().click()
+    if (!await until(() => document.querySelector('[data-menu-card] [data-act=turn]'))) return 'with a tablet on, the Layout row should turn it'
+    document.querySelector('[data-scale-backdrop]').click()
+    if (!await until(() => !document.querySelector('[data-menu-card]'), 3000)) return 'the backdrop should fold the menu back'
+    ${viaMenu('size:desktop:card')}
+    if (!await until(() => /^1440 × 900/.test(document.querySelector('[data-view-line]')?.textContent ?? '') && inFrame(), 15000)) return 'no desktop in a view again'
+    return 'ok'
+  })()`, 60_000)
+  if (r !== 'ok') fail(`a device view on a phone: ${r}`)
+  // Two fingers on the device, spreading 3x: the zoom only grows, about 3x, around the point between them.
+  const where = `(() => {
+    const a = document.querySelector('[data-view-area]').getBoundingClientRect(), f = document.querySelector('[data-view] iframe').getBoundingClientRect()
+    return { x: (Math.max(a.left, f.left) + Math.min(a.right, f.right)) / 2 - 30, y: (Math.max(a.top, f.top) + Math.min(a.bottom, f.bottom)) / 2 + 20 }
+  })()`
+  const mid = await viewPhone.run(where)
+  const under = `(() => { const f = document.querySelector('[data-view] iframe'), r = f.getBoundingClientRect(), s = r.width / f.offsetWidth; return { x: (${mid.x} - r.left) / s, y: (${mid.y} - r.top) / s, pct: s * 100 } })()`
+  const before = await viewPhone.run(under)
+  const path = []
+  await viewPhone.touch('touchStart', [[mid.x - 30, mid.y], [mid.x + 30, mid.y]])
+  for (let i = 1; i <= 20; i++) {
+    const g = 30 + 60 * i / 20
+    await viewPhone.touch('touchMove', [[mid.x - g, mid.y], [mid.x + g, mid.y]])
+    await new Promise(r => setTimeout(r, 20))
+    path.push(await viewPhone.run(under, 5000))
+  }
+  await viewPhone.touch('touchEnd', [])
+  const pcts = path.map(p => p.pct), back = pcts.findIndex((p, i) => i && p < pcts[i - 1] - 0.3), drift = Math.max(...path.map(p => Math.hypot(p.x - before.x, p.y - before.y)))
+  if (back > 0) fail(`a pinch on the device went back at step ${back}: ${pcts.map(Math.round).join(' ')}`)
+  if (Math.abs(pcts.at(-1) / before.pct - 3) > 0.3) fail(`spreading two fingers 3x should zoom about 3x: ${Math.round(before.pct)}% to ${Math.round(pcts.at(-1))}%`)
+  if (drift > 6) fail(`the point between the fingers moved ${Math.round(drift)} page px`)
+} finally { viewPhone.close() }
+// Sizes and variants switched fast with a view open: the page answers every step and ends in step.
+const viewFast = await openPage(`${local}?theme=dark#/home/A`)
+try {
+  for (const step of ['size:phone', 'v:B', 'size:tablet', 'v:C', 'size:desktop', 'size:phone', 'v:A', 'size:tablet', 'v:B', 'size:phone', 'v:A', 'size:tablet']) {
+    const [k, a] = step.split(':')
+    const r = await viewFast.run(k === 'v' ? `(location.hash = '#/home/${a}', 'ok')` : `(() => { const b = document.querySelector('[data-size-tabs] [data-act="size:${a}"]'); if (!b) return 'no ${a} in the bar'; b.click(); return 'ok' })()`, 8000)
+    if (r !== 'ok') fail(`switching fast with a view open, ${step}: ${r}`)
+    await new Promise(r => setTimeout(r, 120))
+  }
+  const end = await viewFast.run(`(async () => {
+    ${until}
+    ${frameOf}
+    if (!await until(() => inFrame()?.defaultView.location.hash === location.hash, 15000)) return 'the view never caught up: ' + location.hash + ' in the page, ' + frame()?.contentWindow.location.hash + ' in the view'
+    return /^834 × 1194/.test(document.querySelector('[data-view-line]').textContent) && document.querySelectorAll('[data-view] iframe').length === 1 ? 'ok' : 'the view should be one tablet: ' + document.querySelector('[data-view-line]').textContent
+  })()`, 20_000)
+  if (end !== 'ok') fail(`switching fast with a view open: ${end}`)
+} finally { viewFast.close() }
+proto(['shoot', 'tryit/A', '--size', '834x1194'])
+if (!pngs(shots).includes('tryit-A-834x1194.png')) fail('proto shoot --size 834x1194 should write tryit-A-834x1194.png')
+proto(['shoot', 'tryit/A', '--size', '834'], { ok: false })
+proto(['shoot', 'tryit', '--sheet', '--size', '834x1194'], { ok: false })
 
 proto(['stop'])
 for (let i = 0; i < 40 && await answers(`${local}__proto/status`); i++) await new Promise(r => setTimeout(r, 250))

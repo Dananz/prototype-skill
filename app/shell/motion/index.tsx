@@ -1,7 +1,8 @@
 // The motion dock, as the shell sees it: shown under the design on the stage while that design has
-// declared its motion (useMotion), with the room it takes given up by the stage (--dock-h), so it
-// never covers the design. The first take is recorded as the design arrives; using the design lets
-// it run live, and an edit to its files records it again. window.__protoMotion is the same take for
+// declared its motion (useMotion) and the reviewer asked for it, with the room it takes given up by
+// the stage (--dock-h), so it never covers the design. The first take is recorded as it is shown
+// (as the design arrives, once it's on); using the design lets it run live, and an edit to its
+// files records it again. window.__protoMotion is the same take for
 // `proto shoot --at/--frames`, which has no dock.
 import { createRoot } from 'react-dom/client'
 import type { Comments } from '../comments/index'
@@ -21,6 +22,10 @@ export type MotionHost = {
   stage: () => HTMLElement | null
   /** Whether the dock may show: not in focus mode, not in a shot. */
   show: () => boolean
+  /** Whether the reviewer asked for it (Motion in the pill's menu, the bar's curves). Until then
+   *  the design runs live and nothing is recorded; put away, it lets the design go and comes back
+   *  as it was, as in focus mode. */
+  on: () => boolean
   /** Focus mode: the dock hides and lets the design go, so it plays live, and comes back as it was. */
   focused: () => boolean
   /** Mounts the design on the stage again; resolves once it is mounted. */
@@ -33,6 +38,9 @@ export function createMotion(o: MotionHost) {
   // A new dock for each design (and each player), so what was chosen on one doesn't carry over.
   let gen = 0
   const root = createRoot(o.el)
+  // Put away: in focus mode, or on the page until the reviewer asks for it. A shot has no dock and
+  // asks for nothing, so its takes hold.
+  const putAway = () => o.focused() || (o.show() && !o.on())
   const room = () => o.zone.style.setProperty('--dock-h', `${shown ? o.el.offsetHeight : 0}px`)
   new ResizeObserver(room).observe(o.el)
 
@@ -67,21 +75,22 @@ export function createMotion(o: MotionHost) {
       const p = player = createPlayer(h, { remount: o.remount })
       gen++
       const unwireUse = wire(h, p)
-      // In focus mode a take that ends (or a move that held it) lets the design go at once.
-      const unsub = p.subscribe(() => { if (o.focused()) p.letGo() })
+      // In focus mode, or put away, a take that ends (or a move that held it) lets the design go at once.
+      const unsub = p.subscribe(() => { if (putAway()) p.letGo() })
       unwire = () => { unwireUse(); unsub() }
       // The first take: the design was just mounted, so it is at rest and its entrance is running.
-      if (o.show()) void p.take(true)
+      if (o.show() && o.on()) void p.take(true)
     }
-    const want = !!player && o.show(), focus = !!player && o.focused()
-    if (focus) player!.letGo()
-    // Shown later (out of focus mode), with nothing recorded yet: record it now.
+    // Put away (in focus mode, or until asked for) it lets the design go and stays as it was.
+    const want = !!player && o.show() && o.on(), away = !!player && putAway()
+    if (away) player!.letGo()
+    // Shown later (out of focus mode, or asked for), with nothing recorded yet: record it now.
     if (want && !shown && player!.get().status === 'off') void player!.take()
     shown = want
     o.el.hidden = !shown
     room()
-    // Hidden in focus mode, the dock stays mounted, so it comes back with what was chosen on it.
-    root.render(player && (shown || focus) ? o.comments.wrap(<Dock key={gen} player={player} />) : null)
+    // Put away, the dock stays mounted, so it comes back with what was chosen on it.
+    root.render(player && (shown || away) ? o.comments.wrap(<Dock key={gen} player={player} />) : null)
   }
   motion.subscribe(sync)
 

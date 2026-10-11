@@ -13,10 +13,40 @@ const originOf = (mount: HTMLElement) => (mount.firstElementChild as HTMLElement
 /** A phone's frame is zoomed to fit the stage; rects read in screen px, the design lives in CSS px. */
 export const zoomOf = (mount: HTMLElement) => parseFloat(mount.closest<HTMLElement>('[data-phone]')?.style.zoom || '') || 1
 
-/** `box` of `el` within `host`, in screen px (for drawing over the design). */
+/** The frame a device view (view/) draws the page in, when el is in it. Nothing here is an
+ *  instanceof check: an element in the frame belongs to another window, whose classes are its own. */
+const frameOf = (el: Element) => el.ownerDocument !== document ? el.ownerDocument.defaultView?.frameElement as HTMLElement | null ?? null : null
+/** How much bigger el is drawn on the page than in its own px: a device view's frame is scaled. */
+export const scaleOf = (el: Element) => { const f = frameOf(el); return f ? f.getBoundingClientRect().width / (f.offsetWidth || 1) : 1 }
+
+/** `box` of `el` within `host`, in screen px (for drawing over the design). An element in a device
+ *  view's frame is where the frame draws it: its own box, scaled, from the frame's corner. */
 export function rel(el: Element, host: Element): Box {
-  const r = el.getBoundingClientRect(), h = host.getBoundingClientRect()
-  return { x: r.left - h.left, y: r.top - h.top, w: r.width, h: r.height }
+  const r = el.getBoundingClientRect(), h = host.getBoundingClientRect(), f = frameOf(el)
+  if (!f) return { x: r.left - h.left, y: r.top - h.top, w: r.width, h: r.height }
+  const o = f.getBoundingClientRect(), s = o.width / (f.offsetWidth || 1)
+  return { x: o.left + r.left * s - h.left, y: o.top + r.top * s - h.top, w: r.width * s, h: r.height * s }
+}
+
+/** The part of a device view's frame that shows, within host (its area scrolls around it when zoomed in). */
+function frameShown(el: Element, host: Element): Box | null {
+  const f = frameOf(el)
+  if (!f) return null
+  const r = f.getBoundingClientRect(), h = host.getBoundingClientRect()
+  let [l, t, rt, b] = [r.left, r.top, r.right, r.bottom]
+  for (let p = f.parentElement; p && p !== document.body; p = p.parentElement) {
+    const cs = getComputedStyle(p)
+    if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
+    const c = p.getBoundingClientRect()
+    l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); b = Math.min(b, c.bottom)
+  }
+  return { x: l - h.left, y: t - h.top, w: rt - l, h: b - t }
+}
+
+const cut = (a: Box, b: Box): Box | null => {
+  const x = Math.max(a.x, b.x), y = Math.max(a.y, b.y)
+  const w = Math.min(a.x + a.w, b.x + b.w) - x, h = Math.min(a.y + a.h, b.y + b.h) - y
+  return w > 0 && h > 0 ? { x, y, w, h } : null
 }
 
 /**
@@ -25,10 +55,8 @@ export function rel(el: Element, host: Element): Box {
  * is only drawn where it can be seen. Null when none of it is.
  */
 export function seen(el: Element, mount: Element, host: Element): Box | null {
-  const b = rel(el, host), m = rel(mount, host)
-  const x = Math.max(b.x, m.x), y = Math.max(b.y, m.y)
-  const w = Math.min(b.x + b.w, m.x + m.w) - x, h = Math.min(b.y + b.h, m.y + m.h) - y
-  return w > 0 && h > 0 ? { x, y, w, h } : null
+  const b = cut(rel(el, host), rel(mount, host)), f = frameShown(mount, host)
+  return b && f ? cut(b, f) : b
 }
 
 /** A readable name: its own (data-shoot, aria-label, alt), else what it says, else its tag, and where it sits. */
@@ -82,7 +110,7 @@ export function spot(mount: HTMLElement, el: HTMLElement, cx: number, cy: number
  */
 export function spotAt(t: Target, el: Element, mount: HTMLElement, host: Element): Box | null {
   if (!t.point) return null
-  const b = rel(el, host), m = rel(mount, host), z = zoomOf(mount)
+  const b = rel(el, host), m = rel(mount, host), z = zoomOf(mount) * scaleOf(el)
   const x = b.x + (t.point.x - t.rect.x) * z, y = b.y + (t.point.y - t.rect.y) * z
   return x >= m.x && x <= m.x + m.w && y >= m.y && y <= m.y + m.h ? { x, y, w: 0, h: 0 } : null
 }

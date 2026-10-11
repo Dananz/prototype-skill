@@ -12,6 +12,7 @@ import { useRows } from './list'
 import { progress, type Said } from './store'
 import type { Box, Item } from './types'
 import { PinDot, Reply, STATE, Body } from './ui'
+import { sameView } from '../view/sizes'
 
 function Pins({ items, boxes, active, onOpen }: { items: { item: Item; done: boolean }[]; boxes: Record<string, Box>; active: string | null; onOpen: (id: string) => void }) {
   return <>{items.map(({ item: c, done }) => {
@@ -65,7 +66,8 @@ export function Layer() {
   }, [host, act, s.place, m.kind])
 
   // Only comments are on the design; a decision (Pick, More, Build) is on the variant as a whole.
-  const here = rows.filter(r => r.here && r.item.target)
+  // One written in a device view is on that layout: its pin shows over the view at that size only.
+  const here = rows.filter(r => r.here && r.item.target && sameView(r.item.target.view, s.place?.view))
   const listed = here.map(r => ({ id: r.item.id, t: r.item.target! }))
   if (editing && !editing.id) listed.push({ id: '__new', t: editing.target })
   const boxes = useBoxes(listed)
