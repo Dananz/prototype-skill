@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { useCtx } from './ctx'
 import { progress, useStore, type Said } from './store'
 import type { CState, Item } from './types'
-import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, Reply, since, SrcTag, Working } from './ui'
+import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, Reply, since, spanOf, SrcTag, Working } from './ui'
 
 export function useRows() {
   const { store, act } = useCtx()
@@ -79,7 +79,7 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
       </button>
       {open && (
         <div className="space-y-2 pb-2 pe-1 ps-8">
-          <p className="flex items-center gap-2 text-xs text-zinc-400"><span className="min-w-0 truncate"><About item={item} /></span>{when && <span className="shrink-0">· {when === 'now' ? 'just now' : `${when} ago`}</span>}<button onClick={onShow} className="ms-auto shrink-0 font-medium text-proto-primary-soft-fg hover:underline">{item.target ? 'Show on design' : `Go to ${item.variant}`}</button></p>
+          <p className="flex items-center gap-2 text-xs text-zinc-400"><span className="min-w-0 truncate"><About item={item} /></span>{when && <span className="shrink-0">· {when === 'now' ? 'just now' : `${when} ago`}</span>}<button onClick={onShow} className="ms-auto shrink-0 font-medium text-proto-primary-soft-fg hover:underline">{item.time ? `Show ${spanOf(item.time)}` : item.target ? 'Show on design' : `Go to ${item.variant}`}</button></p>
           {reply ? <Reply text={reply.text} by={reply.by} small /> : <p className="text-xs text-zinc-400">Marked done, no note.</p>}
         </div>
       )}
@@ -90,7 +90,7 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
 export function CommentList({ roomy, onOpen }: { roomy?: boolean; onOpen?: (id: string) => void }) {
   const { act } = useCtx()
   const { s, rows } = useRows()
-  const held = s.held && s.mode.kind !== 'compose' && s.mode.kind !== 'tag' ? s.held : null
+  const held = s.held && s.mode.kind !== 'compose' && s.mode.kind !== 'tag' && s.mode.kind !== 'time' ? s.held : null
   const on = (id: string) => s.active === id || (s.mode.kind === 'compose' && s.mode.id === id)
   const open = (id: string) => { onOpen?.(id); act.open(id) }
   const by = (st: CState[]) => rows.filter(r => st.includes(r.state))
@@ -104,7 +104,7 @@ export function CommentList({ roomy, onOpen }: { roomy?: boolean; onOpen?: (id: 
           <div className="space-y-2">
             {held && (
               <div className="rounded-2xl border border-dashed border-proto-primary-ring/60 bg-proto-primary-soft/50 p-3">
-                <div className="flex items-center gap-2 text-xs"><span className="size-1.5 rounded-full bg-proto-primary" /><span className="font-medium text-proto-primary-soft-fg">Unfinished comment</span><span dir="auto" className="min-w-0 flex-1 truncate text-end text-zinc-500">{held.target.label}</span></div>
+                <div className="flex items-center gap-2 text-xs"><span className="size-1.5 rounded-full bg-proto-primary" /><span className="font-medium text-proto-primary-soft-fg">Unfinished comment</span><span dir="auto" className="min-w-0 flex-1 truncate text-end text-zinc-500">{held.time ? spanOf(held.time) : held.target?.label}</span></div>
                 <Body c={held} className={`mt-1 line-clamp-2 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
                 <div className="mt-2 flex gap-1.5"><button onClick={() => { onOpen?.(''); act.resume() }} className="h-8 rounded-full bg-proto-primary px-3 text-xs font-semibold text-proto-primary-fg hover:bg-proto-primary-hover">Continue</button><button onClick={act.discardHeld} className="h-8 rounded-full px-3 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Discard</button></div>
               </div>

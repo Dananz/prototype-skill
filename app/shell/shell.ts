@@ -15,8 +15,10 @@ import { copy } from './copy'
 import { createSheet, createMenuSheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
 import { createComments, type Subject } from './comments/index'
+import { createMotion } from './motion/index'
 import type { Action } from './comments/types'
 import { tabIcon } from './favicon'
+import { setShellRoot } from './portals'
 
 export type Variant = { id: string; name: string; file: string; load: () => Promise<unknown> }
 /** Something behind clicks in a prototype's variants (a menu, a drawer, a dialog), reached by
@@ -33,7 +35,7 @@ type Mount = (el: HTMLElement, component: any) => () => void
 // (all), playing through them (play), or next to another variant (compare).
 type Tool = 'play' | 'all' | 'compare'
 type Place = { view: 'session' } | { view: 'proto'; proto: string } | { view: 'variant'; proto: string; variant: string; state?: string; tool?: Tool }
-type Layer = { el: HTMLElement; refs: unknown[]; ready: Promise<unknown>; dispose: () => void; player?: { toggle: () => void; jump: (i: number) => void } }
+type Layer = { el: HTMLElement; refs: unknown[]; ready: Promise<unknown>; dispose: () => void; player?: { toggle: () => void; jump: (i: number) => void }; remount?: () => Promise<unknown> }
 // Comments sent from the page to the agent running the session (`proto inbox`), and what came back.
 export type Inbox = {
   new: number
@@ -47,7 +49,9 @@ export type Pinned = { selector?: string; shoot?: string; src?: string; componen
 /** One send: route is <slug>/<letter>[/<state>]; images are data URLs (png, jpeg, webp). A decision
  *  on a variant (pick, unpick, more, build) is a comment with an action and no target. */
 export type CommentBatch = {
-  comments: { route: string; text: string; action?: Action; point?: { x: number; y: number }; target?: Pinned; tags?: Pinned[]; images?: { dataUrl: string; name?: string }[] }[]
+  comments: { route: string; text: string; action?: Action; point?: { x: number; y: number }; target?: Pinned; tags?: Pinned[]; images?: { dataUrl: string; name?: string }[]
+    /** On the motion (motion/): a moment of its take in ms, or a range to `to`, and the take's length. */
+    at?: number; to?: number; take?: number }[]
   viewport?: { w: number; h: number; phone?: boolean }
   theme?: 'light' | 'dark'
 }
@@ -126,6 +130,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let protos = opts.protos
   let session = opts.session
   copy.configure(session.id)
+  setShellRoot(root)
   const q = new URLSearchParams(location.search)
   const stored = localStorage.getItem('proto-theme')
   const st = {
@@ -323,9 +328,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- skeleton ----------
   // A comment being written lifts its layer over the side panel and its edge tabs (z-20), which
-  // otherwise cover the composer's buttons where it docks at the bottom of a phone. The copy
-  // picker's bar sits under the stage and takes its height from it (--copy-h); its phone sheet
-  // covers both.
+  // otherwise cover the composer's buttons where it docks at the bottom of a phone. Two bars can
+  // sit under the stage, each taking its height from it: the motion dock (--dock-h) just above the
+  // pill, where it always is, and the copy picker's bar (--copy-h) over the dock while copy mode is
+  // on. The copy picker's phone sheet covers both.
   root.innerHTML = `<div class="flex h-dvh bg-white text-[13px] text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
     <aside data-side></aside>
     <div data-grip role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0" title="Drag to resize · double-click to reset" class="group relative z-40 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none outline-none">
@@ -334,10 +340,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div class="flex min-w-0 flex-1 flex-col">
       <header data-bar class="relative z-30 flex h-12 shrink-0 items-center gap-1 border-b border-black/[.07] px-2 dark:border-white/10"></header>
       <div data-zone>
-        <div data-layers class="absolute inset-0 overflow-hidden" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--copy-h,0px))"></div>
-        <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--copy-h,0px))"></div>
-        <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--copy-h,0px))"></div>
-        <div data-copy-bar class="absolute left-0 z-[14]" style="right:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
+        <div data-layers class="absolute inset-0 overflow-hidden" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-motion-dock class="absolute left-0 z-[18]" style="right:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
+        <div data-copy-bar class="absolute left-0 z-[14]" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px))"></div>
         <div data-copy-sheet class="pointer-events-none absolute inset-0 z-[19] overflow-hidden" style="right:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-overlay></div>
         <div data-pill></div>
@@ -472,6 +479,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       hosts.forEach(h => io!.observe(h))
     }
     let player: Layer['player']
+    let remount: Layer['remount']
     let quit = () => {}
     if (p.view === 'variant') {
       const proto = byId(p.proto)!, v = proto.variants.find(x => x.id === p.variant)!, s = stateOf(proto, v.id, p.state)
@@ -489,6 +497,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       } else {
         el.innerHTML = `<div class="h-full overflow-auto">${frameOf(proto)}</div>`
         mountAll([{ v, s }], false)
+        // The motion dock mounts the design again to record its entrance (motion/).
+        const host = el.querySelector<HTMLElement>('[data-mount]')!
+        remount = () => { stop(host); return start(host, v, s) }
       }
     } else {
       el.innerHTML = `<div class="h-full overflow-auto">${p.view === 'proto' ? protoLobby(byId(p.proto)!) : sessionLobby()}</div>`
@@ -556,7 +567,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
 
     const ready = Promise.all(pending)
-    return { el, refs: refsFor(p), ready, player, dispose: () => { gone = true; quit(); io?.disconnect(); [...live.keys()].forEach(stop) } }
+    return { el, refs: refsFor(p), ready, player, remount, dispose: () => { gone = true; quit(); io?.disconnect(); [...live.keys()].forEach(stop) } }
   }
 
   // ---------- the tools' views ----------
@@ -648,7 +659,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       phone.style.zoom = String((st.scale || auto) / 100)
     }
   }
-  new ResizeObserver(fit).observe(zone)
+  // The stage changes size with the window, and when the motion dock under it grows or shrinks.
+  const resized = new ResizeObserver(fit)
+  resized.observe(zone)
+  resized.observe(layers)
 
   // ---------- navigation ----------
   function go(p: Place) {
@@ -893,7 +907,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
       ${!st.focus ? `<button data-act="focus" data-focus-btn title="Focus mode · F" class="absolute right-[calc(var(--hw,0px)+1rem)] top-3 z-10 hidden h-9 [@media(hover:hover)]:inline-flex items-center gap-1.5 rounded-full bg-zinc-900/80 px-3 text-xs font-medium text-white shadow-lg backdrop-blur transition-opacity duration-200 focus-visible:!opacity-100" style="opacity:${stageHover.on ? 1 : 0}">${ic('grow', 'size-3.5')}Focus</button>` : `
       ${st.open === 'fproto' ? `<div data-pop class="fixed bottom-[76px] left-1/2 z-20 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">${protoMenu}</div>` : ''}
-      <div class="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex justify-center pb-[env(safe-area-inset-bottom)]" style="bottom:var(--copy-h,0px)">
+      <div class="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex justify-center pb-[env(safe-area-inset-bottom)]" style="bottom:calc(var(--dock-h,0px) + var(--copy-h,0px))">
         <div data-dock data-locked="${st.open === 'fproto' ? 1 : 0}" class="pointer-events-auto relative overflow-hidden rounded-full shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur" style="width:72px;height:6px;margin-bottom:4px;background-color:rgb(24 24 27/.35)">
           <div data-dock-full class="absolute left-1/2 top-1/2 flex w-max items-center gap-0.5 px-1 text-white" style="opacity:0;transform:translate(-50%,-50%)">
             <button data-act="unfocus" class="${dockBtn}" aria-label="Exit focus (Esc)" title="Exit focus · Esc">${ic('shrink')}</button>${dockSep}
@@ -1531,6 +1545,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     zone.toggleAttribute('data-picking', !!host && comments.counts().picking)
   }
   comments.mountSheet(root.querySelector<HTMLElement>('[data-comments-sheet]')!)
+  // ---------- the motion dock: under a design that declared its motion (useMotion) ----------
+  const motionDock = createMotion({
+    el: zone.querySelector<HTMLElement>('[data-motion-dock]')!, zone, stage: hintHost, show: () => !!commentHost(), focused: () => st.focus,
+    remount: () => layer?.remount?.() ?? Promise.resolve(), comments,
+  })
   // The chrome shows counts (the bar's button, the pill, the tree): repaint it when they change.
   comments.store.subscribe(() => {
     const k = commentsKeyOf()
@@ -1611,7 +1630,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let tab: 'comments' | 'try' = 'comments'
   comments.mountRail(cbody)
 
-  function paintHints() { syncComments(); paintPanel(); syncSpot() }
+  function paintHints() { syncComments(); motionDock.sync(); paintPanel(); syncSpot() }
   // Starting to comment opens the Comments tab beside the design, where the new one lands. Only
   // where the panel docks: narrower, it would cover what you're about to click on.
   function toggleComment() {
@@ -1634,7 +1653,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const c = comments.counts()
     if (!hintsOpen) {
       panel.className = 'hidden'
-      handles.innerHTML = `<div class="absolute bottom-[calc(var(--pill-h,0px)+1rem)] right-0 z-20 flex flex-col items-end gap-2">
+      handles.innerHTML = `<div class="absolute bottom-[calc(var(--pill-h,0px)+var(--dock-h,0px)+var(--copy-h,0px)+1rem)] right-0 z-20 flex flex-col items-end gap-2">
         ${tabs.includes('comments') ? `<button data-hint="open:comments" title="Comments on this design · C" class="${HANDLE}">${ic('comment', 'size-3.5 text-proto-primary-ring')}Comments${c.total ? `<span class="tabular-nums text-zinc-400">${c.total}</span>` : ''}</button>` : ''}
         ${tabs.includes('try') ? `<button data-hint="open:try" title="What to type and try in this design" class="${HANDLE}">${ic('key', 'size-3.5 text-amber-500')}Try it<span class="tabular-nums text-zinc-400">${count}</span></button>` : ''}
       </div>`
@@ -1920,6 +1939,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         if (m) st.editing = { proto: m[1], variant: m[2] }
       }
       if (retrying) show(false)
+      motionDock.edited(paths, st.place.view === 'variant' ? st.place.proto : null)
       render()
       clearTimeout(editTimer)
       editTimer = window.setTimeout(() => { st.editing = null; render() }, 10_000)

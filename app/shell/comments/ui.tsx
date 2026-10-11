@@ -83,8 +83,10 @@ export const ACTION: Record<Action, { say: (v: string) => string; icon: string }
   build: { say: v => `Build ${v}`, icon: 'code' },
   copy: { say: v => `Copy for ${v}`, icon: 'text' },
 }
-/** What a row of the list is about: the element a comment is on, or what a decision asked. */
-export const aboutOf = (i: Item) => i.action ? ACTION[i.action].say(i.variant) : i.target?.label ?? ''
+/** A moment or a range of the motion, as the dock and the inbox write it: `0.35 s`, `0.30–0.62 s`. */
+export const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `${(t.at / 1000).toFixed(2)} s` : `${(t.at / 1000).toFixed(2)}–${(t.to / 1000).toFixed(2)} s`
+/** What a row of the list is about: the element a comment is on, the moment of the motion, or what a decision asked. */
+export const aboutOf = (i: Item) => i.action ? ACTION[i.action].say(i.variant) : i.time ? `${i.time.to === undefined ? 'At' : 'Over'} ${spanOf(i.time)}` : i.target?.label ?? ''
 
 /** The words of a comment as plain text, tags written as @Name: what the agent reads. */
 export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : `@${c.tags[s.tag]?.label ?? '?'}`).join('').replace(/ /g, ' ').trim()

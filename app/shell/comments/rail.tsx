@@ -1,6 +1,7 @@
 // The comments tab of the side panel, and the phone's list as a bottom sheet (Base UI's Drawer,
 // like the variant sheet).
 import { Drawer } from '@base-ui/react/drawer'
+import { uiBox } from '../portals'
 import { useCtx } from './ctx'
 import { CommentList, SendBar, useRows } from './list'
 import { Icon } from './ui'
@@ -27,7 +28,7 @@ export function PhoneSheet() {
   const { s } = useRows()
   return (
     <Drawer.Root open={s.sheet} onOpenChange={(open: boolean) => act.openSheet(open)}>
-      <Drawer.Portal>
+      <Drawer.Portal container={uiBox()}>
         <Drawer.Backdrop className={BACKDROP} />
         <Drawer.Viewport className="fixed inset-0 z-[200] flex items-end justify-center">
           <Drawer.Popup className={POPUP}>

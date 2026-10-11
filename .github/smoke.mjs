@@ -2,7 +2,7 @@
 // add prototypes (one built from another, one from two at once, one from the picks), screenshot
 // them (one by one and on a contact sheet) and snapshot them, open a state listed in meta.ts,
 // print a variant's handoff checklist, send comments, decisions and copy choices from the page,
-// then stop and delete the session. Run by
+// record, scrub and comment on a variant's motion, then stop and delete the session. Run by
 // .github/workflows/smoke.yml on Windows, Linux and macOS.
 import { spawn, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -56,9 +56,10 @@ const proto = (args, { ok = true, stdout = false } = {}) => {
 }
 const answers = async url => { try { return (await fetch(url, { signal: AbortSignal.timeout(2000) })).ok } catch { return false } }
 const pngs = dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.png')) : []
-// Opens the page in headless Chrome and waits until it says it is ready, as shoot.mjs does. run()
-// evaluates an expression there (a promise is awaited), as often as needed; close() ends it all.
-async function openPage(url) {
+// A page in headless Chrome (1440x900, or a phone's size), once it says it is ready, as shoot.mjs
+// does: run evaluates an expression in it (awaiting a promise), as often as needed, and it stays
+// open until closed, so the page can carry on while proto runs beside it.
+async function openPage(url, { width = 1440, height = 900, phone = false } = {}) {
   const profile = mkdtempSync(join(tmpdir(), 'proto-smoke-'))
   const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run'])
   let ws
@@ -85,9 +86,12 @@ async function openPage(url) {
       waiting.get(m.id)?.(m.result); waiting.delete(m.id)
     }
     const send = (method, params, sessionId) => new Promise(ok => { waiting.set(++n, ok); ws.send(JSON.stringify({ id: n, method, params, sessionId })) })
-    const { targetId } = await send('Target.createTarget', { url })
+    const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
     await send('Inspector.enable', {}, sessionId)
+    await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: phone ? 2 : 1, mobile: phone }, sessionId)
+    if (phone) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
+    await send('Page.navigate', { url }, sessionId)
     // A page that stops answering (a render loop) fails the check instead of hanging the run.
     const run = async (expr, ms = 30_000) => {
       let timer
@@ -100,7 +104,11 @@ async function openPage(url) {
     // never be answered: each waits 2 s at most and is sent again, for 30 s in all.
     const ready = () => run('document.documentElement.dataset.ready === "1"', 2000).catch(() => false)
     for (const end = Date.now() + 30_000; Date.now() < end && !await ready();) await new Promise(r => setTimeout(r, 100))
-    return { run, close }
+    // A real press (Input.dispatchMouseEvent): trusted, as a person's.
+    const press = async (x, y) => { for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }, sessionId) }
+    // A real Enter (Input.dispatchKeyEvent), as a person's: on a focused button it clicks it.
+    const enter = async () => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ...(type === 'keyDown' ? { text: '\r' } : {}) }, sessionId) }
+    return { run, close, press, enter }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {
@@ -437,6 +445,440 @@ const code = await Promise.race([exited, new Promise(r => setTimeout(() => r('ti
 if (code === 'timeout') { waiter.kill(); fail('proto inbox --wait did not wake for a new batch') }
 if (!/Woke you up/.test(heard)) fail(`the listener exited without the batch: ${heard}`)
 
+// The motion dock: a variant that declares its motion (useMotion) gets the dock under it, and the
+// take records its CSS transitions with when each starts (one staggered), holds them, and sets the
+// design to any moment. A comment on a range of it goes out through the page's own composer, the
+// inbox prints its times, and a reply reaches its point. A variant without useMotion has no dock.
+if (!existsSync(join(app, 'src', 'motion.ts'))) fail('the app has no src/motion.ts')
+proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still,C:Twice,D:Chained,E:Broken,F:Late,G:Again,H:Then keyframes,I:Then animate,J:Swap,K:Nudge,L:Cancelled,M:Shake,N:Reversed,P:Dropped,Q:Portal'])
+writeFileSync(join(app, 'src', 'protos', 'move', 'A.tsx'), `import { useState } from 'react'
+import { useMotion } from '../../motion'
+export default function A() {
+  const [open, setOpen] = useState(false)
+  useMotion({ start: () => setOpen(true), reset: () => setOpen(false), moments: [{ label: 'Rows', at: 100 }] })
+  return <div className="h-full p-8">
+    <div data-shoot="panel" style={{ height: 240, background: '#4f46e5', transform: open ? 'translateY(0px)' : 'translateY(100px)', transition: 'transform 400ms linear' }}>
+      {['One', 'Two', 'Three'].map((n, i) => <p key={n} data-shoot="row" style={{ opacity: open ? 1 : 0, transition: \`opacity 200ms linear \${open ? 100 + i * 100 : 0}ms\` }}>{n}</p>)}
+    </div>
+  </div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'B.tsx'), 'export default function B() { return <div className="h-full p-8">Still</div> }\n')
+// One property moved twice: a toast in (CSS transition), then out once a timer runs; and a box moved
+// by two element.animate() calls filling forwards, the second after the first (the browser drops
+// the first once the second covers it). Then a start() that throws, and a step a timer starts after
+// the take has ended (only a color: a Save turning green).
+writeFileSync(join(app, 'src', 'protos', 'move', 'C.tsx'), `import { useState } from 'react'
+import { useMotion } from '../../motion'
+export default function C() {
+  const [step, setStep] = useState(0)
+  // Out at 0.7 s: on a slow runner the fade in starts late, and a timer firing during it would turn it around.
+  useMotion({ start: () => { setStep(1); setTimeout(() => setStep(2), 700) }, reset: () => setStep(0) })
+  return <div className="h-full p-8"><p data-shoot="toast" style={{ width: 160, height: 60, background: '#4f46e5', opacity: step === 1 ? 1 : 0, transition: 'opacity 300ms linear' }} /></div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'D.tsx'), `import { useRef } from 'react'
+import { useMotion } from '../../motion'
+export default function D() {
+  const box = useRef<HTMLDivElement>(null)
+  useMotion({
+    start: () => {
+      box.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(100px)' }], { duration: 300, fill: 'forwards' })
+      box.current!.animate([{ transform: 'translateX(100px)' }, { transform: 'translateX(200px)' }], { duration: 300, delay: 300, fill: 'forwards' })
+    },
+    reset: () => box.current!.getAnimations().forEach(a => a.cancel()),
+  })
+  return <div className="h-full p-8"><div ref={box} data-shoot="box" style={{ width: 80, height: 80, background: '#4f46e5' }} /></div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'E.tsx'), `import { useMotion } from '../../motion'
+export default function E() {
+  useMotion({ start: () => { throw new Error('boom') } })
+  return <div className="h-full p-8">Broken</div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'F.tsx'), `import { useState } from 'react'
+import { useMotion } from '../../motion'
+export default function F() {
+  const [step, setStep] = useState(0)
+  useMotion({ start: () => { setStep(1); setTimeout(() => setStep(2), 1200) }, reset: () => setStep(0) })
+  return <div className="h-full p-8">
+    <p data-shoot="one" style={{ opacity: step >= 1 ? 1 : 0, transition: 'opacity 200ms linear' }}>One</p>
+    <button data-shoot="save" style={{ background: step >= 2 ? '#10b981' : '#e4e4e7', transition: 'background-color 200ms linear' }}>Save</button>
+  </div>
+}
+`)
+// Taken again and again: element.animate() filling forwards, with a reset that doesn't cancel it.
+// Then a transition followed by a CSS animation, and by element.animate(), on the same property;
+// and a keyframe animation that a class swap replaces (an enter, then an exit).
+writeFileSync(join(app, 'src', 'protos', 'move', 'G.tsx'), `import { useRef, useState } from 'react'
+import { useMotion } from '../../motion'
+export default function G() {
+  const box = useRef<HTMLDivElement>(null)
+  const [, setOpen] = useState(false)
+  useMotion({ start: () => { setOpen(true); box.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(100px)' }], { duration: 300, fill: 'forwards' }) }, reset: () => setOpen(false) })
+  return <div className="h-full p-8"><div ref={box} data-shoot="slide" style={{ width: 80, height: 80, background: '#4f46e5' }} /></div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'H.tsx'), `import { useState } from 'react'
+import { useMotion } from '../../motion'
+export default function H() {
+  const [step, setStep] = useState(0)
+  useMotion({ start: () => { setStep(1); setTimeout(() => setStep(2), 500) }, reset: () => setStep(0) })
+  return <div className="h-full p-8">
+    <style>{'@keyframes h-out { from { opacity: 1 } to { opacity: .2 } }'}</style>
+    <div data-shoot="fade" style={{ width: 160, height: 60, background: '#4f46e5', opacity: step >= 1 ? 1 : 0, transition: 'opacity 300ms linear', animation: step === 2 ? 'h-out 500ms linear forwards' : 'none' }} />
+  </div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'I.tsx'), `import { useRef, useState } from 'react'
+import { useMotion } from '../../motion'
+export default function I() {
+  const box = useRef<HTMLDivElement>(null)
+  const [step, setStep] = useState(0)
+  useMotion({
+    start: () => { setStep(1); setTimeout(() => box.current?.animate([{ transform: 'translateX(100px)' }, { transform: 'translateX(200px)' }], { duration: 500, fill: 'forwards' }), 500) },
+    reset: () => { box.current!.getAnimations().forEach(a => a.cancel()); setStep(0) },
+  })
+  return <div className="h-full p-8"><div ref={box} data-shoot="slide" style={{ width: 80, height: 80, background: '#4f46e5', transform: step ? 'translateX(100px)' : 'translateX(0px)', transition: 'transform 300ms linear' }} /></div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'J.tsx'), `import { useState } from 'react'
+import { useMotion } from '../../motion'
+export default function J() {
+  const [state, setState] = useState('idle')
+  useMotion({ start: () => { setState('in'); setTimeout(() => setState('out'), 500) }, reset: () => setState('idle') })
+  return <div className="h-full p-8">
+    <style>{'@keyframes j-in { from { opacity: 0 } to { opacity: 1 } } @keyframes j-out { from { opacity: 1 } to { opacity: 0 } } .j-in { animation: j-in 300ms linear both } .j-out { animation: j-out 300ms linear both }'}</style>
+    <div data-shoot="note" className={state === 'in' ? 'j-in' : state === 'out' ? 'j-out' : ''} style={{ width: 160, height: 60, background: '#4f46e5', opacity: state === 'idle' ? 0 : undefined }} />
+  </div>
+}
+`)
+// A sheet that enters (transform and opacity), then a class swap that nudges it (transform only):
+// the browser cancels the enter. A slide cancelled at 0.4 s, nothing taking its place, beside a bar
+// that runs on. And a shake added (composite add) to a slide that fills forwards.
+writeFileSync(join(app, 'src', 'protos', 'move', 'K.tsx'), `import { useState } from 'react'
+import { useMotion } from '../../motion'
+export default function K() {
+  const [state, setState] = useState('idle')
+  useMotion({ start: () => { setState('in'); setTimeout(() => setState('nudge'), 400) }, reset: () => setState('idle') })
+  return <div className="h-full p-8">
+    <style>{'@keyframes k-in { from { transform: translateY(100px); opacity: 0 } to { transform: translateY(0px); opacity: 1 } } @keyframes k-nudge { from { transform: translateY(0px) } to { transform: translateY(-40px) } } .k-in { animation: k-in 300ms linear both } .k-nudge { animation: k-nudge 200ms linear forwards }'}</style>
+    <div data-shoot="sheet" className={state === 'in' ? 'k-in' : state === 'nudge' ? 'k-nudge' : ''} style={{ width: 160, height: 60, marginTop: 60, background: '#4f46e5', opacity: state === 'idle' ? 0 : undefined }} />
+  </div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'L.tsx'), `import { useRef } from 'react'
+import { useMotion } from '../../motion'
+export default function L() {
+  const slide = useRef<HTMLDivElement>(null), bar = useRef<HTMLDivElement>(null)
+  useMotion({
+    start: () => {
+      const a = slide.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(200px)' }], { duration: 1000, fill: 'forwards' })
+      bar.current!.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1000, fill: 'forwards' })
+      setTimeout(() => a.cancel(), 400)
+    },
+    reset: () => [slide, bar].forEach(r => r.current!.getAnimations().forEach(a => a.cancel())),
+  })
+  return <div className="h-full p-8">
+    <div ref={slide} data-shoot="slide" style={{ width: 80, height: 80, background: '#4f46e5' }} />
+    <div ref={bar} data-shoot="bar" style={{ width: 160, height: 20, marginTop: 8, background: '#0ea5e9' }} />
+  </div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'M.tsx'), `import { useRef } from 'react'
+import { useMotion } from '../../motion'
+export default function M() {
+  const box = useRef<HTMLDivElement>(null)
+  useMotion({
+    start: () => {
+      box.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(100px)' }], { duration: 300, fill: 'forwards' })
+      box.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(40px)' }, { transform: 'translateX(0px)' }], { duration: 300, delay: 300, composite: 'add' })
+    },
+    reset: () => box.current!.getAnimations().forEach(a => a.cancel()),
+  })
+  return <div className="h-full p-8"><div ref={box} data-shoot="box" style={{ width: 80, height: 80, background: '#4f46e5' }} /></div>
+}
+`)
+// Played backwards (reverse()), beside one with a negative delay (it starts partway through). And
+// two element.animate() calls chained, filling forwards, with a reset that cancels neither: the
+// browser drops the first once the second covers it.
+writeFileSync(join(app, 'src', 'protos', 'move', 'N.tsx'), `import { useRef } from 'react'
+import { useMotion } from '../../motion'
+export default function N() {
+  const back = useRef<HTMLDivElement>(null), early = useRef<HTMLDivElement>(null)
+  useMotion({
+    start: () => {
+      back.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(100px)' }], { duration: 400, fill: 'forwards' }).reverse()
+      early.current!.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 600, delay: -300, fill: 'forwards' })
+    },
+    reset: () => [back, early].forEach(r => r.current!.getAnimations().forEach(a => a.cancel())),
+  })
+  return <div className="h-full p-8">
+    <div ref={back} data-shoot="back" style={{ width: 80, height: 80, background: '#4f46e5' }} />
+    <div ref={early} data-shoot="early" style={{ width: 80, height: 20, marginTop: 8, background: '#0ea5e9' }} />
+  </div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'P.tsx'), `import { useRef, useState } from 'react'
+import { useMotion } from '../../motion'
+export default function P() {
+  const box = useRef<HTMLDivElement>(null)
+  const [, setOpen] = useState(false)
+  useMotion({
+    start: () => {
+      setOpen(true)
+      box.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(100px)' }], { duration: 200, fill: 'forwards' })
+      box.current!.animate([{ transform: 'translateX(100px)' }, { transform: 'translateX(200px)' }], { duration: 200, delay: 200, fill: 'forwards' })
+    },
+    reset: () => setOpen(false),
+  })
+  return <div className="h-full p-8"><div ref={box} data-shoot="box" style={{ width: 80, height: 80, background: '#4f46e5' }} /></div>
+}
+`)
+// A sheet the design renders on <body> through a portal (as Base UI's Drawer does), sliding up,
+// with steps and a Close in it. It counts its starts.
+writeFileSync(join(app, 'src', 'protos', 'move', 'Q.tsx'), `import { useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useMotion } from '../../motion'
+export default function Q() {
+  const [open, setOpen] = useState(false)
+  const [step, setStep] = useState(1)
+  useMotion({ start: () => { (window as any).__starts = ((window as any).__starts ?? 0) + 1; setOpen(true) }, reset: () => setOpen(false) })
+  return <div className="h-full p-8">
+    <p data-shoot="label">Sheet</p>
+    {createPortal(<div data-shoot="sheet" style={{ position: 'fixed', left: 480, width: 400, top: 120, height: 200, background: '#4f46e5', transform: open ? 'translateY(0px)' : 'translateY(300px)', transition: 'transform 400ms linear' }}>
+      <p data-shoot="step">Step {step}</p>
+      <button data-shoot="next" onClick={() => setStep(step + 1)}>Next</button>
+      <button data-shoot="close" onClick={() => setOpen(false)}>Close</button>
+    </div>, document.body)}
+  </div>
+}
+`)
+const near = (a, b, by) => typeof a === 'number' && Math.abs(a - b) <= by
+const motionPage = await openPage(`${local}?theme=light#/move/A`)
+try {
+  const run = motionPage.run
+  const until = async (expr, what, ms = 15_000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 100))) if (await run(expr)) return
+    fail(`${what} (waited ${ms / 1000} s)`)
+  }
+  // The dock shows under the design, and the first take is recorded as the design arrives.
+  await until(`window.__protoMotion?.state()?.status === 'ready'`, 'the motion dock never recorded a take of move/A')
+  const dock = await run(`[!!document.querySelector('[data-motion-bar]'), parseFloat(getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h'))]`)
+  if (!dock[0] || !(dock[1] > 40)) fail(`move/A should have the motion dock under it, with the stage giving up its height: ${JSON.stringify(dock)}`)
+  // A take from rest: the panel from 0 to 400 ms, the rows 100, 200 and 300 ms in, as one stagger.
+  const take = await run('window.__protoMotion.take()')
+  const panel = take.parts?.find(p => p.shoot === 'panel'), rows = (take.parts || []).filter(p => p.shoot === 'row').map(p => p.start)
+  if (!near(panel?.start, 0, 50) || !near(panel?.end, 400, 50) || rows.length !== 3 || !rows.every((t, i) => near(t, 100 + 100 * i, 50)) || !near(take.duration, 500, 50)) fail(`the take's parts are off: ${JSON.stringify(take)}`)
+  if (!take.tracks?.some(t => t.name === 'Row ×3')) fail(`the three rows should be one staggered group in the curves: ${JSON.stringify(take.tracks)}`)
+  // Scrubbing sets the design to that moment: the panel halfway at 200 ms, the second row a quarter in at 250.
+  const at = t => run(`window.__protoMotion.seek(${t}).then(() => [new DOMMatrix(getComputedStyle(document.querySelector('[data-shoot=panel]')).transform).m42, +getComputedStyle(document.querySelectorAll('[data-shoot=row]')[1]).opacity])`)
+  const [y200] = await at(200), [, o250] = await at(250), [y0, o0] = await at(0)
+  if (!near(y200, 50, 2) || !near(o250, 0.25, 0.05) || !near(y0, 100, 2) || !near(o0, 0, 0.01)) fail(`scrubbing didn't set the design: at 200 ms the panel is ${y200}px down (50), at 250 the row's opacity ${o250} (0.25), at 0 ${y0}px and ${o0}`)
+  // A comment on the range 0.10–0.30 s, drawn on the track and written in the page's own composer.
+  const D = (await run('window.__protoMotion.state()')).duration
+  await run(`document.querySelector('[data-motion=mode-range]').click()`)
+  await run(`(async () => {
+    const track = document.querySelector('[data-motion=track]'), r = track.getBoundingClientRect(), y = r.top + r.height / 2
+    const x = t => r.left + 12 + (t / ${D}) * (r.width - 24)
+    const fire = (type, t) => track.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x(t), clientY: y, button: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true }))
+    fire('pointerdown', 100); fire('pointermove', 200); fire('pointermove', 300); fire('pointerup', 300)
+    await new Promise(r => setTimeout(r, 100))
+    document.querySelector('[data-motion=compose]').click()
+    await new Promise(r => setTimeout(r, 300))
+    const ed = document.querySelector('[data-composer] [role=textbox]')
+    ed.textContent = 'The rows come in too late'
+    ed.dispatchEvent(new Event('input', { bubbles: true }))
+    await new Promise(r => setTimeout(r, 100))
+    ;[...document.querySelectorAll('[data-composer] button')].find(b => /Add/.test(b.textContent)).click()
+    await new Promise(r => setTimeout(r, 200))
+    document.querySelector('[data-shoot=send]').click()
+  })()`)
+  await until(`document.querySelector('[data-motion-bar] [data-point]')?.dataset.state === 'sent'`, 'the comment on the range never showed as sent on the track')
+  const heard = proto(['inbox'])
+  if (!/The rows come in too late\n {3}at: 0\.10–0\.30 s of the motion \(its take is 0\.50 s\): see it with proto shoot move\/A --frames 8 --at 100-300/.test(heard)) fail(`proto inbox should print the range as at: 0.10–0.30 s, with the shoot that shows it: ${heard}`)
+  proto(['reply', `${heard.match(/^batch (\S+)/m)[1]}/1`, 'Rows start at 40 ms apart now', '--done'])
+  await until(`document.querySelector('[data-motion-bar] [data-point]')?.dataset.state === 'done'`, 'the reply never reached the comment\'s point on the track')
+  // Tapping the point loops its range and shows the comment with the reply.
+  await run(`document.querySelector('[data-motion-bar] [data-point]').click()`)
+  const shown = `(() => { const t = document.querySelector('[data-motion-bar] [data-thread]'); return !!t && !t.closest('[inert]') && /Rows start at 40 ms apart now/.test(t.textContent) })()`
+  await until(`window.__protoMotion.state().playing && window.__protoMotion.state().span?.join() === '100,300' && ${shown}`, 'tapping the point should loop 0.10–0.30 s and show the reply', 5000)
+  // Pausing it is a press in the dock, which keeps the comment open.
+  await run(`(() => { const b = document.querySelector('[data-motion=play]'); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true })); b.click() })()`)
+  await until(`!window.__protoMotion.state().playing && ${shown}`, 'pausing the loop put the comment on the motion away', 3000)
+  // A moment, posted as the page does; one outside the take, or a range that ends before it starts, is refused.
+  // A time also needs a variant, and goes with no action and no point.
+  for (const bad of [{ at: 600, take: 500 }, { at: 300, to: 100, take: 500 }, { at: 'x', take: 500 }, { at: 100 }, { route: 'move', at: 100, take: 500 }, { action: 'more', at: 100, take: 500 }, { point: { x: 1, y: 1 }, at: 100, take: 500 }]) {
+    if ((await postJson('comments', { comments: [{ route: 'move/A', text: 'x', ...bad }] })).status !== 400) fail(`a comment with ${JSON.stringify(bad)} was accepted`)
+  }
+  await send([{ route: 'move/A', text: 'Hold the panel longer', at: 350, take: 500 }])
+  if (!/^ {3}at: 0\.35 s of the motion \(its take is 0\.50 s\): see it with proto shoot move\/A --at 350$/m.test(proto(['inbox']))) fail('proto inbox should print a moment as at: 0.35 s')
+  // The composer's @ menu, in the dock, opens over the page, whole: the dock doesn't cut it off.
+  const tagMenu = await run(`(async () => {
+    document.querySelector('[data-motion=compose]').click()
+    await new Promise(r => setTimeout(r, 500))
+    const ed = document.querySelector('[data-motion-bar] [data-composer] [role=textbox]')
+    if (!ed) return 'the dock opened no composer'
+    ed.focus()
+    document.execCommand('insertText', false, '@')
+    await new Promise(r => setTimeout(r, 300))
+    const m = document.querySelector('[data-tag-menu]')
+    const r = m?.getBoundingClientRect(), hit = r && document.elementFromPoint(r.left + r.width / 2, r.top + 12)
+    const said = !m ? 'typing @ opened no menu' : r.height > 80 && r.top >= 0 && r.bottom <= innerHeight && m.contains(hit) ? 'ok' : 'the @ menu is cut off or covered: ' + JSON.stringify([r.top, r.bottom, r.height, hit?.tagName])
+    ed.textContent = ''
+    ed.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector('[data-motion=compose]').click()
+    return said
+  })()`)
+  if (tagMenu !== 'ok') fail(`the @ menu in the dock's composer: ${tagMenu}`)
+  // Focus mode: the dock hides and lets the design go (it plays live); it comes back as it was.
+  await run(`document.querySelector('[data-motion=curves]').click()`)
+  await run(`document.querySelector('[data-act=focus]').click()`)
+  await until(`window.__protoMotion.state().live && getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h').trim() === '0px' && document.querySelector('[data-motion-dock]').hidden`, 'focus mode should hide the dock and let the design go', 5000)
+  await run(`document.querySelector('[data-act=unfocus]').click()`)
+  await until(`parseFloat(getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h')) > 40 && document.querySelector('[data-motion=curves]')?.getAttribute('aria-pressed') === 'true'`, 'after focus mode the dock should come back as it was (curves on)', 5000)
+  // One property moved twice: the toast fades in over 0-300 ms (and out from about 700), and at
+  // each moment it shows that moment, not the later fade's first frame.
+  const design = (route, sel) => run(`(async () => {
+    location.hash = '#/${route}'
+    for (let i = 0; i < 100 && !document.querySelector('[data-layers] ${sel}'); i++) await new Promise(r => setTimeout(r, 100))
+    // It declares its motion (useMotion, in an effect) a moment after it renders, on a slow runner later.
+    for (let i = 0; i < 100 && !window.__protoMotion.state(); i++) await new Promise(r => setTimeout(r, 100))
+    for (let i = 0; i < 100 && window.__protoMotion.state()?.status === 'taking'; i++) await new Promise(r => setTimeout(r, 100))
+    return window.__protoMotion.take()
+  })()`)
+  const value = (sel, read, t) => run(`window.__protoMotion.seek(${t}).then(() => { const cs = getComputedStyle(document.querySelector('[data-layers] ${sel}')); return ${read} })`)
+  const twice = await design('move/C', '[data-shoot=toast]')
+  if (twice.parts?.filter(p => p.shoot === 'toast').length !== 2) fail(`move/C's take should have the toast's two fades: ${JSON.stringify(twice)}`)
+  const fades = [await value('[data-shoot=toast]', '+cs.opacity', 0), await value('[data-shoot=toast]', '+cs.opacity', 150), await value('[data-shoot=toast]', '+cs.opacity', 300)]
+  if (!near(fades[0], 0, 0.05) || !near(fades[1], 0.5, 0.1) || !near(fades[2], 1, 0.05)) fail(`the toast fading in, then out, should read 0, 0.5 and 1 at 0, 150 and 300 ms: ${fades}`)
+  const chained = await design('move/D', '[data-shoot=box]')
+  if (chained.parts?.length !== 2) fail(`move/D's take should have both of the box's moves: ${JSON.stringify(chained)}`)
+  const moves = [await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 0), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 150), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 450)]
+  if (!near(moves[0], 0, 3) || !near(moves[1], 50, 5) || !near(moves[2], 150, 5)) fail(`the box moved twice by element.animate should be at 0, 50 and 150 px at 0, 150 and 450 ms: ${moves}`)
+  // Taken again and again, a take is still the one move: the last takes' animations, filling
+  // forwards, aren't part of it, and they don't pile up on the element.
+  await design('move/G', '[data-shoot=slide]')
+  await run('window.__protoMotion.take()')
+  await run('window.__protoMotion.take()')
+  const again = await run('window.__protoMotion.take()')
+  if (again.parts?.length !== 1 || !near(again.duration, 300, 40)) fail(`a fourth take should be the one move, 0.30 s: ${JSON.stringify(again)}`)
+  const piled = await run(`document.querySelector('[data-layers] [data-shoot=slide]').getAnimations().length`)
+  if (piled > 2) fail(`four takes left ${piled} animations on the element`)
+  // A transition, then a CSS animation (H) or element.animate() (I) on the same property: at each
+  // moment the part moving then shows, whichever the browser draws on top.
+  for (const [v, sel, read, want, by] of [['H', '[data-shoot=fade]', '+cs.opacity', [0.5, 0.6, 0.2], 0.06], ['I', '[data-shoot=slide]', 'new DOMMatrix(cs.transform).m41', [50, 150, 200], 6]]) {
+    const tk = await design(`move/${v}`, sel)
+    const second = tk.parts?.[1]?.start
+    if (tk.parts?.length !== 2 || !(second > 300)) fail(`move/${v}'s take should have the transition, then the second move: ${JSON.stringify(tk)}`)
+    const got = [await value(sel, read, 150), await value(sel, read, second + 250), await value(sel, read, tk.duration)]
+    if (!got.every((g, i) => near(g, want[i], by))) fail(`move/${v} should read ${want} at 150 ms, halfway through its second move and at the end: ${got}`)
+  }
+  // A keyframe animation a class swap replaces: both are in the take, and its 0 is the start.
+  const swap = await design('move/J', '[data-shoot=note]')
+  const notes = (swap.parts || []).filter(p => p.shoot === 'note')
+  if (notes.length !== 2) fail(`move/J's take should have the enter and the exit that replaced it: ${JSON.stringify(swap)}`)
+  const ops = [await value('[data-shoot=note]', '+cs.opacity', 0), await value('[data-shoot=note]', '+cs.opacity', 150), await value('[data-shoot=note]', '+cs.opacity', notes[1].start + 150), await value('[data-shoot=note]', '+cs.opacity', swap.duration)]
+  if (!ops.every((o, i) => near(o, [0, 0.5, 0.5, 0][i], 0.06))) fail(`the note entering, then leaving by a class swap, should read 0, 0.5, 0.5 and 0: ${ops}`)
+  // A part the browser cancelled shows nothing from then on: the enter that the nudge's class swap
+  // cancelled doesn't cover the nudge (it set opacity too), and the slide cancelled with nothing in
+  // its place is back at 0, also where the take ends (where the dock rests and --at shoots).
+  const nudged = await design('move/K', '[data-shoot=sheet]')
+  const nudge = nudged.parts?.find(p => p.prop === 'k-nudge')
+  if (nudged.parts?.length !== 2 || !nudge) fail(`move/K's take should have the enter and the nudge: ${JSON.stringify(nudged)}`)
+  const ys = [await value('[data-shoot=sheet]', 'new DOMMatrix(cs.transform).m42', 150), await value('[data-shoot=sheet]', 'new DOMMatrix(cs.transform).m42', nudge.start + 100), await value('[data-shoot=sheet]', 'new DOMMatrix(cs.transform).m42', nudge.start + 200), await value('[data-shoot=sheet]', '+cs.opacity', nudge.start + 100)]
+  if (!ys.every((y, i) => near(y, [50, -20, -40, 1][i], i === 3 ? 0.05 : 4))) fail(`the sheet entering, then nudged, should be at 50, -20 and -40 px (opacity 1 while nudged): ${ys}`)
+  const cancelled = await design('move/L', '[data-shoot=slide]')
+  const slid = cancelled.parts?.find(p => p.shoot === 'slide')
+  if (!slid || !near(slid.end, 400, 120) || !(cancelled.duration > 800)) fail(`move/L's slide should end where it was cancelled, 0.4 s into a 1 s take: ${JSON.stringify(cancelled)}`)
+  const xs = [await value('[data-shoot=slide]', 'new DOMMatrix(cs.transform).m41', 200), await value('[data-shoot=slide]', 'new DOMMatrix(cs.transform).m41', 800), await value('[data-shoot=slide]', 'new DOMMatrix(cs.transform).m41', cancelled.duration)]
+  if (!near(xs[0], 40, 6) || !near(xs[1], 0, 1) || !near(xs[2], 0, 1)) fail(`the slide cancelled at 0.4 s should be at 40 px at 0.2 s, then back at 0 (0.8 s and the end): ${xs}`)
+  // A shake added to a slide: each moment shows both.
+  const shaken = await design('move/M', '[data-shoot=box]')
+  if (shaken.parts?.length !== 2) fail(`move/M's take should have the slide and the shake: ${JSON.stringify(shaken)}`)
+  const sx = [await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 150), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 375), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 450), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', shaken.duration)]
+  if (!sx.every((x, i) => near(x, [50, 120, 140, 100][i], 5))) fail(`the slide with a shake added should be at 50, 120, 140 and 100 px at 150, 375, 450 ms and the end: ${sx}`)
+  // Played backwards: 0.4 s, from 100 px back to 0. A negative delay starts at the take's 0, as its
+  // curve does (so Go to lists no time before 0).
+  const reversed = await design('move/N', '[data-shoot=back]')
+  if (!near(reversed.duration, 400, 40) || !reversed.parts?.every(p => p.start >= 0) || !reversed.tracks?.every(t => t.start >= 0)) fail(`move/N's take should be 0.40 s, nothing in it before 0: ${JSON.stringify(reversed)}`)
+  const bx = [await value('[data-shoot=back]', 'new DOMMatrix(cs.transform).m41', 0), await value('[data-shoot=back]', 'new DOMMatrix(cs.transform).m41', 200), await value('[data-shoot=back]', 'new DOMMatrix(cs.transform).m41', 400)]
+  if (!bx.every((x, i) => near(x, [100, 50, 0][i], 6))) fail(`the box played backwards should be at 100, 50 and 0 px at 0, 200 and 400 ms: ${bx}`)
+  const firsts = await run(`window.__protoMotion.curves().tracks.flatMap(t => t.lines.map(l => l[0][0]))`)
+  if (!firsts.length || !firsts.every(t => t >= 0)) fail(`no curve should start before 0: ${firsts}`)
+  // Held again after it ran live (focus mode lets it go), a take's dropped animation is still
+  // cancelled when it is let go: takes don't pile animations up on the element.
+  await design('move/P', '[data-shoot=box]')
+  for (let i = 0; i < 4; i++) {
+    await run('window.__protoMotion.take()')
+    await run(`document.querySelector('[data-act=focus]').click()`)
+    await until(`window.__protoMotion.state().live`, 'focus mode should let move/P go', 5000)
+    await run(`document.querySelector('[data-act=unfocus]').click()`)
+    await until(`!document.querySelector('[data-act=unfocus]') && !document.querySelector('[data-motion-dock]').hidden`, 'the dock should come back after focus mode', 5000)
+    await run('window.__protoMotion.seek(100)')
+  }
+  await run('window.__protoMotion.take()')
+  const left = await run(`document.querySelector('[data-layers] [data-shoot=box]').getAnimations().length`)
+  if (left > 2) fail(`five takes of move/P, let go and held again between them, left ${left} animations on the element`)
+  // A sheet rendered on <body> through a portal: the take has it, it scrubs, and a press on it lets
+  // the design go (as one inside the stage does).
+  const portaled = await design('move/Q', '[data-shoot=label]')
+  if (portaled.parts?.length !== 1 || portaled.parts[0].shoot !== 'sheet' || !near(portaled.duration, 400, 40)) fail(`move/Q's take should have the sheet it renders on <body>, 0.40 s: ${JSON.stringify(portaled)}`)
+  const onBody = t => run(`window.__protoMotion.seek(${t}).then(() => new DOMMatrix(getComputedStyle(document.querySelector('body > [data-shoot=sheet]')).transform).m42)`)
+  const qy = [await onBody(0), await onBody(200), await onBody(400)]
+  if (!qy.every((y, i) => near(y, [300, 150, 0][i], 6))) fail(`the sheet on <body> should be at 300, 150 and 0 px at 0, 200 and 400 ms: ${qy}`)
+  const [px, py] = await run(`(() => { const r = document.querySelector('body > [data-shoot=sheet]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
+  await motionPage.press(px, py)
+  await until(`window.__protoMotion.state().live`, 'a press on the sheet the design renders on <body> should let it go', 3000)
+  // Held again, the sheet closed from the keyboard (Enter on its Close) lets it go and runs its exit.
+  await run('window.__protoMotion.seek(100)')
+  await run(`document.querySelector('body > [data-shoot=sheet] [data-shoot=close]').focus()`)
+  await motionPage.enter()
+  const exit = await run(`document.querySelector('body > [data-shoot=sheet]').getAnimations().filter(a => a.playState === 'running').map(a => a.transitionProperty).join()`)
+  if (exit !== 'transform' || !await run('window.__protoMotion.state().live')) fail(`the held sheet closed by Enter on its Close should let the design go and run its exit transition: ${exit || 'none'}`)
+  // A change inside the sheet while the design runs live (Next, to its second step) makes the
+  // dock's next move take it again, as a change in the stage does.
+  await run('window.__protoMotion.seek(400)')
+  const starts = await run('window.__starts')
+  const [nx, ny] = await run(`(() => { const r = document.querySelector('body > [data-shoot=sheet] [data-shoot=next]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
+  await motionPage.press(nx, ny)
+  await until(`window.__protoMotion.state().live && document.querySelector('[data-shoot=step]')?.textContent === 'Step 2'`, 'Next in the sheet on <body> should let the design go to its second step', 3000)
+  await run('window.__protoMotion.seek(100)')
+  if (!(await run('window.__starts') > starts)) fail(`after the sheet on <body> went to its second step, the dock's next move should take the design again (it held the old take)`)
+  // A start() that throws: the take is empty and says why, and the dock isn't left recording.
+  await run(`location.hash = '#/move/E'`)
+  await until(`window.__protoMotion.state()?.status === 'empty' && /boom/.test(window.__protoMotion.state().error) && /start\\(\\) threw Error: boom/.test(document.querySelector('[data-motion=error]')?.textContent)`, 'a start() that throws should end the take with its error in the dock')
+  // A step a timer starts 1.2 s in, after the take has ended: the dock says it was missed, though
+  // it only turns a button green (a color is only taken for hover or focus right after a move).
+  await run(`location.hash = '#/move/F'`)
+  await until(`(() => { const s = window.__protoMotion.state(); return s?.status === 'ready' && s.late > 800 && s.late < 1600 && !!document.querySelector('[data-motion=late]') })()`, 'a step started after the take ended should be named in the dock')
+  await run(`document.querySelector('[data-motion=late-close]').click()`)
+  await until(`window.__protoMotion.state().late === null && !document.querySelector('[data-motion=late]')`, 'the note about a missed step should go when dismissed', 3000)
+  // No useMotion, no dock, and the stage has its full height back.
+  await run(`location.hash = '#/move/B'`)
+  await until(`!document.querySelector('[data-motion-bar]') && getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h').trim() === '0px'`, 'move/B declares no motion but has a dock', 5000)
+} finally { motionPage.close() }
+// The same take headlessly: one moment of it, and frames of it on one sheet, each frame its own.
+proto(['shoot', 'move/A', '--at', '200'])
+for (const want of ['move-A-desktop-at-200.png', 'move-A-mobile-at-200.png']) if (!pngs(shots).includes(want)) fail(`proto shoot --at 200 wrote no ${want}`)
+const strip = proto(['shoot', 'move/A', '--frames', '4'])
+if (!pngs(shots).includes('move-A-frames.png') || !/^4 frames in /m.test(strip)) fail(`proto shoot --frames 4 wrote no move-A-frames.png: ${strip}`)
+const frame = t => readFileSync(join(shots, `move-A-desktop-at-${t}.png`))
+if (frame(0).equals(frame(500)) || frame(167).equals(frame(333))) fail('the frames of the take are the same picture')
+if (!/no motion|declares no motion/.test(proto(['shoot', 'move/B', '--at', '100'], { ok: false }))) fail('proto shoot --at on a design without useMotion should say it has no motion')
+if (!/start\(\) threw Error: boom/.test(proto(['shoot', 'move/E', '--at', '100'], { ok: false }))) fail('proto shoot --at should print the error a start() threw')
+// Frames across a property moved twice differ, frame to frame: also the nudge after a cancelled
+// enter, a shake added to a slide, and a sheet on <body>.
+for (const [v, a, b] of [['C', 0, 300], ['D', 0, 300], ['H', 0, 300], ['I', 0, 300], ['J', 0, 300], ['K', 400, 600], ['M', 300, 450], ['Q', 0, 400]]) {
+  proto(['shoot', `move/${v}`, '--frames', '3', '--at', `${a}-${b}`])
+  const f = t => readFileSync(join(shots, `move-${v}-desktop-at-${t}.png`))
+  if (f(a).equals(f((a + b) / 2)) || f((a + b) / 2).equals(f(b))) fail(`the frames of move/${v} from ${a} to ${b} ms are the same picture`)
+}
+proto(['shoot', 'move', '--frames', '4'], { ok: false })
+// The build drops the dock: the handoff lists useMotion as the page's own.
+if (!/## Motion review\n- \[ \] Its motion dock \(`useMotion`\) · A\.tsx:5\b/.test(proto(['handoff', 'move/A']))) fail('proto handoff should list useMotion under Motion review')
+
 // A right-to-left variant: physical sides are listed, while sides chosen per direction,
 // centring and logical sides are not.
 writeFileSync(join(app, 'src', 'protos', 'phone', 'A.tsx'), [
@@ -654,6 +1096,97 @@ if (!pngs(shots).includes('words-A-desktop-copy.png') || sizeOf('words-A-desktop
 const noCopy = proto(['shoot', 'words/B', '--copy'])
 if (!/words\/B has no copy options/.test(noCopy) || pngs(shots).includes('words-B-desktop-copy.png') || !noCopy.includes('words-B-desktop.png')) fail(`proto shoot --copy on a variant without copy options should say so and name the shot words-B-desktop.png: ${noCopy}`)
 if ((await postJson('comments', { comments: [{ route: 'words', text: 'x', action: 'copy' }] })).status !== 400) fail('a copy choice on no variant was accepted')
+
+// Both bars at once: a variant with copy options and motion. With copy mode on, the copy bar sits
+// over the motion dock, which keeps its place above the pill; the stage clears both, and neither
+// covers the other. On a 360 px phone the pill still holds Comment and T, and the dock's buttons
+// keep their size.
+proto(['add', 'both', '--title', 'Both', '--variants', 'A:Words and motion'])
+writeFileSync(join(app, 'src', 'protos', 'both', 'A.tsx'), `import { useState } from 'react'
+import { useCopy } from '../../copy'
+import { useMotion } from '../../motion'
+export default function A() {
+  const [open, setOpen] = useState(false)
+  const copy = useCopy([{ id: 'title', label: 'Title', options: ['Your order', 'Ready to pay'] }])
+  useMotion({ start: () => setOpen(true), reset: () => setOpen(false) })
+  return <div className="h-full p-8">
+    <h1 data-copy="title" className="text-2xl">{copy.title}</h1>
+    <div data-shoot="sheet" style={{ height: 160, background: '#4f46e5', transform: open ? 'translateY(0px)' : 'translateY(80px)', opacity: open ? 1 : 0, transition: 'transform 400ms ease-out, opacity 300ms linear' }} />
+  </div>
+}
+`)
+const stacked = `(async () => {
+    ${until}
+    if (!await until(() => window.__protoMotion?.state()?.status === 'ready', 15000)) return 'the motion dock recorded no take'
+    ${copyOn}
+    if (!await until(() => document.querySelector('[data-copy-bar]').offsetHeight > 0 && document.querySelector('[data-copy-mark=title]'))) return 'copy mode showed no bar'
+    await new Promise(r => setTimeout(r, 300))
+    const box = s => document.querySelector(s).getBoundingClientRect()
+    const zone = box('[data-zone]'), layers = box('[data-layers]'), copyBar = box('[data-copy-bar]'), dock = box('[data-motion-dock]')
+    const pill = document.querySelector('[data-pill] > div')?.getBoundingClientRect().height || 0
+    const near = (a, b) => Math.abs(a - b) <= 1
+    if (!(copyBar.height > 20 && dock.height > 40)) return 'both bars should show: copy bar ' + copyBar.height + ', dock ' + dock.height
+    if (!near(dock.bottom, zone.bottom - pill)) return 'the dock should sit just above the pill: ' + dock.bottom + ' vs ' + (zone.bottom - pill)
+    if (!near(copyBar.bottom, dock.top)) return 'the copy bar should sit on the dock: ' + copyBar.bottom + ' vs ' + dock.top
+    if (!near(layers.bottom, copyBar.top)) return 'the stage should end at the copy bar: ' + layers.bottom + ' vs ' + copyBar.top
+    if (layers.height < 200) return 'the stage kept ' + layers.height + ' px'
+    // Copy mode marking its lines (an underline's transition) is no step the take missed.
+    if (window.__protoMotion.state().late !== null) return 'turning copy mode on was taken for a missed step at ' + window.__protoMotion.state().late + ' ms'
+    return 'ok'
+  })()`
+const deskBoth = await openPage(`${local}?theme=light#/both/A`)
+try {
+  const r = await deskBoth.run(stacked)
+  if (r !== 'ok') fail(`copy mode on a design with motion, desktop: ${r}`)
+  // In copy mode a real press on a line opens its options over the moment held: the take isn't let go.
+  await deskBoth.run('window.__protoMotion.seek(150)')
+  const [lx, ly] = await deskBoth.run(`(() => { const r = document.querySelector('[data-layers] [data-copy=title]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
+  await deskBoth.press(lx, ly)
+  const picked = await deskBoth.run(`(async () => {
+    ${until}
+    if (!await until(() => document.querySelector('[data-copy-list]'))) return 'the press opened no options list'
+    const s = window.__protoMotion.state()
+    document.body.click()
+    return s.live || s.t !== 150 ? 'the press let the take go (live ' + s.live + ', at ' + s.t + ' ms)' : 'ok'
+  })()`)
+  if (picked !== 'ok') fail(`a press on a line in copy mode: ${picked}`)
+  // Focus mode keeps the copy bar (copy mode was turned on) and hides the dock, letting the design go.
+  const focused = await deskBoth.run(`(async () => {
+    ${until}
+    document.querySelector('[data-act=focus]').click()
+    if (!await until(() => document.querySelector('[data-motion-dock]').hidden && window.__protoMotion.state().live)) return 'the dock should hide and let the design go'
+    const bar = document.querySelector('[data-copy-bar]').getBoundingClientRect()
+    if (!(bar.height > 20) || Math.abs(bar.bottom - innerHeight) > 1) return 'the copy bar should stay, at the bottom: ' + bar.height + ' px, bottom ' + bar.bottom
+    document.querySelector('[data-act=unfocus]').click()
+    if (!await until(() => !document.querySelector('[data-motion-dock]').hidden && document.querySelector('[data-copy-bar]').getBoundingClientRect().bottom <= document.querySelector('[data-motion-dock]').getBoundingClientRect().top + 1)) return 'after focus mode both bars should be back, stacked'
+    return 'ok'
+  })()`)
+  if (focused !== 'ok') fail(`focus mode with copy mode on and motion: ${focused}`)
+} finally { deskBoth.close() }
+const phoneBoth = await openPage(`${local}?theme=light#/both/A`, { width: 360, height: 740, phone: true })
+try {
+  const r = await phoneBoth.run(stacked.replace("document.querySelector('[data-bar] [data-act=copymode]')", "document.querySelector('[data-pill] [data-act=copymode]')"))
+  if (r !== 'ok') fail(`copy mode on a design with motion, 360 px phone: ${r}`)
+  const fits = await phoneBoth.run(`(() => {
+    const bar = document.querySelector('[data-pill-bar]'), r = bar.getBoundingClientRect()
+    if (!bar.querySelector('[data-act="comment:tap"]') || !bar.querySelector('[data-act=copymode]')) return 'the pill should hold Comment and T'
+    if (r.left < 0 || r.right > innerWidth || bar.scrollWidth > bar.clientWidth + 1) return 'the pill overflows 360 px: ' + r.left + '-' + r.right + ', ' + bar.scrollWidth + '/' + bar.clientWidth
+    if (document.querySelector('[data-pill-handle]').offsetWidth < 100) return 'the pill handle was squeezed to ' + document.querySelector('[data-pill-handle]').offsetWidth + ' px'
+    const tight = [...document.querySelectorAll('[data-motion-bar] button')].filter(b => b.offsetParent && b.offsetWidth < 32).map(b => (b.dataset.motion || b.getAttribute('aria-label')) + ' ' + b.offsetWidth)
+    if (tight.length) return 'dock buttons squeezed: ' + tight.join(', ')
+    const row = document.querySelector('[data-motion-bar] > div')
+    if (row.scrollWidth > row.clientWidth + 1) return 'the dock overflows: ' + row.scrollWidth + '/' + row.clientWidth
+    return 'ok'
+  })()`)
+  if (fits !== 'ok') fail(`the phone at 360 px with both bars: ${fits}`)
+} finally { phoneBoth.close() }
+// A moment of the motion in copy mode is shot as copy mode is: once its bar is in, with the bar,
+// at the stage's own size; a variant without copy options is shot without and says so.
+proto(['shoot', 'both/A', '--at', '200'])
+proto(['shoot', 'both/A', '--at', '200', '--copy'])
+if (!pngs(shots).includes('both-A-desktop-at-200-copy.png') || sizeOf('both-A-desktop-at-200-copy.png') !== sizeOf('both-A-desktop-at-200.png')) fail('proto shoot --at 200 --copy should write both-A-desktop-at-200-copy.png at the size of both-A-desktop-at-200.png')
+const motionNoCopy = proto(['shoot', 'move/A', '--at', '200', '--copy'])
+if (!/move\/A has no copy options/.test(motionNoCopy) || pngs(shots).includes('move-A-desktop-at-200-copy.png')) fail(`proto shoot --at --copy on a variant without copy options should say so and drop -copy from the name: ${motionNoCopy}`)
 
 proto(['stop'])
 for (let i = 0; i < 40 && await answers(`${local}__proto/status`); i++) await new Promise(r => setTimeout(r, 250))
