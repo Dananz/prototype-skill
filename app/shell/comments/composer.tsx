@@ -1,7 +1,8 @@
 // Writing a comment on one element, or on a moment or a range of the design's motion (in the motion
 // dock, with the time where the element's name would be). `@` (or the @ button) offers the design's
 // named parts, or picking any element on the page; the camera captures the design around the
-// element (all of it, on a moment) and opens the editor; ⌘↩ adds it. Whatever is written is held by
+// element (all of it, on a moment) and opens the editor; an image pasted (Ctrl+V) or dropped on the
+// composer is attached in its place; ⌘↩ adds it. Whatever is written is held by
 // the store as it is typed, so putting the composer away any way but Cancel or Add loses nothing.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
@@ -35,6 +36,33 @@ const chipNode = (t: Target | undefined, i: number) => {
 }
 const endRange = (el: HTMLElement) => { const x = document.createRange(); x.selectNodeContents(el); x.collapse(false); return x }
 
+// An image from the clipboard or dropped on the composer becomes the comment's picture, the way a
+// screenshot does. It goes through a canvas, so whatever it was (a GIF, a BMP from a screenshot
+// tool) it is sent as a PNG the server keeps (it takes png, jpeg and webp only), at most MAX_SIDE
+// px a side; one still too big for localStorage is sent as a JPEG.
+const MAX_SIDE = 2000
+const imageIn = (dt: DataTransfer | null) => {
+  if (!dt) return null
+  for (const f of dt.files) if (f.type.startsWith('image/')) return f
+  for (const i of dt.items) if (i.kind === 'file' && i.type.startsWith('image/')) return i.getAsFile()
+  return null
+}
+const carriesImage = (dt: DataTransfer | null) => !!dt && [...dt.items].some(i => i.kind === 'file' && i.type.startsWith('image/'))
+async function imageUrl(file: File): Promise<string | null> {
+  const src = URL.createObjectURL(file)
+  try {
+    const img = new Image()
+    img.src = src
+    await img.decode()
+    const k = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight))
+    const c = document.createElement('canvas')
+    c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k))
+    c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
+    const png = c.toDataURL('image/png')
+    return png.length < 3_000_000 ? png : c.toDataURL('image/jpeg', 0.9)
+  } catch { return null } finally { URL.revokeObjectURL(src) }
+}
+
 type Props = {
   /** The element it is on; a comment on the motion has a time instead. */
   target?: Target
@@ -67,6 +95,10 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const [shot, setShot] = useState<string | undefined>(initial?.shot)
   const shotRef = useRef(shot)
   shotRef.current = shot
+  // Whether the picture is an image the user pasted or dropped, not one of the design.
+  const [pasted, setPasted] = useState(!!initial?.pasted)
+  const pastedRef = useRef(pasted)
+  pastedRef.current = pasted
   const [menu, setMenu] = useState(false)
   // The @ menu: what was typed after @ filters it; row 0 is Pick on the design, the parts follow.
   const [q, setQ] = useState('')
@@ -123,12 +155,14 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
 
   const over = (el: ReactElement) => docked ? createPortal(el, uiBox()) : el
   const [empty, setEmpty] = useState(!initial || !initial.body.some(s => typeof s !== 'string' || s.trim()))
-  const emit = () => { if (!editing && ed.current) act.hold({ body: readEditor(ed.current), tags: tagsRef.current, shot: shotRef.current }, target, time) }
-  useEffect(emit, [tags, shot]) // eslint-disable-line react-hooks/exhaustive-deps
+  const emit = () => { if (!editing && ed.current) act.hold({ body: readEditor(ed.current), tags: tagsRef.current, shot: shotRef.current, pasted: pastedRef.current }, target, time) }
+  useEffect(emit, [tags, shot, pasted]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (nudge) box.current?.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(-3px)' }, { transform: 'translateX(0)' }], { duration: 320, easing: 'ease-out' })
   }, [nudge])
-  const [capturing, setCapturing] = useState(false)
+  // What the picture's place says while one is on its way: a screenshot being taken, or an image read.
+  const [capturing, setCapturing] = useState<string | null>(null)
+  const [dropping, setDropping] = useState(false)
   const [marking, setMarking] = useState<string | null>(null)
   const range = useRef<Range | null>(null)
 
@@ -173,11 +207,15 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const submit = () => {
     const body = readEditor(ed.current!)
     if (!body.some(s => typeof s !== 'string' || s.trim()) && !tags.length) return
-    act.save({ body, tags, shot }, target, id, time)
+    act.save({ body, tags, shot, pasted: (!!shot && pasted) || undefined }, target, id, time)
   }
   const shoot = async () => {
-    setCapturing(true)
-    try { const url = await capture(host.mount(), target ?? WHOLE, host.dark()); if (url) setMarking(url) } finally { setCapturing(false) }
+    setCapturing('Capturing…')
+    try { const url = await capture(host.mount(), target ?? WHOLE, host.dark()); if (url) setMarking(url) } finally { setCapturing(null) }
+  }
+  const attach = async (file: File) => {
+    setCapturing('Adding…')
+    try { const url = await imageUrl(file); if (url) { setShot(url); setPasted(true) } } finally { setCapturing(null); refocus() }
   }
 
   const W = 312
@@ -206,7 +244,11 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
       <Glide item={peek && peekBox ? { box: peekBox, label: peek.t.label } : null} pad={4} className="rounded-lg ring-2 ring-proto-primary-ring" style={{ boxShadow: '0 0 0 9999px rgb(9 9 11 / 0.32)' }}>
         {h => <span className="absolute -top-7 left-0 whitespace-nowrap rounded-md bg-proto-primary px-1.5 py-0.5 text-[11px] font-medium text-proto-primary-fg shadow">@{h.label}</span>}
       </Glide>
-      <div ref={box} data-composer onKeyDown={keys} className={`pointer-events-auto z-30 flex flex-col text-[13px] text-zinc-900 dark:text-zinc-100 ${docked ? 'relative' : `rounded-2xl border border-black/10 bg-white shadow-2xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900 ${sheet ? 'absolute inset-x-2 bottom-2' : 'absolute'}`} ${tagging ? 'opacity-60' : ''}`} style={style}>
+      <div ref={box} data-composer onKeyDown={keys}
+        onDragOver={e => { if (!carriesImage(e.dataTransfer)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDropping(true) }}
+        onDragLeave={e => { if (!box.current?.contains(e.relatedTarget as Node)) setDropping(false) }}
+        onDrop={e => { setDropping(false); const f = imageIn(e.dataTransfer); if (!f) return; e.preventDefault(); void attach(f) }}
+        className={`pointer-events-auto z-30 flex flex-col text-[13px] text-zinc-900 dark:text-zinc-100 ${docked ? 'relative' : `rounded-2xl border border-black/10 bg-white shadow-2xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900 ${sheet ? 'absolute inset-x-2 bottom-2' : 'absolute'}`} ${tagging ? 'opacity-60' : ''} ${dropping ? 'ring-2 ring-proto-primary-ring' : ''}`} style={style}>
         <div className="flex items-center gap-2 px-3 pt-2.5">
           <PinDot n={n} size="sm" />
           {time
@@ -222,6 +264,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
               if (m) { if (!menu) openMenu(); setQ(m[1]); setRow(m[1] ? 1 : 0); setPeeking(!!m[1]) } else if (menu) setMenu(false)
             }}
             onKeyUp={saveRange} onMouseUp={saveRange} onBlur={saveRange}
+            onPaste={e => { const f = imageIn(e.clipboardData); if (!f) return; e.preventDefault(); void attach(f) }}
             className="max-h-40 min-h-[52px] overflow-y-auto whitespace-pre-wrap break-words py-1 leading-5 outline-none [@media(pointer:coarse)]:min-h-[60px] [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6" />
           {empty && <span className="pointer-events-none absolute left-3 top-2.5 text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">{time ? `What should change ${time.to === undefined ? 'at this moment' : 'over this range'}? @ tags an element` : 'What should change? @ tags another element'}</span>}
           {menu && over(
@@ -260,9 +303,10 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
         </div>
         {(shot || capturing) && (
           <div className="flex items-center gap-2 px-3 pb-1 pt-1.5">
-            {capturing ? <span className="grid h-12 w-20 place-items-center rounded-lg bg-zinc-900/[.04] text-[11px] text-zinc-400 dark:bg-white/[.06]">Capturing…</span>
+            {capturing ? <span className="grid h-12 w-20 place-items-center rounded-lg bg-zinc-900/[.04] text-[11px] text-zinc-400 dark:bg-white/[.06]">{capturing}</span>
               : <button onClick={() => setMarking(shot!)} title="Edit the screenshot" className="group relative h-12 w-20 overflow-hidden rounded-lg ring-1 ring-black/10 dark:ring-white/15"><img src={shot} alt="Screenshot" className="size-full object-cover" /><span className="absolute inset-0 grid place-items-center bg-black/40 text-[11px] font-medium text-white opacity-0 transition group-hover:opacity-100">Edit</span></button>}
-            {shot && <button onClick={() => setShot(undefined)} className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">Remove</button>}
+            {shot && !capturing && pasted && <span className="text-[11px] text-zinc-400">Pasted image</span>}
+            {shot && <button onClick={() => { setShot(undefined); setPasted(false) }} className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">Remove</button>}
           </div>
         )}
         <div className="flex items-center gap-1 px-2 pb-2 pt-1">
@@ -274,14 +318,14 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             const sel = getSelection(); sel?.removeAllRanges(); sel?.addRange(r)
             document.execCommand('insertText', false, '@')
           }} title="Tag another element (@)" aria-label="Tag another element" className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="at" /></button>
-          <button onClick={shoot} title="Screenshot this part of the design, then draw on it" aria-label="Attach a screenshot" className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="camera" /></button>
+          <button onClick={shoot} title={`Screenshot this part of the design, then draw on it (or paste an image: ${MOD} V, or drop one here)`} aria-label="Attach a screenshot" className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="camera" /></button>
           {editing && <button onClick={() => id && act.remove(id)} title="Delete" aria-label="Delete comment" className={`${IB} h-8 min-w-8 px-1.5 hover:text-rose-600`}><Icon name="trash" /></button>}
           <span className="ms-auto" />
           <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Cancel</button>
           <button onClick={submit} disabled={empty && !tags.length} title={`Add, to send with the rest · ${MOD} Enter adds and sends to Claude`} className={`inline-flex h-8 items-center gap-1 rounded-lg pl-2 pr-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={editing ? 'check' : 'plus'} className="size-3.5" />{editing ? 'Save' : 'Add'}</button>
         </div>
       </div>
-      {marking && <ShotEditor src={marking} onCancel={() => { setMarking(null); refocus() }} onDone={url => { setShot(url); setMarking(null); refocus() }} />}
+      {marking && <ShotEditor src={marking} onCancel={() => { setMarking(null); refocus() }} onDone={url => { setPasted(pasted && marking === shot); setShot(url); setMarking(null); refocus() }} />}
     </>
   )
 }

@@ -106,7 +106,7 @@ export function createActions(store: Store, host: Host) {
           // On the motion: a moment or a range, in ms of the take, and how long the take is.
           ...(i.time ? { at: i.time.at, ...(i.time.to !== undefined ? { to: i.time.to } : {}), take: i.time.take } : {}),
           ...(i.tags.length ? { tags: i.tags } : {}),
-          ...(i.shot ? { images: [{ dataUrl: i.shot, name: 'marked up' }] } : {}),
+          ...(i.shot ? { images: [{ dataUrl: i.shot, name: i.pasted ? 'pasted by the user' : 'marked up' }] } : {}),
         })),
       }
       set({ sending: true, error: '' })
