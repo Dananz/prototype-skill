@@ -240,8 +240,9 @@ columns, each with its line, beside Autoplay, All states and Compare:
 **Say what to type and try.** When getting through a variant takes something a reviewer can't
 guess (a login, a code, a search that returns results), or it has scenarios, outside events or
 limits worth knowing, report them with `useHints` from `src/hints.ts`, once, in the variant's
-component. The page shows them in a Try it panel beside the design, where each value copies with
-a click and Fill in types them into the design's fields; `proto shoot` leaves the panel out.
+component. The page shows them in a Try it panel beside the design (on a phone, a sheet from the
+key in the pill), where each value copies with a click and Fill in types them into the design's
+fields; `proto shoot` leaves the panel out.
 
 ```
 import { useHints } from '../../hints'

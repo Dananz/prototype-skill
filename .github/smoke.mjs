@@ -1188,6 +1188,97 @@ if (!pngs(shots).includes('both-A-desktop-at-200-copy.png') || sizeOf('both-A-de
 const motionNoCopy = proto(['shoot', 'move/A', '--at', '200', '--copy'])
 if (!/move\/A has no copy options/.test(motionNoCopy) || pngs(shots).includes('move-A-desktop-at-200-copy.png')) fail(`proto shoot --at --copy on a variant without copy options should say so and drop -copy from the name: ${motionNoCopy}`)
 
+// Try it on a phone: a key in the pill (no handle over the design) with its count, opening a sheet
+// with the panel's list, the pill raised over its backdrop. A thing to try puts the sheet away while
+// its spot is lit and brings it back once the spot goes out; a press on the design meanwhile leaves
+// it down. Esc puts it away and stays on the variant. With Comment, T and the key the pill drops its
+// grid and keeps the name whole. On a desktop the panel's tabs and Fill in stay on one line each.
+proto(['add', 'tryit', '--title', 'Try it', '--variants', 'A:Checkout'])
+writeFileSync(join(app, 'src', 'protos', 'tryit', 'A.tsx'), `import { useState } from 'react'
+import { useHints } from '../../hints'
+import { useCopy } from '../../copy'
+export default function A() {
+  const [code, setCode] = useState('')
+  const copy = useCopy([{ id: 'title', label: 'Title', options: ['Your order', 'Almost yours'] }])
+  useHints([
+    { kind: 'value', label: 'Promo code', value: 'BEAN10', fill: 'input[name=promo]' },
+    { kind: 'try', text: 'Pay for the order', at: '[data-shoot=pay]' },
+    { kind: 'switch', label: 'Scenario', options: ['Order', 'Empty'], value: 'Order', set: () => {} },
+    { kind: 'caveat', text: 'No payment is made.' },
+  ])
+  return <div className="h-full p-8">
+    <h1 data-copy="title" className="text-2xl">{copy.title}</h1>
+    <input name="promo" value={code} onChange={e => setCode(e.target.value)} placeholder="Promo code" />
+    <div style={{ height: 120 }} />
+    <button data-shoot="pay" className="rounded-full bg-zinc-900 px-6 py-3 text-white">Pay</button>
+  </div>
+}
+`)
+const tryPhone = await openPage(`${local}?theme=light#/tryit/A`, { width: 360, height: 740, phone: true })
+try {
+  const r = await tryPhone.run(`(async () => {
+    ${until}
+    const key = await until(() => document.querySelector('[data-pill] [data-act=try]'), 8000)
+    if (!key) return 'the pill has no Try it key'
+    if (document.querySelector('[data-handles] [data-hint="open:try"]')) return 'the Try it handle still floats over the design'
+    if (key.textContent.trim() !== '3') return 'the key should count 3 things, says ' + key.textContent.trim()
+    const bar = document.querySelector('[data-pill-bar]'), b = bar.getBoundingClientRect(), name = document.querySelector('[data-pill-name]')
+    if (bar.querySelector('[data-act="lobby:proto"]')) return 'with Comment, T and the key the pill should drop its grid'
+    if (b.left < 0 || b.right > innerWidth || bar.scrollWidth > bar.clientWidth + 1) return 'the pill overflows 360 px: ' + b.left + '-' + b.right
+    if (name.scrollWidth > name.clientWidth + 1) return 'the variant name is cut: ' + name.scrollWidth + '/' + name.clientWidth
+    if (!document.querySelector('[data-pill-handle] [data-pill-n]')) return 'the count should sit under the name'
+    const sheet = () => document.querySelector('[data-try-sheet] [data-try-list]')
+    const pressed = () => document.querySelector('[data-pill] [data-act=try]').getAttribute('aria-pressed')
+    document.querySelector('[data-pill] [data-act=try]').click()
+    if (!await until(() => sheet()?.querySelector('[data-try-row]'))) return 'the key opened no sheet with the things to try'
+    if (document.querySelector('[data-pill] > div').style.zIndex !== '210') return 'the pill should ride over the sheet'
+    if (pressed() !== 'true') return 'the key should be pressed while the sheet is up'
+    if (!document.querySelector('[data-try-sheet] [data-hint=fill]')) return 'the sheet has no Fill in'
+    sheet().querySelector('[data-try-row]').click()
+    if (!await until(() => !sheet())) return 'a thing to try should put the sheet away'
+    if (pressed() !== 'true') return 'the key should stay pressed while the sheet is away'
+    if (!await until(() => sheet(), 7000)) return 'the sheet should come back once the spot goes out'
+    sheet().querySelector('[data-try-row]').click()
+    if (!await until(() => !sheet())) return 'the sheet should go away again'
+    return 'ok'
+  })()`, 30_000)
+  if (r !== 'ok') fail(`Try it on a phone: ${r}`)
+  // A real press on the design while the spot is lit: the sheet stays down, and the key is let go.
+  await tryPhone.press(180, 200)
+  const down = await tryPhone.run(`(async () => {
+    ${until}
+    await new Promise(r => setTimeout(r, 900))
+    if (document.querySelector('[data-try-sheet] [data-try-list]')) return 'a press on the design should leave the sheet down'
+    if (document.querySelector('[data-pill] [data-act=try]').getAttribute('aria-pressed') !== 'false') return 'the key should be let go'
+    document.querySelector('[data-pill] [data-act=try]').click()
+    if (!await until(() => document.querySelector('[data-try-sheet] [data-try-list]'))) return 'the key should bring the sheet back'
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    if (!await until(() => !document.querySelector('[data-try-sheet] [data-try-list]'))) return 'Esc should put the sheet away'
+    await new Promise(r => setTimeout(r, 300))
+    return location.hash === '#/tryit/A' ? 'ok' : 'Esc left the variant for ' + location.hash
+  })()`, 20_000)
+  if (down !== 'ok') fail(`Try it on a phone: ${down}`)
+} finally { tryPhone.close() }
+const tryDesk = await openPage(`${local}?theme=light#/tryit/A`)
+try {
+  const r = await tryDesk.run(`(async () => {
+    ${until}
+    const tab = await until(() => document.querySelector('[data-hint="tab:try"]'), 8000)
+    if (!tab) return 'the desktop panel has no Try it tab'
+    tab.click()
+    if (!await until(() => document.querySelector('[data-hints] [data-hint=fill]'))) return 'no Fill in'
+    const strip = document.querySelector('[data-tabs]')
+    if (strip.scrollWidth > strip.clientWidth + 1) return 'the tabs overflow the panel: ' + strip.scrollWidth + '/' + strip.clientWidth
+    // A label on two lines is a text node drawn as two boxes.
+    const lines = n => { const r = document.createRange(); r.selectNodeContents(n); return r.getClientRects().length }
+    const two = [...strip.querySelectorAll('button'), document.querySelector('[data-hints] [data-hint=fill]')].flatMap(b => [...b.childNodes].filter(n => n.nodeType === 3 && n.textContent.trim() && lines(n) > 1).map(n => n.textContent.trim()))
+    if (two.length) return 'on two lines: ' + two.join(', ')
+    if (document.querySelector('[data-pill] [data-act=try]')?.offsetParent) return 'a desktop should have no key in a pill'
+    return 'ok'
+  })()`)
+  if (r !== 'ok') fail(`Try it on a desktop: ${r}`)
+} finally { tryDesk.close() }
+
 proto(['stop'])
 for (let i = 0; i < 40 && await answers(`${local}__proto/status`); i++) await new Promise(r => setTimeout(r, 250))
 if (await answers(`${local}__proto/status`)) fail('the server still answers after proto stop')

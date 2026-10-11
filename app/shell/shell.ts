@@ -12,7 +12,7 @@ import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } fro
 import { dock, edge, smooth, runDock, restoreEdgeLabels, stageHover, installPointerTracking, fadeOut } from './motion'
 import { hints, fillField, type Hint } from './hints'
 import { copy } from './copy'
-import { createSheet, createMenuSheet } from './sheet'
+import { createSheet, createMenuSheet, createTrySheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
 import { createComments, type Subject } from './comments/index'
 import { createMotion } from './motion/index'
@@ -682,6 +682,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     st.pairAt = null
     st.drill = null
     st.sheet = false
+    trySheet = 'closed'
     closeCard(true)
     if (p.view !== 'variant') st.focus = false
     localStorage.setItem(`proto-place-${session.id}`, hashOf(p))
@@ -968,33 +969,45 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const vs = p ? visible(p) : []
     const vid = st.place.view === 'variant' ? st.place.variant : ''
     const at = vs.findIndex(v => v.id === vid)
-    const key = pillOn() ? JSON.stringify([p!.id, p!.kind, vid, vs.map(v => [v.id, v.name]), p!.variants.length, editing(p!.id, vid), st.sheet, pillComments(), copyKeyOf()]) : ''
+    const tryN = pillOn() && phoneMq.matches ? tryCount(hintList()) : 0
+    const key = pillOn() ? JSON.stringify([p!.id, p!.kind, vid, vs.map(v => [v.id, v.name]), p!.variants.length, editing(p!.id, vid), st.sheet, pillComments(), copyKeyOf(), tryN, trySheet]) : ''
     if (key !== pillKey) {
       pillKey = key
       if (!key) { pill.innerHTML = ''; closeCard(true) }
       else {
         const v = vs[at]
-        // With Comment, T and the phone scale all in the pill, the handle drops its count (3/5) so
-        // the variant's name keeps room on a 360px phone.
-        const count = !(p!.kind === 'phone' && copyCounts().lines)
+        const acts = [!!commentHost(), !!copyCounts().lines, !!tryN, p!.kind === 'phone'].filter(Boolean).length
+        // The pill's one rule for room: with three buttons or more after the name, the grid goes (All
+        // variants is in the sheet the name opens), the buttons narrow to 36 px and the count moves
+        // under the name, so the name keeps its room on a 360 px phone.
+        const tight = acts >= 3
+        const btn = tight ? pillBtn.replace('size-10', 'size-9') : pillBtn
+        const sep = `<span class="${tight ? 'mx-1' : 'mx-0.5'} h-5 w-px shrink-0 bg-white/15"></span>`
         const prev = vs[at <= 0 ? vs.length - 1 : at - 1], next = vs[at < 0 || at === vs.length - 1 ? 0 : at + 1]
+        const n = `<span data-pill-n class="shrink-0 tabular-nums ${tight ? 'text-[10px] leading-3 text-white/45' : 'text-[11px] text-white/40'}">${at + 1}/${vs.length}</span>`
+        const name = v ? `<b data-pill-id class="shrink-0 text-[15px]">${v.id}</b><span data-pill-name dir="auto" class="min-w-0 truncate text-white/70">${esc(v.name)}</span>`
+          : '<span class="truncate font-medium">All variants</span>'
+        const handle = tight
+          ? `<span class="flex min-w-0 max-w-full items-center gap-1.5 leading-[18px]">${name}${v && editing(p!.id, v.id) ? pulse('size-1.5') : ''}</span>${v ? n : `<span class="text-[10px] leading-3 tabular-nums text-white/45">${vs.length}</span>`}`
+          : v ? `${name}${n}${editing(p!.id, v.id) ? pulse('size-1.5') : ''}` : `${name}<span class="shrink-0 text-[11px] tabular-nums text-white/40">${vs.length}</span>`
+        const tryOpen = trySheet !== 'closed'
         pill.innerHTML = `<div class="absolute inset-x-0 bottom-0 z-10 flex h-[var(--pill-h,0px)] items-start justify-center pt-2 sm:hidden">
-          <div data-pill-bar class="relative flex h-12 max-w-[calc(100%-1rem)] items-center gap-0.5 rounded-full bg-zinc-900/90 p-1 text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/90">
+          <div data-pill-bar class="relative flex h-12 max-w-[calc(100%-1rem)] items-center ${tight ? '' : 'gap-0.5'} rounded-full bg-zinc-900/90 p-1 text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/90">
             <div data-ruler hidden class="pointer-events-none absolute bottom-full left-1/2 mb-2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-zinc-900/90 shadow-lg ring-1 ring-white/10 [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)] dark:bg-zinc-800/90"></div>
-            <button data-act="lobby:proto" aria-label="All variants" aria-pressed="${st.place.view === 'proto'}" class="${pillBtn} ${st.place.view === 'proto' ? '!bg-white !text-zinc-900' : ''}">${ic('grid')}</button>
-            <span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span>
-            <button data-act="variant:${prev.id}" aria-label="Previous variant: ${prev.id} ${esc(prev.name)}" class="${pillBtn}">${ic('left')}</button>
-            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? `${v.id} ${esc(v.name)}, ${at + 1} of ${vs.length}. ` : ''}Show all variants" class="flex h-10 ${commentHost() || copyCounts().lines ? 'w-28' : 'w-40'} min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 active:bg-white/10">
-              ${v ? `<b data-pill-id class="shrink-0 text-[15px]">${v.id}</b><span data-pill-name dir="auto" class="min-w-0 truncate text-white/70">${esc(v.name)}</span>${count ? `<span data-pill-n class="shrink-0 text-[11px] tabular-nums text-white/40">${at + 1}/${vs.length}</span>` : ''}${editing(p!.id, v.id) ? pulse('size-1.5') : ''}`
-                : `<span class="truncate font-medium">All variants</span><span class="shrink-0 text-[11px] tabular-nums text-white/40">${vs.length}</span>`}
+            ${tight ? '' : `<button data-act="lobby:proto" aria-label="All variants" aria-pressed="${st.place.view === 'proto'}" class="${btn} ${st.place.view === 'proto' ? '!bg-white !text-zinc-900' : ''}">${ic('grid')}</button>${sep}`}
+            <button data-act="variant:${prev.id}" aria-label="Previous variant: ${prev.id} ${esc(prev.name)}" class="${btn}">${ic('left')}</button>
+            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? `${v.id} ${esc(v.name)}, ${at + 1} of ${vs.length}. ` : ''}Show all variants" class="${tight ? 'flex max-w-40 shrink flex-col px-1.5' : `flex ${commentHost() || copyCounts().lines || tryN ? 'w-28' : 'w-40'} gap-1.5 px-2`} h-10 min-w-0 cursor-grab touch-none select-none items-center justify-center rounded-full active:bg-white/10">
+              ${handle}
             </div>
-            <button data-act="variant:${next.id}" aria-label="Next variant: ${next.id} ${esc(next.name)}" class="${pillBtn}">${ic('right')}</button>
-            ${commentHost() || copyCounts().lines ? '<span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span>' : ''}
-            ${commentHost() ? (c => `<button data-act="comment:tap" data-shoot="comment" aria-label="Comments" aria-pressed="${c.picking}" class="${pillBtn} relative ${c.picking ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.picking ? 'x' : 'comment', 'size-5')}${c.drafts && !c.picking ? `<span class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold text-proto-primary-fg ring-2 ring-zinc-900">${c.drafts}</span>` : ''}</button>`)(comments.counts()) : ''}
-            ${(c => c.lines ? `<button data-act="copymode" data-shoot="copy-mode" aria-label="Copy options" aria-pressed="${c.on}" class="${pillBtn} relative ${c.on ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.on ? 'x' : 'text', 'size-5')}${copyCount(c, 'ring-zinc-900')}</button>` : '')(copyCounts())}
-            ${p!.kind === 'phone' ? `<span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span><button data-pill-scale aria-label="Phone scale" aria-expanded="false" class="h-10 min-w-12 shrink-0 rounded-full px-2.5 text-xs font-medium tabular-nums text-white/70 transition-colors duration-200 active:bg-white/10"><span data-scale-label>${scaleLabel()}</span></button>` : ''}
+            <button data-act="variant:${next.id}" aria-label="Next variant: ${next.id} ${esc(next.name)}" class="${btn}">${ic('right')}</button>
+            ${commentHost() || copyCounts().lines || tryN ? sep : ''}
+            ${commentHost() ? (c => `<button data-act="comment:tap" data-shoot="comment" aria-label="Comments" aria-pressed="${c.picking}" class="${btn} relative ${c.picking ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.picking ? 'x' : 'comment', 'size-5')}${c.drafts && !c.picking ? `<span class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold text-proto-primary-fg ring-2 ring-zinc-900">${c.drafts}</span>` : ''}</button>`)(comments.counts()) : ''}
+            ${(c => c.lines ? `<button data-act="copymode" data-shoot="copy-mode" aria-label="Copy options" aria-pressed="${c.on}" class="${btn} relative ${c.on ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.on ? 'x' : 'text', 'size-5')}${copyCount(c, 'ring-zinc-900')}</button>` : '')(copyCounts())}
+            ${tryN ? `<button data-act="try" data-shoot="try-it" aria-label="Try it, ${tryN} thing${tryN === 1 ? '' : 's'}" aria-pressed="${tryOpen}" aria-expanded="${trySheet === 'open'}" class="${btn} relative ${tryOpen ? '!bg-proto-primary !text-proto-primary-fg' : '!text-amber-300'}">${ic('key', 'size-5')}${tryOpen ? '' : `<span aria-hidden="true" class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-zinc-600 text-[10px] font-semibold tabular-nums text-white ring-2 ring-zinc-900">${tryN}</span>`}</button>` : ''}
+            ${p!.kind === 'phone' ? `${sep}<button data-pill-scale aria-label="Phone scale" aria-expanded="false" class="h-10 min-w-12 shrink-0 rounded-full px-2.5 text-xs font-medium tabular-nums text-white/70 transition-colors duration-200 active:bg-white/10"><span data-scale-label>${scaleLabel()}</span></button>` : ''}
           </div>
         </div>`
+        raisePill()
       }
     }
     if (card) pill.querySelector('[data-pill-scale]')?.setAttribute('aria-expanded', String(card.phase !== 'exit'))
@@ -1111,8 +1124,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   cardHost.addEventListener('click', e => { if ((e.target as Element).closest('[data-scale-backdrop]')) closeCard() })
   // The phone's sheets and scale card belong to the phone layout; widening past it closes them.
   matchMedia('(min-width: 640px)').addEventListener('change', e => {
-    if (!e.matches || !(st.menu || st.sheet || card)) return
-    st.menu = ''; st.sheet = false; closeCard(true); render()
+    if (!e.matches || !(st.menu || st.sheet || card || trySheet !== 'closed')) return
+    st.menu = ''; st.sheet = false; trySheet = 'closed'; closeCard(true); render()
   })
 
   // The letters around the finger, above the pill, while it drags.
@@ -1334,6 +1347,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const here = st.place.view === 'variant' ? st.place : null
     switch (name) {
       case 'comment': if (arg === 'tap') { comments.copy.off(); return comments.tap() } return toggleComment()
+      // The phone's Try it key: the sheet up, or down. Brought back from away, the spot goes out.
+      case 'try': { const to = trySheet === 'open' ? 'closed' : 'open'; trySheet = to; setTry(null); return setTrySheet(to) }
       case 'copymode': return comments.copy.toggle()
       // A state leaf: that variant in that state. Comparing keeps comparing.
       case 'pvs': {
@@ -1433,6 +1448,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
     if (e.key === 'Escape') {
       if (tryEsc()) return
+      if (trySheet === 'open') return setTrySheet('closed')
       if (comments.copy.escape()) return
       if (comments.escape()) return
       if (card && card.phase !== 'exit') return closeCard()
@@ -1441,7 +1457,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (st.focus) return act('unfocus', '', '')
       if (st.place.view === 'variant' && st.place.tool) return go(untool(st.place))
     }
-    if (e.metaKey || e.ctrlKey || e.altKey || st.sheet || t.closest?.(INTERACTIVE)) return
+    if (e.metaKey || e.ctrlKey || e.altKey || st.sheet || trySheet === 'open' || t.closest?.(INTERACTIVE)) return
     // Esc on a variant goes up to its prototype's variants, unless the design used it first (a
     // design closing its own menu calls preventDefault). Its handlers may run after this one,
     // so the check waits a tick.
@@ -1611,16 +1627,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- the side panel: comments, and Try it ----------
   // One panel, two tabs. Docked it narrows the stage; narrower it is a sheet over the design;
-  // closed, a handle per tab on the edge (above the phone's pill). The comments tab is a React
-  // root made once: the panel's frame is made once too, and only the Try it body and the tab
-  // strip are repainted, so nothing the comment list is showing is ever rebuilt under it.
+  // closed, a handle per tab on the edge. The comments tab is a React root made once: the panel's
+  // frame is made once too, and only the Try it body and the tab strip are repainted, so nothing
+  // the comment list is showing is ever rebuilt under it. A phone has no panel: its comments are a
+  // sheet from the pill's Comment, and its Try it a sheet from the pill's key (paintTry).
   hintBox.innerHTML = `<div data-handles></div>
     <div data-panel role="complementary" class="absolute inset-y-0 right-0 z-20 hidden flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div data-tabs class="flex h-11 shrink-0 items-center gap-0.5 border-b border-black/[.07] pl-1.5 pr-1 dark:border-white/10"></div>
       <div data-try class="min-h-0 flex-1 overflow-y-auto overscroll-contain" hidden></div>
       <div data-cbody class="min-h-0 flex-1" hidden></div>
       <div data-caveats></div>
-    </div>`
+    </div>
+    <div data-try-sheet></div>`
   const handles = hintBox.querySelector<HTMLElement>('[data-handles]')!
   const panel = hintBox.querySelector<HTMLElement>('[data-panel]')!
   const tabsEl = hintBox.querySelector<HTMLElement>('[data-tabs]')!
@@ -1643,13 +1661,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   function paintPanel() {
     const list = hintList()
-    const tabs: ('comments' | 'try')[] = [...(railOn() ? ['comments' as const] : []), ...(list.length ? ['try' as const] : [])]
+    paintTry(list)
+    const tabs: ('comments' | 'try')[] = [...(railOn() ? ['comments' as const] : []), ...(list.length && !phoneMq.matches ? ['try' as const] : [])]
     const docked = tabs.length > 0 && hintsOpen && wideMq.matches
     zone.style.setProperty('--hw', docked ? `${HINTS_W}px` : '0px')
     if (docked !== hintsDocked) { hintsDocked = docked; requestAnimationFrame(fit) }
-    if (!tabs.length) { panel.className = 'hidden'; handles.innerHTML = ''; tryEl.innerHTML = ''; return }
+    if (!tabs.length) { panel.className = 'hidden'; handles.innerHTML = ''; tryEl.innerHTML = ''; caveatEl.innerHTML = ''; return }
     if (!tabs.includes(tab)) tab = tabs[0]
-    const count = list.filter(h => h.kind !== 'caveat').length
+    const count = tryCount(list)
     const c = comments.counts()
     if (!hintsOpen) {
       panel.className = 'hidden'
@@ -1664,22 +1683,33 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const wide = wideMq.matches
     panel.className = `absolute inset-y-0 right-0 z-20 flex flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 ${wide ? 'border-l border-black/[.07] dark:border-white/10' : 'w-[min(18rem,88%)] shadow-2xl shadow-black/30'}`
     panel.style.width = wide ? `${HINTS_W}px` : ''
+    // Never on two lines: docked, the panel is 264 px, which the two tabs and Fill in beside them
+    // overran. Fill in is at the head of the values it types, To type.
     const tabBtn = (t: 'comments' | 'try') => {
       const on = tab === t, n = t === 'comments' ? c.total : count
-      return `<button data-hint="tab:${t}" aria-pressed="${on}" class="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium ${on ? 'bg-zinc-900/[.06] text-zinc-900 dark:bg-white/10 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}">${ic(t === 'comments' ? 'comment' : 'key', `size-3.5 ${t === 'try' ? 'text-amber-500' : on ? 'text-proto-primary-ring' : ''}`)}${t === 'comments' ? 'Comments' : 'Try it'}${n ? `<span class="tabular-nums text-zinc-400">${n}</span>` : ''}</button>`
+      return `<button data-hint="tab:${t}" aria-pressed="${on}" class="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-medium ${on ? 'bg-zinc-900/[.06] text-zinc-900 dark:bg-white/10 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}">${ic(t === 'comments' ? 'comment' : 'key', `size-3.5 ${t === 'try' ? 'text-amber-500' : on ? 'text-proto-primary-ring' : ''}`)}${t === 'comments' ? 'Comments' : 'Try it'}${n ? `<span class="tabular-nums text-zinc-400">${n}</span>` : ''}</button>`
     }
-    const canFill = tab === 'try' && list.some(h => h.kind === 'value' && h.fill)
     tabsEl.innerHTML = `${tabs.map(tabBtn).join('')}<span class="ml-auto"></span>
-      ${canFill ? `<button data-hint="fill" title="Type the values into this design's fields" class="inline-flex h-7 items-center gap-1.5 rounded-md bg-zinc-900 px-2.5 text-xs font-medium text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">${ic(hintSaid === 'Filled' ? 'check' : 'fill', 'size-3.5')}${hintSaid || 'Fill in'}</button>` : ''}
-      <button data-hint="close" class="${IB} h-7 min-w-7 px-1" aria-label="Close panel" title="Close">${ic(wide ? 'right' : 'x', 'size-3.5')}</button>`
+      <button data-hint="close" class="${IB} h-7 min-w-7 shrink-0 px-1" aria-label="Close panel" title="Close">${ic(wide ? 'right' : 'x', 'size-3.5')}</button>`
     cbody.hidden = tab !== 'comments'
     tryEl.hidden = tab !== 'try'
     if (tab !== 'try') { tryEl.innerHTML = ''; caveatEl.innerHTML = ''; return }
+    const t = tryBody(list, false)
+    tryEl.innerHTML = t.list
+    caveatEl.innerHTML = t.foot
+  }
+  const tryCount = (list: Hint[]) => list.filter(h => h.kind !== 'caveat').length
+  const fillable = (list: Hint[]) => list.some(h => h.kind === 'value' && h.fill)
+  const fillLabel = () => `${ic(hintSaid === 'Filled' ? 'check' : 'fill', 'size-3.5')}${hintSaid || 'Fill in'}`
+  /** What Try it lists, as the panel draws it: the values to type, the things to try, the switches and
+   *  the events, then the caveats under them. Roomy is the phone's sheet: rows a finger can hit. */
+  function tryBody(list: Hint[], roomy: boolean) {
     const all = list.map((h, i) => ({ h, i }))
     const pick = <K extends Hint['kind']>(k: K) => all.filter(x => x.h.kind === k) as { h: Extract<Hint, { kind: K }>; i: number }[]
     const values = pick('value'), tries = pick('try'), switches = pick('switch'), events = pick('event'), caveats = pick('caveat')
-    const sec = (name: string, body: string, meta = '') => `<section class="border-b border-black/[.05] p-1 last:border-b-0 dark:border-white/[.07]"><h3 class="flex px-2 pb-0.5 pt-1 text-[11px] font-medium text-zinc-400">${bd(name)}<span class="ml-auto font-normal tabular-nums">${meta}</span></h3>${body}</section>`
-    const value = ({ h, i }: { h: Extract<Hint, { kind: 'value' }>; i: number }) => `<button data-hint="copy:${i}" title="Copy ${esc(h.label.toLowerCase())}" class="group/h flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">
+    const py = roomy ? 'py-2.5' : 'py-1.5'
+    const sec = (name: string, body: string, meta = '') => `<section class="border-b border-black/[.05] last:border-b-0 dark:border-white/[.07] ${roomy ? '-mx-1 px-2 py-1' : 'p-1'}"><h3 class="flex items-center px-2 pb-0.5 pt-1 text-[11px] font-medium text-zinc-400">${bd(name)}<span class="ml-auto flex font-normal tabular-nums">${meta}</span></h3>${body}</section>`
+    const value = ({ h, i }: { h: Extract<Hint, { kind: 'value' }>; i: number }) => `<button data-hint="copy:${i}" title="Copy ${esc(h.label.toLowerCase())}" class="group/h flex w-full min-w-0 items-start gap-2 rounded-md px-2 ${roomy ? 'py-2' : 'py-1.5'} text-left hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">
         <span dir="auto" class="w-[4.5rem] shrink-0 pt-px text-[11px] leading-4 text-zinc-500">${esc(h.label)}</span>
         <span class="min-w-0 flex-1"><span ${typeof h.value === 'function' ? `data-live="${i}" ` : ''}dir="auto" class="block break-all font-mono text-[12px] leading-[18px] text-zinc-900 dark:text-zinc-100">${esc(valueOf(h))}</span>${h.note ? `<span dir="auto" class="block text-[11px] leading-4 text-zinc-400">${esc(h.note)}</span>` : ''}</span>
         <span class="grid size-5 shrink-0 place-items-center ${hintCopied === i ? 'text-emerald-500' : 'text-zinc-400 opacity-0 group-hover/h:opacity-100 [@media(hover:none)]:opacity-100'}">${ic(hintCopied === i ? 'check' : 'copy', 'size-3.5')}</span></button>`
@@ -1687,18 +1717,66 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const tryRow = ({ h, i }: { h: Extract<Hint, { kind: 'try' }>; i: number }) => {
       const tick = `<span class="mt-px grid size-4 shrink-0 place-items-center rounded-full ${h.done ? 'bg-emerald-500 text-white' : 'ring-1 ring-inset ring-zinc-300 dark:ring-zinc-600'}">${h.done ? ic('check', 'size-3') : ''}</span>`
       const text = `<span dir="auto" class="${showable(h) ? 'block' : 'min-w-0 flex-1'} text-[12.5px] leading-[18px] ${h.done ? 'text-zinc-400 line-through decoration-zinc-300 dark:decoration-zinc-600' : ''}">${esc(h.text)}</span>`
-      if (!showable(h)) return `<div class="flex items-start gap-2 px-2 py-1.5">${tick}${text}</div>`
-      return `<div data-try-row="${i}" tabindex="0" title="Show where on the page" class="group/t flex cursor-default items-start gap-2 rounded-md px-2 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 data-on:bg-amber-400/[.12] not-data-on:hover:bg-zinc-900/[.04] dark:not-data-on:hover:bg-white/[.06]">${tick}<span class="min-w-0 flex-1">${text}<span class="hidden text-[11px] leading-4 text-zinc-400 group-data-gone/t:block">Not on the page right now</span></span>${showIcon('mt-0.5 text-zinc-400 opacity-0 transition-opacity group-hover/t:opacity-100 group-data-on/t:text-amber-500 group-data-on/t:opacity-100')}</div>`
+      if (!showable(h)) return `<div class="flex items-start gap-2 px-2 ${py}">${tick}${text}</div>`
+      return `<div data-try-row="${i}" tabindex="0" title="Show where on the page" class="group/t flex cursor-default items-start gap-2 rounded-md px-2 ${py} outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 data-on:bg-amber-400/[.12] not-data-on:hover:bg-zinc-900/[.04] dark:not-data-on:hover:bg-white/[.06]">${tick}<span class="min-w-0 flex-1">${text}<span class="hidden text-[11px] leading-4 text-zinc-400 group-data-gone/t:block">Not on the page right now</span></span>${showIcon('mt-0.5 text-zinc-400 opacity-0 transition-opacity group-hover/t:opacity-100 group-data-on/t:text-amber-500 group-data-on/t:opacity-100')}</div>`
     }
-    const switchRow = ({ h, i }: { h: Extract<Hint, { kind: 'switch' }>; i: number }) => `<div class="flex flex-wrap gap-1 px-2 py-1">${h.options.map((o, j) => `<button data-hint="switch:${i}:${j}" aria-pressed="${o === h.value}" class="h-7 rounded-md px-2.5 text-xs ${o === h.value ? 'bg-zinc-900 font-medium text-white dark:bg-white dark:text-zinc-900' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${bd(o)}</button>`).join('')}</div>`
-    const eventRow = ({ h, i }: { h: Extract<Hint, { kind: 'event' }>; i: number }) => `<button data-hint="event:${i}" class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">${ic('bolt', 'size-3.5 text-amber-500')}${bd(h.label)}</button>`
-    tryEl.innerHTML = `${values.length ? sec('To type', values.map(value).join('')) : ''}
+    const switchRow = ({ h, i }: { h: Extract<Hint, { kind: 'switch' }>; i: number }) => `<div class="flex flex-wrap gap-1 px-2 py-1">${h.options.map((o, j) => `<button data-hint="switch:${i}:${j}" aria-pressed="${o === h.value}" class="${roomy ? 'h-9 px-3' : 'h-7 px-2.5'} rounded-md text-xs ${o === h.value ? 'bg-zinc-900 font-medium text-white dark:bg-white dark:text-zinc-900' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${bd(o)}</button>`).join('')}</div>`
+    const eventRow = ({ h, i }: { h: Extract<Hint, { kind: 'event' }>; i: number }) => `<button data-hint="event:${i}" class="flex w-full items-center gap-2 rounded-md px-2 ${py} text-left text-[12.5px] hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">${ic('bolt', 'size-3.5 text-amber-500')}${bd(h.label)}</button>`
+    // The panel has Fill in at the head of the values; the sheet has it in its own head, by its name.
+    const fill = !roomy && fillable(list) ? `<button data-hint="fill" title="Type the values into this design's fields" class="-my-1 inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-zinc-900 px-2 text-[11px] font-medium text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">${fillLabel()}</button>` : ''
+    return {
+      list: `${values.length ? sec('To type', values.map(value).join(''), fill) : ''}
         ${tries.length ? sec('Things to try', tries.map(tryRow).join(''), `${tries.filter(x => x.h.done).length}/${tries.length}`) : ''}
         ${switches.map(x => sec(x.h.label, switchRow(x))).join('')}
-        ${events.length ? sec('Make it happen', events.map(eventRow).join('')) : ''}`
-    caveatEl.innerHTML = caveats.length ? `<div class="shrink-0 border-t border-black/[.06] px-3 py-2 text-[11px] leading-4 text-zinc-500 dark:border-white/10">${caveats.map(x => `<p dir="auto">${esc(x.h.text)}</p>`).join('')}</div>` : ''
+        ${events.length ? sec('Make it happen', events.map(eventRow).join('')) : ''}`,
+      foot: caveats.length ? `<div class="shrink-0 border-t border-black/[.06] px-3 py-2 text-[11px] leading-4 text-zinc-500 dark:border-white/10">${caveats.map(x => `<p dir="auto">${esc(x.h.text)}</p>`).join('')}</div>` : '',
+    }
   }
-  hints.subscribe(paintHints)
+
+  // ---------- Try it on a phone: a key in the pill, and a sheet ----------
+  // The key opens Try it as a sheet rising from behind the pill, which stays on top (over the sheet's
+  // backdrop too, while the sheet is on screen). Tapping a thing to try puts the sheet away while its
+  // spot is lit, and brings it back once the spot goes out, unless the design was pressed meanwhile:
+  // then you are doing the thing, and the key brings it back. A thing that isn't on the page right
+  // now keeps the sheet up, and its row says so.
+  const paintTrySheet = createTrySheet(hintBox.querySelector<HTMLElement>('[data-try-sheet]')!)
+  let trySheet: 'closed' | 'open' | 'away' = 'closed', tryPressed = false, tryUp = false
+  let tryIn: { list: HTMLElement | null; foot: HTMLElement | null } = { list: null, foot: null }
+  let tryNow = { list: '', foot: '' }
+  // Written in only when it changed, so a repaint keeps what the list shows (a lit row, its scroll).
+  const written = new WeakMap<HTMLElement, string>()
+  const fillTry = () => {
+    for (const k of ['list', 'foot'] as const) { const el = tryIn[k]; if (el && written.get(el) !== tryNow[k]) { el.innerHTML = tryNow[k]; written.set(el, tryNow[k]) } }
+  }
+  const raisePill = () => { const box = pill.firstElementChild as HTMLElement | null; if (box) box.style.zIndex = tryUp ? '210' : '' }
+  function setTrySheet(to: typeof trySheet) {
+    trySheet = to
+    if (to === 'open') { tryUp = true; tryPressed = false }
+    raisePill()
+    render()
+  }
+  function paintTry(list: Hint[]) {
+    const on = phoneMq.matches && list.length > 0
+    if (!on) trySheet = 'closed'
+    tryNow = on ? tryBody(list, true) : { list: '', foot: '' }
+    paintTrySheet({
+      open: on && trySheet === 'open',
+      count: tryCount(list),
+      fill: on && fillable(list) ? fillLabel() : null,
+      body: (l, f) => { tryIn = { list: l, foot: f }; fillTry(); syncSpot() },
+      onClose: (reason, event, cancel) => {
+        // The key opens and closes the sheet itself; a press on it is no press outside.
+        if (reason === 'outside-press' && (event?.target as Element | null)?.closest?.('[data-act="try"]')) return cancel()
+        // Esc puts the sheet away and stays on the variant (the page would go up a level).
+        if (reason === 'escape-key') event?.preventDefault()
+        if (trySheet === 'open') setTrySheet('closed')
+      },
+      onGone: () => { if (trySheet !== 'open') { tryUp = false; raisePill() } },
+    })
+    fillTry()
+  }
+  // The pill shows Try it's count on its key.
+  hints.subscribe(() => { paintHints(); paintPill() })
   wideMq.addEventListener('change', () => { hintsOpen = wideMq.matches && localStorage.getItem('proto-hints') !== '0'; paintHints() })
   // A live value (a code that changes every 30 seconds) is re-read every second, in place.
   setInterval(() => {
@@ -1708,8 +1786,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   hintBox.addEventListener('click', e => {
     const row = (e.target as Element).closest<HTMLElement>('[data-try-row]')
     if (row) {
-      setTry(Number(row.dataset.tryRow), 'tap', 4000)
-      if (!wideMq.matches) { hintsOpen = false; paintHints() }
+      const i = Number(row.dataset.tryRow)
+      setTry(i, 'tap', 4000)
+      // On a phone the sheet goes away while the spot is lit; between a phone and docked, the panel closes.
+      if (phoneMq.matches) {
+        const host = hintHost(), h = tryAt(i)
+        if (tryOn && host && h && whereIs(host, h, zone) !== 'gone') { trySheet = 'away'; tryPressed = false; render() }
+      } else if (!wideMq.matches) { hintsOpen = false; paintHints() }
       return
     }
     const b = (e.target as Element).closest<HTMLElement>('[data-hint]')
@@ -1765,6 +1848,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       r.toggleAttribute('data-on', on)
       r.toggleAttribute('data-gone', on && !!host && !!h && whereIs(host, h, zone) === 'gone')
     }
+    // The phone's sheet, away for a spot that is now out, comes back, unless the design was pressed.
+    if (trySheet === 'away' && !tryOn) { const to = tryPressed ? 'closed' : 'open'; queueMicrotask(() => { if (trySheet === 'away') setTrySheet(to) }) }
   }
   function tryEsc() { if (!tryOn) return false; setTry(null); return true }
   hintBox.addEventListener('pointerover', e => {
@@ -1791,6 +1876,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if ((e.target as Element).closest('[data-try-row]') && tryOn?.via === 'focus') setTry(null)
   })
   layers.addEventListener('pointerdown', () => {
+    if (trySheet === 'away') tryPressed = true
     if (!tryOn) return
     if (tryAt(tryOn.i)?.steps?.length) { clearTimeout(tryTimer); tryOn.via = 'tap'; tryTimer = window.setTimeout(() => setTry(null), 8000) }
     else setTry(null)
