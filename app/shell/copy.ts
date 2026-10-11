@@ -15,7 +15,8 @@
 // sends a line twice nor forgets a change made since; it goes with its line's choice. Going back to
 // today's words after other words went is a choice too (`back`), not none: when Claude's edit for
 // the earlier words lands and reorders the options, the line still reads what the user went back
-// to, and that is still there to send. It goes once Claude is done and copy mode closes.
+// to, and that is still there to send. Once Claude is done and copy mode closes, one that went
+// goes, and one that never went is a plain choice again.
 
 /** One line with options. options[0] is the line as it reads today. */
 export type CopyLine = { id: string; label: string; options: string[] }
@@ -157,9 +158,13 @@ export const copy = {
   unsend(route: string) {
     const w = went[route]
     if (!w) return
-    // A way back that went is done with it.
+    // A way back that went is done with it; one that never went has nothing left to go back from,
+    // so it is a plain choice again (gone while its words are the first option).
     const mine = saved[route]
-    for (const [id, c] of Object.entries(mine ?? {})) if (c.back && w.texts?.[id] === c.text) delete mine![id]
+    for (const [id, c] of Object.entries(mine ?? {})) {
+      if (c.back && w.texts?.[id] === c.text) delete mine![id]
+      else if (c.back) delete c.back
+    }
     if (mine && !Object.keys(mine).length) delete saved[route]
     delete went[route]
     persist()
