@@ -1008,16 +1008,19 @@ const inboxDir = dir => join(dir, '.proto', 'inbox')
 const batchesIn = (dir, sub) => { try { return readdirSync(join(inboxDir(dir), sub)).filter(f => !f.startsWith('.')).sort() } catch { return [] } }
 const waiterFile = dir => join(inboxDir(dir), 'waiter.json')
 
+// A batch that can't be taken or read is said so (on stderr), never skipped without a word, and
+// once: `--wait` takes again every few seconds and would say it each time.
+const told = new Set()
+const tell = (id, what) => { if (!told.has(id)) { told.add(id); console.error(`batch ${id} ${what}`) } }
 function take(dir) {
   const taken = []
   mkdirSync(join(inboxDir(dir), 'taken'), { recursive: true })
   for (const id of batchesIn(dir, 'new')) {
     const from = join(inboxDir(dir), 'new', id)
-    // A batch that can't be taken or read is said so (on stderr), never skipped without a word.
-    try { moveDir(from, join(inboxDir(dir), 'taken', id)) } catch (e) { if (existsSync(from)) console.error(`batch ${id} could not be taken (${e?.code ?? e?.message ?? e})`); continue /* else another reader took it */ }
+    try { moveDir(from, join(inboxDir(dir), 'taken', id)) } catch (e) { if (existsSync(from)) tell(id, `could not be taken (${e?.code ?? e?.message ?? e})`); continue /* else another reader took it */ }
     const b = readJson(join(inboxDir(dir), 'taken', id, 'batch.json'), null)
     if (b) taken.push(b)
-    else console.error(`batch ${id}: its batch.json could not be read`)
+    else tell(id, 'was taken, but its batch.json could not be read')
   }
   return taken
 }
