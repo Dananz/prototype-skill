@@ -246,4 +246,7 @@ export function release(take: Take) {
     } catch { /* already gone with its element */ }
   }
   take.held = false
+  // Styled now, before whatever let it go changes the design in the same event (a key on a sheet's
+  // Close): without a style change in between, the browser starts no transition for that change.
+  void document.documentElement.getBoundingClientRect()
 }

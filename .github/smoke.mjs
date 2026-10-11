@@ -106,7 +106,9 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
     for (const end = Date.now() + 30_000; Date.now() < end && !await ready();) await new Promise(r => setTimeout(r, 100))
     // A real press (Input.dispatchMouseEvent): trusted, as a person's.
     const press = async (x, y) => { for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }, sessionId) }
-    return { run, close, press }
+    // A real Enter (Input.dispatchKeyEvent), as a person's: on a focused button it clicks it.
+    const enter = async () => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ...(type === 'keyDown' ? { text: '\r' } : {}) }, sessionId) }
+    return { run, close, press, enter }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {
@@ -634,7 +636,8 @@ export default function P() {
   return <div className="h-full p-8"><div ref={box} data-shoot="box" style={{ width: 80, height: 80, background: '#4f46e5' }} /></div>
 }
 `)
-// A sheet the design renders on <body> through a portal (as Base UI's Drawer does), sliding up.
+// A sheet the design renders on <body> through a portal (as Base UI's Drawer does), sliding up,
+// with a Close in it.
 writeFileSync(join(app, 'src', 'protos', 'move', 'Q.tsx'), `import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMotion } from '../../motion'
@@ -643,7 +646,9 @@ export default function Q() {
   useMotion({ start: () => setOpen(true), reset: () => setOpen(false) })
   return <div className="h-full p-8">
     <p data-shoot="label">Sheet</p>
-    {createPortal(<div data-shoot="sheet" style={{ position: 'fixed', left: 480, width: 400, top: 120, height: 200, background: '#4f46e5', transform: open ? 'translateY(0px)' : 'translateY(300px)', transition: 'transform 400ms linear' }} />, document.body)}
+    {createPortal(<div data-shoot="sheet" style={{ position: 'fixed', left: 480, width: 400, top: 120, height: 200, background: '#4f46e5', transform: open ? 'translateY(0px)' : 'translateY(300px)', transition: 'transform 400ms linear' }}>
+      <button data-shoot="close" onClick={() => setOpen(false)}>Close</button>
+    </div>, document.body)}
   </div>
 }
 `)
@@ -821,6 +826,12 @@ try {
   const [px, py] = await run(`(() => { const r = document.querySelector('body > [data-shoot=sheet]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
   await motionPage.press(px, py)
   await until(`window.__protoMotion.state().live`, 'a press on the sheet the design renders on <body> should let it go', 3000)
+  // Held again, the sheet closed from the keyboard (Enter on its Close) lets it go and runs its exit.
+  await run('window.__protoMotion.seek(100)')
+  await run(`document.querySelector('body > [data-shoot=sheet] [data-shoot=close]').focus()`)
+  await motionPage.enter()
+  const exit = await run(`document.querySelector('body > [data-shoot=sheet]').getAnimations().filter(a => a.playState === 'running').map(a => a.transitionProperty).join()`)
+  if (exit !== 'transform' || !await run('window.__protoMotion.state().live')) fail(`the held sheet closed by Enter on its Close should let the design go and run its exit transition: ${exit || 'none'}`)
   // A start() that throws: the take is empty and says why, and the dock isn't left recording.
   await run(`location.hash = '#/move/E'`)
   await until(`window.__protoMotion.state()?.status === 'empty' && /boom/.test(window.__protoMotion.state().error) && /start\\(\\) threw Error: boom/.test(document.querySelector('[data-motion=error]')?.textContent)`, 'a start() that throws should end the take with its error in the dock')
