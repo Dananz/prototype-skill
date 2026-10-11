@@ -22,6 +22,24 @@ export function Icon({ name, className = 'size-4' }: { name: string; className?:
   return <svg className={`${className} shrink-0`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PATHS[name]} /></svg>
 }
 
+/**
+ * An image the user pasted or dropped, as a chip: a small thumbnail and "Image", the full picture on hover. The composer
+ * puts it in its action row (beside @ and the camera) with a remove ×; a click draws on it. The rail shows the same chip,
+ * so a comment that carries a picture reads as one at a glance without taking the row's room.
+ */
+export function ImageChip({ src, onOpen, onRemove, size = 'md' }: { src: string; onOpen?: () => void; onRemove?: () => void; size?: 'sm' | 'md' }) {
+  const h = size === 'sm' ? 'h-6' : 'h-7'
+  return (
+    <span data-shoot="image-chip" className={`group/chip relative inline-flex ${h} shrink-0 items-center gap-1.5 rounded-lg bg-proto-primary-soft ps-1 ${onRemove ? 'pe-0.5' : 'pe-2'} text-[11px] font-medium text-proto-primary-soft-fg`}>
+      {onOpen
+        ? <button onClick={onOpen} title="Draw on the image" className="inline-flex items-center gap-1.5"><img src={src} alt="" className="size-5 rounded object-cover ring-1 ring-black/10 dark:ring-white/20" />Image</button>
+        : <span className="inline-flex items-center gap-1.5"><img src={src} alt="" className="size-5 rounded object-cover ring-1 ring-black/10 dark:ring-white/20" />Image</span>}
+      {onRemove && <button onClick={onRemove} aria-label="Remove the image" title="Remove the image" className="grid size-6 place-items-center rounded-md hover:bg-zinc-900/5 dark:hover:bg-white/10"><Icon name="x" className="size-3" /></button>}
+      <span className="pointer-events-none absolute bottom-full start-0 z-20 mb-2 hidden w-56 overflow-hidden rounded-lg bg-white shadow-xl ring-1 ring-black/10 group-hover/chip:block dark:bg-zinc-900 dark:ring-white/15"><img src={src} alt="" className="block w-full" /></span>
+    </span>
+  )
+}
+
 /** The modifier keys' names where this runs: ⌘ and ⌥ on a Mac, Ctrl and Alt elsewhere. */
 const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent)
 export const MOD = MAC ? '⌘' : 'Ctrl'

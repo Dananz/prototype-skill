@@ -12,7 +12,7 @@ import { find, groupOf, parts } from './dom'
 import { EASE, GLIDE_MS, Glide, useBoxes } from './inspect'
 import { capture, ShotEditor } from './shot'
 import type { Box, Draft, Seg, Target, Time } from './types'
-import { IB, Icon, MOD, PinDot, PRIMARY, spanOf, SrcTag, srcOf } from './ui'
+import { IB, Icon, MOD, PinDot, PRIMARY, spanOf, SrcTag, srcOf, ImageChip } from './ui'
 
 function readEditor(el: HTMLElement): Seg[] {
   const out: Seg[] = []
@@ -301,11 +301,10 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             </div>
           )}
         </div>
-        {(shot || capturing) && (
+        {(capturing || (shot && !pasted)) && (
           <div className="flex items-center gap-2 px-3 pb-1 pt-1.5">
             {capturing ? <span className="grid h-12 w-20 place-items-center rounded-lg bg-zinc-900/[.04] text-[11px] text-zinc-400 dark:bg-white/[.06]">{capturing}</span>
               : <button onClick={() => setMarking(shot!)} title="Edit the screenshot" className="group relative h-12 w-20 overflow-hidden rounded-lg ring-1 ring-black/10 dark:ring-white/15"><img src={shot} alt="Screenshot" className="size-full object-cover" /><span className="absolute inset-0 grid place-items-center bg-black/40 text-[11px] font-medium text-white opacity-0 transition group-hover:opacity-100">Edit</span></button>}
-            {shot && !capturing && pasted && <span className="text-[11px] text-zinc-400">Pasted image</span>}
             {shot && <button onClick={() => { setShot(undefined); setPasted(false) }} className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">Remove</button>}
           </div>
         )}
@@ -319,6 +318,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             document.execCommand('insertText', false, '@')
           }} title="Tag another element (@)" aria-label="Tag another element" className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="at" /></button>
           <button onClick={shoot} title={`Screenshot this part of the design, then draw on it (or paste an image: ${MOD} V, or drop one here)`} aria-label="Attach a screenshot" className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="camera" /></button>
+          {shot && pasted && !capturing && <ImageChip src={shot} onOpen={() => setMarking(shot)} onRemove={() => { setShot(undefined); setPasted(false) }} />}
           {editing && <button onClick={() => id && act.remove(id)} title="Delete" aria-label="Delete comment" className={`${IB} h-8 min-w-8 px-1.5 hover:text-rose-600`}><Icon name="trash" /></button>}
           <span className="ms-auto" />
           <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Cancel</button>
