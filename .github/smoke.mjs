@@ -743,6 +743,8 @@ try {
   const design = (route, sel) => run(`(async () => {
     location.hash = '#/${route}'
     for (let i = 0; i < 100 && !document.querySelector('[data-layers] ${sel}'); i++) await new Promise(r => setTimeout(r, 100))
+    // It declares its motion (useMotion, in an effect) a moment after it renders, on a slow runner later.
+    for (let i = 0; i < 100 && !window.__protoMotion.state(); i++) await new Promise(r => setTimeout(r, 100))
     for (let i = 0; i < 100 && window.__protoMotion.state()?.status === 'taking'; i++) await new Promise(r => setTimeout(r, 100))
     return window.__protoMotion.take()
   })()`)
