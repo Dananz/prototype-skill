@@ -14,9 +14,15 @@ session lives in that one app: **session › prototype › variant**.
 
 The app already has its navigation (a switcher in the bar that opens the session as columns,
 a sidebar with one line per level and the current level as two columns, a stepper through the
-variants (on a phone, a pill at the bottom you drag along, and the columns as a sheet you drill
-into), edge arrows, a focus mode with a dock, light and dark, phone frames, "editing" dots, a
+variants (on a phone, a pill at the bottom you drag along, with a menu for the page's tools and
+Comment, and the columns as a sheet you drill into), edge arrows, a focus mode with a dock, light and dark, phone frames, "editing" dots, a
 strip naming the variant your requests change). You only write variant files.
+
+Beside Comment the bar has three sizes, phone, tablet and desktop (on a phone, the Layout row of the
+pill's menu). The screen's own is selected; choosing another shows the page at that size in
+the stage, zoomed to fit (a 1440 × 900 desktop on a phone, a phone on a desktop), and the user can
+pinch it, move around it and comment on it there. Nothing to build for it beyond a web variant
+that lays out well at each width.
 
 `proto` below means `node "${CLAUDE_SKILL_DIR}/scripts/proto.mjs"` (through `node`, the path in
 double quotes, not a shell variable: the same command works in Bash, Git Bash and PowerShell). It
@@ -240,8 +246,9 @@ columns, each with its line, beside Autoplay, All states and Compare:
 **Say what to type and try.** When getting through a variant takes something a reviewer can't
 guess (a login, a code, a search that returns results), or it has scenarios, outside events or
 limits worth knowing, report them with `useHints` from `src/hints.ts`, once, in the variant's
-component. The page shows them in a Try it panel beside the design, where each value copies with
-a click and Fill in types them into the design's fields; `proto shoot` leaves the panel out.
+component. The page shows them in a Try it panel beside the design (on a phone, a sheet from Try it
+in the pill's menu), where each value copies with a click and Fill in types them into the design's
+fields; `proto shoot` leaves the panel out.
 
 ```
 import { useHints } from '../../hints'
@@ -277,7 +284,7 @@ useHints([
 **Offer other copy when asked.** When the user asks for other words ("better headlines", "try other
 button text"), don't write a variant per wording: give the lines they asked about options with
 `useCopy` from `src/copy.ts`, in the variant being worked on. The page then shows a T button beside
-Comment; in copy mode each of those lines is marked, a click lists its options and points one into
+Comment (on a phone, Copy options in the pill's menu); in copy mode each of those lines is marked, a click lists its options and points one into
 place, and the user sends the choices back (`action: copy`, below). A variant without `useCopy` shows
 none of it.
 
@@ -306,10 +313,12 @@ const copy = useCopy([
 
 **Let the motion be reviewed.** When the request is about motion (how a sheet opens, a list
 enters, a toast lands, the feel of a spring), call `useMotion` from `src/motion.ts` once, in the
-variant's own component. The page then docks a slim bar under the design: play, the time, a
-slider to scrub forward and back, the curves of every animation, speed and loop, and comments on a
-moment or a range, which reach you like any comment (below). The design makes room for it; it is
-never covered.
+variant's own component. The page then offers Motion (a curves button beside Comment, or Motion in
+the pill's menu on a phone), which docks a slim bar under the design: play, the time, a slider to
+scrub forward and back, the curves of every animation, speed and loop, and comments on a moment or
+a range, which reach you like any comment (below). The design makes room for it; it is never
+covered. Until the user turns it on the design runs live and nothing is recorded, so when you add
+`useMotion`, tell them where to find it.
 
 ```
 import { useMotion } from '../../motion'
@@ -377,6 +386,7 @@ proto shoot <slug>/B --copy                     # copy mode on (useCopy): each l
 proto shoot <slug>/B --copy --click "[data-copy=headline]" --click "[data-copy-option='2']"   # its third option in place
 proto shoot <slug>/B --at 350                   # a variant with useMotion, 350 ms into its motion
 proto shoot <slug>/B --frames 12 [--at 300-620] # 12 moments of its motion (or of that range) on one sheet
+proto shoot <slug>/B --size 834x1194            # one viewport instead of desktop and phone (a tablet here)
 ```
 
 `--sheet` shoots every variant (a web one at 1440×900 and 390×844, a `--kind phone` one at
@@ -507,6 +517,12 @@ change landed, and reply with the new timing in numbers ("damping 0.75 now: the 
 4 px instead of 14 and settles by 0.50 s"). The page records the take again after your edit, and
 the reply shows on the comment's point on the slider.
 
+**A comment in a view** (written while the page showed another size, see the top) has a `view:`
+line, `view: desktop 1440x900`, and is about that layout, not the one the batch's page size says.
+Run the shoot the line names (`proto shoot <route> --size 1440x900`) and read it, change that
+layout (its breakpoints, so the other sizes stay as they were), shoot it again, and name the size
+in the reply ("On desktop the heading is 28 px now; phone and tablet as before").
+
 **Decisions from the page** arrive in the same batches, as comments with an `action:` line and
 no element (a `copy` choice is on its line's element); the user's optional note follows a colon in
 the text.
@@ -586,6 +602,7 @@ Each module is roughly 4 to 30 KB and goes through your tool calls, so snap only
 | A change to another variant ("now D, same idea") | `proto work <slug>/<letter> --ask "…"`, then edit it |
 | To review an animation ("how should the sheet open?", "the toast lands too hard") | the motion in CSS or `element.animate()`, `useMotion` in each variant, then `proto shoot <slug>/<letter> --frames 12` |
 | A comment on the motion (`at: 0.30–0.62 s` in a batch) | the shoot its line names, change the motion, reply with the new timing (Comments from the page) |
+| A comment in a view (`view: tablet 834x1194` in a batch) | the shoot its line names, change that layout's breakpoints, reply naming the size (Comments from the page) |
 | To drop a direction or prototype | `proto archive <slug>` (still reachable under Archived) |
 | The prototypes in a doc to share | `proto snap`, then a Claude Doc (section above) |
 | Comments sent from the page (a `proto inbox --wait` exited) | handle each, `proto reply … --done`, listen again |

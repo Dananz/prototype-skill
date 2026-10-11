@@ -1,9 +1,11 @@
 // Small pieces the comment layer shares: icons (the shell's own set plus the comment tools), the
 // primary color classes (placeholder tokens in shell.css), and a few text pieces.
 import type { ReactNode } from 'react'
+import { SIZE_PATHS, sizeIcon, sizeName, type ViewSize } from '../view/sizes'
 import type { Action, CState, Item, Seg, Target } from './types'
 
 const PATHS: Record<string, string> = {
+  ...SIZE_PATHS,
   chev: 'M6 9l6 6 6-6', right: 'M9 6l6 6-6 6', left: 'M15 6l-6 6 6 6',
   check: 'M5 12l5 5 9-10', x: 'M6 6l12 12M18 6 6 18',
   key: 'M7.5 10a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM11.4 11.6 21 2M15.5 7.5l2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4',
@@ -48,6 +50,13 @@ export function Pulse({ on = true, className = 'size-2' }: { on?: boolean; class
 export function Listening({ on, className = '' }: { on: boolean; className?: string }) {
   return <span className={`inline-flex items-center gap-1.5 text-xs text-zinc-500 ${className}`}><Pulse on={on} className="size-1.5" />{on ? 'Claude is listening' : 'Claude sees these on its next turn'}</span>
 }
+
+/** The layout a comment was written on, in a device view (view/): `Desktop · 1440 × 900`. */
+export const ViewChip = ({ v, className = '' }: { v?: ViewSize; className?: string }) => v ? (
+  <span data-view-chip title={`Written in the ${sizeName(v).toLowerCase().replace(' · ', ' view, ')}`} className={`inline-flex shrink-0 items-center gap-1 rounded-md bg-proto-primary-soft px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-proto-primary-soft-fg ${className}`}>
+    <Icon name={sizeIcon(v.size, v.size === 'tablet' && v.w > v.h)} className="size-3.5" />{sizeName(v)}
+  </span>
+) : null
 
 export const PinDot = ({ n, done, size = 'md' }: { n: number; done?: boolean; size?: 'sm' | 'md' }) => (
   <span className={`grid shrink-0 place-items-center rounded-full font-semibold tabular-nums ${size === 'sm' ? 'size-4 text-[9px]' : 'size-5 text-[10px]'} ${done ? 'bg-emerald-500 text-white' : 'bg-proto-primary text-proto-primary-fg'}`}>{done ? <Icon name="check" className="size-2.5" /> : n}</span>
