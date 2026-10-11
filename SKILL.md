@@ -328,7 +328,9 @@ useMotion({
   its curve, a stagger as delays. Motion run from script (a `requestAnimationFrame` loop,
   react-spring, GSAP's core, Framer Motion's JS springs) can't be recorded; the dock says the take
   caught no motion. DOM changes that aren't animated (an element added, a class swapped without a
-  transition) show their final state at every moment of the take.
+  transition) show their final state at every moment of the take. An animation whose speed changes
+  while it runs (`updatePlaybackRate()`, `playbackRate` set midway) is drawn at its last speed for
+  the whole take: write a change of pace into its easing or keyframes instead.
 - **Waits go in delays, not `setTimeout`.** A take's 0 is when its first part starts, and it ends
   once nothing has moved for 0.5 s. A step that a `setTimeout` starts later than that is missed and
   runs live over the held take (the dock and `proto shoot` say so). Write each wait as a
