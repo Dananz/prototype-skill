@@ -13,39 +13,46 @@ import { fileURLToPath } from 'node:url'
 import { startChrome, stopChrome } from '../scripts/chrome.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
-const scratch = process.env.RUNNER_TEMP || tmpdir()
+// Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
+// remove each other's session; the shots for the CI artifact stay at <base>/proto-shots.
+const base = process.env.RUNNER_TEMP || tmpdir()
+const scratch = mkdtempSync(join(base, 'proto-smoke-run-'))
 // The project is reached through a link, as /tmp is on macOS: the app must still serve its files.
 const real = join(scratch, 'proto-smoke')
 const project = join(scratch, 'proto-smoke-link')
-const keepShots = join(scratch, 'proto-shots')
+const keepShots = join(base, 'proto-shots')
 const app = join(project, '.prototypes', 'smoke')
-rmSync(project, { recursive: true, force: true })
-rmSync(real, { recursive: true, force: true })
 mkdirSync(real, { recursive: true })
 symlinkSync(real, project, 'junction')
 writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'proto-smoke', private: true, dependencies: { react: '^19.2.0' } }))
 
-// A failure says why, then stops and removes its session (after dev.log, which is in it), so no
-// dev server or tailnet rule outlives the run. Straight through spawnSync: proto() fails by itself.
+// A failure says why, then closes the pages it opened and stops and removes its session (after
+// dev.log, which is in it), so no Chrome, dev server or tailnet rule outlives the run. Straight
+// through spawnSync: proto() fails by itself. So does anything thrown and not caught.
 let failing = false
+const pages = new Set()
 const fail = msg => {
   console.error(`\nFAILED: ${msg}`)
   const log = join(app, '.proto', 'dev.log')
   if (existsSync(log)) console.error(`\n--- dev.log ---\n${readFileSync(log, 'utf8')}`)
-  if (!failing && existsSync(join(app, 'session.json'))) {
+  if (!failing) {
     failing = true
-    spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'rm', '--project', project, '--session', 'smoke'], { stdio: 'ignore', timeout: 60_000 })
+    for (const close of pages) try { close() } catch { /* already gone */ }
+    if (existsSync(join(app, 'session.json'))) spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'rm', '--project', project, '--session', 'smoke'], { stdio: 'ignore', timeout: 60_000 })
+    try { rmSync(scratch, { recursive: true, force: true }) } catch { /* temp dir */ }
   }
   process.exit(1)
 }
-const proto = (args, { ok = true } = {}) => {
+process.on('unhandledRejection', e => fail(`unhandled rejection: ${e?.stack || e}`))
+process.on('uncaughtException', e => fail(`uncaught: ${e?.stack || e}`))
+const proto = (args, { ok = true, stdout = false } = {}) => {
   console.log(`\n$ proto ${args.join(' ')}`)
   const r = spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), ...args, '--project', project, '--session', 'smoke'], { encoding: 'utf8', timeout: 600_000 })
   process.stdout.write(r.stdout || '')
   process.stderr.write(r.stderr || '')
   if (ok && r.status !== 0) fail(`proto ${args[0]} exited ${r.status}`)
   if (!ok && r.status === 0) fail(`proto ${args.join(' ')} should have been refused`)
-  return (r.stdout || '') + (r.stderr || '')
+  return stdout ? r.stdout || '' : (r.stdout || '') + (r.stderr || '')
 }
 const answers = async url => { try { return (await fetch(url, { signal: AbortSignal.timeout(2000) })).ok } catch { return false } }
 const pngs = dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.png')) : []
@@ -56,10 +63,12 @@ async function openPage(url) {
   const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run'])
   let ws
   const close = () => {
+    pages.delete(close)
     ws?.close()
     stopChrome(chrome)
     try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) } catch { /* temp dir */ }
   }
+  pages.add(close)
   try {
     ws = new WebSocket(await new Promise((ok, no) => {
       let b = ''
@@ -69,10 +78,16 @@ async function openPage(url) {
     await new Promise((ok, no) => { ws.onopen = ok; ws.onerror = no })
     let n = 0
     const waiting = new Map()
-    ws.onmessage = e => { const m = JSON.parse(e.data); waiting.get(m.id)?.(m.result); waiting.delete(m.id) }
+    ws.onmessage = e => {
+      const m = JSON.parse(e.data)
+      // A page that crashes says so at once, instead of every check after it waiting out its time.
+      if (m.method === 'Inspector.targetCrashed') fail(`Chrome's page crashed (Inspector.targetCrashed) at ${url}`)
+      waiting.get(m.id)?.(m.result); waiting.delete(m.id)
+    }
     const send = (method, params, sessionId) => new Promise(ok => { waiting.set(++n, ok); ws.send(JSON.stringify({ id: n, method, params, sessionId })) })
     const { targetId } = await send('Target.createTarget', { url })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+    await send('Inspector.enable', {}, sessionId)
     // A page that stops answering (a render loop) fails the check instead of hanging the run.
     const run = async (expr, ms = 30_000) => {
       let timer
@@ -81,7 +96,10 @@ async function openPage(url) {
       if (r === 'hung') throw new Error(`the page did not answer in ${ms / 1000} s: it is stuck, as in a render loop`)
       return r?.result?.value
     }
-    for (let i = 0; i < 150 && !await run('document.documentElement.dataset.ready === "1"'); i++) await new Promise(r => setTimeout(r, 100))
+    // A check sent while the first navigation is still going can land on a half-loaded document and
+    // never be answered: each waits 2 s at most and is sent again, for 30 s in all.
+    const ready = () => run('document.documentElement.dataset.ready === "1"', 2000).catch(() => false)
+    for (const end = Date.now() + 30_000; Date.now() < end && !await ready();) await new Promise(r => setTimeout(r, 100))
     return { run, close }
   } catch (e) { close(); throw e }
 }
@@ -348,8 +366,8 @@ if (/Build A/.test(proto(['inbox']))) fail('a refused request still reached the 
 const inboxWith = async id => {
   const at = sub => existsSync(join(app, '.proto', 'inbox', sub, id, 'batch.json'))
   for (let i = 0; i < 40 && !at('new') && !at('taken'); i++) await new Promise(r => setTimeout(r, 50))
-  const out = proto(['inbox'])
-  if (!out.includes(`batch ${id} `)) fail(`proto inbox did not hand out batch ${id} (in new/: ${at('new')}, in taken/: ${at('taken')}):\n${out}`)
+  const out = proto(['inbox'], { stdout: true })
+  if (!out.includes(`batch ${id} ·`)) fail(`proto inbox did not hand out batch ${id} (in new/: ${at('new')}, in taken/: ${at('taken')}):\n${out}`)
   return out
 }
 const pickSent = await send([{ route: 'hero/B', text: 'Picked B', action: 'pick' }])
@@ -509,7 +527,7 @@ const sendOne = `
 const reload = async () => {
   await words.run('setTimeout(() => location.reload(), 0), 1')
   await new Promise(r => setTimeout(r, 500))
-  for (let i = 0; i < 100 && !await words.run('document.documentElement.dataset.ready === "1"').catch(() => false); i++) await new Promise(r => setTimeout(r, 100))
+  for (let i = 0; i < 100 && !await words.run('document.documentElement.dataset.ready === "1"', 2000).catch(() => false); i++) await new Promise(r => setTimeout(r, 100))
 }
 try {
   const step = await words.run(`(async () => {
@@ -646,4 +664,5 @@ if (!gone) fail(`the dev server (pid ${pid}) is still running after proto stop`)
 
 proto(['rm'])
 if (existsSync(app)) fail('proto rm left the session folder')
+try { rmSync(scratch, { recursive: true, force: true }) } catch { /* temp dir */ }
 console.log(`\nOK: ${made.length} screenshots in ${keepShots}`)
