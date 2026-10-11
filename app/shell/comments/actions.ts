@@ -60,13 +60,8 @@ export function createActions(store: Store, host: Host) {
     discardHeld() { set({ held: null }) },
     /** Called as a new comment is written, so it survives being put away. */
     hold(d: Draft, target?: Target, time?: Time) { set({ held: hasWords(d) ? { ...d, ...(time ? { time } : { target }) } : null }) },
-    /** Acting on the design while a comment is open: an empty one moves to the new element, a written one says no. */
-    guard(el: Target) {
-      const m = get().mode
-      if (m.kind !== 'compose') return
-      if (get().held || m.id) set(s => ({ nudge: s.nudge + 1 }))
-      else set({ mode: { kind: 'compose', target: el } })
-    },
+    /** Pressing the design while a comment is open: the comment stays where it is and the composer says so. */
+    guard() { if (get().mode.kind === 'compose') set(s => ({ nudge: s.nudge + 1 })) },
 
     save(d: Draft, target: Target | undefined, id?: string, time?: Time) {
       const p = get().place

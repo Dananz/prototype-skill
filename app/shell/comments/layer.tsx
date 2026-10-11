@@ -50,7 +50,7 @@ export function Layer() {
     onCancel: () => (tagging ? act.tagDone(null) : act.stop()),
     onGuard: act.guard,
   })
-  const verb = tagging ? 'Tag' : m.kind === 'compose' ? 'Comment here instead' : s.held ? 'Continue your comment' : 'Comment'
+  const verb = tagging ? 'Tag' : s.held ? 'Continue your comment' : 'Comment'
 
   // ⌥-click comments on one element without turning comment mode on.
   useEffect(() => {
