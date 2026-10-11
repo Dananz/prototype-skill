@@ -446,7 +446,7 @@ if (!/Woke you up/.test(heard)) fail(`the listener exited without the batch: ${h
 // design to any moment. A comment on a range of it goes out through the page's own composer, the
 // inbox prints its times, and a reply reaches its point. A variant without useMotion has no dock.
 if (!existsSync(join(app, 'src', 'motion.ts'))) fail('the app has no src/motion.ts')
-proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still,C:Twice,D:Chained,E:Broken,F:Late'])
+proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still,C:Twice,D:Chained,E:Broken,F:Late,G:Again,H:Then keyframes,I:Then animate,J:Swap'])
 writeFileSync(join(app, 'src', 'protos', 'move', 'A.tsx'), `import { useState } from 'react'
 import { useMotion } from '../../motion'
 export default function A() {
@@ -501,6 +501,52 @@ export default function F() {
   return <div className="h-full p-8">
     <p data-shoot="one" style={{ opacity: step >= 1 ? 1 : 0, transition: 'opacity 200ms linear' }}>One</p>
     <p data-shoot="two" style={{ opacity: step >= 2 ? 1 : 0, transition: 'opacity 200ms linear' }}>Two</p>
+  </div>
+}
+`)
+// Taken again and again: element.animate() filling forwards, with a reset that doesn't cancel it.
+// Then a transition followed by a CSS animation, and by element.animate(), on the same property;
+// and a keyframe animation that a class swap replaces (an enter, then an exit).
+writeFileSync(join(app, 'src', 'protos', 'move', 'G.tsx'), `import { useRef, useState } from 'react'
+import { useMotion } from '../../motion'
+export default function G() {
+  const box = useRef<HTMLDivElement>(null)
+  const [, setOpen] = useState(false)
+  useMotion({ start: () => { setOpen(true); box.current!.animate([{ transform: 'translateX(0px)' }, { transform: 'translateX(100px)' }], { duration: 300, fill: 'forwards' }) }, reset: () => setOpen(false) })
+  return <div className="h-full p-8"><div ref={box} data-shoot="slide" style={{ width: 80, height: 80, background: '#4f46e5' }} /></div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'H.tsx'), `import { useState } from 'react'
+import { useMotion } from '../../motion'
+export default function H() {
+  const [step, setStep] = useState(0)
+  useMotion({ start: () => { setStep(1); setTimeout(() => setStep(2), 500) }, reset: () => setStep(0) })
+  return <div className="h-full p-8">
+    <style>{'@keyframes h-out { from { opacity: 1 } to { opacity: .2 } }'}</style>
+    <div data-shoot="fade" style={{ width: 160, height: 60, background: '#4f46e5', opacity: step >= 1 ? 1 : 0, transition: 'opacity 300ms linear', animation: step === 2 ? 'h-out 500ms linear forwards' : 'none' }} />
+  </div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'I.tsx'), `import { useRef, useState } from 'react'
+import { useMotion } from '../../motion'
+export default function I() {
+  const box = useRef<HTMLDivElement>(null)
+  const [step, setStep] = useState(0)
+  useMotion({
+    start: () => { setStep(1); setTimeout(() => box.current?.animate([{ transform: 'translateX(100px)' }, { transform: 'translateX(200px)' }], { duration: 500, fill: 'forwards' }), 500) },
+    reset: () => { box.current!.getAnimations().forEach(a => a.cancel()); setStep(0) },
+  })
+  return <div className="h-full p-8"><div ref={box} data-shoot="slide" style={{ width: 80, height: 80, background: '#4f46e5', transform: step ? 'translateX(100px)' : 'translateX(0px)', transition: 'transform 300ms linear' }} /></div>
+}
+`)
+writeFileSync(join(app, 'src', 'protos', 'move', 'J.tsx'), `import { useState } from 'react'
+import { useMotion } from '../../motion'
+export default function J() {
+  const [state, setState] = useState('idle')
+  useMotion({ start: () => { setState('in'); setTimeout(() => setState('out'), 500) }, reset: () => setState('idle') })
+  return <div className="h-full p-8">
+    <style>{'@keyframes j-in { from { opacity: 0 } to { opacity: 1 } } @keyframes j-out { from { opacity: 1 } to { opacity: 0 } } .j-in { animation: j-in 300ms linear both } .j-out { animation: j-out 300ms linear both }'}</style>
+    <div data-shoot="note" className={state === 'in' ? 'j-in' : state === 'out' ? 'j-out' : ''} style={{ width: 160, height: 60, background: '#4f46e5', opacity: state === 'idle' ? 0 : undefined }} />
   </div>
 }
 `)
@@ -586,6 +632,30 @@ try {
   if (chained.parts?.length !== 2) fail(`move/D's take should have both of the box's moves: ${JSON.stringify(chained)}`)
   const moves = [await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 0), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 150), await value('[data-shoot=box]', 'new DOMMatrix(cs.transform).m41', 450)]
   if (!near(moves[0], 0, 3) || !near(moves[1], 50, 5) || !near(moves[2], 150, 5)) fail(`the box moved twice by element.animate should be at 0, 50 and 150 px at 0, 150 and 450 ms: ${moves}`)
+  // Taken again and again, a take is still the one move: the last takes' animations, filling
+  // forwards, aren't part of it, and they don't pile up on the element.
+  await design('move/G', '[data-shoot=slide]')
+  await run('window.__protoMotion.take()')
+  await run('window.__protoMotion.take()')
+  const again = await run('window.__protoMotion.take()')
+  if (again.parts?.length !== 1 || !near(again.duration, 300, 40)) fail(`a fourth take should be the one move, 0.30 s: ${JSON.stringify(again)}`)
+  const piled = await run(`document.querySelector('[data-layers] [data-shoot=slide]').getAnimations().length`)
+  if (piled > 2) fail(`four takes left ${piled} animations on the element`)
+  // A transition, then a CSS animation (H) or element.animate() (I) on the same property: at each
+  // moment the part moving then shows, whichever the browser draws on top.
+  for (const [v, sel, read, want, by] of [['H', '[data-shoot=fade]', '+cs.opacity', [0.5, 0.6, 0.2], 0.06], ['I', '[data-shoot=slide]', 'new DOMMatrix(cs.transform).m41', [50, 150, 200], 6]]) {
+    const tk = await design(`move/${v}`, sel)
+    const second = tk.parts?.[1]?.start
+    if (tk.parts?.length !== 2 || !(second > 300)) fail(`move/${v}'s take should have the transition, then the second move: ${JSON.stringify(tk)}`)
+    const got = [await value(sel, read, 150), await value(sel, read, second + 250), await value(sel, read, tk.duration)]
+    if (!got.every((g, i) => near(g, want[i], by))) fail(`move/${v} should read ${want} at 150 ms, halfway through its second move and at the end: ${got}`)
+  }
+  // A keyframe animation a class swap replaces: both are in the take, and its 0 is the start.
+  const swap = await design('move/J', '[data-shoot=note]')
+  const notes = (swap.parts || []).filter(p => p.shoot === 'note')
+  if (notes.length !== 2) fail(`move/J's take should have the enter and the exit that replaced it: ${JSON.stringify(swap)}`)
+  const ops = [await value('[data-shoot=note]', '+cs.opacity', 0), await value('[data-shoot=note]', '+cs.opacity', 150), await value('[data-shoot=note]', '+cs.opacity', notes[1].start + 150), await value('[data-shoot=note]', '+cs.opacity', swap.duration)]
+  if (!ops.every((o, i) => near(o, [0, 0.5, 0.5, 0][i], 0.06))) fail(`the note entering, then leaving by a class swap, should read 0, 0.5, 0.5 and 0: ${ops}`)
   // A start() that throws: the take is empty and says why, and the dock isn't left recording.
   await run(`location.hash = '#/move/E'`)
   await until(`window.__protoMotion.state()?.status === 'empty' && /boom/.test(window.__protoMotion.state().error) && /start\\(\\) threw Error: boom/.test(document.querySelector('[data-motion=error]')?.textContent)`, 'a start() that throws should end the take with its error in the dock')
@@ -606,7 +676,7 @@ if (frame(0).equals(frame(500)) || frame(167).equals(frame(333))) fail('the fram
 if (!/no motion|declares no motion/.test(proto(['shoot', 'move/B', '--at', '100'], { ok: false }))) fail('proto shoot --at on a design without useMotion should say it has no motion')
 if (!/start\(\) threw Error: boom/.test(proto(['shoot', 'move/E', '--at', '100'], { ok: false }))) fail('proto shoot --at should print the error a start() threw')
 // Frames across a property moved twice differ, frame to frame.
-for (const v of ['C', 'D']) {
+for (const v of ['C', 'D', 'H', 'I', 'J']) {
   proto(['shoot', `move/${v}`, '--frames', '3', '--at', '0-300'])
   const f = t => readFileSync(join(shots, `move-${v}-desktop-at-${t}.png`))
   if (f(0).equals(f(150)) || f(150).equals(f(300))) fail(`the frames of move/${v} from 0 to 300 ms are the same picture`)
