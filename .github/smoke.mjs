@@ -994,6 +994,13 @@ try {
   })()`)
   if (fits !== 'ok') fail(`the phone at 360 px with both bars: ${fits}`)
 } finally { phoneBoth.close() }
+// A moment of the motion in copy mode is shot as copy mode is: once its bar is in, with the bar,
+// at the stage's own size; a variant without copy options is shot without and says so.
+proto(['shoot', 'both/A', '--at', '200'])
+proto(['shoot', 'both/A', '--at', '200', '--copy'])
+if (!pngs(shots).includes('both-A-desktop-at-200-copy.png') || sizeOf('both-A-desktop-at-200-copy.png') !== sizeOf('both-A-desktop-at-200.png')) fail('proto shoot --at 200 --copy should write both-A-desktop-at-200-copy.png at the size of both-A-desktop-at-200.png')
+const motionNoCopy = proto(['shoot', 'move/A', '--at', '200', '--copy'])
+if (!/move\/A has no copy options/.test(motionNoCopy) || pngs(shots).includes('move-A-desktop-at-200-copy.png')) fail(`proto shoot --at --copy on a variant without copy options should say so and drop -copy from the name: ${motionNoCopy}`)
 
 proto(['stop'])
 for (let i = 0; i < 40 && await answers(`${local}__proto/status`); i++) await new Promise(r => setTimeout(r, 250))

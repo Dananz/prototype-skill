@@ -202,9 +202,14 @@ try {
         if (result.value) break
         await sleep(100)
       }
+      // With --copy, as any shot: copy mode on once its bar is in, or named as one at rest, saying so.
+      const copyOn = await copied(sessionId, route), sfx = flags.copy && !copyOn ? suffix.replace('-copy', '') : suffix
       await settle(sessionId)
       const page = async expression => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)).result?.value
-      for (const sel of clicks) { await page(`document.querySelector('[data-layers]').querySelector(${JSON.stringify(sel)})?.click()`); await sleep(400) }
+      for (const sel of clicks) {
+        if (!await page(clickIn(sel))) console.error(`shoot: nothing matches ${sel} on ${route}`)
+        await sleep(400)
+      }
       // The design declares its motion once it is mounted: wait for that, a moment at most.
       for (let i = 0; i < 20 && !await page('!!window.__protoMotion?.state()'); i++) await sleep(100)
       const take = await page('window.__protoMotion ? window.__protoMotion.take() : { error: "this page has no motion dock (a session app made before it?)" }')
@@ -218,10 +223,12 @@ try {
       const a = Math.min(from ?? 0, D), b = Math.min(to ?? D, D)
       if ((from ?? 0) > D || (to ?? 0) > D) console.error(`shoot: ${route}: its take is ${D} ms, so ${flags.at} is held at its end`)
       const times = many ? Array.from({ length: many }, (_, i) => Math.round(a + (i * (b - a)) / (many - 1))) : [a]
-      // What is shot: the stage (as any shot), or for frames where the motion happens in it: a phone
-      // prototype's phone, else every moving part's box at its start, middle and end, with a margin.
+      // What is shot: the stage, with the copy picker's bar under it in copy mode (as any shot), or
+      // for frames where the motion happens in it: a phone prototype's phone, else every moving
+      // part's box at its start, middle and end, with a margin.
       const stage = await page(`(() => { document.querySelector('[data-overlay]')?.style.setProperty('display', 'none'); const r = document.querySelector('[data-layers]').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } })()`)
-      let cut = stage
+      const bar = copyOn ? await page(`document.querySelector('[data-copy-bar]')?.getBoundingClientRect().height ?? 0`) : 0
+      let cut = { ...stage, h: stage.h + bar }
       if (many) {
         const box = phoneOnly(route) ? await page(`(() => { const r = document.querySelector('[data-layers] [data-phone]')?.getBoundingClientRect(); return r && { x: r.x, y: r.y, w: r.width, h: r.height } })()`) : await page('window.__protoMotion.box()')
         if (box) {
@@ -233,7 +240,7 @@ try {
       for (const t of times) {
         await page(`window.__protoMotion.seek(${t})`)
         const { data } = await send('Page.captureScreenshot', { format: 'png', clip: { x: cut.x, y: cut.y, width: cut.w, height: cut.h, scale: 1 } }, sessionId)
-        const file = resolve(outDir, `${fileOf(route)}-${size.name}-at-${t}${suffix}.png`)
+        const file = resolve(outDir, `${fileOf(route)}-${size.name}-at-${t}${sfx}.png`)
         writeFileSync(file, Buffer.from(data, 'base64'))
         shots.push({ t, file })
         if (!many) console.log(file)
@@ -264,7 +271,7 @@ try {
         <div style="width:${width}px;height:${HEAD}px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${esc(head)}</div>
         <div style="display:grid;grid-template-columns:repeat(${cols},${w}px);gap:${GAP}px;align-items:start">${shots.map(cell).join('')}</div>
         <div style="display:flex;gap:16px;margin-top:${GAP}px;width:${width}px;font-size:16px">${svg}<div style="display:flex;flex-direction:column;gap:10px;min-width:0;padding-top:${top}px">${legend}</div></div></body>`
-      const file = resolve(outDir, `${fileOf(route)}-frames${flags.at === undefined ? '' : `-${a}-${b}`}${suffix}.png`)
+      const file = resolve(outDir, `${fileOf(route)}-frames${flags.at === undefined ? '' : `-${a}-${b}`}${sfx}.png`)
       await compose(html, file, width + 2 * PAD, SHEET)
       console.log(file)
       console.log(`${shots.length} frames in ${resolve(outDir)} (${basename(shots[0].file)} …): open one only for a detail`)
