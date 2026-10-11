@@ -18,6 +18,7 @@ import { createComments, type Subject } from './comments/index'
 import { createMotion } from './motion/index'
 import type { Action } from './comments/types'
 import { tabIcon } from './favicon'
+import { setShellRoot } from './portals'
 
 export type Variant = { id: string; name: string; file: string; load: () => Promise<unknown> }
 /** Something behind clicks in a prototype's variants (a menu, a drawer, a dialog), reached by
@@ -129,6 +130,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let protos = opts.protos
   let session = opts.session
   copy.configure(session.id)
+  setShellRoot(root)
   const q = new URLSearchParams(location.search)
   const stored = localStorage.getItem('proto-theme')
   const st = {

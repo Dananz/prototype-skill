@@ -5,6 +5,7 @@
 // the store as it is typed, so putting the composer away any way but Cancel or Add loses nothing.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
+import { uiBox } from '../portals'
 import { useCtx } from './ctx'
 import { find, groupOf, parts } from './dom'
 import { EASE, GLIDE_MS, Glide, useBoxes } from './inspect'
@@ -120,7 +121,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     setRow(0); setPeeking(false); setMenu(true)
   }
 
-  const over = (el: ReactElement) => docked ? createPortal(el, document.body) : el
+  const over = (el: ReactElement) => docked ? createPortal(el, uiBox()) : el
   const [empty, setEmpty] = useState(!initial || !initial.body.some(s => typeof s !== 'string' || s.trim()))
   const emit = () => { if (!editing && ed.current) act.hold({ body: readEditor(ed.current), tags: tagsRef.current, shot: shotRef.current }, target, time) }
   useEffect(emit, [tags, shot]) // eslint-disable-line react-hooks/exhaustive-deps

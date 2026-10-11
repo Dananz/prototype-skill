@@ -9,6 +9,7 @@ import { Dock } from './dock'
 import { createPlayer, type Player } from './player'
 import { motion } from './registry'
 import { frame } from './take'
+import { portaled } from '../portals'
 
 export type MotionHost = {
   /** Where the dock is drawn: a box along the bottom of the stage. */
@@ -34,14 +35,20 @@ export function createMotion(o: MotionHost) {
   const room = () => o.zone.style.setProperty('--dock-h', `${shown ? o.el.offsetHeight : 0}px`)
   new ResizeObserver(room).observe(o.el)
 
-  // Using the design itself (a real press or key in it) lets it run live; the dock's next move holds
-  // it again. Clicks the shell replays to reach a state aren't trusted, and picking what to comment
-  // on only looks at the design.
+  // Using the design itself (a real press or key in it, or in what it renders through a portal, such
+  // as a sheet's close button) lets it run live; the dock's next move holds it again. Clicks the shell
+  // replays to reach a state aren't trusted, and picking what to comment on only looks at the design.
   function wire(h: HTMLElement, p: Player) {
     const use = (e: Event) => { if (e.isTrusted && !o.zone.hasAttribute('data-picking')) p.letGo() }
+    const usePortal = (e: Event) => { if (e.target instanceof Node && portaled(e.target)) use(e) }
     h.addEventListener('pointerdown', use, true)
     h.addEventListener('keydown', use, true)
-    return () => { h.removeEventListener('pointerdown', use, true); h.removeEventListener('keydown', use, true) }
+    document.addEventListener('pointerdown', usePortal, true)
+    document.addEventListener('keydown', usePortal, true)
+    return () => {
+      h.removeEventListener('pointerdown', use, true); h.removeEventListener('keydown', use, true)
+      document.removeEventListener('pointerdown', usePortal, true); document.removeEventListener('keydown', usePortal, true)
+    }
   }
 
   function sync() {

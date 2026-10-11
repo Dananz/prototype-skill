@@ -4,9 +4,14 @@
 // with when it started, and the take ends once all of them have finished and nothing new has
 // started for a moment. Held, each one is paused and set to the same moment of the take.
 //
+// What the design renders outside the stage through a portal (a sheet or a toast on document.body)
+// is part of it too (see portals.ts).
+//
 // Motion run from script (requestAnimationFrame springs, react-spring, GSAP's core) is no animation
 // the browser knows of, so a take can't see it. DOM changes that aren't animated (an element added,
 // a class swapped without a transition) show their final state at every moment.
+
+import { animationsOf } from '../portals'
 
 export type Part = {
   /** What is held: the design's own animation, or a copy of one (see hold). */
@@ -70,7 +75,7 @@ function propOf(a: Animation, keyframes: ComputedKeyframe[]) {
 
 /** Ends everything moving in the design (what reset set moving back), endless loops aside. */
 export function settle(host: HTMLElement) {
-  for (const a of host.getAnimations({ subtree: true })) if (!endless(a)) try { a.finish() } catch { /* no end to go to */ }
+  for (const a of animationsOf(host)) if (!endless(a)) try { a.finish() } catch { /* no end to go to */ }
 }
 
 export const errorOf = (e: unknown) => e instanceof Error ? `${e.name}: ${e.message}` : String(e)
@@ -95,7 +100,7 @@ type Seen = {
  */
 export async function record(host: HTMLElement, go: () => unknown, alive: () => boolean): Promise<Take | null> {
   const seen = new Map<Animation, Seen>(), over = new Set<Animation>()
-  const before = new Set(host.getAnimations({ subtree: true }).filter(a => a.playState !== 'running'))
+  const before = new Set(animationsOf(host).filter(a => a.playState !== 'running'))
   const began = performance.now()
   let last = began, error: string | null = null
   try {
@@ -107,7 +112,7 @@ export async function record(host: HTMLElement, go: () => unknown, alive: () => 
     await frame()
     if (!alive()) return null
     const now = performance.now()
-    for (const a of host.getAnimations({ subtree: true })) {
+    for (const a of animationsOf(host)) {
       // A spinner or a pulse never ends: it isn't part of the sequence.
       if (seen.has(a) || endless(a) || a.playState === 'idle' || (before.has(a) && a.playState !== 'running')) continue
       const e = a.effect as KeyframeEffect | null

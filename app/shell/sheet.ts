@@ -4,6 +4,7 @@
 import { createElement as h, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Drawer } from '@base-ui/react/drawer'
+import { uiBox } from './portals'
 
 export type SheetRow = { id: string; name: string; on: boolean; picked: boolean; editing: boolean }
 export type SheetProps = {
@@ -37,7 +38,7 @@ function Sheet(p: SheetProps) {
     r.on ? CHECK : null)
 
   return h(Drawer.Root, { open: p.open, onOpenChange: (open: boolean) => { if (!open) p.onClose() } },
-    h(Drawer.Portal, null,
+    h(Drawer.Portal, { container: uiBox() },
       // The Backdrop and Popup classes follow Base UI's bottom drawer example: the swipe
       // variables, the bleed below the screen and the iOS 26 backdrop fix are theirs.
       h(Drawer.Backdrop, { className: '[--backdrop-opacity:0.3] [--bleed:3rem] dark:[--backdrop-opacity:0.6] fixed inset-0 z-[200] min-h-dvh bg-black opacity-[calc(var(--backdrop-opacity)*(1-var(--drawer-swipe-progress)))] transition-opacity duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:duration-0 data-ending-style:opacity-0 data-starting-style:opacity-0 data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] supports-[-webkit-touch-callout:none]:absolute' }),

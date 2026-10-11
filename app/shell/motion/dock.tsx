@@ -11,6 +11,7 @@ import { Composer } from '../comments/composer'
 import { useRows } from '../comments/list'
 import type { Item, Time } from '../comments/types'
 import { Body, Icon, PinDot, PRIMARY, Reply, STATE, spanOf } from '../comments/ui'
+import { uiBox } from '../portals'
 import type { Player, PlayState } from './player'
 import type { Track as Curve } from './curves'
 
@@ -151,7 +152,7 @@ function Tip({ label, kbd, side = 'top', children }: { label: ReactNode; kbd?: s
   return (
     <Tooltip.Root>
       <Tooltip.Trigger render={children} />
-      <Tooltip.Portal>
+      <Tooltip.Portal container={uiBox()}>
         <Tooltip.Positioner side={side} sideOffset={8} collisionPadding={8} className="z-[60]">
           <Tooltip.Popup className="flex max-w-[260px] origin-[var(--transform-origin)] items-center gap-1.5 rounded-md bg-zinc-900 px-2 py-1 text-[11px] font-medium text-white shadow-lg transition-[opacity,scale] duration-150 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0 dark:bg-zinc-700">
             <span className="min-w-0 truncate">{label}</span>{kbd && <span className="shrink-0 text-white/55">{kbd}</span>}
@@ -488,7 +489,7 @@ function More({ ctl }: { ctl: Ctl }) {
       <Tip label="More">
         <Menu.Trigger data-motion="more" aria-label="More" className={IBTN}><Glyph name="more" /></Menu.Trigger>
       </Tip>
-      <Menu.Portal>
+      <Menu.Portal container={uiBox()}>
         <Menu.Positioner side="top" align="end" sideOffset={8} collisionPadding={8} className="z-50 outline-none">
           <Menu.Popup className={POP} finalFocus={type => type === 'keyboard'}>
             <div className="flex h-9 items-center gap-2.5 ps-2 pe-0.5 [@media(pointer:coarse)]:h-11">
@@ -511,7 +512,7 @@ function More({ ctl }: { ctl: Ctl }) {
               <Menu.SubmenuTrigger data-motion="go" disabled={!moments.length} className={ROW}>
                 <Glyph name="goto" className="size-4 text-zinc-400" /><span className="flex-1">Go to</span><Icon name="right" className="size-3.5 text-zinc-400" />
               </Menu.SubmenuTrigger>
-              <Menu.Portal>
+              <Menu.Portal container={uiBox()}>
                 <Menu.Positioner side="inline-end" align="start" sideOffset={6} alignOffset={-6} collisionPadding={8} className="z-50 outline-none">
                   <Menu.Popup className={`${POP} w-56`} finalFocus={type => type === 'keyboard'}>
                     {moments.map((m, i) => (

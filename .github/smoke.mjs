@@ -104,7 +104,9 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
     // never be answered: each waits 2 s at most and is sent again, for 30 s in all.
     const ready = () => run('document.documentElement.dataset.ready === "1"', 2000).catch(() => false)
     for (const end = Date.now() + 30_000; Date.now() < end && !await ready();) await new Promise(r => setTimeout(r, 100))
-    return { run, close }
+    // A real press (Input.dispatchMouseEvent): trusted, as a person's.
+    const press = async (x, y) => { for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }, sessionId) }
+    return { run, close, press }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {
@@ -446,7 +448,7 @@ if (!/Woke you up/.test(heard)) fail(`the listener exited without the batch: ${h
 // design to any moment. A comment on a range of it goes out through the page's own composer, the
 // inbox prints its times, and a reply reaches its point. A variant without useMotion has no dock.
 if (!existsSync(join(app, 'src', 'motion.ts'))) fail('the app has no src/motion.ts')
-proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still,C:Twice,D:Chained,E:Broken,F:Late,G:Again,H:Then keyframes,I:Then animate,J:Swap,K:Nudge,L:Cancelled,M:Shake,N:Reversed,P:Dropped'])
+proto(['add', 'move', '--title', 'Motion', '--variants', 'A:Panel,B:Still,C:Twice,D:Chained,E:Broken,F:Late,G:Again,H:Then keyframes,I:Then animate,J:Swap,K:Nudge,L:Cancelled,M:Shake,N:Reversed,P:Dropped,Q:Portal'])
 writeFileSync(join(app, 'src', 'protos', 'move', 'A.tsx'), `import { useState } from 'react'
 import { useMotion } from '../../motion'
 export default function A() {
@@ -632,6 +634,19 @@ export default function P() {
   return <div className="h-full p-8"><div ref={box} data-shoot="box" style={{ width: 80, height: 80, background: '#4f46e5' }} /></div>
 }
 `)
+// A sheet the design renders on <body> through a portal (as Base UI's Drawer does), sliding up.
+writeFileSync(join(app, 'src', 'protos', 'move', 'Q.tsx'), `import { useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useMotion } from '../../motion'
+export default function Q() {
+  const [open, setOpen] = useState(false)
+  useMotion({ start: () => setOpen(true), reset: () => setOpen(false) })
+  return <div className="h-full p-8">
+    <p data-shoot="label">Sheet</p>
+    {createPortal(<div data-shoot="sheet" style={{ position: 'fixed', left: 480, width: 400, top: 120, height: 200, background: '#4f46e5', transform: open ? 'translateY(0px)' : 'translateY(300px)', transition: 'transform 400ms linear' }} />, document.body)}
+  </div>
+}
+`)
 const near = (a, b, by) => typeof a === 'number' && Math.abs(a - b) <= by
 const motionPage = await openPage(`${local}?theme=light#/move/A`)
 try {
@@ -796,6 +811,16 @@ try {
   await run('window.__protoMotion.take()')
   const left = await run(`document.querySelector('[data-layers] [data-shoot=box]').getAnimations().length`)
   if (left > 2) fail(`five takes of move/P, let go and held again between them, left ${left} animations on the element`)
+  // A sheet rendered on <body> through a portal: the take has it, it scrubs, and a press on it lets
+  // the design go (as one inside the stage does).
+  const portaled = await design('move/Q', '[data-shoot=label]')
+  if (portaled.parts?.length !== 1 || portaled.parts[0].shoot !== 'sheet' || !near(portaled.duration, 400, 40)) fail(`move/Q's take should have the sheet it renders on <body>, 0.40 s: ${JSON.stringify(portaled)}`)
+  const onBody = t => run(`window.__protoMotion.seek(${t}).then(() => new DOMMatrix(getComputedStyle(document.querySelector('body > [data-shoot=sheet]')).transform).m42)`)
+  const qy = [await onBody(0), await onBody(200), await onBody(400)]
+  if (!qy.every((y, i) => near(y, [300, 150, 0][i], 6))) fail(`the sheet on <body> should be at 300, 150 and 0 px at 0, 200 and 400 ms: ${qy}`)
+  const [px, py] = await run(`(() => { const r = document.querySelector('body > [data-shoot=sheet]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
+  await motionPage.press(px, py)
+  await until(`window.__protoMotion.state().live`, 'a press on the sheet the design renders on <body> should let it go', 3000)
   // A start() that throws: the take is empty and says why, and the dock isn't left recording.
   await run(`location.hash = '#/move/E'`)
   await until(`window.__protoMotion.state()?.status === 'empty' && /boom/.test(window.__protoMotion.state().error) && /start\\(\\) threw Error: boom/.test(document.querySelector('[data-motion=error]')?.textContent)`, 'a start() that throws should end the take with its error in the dock')
@@ -819,8 +844,8 @@ if (frame(0).equals(frame(500)) || frame(167).equals(frame(333))) fail('the fram
 if (!/no motion|declares no motion/.test(proto(['shoot', 'move/B', '--at', '100'], { ok: false }))) fail('proto shoot --at on a design without useMotion should say it has no motion')
 if (!/start\(\) threw Error: boom/.test(proto(['shoot', 'move/E', '--at', '100'], { ok: false }))) fail('proto shoot --at should print the error a start() threw')
 // Frames across a property moved twice differ, frame to frame: also the nudge after a cancelled
-// enter, and a shake added to a slide.
-for (const [v, a, b] of [['C', 0, 300], ['D', 0, 300], ['H', 0, 300], ['I', 0, 300], ['J', 0, 300], ['K', 400, 600], ['M', 300, 450]]) {
+// enter, a shake added to a slide, and a sheet on <body>.
+for (const [v, a, b] of [['C', 0, 300], ['D', 0, 300], ['H', 0, 300], ['I', 0, 300], ['J', 0, 300], ['K', 400, 600], ['M', 300, 450], ['Q', 0, 400]]) {
   proto(['shoot', `move/${v}`, '--frames', '3', '--at', `${a}-${b}`])
   const f = t => readFileSync(join(shots, `move-${v}-desktop-at-${t}.png`))
   if (f(a).equals(f((a + b) / 2)) || f((a + b) / 2).equals(f(b))) fail(`the frames of move/${v} from ${a} to ${b} ms are the same picture`)

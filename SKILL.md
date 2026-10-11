@@ -195,7 +195,11 @@ so the user sees them land:
   for a page that scrolls. `--kind phone` variants go in a phone frame whose screen is
   `--screen` (393×852 when not given).
 - `position: fixed` inside a variant is pinned to the stage (or the phone frame), not the
-  window, so drawers and sheets can use it.
+  window, so drawers and sheets can use it. A portal isn't: Base UI's Drawer, Dialog, Popover
+  and Toast (and `createPortal(…, document.body)`) render on the page's `<body>`, outside the
+  stage, so a drawer's backdrop covers the whole page, the motion dock too. Give each `Portal` a
+  `container` in the variant (`<Drawer.Portal container={rootRef}>`, a ref to the variant's
+  root; Vue: a `<Teleport>` to it) so it stays on the stage.
 - Make it real: realistic content (never lorem ipsum), working hover, focus, open and close,
   typing, empty and loading states where they matter. Local state is fine.
 - Esc on a variant page goes back to the prototype's variants. A design that closes its own
@@ -333,6 +337,8 @@ useMotion({
 - `start()` (and `reset()`) must not throw: the dock and `proto shoot` print the error, and the
   take is empty.
 - Name the moving parts with `data-shoot`: the curves are labelled by it.
+- Motion the design renders on `<body>` through a portal (a sheet, a toast) is recorded too, but
+  it covers the dock there: give the portal a `container` in the variant (above).
 - Pressing anything in the design lets it run live; the dock's next move takes it back. An edit
   to the variant records the take again.
 

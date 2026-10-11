@@ -4,6 +4,7 @@
 import { motion, type Moment } from './registry'
 import { clock, errorOf, frame, hold, record, release, seek, settle, type Take } from './take'
 import { tracksOf, type Track } from './curves'
+import { animationsOf, portaled } from '../portals'
 
 /** off: nothing recorded yet; taking: recording now; ready: held; empty: it recorded no motion. */
 export type Status = 'off' | 'taking' | 'ready' | 'empty'
@@ -42,9 +43,12 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
   const subs = new Set<() => void>()
   const set = (patch: Partial<PlayState>) => { s = { ...s, ...patch }; subs.forEach(f => f()) }
   let run = 0, raf = 0, last = 0, rest = 0
-  // Whether the design changed while it ran live: then its take is out of date.
+  // Whether the design changed while it ran live (in its host, or a portal it renders on <body> came
+  // or went): then its take is out of date.
   let changed = false
-  const watch = new MutationObserver(() => { changed = true })
+  const watch = new MutationObserver(records => {
+    if (records.some(r => r.target !== document.body || [...r.addedNodes, ...r.removedNodes].some(n => n instanceof Element && !n.hasAttribute('data-proto-ui')))) changed = true
+  })
   const stopClock = () => { cancelAnimationFrame(raf); raf = 0 }
 
   const at = (t: number) => { if (s.take) seek(s.take, t); set({ t }) }
@@ -114,16 +118,16 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
   async function lateStep(my: number, got: Take) {
     const known = new Set(got.parts.map(p => p.anim)), began = performance.now()
     let moved = -1e9
-    const mark = (e: Event) => { if (e.isTrusted) moved = performance.now() }
+    const mark = (e: Event) => { if (e.isTrusted && e.target instanceof Node && (host.contains(e.target) || portaled(e.target))) moved = performance.now() }
     const kinds = ['pointermove', 'pointerover', 'pointerout', 'focusin', 'focusout']
-    kinds.forEach(k => host.addEventListener(k, mark, true))
+    kinds.forEach(k => document.addEventListener(k, mark, true))
     const copyMode = new MutationObserver(() => { moved = performance.now() })
     copyMode.observe(host, { attributes: true, attributeFilter: ['data-copy-on'] })
     try {
       while (my === run && s.take === got && !s.live && performance.now() - began < LATE) {
         await frame()
         const now = performance.now()
-        for (const a of host.getAnimations({ subtree: true })) {
+        for (const a of animationsOf(host)) {
           if (known.has(a) || a.playState !== 'running' || !Number.isFinite(Number(a.effect?.getComputedTiming().activeDuration))) continue
           known.add(a)
           // A color alone can be a step (a Save turning green): it is only taken for chrome just after a move.
@@ -132,7 +136,7 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
         }
       }
     } finally {
-      kinds.forEach(k => host.removeEventListener(k, mark, true))
+      kinds.forEach(k => document.removeEventListener(k, mark, true))
       copyMode.disconnect()
     }
   }
@@ -194,6 +198,7 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
       release(s.take)
       changed = false
       watch.observe(host, { subtree: true, childList: true, attributes: true, characterData: true })
+      watch.observe(document.body, { childList: true })
       set({ live: true, playing: false, span: null, t: s.duration })
     },
     /** The design's files changed: take it again (Fast Refresh keeps its state, not its old animations). */
