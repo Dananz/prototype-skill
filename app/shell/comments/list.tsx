@@ -1,7 +1,7 @@
 // The comments as a list, the rail's body and the phone sheet's, grouped by what needs you:
 // Ready to send (drafts, and the unfinished one), With Claude (sent, not done), and Done, which
 // folds to one line each and opens to show what Claude said. The bottom bar is Add and Send.
-import { useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useCtx } from './ctx'
 import { progress, useStore, type Said } from './store'
 import type { CState, Item } from './types'
@@ -16,9 +16,31 @@ export function useRows() {
 }
 type Row = ReturnType<typeof useRows>['rows'][number]
 
-const Head = ({ title, n, tone = 'text-zinc-500' }: { title: string; n: number; tone?: string }) => (
-  <h3 className={`flex items-center gap-2 px-1 pb-1.5 pt-4 text-xs font-semibold first:pt-1 ${tone}`}>{title}<span className="rounded-full bg-zinc-900/[.06] px-1.5 text-[11px] font-medium tabular-nums dark:bg-white/10">{n}</span></h3>
+const Head = ({ title, n, tone = 'text-zinc-500', children }: { title: string; n: number; tone?: string; children?: ReactNode }) => (
+  <h3 className={`flex items-center gap-2 px-1 pb-1.5 pt-4 text-xs font-semibold first:pt-1 ${tone}`}>{title}<span className="rounded-full bg-zinc-900/[.06] px-1.5 text-[11px] font-medium tabular-nums dark:bg-white/10">{n}</span>{children}</h3>
 )
+/**
+ * Clears a whole section from the list. It asks once (the button turns into "Clear n?"), since
+ * comments still with Claude are taken back from it, and it stops asking after a few seconds.
+ */
+function ClearAll({ ids, what }: { ids: string[]; what: string }) {
+  const { act } = useCtx()
+  const [sure, setSure] = useState(false)
+  useEffect(() => { if (!sure) return; const t = window.setTimeout(() => setSure(false), 4000); return () => clearTimeout(t) }, [sure])
+  return (
+    <button data-shoot={`clear-${what}`} onClick={() => { if (!sure) return setSure(true); setSure(false); act.removeAll(ids) }}
+      title={what === 'sent' ? 'Delete all of these, and take them back from Claude' : 'Delete all of these from the list'}
+      className={`ms-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium ${sure ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' : 'text-zinc-400 hover:bg-zinc-900/5 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200'}`}>
+      <Icon name="trash" className="size-3" />{sure ? `Clear ${ids.length}?` : 'Clear'}
+    </button>
+  )
+}
+/** Deletes one comment, whatever became of it; a sent one is taken back from Claude. */
+const Remove = ({ item, className = '' }: { item: Item; className?: string }) => {
+  const { act } = useCtx()
+  const sent = !!item.sent
+  return <button data-shoot="remove" onClick={e => { e.stopPropagation(); act.remove(item.id) }} aria-label="Delete this comment" title={sent ? 'Delete this comment (Claude is told to leave it)' : 'Delete this comment'} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10 ${className}`}><Icon name="trash" className="size-4" /></button>
+}
 const Where = ({ item, here }: { item: Item; here: boolean }) => here ? null : <span className="shrink-0 rounded bg-zinc-900/[.05] px-1 font-mono text-[10px] text-zinc-500 dark:bg-white/10">{item.variant}</span>
 /** What a row is about: the element a comment is on, or a decision with its icon (it is on no element). */
 const About = ({ item }: { item: Item }) => item.action
@@ -54,13 +76,16 @@ function Draft({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: b
 function WithClaude({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: boolean; onOpen: () => void }) {
   const { item } = r
   return (
-    <button onClick={onOpen} data-shoot="comment-row" className={`flex w-full items-start gap-3 rounded-2xl p-3 text-start transition ${active ? 'bg-proto-primary-soft ring-1 ring-proto-primary-ring' : 'bg-proto-primary-soft/60 hover:bg-proto-primary-soft'}`}>
-      <span className="mt-1"><Working /></span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} /><span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? 'Claude is on it' : 'Sent'}</span></span>
-        <Body c={item} className={`mt-0.5 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
-      </span>
-    </button>
+    <div data-shoot="comment-row" className={`flex w-full items-start gap-1 rounded-2xl transition ${active ? 'bg-proto-primary-soft ring-1 ring-proto-primary-ring' : 'bg-proto-primary-soft/60 hover:bg-proto-primary-soft'}`}>
+      <button onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 p-3 pe-0 text-start">
+        <span className="mt-1"><Working /></span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} /><span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? 'Claude is on it' : 'Sent'}</span></span>
+          <Body c={item} className={`mt-0.5 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
+        </span>
+      </button>
+      <Remove item={item} className="me-1 mt-1.5" />
+    </div>
   )
 }
 
@@ -71,12 +96,15 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
   const when = since(reply?.at)
   return (
     <div data-shoot="comment-row">
-      <button onClick={() => setOpen(!open)} aria-expanded={open} className={`flex w-full items-center gap-2.5 rounded-xl px-1 text-start active:bg-zinc-900/[.04] dark:active:bg-white/5 ${roomy ? 'h-11' : 'h-9'} ${active ? 'bg-emerald-500/10' : ''}`}>
-        <PinDot n={item.n} done />
-        <span className={`min-w-0 flex-1 truncate text-zinc-500 ${roomy ? 'text-[13.5px]' : 'text-[12.5px]'}`}>{item.action ? <span dir="auto">{aboutOf(item)}{item.body.length ? `: ${item.body.join('')}` : ''}</span> : <Body c={item} />}</span>
-        <Where item={item} here={r.here} />
-        <Icon name="right" className={`size-4 text-zinc-400 transition-transform ${open ? 'rotate-90' : ''}`} />
-      </button>
+      <div className={`flex items-center rounded-xl ${active ? 'bg-emerald-500/10' : ''}`}>
+        <button onClick={() => setOpen(!open)} aria-expanded={open} className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-1 text-start active:bg-zinc-900/[.04] dark:active:bg-white/5 ${roomy ? 'h-11' : 'h-9'}`}>
+          <PinDot n={item.n} done />
+          <span className={`min-w-0 flex-1 truncate text-zinc-500 ${roomy ? 'text-[13.5px]' : 'text-[12.5px]'}`}>{item.action ? <span dir="auto">{aboutOf(item)}{item.body.length ? `: ${item.body.join('')}` : ''}</span> : <Body c={item} />}</span>
+          <Where item={item} here={r.here} />
+          <Icon name="right" className={`size-4 text-zinc-400 transition-transform ${open ? 'rotate-90' : ''}`} />
+        </button>
+        <Remove item={item} />
+      </div>
       {open && (
         <div className="space-y-2 pb-2 pe-1 ps-8">
           <p className="flex items-center gap-2 text-xs text-zinc-400"><span className="min-w-0 truncate"><About item={item} /></span>{when && <span className="shrink-0">· {when === 'now' ? 'just now' : `${when} ago`}</span>}<button onClick={onShow} className="ms-auto shrink-0 font-medium text-proto-primary-soft-fg hover:underline">{item.time ? `Show ${spanOf(item.time)}` : item.target ? 'Show on design' : `Go to ${item.variant}`}</button></p>
@@ -115,13 +143,13 @@ export function CommentList({ roomy, onOpen }: { roomy?: boolean; onOpen?: (id: 
       )}
       {wait.length > 0 && (
         <section aria-label="With Claude">
-          <Head title="With Claude" n={wait.length} tone="text-proto-primary-soft-fg" />
+          <Head title="With Claude" n={wait.length} tone="text-proto-primary-soft-fg"><ClearAll what="sent" ids={wait.map(r => r.item.id)} /></Head>
           <div className="space-y-2">{wait.map(r => <WithClaude key={r.item.id} r={r} roomy={!!roomy} active={on(r.item.id)} onOpen={() => open(r.item.id)} />)}</div>
         </section>
       )}
       {done.length > 0 && (
         <section aria-label="Done">
-          <Head title="Done" n={done.length} tone="text-emerald-700 dark:text-emerald-400" />
+          <Head title="Done" n={done.length} tone="text-emerald-700 dark:text-emerald-400"><ClearAll what="done" ids={done.map(r => r.item.id)} /></Head>
           <div className="divide-y divide-black/[.05] dark:divide-white/[.07]">{done.map(r => <DoneRow key={r.item.id} r={r} roomy={!!roomy} active={on(r.item.id)} onShow={() => open(r.item.id)} />)}</div>
         </section>
       )}

@@ -6,7 +6,7 @@ import type { CommentBatch } from '../shell'
 import { find } from './dom'
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
-import type { Store } from './store'
+import { progress, type Store } from './store'
 import type { Action, Draft, Item, Place, Target, Time } from './types'
 import { routeOf } from './types'
 
@@ -74,7 +74,21 @@ export function createActions(store: Store, host: Host) {
       }
     },
     cancel() { set({ held: null, mode: { kind: 'idle' }, active: null, pendingTag: null }) },
-    remove(id: string) { set(s => ({ items: s.items.filter(i => i.id !== id), mode: { kind: 'idle' }, active: null })) },
+    remove(id: string) { act.removeAll([id]) },
+    /**
+     * Deletes comments from the list, whatever became of them. One sent and not done is taken back
+     * from Claude too (the server marks it withdrawn, or drops a batch nobody took yet); a done one,
+     * or one whose batch the server no longer lists (an old one that got stuck), only leaves the list.
+     * What is open stays open unless it is one of these.
+     */
+    removeAll(ids: string[]) {
+      const gone = new Set(ids), s = get()
+      if (!gone.size) return
+      const m = s.mode
+      const open = (s.active && gone.has(s.active)) || ((m.kind === 'compose' || m.kind === 'tag' || m.kind === 'time') && !!m.id && gone.has(m.id))
+      for (const i of s.items) if (gone.has(i.id) && i.sent && progress(i, s.inbox).state !== 'done') void host.withdraw(i.sent.batch, i.sent.i)
+      set(x => ({ items: x.items.filter(i => !gone.has(i.id)), ...(open ? { mode: { kind: 'idle' as const }, active: null } : {}) }))
+    },
 
     /** Every draft, as one batch. */
     async send() {

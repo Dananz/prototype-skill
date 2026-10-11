@@ -1075,8 +1075,10 @@ const secs = ms => `${(ms / 1000).toFixed(2)} s`
 const spanOf = c => c.to === undefined ? secs(c.at) : `${(c.at / 1000).toFixed(2)}–${secs(c.to)}`
 function printBatch(dir, b) {
   const vp = b.viewport ? ` · page ${b.viewport.w}x${b.viewport.h}${b.viewport.phone ? ' (phone)' : ''}` : ''
-  console.log(`batch ${b.id} · ${b.comments.length} comment${b.comments.length === 1 ? '' : 's'}${vp} · ${b.theme}`)
-  for (const c of b.comments) {
+  // A comment the user deleted in the page after sending it is withdrawn: left out, only counted.
+  const live = b.comments.filter(c => !c.withdrawn), gone = b.comments.length - live.length
+  console.log(`batch ${b.id} · ${live.length} comment${live.length === 1 ? '' : 's'}${gone ? ` (${gone} withdrawn in the page)` : ''}${vp} · ${b.theme}`)
+  for (const c of live) {
     console.log(`\n${c.n}. ${c.route}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
     if (c.action) console.log(`   action: ${c.action} (${c.failed && FAILED[c.action] ? FAILED[c.action](c, c.failed) : ACTIONS[c.action] || ''})`)
@@ -1140,6 +1142,7 @@ function reply() {
   const by = flags.as === 'codex' ? 'codex' : 'claude'
   if (n) {
     const c = b.comments.find(x => x.n === Number(n)) || die(`batch ${ids[0]} has no comment ${n} (1-${b.comments.length})`)
+    if (c.withdrawn) console.log(`(comment ${n} was withdrawn in the page: the user deleted it after sending)`)
     if (text) c.reply = { text, at, by }
     if (flags.done) c.done = true
   } else {

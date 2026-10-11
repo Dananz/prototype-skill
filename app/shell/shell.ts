@@ -43,7 +43,7 @@ export type Inbox = {
   new: number
   listening: boolean
   batches: { id: string; at: string; state: 'sent' | 'seen' | 'done'; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null
-    comments: { n: number; route: string; done: boolean; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null }[] }[]
+    comments: { n: number; route: string; done: boolean; withdrawn?: boolean; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null }[] }[]
 }
 /** An element a comment is on or tags. Rect is in CSS px from the variant root's top left; src and
  *  component say where it is written (`today/parts.tsx:30`, `PriceCard`). */
@@ -1520,6 +1520,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     mount: commentHost,
     go: (proto, variant, state) => go({ view: 'variant', proto, variant, ...(state ? { state } : {}) }),
     send: sendBatch,
+    withdraw: async (batch, n) => { await post('withdraw', { batch, n }) },
     dark: () => st.dark,
   }, session.id)
   // A design's own page listeners don't hear commenting: anything while picking or writing, a press

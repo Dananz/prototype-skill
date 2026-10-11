@@ -13,6 +13,8 @@ export type Host = {
   go: (proto: string, variant: string, state?: string) => void
   /** Posts a batch; resolves the batch's id, and how each decision in it went. */
   send: (batch: CommentBatch) => Promise<Sent>
+  /** Takes back a sent comment the user deleted (batch, and its number in it); never throws. */
+  withdraw: (batch: string, n: number) => Promise<void>
   dark: () => boolean
 }
 /** The comment layer's store and actions, and the copy picker's, which sends through it. */
