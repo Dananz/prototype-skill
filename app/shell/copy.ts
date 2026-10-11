@@ -68,8 +68,10 @@ function merge(host: Element) {
   const order = [...new Set([...host.querySelectorAll<HTMLElement>('[data-copy]')].map(el => el.dataset.copy))]
   const at = (id: string) => { const i = order.indexOf(id); return i < 0 ? order.length : i }
   all.sort((a, b) => at(a.id) - at(b.id))
+  // No lines is no key: compared as an empty list, so declaring none again is no change (it was,
+  // every time, and a design whose useCopy got [] re-rendered itself forever).
   const k = JSON.stringify(all)
-  if (keys.get(host) === k) return false
+  if ((keys.get(host) ?? '[]') === k) return false
   if (all.length) { lines.set(host, all); keys.set(host, k) } else { lines.delete(host); keys.delete(host) }
   return true
 }
