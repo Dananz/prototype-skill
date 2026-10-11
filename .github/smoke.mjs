@@ -1136,6 +1136,18 @@ const deskBoth = await openPage(`${local}?theme=light#/both/A`)
 try {
   const r = await deskBoth.run(stacked)
   if (r !== 'ok') fail(`copy mode on a design with motion, desktop: ${r}`)
+  // In copy mode a real press on a line opens its options over the moment held: the take isn't let go.
+  await deskBoth.run('window.__protoMotion.seek(150)')
+  const [lx, ly] = await deskBoth.run(`(() => { const r = document.querySelector('[data-layers] [data-copy=title]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
+  await deskBoth.press(lx, ly)
+  const picked = await deskBoth.run(`(async () => {
+    ${until}
+    if (!await until(() => document.querySelector('[data-copy-list]'))) return 'the press opened no options list'
+    const s = window.__protoMotion.state()
+    document.body.click()
+    return s.live || s.t !== 150 ? 'the press let the take go (live ' + s.live + ', at ' + s.t + ' ms)' : 'ok'
+  })()`)
+  if (picked !== 'ok') fail(`a press on a line in copy mode: ${picked}`)
   // Focus mode keeps the copy bar (copy mode was turned on) and hides the dock, letting the design go.
   const focused = await deskBoth.run(`(async () => {
     ${until}

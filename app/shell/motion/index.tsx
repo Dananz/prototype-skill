@@ -39,7 +39,12 @@ export function createMotion(o: MotionHost) {
   // as a sheet's close button) lets it run live; the dock's next move holds it again. Clicks the shell
   // replays to reach a state aren't trusted, and picking what to comment on only looks at the design.
   function wire(h: HTMLElement, p: Player) {
-    const use = (e: Event) => { if (e.isTrusted && !o.zone.hasAttribute('data-picking')) p.letGo() }
+    const use = (e: Event) => {
+      if (!e.isTrusted || o.zone.hasAttribute('data-picking')) return
+      // In copy mode a press on a line opens its options, over the moment held.
+      if (h.hasAttribute('data-copy-on') && (e.target as Element | null)?.closest?.('[data-copy]')) return
+      p.letGo()
+    }
     const usePortal = (e: Event) => { if (e.target instanceof Node && portaled(e.target)) use(e) }
     h.addEventListener('pointerdown', use, true)
     h.addEventListener('keydown', use, true)
