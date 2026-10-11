@@ -33,6 +33,9 @@ const REST = 360
 const ARRIVE = 350
 // How long after a take ends something starting in the design is taken for a step it missed.
 const LATE = 3000
+// A transition of a color, an underline, a focus ring or a shadow: what hover, focus and copy mode
+// change, never a step of the sequence.
+const chrome = (a: Animation) => typeof CSSTransition !== 'undefined' && a instanceof CSSTransition && /^(-webkit-)?(text-decoration|box-shadow|outline)|color$/.test(a.transitionProperty)
 
 export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unknown> }) {
   let s: PlayState = { status: 'off', take: null, tracks: [], t: 0, duration: 0, playing: false, speed: 1, loop: false, span: null, live: false, error: null, late: null }
@@ -105,14 +108,17 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
     void lateStep(my, got)
   }
   // A step that starts after the take ended (a setTimeout longer than the quiet that ends a take)
-  // runs live under the held take: say so. A pointer moving over the design starts hover
-  // transitions; those aren't steps.
+  // runs live under the held take: say so. What the page and the pointer start aren't steps: hover
+  // and focus transitions (the pointer moving, over or out, focus moving in or out of the design),
+  // copy mode marking its lines, and the small transitions those use (see chrome).
   async function lateStep(my: number, got: Take) {
     const known = new Set(got.parts.map(p => p.anim)), began = performance.now()
     let moved = -1e9
-    const mark = (e: PointerEvent) => { if (e.isTrusted) moved = performance.now() }
-    host.addEventListener('pointermove', mark, true)
-    host.addEventListener('pointerover', mark, true)
+    const mark = (e: Event) => { if (e.isTrusted) moved = performance.now() }
+    const kinds = ['pointermove', 'pointerover', 'pointerout', 'focusin', 'focusout']
+    kinds.forEach(k => host.addEventListener(k, mark, true))
+    const copyMode = new MutationObserver(() => { moved = performance.now() })
+    copyMode.observe(host, { attributes: true, attributeFilter: ['data-copy-on'] })
     try {
       while (my === run && s.take === got && !s.live && performance.now() - began < LATE) {
         await frame()
@@ -120,13 +126,13 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
         for (const a of host.getAnimations({ subtree: true })) {
           if (known.has(a) || a.playState !== 'running' || !Number.isFinite(Number(a.effect?.getComputedTiming().activeDuration))) continue
           known.add(a)
-          if (now - moved < 300) continue
+          if (now - moved < 300 || chrome(a)) continue
           return set({ late: Math.round((a.startTime === null ? clock() : Number(a.startTime)) - (got.t0 ?? 0)) })
         }
       }
     } finally {
-      host.removeEventListener('pointermove', mark, true)
-      host.removeEventListener('pointerover', mark, true)
+      kinds.forEach(k => host.removeEventListener(k, mark, true))
+      copyMode.disconnect()
     }
   }
   // The design mounted again, its entrance starting; done once the new mount has declared its motion.
@@ -175,6 +181,8 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
       if (fromStart || s.t < a || s.t >= b - 1) at(a)
       startClock()
     },
+    /** Puts away the note about a step the take missed. */
+    dismissLate() { set({ late: null }) },
     setSpeed(v: number) { set({ speed: v }) },
     setLoop(v: boolean) { set({ loop: v }) },
     /** Someone used the design: it runs live from its end, until the dock is used again. */

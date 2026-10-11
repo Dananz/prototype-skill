@@ -609,6 +609,24 @@ try {
   }
   await send([{ route: 'move/A', text: 'Hold the panel longer', at: 350, take: 500 }])
   if (!/^ {3}at: 0\.35 s of the motion \(its take is 0\.50 s\): see it with proto shoot move\/A --at 350$/m.test(proto(['inbox']))) fail('proto inbox should print a moment as at: 0.35 s')
+  // The composer's @ menu, in the dock, opens over the page, whole: the dock doesn't cut it off.
+  const tagMenu = await run(`(async () => {
+    document.querySelector('[data-motion=compose]').click()
+    await new Promise(r => setTimeout(r, 500))
+    const ed = document.querySelector('[data-motion-bar] [data-composer] [role=textbox]')
+    if (!ed) return 'the dock opened no composer'
+    ed.focus()
+    document.execCommand('insertText', false, '@')
+    await new Promise(r => setTimeout(r, 300))
+    const m = document.querySelector('[data-tag-menu]')
+    const r = m?.getBoundingClientRect(), hit = r && document.elementFromPoint(r.left + r.width / 2, r.top + 12)
+    const said = !m ? 'typing @ opened no menu' : r.height > 80 && r.top >= 0 && r.bottom <= innerHeight && m.contains(hit) ? 'ok' : 'the @ menu is cut off or covered: ' + JSON.stringify([r.top, r.bottom, r.height, hit?.tagName])
+    ed.textContent = ''
+    ed.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector('[data-motion=compose]').click()
+    return said
+  })()`)
+  if (tagMenu !== 'ok') fail(`the @ menu in the dock's composer: ${tagMenu}`)
   // Focus mode: the dock hides and lets the design go (it plays live); it comes back as it was.
   await run(`document.querySelector('[data-motion=curves]').click()`)
   await run(`document.querySelector('[data-act=focus]').click()`)
@@ -662,6 +680,8 @@ try {
   // A step a timer starts 1.2 s in, after the take has ended: the dock says it was missed.
   await run(`location.hash = '#/move/F'`)
   await until(`(() => { const s = window.__protoMotion.state(); return s?.status === 'ready' && s.late > 800 && s.late < 1600 && !!document.querySelector('[data-motion=late]') })()`, 'a step started after the take ended should be named in the dock')
+  await run(`document.querySelector('[data-motion=late-close]').click()`)
+  await until(`window.__protoMotion.state().late === null && !document.querySelector('[data-motion=late]')`, 'the note about a missed step should go when dismissed', 3000)
   // No useMotion, no dock, and the stage has its full height back.
   await run(`location.hash = '#/move/B'`)
   await until(`!document.querySelector('[data-motion-bar]') && getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h').trim() === '0px'`, 'move/B declares no motion but has a dock', 5000)
@@ -936,6 +956,8 @@ const stacked = `(async () => {
     if (!near(copyBar.bottom, dock.top)) return 'the copy bar should sit on the dock: ' + copyBar.bottom + ' vs ' + dock.top
     if (!near(layers.bottom, copyBar.top)) return 'the stage should end at the copy bar: ' + layers.bottom + ' vs ' + copyBar.top
     if (layers.height < 200) return 'the stage kept ' + layers.height + ' px'
+    // Copy mode marking its lines (an underline's transition) is no step the take missed.
+    if (window.__protoMotion.state().late !== null) return 'turning copy mode on was taken for a missed step at ' + window.__protoMotion.state().late + ' ms'
     return 'ok'
   })()`
 const deskBoth = await openPage(`${local}?theme=light#/both/A`)

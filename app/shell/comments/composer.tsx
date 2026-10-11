@@ -3,7 +3,8 @@
 // named parts, or picking any element on the page; the camera captures the design around the
 // element (all of it, on a moment) and opens the editor; ⌘↩ adds it. Whatever is written is held by
 // the store as it is typed, so putting the composer away any way but Cancel or Add loses nothing.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
+import { createPortal } from 'react-dom'
 import { useCtx } from './ctx'
 import { find, groupOf, parts } from './dom'
 import { EASE, GLIDE_MS, Glide, useBoxes } from './inspect'
@@ -70,6 +71,10 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const [q, setQ] = useState('')
   const [row, setRow] = useState(0)
   const [up, setUp] = useState(false)
+  // Docked (in the motion dock, which clips what overflows it), the menu is drawn over the page,
+  // fixed above or below the editor.
+  const [fixedAt, setFixedAt] = useState<CSSProperties | null>(null)
+  const anchor = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLDivElement>(null)
   const list = useRef<HTMLDivElement>(null)
 
@@ -107,10 +112,15 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   useEffect(() => { list.current?.querySelector(`[data-i="${row}"]`)?.scrollIntoView({ block: 'nearest' }) }, [row])
   const openMenu = () => {
     const r = box.current?.getBoundingClientRect(), h = host.layer.getBoundingClientRect()
-    setUp(sheet || (!!r && r.bottom + 360 > h.bottom && r.top - 360 > h.top))
+    if (docked && anchor.current) {
+      const a = anchor.current.getBoundingClientRect(), goUp = a.top > innerHeight - a.bottom
+      setUp(goUp)
+      setFixedAt({ left: a.left + 8, width: a.width - 16, ...(goUp ? { bottom: innerHeight - a.top + 4, maxHeight: Math.min(352, a.top - 12) } : { top: a.bottom + 4, maxHeight: Math.min(352, innerHeight - a.bottom - 12) }) })
+    } else setUp(sheet || (!!r && r.bottom + 360 > h.bottom && r.top - 360 > h.top))
     setRow(0); setPeeking(false); setMenu(true)
   }
 
+  const over = (el: ReactElement) => docked ? createPortal(el, document.body) : el
   const [empty, setEmpty] = useState(!initial || !initial.body.some(s => typeof s !== 'string' || s.trim()))
   const emit = () => { if (!editing && ed.current) act.hold({ body: readEditor(ed.current), tags: tagsRef.current, shot: shotRef.current }, target, time) }
   useEffect(emit, [tags, shot]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -202,7 +212,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             ? <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[11px] font-semibold tabular-nums text-proto-primary-soft-fg"><svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={time.to === undefined ? TIME_PATH.at : TIME_PATH.range} /></svg>{time.to === undefined ? `At ${spanOf(time)}` : spanOf(time)}</span>
             : <><span dir="auto" className="min-w-0 flex-1 truncate text-xs font-medium">{target?.label}</span><SrcTag t={target} /></>}
         </div>
-        <div className="relative px-3 pt-1.5">
+        <div ref={anchor} className="relative px-3 pt-1.5">
           <div ref={ed} contentEditable suppressContentEditableWarning role="textbox" aria-label="Comment" aria-multiline="true" dir="auto"
             onInput={() => {
               saveRange(); setEmpty(!ed.current!.innerText.trim()); emit()
@@ -213,8 +223,8 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             onKeyUp={saveRange} onMouseUp={saveRange} onBlur={saveRange}
             className="max-h-40 min-h-[52px] overflow-y-auto whitespace-pre-wrap break-words py-1 leading-5 outline-none [@media(pointer:coarse)]:min-h-[60px] [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6" />
           {empty && <span className="pointer-events-none absolute left-3 top-2.5 text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">{time ? `What should change ${time.to === undefined ? 'at this moment' : 'over this range'}? @ tags an element` : 'What should change? @ tags another element'}</span>}
-          {menu && (
-            <div ref={menuBox} className={`absolute inset-x-2 z-10 flex max-h-[min(22rem,60vh)] flex-col overflow-hidden rounded-xl border border-black/10 bg-white shadow-xl dark:border-white/10 dark:bg-zinc-900 ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+          {menu && over(
+            <div ref={menuBox} data-tag-menu className={`flex max-h-[min(22rem,60vh)] flex-col overflow-hidden rounded-xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 ${docked ? 'fixed z-[60]' : `absolute inset-x-2 z-10 ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}`} style={docked ? fixedAt ?? undefined : undefined}>
               {hl && <div className="pointer-events-none absolute inset-x-1 rounded-lg bg-proto-primary-soft" style={{ top: hl.top, height: hl.height, transition: hl.still ? 'none' : ['top', 'height'].map(k => `${k} ${GLIDE_MS}ms ${EASE}`).join(', ') }} />}
               <div className="relative shrink-0 p-1 pb-0">
                 <button data-i="0" onMouseDown={e => { e.preventDefault(); setMenu(false); act.tagPick() }} onMouseEnter={() => { setRow(0); setPeeking(false) }}

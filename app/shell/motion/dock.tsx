@@ -583,7 +583,7 @@ function DockComposer({ ctl }: { ctl: Ctl }) {
 }
 
 /** What the take has to say over the slider: its start threw, it saw no motion, or it missed a step. */
-function Note({ ctl }: { ctl: Ctl }) {
+function Note({ ctl, narrow = false }: { ctl: Ctl; narrow?: boolean }) {
   const { status, error, late } = ctl.p
   const say = (kind: string, head: string, body: string) => (
     <p data-motion={kind} className="px-1 pt-2.5 text-xs leading-[18px] text-zinc-500 dark:text-zinc-400">
@@ -592,7 +592,19 @@ function Note({ ctl }: { ctl: Ctl }) {
   )
   if (status === 'empty' && error) return say('error', `useMotion’s ${error}.`, 'Nothing was recorded. Play runs it again.')
   if (status === 'empty') return say('empty', 'This take caught no motion.', 'Only CSS transitions, CSS animations and element.animate() can be recorded; motion run from script (requestAnimationFrame, react-spring, GSAP) can’t. Play runs it again.')
-  if (status === 'ready' && late !== null) return say('late', `Something started at ${fmt(late)}, after this take ended.`, 'A take ends after 0.5 s with nothing moving, so that step runs live over it. To record it, put the wait before it in a delay (transition-delay, animation-delay or element.animate’s delay).')
+  if (status === 'ready' && late !== null) {
+    // A missed step: put away with its x, and one line on a phone.
+    return (
+      <div data-motion="late" className="flex items-start gap-1 pt-1.5 text-xs leading-[18px] text-zinc-500 dark:text-zinc-400">
+        {narrow
+          ? <p className="min-w-0 flex-1 truncate px-1 pt-1.5"><b className="font-medium text-zinc-700 dark:text-zinc-200">Missed a step at {fmt(late)}.</b> Use a delay.</p>
+          : <p className="min-w-0 flex-1 px-1 pt-1"><b className="font-medium text-zinc-700 dark:text-zinc-200">Something started at {fmt(late)}, after this take ended.</b> A take ends after 0.5 s with nothing moving, so that step runs live over it. To record it, put the wait before it in a delay (transition-delay, animation-delay or element.animate’s delay).</p>}
+        <Tip label="Dismiss">
+          <button data-motion="late-close" onClick={() => ctl.player.dismissLate()} aria-label="Dismiss" className={IBTN}><Icon name="x" className="size-4" /></button>
+        </Tip>
+      </div>
+    )
+  }
   return null
 }
 
@@ -611,7 +623,7 @@ export function Dock({ player }: { player: Player }) {
         <div ref={ref} className="mx-auto w-full max-w-[880px] px-3 sm:px-5">
           {narrow ? (
             <>
-              <Note ctl={ctl} />
+              <Note ctl={ctl} narrow />
               <Reveal open={!!ctl.composing || !!ctl.open}><div className="pt-2.5">{detail}</div></Reveal>
               <Reveal open={curvesOn}>
                 <div className="pt-3">
