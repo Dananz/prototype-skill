@@ -18,6 +18,12 @@ variants (on a phone, a pill at the bottom you drag along, and the columns as a 
 into), edge arrows, a focus mode with a dock, light and dark, phone frames, "editing" dots, a
 strip naming the variant your requests change). You only write variant files.
 
+Beside Comment the bar has three sizes, phone, tablet and desktop (on a phone, one button in the
+pill opens them). The screen's own is selected; choosing another shows the page at that size in
+the stage, zoomed to fit (a 1440 × 900 desktop on a phone, a phone on a desktop), and the user can
+pinch it, move around it and comment on it there. Nothing to build for it beyond a web variant
+that lays out well at each width.
+
 `proto` below means `node "${CLAUDE_SKILL_DIR}/scripts/proto.mjs"` (through `node`, the path in
 double quotes, not a shell variable: the same command works in Bash, Git Bash and PowerShell). It
 finds the session from `$CLAUDE_CODE_SESSION_ID` and the project from the git root of the current
@@ -378,6 +384,7 @@ proto shoot <slug>/B --copy                     # copy mode on (useCopy): each l
 proto shoot <slug>/B --copy --click "[data-copy=headline]" --click "[data-copy-option='2']"   # its third option in place
 proto shoot <slug>/B --at 350                   # a variant with useMotion, 350 ms into its motion
 proto shoot <slug>/B --frames 12 [--at 300-620] # 12 moments of its motion (or of that range) on one sheet
+proto shoot <slug>/B --size 834x1194            # one viewport instead of desktop and phone (a tablet here)
 ```
 
 `--sheet` shoots every variant (a web one at 1440×900 and 390×844, a `--kind phone` one at
@@ -508,6 +515,12 @@ change landed, and reply with the new timing in numbers ("damping 0.75 now: the 
 4 px instead of 14 and settles by 0.50 s"). The page records the take again after your edit, and
 the reply shows on the comment's point on the slider.
 
+**A comment in a view** (written while the page showed another size, see the top) has a `view:`
+line, `view: desktop 1440x900`, and is about that layout, not the one the batch's page size says.
+Run the shoot the line names (`proto shoot <route> --size 1440x900`) and read it, change that
+layout (its breakpoints, so the other sizes stay as they were), shoot it again, and name the size
+in the reply ("On desktop the heading is 28 px now; phone and tablet as before").
+
 **Decisions from the page** arrive in the same batches, as comments with an `action:` line and
 no element (a `copy` choice is on its line's element); the user's optional note follows a colon in
 the text.
@@ -587,6 +600,7 @@ Each module is roughly 4 to 30 KB and goes through your tool calls, so snap only
 | A change to another variant ("now D, same idea") | `proto work <slug>/<letter> --ask "…"`, then edit it |
 | To review an animation ("how should the sheet open?", "the toast lands too hard") | the motion in CSS or `element.animate()`, `useMotion` in each variant, then `proto shoot <slug>/<letter> --frames 12` |
 | A comment on the motion (`at: 0.30–0.62 s` in a batch) | the shoot its line names, change the motion, reply with the new timing (Comments from the page) |
+| A comment in a view (`view: tablet 834x1194` in a batch) | the shoot its line names, change that layout's breakpoints, reply naming the size (Comments from the page) |
 | To drop a direction or prototype | `proto archive <slug>` (still reachable under Archived) |
 | The prototypes in a doc to share | `proto snap`, then a Claude Doc (section above) |
 | Comments sent from the page (a `proto inbox --wait` exited) | handle each, `proto reply … --done`, listen again |

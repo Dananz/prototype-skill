@@ -19,6 +19,9 @@ import { createMotion } from './motion/index'
 import type { Action } from './comments/types'
 import { tabIcon } from './favicon'
 import { setShellRoot } from './portals'
+import { createView } from './view/index'
+import { framed } from './view/frame'
+import { dims, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
 
 export type Variant = { id: string; name: string; file: string; load: () => Promise<unknown> }
 /** Something behind clicks in a prototype's variants (a menu, a drawer, a dialog), reached by
@@ -51,7 +54,9 @@ export type Pinned = { selector?: string; shoot?: string; src?: string; componen
 export type CommentBatch = {
   comments: { route: string; text: string; action?: Action; point?: { x: number; y: number }; target?: Pinned; tags?: Pinned[]; images?: { dataUrl: string; name?: string }[]
     /** On the motion (motion/): a moment of its take in ms, or a range to `to`, and the take's length. */
-    at?: number; to?: number; take?: number }[]
+    at?: number; to?: number; take?: number
+    /** Written in a device view (view/): about that layout. */
+    view?: ViewSize }[]
   viewport?: { w: number; h: number; phone?: boolean }
   theme?: 'light' | 'dark'
 }
@@ -129,7 +134,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const { mount } = opts
   let protos = opts.protos
   let session = opts.session
-  copy.configure(session.id)
+  // The page inside a device view (view/frame.ts) shares this browser's storage with the page
+  // outside, so it keeps copy choices and comments under names of its own, and writes nothing else:
+  // what it chooses (its place, theme, sidebar, panel) lasts until it reloads.
+  copy.configure(framed ? `${session.id}~view` : session.id)
+  const remember = (key: string, value: string) => { if (!framed) localStorage.setItem(key, value) }
   setShellRoot(root)
   const q = new URLSearchParams(location.search)
   const stored = localStorage.getItem('proto-theme')
@@ -166,6 +175,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // The sidebar's level shown as columns (null: the last two), and the phone sheet's column.
     pairAt: null as number | null,
     drill: null as number | null,
+    // The device view (view/): the page at another size in the stage. size null: none, the page as
+    // this screen is; zoom 0: Fit, else a percentage.
+    view: { size: null as Size | null, land: false, zoom: 0 },
   }
 
   // ---------- data helpers ----------
@@ -331,7 +343,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // otherwise cover the composer's buttons where it docks at the bottom of a phone. Two bars can
   // sit under the stage, each taking its height from it: the motion dock (--dock-h) just above the
   // pill, where it always is, and the copy picker's bar (--copy-h) over the dock while copy mode is
-  // on. The copy picker's phone sheet covers both.
+  // on. The copy picker's phone sheet covers both. A device view covers the stage, under the edge
+  // arrows and the Focus button, the spotlight and the comment layer.
   root.innerHTML = `<div class="flex h-dvh bg-white text-[13px] text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
     <aside data-side></aside>
     <div data-grip role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0" title="Drag to resize · double-click to reset" class="group relative z-40 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none outline-none">
@@ -341,6 +354,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <header data-bar class="relative z-30 flex h-12 shrink-0 items-center gap-1 border-b border-black/[.07] px-2 dark:border-white/10"></header>
       <div data-zone>
         <div data-layers class="absolute inset-0 overflow-hidden" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-view hidden class="absolute inset-0 z-[5]" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-motion-dock class="absolute left-0 z-[18]" style="right:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
@@ -685,7 +699,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     trySheet = 'closed'
     closeCard(true)
     if (p.view !== 'variant') st.focus = false
-    localStorage.setItem(`proto-place-${session.id}`, hashOf(p))
+    remember(`proto-place-${session.id}`, hashOf(p))
     if (moved) show(fade && !!layer)
     render()
     if (moved) side.querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'nearest' })
@@ -851,8 +865,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <div class="relative shrink-0"><button data-act="open:session" aria-label="Session" aria-expanded="${st.open === 'session'}" title="${esc(session.name)}" class="${IB} ${st.open === 'session' ? ON : ''}"><span class="relative grid size-5 shrink-0 place-items-center rounded bg-zinc-900 text-[10px] font-bold text-white dark:bg-white dark:text-zinc-900">${initial}<span class="absolute -right-1 -top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-2', st.live && !st.stopped)}</span></span></button>${pop(st.open === 'session', sessionMenu, 'left-0 top-11 w-[22rem] max-w-[calc(100vw-1rem)]')}</div>
       ${switcher}
       <div class="ml-auto flex shrink-0 items-center gap-1">
-        ${stepper}${stepper && (commentHost() || copyCounts().lines || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${commentBtn()}${copyBtn()}${decideBtn()}
+        ${stepper}${stepper && (viewOk() || commentHost() || copyCounts().lines || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
+        ${sizeTabs()}${commentBtn()}${copyBtn()}${decideBtn()}
         ${phones ? `<div class="relative"><button data-act="open:scale" aria-expanded="${st.open === 'scale'}" class="${IB} text-xs tabular-nums ${st.open === 'scale' ? 'bg-zinc-900/5 text-zinc-900 dark:bg-white/10 dark:text-white' : ''}">${ic('phone')}<span data-scale-label>${scaleLabel()}</span></button>${pop(st.open === 'scale', scaleMenu, 'right-0 top-11 w-72')}</div>` : ''}
       </div></div>`)
     menus = { protos: drill(), session: sessionBody }
@@ -942,6 +956,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     paintHints()
     paintPill()
     paintDecide()
+    paintView()
   }
 
   // ---------- the variant pill (phones) ----------
@@ -970,13 +985,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const vid = st.place.view === 'variant' ? st.place.variant : ''
     const at = vs.findIndex(v => v.id === vid)
     const tryN = pillOn() && phoneMq.matches ? tryCount(hintList()) : 0
-    const key = pillOn() ? JSON.stringify([p!.id, p!.kind, vid, vs.map(v => [v.id, v.name]), p!.variants.length, editing(p!.id, vid), st.sheet, pillComments(), copyKeyOf(), tryN, trySheet]) : ''
+    const sizes = viewOk()
+    const key = pillOn() ? JSON.stringify([p!.id, p!.kind, vid, vs.map(v => [v.id, v.name]), p!.variants.length, editing(p!.id, vid), st.sheet, pillComments(), copyKeyOf(), tryN, trySheet, sizes && [shownSize(), viewOn(), st.view.land]]) : ''
     if (key !== pillKey) {
       pillKey = key
       if (!key) { pill.innerHTML = ''; closeCard(true) }
       else {
         const v = vs[at]
-        const acts = [!!commentHost(), !!copyCounts().lines, !!tryN, p!.kind === 'phone'].filter(Boolean).length
+        const acts = [!!commentHost(), !!copyCounts().lines, !!tryN, sizes, p!.kind === 'phone'].filter(Boolean).length
         // The pill's one rule for room: with three buttons or more after the name, the grid goes (All
         // variants is in the sheet the name opens), the buttons narrow to 36 px and the count moves
         // under the name, so the name keeps its room on a 360 px phone.
@@ -996,21 +1012,22 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             <div data-ruler hidden class="pointer-events-none absolute bottom-full left-1/2 mb-2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-zinc-900/90 shadow-lg ring-1 ring-white/10 [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)] dark:bg-zinc-800/90"></div>
             ${tight ? '' : `<button data-act="lobby:proto" aria-label="All variants" aria-pressed="${st.place.view === 'proto'}" class="${btn} ${st.place.view === 'proto' ? '!bg-white !text-zinc-900' : ''}">${ic('grid')}</button>${sep}`}
             <button data-act="variant:${prev.id}" aria-label="Previous variant: ${prev.id} ${esc(prev.name)}" class="${btn}">${ic('left')}</button>
-            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? `${v.id} ${esc(v.name)}, ${at + 1} of ${vs.length}. ` : ''}Show all variants" class="${tight ? 'flex max-w-40 shrink flex-col px-1.5' : `flex ${commentHost() || copyCounts().lines || tryN ? 'w-28' : 'w-40'} gap-1.5 px-2`} h-10 min-w-0 cursor-grab touch-none select-none items-center justify-center rounded-full active:bg-white/10">
+            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? `${v.id} ${esc(v.name)}, ${at + 1} of ${vs.length}. ` : ''}Show all variants" class="${tight ? 'flex max-w-40 shrink flex-col px-1.5' : `flex ${commentHost() || copyCounts().lines || tryN || sizes ? 'w-28' : 'w-40'} gap-1.5 px-2`} h-10 min-w-0 cursor-grab touch-none select-none items-center justify-center rounded-full active:bg-white/10">
               ${handle}
             </div>
             <button data-act="variant:${next.id}" aria-label="Next variant: ${next.id} ${esc(next.name)}" class="${btn}">${ic('right')}</button>
-            ${commentHost() || copyCounts().lines || tryN ? sep : ''}
+            ${commentHost() || copyCounts().lines || tryN || sizes ? sep : ''}
             ${commentHost() ? (c => `<button data-act="comment:tap" data-shoot="comment" aria-label="Comments" aria-pressed="${c.picking}" class="${btn} relative ${c.picking ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.picking ? 'x' : 'comment', 'size-5')}${c.drafts && !c.picking ? `<span class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold text-proto-primary-fg ring-2 ring-zinc-900">${c.drafts}</span>` : ''}</button>`)(comments.counts()) : ''}
             ${(c => c.lines ? `<button data-act="copymode" data-shoot="copy-mode" aria-label="Copy options" aria-pressed="${c.on}" class="${btn} relative ${c.on ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.on ? 'x' : 'text', 'size-5')}${copyCount(c, 'ring-zinc-900')}</button>` : '')(copyCounts())}
             ${tryN ? `<button data-act="try" data-shoot="try-it" aria-label="Try it, ${tryN} thing${tryN === 1 ? '' : 's'}" aria-pressed="${tryOpen}" aria-expanded="${trySheet === 'open'}" class="${btn} relative ${tryOpen ? '!bg-proto-primary !text-proto-primary-fg' : '!text-amber-300'}">${ic('key', 'size-5')}${tryOpen ? '' : `<span aria-hidden="true" class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-zinc-600 text-[10px] font-semibold tabular-nums text-white ring-2 ring-zinc-900">${tryN}</span>`}</button>` : ''}
+            ${sizes ? `<button data-pill-size data-shoot="size-button" aria-label="Layout: ${SIZES[shownSize()].name}. Change it" aria-expanded="false" class="${btn} transition-colors ${cardBtnCls('size')}">${ic(sizeIcon(shownSize(), st.view.land), 'size-5')}</button>` : ''}
             ${p!.kind === 'phone' ? `${sep}<button data-pill-scale aria-label="Phone scale" aria-expanded="false" class="h-10 min-w-12 shrink-0 rounded-full px-2.5 text-xs font-medium tabular-nums text-white/70 transition-colors duration-200 active:bg-white/10"><span data-scale-label>${scaleLabel()}</span></button>` : ''}
           </div>
         </div>`
         raisePill()
       }
     }
-    if (card) pill.querySelector('[data-pill-scale]')?.setAttribute('aria-expanded', String(card.phase !== 'exit'))
+    if (card) markCardBtn(card.kind)
     syncScale()
     paintMenu({
       open: !!st.menu,
@@ -1037,14 +1054,42 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // a slider), in the pill's dark. The card grows out of the button: it starts as the button,
   // same place, size and round corners, opens into the card, and its controls fade in once
   // there is room; closing folds it back. Turning it around halfway plays the running
-  // animation back from where it is.
+  // animation back from where it is. The pill's layout button (the device view) opens its twin.
   const DARK_SEG = (on: boolean) => `h-9 flex-1 rounded-full text-xs font-medium tabular-nums ${on ? 'bg-white text-zinc-900' : 'text-white/70 hover:bg-white/10'}`
-  const cardHtml = () => `<div data-scale-backdrop class="fixed inset-0 z-20"></div>
-    <div data-card class="absolute z-30 w-[17.5rem] space-y-1 rounded-3xl bg-zinc-900/95 p-1.5 text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/95" style="transform-origin:0 0">
+  type CardKind = 'scale' | 'size'
+  const CARD_BTN: Record<CardKind, string> = { scale: '[data-pill-scale]', size: '[data-pill-size]' }
+  const CARD_CLS = 'absolute z-30 w-[17.5rem] space-y-1 rounded-3xl bg-zinc-900/95 p-1.5 text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/95'
+  const cardHtml = (kind: CardKind) => `<div data-scale-backdrop class="fixed inset-0 z-20"></div>${kind === 'scale' ? `
+    <div data-card class="${CARD_CLS}" style="transform-origin:0 0">
       <div class="flex gap-0.5 rounded-full bg-white/[.06] p-0.5">${SCALES.map(s => `<button data-act="scale:${s}" data-scale-seg="${s}" data-dark aria-pressed="${st.scale === s}" class="${DARK_SEG(st.scale === s)}">${s ? s + '%' : 'Fit'}</button>`).join('')}</div>
       <div class="flex items-center">${['minus', 'plus'].map((n, i) => `<button data-act="scalestep:${i ? 5 : -5}" aria-label="${i ? 'Bigger' : 'Smaller'}" class="${i ? 'order-3' : ''} grid size-10 shrink-0 place-items-center rounded-full text-white/60 hover:bg-white/10 hover:text-white">${ic(n)}</button>`).join('')}<input data-scale-range type="range" min="${SCALE_MIN}" max="${SCALE_MAX}" step="1" value="${st.scale || 50}" aria-label="Phone scale" class="order-2 ${RANGE} ${st.scale ? '' : 'opacity-40'}" style="--p:${rangeAt(st.scale || 50)}%;--fill:#fff;--rest:rgb(255 255 255/.15)"></div>
-    </div>`
-  let card: { el: HTMLElement; phase: 'enter' | 'open' | 'exit'; anims: Animation[] } | null = null
+    </div>` : `
+    <div data-card data-size-card role="dialog" aria-label="Layout" class="${CARD_CLS}" style="transform-origin:0 0">
+      <div class="flex gap-0.5 rounded-full bg-white/[.06] p-0.5">${ORDER.map(s => `<button data-act="size:${s}:card" data-shoot="size-${s}" aria-label="${SIZES[s].name}" aria-pressed="${shownSize() === s}" class="grid place-items-center ${DARK_SEG(shownSize() === s)}">${ic(sizeIcon(s, s === 'tablet' && st.view.land), 'size-[18px]')}</button>`).join('')}</div>
+      ${viewOn() ? `<div class="flex items-center gap-1">
+        <div class="flex flex-1 gap-0.5 rounded-full bg-white/[.06] p-0.5">${[0, 100].map(z => `<button data-act="zoom:${z}" data-zoom-seg="${z}" aria-pressed="${st.view.zoom === z}" class="${DARK_SEG(st.view.zoom === z)}">${z ? '100%' : 'Fit'}</button>`).join('')}</div>
+        ${st.view.size === 'tablet' ? `<button data-act="turn" data-shoot="turn" aria-label="${st.view.land ? 'Turn upright' : 'Turn on its side'}" class="grid size-10 shrink-0 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white">${ic('rotate', 'size-5')}</button>` : ''}
+      </div>` : ''}
+    </div>`}`
+  let card: { el: HTMLElement; phase: 'enter' | 'open' | 'exit'; anims: Animation[]; kind: CardKind } | null = null
+  /** A card's button: white while its card is open; the layout button indigo while a view is on. */
+  const cardBtnCls = (kind: CardKind) => card?.kind === kind && card.phase !== 'exit' ? '!bg-white !text-zinc-900' : kind === 'size' && viewOn() ? '!bg-proto-primary !text-proto-primary-fg' : ''
+  function markCardBtn(kind: CardKind) {
+    const b = pill.querySelector<HTMLElement>(CARD_BTN[kind])
+    if (!b) return
+    b.classList.remove('!bg-white', '!text-zinc-900', '!bg-proto-primary', '!text-proto-primary-fg')
+    const c = cardBtnCls(kind)
+    if (c) b.classList.add(...c.split(' '))
+    b.setAttribute('aria-expanded', String(card?.kind === kind && card.phase !== 'exit'))
+  }
+  /** The layout card's zoom and the tablet's icon, updated in place (a pinch changes the zoom). */
+  function syncSizeCard() {
+    if (card?.kind !== 'size') return
+    for (const b of card.el.querySelectorAll<HTMLElement>('[data-zoom-seg]')) { const on = Number(b.dataset.zoomSeg) === st.view.zoom; b.setAttribute('aria-pressed', String(on)); b.className = DARK_SEG(on) }
+    const tablet = card.el.querySelector<HTMLElement>('[data-act="size:tablet:card"]'), turn = card.el.querySelector<HTMLElement>('[data-act="turn"]')
+    if (tablet) tablet.innerHTML = ic(sizeIcon('tablet', st.view.land), 'size-[18px]')
+    turn?.setAttribute('aria-label', st.view.land ? 'Turn upright' : 'Turn on its side')
+  }
   const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches
   const CARD_EASE_OUT = 'cubic-bezier(0.32, 0.72, 0, 1)', CARD_EASE_IN = 'cubic-bezier(0.4, 0, 1, 1)'
 
@@ -1069,19 +1114,20 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const anims = c.anims
     Promise.all(anims.map(a => a.finished)).then(() => { if (card === c && c.anims === anims && c.phase === phase) done() }, () => {})
   }
-  function openCard() {
-    const btn = pill.querySelector<HTMLElement>('[data-pill-scale]'), bar = btn?.closest<HTMLElement>('[data-pill-bar]')
+  function openCard(kind: CardKind) {
+    const btn = pill.querySelector<HTMLElement>(CARD_BTN[kind]), bar = btn?.closest<HTMLElement>('[data-pill-bar]')
     if (!btn || !bar) return
-    btn.setAttribute('aria-expanded', 'true')
-    btn.classList.add('!bg-white', '!text-zinc-900')
-    if (card?.phase === 'exit') { card.el.style.pointerEvents = ''; cardHost.querySelector<HTMLElement>('[data-scale-backdrop]')!.style.pointerEvents = ''; card.anims.forEach(a => a.reverse()); card.phase = 'enter'; const c = card; settleCard(c, 'enter', () => { c.phase = 'open'; c.anims.forEach(a => a.cancel()); c.anims = [] }); return }
+    // The other card goes at once: one card over the pill at a time.
+    if (card && card.kind !== kind) closeCard(true)
+    if (card?.phase === 'exit') { card.el.style.pointerEvents = ''; cardHost.querySelector<HTMLElement>('[data-scale-backdrop]')!.style.pointerEvents = ''; card.anims.forEach(a => a.reverse()); card.phase = 'enter'; const c = card; settleCard(c, 'enter', () => { c.phase = 'open'; c.anims.forEach(a => a.cancel()); c.anims = [] }); return markCardBtn(kind) }
     if (card) return
-    cardHost.innerHTML = cardHtml()
+    cardHost.innerHTML = cardHtml(kind)
     const el = cardHost.querySelector<HTMLElement>('[data-card]')!
     const z = zone.getBoundingClientRect(), b = bar.getBoundingClientRect()
     el.style.right = `${z.right - b.right}px`
     el.style.bottom = `${z.bottom - b.top + 8}px`
-    card = { el, phase: 'open', anims: [] }
+    card = { el, phase: 'open', anims: [], kind }
+    markCardBtn(kind)
     if (reduceMotion()) return
     const from = asButton(el, btn)
     card.phase = 'enter'
@@ -1094,10 +1140,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   function closeCard(now = false) {
     if (!card) return
-    const btn = pill.querySelector<HTMLElement>('[data-pill-scale]')
-    btn?.setAttribute('aria-expanded', 'false')
-    btn?.classList.remove('!bg-white', '!text-zinc-900')
-    const drop = () => { cardHost.innerHTML = ''; card = null }
+    const kind = card.kind, btn = pill.querySelector<HTMLElement>(CARD_BTN[kind])
+    const drop = () => { cardHost.innerHTML = ''; card = null; markCardBtn(kind) }
     if (now || reduceMotion() || !btn) { card.anims.forEach(a => a.cancel()); return drop() }
     const c = card
     if (c.phase === 'exit') return
@@ -1112,14 +1156,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ]
     }
     c.phase = 'exit'
+    markCardBtn(kind)
     // While it folds away, a tap goes through to the pill, so the button can open it again.
     c.el.style.pointerEvents = 'none'
     cardHost.querySelector<HTMLElement>('[data-scale-backdrop]')!.style.pointerEvents = 'none'
     settleCard(c, 'exit', drop)
   }
   pill.addEventListener('click', e => {
-    if (!(e.target as Element).closest('[data-pill-scale]')) return
-    card && card.phase !== 'exit' ? closeCard() : openCard()
+    const b = (e.target as Element).closest('[data-pill-scale], [data-pill-size]')
+    if (!b) return
+    const kind: CardKind = b.hasAttribute('data-pill-size') ? 'size' : 'scale'
+    card && card.kind === kind && card.phase !== 'exit' ? closeCard() : openCard(kind)
   })
   cardHost.addEventListener('click', e => { if ((e.target as Element).closest('[data-scale-backdrop]')) closeCard() })
   // The phone's sheets and scale card belong to the phone layout; widening past it closes them.
@@ -1399,11 +1446,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         return
       }
       // Wide windows dock the sidebar (remembered); narrower ones open it as a drawer.
-      case 'side': recenter = true; if (!wide()) { st.drawer = arg === '1'; return render() } st.side = arg === '1'; localStorage.setItem('proto-side', st.side ? '1' : '0'); return render()
+      case 'side': recenter = true; if (!wide()) { st.drawer = arg === '1'; return render() } st.side = arg === '1'; remember('proto-side', st.side ? '1' : '0'); return render()
       case 'drawer': st.drawer = arg === '1'; return render()
       case 'menu': st.menu = arg as typeof st.menu; recenter = true; return render()
-      case 'stack': st.stack = arg === '1'; localStorage.setItem('proto-lobby', st.stack ? 'stack' : 'grid'); return show(true)
+      case 'stack': st.stack = arg === '1'; remember('proto-lobby', st.stack ? 'stack' : 'grid'); return show(true)
       case 'scale': st.scale = Number(arg); render(); return fit()
+      // The device view: a size, Fit or 100%, the tablet turned. Chosen in the pill's card, the card
+      // folds back once the pill is drawn for it, into the button where it is now.
+      case 'size': pickSize(arg as Size); if (arg2 === 'card') closeCard(); return
+      case 'zoom': return patchView({ zoom: Number(arg) })
+      case 'turn': return patchView({ land: !st.view.land, zoom: 0 })
       case 'scalestep': st.scale = Math.min(SCALE_MAX, Math.max(SCALE_MIN, Math.round(((st.scale || 50) + Number(arg)) / 5) * 5)); render(); return fit()
       case 'theme': return setTheme(arg === 'dark')
       case 'focus': if (st.place.view !== 'variant') return; st.focus = true; st.open = null; dock.hold = performance.now() + 1600; edge.hover = {}; render(); return fit()
@@ -1454,6 +1506,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (card && card.phase !== 'exit') return closeCard()
       if (st.open) { st.open = null; return render() }
       if (st.drawer) { st.drawer = false; return render() }
+      if (viewOn()) return patchView({ size: null, zoom: 0 })
       if (st.focus) return act('unfocus', '', '')
       if (st.place.view === 'variant' && st.place.tool) return go(untool(st.place))
     }
@@ -1480,7 +1533,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     st.sideW = Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, w)))
     side.style.width = `${st.sideW}px`
     grip.setAttribute('aria-valuenow', String(st.sideW))
-    if (save) localStorage.setItem('proto-side-w', String(st.sideW))
+    if (save) remember('proto-side-w', String(st.sideW))
   }
   grip.setAttribute('aria-valuemin', String(SIDE_MIN))
   grip.setAttribute('aria-valuemax', String(SIDE_MAX))
@@ -1517,7 +1570,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let hintsOpen = wideMq.matches && localStorage.getItem('proto-hints') !== '0'
   let hintSaid = '', hintCopied = -1, hintTimer = 0, hintsDocked = false
   const hintHost = () => st.place.view === 'variant' && !st.place.tool ? layer?.el.querySelector<HTMLElement>('[data-mount]') ?? null : null
-  const hintList = () => q.get('hints') === '0' ? [] : hints.of(hintHost())
+  // A device view covers the design out here, so what to try in it (and its copy options) step aside.
+  const hintList = () => q.get('hints') === '0' || viewOn() ? [] : hints.of(hintHost())
   const valueOf = (h: Extract<Hint, { kind: 'value' }>) => { try { return String(typeof h.value === 'function' ? h.value() : h.value) } catch { return '' } }
   const flash = () => { clearTimeout(hintTimer); hintTimer = window.setTimeout(() => { hintSaid = ''; hintCopied = -1; paintHints() }, 1400) }
 
@@ -1526,16 +1580,75 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // else: not a lobby, not a tool (all states, compare, autoplay), not focus mode, not a shot.
   const phoneMq = matchMedia('(max-width: 639px)')
   const HANDLE = 'flex h-9 items-center gap-1.5 rounded-l-lg bg-white/95 pl-2.5 pr-3 text-xs font-medium text-zinc-900 shadow-lg shadow-black/10 ring-1 ring-black/10 backdrop-blur hover:bg-white dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-white/15 dark:hover:bg-zinc-900'
-  const commentHost = () => !st.focus && q.get('hints') !== '0' ? hintHost() : null
+  // The page inside a device view has none of its own: the page outside comments on it.
+  const commentHost = () => !framed && !st.focus && q.get('hints') !== '0' ? hintHost() : null
   // The side panel carries the list; a phone has it as a sheet from the pill.
   const railOn = () => !!commentHost() && !phoneMq.matches
   const comments = createComments({
     layer: zone.querySelector<HTMLElement>('[data-comments]')!,
-    mount: commentHost,
+    // While a device view is on, comments are on the design in its frame, about that layout.
+    mount: () => viewOn() ? deviceView.mount() : commentHost(),
+    view: () => viewOn() ? { ...viewSize(), at: deviceView.at } : null,
+    setView: v => {
+      if (!v) { if (viewOn()) patchView({ size: null, zoom: 0 }); return }
+      if (!viewOk()) return
+      const land = v.size === 'tablet' && v.w > v.h
+      if (!viewOn() || st.view.size !== v.size || st.view.land !== land) patchView({ size: v.size, land, zoom: 0 })
+    },
     go: (proto, variant, state) => go({ view: 'variant', proto, variant, ...(state ? { state } : {}) }),
     send: sendBatch,
     dark: () => st.dark,
-  }, session.id)
+  }, framed ? `${session.id}~view` : session.id)
+
+  // ---------- the device view: this page at another layout's size, in the stage (view/) ----------
+  // Three sizes in the bar on a wide screen, one button in the pill (and its card) on a phone; the
+  // layout this window already is (its own breakpoints) is the one selected at rest, and choosing it
+  // leaves the view. Not in the page inside a view (no frames in frames), focus mode or a shot, and
+  // not for a phone prototype: its design is the same phone screen at every window size.
+  const native = () => nativeOf(innerWidth)
+  const viewOk = () => !framed && !st.focus && q.get('hints') !== '0' && st.place.view !== 'session' && cur()?.kind !== 'phone' && (!phoneMq.matches || pillOn())
+  const viewOn = () => !!st.view.size && viewOk()
+  const shownSize = (): Size => viewOn() ? st.view.size! : native()
+  const viewSize = (): ViewSize => { const s = st.view.size!, d = dims(s, st.view.land); return { size: s, w: d.w, h: d.h } }
+  const deviceView = createView(zone.querySelector<HTMLElement>('[data-view]')!, comments.wrap)
+  // The size selected at rest is this window's own layout, which a resize can change.
+  let nativeWas = native()
+  addEventListener('resize', () => { if (native() !== nativeWas) { nativeWas = native(); render() } })
+  function pickSize(s: Size) {
+    if (s === native()) { if (viewOn()) patchView({ size: null, zoom: 0 }); return }
+    patchView({ size: s, zoom: 0 })
+  }
+  /** Changes the view; what the chrome shows (its size, turned or not) redraws it, a zoom only the view. */
+  function patchView(p: Partial<typeof st.view>) {
+    const was = st.view
+    st.view = { ...was, ...p }
+    if (st.view.size !== was.size || st.view.land !== was.land) { render(); fit() }
+    else paintView()
+    syncSizeCard()
+  }
+  function paintView() {
+    deviceView.paint({
+      view: viewOn() ? { size: st.view.size!, land: st.view.land, zoom: st.view.zoom } : null,
+      hash: hashOf(st.place),
+      dark: st.dark,
+      set: patchView,
+      // The page in the view moved (its own chrome): this page follows, unless it is there already.
+      route: h => { if (h && h !== location.hash) location.hash = h },
+      onKey: viewKey,
+    })
+  }
+  /** Keys pressed in the page inside the view: C comments on it, as it does out here, and Esc stops. */
+  function viewKey(e: KeyboardEvent) {
+    const t = e.target as Element
+    if (e.metaKey || e.ctrlKey || e.altKey || t.closest?.('input, textarea, select, [contenteditable]')) return
+    if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
+    else if (e.key === 'Escape' && comments.counts().picking) { e.preventDefault(); comments.escape() }
+  }
+  /** The bar's three sizes: icons, the name and size on hover. */
+  const sizeTabs = () => !viewOk() ? '' : `<div role="radiogroup" aria-label="Layout" data-size-tabs class="me-1 flex shrink-0 gap-0.5 rounded-xl bg-zinc-900/[.05] p-0.5 dark:bg-white/[.07]">${ORDER.map(s => {
+    const on = shownSize() === s, land = s === 'tablet' && st.view.land, d = dims(s, land)
+    return `<button type="button" role="radio" aria-checked="${on}" data-act="size:${s}" data-shoot="size-${s}" aria-label="${SIZES[s].name}" title="${SIZES[s].name} · ${d.w} × ${d.h}" class="grid h-8 w-9 flex-none place-items-center rounded-[10px] transition-colors ${on ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-black/[.04] dark:bg-zinc-700 dark:text-white dark:ring-0' : 'text-zinc-600 hover:text-zinc-900 active:bg-zinc-900/5 dark:text-zinc-400 dark:hover:text-white'}">${ic(sizeIcon(s, land))}</button>`
+  }).join('')}</div>`
   const commentsKeyOf = () => { const c = comments.counts(); return JSON.stringify([c.drafts, c.total, c.picking, c.held, [...c.by]]) }
   let commentsKey = commentsKeyOf()
   const pillComments = () => commentHost() ? commentsKeyOf() : ''
@@ -1556,14 +1669,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function syncComments() {
     const host = commentHost(), pl = st.place, p = cur()
     comments.copy.setStage(copyHost(), copy.routeOf(copyHost()))
-    comments.setPlace(host && pl.view === 'variant' && p ? { proto: pl.proto, variant: pl.variant, ...(pl.state ? { state: pl.state } : {}), phone: phoneMq.matches, title: p.title } : null)
+    comments.setPlace(host && pl.view === 'variant' && p ? { proto: pl.proto, variant: pl.variant, ...(pl.state ? { state: pl.state } : {}), phone: phoneMq.matches, title: p.title, ...(viewOn() ? { view: viewSize() } : {}) } : null)
     if (st.status?.inbox !== seenInbox) { seenInbox = st.status?.inbox; comments.setInbox(seenInbox) }
     zone.toggleAttribute('data-picking', !!host && comments.counts().picking)
   }
   comments.mountSheet(root.querySelector<HTMLElement>('[data-comments-sheet]')!)
   // ---------- the motion dock: under a design that declared its motion (useMotion) ----------
   const motionDock = createMotion({
-    el: zone.querySelector<HTMLElement>('[data-motion-dock]')!, zone, stage: hintHost, show: () => !!commentHost(), focused: () => st.focus,
+    el: zone.querySelector<HTMLElement>('[data-motion-dock]')!, zone, stage: hintHost, show: () => !!commentHost() && !viewOn(), focused: () => st.focus,
     remount: () => layer?.remount?.() ?? Promise.resolve(), comments,
   })
   // The chrome shows counts (the bar's button, the pill, the tree): repaint it when they change.
@@ -1580,7 +1693,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // pill on a phone, in the dock in focus mode. Its count is how many lines have options; pressed,
   // copy mode is on (comments/copy.tsx). The picker works in focus mode and in shots too, so it
   // follows the stage, not commentHost.
-  const copyHost = () => hintHost()
+  const copyHost = () => viewOn() ? null : hintHost()
   const copyCounts = () => { const h = copyHost(), c = comments.copy.store.get(); return { lines: copy.of(h).length, changed: copy.changed(h).length, on: !!h && c.on && c.stage === h } }
   const copySay = (c: ReturnType<typeof copyCounts>) => c.on ? 'Close copy options · Esc' : `Copy options for ${c.lines} line${c.lines === 1 ? '' : 's'}${c.changed ? `, ${c.changed} changed` : ''}`
   const copyCount = (c: ReturnType<typeof copyCounts>, ring: string) => c.on ? '' : `<span aria-hidden="true" class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold tabular-nums text-proto-primary-fg ring-2 ${ring}">${c.lines}</span>`
@@ -1656,7 +1769,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     comments.act.toggle()
     if (!comments.counts().picking || !railOn() || !wideMq.matches) return
     tab = 'comments'
-    if (!hintsOpen) { hintsOpen = true; localStorage.setItem('proto-hints', '1') }
+    if (!hintsOpen) { hintsOpen = true; remember('proto-hints', '1') }
     paintHints()
   }
   function paintPanel() {
@@ -1672,7 +1785,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const c = comments.counts()
     if (!hintsOpen) {
       panel.className = 'hidden'
-      handles.innerHTML = `<div class="absolute bottom-[calc(var(--pill-h,0px)+var(--dock-h,0px)+var(--copy-h,0px)+1rem)] right-0 z-20 flex flex-col items-end gap-2">
+      handles.innerHTML = viewOn() ? '' : `<div class="absolute bottom-[calc(var(--pill-h,0px)+var(--dock-h,0px)+var(--copy-h,0px)+1rem)] right-0 z-20 flex flex-col items-end gap-2">
         ${tabs.includes('comments') ? `<button data-hint="open:comments" title="Comments on this design · C" class="${HANDLE}">${ic('comment', 'size-3.5 text-proto-primary-ring')}Comments${c.total ? `<span class="tabular-nums text-zinc-400">${c.total}</span>` : ''}</button>` : ''}
         ${tabs.includes('try') ? `<button data-hint="open:try" title="What to type and try in this design" class="${HANDLE}">${ic('key', 'size-3.5 text-amber-500')}Try it<span class="tabular-nums text-zinc-400">${count}</span></button>` : ''}
       </div>`
@@ -1800,7 +1913,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const [what, a, c] = b.dataset.hint!.split(':'), list = hintList(), h = list[Number(a)]
     try {
       if (what === 'tab') tab = a as typeof tab
-      else if (what === 'open' || what === 'close') { if (what === 'open' && (a === 'comments' || a === 'try')) tab = a; hintsOpen = what === 'open'; if (!hintsOpen) setTry(null); if (wideMq.matches) localStorage.setItem('proto-hints', hintsOpen ? '1' : '0') }
+      else if (what === 'open' || what === 'close') { if (what === 'open' && (a === 'comments' || a === 'try')) tab = a; hintsOpen = what === 'open'; if (!hintsOpen) setTry(null); if (wideMq.matches) remember('proto-hints', hintsOpen ? '1' : '0') }
       else if (what === 'copy' && h?.kind === 'value') { navigator.clipboard?.writeText(valueOf(h)); hintCopied = Number(a); flash() }
       else if (what === 'fill') {
         const host = hintHost()
@@ -1887,7 +2000,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     st.dark = dark
     document.documentElement.classList.toggle('dark', dark)
     document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
-    localStorage.setItem('proto-theme', dark ? 'dark' : 'light')
+    remember('proto-theme', dark ? 'dark' : 'light')
     render()
   }
   // The lobby is drawn once per visit, so its lifecycle line is updated in place.
@@ -1944,7 +2057,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   // While the page is open and visible it counts as activity, so the server isn't stopped
   // as idle under someone who is looking at it.
-  const ping = () => { if (document.visibilityState === 'visible' && !st.stopped) post('ping') }
+  // The page inside a device view only asks: the page outside is the one being looked at.
+  const ping = () => { if (document.visibilityState === 'visible' && !st.stopped) void (framed ? refreshStatus() : post('ping')) }
   setInterval(ping, 60_000)
   document.addEventListener('visibilitychange', ping)
   setInterval(() => document.querySelectorAll<HTMLElement>('[data-ago]').forEach(el => { el.textContent = ago(Number(el.dataset.ago)) }), 1000)

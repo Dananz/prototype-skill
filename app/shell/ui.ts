@@ -1,6 +1,8 @@
 // Small HTML building blocks for the shell chrome. Everything here returns strings.
+import { SIZE_PATHS } from './view/sizes'
 
 const PATHS: Record<string, string> = {
+  ...SIZE_PATHS,
   chev: 'M6 9l6 6 6-6', right: 'M9 6l6 6-6 6', left: 'M15 6l-6 6 6 6',
   grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   rows: 'M4 4h16v7H4zM4 13h16v7H4z',

@@ -2,7 +2,8 @@
 // add prototypes (one built from another, one from two at once, one from the picks), screenshot
 // them (one by one and on a contact sheet) and snapshot them, open a state listed in meta.ts,
 // print a variant's handoff checklist, send comments, decisions and copy choices from the page,
-// record, scrub and comment on a variant's motion, then stop and delete the session. Run by
+// record, scrub and comment on a variant's motion, view and comment on it at another size, then
+// stop and delete the session. Run by
 // .github/workflows/smoke.yml on Windows, Linux and macOS.
 import { spawn, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -108,7 +109,9 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
     const press = async (x, y) => { for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }, sessionId) }
     // A real Enter (Input.dispatchKeyEvent), as a person's: on a focused button it clicks it.
     const enter = async () => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ...(type === 'keyDown' ? { text: '\r' } : {}) }, sessionId) }
-    return { run, close, press, enter }
+    // Real fingers (Input.dispatchTouchEvent): touchStart, touchMove or touchEnd, with [x, y] per finger.
+    const touch = (type, fingers) => send('Input.dispatchTouchEvent', { type, touchPoints: fingers.map(([x, y], id) => ({ x, y, id })) }, sessionId)
+    return { run, close, press, enter, touch }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {
@@ -1278,6 +1281,169 @@ try {
   })()`)
   if (r !== 'ok') fail(`Try it on a desktop: ${r}`)
 } finally { tryDesk.close() }
+
+// The device view: this page at a phone's, a tablet's or a desktop's size, in the stage. A desktop
+// has the three sizes in the bar before Comment, its own selected; a phone has one button in the
+// pill, after the key, whose card grows out of it and folds back once a size is chosen. The view is
+// the page in a frame (?dv), on the same place: the page in it pings nothing and writes nothing, and
+// where either goes the other follows. A comment written in it is about that layout, and says so in
+// the inbox. Two fingers on the device zoom it around the point between them, and switching sizes
+// and variants fast never freezes the page.
+const frameOf = `const frame = () => document.querySelector('[data-view] iframe')
+    const inFrame = () => { try { const d = frame()?.contentDocument; return d && d.URL !== 'about:blank' && d.documentElement.dataset.ready === '1' && d.querySelector('[data-layers] [data-mount] > *') ? d : null } catch { return null } }`
+const viewDesk = await openPage(`${local}?theme=light#/tryit/A`)
+try {
+  const r = await viewDesk.run(`(async () => {
+    ${until}
+    ${frameOf}
+    const tabs = await until(() => document.querySelector('[data-bar] [data-size-tabs]'), 8000)
+    if (!tabs) return 'the bar has no sizes'
+    const sizes = [...tabs.querySelectorAll('[role=radio]')].map(b => b.dataset.act + '=' + b.getAttribute('aria-checked'))
+    if (sizes.join() !== 'size:phone=false,size:tablet=false,size:desktop=true') return 'the bar should have phone, tablet and desktop, desktop selected: ' + sizes.join()
+    if (tabs.querySelector('[data-act="size:desktop"]').title !== 'Desktop · 1440 × 900') return 'the desktop size says ' + tabs.querySelector('[data-act="size:desktop"]').title
+    if (tabs.nextElementSibling?.dataset.act !== 'comment:toggle') return 'the sizes should come just before Comment'
+    tabs.querySelector('[data-act="size:phone"]').click()
+    if (!await until(() => inFrame(), 15000)) return 'no page in a view'
+    const url = new URL(frame().src)
+    if (!url.searchParams.has('dv') || url.hash !== '#/tryit/A') return 'the view should show this place, framed: ' + frame().src
+    if (!/^390 × 844 · 100%/.test(document.querySelector('[data-view-line]').textContent)) return 'the view line says ' + document.querySelector('[data-view-line]').textContent
+    const d = inFrame(), w = d.defaultView
+    if (d.querySelector('[data-size-tabs], [data-pill-size], [data-act="comment:toggle"], [data-act="comment:tap"]')) return 'the page in the view has sizes or a Comment of its own'
+    // What the page in the view writes and posts from here on.
+    w.__writes = []; w.__posts = []
+    const set = w.Storage.prototype.setItem, f = w.fetch
+    w.Storage.prototype.setItem = function (k, v) { w.__writes.push(k); return set.call(this, k, v) }
+    w.fetch = (u, o) => { if ((o?.method || 'GET') !== 'GET') w.__posts.push(String(u)); return f.call(w, u, o) }
+    d.dispatchEvent(new w.Event('visibilitychange'))
+    w.location.hash = '#/tryit'
+    if (!await until(() => location.hash === '#/tryit', 5000)) return 'the page should follow the view to #/tryit, is on ' + location.hash
+    location.hash = '#/tryit/A'
+    if (!await until(() => w.location.hash === '#/tryit/A' && inFrame(), 8000)) return 'the view should follow the page back to #/tryit/A, is on ' + w.location.hash
+    await new Promise(r => setTimeout(r, 300))
+    if (w.__posts.length) return 'the page in the view posted ' + w.__posts.join(', ')
+    if (w.__writes.length) return 'the page in the view wrote ' + w.__writes.join(', ')
+    document.querySelector('[data-act="comment:toggle"]').click()
+    if (!await until(() => document.querySelector('[data-view-banner]') && document.querySelector('[data-view-pick]'))) return 'Comment should turn the view line into its commenting line, over the frame'
+    if (!/what to change on phone/.test(document.querySelector('[data-view-banner]').textContent)) return 'the commenting line says ' + document.querySelector('[data-view-banner]').textContent
+    return 'ok'
+  })()`, 60_000)
+  if (r !== 'ok') fail(`a device view on a desktop: ${r}`)
+  // A real press on the heading in the frame, mapped out to this page.
+  const at = await viewDesk.run(`(() => {
+    const f = document.querySelector('[data-view] iframe'), h = f.contentDocument.querySelector('[data-layers] [data-mount] h1')
+    const r = h.getBoundingClientRect(), fr = f.getBoundingClientRect(), s = fr.width / f.offsetWidth
+    return [fr.left + (r.left + 10) * s, fr.top + (r.top + r.height / 2) * s]
+  })()`)
+  await viewDesk.press(...at)
+  const wrote = await viewDesk.run(`(async () => {
+    ${until}
+    const chip = await until(() => document.querySelector('[data-composer] [data-view-chip]'))
+    if (!chip) return 'a press on the design in the view opened no composer with its size'
+    if (chip.textContent !== 'Phone · 390 × 844') return 'the composer\\'s chip says ' + chip.textContent
+    const ed = document.querySelector('[data-composer] [role=textbox]')
+    ed.textContent = 'Smaller heading on a phone'
+    ed.dispatchEvent(new Event('input', { bubbles: true }))
+    await new Promise(r => setTimeout(r, 100))
+    ;[...document.querySelectorAll('[data-composer] button')].find(b => /Add/.test(b.textContent)).click()
+    if (!await until(() => document.querySelector('[data-hints] [data-view-chip]'))) return 'the comments list should show the size on the comment'
+    document.querySelector('[data-shoot=send]').click()
+    return 'ok'
+  })()`)
+  if (wrote !== 'ok') fail(`a comment in a device view: ${wrote}`)
+  let heard = ''
+  for (let i = 0; i < 40 && !/Smaller heading on a phone/.test(heard); i++) { await new Promise(r => setTimeout(r, 250)); heard = proto(['inbox'], { stdout: true }) }
+  if (!/Smaller heading on a phone\n(?: {3}.*\n)* {3}view: phone 390x844 \(shoot it: proto shoot tryit\/A --size 390x844\)$/m.test(heard)) fail(`proto inbox should print the comment's layout as view: phone 390x844: ${heard}`)
+  // Its pin is on the phone only: the tablet has a chip that goes back to it, and Esc leaves the view.
+  const pins = await viewDesk.run(`(async () => {
+    ${until}
+    const pins = () => [...document.querySelectorAll('[data-comments] button')].filter(b => /^\\d+$/.test(b.textContent.trim())).length
+    if (!await until(() => pins() === 1)) return 'the comment should have its pin over the phone, has ' + pins()
+    document.querySelector('[data-size-tabs] [data-act="size:tablet"]').click()
+    const chip = await until(() => document.querySelector('[data-view-other=phone]'))
+    if (!chip || pins()) return 'on the tablet the pin should go and a chip lead back to the phone (' + pins() + ' pins)'
+    chip.click()
+    if (!await until(() => /^390 × 844/.test(document.querySelector('[data-view-line]')?.textContent) && pins() === 1)) return 'the chip should go back to the phone, with its pin'
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    if (!await until(() => document.querySelector('[data-view]').hidden && !document.querySelector('[data-view] iframe'))) return 'Esc should leave the view'
+    return pins() ? 'out of the view the pin should go' : 'ok'
+  })()`)
+  if (pins !== 'ok') fail(`a comment's layout: ${pins}`)
+} finally { viewDesk.close() }
+for (const view of [{ size: 'watch', w: 390, h: 844 }, { size: 'phone', w: 390.5, h: 844 }, { size: 'phone', w: 390 }, { size: 'desktop', w: 99999, h: 900 }, 'phone']) {
+  const res = await postJson('comments', { comments: [{ route: 'tryit/A', text: 'x', view }] })
+  if (res.status !== 400 || !/view/.test(await res.text())) fail(`a comment with view ${JSON.stringify(view)} was answered ${res.status}, not refused`)
+}
+if ((await postJson('comments', { comments: [{ route: 'tryit/A', text: 'x', action: 'more', view: { size: 'phone', w: 390, h: 844 } }] })).status !== 400) fail('a decision with a view was accepted')
+const viewPhone = await openPage(`${local}?theme=dark#/tryit/A`, { width: 390, height: 844, phone: true })
+try {
+  const r = await viewPhone.run(`(async () => {
+    ${until}
+    ${frameOf}
+    const btn = () => document.querySelector('[data-pill] [data-pill-size]')
+    if (!await until(btn, 8000)) return 'the pill has no size button'
+    const order = [...document.querySelectorAll('[data-pill-bar] [data-act="comment:tap"], [data-pill-bar] [data-act=copymode], [data-pill-bar] [data-act=try], [data-pill-bar] [data-pill-size]')].map(b => b.dataset.act || 'size')
+    if (order.join() !== 'comment:tap,copymode,try,size') return 'the size button should come after Comment, T and the key: ' + order.join()
+    const bar = document.querySelector('[data-pill-bar]').getBoundingClientRect()
+    if (bar.left < 0 || bar.right > innerWidth) return 'the pill overflows: ' + bar.left + '-' + bar.right
+    btn().click()
+    const card = await until(() => document.querySelector('[data-size-card]'))
+    if (!card || btn().getAttribute('aria-expanded') !== 'true' || !btn().classList.contains('!bg-white')) return 'the size button should open its card and turn white'
+    if (card.querySelectorAll('[data-act^="size:"]').length !== 3 || card.querySelector('[data-act^="zoom:"]')) return 'with no view on, the card has the three sizes only'
+    card.querySelector('[data-act="size:desktop:card"]').click()
+    if (!await until(() => !document.querySelector('[data-size-card]'), 3000)) return 'choosing a size should fold the card back'
+    if (!btn().classList.contains('!bg-proto-primary')) return 'the size button should be lit while a view is on'
+    if (!await until(() => inFrame(), 15000)) return 'no desktop in a view'
+    if (!/^1440 × 900 · \\d+%/.test(document.querySelector('[data-view-line]').textContent)) return 'the view line says ' + document.querySelector('[data-view-line]').textContent
+    btn().click()
+    if (!await until(() => document.querySelector('[data-size-card] [data-act="zoom:100"]'))) return 'with a view on, the card should have Fit and 100%'
+    document.querySelector('[data-scale-backdrop]').click()
+    if (!await until(() => !document.querySelector('[data-size-card]'), 3000)) return 'the backdrop should fold the card back'
+    return 'ok'
+  })()`, 60_000)
+  if (r !== 'ok') fail(`a device view on a phone: ${r}`)
+  // Two fingers on the device, spreading 3x: the zoom only grows, about 3x, around the point between them.
+  const where = `(() => {
+    const a = document.querySelector('[data-view-area]').getBoundingClientRect(), f = document.querySelector('[data-view] iframe').getBoundingClientRect()
+    return { x: (Math.max(a.left, f.left) + Math.min(a.right, f.right)) / 2 - 30, y: (Math.max(a.top, f.top) + Math.min(a.bottom, f.bottom)) / 2 + 20 }
+  })()`
+  const mid = await viewPhone.run(where)
+  const under = `(() => { const f = document.querySelector('[data-view] iframe'), r = f.getBoundingClientRect(), s = r.width / f.offsetWidth; return { x: (${mid.x} - r.left) / s, y: (${mid.y} - r.top) / s, pct: s * 100 } })()`
+  const before = await viewPhone.run(under)
+  const path = []
+  await viewPhone.touch('touchStart', [[mid.x - 30, mid.y], [mid.x + 30, mid.y]])
+  for (let i = 1; i <= 20; i++) {
+    const g = 30 + 60 * i / 20
+    await viewPhone.touch('touchMove', [[mid.x - g, mid.y], [mid.x + g, mid.y]])
+    await new Promise(r => setTimeout(r, 20))
+    path.push(await viewPhone.run(under, 5000))
+  }
+  await viewPhone.touch('touchEnd', [])
+  const pcts = path.map(p => p.pct), back = pcts.findIndex((p, i) => i && p < pcts[i - 1] - 0.3), drift = Math.max(...path.map(p => Math.hypot(p.x - before.x, p.y - before.y)))
+  if (back > 0) fail(`a pinch on the device went back at step ${back}: ${pcts.map(Math.round).join(' ')}`)
+  if (Math.abs(pcts.at(-1) / before.pct - 3) > 0.3) fail(`spreading two fingers 3x should zoom about 3x: ${Math.round(before.pct)}% to ${Math.round(pcts.at(-1))}%`)
+  if (drift > 6) fail(`the point between the fingers moved ${Math.round(drift)} page px`)
+} finally { viewPhone.close() }
+// Sizes and variants switched fast with a view open: the page answers every step and ends in step.
+const viewFast = await openPage(`${local}?theme=dark#/home/A`)
+try {
+  for (const step of ['size:phone', 'v:B', 'size:tablet', 'v:C', 'size:desktop', 'size:phone', 'v:A', 'size:tablet', 'v:B', 'size:phone', 'v:A', 'size:tablet']) {
+    const [k, a] = step.split(':')
+    const r = await viewFast.run(k === 'v' ? `(location.hash = '#/home/${a}', 'ok')` : `(() => { const b = document.querySelector('[data-size-tabs] [data-act="size:${a}"]'); if (!b) return 'no ${a} in the bar'; b.click(); return 'ok' })()`, 8000)
+    if (r !== 'ok') fail(`switching fast with a view open, ${step}: ${r}`)
+    await new Promise(r => setTimeout(r, 120))
+  }
+  const end = await viewFast.run(`(async () => {
+    ${until}
+    ${frameOf}
+    if (!await until(() => inFrame()?.defaultView.location.hash === location.hash, 15000)) return 'the view never caught up: ' + location.hash + ' in the page, ' + frame()?.contentWindow.location.hash + ' in the view'
+    return /^834 × 1194/.test(document.querySelector('[data-view-line]').textContent) && document.querySelectorAll('[data-view] iframe').length === 1 ? 'ok' : 'the view should be one tablet: ' + document.querySelector('[data-view-line]').textContent
+  })()`, 20_000)
+  if (end !== 'ok') fail(`switching fast with a view open: ${end}`)
+} finally { viewFast.close() }
+proto(['shoot', 'tryit/A', '--size', '834x1194'])
+if (!pngs(shots).includes('tryit-A-834x1194.png')) fail('proto shoot --size 834x1194 should write tryit-A-834x1194.png')
+proto(['shoot', 'tryit/A', '--size', '834'], { ok: false })
+proto(['shoot', 'tryit', '--sheet', '--size', '834x1194'], { ok: false })
 
 proto(['stop'])
 for (let i = 0; i < 40 && await answers(`${local}__proto/status`); i++) await new Promise(r => setTimeout(r, 250))

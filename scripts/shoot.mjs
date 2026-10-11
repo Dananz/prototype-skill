@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Screenshot places in a prototype session at desktop and phone size: the stage only (the
 // design, or a lobby's grid), without the page's sidebar, bars and floating controls.
-// Usage: shoot.mjs <app-url> <out-dir> <route...> [--theme=dark] [--focus=1] [--copy=1] [--click=<css>]... [--ref=<png> [--as=built]] [--phone=<slug,…>] [--sheet=<json>]
+// Usage: shoot.mjs <app-url> <out-dir> <route...> [--theme=dark] [--focus=1] [--copy=1] [--click=<css>]... [--ref=<png> [--as=built]] [--phone=<slug,…>] [--sheet=<json>] [--size=<w>x<h>]
 // Routes are the page's hash routes: "/" (session lobby), "hero" (a prototype's lobby),
 // "hero/A" (one variant), "hero/A/open" (a state from its meta). Files are named
 // hero-A-desktop.png, hero-A-mobile-dark.png …
@@ -30,6 +30,9 @@
 // --phone lists the phone prototypes: their variants are shot at phone size only, where the phone
 // shows larger than in the desktop shell. Their lobbies still get both.
 //
+// --size=<w>x<h> shoots at that one viewport instead (hero-A-834x1194.png), the way the page's
+// device view shows a tablet or a desktop: a web prototype's stage at that width, no phone frame.
+//
 // Drives Chrome over the DevTools protocol so the phone shot is a real 390px mobile
 // viewport, and waits for the page to say it is ready instead of sleeping.
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -50,10 +53,15 @@ if (!rawUrl || !outDir || routes.length === 0) {
 // At the scale Claude Code shows them: it shrinks an image to 2000 px on its long side, which
 // for the whole window was 2000 / 1440 desktop and 2000 / 844 phone. Cropped to the stage at the
 // same scale, a design keeps the detail it had and the shell's pixels are no longer paid for.
-const SIZES = [
-  { name: 'desktop', width: 1440, height: 900, deviceScaleFactor: 2000 / 1440, mobile: false },
-  { name: 'mobile', width: 390, height: 844, deviceScaleFactor: 2000 / 844, mobile: true },
-]
+// With --size, that viewport alone, for every route (a phone prototype's variants too), a phone's
+// below 640 px wide.
+const sized = String(flags.size ?? '').match(/^(\d+)x(\d+)$/)
+const SIZES = sized
+  ? [{ name: `${sized[1]}x${sized[2]}`, width: +sized[1], height: +sized[2], deviceScaleFactor: 2000 / Math.max(+sized[1], +sized[2]), mobile: +sized[1] < 640, every: true }]
+  : [
+      { name: 'desktop', width: 1440, height: 900, deviceScaleFactor: 2000 / 1440, mobile: false },
+      { name: 'mobile', width: 390, height: 844, deviceScaleFactor: 2000 / 844, mobile: true },
+    ]
 const base = new URL(rawUrl)
 base.hash = ''
 base.searchParams.set('theme', flags.theme === 'dark' ? 'dark' : 'light') // headless Chrome may report a dark system theme
@@ -278,7 +286,7 @@ try {
     }
   }
   for (const size of flags.ref || motion ? [] : SIZES) {
-    for (const route of routes.filter(r => size.mobile || !phoneOnly(r))) {
+    for (const route of routes.filter(r => size.mobile || size.every || !phoneOnly(r))) {
       // A fresh tab per shot: the page reads its route and theme only at load.
       const at = [performance.now()]
       const { targetId } = await send('Target.createTarget', { url: 'about:blank' })

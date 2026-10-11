@@ -98,6 +98,7 @@ Or just ask for "a few versions of the settings drawer". Keep talking in the sam
 - Open menus, drawers and steps from a list, autoplay them, or compare two variants in the same state.
 - A Try it panel tells you what to type and where to click.
 - Comment on any part of a design. Claude makes the change and replies.
+- See the page at a phone's, a tablet's or a desktop's size from any screen, and comment on that layout.
 - Ask for other copy, then try Claude's options on the design itself and send back the ones you pick.
 - Scrub an animation forward and back, see each part's curve, and comment on one moment of it or a stretch of it. Claude reads the frames, changes the timing and replies.
 
