@@ -5,6 +5,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useCtx } from './ctx'
 import { describe } from './dom'
+import { listen } from '../quiet'
 import { Glide, HoldRing, HoverBox, useBoxes, usePick } from './inspect'
 import { Composer } from './composer'
 import { useRows } from './list'
@@ -59,7 +60,7 @@ export function Layer() {
       e.preventDefault(); e.stopPropagation()
       act.begin(describe(mount, t))
     }
-    document.addEventListener('click', alt, true)
+    listen(document, 'click', alt, true)
     return () => document.removeEventListener('click', alt, true)
   }, [host, act, s.place, m.kind])
 
@@ -107,8 +108,8 @@ function ReadCard({ row, box }: { row: { item: Item; state: ReturnType<typeof pr
       act.close()
     }
     const timer = window.setTimeout(act.close, 60_000)
-    document.addEventListener('keydown', k, true)
-    document.addEventListener('pointerdown', away, true)
+    listen(document, 'keydown', k, true)
+    listen(document, 'pointerdown', away, true)
     return () => { document.removeEventListener('keydown', k, true); document.removeEventListener('pointerdown', away, true); clearTimeout(timer) }
   }, [act, row.item.id])
   // Under the element and its outline; above it only when there is no room below.

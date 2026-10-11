@@ -29,8 +29,8 @@ export function PhoneSheet() {
   return (
     <Drawer.Root open={s.sheet} onOpenChange={(open: boolean) => act.openSheet(open)}>
       <Drawer.Portal container={uiBox()}>
-        <Drawer.Backdrop className={BACKDROP} />
-        <Drawer.Viewport className="fixed inset-0 z-[200] flex items-end justify-center">
+        <Drawer.Backdrop data-comment-ui="" className={BACKDROP} />
+        <Drawer.Viewport data-comment-ui="" className="fixed inset-0 z-[200] flex items-end justify-center">
           <Drawer.Popup className={POPUP}>
             <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700" />
             <Drawer.Content className="flex min-h-0 flex-1 flex-col px-3">

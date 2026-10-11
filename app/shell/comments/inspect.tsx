@@ -6,6 +6,7 @@ import { describe, find, labelOf, seen, spot, spotAt } from './dom'
 import { Icon } from './ui'
 import type { Box, Target } from './types'
 import { useCtx } from './ctx'
+import { listen } from '../quiet'
 
 export const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 export const GLIDE_MS = 110
@@ -229,15 +230,15 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     designs?.style.setProperty('-webkit-touch-callout', 'none')
     const noMenu = (e: Event) => { if (inDesign(e.target)) e.preventDefault() }
     stage.addEventListener('pointermove', move)
-    for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'contextmenu']) document.addEventListener(t, press, true)
-    document.addEventListener('touchstart', touchStart, opts)
-    document.addEventListener('touchend', touchEnd, opts)
-    document.addEventListener('touchmove', touchMove, opts)
-    document.addEventListener('touchcancel', touchCancel, opts)
-    document.addEventListener('contextmenu', noMenu, true)
-    document.addEventListener('selectstart', noMenu, true)
-    document.addEventListener('click', click, true)
-    document.addEventListener('keydown', key, true)
+    for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'contextmenu']) listen(document, t, press, true)
+    listen(document, 'touchstart', touchStart, opts)
+    listen(document, 'touchend', touchEnd, opts)
+    listen(document, 'touchmove', touchMove, opts)
+    listen(document, 'touchcancel', touchCancel, opts)
+    listen(document, 'contextmenu', noMenu, true)
+    listen(document, 'selectstart', noMenu, true)
+    listen(document, 'click', click, true)
+    listen(document, 'keydown', key, true)
     stage.addEventListener('scroll', scroll, true)
     return () => {
       settle()

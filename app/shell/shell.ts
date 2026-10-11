@@ -8,6 +8,8 @@
 // mounted once; moving somewhere builds a new layer under the old one and fades the old
 // one out. Live edits reach the mounted components through the framework's own HMR.
 
+// First: it wraps the page listeners every later import, and every design, adds (see quiet.ts).
+import { listen, quiet } from './quiet'
 import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } from './ui'
 import { dock, edge, smooth, runDock, restoreEdgeLabels, stageHover, installPointerTracking, fadeOut } from './motion'
 import { hints, fillField, type Hint } from './hints'
@@ -1426,7 +1428,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
   })
 
-  addEventListener('keydown', e => {
+  listen(window, 'keydown', e => {
     const t = e.target as Element
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); return act('side', (wide() ? st.side : st.drawer) ? '0' : '1', '') }
     // Cmd or Ctrl Enter sends what's ready to Claude, from anywhere but a field of the design's own.
@@ -1520,6 +1522,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     send: sendBatch,
     dark: () => st.dark,
   }, session.id)
+  // A design's own page listeners don't hear commenting: anything while picking or writing, a press
+  // on the comment chrome, or the C that starts it. So a menu open in the design stays open, and
+  // what is in it can be commented on.
+  const COMMENT_UI = '[data-comments], [data-cbody], [data-comments-sheet], [data-comment-ui], [data-composer], [data-tag-menu], [data-act^="comment:"]'
+  quiet(e => {
+    if (comments.busy()) return true
+    const t = e.target instanceof Element ? e.target : null
+    if (t?.closest(COMMENT_UI)) return true
+    const k = e as KeyboardEvent
+    return (e.type === 'keydown' || e.type === 'keyup') && k.key === 'c' && !k.metaKey && !k.ctrlKey && !k.altKey && !st.sheet && !!commentHost() && !t?.closest(INTERACTIVE)
+  })
   const commentsKeyOf = () => { const c = comments.counts(); return JSON.stringify([c.drafts, c.total, c.picking, c.held, [...c.by]]) }
   let commentsKey = commentsKeyOf()
   const pillComments = () => commentHost() ? commentsKeyOf() : ''
