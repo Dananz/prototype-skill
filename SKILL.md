@@ -108,7 +108,7 @@ the app), do the steps below and save one at the end.
    the font family and type scale. The shell imports this file too, so new names go in
    `@theme {}` (`--color-brand-ink`), but values that replace Tailwind's own (`--font-sans`,
    `--text-xs`, `--radius-2xl`) go on a class (`.app { --font-sans: … }`) set on each variant's
-   root; otherwise they restyle the shell. Right-to-left products: see "Right to left" below.
+   root; otherwise they restyle the shell. Right-to-left products: see Right to left below.
 4. **The real chrome, once.** Rebuild the app's recurring pieces (tab bar, header, cards,
    buttons, sheets, status bar and home indicator on a phone) in `src/protos/<slug>/parts.tsx`,
    measured from the component source (radii, padding, sizes, blur), not eyeballed. System
@@ -148,56 +148,24 @@ The feature itself: write down in two or three lines what it must do. Every vari
 **A new product** (nothing ships yet, so there's no Current): import the project's tokens and
 components if it has any (`@import` its token CSS in `src/theme.css`; import presentational
 components through `@project/…` and add `@source "../../../src/components";` so their classes
-are generated). With none, choose a restrained palette and type that fit the product, put them
-in a `@theme {}` block, and tell the user they are invented. Save the kit once those and the
-first parts exist (`proto kit save <slug>`), so the next prototype keeps the same invented look.
+are generated). With none, the look is yours to choose, and it is chosen per direction by the
+plan in craft.md (next section), not once for the session: name it, give it a palette and a
+type pairing from the font kit, and tell the user it is invented. Once the user picks one, put
+its tokens in a `@theme {}` block and save the kit (`proto kit save <slug>`), so the next
+prototype keeps that look.
 
-## Right to left (Hebrew, Arabic, Persian, Urdu)
-
-When the product reads right to left, every variant (Current and new designs alike) is built
-right to left from its first line. Never draw it left to right and flip it, and never copy a
-screenshot's pixel positions: RTL layout comes from the flow, not from coordinates.
-
-- **Direction.** `dir="rtl"` and `lang` (`he`, `ar`, …) on each variant's root. Everything
-  inside inherits it; set `dir` again only on an LTR island.
-- **Logical sides only.** `ms-`/`me-`, `ps-`/`pe-`, `start-`/`end-`, `text-start`/`text-end`,
-  `rounded-s`/`rounded-e`, `border-s`/`border-e`; rows and grids already begin at the right.
-  Never `ml`/`mr`/`pl`/`pr`/`left`/`right`/`text-left`/`text-right`, in classes or styles. Measure
-  sizes and gaps off the screenshot and let the flow place them. Center with
-  `left-1/2 -translate-x-1/2` (`start-1/2` with a translate goes wrong: translate is physical).
-  Anything that really depends on the side (a scrim behind start-aligned text, a slide-in, a
-  translate) gets both versions: `ltr:bg-linear-to-r rtl:bg-linear-to-l`.
-- **What mirrors.** Reading order: the first tab, step, crumb, chip and carousel page sit at
-  the right, and carousels start from their right end. Back points right and forward points
-  left; `‹` is drill-in. Progress bars, sliders and rings fill from the right. A pushed page
-  enters from the left, swipe back starts at the right edge, and a side drawer opens from the
-  side its button is on. Icons that show a direction
-  (arrows, chevrons, send, reply, undo/redo, trend charts, text alignment) flip with
-  `rtl:-scale-x-100`.
-- **What doesn't mirror (LTR islands).** Numbers joined by symbols (`0/10`, `3.1K`, `+2`,
-  `4–10`), times, phone numbers, Latin names, code, URLs, emails, media controls (play, seek), clocks,
-  checkmarks, logos, and a device's own status bar when the device's language reads LTR
-  (follow the reference). Wrap an LTR run inside a sentence in
-  `<bdi>` or `<span dir="ltr">` so punctuation and the words around it stay put. A plain number
-  (`22.5`, `1,250`) needs no wrapper. Where the project writes ranges, units or dates its own
-  way in its locale files (`8 עד 10 חזרות`), that wins over a symbol.
-- **Type.** The project's own font for that script; confirm it has the glyphs, because a
-  missing one falls back silently and changes every width. No letter-spacing or italics the app
-  doesn't ship (Hebrew has no italics, spacing breaks Arabic joining), no `uppercase`. Arabic
-  needs more line height than Latin. Truncation puts the ellipsis on the left; check what's cut.
-- **Copy.** Real copy in the product's language, from the project's locale files where the
-  string exists. New strings follow the project's rules (gender, register, punctuation). Never
-  English placeholder text in an RTL screen.
-- **Check.** `proto shoot` lists every physical side in an RTL prototype's files (margins,
-  padding, insets, text alignment, corners, borders, gradients, translates, transform origins,
-  image positions), skipping anything nested under a `dir="ltr"` element, centring, and classes
-  chosen per direction (`rtl:…`). Each one it lists is a bug. It can't see an icon that should
-  have flipped; check those in the shots. In every shot, check that text is ragged on the
-  left, that numbers and Latin words sit right inside Hebrew lines, and that arrows point the
-  way they go. A product that also ships LTR: flip the root's `dir` once and check the variant
-  mirrors cleanly.
+**Right to left** (Hebrew, Arabic, Persian, Urdu): when the product reads right to left, read
+`${CLAUDE_SKILL_DIR}/references/rtl.md` before the first variant, Current included. `proto shoot` lists every
+physical left or right in an RTL prototype's files; each one it lists is a bug.
 
 ## 3. One usable direction first, then the exploration
+
+**Plan the look before code.** Read `${CLAUDE_SKILL_DIR}/references/craft.md` before the first variant. For each
+direction you will build, write its plan (concept, palette, type, layout, signature, imagery,
+motion) into the app's `.proto/briefs/<slug>.md` and check it against the defaults that file
+lists, then build from the plan. With a Current the plan is short (what changes and why) and
+Current's look holds; without one it is the whole look. This takes a minute per direction and is
+what keeps the result from looking generated.
 
 **First usable output: one complete, high-quality direction.** No special prompt is needed.
 Keep the real-product grounding, exact Current/reference match, real tokens/assets/chrome,
@@ -234,7 +202,10 @@ after the first usable prototype is in place.
 Name each direction in a few words. Vary something structural: where it lives, how it is
 triggered, how much it shows, the interaction model. Two directions that differ only in color
 or spacing are one direction. With a Current, the directions are B onwards, and each keeps
-Current's chrome and visual language unless the direction is about them.
+Current's chrome and visual language unless the direction is about them. Without a Current
+(a new product, a "go wild" request), each direction also has its own look: its own palette, type
+pairing and signature from its plan, so the user is choosing between finished-looking designs,
+not between wireframes in one default style.
 
 **Rearranging adds nothing.** When the user asks to rearrange, restyle, simplify or declutter
 what exists, every variant keeps exactly the product's features and content, and the
@@ -315,117 +286,15 @@ columns, each with its line, beside Autoplay, All states and Compare:
 - Put `data-diff` on what a variant adds; Compare outlines it.
 - `proto add`, `pick` and `archive` keep these fields; edit `meta.ts` after `proto add`.
 
-**Only on request: say what to type and try.** After an explicit request in chat or
-`action: try-it` from the page, when getting through a variant takes something a reviewer can't
-guess (a login, a code, a search that returns results), or it has scenarios, outside events or
-limits worth knowing, report them with `useHints` from `src/hints.ts`, once, in the variant's
-component. The page shows them in a Try it panel beside the design (on a phone, a sheet from Try it
-in the pill's menu), where each value copies with a click and Fill in types them into the design's
-fields; `proto shoot` leaves the panel out.
+**Extras, only when asked.** Each has its own file; read it when the request comes, not before:
 
-```
-import { useHints } from '../../hints'
-
-useHints([
-  { kind: 'value', label: 'Email', value: 'mira@arc.audio', fill: 'input[type=email]' },
-  { kind: 'value', label: '2FA code', value: () => codeNow(), fill: 'input[inputmode=numeric]', note: 'changes every 30 s' },
-  { kind: 'try', text: 'Lock the account: 5 wrong passwords', done: misses >= 5, at: '[data-shoot=sign-in]' },
-  { kind: 'try', text: 'Drag a mix onto the queue', done: queued, at: '[data-shoot=mix]', to: '[data-shoot=queue]' },
-  { kind: 'switch', label: 'Scenario', options: ['Few', 'Empty', 'Busy', 'Can’t load'], value: scenario, set: setScenario },
-  { kind: 'event', label: 'A new mix arrives', run: addMix },
-  { kind: 'caveat', text: 'Audio doesn’t play in the prototype.' },
-])
-```
-
-- Report what applies now, from the variant's own state: the values for the step on screen, and
-  `done` once a thing to try has happened. The panel follows along.
-- `fill` is a selector inside the variant; a function `value` is read every second.
-- **Give each thing to try its spot.** Pointing at it in the panel (or tapping it on a phone)
-  dims the design except where it happens, with a label: `at` is where you start, `to` where a
-  drag ends. `act` says what you do there, `click` unless `to` makes it a `drag`; also
-  `right-click`, `hover` and `type`. `label` replaces the act's word (`Type “rain”`, `Any of
-  these`). `key: '⌘ K'` shows the keys to press, with or without a spot. `all: true` lights every
-  match of `at`. A thing done in order (open a menu, then pick in it) is `steps: [{ at, label },
-  …]`: the light moves to the last step on the page. Selectors are the same `data-shoot`
-  attributes as states. A spot scrolled out of view is scrolled to; one that isn't on the page
-  says so in the panel.
-- Made-up demo data only, never real credentials: the page is served on the tailnet.
-- A scenario switch is for the same design with other data (empty, busy, an error, a first
-  visit); a different design is a variant.
-- Vue: `useHints(() => [...])` in `<script setup>`. A variant with nothing to say makes no call.
-
-**Offer other copy when asked.** When the user asks for other words ("better headlines", "try other
-button text") or sends `action: copy-options` from the page, don't write a variant per wording: give the lines they asked about options with
-`useCopy` from `src/copy.ts`, in the variant being worked on. The page then shows a T button beside
-Comment (on a phone, Copy options in the pill's menu); in copy mode each of those lines is marked, a click lists its options and points one into
-place, and the user sends the choices back (`action: copy`, below). A variant without `useCopy` shows
-none of it.
-
-```
-import { useCopy } from '../../copy'
-
-const copy = useCopy([
-  { id: 'headline', label: 'Headline', options: ['עוד אימון מאחוריך', 'עשית את זה', 'עוד צעד אל היעד'] },
-  { id: 'cta', label: 'Button', options: ['לסיכום האימון', 'סיימתי'] },
-])
-<h1 data-copy="headline">{copy.headline}</h1>
-<button data-copy="cta">{copy.cta}</button>
-```
-
-- The first option is the line as it reads today; then 2 to 4 others. Only the lines they asked
-  about, never every string on the screen. A page request without a note means the headline and
-  primary supporting text/CTA. Preserve the design and its current words until they choose.
-- Real copy in the product's language and rules (its locale files, gender, register, length), the
-  same as any copy in a variant.
-- `useCopy` returns the words to show per line (the user's pick, or the first option). Put
-  `data-copy="<id>"` on the element that holds those words, so the page can mark it.
-- Call it in the component that shows the lines: each component may declare its own (the variant
-  its headline, a part in `parts.tsx` its button), and the page counts them all as the design's.
-  A part used more than once with different words (a card per plan) needs an id per use
-  (`plan-${id}-title`): one id is one line, with one set of options.
-- Vue: `const copy = useCopy([...])` in `<script setup>`, then `{{ copy.headline }}`.
-
-**Let the motion be reviewed.** When the request is about motion (how a sheet opens, a list
-enters, a toast lands, the feel of a spring), call `useMotion` from `src/motion.ts` once, in the
-variant's own component. The page then offers Motion (a curves button beside Comment, or Motion in
-the pill's menu on a phone), which docks a slim bar under the design: play, the time, a slider to
-scrub forward and back, the curves of every animation, speed and loop, and comments on a moment or
-a range, which reach you like any comment (below). The design makes room for it; it is never
-covered. Until the user turns it on the design runs live and nothing is recorded, so when you add
-`useMotion`, tell them where to find it.
-
-```
-import { useMotion } from '../../motion'
-
-useMotion({
-  start: () => setOpen(true),      // runs the sequence from rest (a tap on Checkout)
-  reset: () => setOpen(false),     // puts the design back at rest; optional
-  moments: [{ label: 'Overshoot', at: 350 }, { label: 'Toast', at: 1250 }],  // ms into the take, for Go to; optional
-})
-```
-
-- Without `start`, the sequence is the design's entrance; without `reset`, the page mounts the
-  design again before each run. Vue: the same call in `<script setup>`.
-- The dock records a take through the browser's own animation API, so **write the motion in CSS
-  transitions, CSS keyframes or `element.animate()`**: a spring as a `linear()` easing sampled from
-  its curve, a stagger as delays. Motion run from script (a `requestAnimationFrame` loop,
-  react-spring, GSAP's core, Framer Motion's JS springs) can't be recorded; the dock says the take
-  caught no motion. DOM changes that aren't animated (an element added, a class swapped without a
-  transition) show their final state at every moment of the take. An animation whose speed changes
-  while it runs (`updatePlaybackRate()`, `playbackRate` set midway) is drawn at its last speed for
-  the whole take: write a change of pace into its easing or keyframes instead.
-- **Waits go in delays, not `setTimeout`.** A take's 0 is when its first part starts, and it ends
-  once nothing has moved for 0.5 s. A step that a `setTimeout` starts later than that is missed and
-  runs live over the held take (the dock and `proto shoot` say so). Write each wait as a
-  `transition-delay`, an `animation-delay` or `element.animate`'s `delay`, or start the next step
-  within 0.5 s of the last one ending. A take is at most 20 s.
-- `start()` (and `reset()`) must not throw: the dock and `proto shoot` print the error, and the
-  take is empty.
-- Name the moving parts with `data-shoot`: the curves are labelled by it.
-- Motion the design renders on `<body>` through a portal (a sheet, a toast) is recorded too, but
-  it covers the dock there: give the portal a `container` in the variant (above).
-- Pressing anything in the design lets it run live; the dock's next move takes it back. An edit
-  to the variant records the take again.
+- **Try it** (what to type and try, scenarios, outside events): an explicit request, or
+  `action: try-it` from the page. `${CLAUDE_SKILL_DIR}/references/try-it.md` (`useHints`).
+- **Copy options** (other words for some lines): "better headlines", or `action: copy-options` /
+  `action: copy` from the page. `${CLAUDE_SKILL_DIR}/references/copy.md` (`useCopy`).
+- **Motion review** (how a sheet opens, a spring's feel, a comment on a moment): the request is
+  about motion, or a batch has `at: 0.35 s`. `${CLAUDE_SKILL_DIR}/references/motion.md` (`useMotion`, `--at`,
+  `--frames`).
 
 **Build remaining requested variants in parallel when you can.** After the first proposed
 direction is usable and checked, when there are 3 or more remaining variants to write, the
@@ -434,21 +303,34 @@ harness has subagents, and Current matches its reference (for a new product: onc
 (`parts.tsx`, `src/theme.css`, `meta.ts`, packages), then start every subagent in one message.
 Each is told:
 
-- its letter, its direction in a sentence or two, and the feature's must-do lines;
+- its letter and its direction's whole plan from `.proto/briefs/<slug>.md` (concept, palette
+  as hex values, type pairing with the import lines, layout and its wireframe, signature,
+  imagery, motion), and the feature's must-do lines;
+- to read `${CLAUDE_SKILL_DIR}/references/craft.md` (its absolute path) before writing, and to build from the plan
+  exactly, deriving every color and type decision from it;
 - the app's folder, the reference screenshots, and `A.tsx` to start from;
 - to write only `src/protos/<slug>/<letter>.tsx` and lowercase helpers of its own (`c-map.tsx`).
   `parts.tsx`, `meta.ts`, `theme.css` and the other variants are read-only to it, and it installs
   nothing; it asks for those in its reply;
 - `--session <the main session's $CLAUDE_CODE_SESSION_ID>` on every `proto` call, plus
   `--project <project root>` if it works in another folder; never `proto up`, `add`, `pick` or `work`;
-- to shoot only its own variant (`proto shoot <slug>/<letter>`), read the shots, fix, and shoot again;
-- to reply in at most five lines: what it built, and its weakest point.
+- to shoot only its own variant (`proto shoot <slug>/<letter>`), read both single shots at full
+  size, run craft.md's craft check on them, fix, and shoot again;
+- to reply in at most five lines: what it built, its weakest point, and which default from
+  craft.md it is closest to.
+
+Variant subagents run on the session's own model; don't pick a smaller one for them.
 
 When all are back, run one `proto shoot <slug> --sheet`, read it, fix what the sheet shows and
 what the subagents named, write each variant's `about` and `states` into `meta.ts`, then go on
 with step 5. Without subagents, write the variants one after another; the sheet is the same.
 
 ## 5. Look at it, then iterate
+
+**Craft first, then defects.** Before the first defect round, shoot each direction you wrote
+yourself on its own (`proto shoot <slug>/<letter>`), read its `-desktop.png` and `-mobile.png` at
+full size, and run the craft check at the end of craft.md. Fix every no. Subagents do the same
+for theirs. Then the rounds below.
 
 ```
 proto shoot <slug> --sheet                      # every variant on one contact sheet: what you read each round
@@ -474,21 +356,16 @@ of its size, the phone row close to full size. Open a single shot only for what 
 show (small copy, an alignment, a clipped edge), and only that one. Past about 12 variants it
 goes on to `-sheet-2.png`; read each.
 
-You can't watch motion, so read it in frames. A plain shot of a variant with `useMotion` shows it
-before `start`. `--at` and `--frames` record its take from rest, the way the dock does, then shoot
-those moments: `--at 350` writes `<slug>-<letter>-desktop-at-350.png` (and `-mobile-`), `--frames 12`
-writes `<slug>-<letter>-frames.png`, the moments in order with their times, cut to where the motion
-happens, and every animation's curve under them on the same clock. Read the frames sheet whenever
-you write or change motion: an overshoot, a stagger's rhythm, something landing early all show
-there.
+For motion, read it in frames (`--at`, `--frames`): see references/motion.md.
 
 For a right-to-left prototype, `proto shoot` first lists any physical left or right in its files
-(see Right to left). For states behind an interaction, put `data-shoot="…"` on the elements and
+(references/rtl.md). For states behind an interaction, put `data-shoot="…"` on the elements and
 list the state in `meta.ts`, or pass one `--click` per step; if a state's clicks match nothing,
 `proto shoot` says so. With copy options, shoot each line's longest option once (`--copy` and the
 two clicks above) to see that it fits. For each variant, note what breaks: alignment, hierarchy, clipped text,
-overflow on the phone row, weak affordance, too many steps. Fix it and push each variant further
-in its own direction instead of letting them converge. Do 2 rounds unless the user asked for
+overflow on the phone row, weak affordance, too many steps, and where it has drifted back toward
+a default from craft.md. Fix it and push each variant further in its own direction instead of
+letting them converge. Do 2 rounds unless the user asked for
 more, and shoot the sheet again after the last round.
 
 ## 6. Pick one and say why
@@ -514,7 +391,7 @@ user makes one (next section).
 The user chooses in chat ("go with A", "A it is", "build B", "let's move forward with C") or in
 the page, where each variant has Pick (the check button in the bar, or P; on a phone, the top of
 the variant sheet). A pick made in the page is already marked when you hear of it, as a comment
-with `action: pick` (see Comments from the page): don't run `proto pick` again.
+with `action: pick` (references/comments.md): don't run `proto pick` again.
 
 As soon as the user chooses in chat, run `proto pick <slug> <letter>` before anything else,
 without asking. If they don't
@@ -551,126 +428,31 @@ shows there as "You picked X".
 
 ## Comments from the page
 
-The user can leave comments on the design in the page (the Comment button, or C): click an
-element (or, on a phone, hold a finger on a spot), write, tag other elements with `@`, attach a
-screenshot and mark it up (or paste an image with Ctrl/⌘ V, or drop one on the comment), then send
-every draft at once. Commenting never reaches the design, so a menu or popover open in it stays
-open and what is in it can be commented on. The side panel's Comments tab lists
-them and shows what became of each. `@` opens the existing visual picker to tag another
-element. Do not author special comment-element names or a catalog of elements. The outline
-and numbered references identify selected targets; source locations are stamped automatically.
-The design's native accessibility labels and semantics must remain intact. Keep `data-shoot` only where a QA/state selector
-needs it; Comments does not use it as a display name. Existing comments keep their targets. Each send is a batch waiting for you in the app's inbox. You hear
-about it only while you listen, so **at the end of every turn in a prototype session,
-listen**: run, in the background, with the Bash tool's longest timeout (2 hours),
+The user can comment on the design in the page and send the comments as a batch, which waits for
+you in the app's inbox. You hear about it only while you listen, so **at the end of every turn in
+a prototype session, listen**: run, in the background, with the Bash tool's longest timeout
+(2 hours),
 
 ```
 proto inbox --wait
 ```
 
-It exits when a batch arrives (printing it), which wakes you; after 115 minutes with nothing
-it exits saying so, and you listen again. If one is already listening it says so and exits;
-leave it. `proto inbox` without `--wait` takes whatever is waiting now and tells you whether
-something is listening.
+It exits when a batch arrives (printing it), which wakes you; after 115 minutes with nothing it
+exits saying so, and you listen again. If one is already listening it says so and exits; leave
+it. `proto inbox` without `--wait` takes whatever is waiting now.
 
-Each comment prints its route (`<slug>/<letter>[/<state>]`), the user's words, the element
-it is on (tag, text, `data-shoot` or selector, its box in CSS px from the variant's top left,
-and where it is written: its file from the app's folder, line and component, as
-`src/protos/today/parts.tsx:30 (PriceCard)`; open it there) and any elements it tags (numbered `with @1`, `with @2`, matching the comment), and the absolute path of each image attached to it:
-`(marked up)` is a screenshot of the design, `(pasted by the user)` an image they pasted or
-dropped (a reference, another app, anything). A comment
-pinned to a spot with a long press (on a phone, where no element fit) prints `at:` the spot, in
-the same px, and `in:` the element under it: the change is about that spot, not the whole
-element. The user can delete a comment after sending it: one deleted before you took its batch
-never reaches you, and one deleted after is withdrawn: `proto inbox` leaves it out (the batch
-line counts it, `(1 withdrawn in the page)`) and `proto reply` to it says so. Leave a withdrawn
-comment alone. Read every image. Then, per comment:
-
-1. The same as a request typed in chat: `proto ask` (or `proto work … --ask`) in the user's
-   words, then edit the variant.
-2. For optional extras, recheck the batch's `batch.json` for `withdrawn` before editing and
-   before replying. A withdrawn request is canceled: stop optional work, and do not claim delivery.
-   If no useful extra applies, reply with that reason and `--done`, so it can be requested again.
-   `proto reply <batch>/<n> "<what you changed, one line>" --done` (Codex adds `--as codex`, which
-   puts its mark beside the reply instead of Claude's). The page shows it on the
-   comment. A comment you can't act on gets a reply without `--done` saying why.
-3. When the batch is handled, listen again.
-
-**A comment on the motion** (written in the motion dock, under a variant with `useMotion`) is on a
-moment or a range of its take rather than an element: its `at:` is a time, `at: 0.35 s` or
-`at: 0.30–0.62 s`, with the take's length and the shoot that shows it. Run that shoot (`--at 350`,
-or `--frames 8 --at 300-620` for a range) and read it, change the motion, shoot it again to see the
-change landed, and reply with the new timing in numbers ("damping 0.75 now: the sheet overshoots
-4 px instead of 14 and settles by 0.50 s"). The page records the take again after your edit, and
-the reply shows on the comment's point on the slider.
-
-**A comment in a view** (written while the page showed another size, see the top) has a `view:`
-line, `view: desktop 1440x900`, and is about that layout, not the one the batch's page size says.
-Run the shoot the line names (`proto shoot <route> --size 1440x900`) and read it, change that
-layout (its breakpoints, so the other sizes stay as they were), shoot it again, and name the size
-in the reply ("On desktop the heading is 28 px now; phone and tablet as before").
-
-**Decisions from the page** arrive in the same batches, as comments with an `action:` line and
-no element (a `copy` choice is on its line's element); the user's optional note follows a colon in
-the text.
-
-| `action:` | Already done | You |
-|---|---|---|
-| `pick` | marked, the working variant, and the comment done, unless its line says otherwise | do what the note asks, if anything; a reply is only a note. When the line says it wasn't marked or the working variant didn't move, run the `proto pick` it names |
-| `unpick` | the pick is off, and the comment done | nothing. When the line says nothing changed (that variant wasn't the pick), say so in a reply with `--done`; when it says it wasn't taken off, run the `proto pick … --off` it names |
-| `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you added |
-| `build` | nothing | `proto pick` it if it isn't the pick, then step 7; reply when it is in |
-| `try-it` | queued only; no content generated yet | check that the request is not withdrawn; add useful `useHints` to this variant only (section 4), preserve its working flow, verify it, then reply `--done`; if it already has useful hints, reuse them |
-| `copy-options` | queued only; no alternatives generated yet | check that the request is not withdrawn; add `useCopy` to the requested lines in this variant only (headline and primary text/CTA without a note), current words first, verify fit, then reply `--done`; reuse existing options |
-| `copy` | nothing (one comment per line changed since the last send, on that line's element; the text says option k of n, their own words, or back to today's words) | put the chosen words first in that line's `useCopy` options and keep the rest; then one `proto reply <batch> "…" --done` for the batch, in one line. The page drops its own choice once the words are first |
+**When a batch arrives, read `${CLAUDE_SKILL_DIR}/references/comments.md` before handling it**: what each line
+means, withdrawn comments, comments on the motion or in a view, `proto reply`, and the table of
+decisions from the page (`action: pick`, `more`, `build`, `try-it`, `copy-options`, `copy`).
 
 ## 7. Only if asked: build it
 
-When the request says to implement the winner (the picked variant), start with
-
-```
-proto handoff <slug>/<letter>
-```
-
-It lists everything the variant has, each with its file and line: its files, states, marked
-elements, motion, materials, interactions, assets, copy, copy options (the build ships each line's
-first option as plain copy, without the options or the picker) and where its Try it list and
-`useMotion` call are. A build loses what nobody listed (a drag's tilt, the shade behind a sheet, a
-glass material), so put every line on your task list and tick it as the build gets it, or say why
-it doesn't apply. `useMotion` is the page's own and the build drops it; the motion it reviewed, its
-durations, delays and easings, is what ships.
-
-Build it in the real codebase with the project's own components and patterns; the variant file is
-a starting point, not a paste. Then screenshot the built screen the way Current's references were
-taken (step 2), at the variant's size, into the app's `.proto/ref/<slug>/built-<letter>.png` (each
-state as `built-<letter>-<state>.png`), and run
-
-```
-proto shoot <slug>/<letter> --ref .proto/ref/<slug>/built-<letter>.png --as built
-```
-
-It writes `<slug>-<letter>-vs-built.png`: the variant, the build and the two laid over each other.
-Read it and fix the build until the overlay shows no double edges. Reply with that sheet,
-screenshots of the real feature, and any line of the handoff left unticked.
+When the request says to implement the picked variant, read `${CLAUDE_SKILL_DIR}/references/build.md` first
+(`proto handoff`, the build, and the `--as built` overlay check).
 
 ## Only if asked: snapshots in a Claude Doc
 
-When the user wants the prototypes in a doc or artifact to share, and the Claude Docs
-connector is available (otherwise say so and offer the `proto shoot` images):
-
-1. `proto snap <slug> …` (or `<slug>/<letter>`) renders each variant and writes it as a static
-   HTML module to the app's `.proto/snaps/<slug>-<letter>.jsx`, plus `index.json` with a caption
-   per variant. Web variants are captured at 672 px (the doc's column), phone variants in a
-   frame. They are snapshots: light theme, no interaction.
-2. Build the doc by the connector's own rules: one section per prototype, and per variant one
-   widget whose `code` is that file's content exactly as written (read it, paste it whole),
-   embedded with its caption.
-3. Look at every widget with the connector's screenshot read before you hand the link over.
-4. To refresh it later, run `proto snap` again and replace each widget's code with a `draft`
-   (it publishes at once). Keep the doc link and the widget ids in `.proto/snaps/doc.json` so
-   the next refresh updates the same doc instead of making a new one.
-
-Each module is roughly 4 to 30 KB and goes through your tool calls, so snap only what was asked.
+When the user wants the prototypes in a doc or artifact to share, read `${CLAUDE_SKILL_DIR}/references/snap.md`.
 
 ## Follow-up requests in the same session
 
@@ -683,18 +465,18 @@ Each module is roughly 4 to 30 KB and goes through your tool calls, so snap only
 | Parts of several variants together ("E's layout with B's style") | `proto add <new slug> --from <slug>/E,<slug>/B …`, the one whose layout it keeps first |
 | One design from everything they picked ("a final design from all my picks") | `proto add <new slug> --from-picks …` |
 | A choice in chat ("go with A", "build B") | `proto pick <slug> <letter>` first, then what they asked |
-| The winner built into the codebase ("build B", "ship it") | `proto pick` if not yet, then `proto handoff <slug>/<letter>` and step 7 |
-| A pick, More like this or Build it from the page (`action:` in a batch) | the table under Comments from the page |
-| Other copy for some lines ("better headlines", "other button text") | `proto ask "…"`, then `useCopy` on those lines (Offer other copy when asked) |
-| Copy choices sent from the page (`action: copy`) | the table under Comments from the page |
+| The winner built into the codebase ("build B", "ship it") | `proto pick` if not yet, then references/build.md |
+| A pick, More like this or Build it from the page (`action:` in a batch) | the table in references/comments.md |
+| Other copy for some lines ("better headlines", "other button text") | `proto ask "…"`, then `useCopy` on those lines (references/copy.md) |
+| Copy choices sent from the page (`action: copy`) | the table in references/comments.md |
 | A change to the variant being worked on ("make the price bigger") | `proto ask "…"`, then edit it |
 | A change to another variant ("now D, same idea") | `proto work <slug>/<letter> --ask "…"`, then edit it |
 | To review an animation ("how should the sheet open?", "the toast lands too hard") | the motion in CSS or `element.animate()`, `useMotion` in each variant, then `proto shoot <slug>/<letter> --frames 12` |
-| A comment on the motion (`at: 0.30–0.62 s` in a batch) | the shoot its line names, change the motion, reply with the new timing (Comments from the page) |
-| A comment in a view (`view: tablet 834x1194` in a batch) | the shoot its line names, change that layout's breakpoints, reply naming the size (Comments from the page) |
+| A comment on the motion (`at: 0.30–0.62 s` in a batch) | the shoot its line names, change the motion, reply with the new timing (references/motion.md) |
+| A comment in a view (`view: tablet 834x1194` in a batch) | the shoot its line names, change that layout's breakpoints, reply naming the size (references/comments.md) |
 | To drop a direction or prototype | `proto archive <slug>` (still reachable under Archived) |
 | The prototypes in a doc to share | `proto snap`, then a Claude Doc (section above) |
-| Comments sent from the page (a `proto inbox --wait` exited) | handle each, `proto reply … --done`, listen again |
+| Comments sent from the page (a `proto inbox --wait` exited) | read references/comments.md, handle each, `proto reply … --done`, listen again |
 | Prototypes for a different project | `proto up --project <dir>`: a separate app for that project |
 
 ## Lifecycle

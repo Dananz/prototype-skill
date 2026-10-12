@@ -53,9 +53,13 @@ const BASE = { vite: '^8.3.0', tailwindcss: '^4.3.0', '@tailwindcss/vite': '^4.3
 // UI's Drawer, which is React, and so is the comment layer (which takes its screenshots with
 // modern-screenshot).
 const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.9.0', 'modern-screenshot': '^4.7.0' }
+// What a variant can reach for without an install (an install reloads the page): a curated font kit
+// (references/craft.md), icons and motion. New sessions only; `proto up` never adds them to an
+// existing one, so a running session isn't reinstalled and restarted for packages it never asked for.
+const FONTS = Object.fromEntries(['geist', 'geist-mono', 'bricolage-grotesque', 'newsreader', 'hanken-grotesk', 'rubik', 'frank-ruhl-libre'].map(f => [`@fontsource-variable/${f}`, '^5.3.0']))
 const STACKS = {
-  react: { deps: {}, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', stub: 'react.tsx' },
-  vue: { deps: { vue: '^3.5.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue' },
+  react: { deps: {}, craft: { ...FONTS, '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', stub: 'react.tsx' },
+  vue: { deps: { vue: '^3.5.0' }, craft: { ...FONTS, '@phosphor-icons/vue': '^2.2.1', 'motion-v': '^2.7.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue' },
 }
 
 // ---------- arguments ----------
@@ -218,7 +222,7 @@ function scaffold(dir, project) {
   cpSync(join(APP, 'adapters', kit.motion), join(dir, 'src', 'motion.ts'))
   writeJson(join(dir, 'package.json'), {
     name: `prototype-${basename(dir)}`, private: true, type: 'module',
-    dependencies: { ...SHELL, ...kit.deps }, devDependencies: { ...BASE, ...kit.dev },
+    dependencies: { ...SHELL, ...kit.deps, ...kit.craft }, devDependencies: { ...BASE, ...kit.dev },
   })
   const id = sessionId()
   writeJson(sessionFile(dir), {
@@ -1433,7 +1437,7 @@ function kitSave() {
   // Each file is read where it lives in the prototype, so its relative imports resolve from there.
   const texts = [[theme, join(dir, 'src')], ...filesIn(join(kd, 'parts')).map(p => [readFileSync(p, 'utf8'), dirname(join(pdir, relative(join(kd, 'parts'), p)))])]
   // The packages the session added on top of the template (an icon set): the next one gets them too.
-  const tpl = STACKS[s.stack], base = new Set(Object.keys({ ...SHELL, ...tpl.deps, ...BASE, ...tpl.dev }))
+  const tpl = STACKS[s.stack], base = new Set(Object.keys({ ...SHELL, ...tpl.deps, ...tpl.craft, ...BASE, ...tpl.dev }))
   const pkg = readJson(join(dir, 'package.json'), {})
   const packages = Object.fromEntries(Object.entries({ ...pkg.devDependencies, ...pkg.dependencies }).filter(([p]) => !base.has(p)).sort())
   const meta = metaIn(join(pdir, 'meta.ts'))
