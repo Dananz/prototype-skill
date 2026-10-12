@@ -37,7 +37,7 @@
 
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
@@ -1212,6 +1212,18 @@ async function inbox() {
   for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, () => { done(); process.exit(0) })
   console.log(`listening for comments on ${s.url || s.localUrl || 'the page'}`)
   const end = Date.now() + minutes * 60e3
+  // Wakes the moment the page's server renames a batch into new/ (it arrives whole), or after a
+  // second to check the server is still up. Polling once a second added half a second on average
+  // between Send and this waking. The watcher is closed before a batch is moved out of new/:
+  // Windows can refuse a rename in a directory something holds open.
+  const fresh = join(inboxDir(dir), 'new')
+  mkdirSync(fresh, { recursive: true })
+  const arrival = () => new Promise(ok => {
+    let w = null
+    const go = () => { clearTimeout(t); try { w?.close() } catch { /* gone */ } ok() }
+    const t = setTimeout(go, 1000)
+    try { w = watch(fresh, go) } catch { /* no watcher here: the second's check still runs */ }
+  })
   while (Date.now() < end) {
     if (batchesIn(dir, 'new').length) {
       // A reviewer often sends twice in a row: a moment's grace takes both in one wake.
@@ -1220,7 +1232,7 @@ async function inbox() {
       if (got.length) { done(); got.forEach(b => printBatch(dir, b)); return }
     }
     if (!alive(readSession(dir)?.pid)) { done(); return console.log('the server stopped, so no comments can come. `proto up`, then listen again.') }
-    await sleep(1000)
+    await arrival()
   }
   done()
   console.log(`no comments in ${minutes} min. Listen again: proto inbox --wait`)
