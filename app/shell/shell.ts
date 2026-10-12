@@ -1545,9 +1545,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
     if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && st.place.view === 'variant') { e.preventDefault(); step(e.key === 'ArrowRight' ? 1 : -1) }
     else if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
-    else if (e.key === 'f' && st.place.view === 'variant') act(st.focus ? 'unfocus' : 'focus', '', '')
+    // Focus mode and the design's actions are the page outside's, when this page is in its view (viewKey).
+    else if (e.key === 'f' && st.place.view === 'variant' && !framed) act(st.focus ? 'unfocus' : 'focus', '', '')
     else if (e.key === 'w' && workOf()) act('work', 'go', '')
-    else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches) act('open', 'decide', '')
+    else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches && !framed) act('open', 'decide', '')
   })
 
   // ---------- resizing the sidebar ----------
@@ -1618,7 +1619,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     layer: zone.querySelector<HTMLElement>('[data-comments]')!,
     // While a device view is on, comments are on the design in its frame, about that layout.
     // The stage's own artboard is the stage's layout: what is written there carries no other.
-    mount: () => frameOn() ? deviceView.mount() : commentHost(),
+    mount: () => !commentHost() ? null : frameOn() ? deviceView.mount() : commentHost(),
     view: () => frameOn() ? { ...(viewOn() ? viewSize() : {}), at: deviceView.at } : null,
     setView: v => {
       if (!v) { if (viewOn()) patchView({ size: null, zoom: 0 }); return }
@@ -1657,8 +1658,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // on hand, and the design laid out for the stage's width (its breakpoints see the frame, not the
   // window). Its layout is the one selected then. A lobby, a tool, focus mode, a shot and a phone
   // keep the stage as it is.
-  const viewOk = () => !framed && !st.focus && q.get('hints') !== '0' && st.place.view !== 'session' && cur()?.kind !== 'phone' && (!phoneMq.matches || pillOn())
-  const fillOk = () => viewOk() && !phoneMq.matches && st.place.view === 'variant' && !st.place.tool
+  // Focus mode leaves a chosen layout, as it always did, but keeps the stage's own artboard: the frame
+  // and the design in it stay as they are (an open menu, what was typed), as on the stage.
+  const frameable = () => !framed && q.get('hints') !== '0' && st.place.view !== 'session' && cur()?.kind !== 'phone'
+  const viewOk = () => frameable() && !st.focus && (!phoneMq.matches || pillOn())
+  const fillOk = () => frameable() && !phoneMq.matches && st.place.view === 'variant' && !st.place.tool
   const native = (): Size | null => {
     if (fillOk()) return nativeOf(layers.clientWidth || innerWidth)
     const s = nativeOf(innerWidth); return !layers.clientWidth || nativeOf(layers.clientWidth) === s ? s : null
@@ -1696,11 +1700,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onKey: viewKey,
     })
   }
-  /** Keys pressed in the page inside the view: C comments on it, as it does out here, and Esc stops. */
+  /** Keys pressed in the page inside the view: C comments on it, F is focus mode and P the design's
+   *  actions, as out here, and Esc stops. */
   function viewKey(e: KeyboardEvent) {
     const t = e.target as Element
     if (e.metaKey || e.ctrlKey || e.altKey || t.closest?.('input, textarea, select, [contenteditable]')) return
     if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
+    else if (e.key === 'f' && st.place.view === 'variant') act(st.focus ? 'unfocus' : 'focus', '', '')
+    else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches) act('open', 'decide', '')
     else if (e.key === 'Escape' && comments.counts().picking) { e.preventDefault(); comments.escape() }
     // Esc leaves the view from inside it too, as it does out here, unless the design used it first.
     else if (e.key === 'Escape' && !e.defaultPrevented && viewOn()) patchView({ size: null, zoom: 0 })

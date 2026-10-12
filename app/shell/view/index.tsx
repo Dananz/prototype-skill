@@ -226,10 +226,20 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
 /** Mounts the view once, in `host`; paint draws it with new props (null view: none, and its frame goes). */
 export function createView(host: HTMLElement, wrap: (el: ReactElement) => ReactElement) {
   const root = createRoot(host)
+  let wait = 0
   return {
     paint(p: ViewProps) {
       host.hidden = !p.view
       root.render(wrap(p.view ? <ViewStage {...p} view={p.view} /> : <></>))
+      // The stage's own artboard stays unseen (laid out, so the frame loads at its size) until the
+      // design is in its frame: meanwhile the stage under it shows the same design, not an empty frame.
+      cancelAnimationFrame(wait)
+      const show = () => {
+        const on = !p.view || !!p.view.size || !!designIn(live?.doc() ?? null)
+        host.style.visibility = on ? '' : 'hidden'
+        if (!on) wait = requestAnimationFrame(show)
+      }
+      show()
     },
     /** The design in the frame, while a view is on and the page in it has one on its stage. */
     mount: () => designIn(live?.doc() ?? null),

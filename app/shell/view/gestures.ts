@@ -221,7 +221,8 @@ export function useGestures(area: RefObject<HTMLDivElement | null>, scale: numbe
       if (f) f.style.pointerEvents = on ? 'none' : ''
       if (!drag) a.style.cursor = on ? 'grab' : ''
     }
-    const typing = (t: EventTarget | null) => !!(t as Element | null)?.closest?.('input, textarea, select, [contenteditable]')
+    // Space is a focused control's own (a button presses on it) and a field's: those keep it.
+    const typing = (t: EventTarget | null) => !!(t as Element | null)?.closest?.('input, textarea, select, [contenteditable], button, a[href], summary, [role="button"], [role="menuitem"], [role="option"], [role="tab"], [role="checkbox"], [role="switch"], [role="radio"], [role="slider"]')
     const kDown = (e: KeyboardEvent) => { if (e.key === ' ' && !typing(e.target) && !e.metaKey && !e.ctrlKey && !e.altKey && a.isConnected && a.offsetParent) { e.preventDefault(); pan(true) } }
     const kUp = (e: KeyboardEvent) => { if (e.key === ' ') pan(false) }
     const blur = () => pan(false)
