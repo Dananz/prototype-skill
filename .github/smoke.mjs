@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startChrome, stopChrome } from '../scripts/chrome.mjs'
 import { optionalExtras } from './optional-extras.mjs'
+import { designKit } from './design-kit.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -1505,6 +1506,7 @@ proto(['shoot', 'tryit/A', '--size', '834'], { ok: false })
 proto(['shoot', 'tryit', '--sheet', '--size', '834x1194'], { ok: false })
 
 await optionalExtras({ proto, app, local, openPage, postJson, fail, keepShots })
+await designKit({ proto, app, project, local, fail })
 
 proto(['stop'])
 for (let i = 0; i < 40 && await answers(`${local}__proto/status`); i++) await new Promise(r => setTimeout(r, 250))
@@ -1515,5 +1517,6 @@ if (!gone) fail(`the dev server (pid ${pid}) is still running after proto stop`)
 
 proto(['rm'])
 if (existsSync(app)) fail('proto rm left the session folder')
+if (!existsSync(join(project, '.prototypes', '_kits', 'main', 'kit.json'))) fail('proto rm took the project\'s design kit with it')
 try { rmSync(scratch, { recursive: true, force: true }) } catch { /* temp dir */ }
 console.log(`\nOK: ${made.length} screenshots in ${keepShots}`)

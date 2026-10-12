@@ -6,6 +6,8 @@
 //   proto add <slug> --title "…" --variants "A:Name,B:Name" [--ask "…"] [--kind phone] [--screen 402x874]
 //             [--from <slug>/<letter>[,<slug>/<letter>…]]   built from those variants: nested under the first
 //             [--from-picks]   built from every variant the user picked in this session
+//             [--kit[=<name>]] [--current <screen>]   on the project's design kit: its theme, parts and
+//             packages, and with --current that screen's saved Current as A (with its references)
 //   proto shoot [route…] [--theme dark] [--focus] [--copy] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
 //             [--ref <png>]   instead, the variant's screen beside that screenshot of the real one
 //             [--as built]    with --ref: the png is the variant built in the codebase (<route>-vs-built.png)
@@ -20,6 +22,10 @@
 //   proto ask "…" [--to <slug>/<letter>]   a change the user asked for, kept with that variant
 //   proto inbox [--wait] [--timeout <min>]   comments sent from the page; --wait blocks until some arrive
 //   proto reply <batch>[/<n>] "…" [--done] [--as codex]   answer a comment (or a whole batch) in the page
+//   proto kit [--kit=<name>]   the project's design kit: what it has, and whether the app moved on since
+//   proto kit save <slug> [--sources <file,…>] [--kit=<name>]   the session's theme.css and that prototype's
+//             parts, packages and screen, kept for the next session (--sources: the files they came from)
+//   proto kit screen <name> <slug>[/<letter>] [--sources <file,…>]   a Current that matches its reference
 //   proto archive <slug> [--off]    proto keep [--off]      proto url    proto stack
 //   proto stop    proto rm    proto ls    proto gc
 //
@@ -27,7 +33,7 @@
 // (default: $CLAUDE_CODE_SESSION_ID).
 
 import { spawn, spawnSync } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { homedir } from 'node:os'
@@ -59,7 +65,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy'])
+const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy', 'kit'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -338,6 +344,7 @@ async function up() {
   if (url !== localUrl) console.log(`local ${localUrl}`)
   console.log(`dir ${dir}`)
   console.log(`stack ${s.stack}`)
+  for (const name of kitNames()) console.log(kitLine(name, project))
 }
 
 function add() {
@@ -397,15 +404,27 @@ function add() {
     if (flags['from-picks']) console.log(`from ${refs.join(', ')}`)
   }
   const list = String(flags.variants || '').split(',').map(x => x.trim()).filter(Boolean)
+  // On the design kit: a new prototype takes its frame from it, unless told otherwise.
+  const design = flags.kit || flags.current ? kitFor(s) : null
+  if (design && !existsSync(metaFile)) {
+    if (!flags.kind) set.kind = design.k.kind
+    if (!flags.screen && design.k.screen) set.screen = design.k.screen
+  }
   mkdirSync(pdir, { recursive: true })
   const stub = readFileSync(join(APP, 'stubs', kit.stub), 'utf8')
+  const stubOf = (id, name) => stub.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name)
+  // A saved Current is A, first in the list, whether or not --variants named it.
+  if (flags.current && !current().variants.A && !list.some(e => e.split(':')[0] === 'A')) added.A = 'Current'
   for (const entry of list) {
     const [id, ...rest] = entry.split(':')
     if (!/^[A-Z]{1,2}$/.test(id)) die(`variant ids are capital letters (A, B … AA): "${id}"`)
     const name = rest.join(':').trim() || id
     added[id] = name
     const file = join(pdir, `${id}.${kit.ext}`)
-    if (!existsSync(file)) writeFileSync(file, stub.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name))
+    if (!existsSync(file)) writeFileSync(file, stubOf(id, name))
+  }
+  if (design) {
+    useKit(dir, pdir, slug, design, flags.current && { file: join(pdir, `A.${kit.ext}`), stub: stubOf('A', added.A ?? current().variants.A) })
   }
   // meta.ts goes last, so the page sees the prototype with all its variants at once. It is read
   // again just before: a pick made in the page meanwhile is written by the dev server, and stays.
@@ -1257,6 +1276,261 @@ async function snap() {
   process.exit(r.status ?? 1)
 }
 
+// ---------- design kit ----------
+// What a project's prototypes stand on (its tokens, its rebuilt chrome, the packages they need,
+// Currents already matched to the real screen), saved once so a later session starts from it
+// instead of rebuilding it. One folder per kit beside the sessions, git-ignored with them:
+// .prototypes/_kits/<name>/ (a session's folder never starts with _, and gc and rm only touch
+// sessions). Every project file a piece came from is kept with its hash, and the project's commit,
+// so `proto kit` can say when the real app has moved on from it.
+const kitsDir = () => join(projectRoot(), '.prototypes', '_kits')
+const kitDir = name => join(kitsDir(), name)
+const readKit = name => readJson(join(kitDir(name), 'kit.json'), null)
+const kitNames = () => { try { return readdirSync(kitsDir()).filter(n => existsSync(join(kitDir(n), 'kit.json'))).sort() } catch { return [] } }
+function kitName() {
+  const n = typeof flags.kit === 'string' ? flags.kit : 'main'
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(n)) die(`a kit's name is lowercase letters, digits and dashes: "${n}"`)
+  return n
+}
+const kitFlag = name => name === 'main' ? '--kit' : `--kit=${name}`
+const VARIANT_FILE = /^[A-Z]{1,2}\.(tsx|vue)$/
+const hashOf = f => { try { return createHash('sha256').update(readFileSync(f)).digest('hex').slice(0, 16) } catch { return null } }
+const headOf = project => { const r = run('git', ['-C', project, 'rev-parse', '--short', 'HEAD']); return r.status === 0 ? r.stdout.trim() : null }
+const slash = p => p.split(sep).join('/')
+const filesIn = d => readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? filesIn(join(d, e.name)) : [join(d, e.name)])
+const metaIn = f => { try { return JSON.parse(readFileSync(f, 'utf8').replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, '')) } catch { return {} } }
+
+/**
+ * The project files a piece of the kit was written from: what its text imports (`@project/…`, or a
+ * relative path that leads out of .prototypes: token CSS, fonts, images), plus what --sources names
+ * (the theme config, the components its chrome was measured from). Paths from the project's root,
+ * with forward slashes on every system, each with its hash.
+ */
+function sourcesOf(texts, project) {
+  const out = new Set()
+  const take = p => {
+    for (const f of [p, ...['.ts', '.tsx', '.js', '.mjs', '.css', '.vue', '.json'].map(e => p + e), ...['index.ts', 'index.tsx', 'index.js'].map(i => join(p, i))]) {
+      let file = false
+      try { file = statSync(f).isFile() } catch { /* not this one */ }
+      if (!file) continue
+      const r = relative(project, f)
+      if (!r.startsWith('..') && !r.split(sep).includes('.prototypes')) out.add(slash(r))
+      return
+    }
+  }
+  for (const [text, from] of texts) {
+    for (const m of text.matchAll(/@project\/([^'"`)\s?#]+)/g)) take(join(project, m[1]))
+    for (const m of text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*|@import\s+(?:url\()?\s*|url\(\s*)['"]?(\.\.?\/[^'"`)\s?#]+)/g)) take(resolve(from, m[1]))
+  }
+  for (const f of String(typeof flags.sources === 'string' ? flags.sources : '').split(',').map(x => x.trim()).filter(Boolean)) {
+    const p = resolve(project, f), r = relative(project, p)
+    if (r.startsWith('..')) die(`--sources: ${f} is outside the project`)
+    if (!existsSync(p) || !statSync(p).isFile()) die(`--sources: no file ${f} in the project`)
+    out.add(slash(r))
+  }
+  return Object.fromEntries([...out].sort().map(r => [r, hashOf(join(project, r))]))
+}
+// Which of those files are not what they were when the kit was saved.
+function drift(sources, project) {
+  const changed = [], gone = []
+  for (const [r, h] of Object.entries(sources || {})) {
+    const now = hashOf(join(project, r))
+    if (now === null) gone.push(r)
+    else if (now !== h) changed.push(r)
+  }
+  return { changed, gone, n: changed.length + gone.length }
+}
+const driftSay = d => [d.changed.length && `changed: ${d.changed.join(', ')}`, d.gone.length && `gone: ${d.gone.join(', ')}`].filter(Boolean).join('; ')
+// Commits since the save: a file nobody listed may have moved too.
+function commitsSince(project, commit) {
+  if (!commit) return 0
+  const now = headOf(project)
+  if (!now || now === commit) return 0
+  const r = run('git', ['-C', project, 'rev-list', '--count', `${commit}..HEAD`])
+  return r.status === 0 ? Number(r.stdout.trim()) : 0
+}
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+/** One line per kit, for `proto up`. */
+function kitLine(name, project) {
+  const k = readKit(name), d = drift(k.sources, project), later = commitsSince(project, k.commit)
+  const screens = Object.keys(k.screens || {})
+  return `kit ${name}: ${d.n ? `out of date (${driftSay(d)})` : 'up to date'}, saved ${k.savedAt.slice(0, 10)}${later ? `, ${plural(later, 'commit')} since` : ''}${screens.length ? `, Currents: ${screens.join(', ')}` : ''} · proto kit${name === 'main' ? '' : ` --kit=${name}`}`
+}
+
+function kitStatus() {
+  const project = projectRoot(), names = kitNames()
+  if (!names.length) {
+    console.log('no design kit in this project yet. Once Current matches its reference: proto kit save <slug> --sources <the files its tokens and chrome came from>')
+    return
+  }
+  const show = typeof flags.kit === 'string' ? [kitName()] : names
+  for (const name of show) {
+    const k = readKit(name) || die(`no kit "${name}" (there is: ${names.join(', ')})`)
+    const d = drift(k.sources, project), later = commitsSince(project, k.commit)
+    const screens = Object.entries(k.screens || {})
+    console.log(`kit ${name} · ${k.stack} · ${k.kind === 'phone' ? `phone${k.screen ? ` ${k.screen.join('x')}` : ''}` : 'web'} · saved ${k.savedAt.slice(0, 16).replace('T', ' ')} from ${k.from}`)
+    console.log(`  read first: ${tilde(join(kitDir(name), 'design-system.md'))}`)
+    const pk = Object.entries(k.packages || {})
+    console.log(`  has: theme.css${k.parts.length ? `, ${k.parts.join(', ')}` : ''}${pk.length ? `, packages ${pk.map(([p, v]) => `${p}@${v}`).join(' ')}` : ''}`)
+    console.log(`  sources: ${Object.keys(k.sources).length} tracked, ${d.n ? driftSay(d) : 'all unchanged'}`)
+    if (later) console.log(`  the project is ${plural(later, 'commit')} past the save (${k.commit}): check the screens you build on still look like it`)
+    for (const [sn, sc] of screens) {
+      const sd = drift(sc.sources, project)
+      console.log(`  Current "${sn}": from ${sc.from}, ${plural(sc.refs.length, 'reference')}, ${sd.n ? driftSay(sd) : 'its sources unchanged'}`)
+    }
+    console.log(`  start on it: proto add <slug> --title "…" --variants "A:Current,B:…" ${kitFlag(name)}${screens.length ? ' [--current <screen>]' : ''}`)
+  }
+}
+
+// The kit's design-system.md as first written: what can be read off the files, and the headings
+// the agent fills in for the next session. Never rewritten once it exists.
+function kitDoc(k, kd) {
+  const exported = k.parts.flatMap(f => {
+    const p = join(kd, 'parts', f)
+    if (!statSync(p).isFile()) return [`- ${f}/`]
+    const names = [...readFileSync(p, 'utf8').matchAll(/export\s+(?:default\s+)?(?:async\s+)?(?:function|const|class)\s+(\w+)/g)].map(m => m[1])
+    return [`- ${f}${names.length ? `: ${names.join(', ')}` : ''}`]
+  })
+  return [
+    `# Design kit: ${k.name}`, '',
+    'Read this before prototyping on this project. `proto kit` says whether the app has moved on since it was saved.', '',
+    '## The product', '',
+    `- Platform and frame: ${k.kind === 'phone' ? `phone, screen ${k.screen ? k.screen.join('x') : '393x852'} pt` : 'web'}`,
+    '- What it is, its language and direction:', '',
+    '## Where the look comes from', '',
+    ...(Object.keys(k.sources).length ? Object.keys(k.sources).map(r => `- \`${r}\``) : ['- (no project files tracked: name them with --sources)']), '',
+    '## Tokens (theme.css)', '',
+    '- The colors, type and radii worth knowing by name:',
+    '- Values that are invented, not from the source:', '',
+    '## Chrome (parts)', '',
+    ...(exported.length ? exported : ['- (none)']),
+    '- What each one is for, and what it does not cover yet:', '',
+    '## Icons, fonts and assets', '',
+    ...(Object.keys(k.packages).length ? Object.entries(k.packages).map(([p, v]) => `- \`${p}@${v}\``) : []),
+    '- Where fonts and images are imported from, and any stand-ins:', '',
+    '## Traps', '',
+    '- What took rounds to match, and why, so the next session gets it right the first time:', '',
+  ].join('\n')
+}
+
+/** `proto kit save <slug>`: the session's theme and that prototype's shared files, as the kit. */
+function kitSave() {
+  const dir = sessionDir(), s = need(dir), project = projectRoot()
+  const slug = args[1]
+  const pdir = join(dir, 'src', 'protos', slug || '-')
+  if (!slug || !existsSync(join(pdir, 'meta.ts'))) die('usage: proto kit save <slug> [--sources <file,…>] [--kit=<name>], with the prototype whose Current matched its reference')
+  const name = kitName(), kd = kitDir(name), was = readKit(name)
+  if (was && was.stack !== s.stack) die(`kit ${name} is for ${was.stack} and this session is ${s.stack}: save under another name (--kit=<name>)`)
+  mkdirSync(kd, { recursive: true })
+  const theme = readFileSync(join(dir, 'src', 'theme.css'), 'utf8')
+  writeFileSync(join(kd, 'theme.css'), theme)
+  // Everything in the prototype's folder but its variants and meta.ts, as it is now, replaces the kit's.
+  const parts = readdirSync(pdir).filter(f => f !== 'meta.ts' && !VARIANT_FILE.test(f) && !f.startsWith('.')).sort()
+  rmSync(join(kd, 'parts'), { recursive: true, force: true })
+  mkdirSync(join(kd, 'parts'))
+  for (const f of parts) cpSync(join(pdir, f), join(kd, 'parts', f), { recursive: true })
+  // Each file is read where it lives in the prototype, so its relative imports resolve from there.
+  const texts = [[theme, join(dir, 'src')], ...filesIn(join(kd, 'parts')).map(p => [readFileSync(p, 'utf8'), dirname(join(pdir, relative(join(kd, 'parts'), p)))])]
+  // The packages the session added on top of the template (an icon set): the next one gets them too.
+  const tpl = STACKS[s.stack], base = new Set(Object.keys({ ...SHELL, ...tpl.deps, ...BASE, ...tpl.dev }))
+  const pkg = readJson(join(dir, 'package.json'), {})
+  const packages = Object.fromEntries(Object.entries({ ...pkg.devDependencies, ...pkg.dependencies }).filter(([p]) => !base.has(p)).sort())
+  const meta = metaIn(join(pdir, 'meta.ts'))
+  const k = {
+    name, stack: s.stack, savedAt: new Date().toISOString(), from: `${basename(dir)}/${slug}`, commit: headOf(project),
+    kind: meta.kind === 'phone' ? 'phone' : 'web', ...(Array.isArray(meta.screen) ? { screen: meta.screen } : {}),
+    parts, packages, sources: sourcesOf(texts, project), screens: was?.screens || {},
+  }
+  writeJson(join(kd, 'kit.json'), k)
+  const doc = join(kd, 'design-system.md'), first = !existsSync(doc)
+  if (first) writeFileSync(doc, kitDoc(k, kd))
+  console.log(`${was ? 'updated' : 'saved'} kit ${name}: theme.css${parts.length ? `, ${parts.join(', ')}` : ''}${Object.keys(packages).length ? `, packages ${Object.keys(packages).join(' ')}` : ''}`)
+  console.log(`tracking ${plural(Object.keys(k.sources).length, 'source')}${Object.keys(k.sources).length ? `: ${Object.keys(k.sources).join(', ')}` : ' (name them with --sources, or the kit can\'t tell when it is out of date)'}`)
+  console.log(`${first ? 'fill in' : 'bring up to date'}: ${tilde(doc)}`)
+}
+
+/** `proto kit screen <name> <slug>[/<letter>]`: a Current that matches its reference, with the reference. */
+function kitScreen() {
+  const dir = sessionDir(), s = need(dir), project = projectRoot()
+  const screen = args[1], [slug, letter = 'A'] = String(args[2] || '').split('/')
+  if (!screen || !/^[a-z0-9][a-z0-9-]*$/.test(screen) || !slug) die('usage: proto kit screen <name> <slug>[/<letter>] [--sources <file,…>], with a Current that matches its reference')
+  const name = kitName(), k = readKit(name) || die(`no kit "${name}" yet: proto kit save ${slug} first`)
+  if (k.stack !== s.stack) die(`kit ${name} is for ${k.stack} and this session is ${s.stack}`)
+  const ext = STACKS[s.stack].ext, file = join(dir, 'src', 'protos', slug, `${letter}.${ext}`)
+  if (!existsSync(file)) die(`no variant ${slug}/${letter} in this session`)
+  const sd = join(kitDir(name), 'screens', screen)
+  rmSync(sd, { recursive: true, force: true })
+  mkdirSync(join(sd, 'ref'), { recursive: true })
+  const text = readFileSync(file, 'utf8')
+  writeFileSync(join(sd, `current.${ext}`), text)
+  const refDir = join(dir, '.proto', 'ref', slug)
+  const refs = existsSync(refDir) ? readdirSync(refDir).filter(f => /\.(png|jpe?g|webp)$/i.test(f)).sort() : []
+  for (const f of refs) cpSync(join(refDir, f), join(sd, 'ref', f))
+  // A file of its own folder that the kit's parts don't have would be missing in the next session.
+  const local = [...text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"]\.\/([^'"]+)['"]/g)].map(m => m[1])
+  const missing = local.filter(m => !k.parts.some(p => p === m || p.replace(/\.[^.]+$/, '') === m || p === m.split('/')[0]))
+  k.screens = { ...k.screens, [screen]: { from: `${basename(dir)}/${slug}/${letter}`, savedAt: new Date().toISOString(), refs, sources: sourcesOf([[text, dirname(file)]], project) } }
+  writeJson(join(kitDir(name), 'kit.json'), k)
+  console.log(`saved Current "${screen}" in kit ${name}: ${slug}/${letter}, ${plural(refs.length, 'reference')}, tracking ${plural(Object.keys(k.screens[screen].sources).length, 'source')}`)
+  if (!refs.length) console.log(`no references in ${tilde(refDir)}: the next session has nothing to check this Current against`)
+  if (!Object.keys(k.screens[screen].sources).length) console.log('no source files tracked for it: name the screen\'s own files with --sources, or the kit can\'t tell when the real screen changed')
+  if (missing.length) console.log(`warning: it imports ${missing.map(m => `./${m}`).join(', ')}, which the kit's parts don't have: proto kit save ${slug}${name === 'main' ? '' : ` --kit=${name}`} first`)
+}
+
+// The kit `proto add --kit` names, checked against the session.
+function kitFor(s) {
+  const name = kitName(), k = readKit(name)
+  if (!k) die(`no design kit "${name}" in this project${kitNames().length ? ` (there is: ${kitNames().join(', ')})` : ''}`)
+  if (k.stack !== s.stack) die(`kit ${name} was saved from a ${k.stack} session and this one is ${s.stack}`)
+  if (flags.current !== undefined && (typeof flags.current !== 'string' || !k.screens?.[flags.current])) die(`--current names a Current saved in kit ${name}${Object.keys(k.screens || {}).length ? `: ${Object.keys(k.screens).join(', ')}` : ' (it has none yet)'}`)
+  return { name, k, kd: kitDir(name) }
+}
+
+/**
+ * Puts the kit under a prototype: its parts (never over a file the prototype has), its theme (only
+ * over the template's, never over tokens the session already has), its packages, and with --current
+ * that screen's Current as A (only over A's stub) and its references. Then says whether the app
+ * has moved on, so the agent knows to check or to go straight on.
+ */
+function useKit(dir, pdir, slug, { name, k, kd }, a) {
+  const kept = []
+  for (const f of k.parts) {
+    if (existsSync(join(pdir, f))) kept.push(f)
+    else cpSync(join(kd, 'parts', f), join(pdir, f), { recursive: true })
+  }
+  const themeFile = join(dir, 'src', 'theme.css'), mine = readFileSync(themeFile, 'utf8'), theirs = readFileSync(join(kd, 'theme.css'), 'utf8')
+  if (mine !== theirs) {
+    if (mine === readFileSync(join(APP, 'src', 'theme.css'), 'utf8')) writeFileSync(themeFile, theirs)
+    else kept.push('src/theme.css')
+  }
+  const pkgFile = join(dir, 'package.json'), pkg = readJson(pkgFile, {})
+  const want = Object.entries(k.packages || {}).filter(([p]) => !pkg.dependencies?.[p] && !pkg.devDependencies?.[p])
+  if (want.length) {
+    pkg.dependencies = { ...pkg.dependencies, ...Object.fromEntries(want) }
+    writeJson(pkgFile, pkg)
+    install(dir)
+  }
+  console.log(`on kit ${name}: theme.css, ${k.parts.join(', ') || 'no parts'}${want.length ? `, installed ${want.map(([p]) => p).join(' ')}` : ''}${kept.length ? ` (kept this session's own ${kept.join(', ')})` : ''}`)
+  const project = projectRoot(), d = drift(k.sources, project), later = commitsSince(project, k.commit)
+  if (d.n) console.log(`the kit is out of date (${driftSay(d)}): bring theme.css and the parts in line with those files, check Current against a fresh screenshot, then proto kit save ${slug}${name === 'main' ? '' : ` --kit=${name}`}`)
+  let refs = []
+  if (a) {
+    const sc = k.screens[flags.current], sd = join(kd, 'screens', flags.current)
+    const ext = STACKS[k.stack].ext
+    if (!existsSync(a.file) || readFileSync(a.file, 'utf8') === a.stub) writeFileSync(a.file, readFileSync(join(sd, `current.${ext}`)))
+    else console.log(`${slug}/A already has its own code; the saved Current "${flags.current}" is ${tilde(join(sd, `current.${ext}`))}`)
+    const refDir = join(dir, '.proto', 'ref', slug)
+    mkdirSync(refDir, { recursive: true })
+    for (const f of sc.refs) if (!existsSync(join(refDir, f))) cpSync(join(sd, 'ref', f), join(refDir, f))
+    refs = sc.refs
+    const sdrift = drift(sc.sources, project)
+    if (sdrift.n) console.log(`Current "${flags.current}" may not match the app any more (${driftSay(sdrift)}): take a fresh screenshot and match it again before the other variants`)
+  }
+  if (!d.n && later) console.log(`the project is ${plural(later, 'commit')} past the kit (${k.commit}); its tracked files are unchanged`)
+  if (a && refs.length) console.log(`check it once: proto shoot ${slug}/A --ref .proto/ref/${slug}/${refs[0]}`)
+}
+
 const commands = {
   up, add, pick, work, ask, archive, shoot, handoff, snap, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
@@ -1264,6 +1538,7 @@ const commands = {
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },
   url: () => { const s = need(sessionDir()); console.log(s.url || s.localUrl || 'not started') },
   stack: () => { const d = detectStack(projectRoot()); console.log(`${d.stack} (${d.why})`) },
+  kit: () => !args[0] ? kitStatus() : args[0] === 'save' ? kitSave() : args[0] === 'screen' ? kitScreen() : die(`proto kit ${args[0]}? It is proto kit, proto kit save or proto kit screen`),
 }
 // The help is this file's opening comment, however many lines it grows to.
 if (!commands[cmd]) {
