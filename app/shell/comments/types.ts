@@ -56,8 +56,9 @@ export type CState = 'draft' | 'sent' | 'seen' | 'done'
 export type Mode =
   | { kind: 'idle' }
   | { kind: 'pick' }
-  | { kind: 'compose'; target: Target; id?: string }
-  | { kind: 'tag'; target: Target; id?: string }
+  /** trail: the elements a new comment was moved up from with Parent, nearest last, so it can step back down. */
+  | { kind: 'compose'; target: Target; id?: string; trail?: Target[] }
+  | { kind: 'tag'; target: Target; id?: string; trail?: Target[] }
   /** Writing on a moment or a range of the motion, in the dock; tagging: picking an element to tag. */
   | { kind: 'time'; time: Time; id?: string; tagging?: boolean }
 

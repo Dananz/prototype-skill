@@ -2,7 +2,7 @@
 // the guard that keeps every press from reaching the design while commenting, and the live boxes
 // pins and outlines are drawn from.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { describe, find, seen, spot, spotAt } from './dom'
+import { climb, describe, find, seen, spot, spotAt } from './dom'
 import { Icon } from './ui'
 import type { Box, Target } from './types'
 import { useCtx } from './ctx'
@@ -120,7 +120,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     // What is picked carries the layout it was picked on, in a device view.
     const onView = (t: Target): Target => { const v = host.view?.(); return v?.size ? { ...t, view: { size: v.size, w: v.w!, h: v.h! } } : t }
     const part = (t: EventTarget | null) => { const el = inDesign(t); return el && el !== host.mount() ? el : null }
-    const parentOf = (el: HTMLElement) => { const m = host.mount(), p = el.parentElement; return m && p && p !== m && m.contains(p) ? p : null }
+    const parentOf = (el: HTMLElement) => { const m = host.mount(); return m ? climb(m, el) : null }
     const show = (el: HTMLElement | null, touch: boolean) => {
       cur.current = el
       raised.current = false
@@ -302,8 +302,9 @@ export function HoldRing({ at }: { at: { x: number; y: number } | null }) {
 }
 
 /**
- * The outline on what is being inspected, with a button to skip to its parent. A finger gets
- * two icon buttons (parent, comment); a pointer gets the action and the parent arrow.
+ * The outline on what is being inspected. A finger gets two icon buttons (parent, comment); a
+ * pointer gets the region alone, no words: a click starts the comment, and the comment's own
+ * outline offers Parent (and back down) from there. ↑ still skips up while hovering.
  */
 export function HoverBox({ hover, verb, onConfirm, onUp }: { hover: Inspect; verb: string; onConfirm: () => void; onUp: () => void }) {
   const { host } = useCtx()
@@ -325,10 +326,7 @@ export function HoverBox({ hover, verb, onConfirm, onUp }: { hover: Inspect; ver
             {h.parent && <><button aria-label="Select the parent" onClick={onUp} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); onUp() }} className="grid size-9 place-items-center rounded-l-lg active:bg-white/15"><Icon name="up" className="size-4" /></button><span className="h-4 w-px bg-white/30" /></>}
             <button onClick={onConfirm} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); onConfirm() }} className={`inline-flex h-9 items-center gap-1.5 pl-2.5 pr-3 active:bg-white/15 ${h.parent ? 'rounded-r-lg' : 'rounded-lg'}`}><Icon name="comment" className="size-3.5" />{verb}</button>
           </div>
-        : <span data-inspect-ui style={spot(h.box, 24, 260)} className={`absolute flex h-6 items-stretch whitespace-nowrap rounded-md bg-proto-primary text-[11px] font-medium text-proto-primary-fg shadow ${hover ? 'pointer-events-auto' : ''}`}>
-            <span className="inline-flex items-center px-1.5">{verb}</span>
-            {h.parent && <button onClick={onUp} aria-label="Select the parent" title="Select the parent · ↑" className="inline-flex items-center gap-1 rounded-r-md border-l border-white/30 px-1.5 hover:bg-white/15"><Icon name="up" className="size-3" /></button>}
-          </span>}
+        : null}
     </Glide>
   )
 }
