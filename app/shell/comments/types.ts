@@ -80,6 +80,8 @@ export type State = {
   /** The phone's list, in a sheet. */
   sheet: boolean
   sending: boolean
+  /** Send as I add: each comment goes to Claude the moment it is added, so work starts while the next is written. */
+  live: boolean
   error: string
 }
 

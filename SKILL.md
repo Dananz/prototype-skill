@@ -496,6 +496,13 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
 Use workers only when comments in one batch each need real design work (a new variant, a section
 rewritten) in separate files: then one subagent per file, at medium effort, all started together.
 
+**Send each comment as you add it.** A switch under the Send button (kept per browser) sends each
+comment the moment it is added, so batches of one arrive while the user writes the next. Handle
+each the same way, then listen again at once; comments that piled up meanwhile arrive together and
+are one job. Measured with 12 comments added 15 s apart: everything was in 16 s after the last one,
+against 54 s after Send for the same 12 sent at once, because only the last one is left to do. A
+comment withdrawn in the page after it was handled is answered by undoing it, if the user asks.
+
 **A comment on the motion** (`at: 0.35 s` or `at: 0.30–0.62 s`): see `${CLAUDE_SKILL_DIR}/references/motion.md`.
 
 **A comment in a view** (written while the page showed another size, see the top) has a `view:`

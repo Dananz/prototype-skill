@@ -89,8 +89,11 @@ export function createActions(store: Store, host: Host) {
         const n = Math.max(0, ...get().items.filter(i => i.proto === p.proto && i.variant === p.variant).map(i => i.n)) + 1
         const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, ...d, ...(time ? { time } : { target }), at: Date.now() }
         set(s => ({ items: [...s.items, item], held: null, mode: { kind: 'idle' }, active: null }))
+        // Send as I add: it goes now, and Claude starts on it while the next one is written.
+        if (get().live) void act.send()
       }
     },
+    setLive(on: boolean) { set({ live: on }) },
     cancel() { set({ held: null, mode: { kind: 'idle' }, active: null, pendingTag: null }) },
     remove(id: string) { act.removeAll([id]) },
     /**
@@ -134,6 +137,8 @@ export function createActions(store: Store, host: Host) {
         const { id: batchId } = await host.send(batch)
         const at = new Map(drafts.map((d, k) => [d.id, k + 1]))
         set(s => ({ sending: false, items: s.items.map(i => at.has(i.id) ? { ...i, sent: { batch: batchId, i: at.get(i.id)! } } : i) }))
+        // One added while this send was on its way is still a draft: in Send as I add, it follows at once.
+        if (get().live && get().items.some(i => !i.sent)) void act.send()
       } catch (e) {
         set({ sending: false, error: e instanceof Error ? e.message : 'Could not send' })
       }
