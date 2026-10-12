@@ -1756,6 +1756,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     comments,
   })
   ;(window as unknown as { __protoRemount: () => Promise<unknown> }).__protoRemount = () => layer?.remount?.() ?? Promise.resolve()
+  // For scripts (the smoke test, like __protoMotion): the design the tools work on, in the view's
+  // frame or on the stage, so its own document is the one to read.
+  ;(window as unknown as { __protoDesign: () => HTMLElement | null }).__protoDesign = () => toolHost() ?? hintHost()
   /** The design the tools work on declared its motion: the menu and the bar offer the dock. */
   const hasMotion = () => !!commentHost() && !!motion.of(countHost())
   // A design declares its motion as it renders, after the chrome was drawn for it: draw it again,

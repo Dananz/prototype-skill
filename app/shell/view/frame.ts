@@ -9,6 +9,11 @@
  *  page on another origin) is someone looking at the page itself, with all of it. */
 export const framed = new URLSearchParams(location.search).has('dv') || (() => { try { return window.top !== window && !!window.parent.document.querySelector('[data-view]') } catch { return false } })()
 
+/** Clicks in the page in the frame, heard out here: a frame's events stay in its own document, and
+ *  the page outside acts on some of them (⌥-click comments on the design). The view adds each
+ *  frame's (view/index.tsx). */
+export const frameClicks = new Set<(e: MouseEvent) => void>()
+
 /** The page at a place, as a device view loads it: framed, in the theme of the page outside. */
 export const frameUrl = (hash: string, dark: boolean) => `${location.origin}${location.pathname}?dv=1&theme=${dark ? 'dark' : 'light'}${hash.startsWith('#') ? hash : `#${hash}`}`
 
