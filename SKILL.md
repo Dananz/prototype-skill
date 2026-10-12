@@ -150,7 +150,7 @@ components if it has any (`@import` its token CSS in `src/theme.css`; import pre
 components through `@project/…` and add `@source "../../../src/components";` so their classes
 are generated). With none, the look is yours to choose, and it is chosen per direction by the
 plan in craft.md (next section), not once for the session: name it, give it a palette and a
-type pairing from the font kit, and tell the user it is invented. Once the user picks one, put
+type pairing (`proto fonts --draw`), and tell the user it is invented. Once the user picks one, put
 its tokens in a `@theme {}` block and save the kit (`proto kit save <slug>`), so the next
 prototype keeps that look.
 
@@ -160,12 +160,15 @@ physical left or right in an RTL prototype's files; each one it lists is a bug.
 
 ## 3. One usable direction first, then the exploration
 
-**Plan the look before code.** Read `${CLAUDE_SKILL_DIR}/references/craft.md` before the first variant. For each
-direction you will build, write its plan (concept, palette, type, layout, signature, imagery,
-motion) into the app's `.proto/briefs/<slug>.md` and check it against the defaults that file
-lists, then build from the plan. With a Current the plan is short (what changes and why) and
-Current's look holds; without one it is the whole look. This takes a minute per direction and is
-what keeps the result from looking generated.
+**Plan the look before code.** Read `${CLAUDE_SKILL_DIR}/references/craft.md` before the first variant. Draw the
+type (`proto fonts --draw <n>`, with `--hebrew` for a Hebrew product), then write each
+direction's plan (concept, palette, type, layout, pattern, signature, imagery, motion, volume)
+into the app's `.proto/briefs/<slug>.md`, check the plans against the defaults that file lists
+and against each other (no shared font family, surface, signature or main-action pattern; at
+most one loud direction), and build from them. With a Current the plan is short (what changes
+and why) and Current's look holds; without one it is the whole look. This takes a minute per
+direction and is what keeps the result from looking generated. When an image tool is available
+and the subject is photo-led, start its images while you write the code (craft.md, Imagery).
 
 **First usable output: one complete, high-quality direction.** No special prompt is needed.
 Keep the real-product grounding, exact Current/reference match, real tokens/assets/chrome,
@@ -306,8 +309,9 @@ Each is told:
 - its letter and its direction's whole plan from `.proto/briefs/<slug>.md` (concept, palette
   as hex values, type pairing with the import lines, layout and its wireframe, signature,
   imagery, motion), and the feature's must-do lines;
-- to read `${CLAUDE_SKILL_DIR}/references/craft.md` (its absolute path) before writing, and to build from the plan
-  exactly, deriving every color and type decision from it;
+- to read `${CLAUDE_SKILL_DIR}/references/craft.md` (its absolute path; not pasted into the brief) before writing,
+  and to build from the plan exactly, deriving every color and type decision from it and loading
+  its fonts with `font()`;
 - the app's folder, the reference screenshots, and `A.tsx` to start from;
 - to write only `src/protos/<slug>/<letter>.tsx` and lowercase helpers of its own (`c-map.tsx`).
   `parts.tsx`, `meta.ts`, `theme.css` and the other variants are read-only to it, and it installs
@@ -315,7 +319,7 @@ Each is told:
 - `--session <the main session's $CLAUDE_CODE_SESSION_ID>` on every `proto` call, plus
   `--project <project root>` if it works in another folder; never `proto up`, `add`, `pick` or `work`;
 - to shoot only its own variant (`proto shoot <slug>/<letter>`), read both single shots at full
-  size, run craft.md's craft check on them, fix, and shoot again;
+  size, run craft.md's short craft check (questions 1, 5 and 7) on them, fix, and shoot again;
 - to reply in at most five lines: what it built, its weakest point, and which default from
   craft.md it is closest to.
 
@@ -323,14 +327,16 @@ Variant subagents run on the session's own model; don't pick a smaller one for t
 
 When all are back, run one `proto shoot <slug> --sheet`, read it, fix what the sheet shows and
 what the subagents named, write each variant's `about` and `states` into `meta.ts`, then go on
-with step 5. Without subagents, write the variants one after another; the sheet is the same.
+with step 5 (which starts with the critic). Without subagents, write the variants one after another; the sheet is the same.
 
 ## 5. Look at it, then iterate
 
-**Craft first, then defects.** Before the first defect round, shoot each direction you wrote
-yourself on its own (`proto shoot <slug>/<letter>`), read its `-desktop.png` and `-mobile.png` at
-full size, and run the craft check at the end of craft.md. Fix every no. Subagents do the same
-for theirs. Then the rounds below.
+**Craft first, then defects.** The first direction gets craft.md's full craft check from you,
+on its single shots at full size, before the others are written. Once every direction is built,
+start **the critic** (craft.md, section 10): one subagent with fresh eyes that reads the plans,
+the sheet and the single shots and returns the three changes that would most raise each
+direction. Apply them (without subagents, run that review yourself as a separate pass). Then the
+defect rounds below.
 
 ```
 proto shoot <slug> --sheet                      # every variant on one contact sheet: what you read each round
@@ -506,7 +512,7 @@ session builds and saves a new one.
 - **A variant shows a red error box:** that variant threw. Fix the file; it re-renders.
 - **`proto shoot` prints `slow …`:** a shot took over 3 s, and the line says which step took
   the time. Pass the line on to the user.
-- **Don't edit** the app's `shell/`, `src/main.ts`, `src/registry.ts`, `src/mount.*`, `src/hints.ts`, `src/copy.ts` or `src/motion.ts`. If the
+- **Don't edit** the app's `shell/`, `src/main.ts`, `src/registry.ts`, `src/mount.*`, `src/hints.ts`, `src/copy.ts`, `src/motion.ts` or `src/fonts.ts`. If the
   shell itself misbehaves, say so; the template is `${CLAUDE_SKILL_DIR}/app/` (replaced on
   every plugin update, so a fix belongs upstream). `proto up` copies the template over an
   existing session's app files (everything except `src/protos/` and `src/theme.css`) and adds

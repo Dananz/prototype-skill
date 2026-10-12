@@ -1,0 +1,733 @@
+{
+ "source": "fonts.google.com metadata, checked 2026-10-12",
+ "pairings": [
+  {
+   "mood": "Editorial and calm",
+   "script": "latin",
+   "display": {
+    "family": "Newsreader",
+    "spec": "Newsreader:ital,wght@0,200..800;1,200..800",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Hanken Grotesk",
+    "spec": "Hanken Grotesk:ital,wght@0,100..900;1,100..900"
+   },
+   "utility": {
+    "family": "IBM Plex Mono",
+    "spec": "IBM Plex Mono:wght@100;200;300;400;500;600;700"
+   }
+  },
+  {
+   "mood": "Literary, quiet luxury",
+   "script": "latin",
+   "display": {
+    "family": "Cormorant Garamond",
+    "spec": "Cormorant Garamond:ital,wght@0,300..700;1,300..700",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Figtree",
+    "spec": "Figtree:ital,wght@0,300..900;1,300..900"
+   }
+  },
+  {
+   "mood": "Swiss precision",
+   "script": "latin",
+   "display": {
+    "family": "Familjen Grotesk",
+    "spec": "Familjen Grotesk:ital,wght@0,400..700;1,400..700",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Public Sans",
+    "spec": "Public Sans:ital,wght@0,100..900;1,100..900"
+   },
+   "utility": {
+    "family": "DM Mono",
+    "spec": "DM Mono:wght@300;400;500"
+   }
+  },
+  {
+   "mood": "Technical, instrument-like",
+   "script": "latin",
+   "display": {
+    "family": "Martian Mono",
+    "spec": "Martian Mono:wght@100..800",
+    "category": "Monospace"
+   },
+   "body": {
+    "family": "Instrument Sans",
+    "spec": "Instrument Sans:ital,wght@0,400..700;1,400..700"
+   }
+  },
+  {
+   "mood": "Industrial poster",
+   "script": "latin",
+   "display": {
+    "family": "Big Shoulders",
+    "spec": "Big Shoulders:wght@100..900",
+    "category": "Display"
+   },
+   "body": {
+    "family": "Archivo",
+    "spec": "Archivo:ital,wght@0,100..900;1,100..900"
+   },
+   "utility": {
+    "family": "Space Mono",
+    "spec": "Space Mono:wght@400;700"
+   }
+  },
+  {
+   "mood": "Loud poster",
+   "script": "latin",
+   "display": {
+    "family": "Anton",
+    "spec": "Anton",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Epilogue",
+    "spec": "Epilogue:ital,wght@0,100..900;1,100..900"
+   }
+  },
+  {
+   "mood": "High-contrast fashion",
+   "script": "latin",
+   "display": {
+    "family": "Bodoni Moda",
+    "spec": "Bodoni Moda:ital,wght@0,400..900;1,400..900",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Albert Sans",
+    "spec": "Albert Sans:ital,wght@0,100..900;1,100..900"
+   }
+  },
+  {
+   "mood": "Warm and bookish",
+   "script": "latin",
+   "display": {
+    "family": "Young Serif",
+    "spec": "Young Serif",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Instrument Sans",
+    "spec": "Instrument Sans:ital,wght@0,400..700;1,400..700"
+   }
+  },
+  {
+   "mood": "Quirky grotesk",
+   "script": "latin",
+   "display": {
+    "family": "Bricolage Grotesque",
+    "spec": "Bricolage Grotesque:wght@200..800",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Onest",
+    "spec": "Onest:wght@100..900"
+   },
+   "utility": {
+    "family": "Fragment Mono",
+    "spec": "Fragment Mono"
+   }
+  },
+  {
+   "mood": "Geometric, art-school",
+   "script": "latin",
+   "display": {
+    "family": "Syne",
+    "spec": "Syne:wght@400..800",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Golos Text",
+    "spec": "Golos Text:wght@400..900"
+   }
+  },
+  {
+   "mood": "Wide and confident",
+   "script": "latin",
+   "display": {
+    "family": "Unbounded",
+    "spec": "Unbounded:wght@200..900",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Rethink Sans",
+    "spec": "Rethink Sans:ital,wght@0,400..800;1,400..800"
+   }
+  },
+  {
+   "mood": "Sturdy slab",
+   "script": "latin",
+   "display": {
+    "family": "Zilla Slab",
+    "spec": "Zilla Slab:wght@300;400;500;600;700",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Red Hat Text",
+    "spec": "Red Hat Text:ital,wght@0,300..700;1,300..700"
+   },
+   "utility": {
+    "family": "Red Hat Mono",
+    "spec": "Red Hat Mono:ital,wght@0,300..700;1,300..700"
+   }
+  },
+  {
+   "mood": "Retro serif headline",
+   "script": "latin",
+   "display": {
+    "family": "Gloock",
+    "spec": "Gloock",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Funnel Sans",
+    "spec": "Funnel Sans:ital,wght@0,300..800;1,300..800"
+   }
+  },
+  {
+   "mood": "Soft humanist",
+   "script": "latin",
+   "display": {
+    "family": "Petrona",
+    "spec": "Petrona:ital,wght@0,100..900;1,100..900",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Lexend",
+    "spec": "Lexend:wght@100..900"
+   }
+  },
+  {
+   "mood": "Classic book",
+   "script": "latin",
+   "display": {
+    "family": "Libre Caslon Display",
+    "spec": "Libre Caslon Display",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Libre Caslon Text",
+    "spec": "Libre Caslon Text:wght@400;700"
+   }
+  },
+  {
+   "mood": "Gallery and fashion",
+   "script": "latin",
+   "display": {
+    "family": "Italiana",
+    "spec": "Italiana",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Jost",
+    "spec": "Jost:ital,wght@0,100..900;1,100..900"
+   }
+  },
+  {
+   "mood": "Friendly and round",
+   "script": "latin",
+   "display": {
+    "family": "Fredoka",
+    "spec": "Fredoka:wght@300..700",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Nunito Sans",
+    "spec": "Nunito Sans:ital,wght@0,200..1000;1,200..1000"
+   }
+  },
+  {
+   "mood": "Condensed utility",
+   "script": "latin",
+   "display": {
+    "family": "Barlow Condensed",
+    "spec": "Barlow Condensed:wght@100;200;300;400;500;600;700;800;900",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Barlow",
+    "spec": "Barlow:wght@100;200;300;400;500;600;700;800;900"
+   },
+   "utility": {
+    "family": "Azeret Mono",
+    "spec": "Azeret Mono:ital,wght@0,100..900;1,100..900"
+   }
+  },
+  {
+   "mood": "Display serif, product",
+   "script": "latin",
+   "display": {
+    "family": "DM Serif Display",
+    "spec": "DM Serif Display",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "DM Sans",
+    "spec": "DM Sans:ital,wght@0,100..1000;1,100..1000"
+   }
+  },
+  {
+   "mood": "Plain grotesk with code",
+   "script": "latin",
+   "display": {
+    "family": "Host Grotesk",
+    "spec": "Host Grotesk:ital,wght@0,300..800;1,300..800",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "JetBrains Mono",
+    "spec": "JetBrains Mono:ital,wght@0,100..800;1,100..800"
+   }
+  },
+  {
+   "mood": "Essay",
+   "script": "latin",
+   "display": {
+    "family": "Spectral",
+    "spec": "Spectral:wght@200;300;400;500;600;700;800",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Karla",
+    "spec": "Karla:ital,wght@0,200..800;1,200..800"
+   }
+  },
+  {
+   "mood": "Newsroom data",
+   "script": "latin",
+   "display": {
+    "family": "Chivo",
+    "spec": "Chivo:ital,wght@0,100..900;1,100..900",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Chivo Mono",
+    "spec": "Chivo Mono:ital,wght@0,100..900;1,100..900"
+   }
+  },
+  {
+   "mood": "Tall and light",
+   "script": "latin",
+   "display": {
+    "family": "Darker Grotesque",
+    "spec": "Darker Grotesque:wght@300..900",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Spline Sans",
+    "spec": "Spline Sans:wght@300..700"
+   },
+   "utility": {
+    "family": "Spline Sans Mono",
+    "spec": "Spline Sans Mono:ital,wght@0,300..700;1,300..700"
+   }
+  },
+  {
+   "mood": "Diner retro",
+   "script": "latin",
+   "display": {
+    "family": "Shrikhand",
+    "spec": "Shrikhand",
+    "category": "Display"
+   },
+   "body": {
+    "family": "Work Sans",
+    "spec": "Work Sans:ital,wght@0,100..900;1,100..900"
+   }
+  },
+  {
+   "mood": "Old-style and modern",
+   "script": "latin",
+   "display": {
+    "family": "EB Garamond",
+    "spec": "EB Garamond:ital,wght@0,400..800;1,400..800",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Schibsted Grotesk",
+    "spec": "Schibsted Grotesk:ital,wght@0,400..900;1,400..900"
+   }
+  },
+  {
+   "mood": "Precise product UI",
+   "script": "latin",
+   "display": {
+    "family": "Geist",
+    "spec": "Geist:ital,wght@0,100..900;1,100..900",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Geist",
+    "spec": "Geist:ital,wght@0,100..900;1,100..900"
+   },
+   "utility": {
+    "family": "Geist Mono",
+    "spec": "Geist Mono:ital,wght@0,100..900;1,100..900"
+   }
+  },
+  {
+   "mood": "Bold modern sans",
+   "script": "latin",
+   "display": {
+    "family": "Funnel Display",
+    "spec": "Funnel Display:wght@300..800",
+    "category": "Display"
+   },
+   "body": {
+    "family": "Funnel Sans",
+    "spec": "Funnel Sans:ital,wght@0,300..800;1,300..800"
+   }
+  },
+  {
+   "mood": "Grotesk with wide axis",
+   "script": "latin",
+   "display": {
+    "family": "Archivo Black",
+    "spec": "Archivo Black",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Archivo",
+    "spec": "Archivo:ital,wght@0,100..900;1,100..900"
+   }
+  },
+  {
+   "mood": "Market signage, condensed poster",
+   "script": "hebrew",
+   "display": {
+    "family": "Karantina",
+    "spec": "Karantina:wght@300;400;700",
+    "category": "Display"
+   },
+   "body": {
+    "family": "Assistant",
+    "spec": "Assistant:wght@200..800"
+   }
+  },
+  {
+   "mood": "Heavy serif, heritage",
+   "script": "hebrew",
+   "display": {
+    "family": "Suez One",
+    "spec": "Suez One",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Heebo",
+    "spec": "Heebo:wght@100..900"
+   }
+  },
+  {
+   "mood": "Bold, friendly street",
+   "script": "hebrew",
+   "display": {
+    "family": "Secular One",
+    "spec": "Secular One",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Rubik",
+    "spec": "Rubik:ital,wght@0,300..900;1,300..900"
+   }
+  },
+  {
+   "mood": "Classic Hebrew book",
+   "script": "hebrew",
+   "display": {
+    "family": "Frank Ruhl Libre",
+    "spec": "Frank Ruhl Libre:wght@300..900",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "IBM Plex Sans Hebrew",
+    "spec": "IBM Plex Sans Hebrew:wght@100;200;300;400;500;600;700"
+   }
+  },
+  {
+   "mood": "Elegant, light display",
+   "script": "hebrew",
+   "display": {
+    "family": "Bellefair",
+    "spec": "Bellefair",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Heebo",
+    "spec": "Heebo:wght@100..900"
+   }
+  },
+  {
+   "mood": "Bookish and warm",
+   "script": "hebrew",
+   "display": {
+    "family": "David Libre",
+    "spec": "David Libre:wght@400;500;700",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Miriam Libre",
+    "spec": "Miriam Libre:wght@400..700"
+   }
+  },
+  {
+   "mood": "Neutral system, many weights",
+   "script": "hebrew",
+   "display": {
+    "family": "Noto Serif Hebrew",
+    "spec": "Noto Serif Hebrew:wght@100..900",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "Noto Sans Hebrew",
+    "spec": "Noto Sans Hebrew:wght@100..900"
+   }
+  },
+  {
+   "mood": "Hand-lettered sign",
+   "script": "hebrew",
+   "display": {
+    "family": "Gveret Levin",
+    "spec": "Gveret Levin",
+    "category": "Handwriting"
+   },
+   "body": {
+    "family": "Assistant",
+    "spec": "Assistant:wght@200..800"
+   }
+  },
+  {
+   "mood": "Chalkboard, playful",
+   "script": "hebrew",
+   "display": {
+    "family": "Amatic SC",
+    "spec": "Amatic SC:wght@400;700",
+    "category": "Handwriting"
+   },
+   "body": {
+    "family": "Varela Round",
+    "spec": "Varela Round"
+   }
+  },
+  {
+   "mood": "Old-style serif",
+   "script": "hebrew",
+   "display": {
+    "family": "Bona Nova",
+    "spec": "Bona Nova:wght@400;700",
+    "category": "Serif"
+   },
+   "body": {
+    "family": "IBM Plex Sans Hebrew",
+    "spec": "IBM Plex Sans Hebrew:wght@100;200;300;400;500;600;700"
+   }
+  },
+  {
+   "mood": "Soft and friendly",
+   "script": "hebrew",
+   "display": {
+    "family": "Playpen Sans Hebrew",
+    "spec": "Playpen Sans Hebrew:wght@100..800",
+    "category": "Handwriting"
+   },
+   "body": {
+    "family": "Rubik",
+    "spec": "Rubik:ital,wght@0,300..900;1,300..900"
+   }
+  },
+  {
+   "mood": "Technical, with a mono",
+   "script": "hebrew",
+   "display": {
+    "family": "IBM Plex Sans Hebrew",
+    "spec": "IBM Plex Sans Hebrew:wght@100;200;300;400;500;600;700",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "IBM Plex Sans Hebrew",
+    "spec": "IBM Plex Sans Hebrew:wght@100;200;300;400;500;600;700"
+   },
+   "utility": {
+    "family": "Cousine",
+    "spec": "Cousine:wght@400;700"
+   }
+  },
+  {
+   "mood": "Heavy rounded sans",
+   "script": "hebrew",
+   "display": {
+    "family": "Rubik",
+    "spec": "Rubik:ital,wght@0,300..900;1,300..900",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Assistant",
+    "spec": "Assistant:wght@200..800"
+   }
+  },
+  {
+   "mood": "Modular, digital",
+   "script": "hebrew",
+   "display": {
+    "family": "Handjet",
+    "spec": "Handjet:wght@100..900",
+    "category": "Display"
+   },
+   "body": {
+    "family": "Rubik",
+    "spec": "Rubik:ital,wght@0,300..900;1,300..900"
+   }
+  },
+  {
+   "mood": "Heritage script",
+   "script": "hebrew",
+   "display": {
+    "family": "Solitreo",
+    "spec": "Solitreo",
+    "category": "Handwriting"
+   },
+   "body": {
+    "family": "Frank Ruhl Libre",
+    "spec": "Frank Ruhl Libre:wght@300..900"
+   }
+  },
+  {
+   "mood": "Soft rounded",
+   "script": "hebrew",
+   "display": {
+    "family": "Fredoka",
+    "spec": "Fredoka:wght@300..700",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Heebo",
+    "spec": "Heebo:wght@100..900"
+   }
+  },
+  {
+   "mood": "Rough street display",
+   "script": "hebrew",
+   "display": {
+    "family": "Rubik Dirt",
+    "spec": "Rubik Dirt",
+    "category": "Display"
+   },
+   "body": {
+    "family": "Assistant",
+    "spec": "Assistant:wght@200..800"
+   }
+  },
+  {
+   "mood": "Calm modern sans",
+   "script": "hebrew",
+   "display": {
+    "family": "Lunasima",
+    "spec": "Lunasima:wght@400;700",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Frank Ruhl Libre",
+    "spec": "Frank Ruhl Libre:wght@300..900"
+   }
+  },
+  {
+   "mood": "Simple and quiet",
+   "script": "hebrew",
+   "display": {
+    "family": "Miriam Libre",
+    "spec": "Miriam Libre:wght@400..700",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "David Libre",
+    "spec": "David Libre:wght@400;500;700"
+   }
+  },
+  {
+   "mood": "Product UI, Hebrew",
+   "script": "hebrew",
+   "display": {
+    "family": "Heebo",
+    "spec": "Heebo:wght@100..900",
+    "category": "Sans Serif"
+   },
+   "body": {
+    "family": "Heebo",
+    "spec": "Heebo:wght@100..900"
+   },
+   "utility": {
+    "family": "Cousine",
+    "spec": "Cousine:wght@400;700"
+   }
+  }
+ ],
+ "hebrew": [
+  "Alef",
+  "Amatic SC",
+  "Arimo",
+  "Assistant",
+  "Bellefair",
+  "Bona Nova",
+  "Bona Nova SC",
+  "Cardo",
+  "Cascadia Code",
+  "Cascadia Mono",
+  "Cousine",
+  "David Libre",
+  "Frank Ruhl Libre",
+  "Fredoka",
+  "Google Sans",
+  "Gveret Levin",
+  "Handjet",
+  "Heebo",
+  "IBM Plex Sans Hebrew",
+  "Karantina",
+  "Libertinus Serif",
+  "Lunasima",
+  "M PLUS 1p",
+  "M PLUS Rounded 1c",
+  "Miriam Libre",
+  "Noto Rashi Hebrew",
+  "Noto Sans Hebrew",
+  "Noto Serif Hebrew",
+  "Open Sans",
+  "Playpen Sans Hebrew",
+  "Rubik",
+  "Rubik 80s Fade",
+  "Rubik Beastly",
+  "Rubik Broken Fax",
+  "Rubik Bubbles",
+  "Rubik Burned",
+  "Rubik Dirt",
+  "Rubik Distressed",
+  "Rubik Doodle Shadow",
+  "Rubik Doodle Triangles",
+  "Rubik Gemstones",
+  "Rubik Glitch",
+  "Rubik Glitch Pop",
+  "Rubik Iso",
+  "Rubik Lines",
+  "Rubik Maps",
+  "Rubik Marker Hatch",
+  "Rubik Maze",
+  "Rubik Microbe",
+  "Rubik Moonrocks",
+  "Rubik Pixels",
+  "Rubik Puddles",
+  "Rubik Scribble",
+  "Rubik Spray Paint",
+  "Rubik Storm",
+  "Rubik Vinyl",
+  "Rubik Wet Paint",
+  "Secular One",
+  "Solitreo",
+  "Suez One",
+  "Tinos",
+  "Varela Round"
+ ]
+}
