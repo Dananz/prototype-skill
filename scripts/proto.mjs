@@ -8,6 +8,7 @@
 //             [--from-picks]   built from every variant the user picked in this session
 //             [--kit[=<name>]] [--current <screen>]   on the project's design kit: its theme, parts and
 //             packages, and with --current that screen's saved Current as A (with its references)
+//   proto plan <slug>   each placeholder shows its direction's one-line plan from .proto/briefs/<slug>.json
 //   proto done <slug>/<letter>[ …] | <slug>   that variant is built: the page drops its Building mark
 //   proto shoot [route…] [--theme dark] [--focus] [--copy] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
 //             [--ref <png>]   instead, the variant's screen beside that screenshot of the real one
@@ -69,8 +70,8 @@ const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.
 // only; `proto up` never adds them to an existing one, so a running session isn't reinstalled and
 // restarted for packages it never asked for.
 const STACKS = {
-  react: { deps: {}, craft: { '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', stub: 'react.tsx' },
-  vue: { deps: { vue: '^3.5.0' }, craft: { '@phosphor-icons/vue': '^2.2.1', 'motion-v': '^2.7.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue' },
+  react: { deps: {}, craft: { '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', stub: 'react.tsx', plan: 'react-plan.tsx' },
+  vue: { deps: { vue: '^3.5.0' }, craft: { '@phosphor-icons/vue': '^2.2.1', 'motion-v': '^2.7.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue', plan: 'vue-plan.vue' },
 }
 
 // ---------- arguments ----------
@@ -459,6 +460,31 @@ function add() {
   }
   console.log(`${pdir}: ${Object.keys(meta.variants).map(id => `${id}.${kit.ext}`).join(' ') || 'no variants'}`)
   if (s.url) console.log(`${s.url}#/${slug}`)
+}
+
+// The one-line plans are written: each variant still on its placeholder shows its own (name, concept,
+// display face, colors) until its first real write. A variant already written is left alone.
+function plan() {
+  const dir = sessionDir()
+  const s = need(dir)
+  const slug = args[0]
+  const pdir = join(dir, 'src', 'protos', slug || '')
+  if (!slug || !existsSync(join(pdir, 'meta.ts'))) die('which prototype? proto plan <slug> (after proto add)')
+  const file = join(dir, '.proto', 'briefs', `${slug}.json`)
+  const brief = readJson(file, null) || die(`write the one-line plans to ${tilde(file)} first: { "facts": "…", "directions": { "A": { "name", "concept", "display", "body", "surface", "ink", "accent", "signature" } } }`)
+  const kit = STACKS[s.stack]
+  const card = readFileSync(join(APP, 'stubs', kit.plan), 'utf8')
+  const shown = []
+  for (const [id, d] of Object.entries(brief.directions || {})) {
+    const f = join(pdir, `${id}.${kit.ext}`)
+    if (!existsSync(f) || !/^(\/\/|<!--) Placeholder while /.test(readFileSync(f, 'utf8'))) continue
+    const keys = ['name', 'concept', 'display', 'body', 'surface', 'ink', 'accent', 'signature']
+    const data = JSON.stringify(Object.fromEntries(keys.map(k => [k, d[k] == null ? null : String(d[k])])))
+    const name = String(d.name || id)
+    writeFileSync(f, card.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name.replace(/[\r\n]+/g, ' ')).replace('__PLAN__', () => data))
+    shown.push(id)
+  }
+  console.log(shown.length ? `plans shown: ${shown.join(', ')}` : 'no placeholders left to show a plan on')
 }
 
 // A variant is built (its checks passed): the page drops its Building mark and shows its errors
@@ -1677,7 +1703,7 @@ function fonts() {
 }
 
 const commands = {
-  up, add, done, pick, work, ask, archive, shoot, compare, perf, handoff, snap, inbox, reply, gc: () => gc(false), ls,
+  up, add, plan, done, pick, work, ask, archive, shoot, compare, perf, handoff, snap, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
   rm: () => rm(),
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },

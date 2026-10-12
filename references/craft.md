@@ -82,9 +82,9 @@ free, don't spend that freedom on a default:
   button; emoji as icons; glass on every surface; a shadow and a hover lift on every card.
 - **Motion:** a fade-and-slide-up on every section and a hover transition on every card.
 
-Work in two passes. First, brainstorm in your thinking and write the direction's full plan (the
-main agent's one-line plans and shared facts are in `.proto/briefs/<slug>.md`; a full plan goes
-to `.proto/briefs/<slug>-<letter>.md`):
+Work in two passes. The direction's one-line plan (with the shared facts, in
+`.proto/briefs/<slug>.json`) is enough for its hero, so the hero goes on screen first. Then
+brainstorm in your thinking and write the full plan to `.proto/briefs/<slug>-<letter>.md`:
 
 ```
 ## B · Tide table
@@ -179,7 +179,8 @@ preference:
    people, interiors). Then it is not optional: a drawn pastry where a photo belongs is the
    weakest part of the page. One hero image and a few product shots per direction, in the
    direction's own light and styling, saved into the app's `src/assets/`. The main agent
-   generates them for all directions at once, in the background, right after the plans; drawn
+   generates them for all directions at once, as one background command right after the plans,
+   and doesn't wait on it or debug it before its own hero is on screen; drawn
    shapes hold each place until its image lands. No tool available: skip this, don't ask.
 3. Drawing from the subject in code: SVG shapes, a chart, a map, a gradient with grain.
 
@@ -227,7 +228,7 @@ own variant; the critic covers the rest.
 Once every direction is built, one subagent with fresh eyes reviews them all, so the work isn't
 only graded by whoever made it. Start it with:
 
-- the paths of this file, `.proto/briefs/<slug>.md`, the contact sheet and each variant's
+- the paths of this file, `.proto/briefs/<slug>.json`, the contact sheet and each variant's
   `-desktop.png` and `-mobile.png` (it reads images; it edits nothing and runs no `proto`
   command other than `proto shoot` with `--session`);
 - the job: for each direction, the three changes that would most raise it, most important first,

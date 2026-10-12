@@ -174,21 +174,26 @@ about half a minute, so the order is:
    client rejected anything templated, one real aesthetic risk per direction, in the look, with
    a simple experience. Draw a pool of type (`proto fonts --draw 10`, with `--hebrew` for a Hebrew
    product).
-3. **One line per direction** into the app's `.proto/briefs/<slug>.md`: concept, display and body
-   face, dominant surface color, signature. Check the lines against the defaults craft.md lists
-   and against each other (no shared font family, surface, signature or main-action pattern).
-   This is the only planning before code that waits for you.
-4. **Start the images** when the subject is photo-led (below), in the background.
-5. **Start the other directions** (subagents, section 4) with their line; each writes its own full
-   plan (craft.md, section 3) before its code. Then write your own direction's full plan, and
-   build it.
+3. **One line per direction** into the app's `.proto/briefs/<slug>.json`, then `proto plan <slug>`:
+   `{ "facts": "…", "directions": { "A": { "name", "concept", "display", "body", "surface", "ink",
+   "accent", "signature" } } }` (display and body are `font()` specs). Check the lines against
+   the defaults craft.md lists and against each other (no shared font family, surface, signature
+   or main-action pattern). `proto plan` turns each placeholder into its line, in its own face and
+   colors, so the page shows every direction's look within seconds. This is the only planning
+   before code that waits for you.
+4. **In one message:** the other directions' subagents (section 4, short briefs) and, when the
+   subject is photo-led (below), the image generation as **one** background command. Don't read
+   its help, test it or check on it now: it reports when it is done, and a failure is fixed after
+   your hero is on screen.
+5. **Your own direction's hero, straight from its line.** Then its full plan (craft.md,
+   section 3), then the rest of it.
 
 With a Current the plan is short (what changes and why) and Current's look holds; without one it
 is the whole look. **Images: when an image tool is available** (the `codex-image` skill, or an
 image-generation MCP), **the subject is photo-led** (food, places, products, people, interiors)
 **and the project has no images of its own, generating them is not optional.** Invoke that skill
 yourself, once, for every direction's images (a hero each, a few product shots), in the
-background into the app's `src/assets/`: drawn shapes hold each place until its image lands, and
+background into the app's `src/assets/`, started as step 4 says: drawn shapes hold each place until its image lands, and
 the variant swaps it in (craft.md, Imagery). Subagents don't generate images; they use what is in
 `src/assets/`.
 
@@ -352,19 +357,22 @@ first except the facts every direction tells the same way (name, products, price
 address), under the lines in the brief. For an existing product, once Current matches and the
 shared chrome (`parts.tsx`, `src/theme.css`, packages) exists. Each is told:
 
-- its letter, its one-line plan and the shared facts from `.proto/briefs/<slug>.md`, and the
-  feature's must-do lines; it writes its own full plan to `.proto/briefs/<slug>-<letter>.md`;
-- to read `${CLAUDE_SKILL_DIR}/references/craft.md` (its absolute path; not pasted into the brief) before writing,
-  and to build from the plan exactly, deriving every color and type decision from it;
+- its letter and the path of `.proto/briefs/<slug>.json` (its line and the shared facts), the
+  feature's must-do lines, and the path of `${CLAUDE_SKILL_DIR}/references/craft.md`. Keep the
+  brief short: everything below is standing practice, not something to restate at length;
+- that its **first write is `src/protos/<slug>/<letter>.tsx` itself: the hero, final, straight
+  from its line**, before reading craft.md in full, before any helper file, and without reading
+  `node_modules`. Then it reads craft.md, writes its full plan to
+  `.proto/briefs/<slug>-<letter>.md` and builds the rest from it, deriving every color and type
+  decision from it;
 - the app's folder, and with a Current, the reference screenshots and `A.tsx` to start from;
 - to write only `src/protos/<slug>/<letter>.tsx` and lowercase helpers of its own (`c-map.tsx`).
   `parts.tsx`, `meta.ts`, `theme.css` and the other variants are read-only to it, and it installs
   nothing; it asks for those in its reply;
 - `--session <the main session's $CLAUDE_CODE_SESSION_ID>` on every `proto` call, plus
   `--project <project root>` if it works in another folder; never `proto up`, `add`, `pick` or `work`;
-- to write that full plan first (craft.md, section 3, including the check against a similar
-  prompt), then build live in
-  passes (the hero, final, first; then section by section; every save renders), and to run
+- to build live in passes (the hero first; then section by section; every save renders; a
+  helper file only once the variant file already imports something that exists), and to run
   `proto done <slug>/<letter>` when its checks pass;
 - to shoot only its own variant (`proto shoot <slug>/<letter>`), read both single shots at full
   size, run craft.md's short craft check (questions 1, 5 and 7) on them, fix, and shoot again;
