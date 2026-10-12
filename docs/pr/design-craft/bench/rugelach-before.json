@@ -1,0 +1,21 @@
+{
+  "name": "rugelach-before",
+  "skill": "/Users/tomer/Code/proto-bench/skill-before",
+  "uuid": "2e9c3252-e594-46bf-bd83-f677daf94bb7",
+  "session": "/Users/tomer/Code/proto-bench/runs/rugelach-before/.prototypes/2e9c3252",
+  "url": "https://studio.tail08ad7c.ts.net:9536/",
+  "exit": 0,
+  "seconds": {
+    "link": 10.024,
+    "added": 35.065,
+    "first": 136.248,
+    "allBuilt": 500.867,
+    "lastReply": 500.842,
+    "done": 501.453
+  },
+  "craftKit": false,
+  "briefs": false,
+  "cost": 5.791254099999995,
+  "turns": 17,
+  "apiSeconds": 776.737
+}

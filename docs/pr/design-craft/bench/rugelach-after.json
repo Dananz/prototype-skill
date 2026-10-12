@@ -1,0 +1,21 @@
+{
+  "name": "rugelach-after",
+  "skill": "/Users/tomer/Code/prototype-craft",
+  "uuid": "1783568e-aac4-4ed5-ae83-ef744d6fce60",
+  "session": "/Users/tomer/Code/proto-bench/runs/rugelach-after/.prototypes/1783568e",
+  "url": "https://studio.tail08ad7c.ts.net:9537/",
+  "exit": 0,
+  "seconds": {
+    "link": 14.031,
+    "added": 72.127,
+    "first": 149.244,
+    "allBuilt": 680.145,
+    "lastReply": 679.842,
+    "done": 680.451
+  },
+  "craftKit": true,
+  "briefs": true,
+  "cost": 8.034162799999997,
+  "turns": 9,
+  "apiSeconds": 1405.248
+}

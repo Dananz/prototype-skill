@@ -34,6 +34,8 @@
 //   proto kit save <slug> [--sources <file,…>] [--kit=<name>]   the session's theme.css and that prototype's
 //             parts, packages and screen, kept for the next session (--sources: the files they came from)
 //   proto kit screen <name> <slug>[/<letter>] [--sources <file,…>]   a Current that matches its reference
+//   proto fonts [--draw <n>] [--hebrew] [--avoid <family,…>]   font pairings from Google Fonts (references/
+//             fonts.json); --draw: n at random, no family twice, for the directions of one prototype
 //   proto archive <slug> [--off]    proto keep [--off]      proto url    proto stack
 //   proto stop    proto rm    proto ls    proto gc
 //
@@ -61,9 +63,13 @@ const BASE = { vite: '^8.3.0', tailwindcss: '^4.3.0', '@tailwindcss/vite': '^4.3
 // UI's Drawer, which is React, and so is the comment layer (which takes its screenshots with
 // modern-screenshot).
 const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.9.0', 'modern-screenshot': '^4.7.0' }
+// What a variant can reach for without an install (an install reloads the page): icons and
+// motion. Fonts come from Google Fonts at run time (src/fonts.ts, `proto fonts`). New sessions
+// only; `proto up` never adds them to an existing one, so a running session isn't reinstalled and
+// restarted for packages it never asked for.
 const STACKS = {
-  react: { deps: {}, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', stub: 'react.tsx' },
-  vue: { deps: { vue: '^3.5.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue' },
+  react: { deps: {}, craft: { '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', stub: 'react.tsx' },
+  vue: { deps: { vue: '^3.5.0' }, craft: { '@phosphor-icons/vue': '^2.2.1', 'motion-v': '^2.7.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue' },
 }
 
 // ---------- arguments ----------
@@ -73,7 +79,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy', 'kit', 'each'])
+const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy', 'kit', 'each', 'hebrew'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -226,7 +232,7 @@ function scaffold(dir, project) {
   cpSync(join(APP, 'adapters', kit.motion), join(dir, 'src', 'motion.ts'))
   writeJson(join(dir, 'package.json'), {
     name: `prototype-${basename(dir)}`, private: true, type: 'module',
-    dependencies: { ...SHELL, ...kit.deps }, devDependencies: { ...BASE, ...kit.dev },
+    dependencies: { ...SHELL, ...kit.deps, ...kit.craft }, devDependencies: { ...BASE, ...kit.dev },
   })
   const id = sessionId()
   writeJson(sessionFile(dir), {
@@ -1522,7 +1528,7 @@ function kitSave() {
   // Each file is read where it lives in the prototype, so its relative imports resolve from there.
   const texts = [[theme, join(dir, 'src')], ...filesIn(join(kd, 'parts')).map(p => [readFileSync(p, 'utf8'), dirname(join(pdir, relative(join(kd, 'parts'), p)))])]
   // The packages the session added on top of the template (an icon set): the next one gets them too.
-  const tpl = STACKS[s.stack], base = new Set(Object.keys({ ...SHELL, ...tpl.deps, ...BASE, ...tpl.dev }))
+  const tpl = STACKS[s.stack], base = new Set(Object.keys({ ...SHELL, ...tpl.deps, ...tpl.craft, ...BASE, ...tpl.dev }))
   const pkg = readJson(join(dir, 'package.json'), {})
   const packages = Object.fromEntries(Object.entries({ ...pkg.devDependencies, ...pkg.dependencies }).filter(([p]) => !base.has(p)).sort())
   const meta = metaIn(join(pdir, 'meta.ts'))
@@ -1620,6 +1626,28 @@ function useKit(dir, pdir, slug, { name, k, kd }, a) {
   if (a && refs.length) console.log(`check it once: proto shoot ${slug}/A --ref .proto/ref/${slug}/${refs[0]}`)
 }
 
+// ---------- fonts ----------
+// The pairings in references/fonts.json, checked against Google Fonts. --draw picks at random, so
+// two sessions with the same brief don't land on the same faces; no family appears twice in a draw.
+function fonts() {
+  const cat = readJson(join(SKILL, 'references', 'fonts.json'), null) || die('references/fonts.json is missing')
+  const avoid = new Set(String(flags.avoid || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean))
+  const fams = p => ['display', 'body', 'utility'].filter(r => p[r]).map(r => p[r].family)
+  let pool = cat.pairings.filter(p => p.script === (flags.hebrew ? 'hebrew' : 'latin') && !fams(p).some(f => avoid.has(f.toLowerCase())))
+  if (flags.draw) {
+    const n = Number(flags.draw) || 1, out = [], used = new Set()
+    pool = pool.map(p => [Math.random(), p]).sort((a, b) => a[0] - b[0]).map(x => x[1])
+    for (const p of pool) { if (out.length >= n) break; if (fams(p).some(f => used.has(f))) continue; fams(p).forEach(f => used.add(f)); out.push(p) }
+    pool = out
+  }
+  for (const p of pool) {
+    const specs = [...new Set(['display', 'body', 'utility'].filter(r => p[r]).map(r => p[r].spec))]
+    console.log(`${p.mood} (${p.script}): ${fams(p).join(' / ')}`)
+    console.log(`  font(${specs.map(s => `'${s}'`).join(', ')})`)
+  }
+  if (flags.hebrew && !flags.draw) console.log(`\nEvery Google family with Hebrew: ${cat.hebrew.join(', ')}`)
+}
+
 const commands = {
   up, add, pick, work, ask, archive, shoot, compare, perf, handoff, snap, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
@@ -1627,6 +1655,7 @@ const commands = {
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },
   url: () => { const s = need(sessionDir()); console.log(s.url || s.localUrl || 'not started') },
   stack: () => { const d = detectStack(projectRoot()); console.log(`${d.stack} (${d.why})`) },
+  fonts,
   kit: () => !args[0] ? kitStatus() : args[0] === 'save' ? kitSave() : args[0] === 'screen' ? kitScreen() : die(`proto kit ${args[0]}? It is proto kit, proto kit save or proto kit screen`),
 }
 // The help is this file's opening comment, however many lines it grows to.

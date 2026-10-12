@@ -1,0 +1,20 @@
+{
+  "name": "pricing-after",
+  "skill": "/Users/tomer/Code/prototype-craft",
+  "uuid": "77d96c43-8dfc-477f-962a-fbf9d5ee2545",
+  "session": "/Users/tomer/Code/proto-bench/runs/pricing-after/.prototypes/77d96c43",
+  "url": "https://studio.tail08ad7c.ts.net:9535/",
+  "exit": 0,
+  "seconds": {
+    "link": 11.023,
+    "added": 34.062,
+    "first": 101.176,
+    "allBuilt": 308.566,
+    "done": 309.087
+  },
+  "craftKit": true,
+  "briefs": true,
+  "cost": 3.1343722,
+  "turns": 24,
+  "apiSeconds": 463.07
+}

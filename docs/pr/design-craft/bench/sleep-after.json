@@ -1,0 +1,20 @@
+{
+  "name": "sleep-after",
+  "skill": "/Users/tomer/Code/prototype-craft",
+  "uuid": "eb89a69c-1a8d-48c3-91dc-e66e1421eba3",
+  "session": "/Users/tomer/Code/proto-bench/runs/sleep-after/.prototypes/eb89a69c",
+  "url": "https://studio.tail08ad7c.ts.net:9533/",
+  "exit": 0,
+  "seconds": {
+    "link": 12.025,
+    "added": 39.08,
+    "first": 133.249,
+    "allBuilt": 376.692,
+    "done": 377.551
+  },
+  "craftKit": true,
+  "briefs": true,
+  "cost": 3.9682029000000005,
+  "turns": 6,
+  "apiSeconds": 574.444
+}
