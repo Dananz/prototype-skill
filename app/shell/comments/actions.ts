@@ -3,7 +3,7 @@
 // Send posts every draft as one batch. Whatever is being written when the composer is put away
 // any way but Cancel or Add is held, and comes back with the next comment.
 import type { CommentBatch } from '../shell'
-import { find } from './dom'
+import { climb, describe, find } from './dom'
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import { progress, type Store } from './store'
@@ -38,12 +38,30 @@ export function createActions(store: Store, host: Host) {
     stop() { set({ mode: { kind: 'idle' } }) },
     close() { set({ mode: { kind: 'idle' }, active: null, pendingTag: null }) },
     begin(target: Target) { set({ mode: { kind: 'compose', target }, active: null }) },
+    /**
+     * Moves the new comment being written up to the element around the one it is on, keeping what
+     * was typed; `down` steps back to the element it came up from. A saved comment, or one on a
+     * spot, stays where it is.
+     */
+    parent() {
+      const m = get().mode, mount = host.mount()
+      if (m.kind !== 'compose' || m.id || m.target.point || !mount) return
+      const el = find(mount, m.target), up = el && climb(mount, el)
+      if (!up) return
+      const t = describe(mount, up)
+      set({ mode: { ...m, target: m.target.view ? { ...t, view: m.target.view } : t, trail: [...(m.trail ?? []), m.target] } })
+    },
+    down() {
+      const m = get().mode
+      if (m.kind !== 'compose' || !m.trail?.length) return
+      set({ mode: { ...m, target: m.trail[m.trail.length - 1], trail: m.trail.slice(0, -1) } })
+    },
     /** A comment on a moment or a range of the motion, written in the motion dock. */
     beginTime(time: Time) { set({ mode: { kind: 'time', time }, active: null }) },
     /** Pick an element to tag from the open composer; it comes back to it with the pick. */
-    tagPick() { set(s => s.mode.kind === 'compose' ? { mode: { kind: 'tag', target: s.mode.target, id: s.mode.id } } : s.mode.kind === 'time' ? { mode: { ...s.mode, tagging: true } } : {}) },
+    tagPick() { set(s => s.mode.kind === 'compose' ? { mode: { ...s.mode, kind: 'tag' } } : s.mode.kind === 'time' ? { mode: { ...s.mode, tagging: true } } : {}) },
     tagDone(picked: Target | null) {
-      set(s => s.mode.kind === 'tag' ? { mode: { kind: 'compose', target: s.mode.target, id: s.mode.id }, pendingTag: picked }
+      set(s => s.mode.kind === 'tag' ? { mode: { ...s.mode, kind: 'compose' }, pendingTag: picked }
         : s.mode.kind === 'time' && s.mode.tagging ? { mode: { ...s.mode, tagging: false }, pendingTag: picked } : {})
     },
     tagTaken() { set({ pendingTag: null }) },

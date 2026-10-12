@@ -106,3 +106,19 @@ export function spotAt(t: Target, el: Element, mount: HTMLElement, host: Element
 export function find(mount: HTMLElement | null, t: Pick<Target, 'selector'>): HTMLElement | null {
   try { return mount ? mount.querySelector<HTMLElement>(t.selector) : null } catch { return null }
 }
+
+/**
+ * The element a comment moves up to with Parent: the nearest one around `el`, inside the design,
+ * that shows as a region of its own. Wrappers with no size (their children are positioned out of
+ * them) or exactly `el`'s size would draw no outline, or the same one, so they are skipped.
+ */
+export function climb(mount: HTMLElement, el: HTMLElement): HTMLElement | null {
+  const a = el.getBoundingClientRect()
+  for (let p = el.parentElement; p && p !== mount && mount.contains(p); p = p.parentElement) {
+    const b = p.getBoundingClientRect()
+    if (b.width < 1 || b.height < 1) continue
+    if (Math.abs(b.left - a.left) < 1 && Math.abs(b.top - a.top) < 1 && Math.abs(b.width - a.width) < 1 && Math.abs(b.height - a.height) < 1) continue
+    return p
+  }
+  return null
+}
