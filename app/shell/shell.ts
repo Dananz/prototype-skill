@@ -654,12 +654,32 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       </div></div>`
   }
 
+  // A lobby keeps its scroll for when it is shown again (Back from a variant), as a page would:
+  // each place gets a new layer, so without this it always came back at the top.
+  const lobbyScroll = new Map<string, number>()
+  let lobbyKey = ''
+  const scrollerOf = (l: Layer) => l.el.firstElementChild as HTMLElement | null
   function show(fade: boolean) {
+    if (layer && lobbyKey) lobbyScroll.set(lobbyKey, scrollerOf(layer)?.scrollTop ?? 0)
     const next = buildLayer(st.place)
     const prev = layer
     layer = next
+    lobbyKey = st.place.view === 'variant' ? '' : hashOf(st.place) + (st.stack ? ':stack' : '')
     layers.prepend(next.el)
     fit()
+    const at = lobbyKey ? lobbyScroll.get(lobbyKey) ?? 0 : 0
+    const sc = at ? scrollerOf(next) : null
+    if (sc) {
+      // Again once the designs in it have mounted (they can make it taller), unless the user has
+      // scrolled it since.
+      let moved = false
+      const mine = () => { moved = true }
+      for (const t of ['wheel', 'touchstart', 'pointerdown', 'keydown']) sc.addEventListener(t, mine, { once: true, passive: true })
+      const put = () => { if (!moved && layer === next) sc.scrollTop = at }
+      put()
+      requestAnimationFrame(put)
+      Promise.race([next.ready, wait(1500)]).then(put)
+    }
     if (!prev) return
     // The new design reaches its state under the old one, which then fades out on top.
     prev.el.inert = true
