@@ -208,7 +208,7 @@ try {
       url.hash = '/' + route.replace(/^\/+/, '')
       await send('Page.navigate', { url: url.href }, sessionId)
       for (let i = 0; i < 100; i++) {
-        const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement.dataset.ready === "1"', returnByValue: true }, sessionId)
+        const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement?.dataset.ready === "1"', returnByValue: true }, sessionId)
         if (result.value) break
         await sleep(100)
       }
@@ -313,7 +313,7 @@ try {
     await send('Page.navigate', { url: url.href }, sessionId)
     let ready = false
     for (let i = 0; i < 100 && !ready; i++) {
-      const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement.dataset.ready === "1"', returnByValue: true }, sessionId)
+      const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement?.dataset.ready === "1"', returnByValue: true }, sessionId)
       if (!(ready = result.value)) await sleep(100)
     }
     at.push(performance.now())
@@ -379,7 +379,7 @@ try {
       url.hash = '/' + route.replace(/^\/+/, '')
       await send('Page.navigate', { url: url.href }, sessionId)
       for (let i = 0; i < 100; i++) {
-        const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement.dataset.ready === "1"', returnByValue: true }, sessionId)
+        const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement?.dataset.ready === "1"', returnByValue: true }, sessionId)
         if (result.value) break
         await sleep(100)
       }
