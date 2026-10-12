@@ -5,7 +5,8 @@
 // started for a moment. Held, each one is paused and set to the same moment of the take.
 //
 // What the design renders outside the stage through a portal (a sheet or a toast on document.body)
-// is part of it too (see portals.ts).
+// is part of it too (see portals.ts). The design may be in a device view's frame, another window:
+// its own document's timeline and classes are used, never this page's (view/frame.ts).
 //
 // Motion run from script (requestAnimationFrame springs, react-spring, GSAP's core) is no animation
 // the browser knows of, so a take can't see it. DOM changes that aren't animated (an element added,
@@ -60,15 +61,18 @@ const LONGEST = 20_000
 
 // A frame, or 50 ms where frames stop (a tab in the background).
 export const frame = () => new Promise<void>(r => { const t = setTimeout(r, 50); requestAnimationFrame(() => { clearTimeout(t); r() }) })
-export const clock = () => (document.timeline.currentTime as number | null) ?? performance.now()
+/** Now on a document's timeline: the design's, which in a device view's frame started when the frame did. */
+export const clock = (d: Document = document) => (d.timeline.currentTime as number | null) ?? performance.now()
+// What kind of animation, by its class's name: one from a frame is that window's class, not this one's.
+const kindOf = (a: Animation) => a.constructor?.name ?? ''
 const endless = (a: Animation) => !Number.isFinite(Number(a.effect?.getComputedTiming().activeDuration ?? 0))
-const isTransition = (a: Animation) => typeof CSSTransition !== 'undefined' && a instanceof CSSTransition
+const isTransition = (a: Animation) => kindOf(a) === 'CSSTransition'
 const kebab = (p: string) => p.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)
 const NOT_PROPS = new Set(['offset', 'computedOffset', 'easing', 'composite'])
 const propsIn = (keyframes: ComputedKeyframe[]) => [...new Set(keyframes.flatMap(k => Object.keys(k)).filter(k => !NOT_PROPS.has(k)))]
 function propOf(a: Animation, keyframes: ComputedKeyframe[]) {
   if (isTransition(a)) return (a as CSSTransition).transitionProperty
-  if (typeof CSSAnimation !== 'undefined' && a instanceof CSSAnimation) return a.animationName
+  if (kindOf(a) === 'CSSAnimation') return (a as CSSAnimation).animationName
   if (a.id) return a.id
   return propsIn(keyframes).map(kebab).join(', ') || 'animation'
 }
@@ -132,7 +136,7 @@ export async function record(host: HTMLElement, go: () => unknown, alive: () => 
       else if (!over.has(a)) { over.add(a); last = now }
       // Cancelled (whether it was running or resting at its end): from when, unless it plays again.
       if (a.playState !== 'idle') s.gone = null
-      else if (s.gone === null) s.gone = clock()
+      else if (s.gone === null) s.gone = clock(host.ownerDocument)
     }
     if ((!moving && now - last >= QUIET) || now - began > LONGEST) break
   }
@@ -188,8 +192,8 @@ export function hold(take: Take) {
   if (take.held) return
   for (const p of take.parts) {
     if (p.copy) {
-      const was = p.anim
-      p.anim = new Animation(new KeyframeEffect(p.target, p.keyframes as Keyframe[], { ...p.timing, fill: 'both', composite: p.composite, ...(p.pseudo ? { pseudoElement: p.pseudo } : {}) }), document.timeline)
+      const was = p.anim, d = p.target?.ownerDocument ?? document, w = (d.defaultView ?? window) as typeof window
+      p.anim = new w.Animation(new w.KeyframeEffect(p.target, p.keyframes as Keyframe[], { ...p.timing, fill: 'both', composite: p.composite, ...(p.pseudo ? { pseudoElement: p.pseudo } : {}) }), d.timeline)
       p.anim.playbackRate = p.rate
       p.anim.pause()
       // The transition itself, finished, goes (or the copy before this one): the copy holds what it showed.
@@ -248,5 +252,5 @@ export function release(take: Take) {
   take.held = false
   // Styled now, before whatever let it go changes the design in the same event (a key on a sheet's
   // Close): without a style change in between, the browser starts no transition for that change.
-  void document.documentElement.getBoundingClientRect()
+  void (take.parts.find(p => p.target)?.target?.ownerDocument ?? document).documentElement.getBoundingClientRect()
 }

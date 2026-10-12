@@ -25,13 +25,27 @@ export function uiBox() {
  * not the <body> or <html> around them, and not in a shadow root (what a browser extension draws).
  */
 export function portaled(el: Node | null): el is Element {
+  const other = theirs(el)
+  if (other) return other.portaled(el)
   return el instanceof Element && !!root && el.isConnected && el.getRootNode() === document
     && !root.contains(el) && !el.contains(root) && !uiBox().contains(el)
 }
 
 /** A design's animations: in its host, and on what it rendered through a portal. */
 export function animationsOf(host: HTMLElement): Animation[] {
+  const other = theirs(host)
+  if (other) return other.animationsOf(host)
   const own = host.getAnimations({ subtree: true })
   const out = root ? document.getAnimations().filter(a => portaled((a.effect as KeyframeEffect | null)?.target ?? null)) : []
   return out.length ? [...own, ...out] : own
+}
+
+// A design in a device view's frame (view/frame.ts) is another window's, with its own shell root and
+// box: what is a portal there is that page's to say. Each page offers its two answers on its window.
+type Portals = { portaled: typeof portaled; animationsOf: typeof animationsOf }
+;(window as unknown as { __protoPortals: Portals }).__protoPortals = { portaled, animationsOf }
+function theirs(n: Node | null) {
+  const d = n?.ownerDocument
+  if (!d || d === document) return null
+  try { return (d.defaultView as unknown as { __protoPortals?: Portals } | null)?.__protoPortals ?? null } catch { return null }
 }

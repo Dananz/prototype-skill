@@ -394,6 +394,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- layers ----------
   let layer: Layer | null = null
+  // What the bar was last drawn with, for the copy and motion buttons (see render's end).
+  let copyKey = '', motionKey = ''
 
   const refsFor = (p: Place): unknown[] => {
     if (p.view === 'session') return [nestKey(), ...lobbyRoots().flatMap(q => [q.id, q.title, ...lobbyOrder(q).slice(0, 1).flatMap(v => [v.file, v.name])])]
@@ -975,6 +977,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     paintPill()
     paintDecide()
     paintView()
+    // What the bar was drawn with, so a change is told from it (a view's frame can draw it before
+    // its design has declared its copy lines or its motion), not from the last change heard.
+    copyKey = copyKeyOf(); motionKey = String(hasMotion())
   }
 
   // ---------- the variant pill (phones) ----------
@@ -1717,22 +1722,25 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   comments.mountSheet(root.querySelector<HTMLElement>('[data-comments-sheet]')!)
   // ---------- the motion dock: under a design that declared its motion (useMotion) ----------
+  // On the design the tools work on: in a device view, the frame's, which the page in the frame
+  // mounts again when a take needs its entrance (its __protoRemount, below). The page in a view
+  // records nothing itself: the page outside does.
   const motionDock = createMotion({
-    el: zone.querySelector<HTMLElement>('[data-motion-dock]')!, zone, stage: hintHost, show: () => !!commentHost() && !viewOn(), on: () => st.motion, focused: () => st.focus,
-    remount: () => layer?.remount?.() ?? Promise.resolve(), comments,
+    el: zone.querySelector<HTMLElement>('[data-motion-dock]')!, zone, stage: () => framed ? null : toolHost(), show: () => !!commentHost(), on: () => st.motion, focused: () => st.focus,
+    remount: () => {
+      if (!viewOn()) return layer?.remount?.() ?? Promise.resolve()
+      const w = deviceView.mount()?.ownerDocument.defaultView as unknown as { __protoRemount?: () => Promise<unknown> } | null
+      return w?.__protoRemount?.() ?? Promise.resolve()
+    },
+    comments,
   })
-  /** The design on the stage declared its motion: the menu and the bar offer the dock. */
-  const hasMotion = () => !!commentHost() && !viewOn() && !!motion.of(hintHost())
+  ;(window as unknown as { __protoRemount: () => Promise<unknown> }).__protoRemount = () => layer?.remount?.() ?? Promise.resolve()
+  /** The design the tools work on declared its motion: the menu and the bar offer the dock. */
+  const hasMotion = () => !!commentHost() && !!motion.of(countHost())
   // A design declares its motion as it renders, after the chrome was drawn for it: draw it again,
   // once that's done, so the menu and the bar learn of it.
-  let motionKey = ''
-  motion.subscribe(() => queueMicrotask(() => { const k = `${hasMotion()} ${motionInView()}`; if (k !== motionKey) { motionKey = k; render() } }))
-  /** The design in a device view declared its motion: the dock can't play it in the frame yet, so the
-   *  bar keeps its button where it is, switched off, instead of the bar changing under the pointer. */
-  const motionInView = () => viewOn() && !!commentHost() && !!motion.of(countHost())
-  const motionBtn = () => st.focus ? '' : motionInView()
-    ? `<button type="button" aria-disabled="true" aria-label="Motion" title="The motion timeline works on the stage, not in a device view yet" class="hidden h-9 min-w-9 cursor-default items-center justify-center rounded-lg text-zinc-600 opacity-40 sm:inline-flex dark:text-zinc-400">${ic('curves')}</button>`
-    : !hasMotion() ? ''
+  motion.subscribe(() => queueMicrotask(() => { const k = String(hasMotion()); if (k !== motionKey) { motionKey = k; render() } }))
+  const motionBtn = () => !hasMotion() || st.focus ? ''
     : `<button data-act="motion" data-shoot="motion" aria-pressed="${st.motion}" aria-label="Motion" title="${st.motion ? 'Hide the motion timeline' : 'Show the motion timeline: scrub it, see its curves, comment on a moment'}" class="hidden h-9 min-w-9 items-center justify-center rounded-lg sm:inline-flex ${st.motion ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'}">${ic('curves')}</button>`
   // The chrome shows counts (the bar's button, the pill, the tree): repaint it when they change.
   comments.store.subscribe(() => {
@@ -1748,7 +1756,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // pill's menu on a phone, in the dock in focus mode. Its count is how many lines have options; pressed,
   // copy mode is on (comments/copy.tsx). The picker works in focus mode and in shots too, so it
   // follows the stage, not commentHost.
-  const copyHost = () => toolHost()
+  // The page inside a view has no copy mode of its own: the page outside runs it on its design.
+  const copyHost = () => framed ? null : toolHost()
   // On while copy mode is on for this design, or for the same variant about to move here (the stage
   // and a device view hand it over as the page redraws, which the button is drawn before).
   const copyCounts = () => { const h = copyHost(), n = countHost(), c = comments.copy.store.get(); return { lines: copy.of(n).length, changed: copy.changed(n).length, on: !!h && c.on && (c.stage === h || c.route === copy.routeOf(h)) } }
@@ -1759,7 +1768,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (!c.lines || st.focus) return ''
     return `<button data-act="copymode" data-shoot="copy-mode" aria-pressed="${c.on}" aria-label="Copy options" title="${copySay(c)}" class="relative hidden h-9 min-w-9 items-center justify-center gap-1.5 rounded-lg text-xs font-medium sm:inline-flex ${c.on ? 'bg-proto-primary px-2.5 text-proto-primary-fg hover:bg-proto-primary-hover' : 'text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'}">${ic('text')}${c.on ? '<kbd class="rounded bg-white/20 px-1 font-sans text-[11px]">Esc</kbd>' : ''}${copyCount(c, 'ring-white dark:ring-zinc-950')}</button>`
   }
-  let copyKey = ''
   const copyKeyOf = () => JSON.stringify(copyCounts())
   // A preview changes the words on every pointer move; the chrome only shows the counts.
   const repaintCopy = () => { const k = copyKeyOf(); if (k !== copyKey) { copyKey = k; render() } }

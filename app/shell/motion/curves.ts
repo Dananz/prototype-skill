@@ -43,11 +43,13 @@ const nice = (s: string) => { const t = s.replace(/[-_]+/g, ' ').trim(); return 
 /** What a part moves, by name: its data-shoot, its label, the component it is written in (not the
  *  variant's own), a short text, else its tag. */
 export function nameOf(el: Element | null, root: Element | null) {
-  if (!(el instanceof HTMLElement || el instanceof SVGElement)) return 'Animation'
-  if (el.dataset.shoot) return nice(el.dataset.shoot)
+  // Not by instanceof: a design in a device view's frame is another window's.
+  if (!el || !('dataset' in el)) return 'Animation'
+  const h = el as HTMLElement
+  if (h.dataset.shoot) return nice(h.dataset.shoot)
   const own = el.getAttribute('aria-label')?.trim()
   if (own) return own
-  const comp = el.dataset.protoComponent
+  const comp = h.dataset.protoComponent
   if (comp && comp !== (root as HTMLElement | null)?.dataset?.protoComponent) return comp
   const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim()
   if (text && text.length <= 24) return `“${text}”`
