@@ -321,8 +321,21 @@ export function prototypeServer(session) {
       server.watcher.on('all', (_, path) => {
         if (!slash(path).startsWith(src)) return
         activity = Date.now()
-        if (slash(path).startsWith(`${src}/protos/`)) server.ws.send({ type: 'custom', event: 'proto:edit', data: { path: slash(path).slice(slash(dir).length - 1) } })
+        if (!slash(path).startsWith(`${src}/protos/`)) return
+        server.ws.send({ type: 'custom', event: 'proto:edit', data: { path: slash(path).slice(slash(dir).length - 1) } })
+        stampBuilding(slash(path).slice(src.length + '/protos/'.length))
       })
+      // A variant still building counts its time from its last edit (its own file or a helper of
+      // its own, c-map.tsx for C), kept in session.json so a reloaded page knows it too.
+      const stampBuilding = rel => {
+        const [slug, name = ''] = rel.split('/')
+        const letter = (name.match(/^([A-Z]{1,2})\.\w+$/) || name.match(/^([a-z]{1,2})-/) || [])[1]
+        if (!letter) return
+        try {
+          const key = `${slug}/${letter.toUpperCase()}`, building = read().building || {}
+          if (building[key] && Date.now() - Date.parse(building[key]) > 5000) write({ building: { ...building, [key]: new Date().toISOString() } })
+        } catch { /* session.json mid-rewrite: the next edit stamps it */ }
+      }
       // Anything but /status changes something, so it must come from the page itself: a POST with a
       // JSON body (which a page on another site can only send after a CORS preflight, and none is
       // ever answered: Vite's own CORS is off too) and, when the browser names its origin, the host

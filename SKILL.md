@@ -163,17 +163,10 @@ folder (a GitHub repo, a website, an App Store page, "based on what you know fro
 before the plans; never design it from memory. Resolve it (`gh repo view <owner>/<name>`,
 `gh search repos`, `gh api repos/<owner>/<name>/contents/<path>` for files, a browser for a
 site) and collect its logo files, colors, fonts, screenshots and voice: logos and images into
-the app's `src/assets/brand/`, everything else as lines under `"brand"` in the brief.
-
-A brand is an anchor, not a template (it is not Current: nothing ships yet to match). Like a
-campaign for a known brand, every direction keeps **the logo file as it is** (never redrawn,
-recolored or replaced by a wordmark of your own), **the name, the voice, and one clear moment of
-the brand's key color**. Everything else stays each direction's own, exactly as without a brand:
-surface, palette, type, composition, imagery, its one risk. At most one direction lives entirely
-in the brand's palette; the others don't share a surface color with it or with each other. The
-brand's assets are raw material for the risk (the logo's shape as an object or a pattern, a
-screenshot as an artifact in a scene), not the hero by default: "the product screenshot, big,
-beside the headline" is the template answer. Tell the user what you took and from where.
+the app's `src/assets/brand/`, everything else as lines under `"brand"` in the brief, and its own
+display faces, if any, under `"brandFonts"`. Then follow craft.md section 1: a brand is an
+anchor, not a template (it is not Current: nothing ships yet to match). Tell the user what you
+took and from where.
 
 ## Right to left (Hebrew, Arabic, Persian, Urdu)
 
@@ -192,9 +185,9 @@ about half a minute, so the order is:
    a simple experience. Read the type catalog (`proto fonts`, with `--hebrew` for a Hebrew
    product): title faces come from it only, never from its never-for-titles list.
 3. **One line per direction** into the app's `.proto/briefs/<slug>.json`, then `proto plan <slug>`:
-   `{ "facts": "…", "brand": "…", "directions": { "A": { "name", "concept", "display", "body",
-   "surface", "ink", "accent", "signature" } } }` (display and body are `font()` specs; `brand`
-   only when one exists, see above). Check the lines against
+   `{ "facts": "…", "brand": "…", "brandFonts": […], "directions": { "A": { "name", "concept",
+   "display", "body", "surface", "ink", "accent", "signature" } } }` (display and body are
+   `font()` specs; `brand` and `brandFonts` only when a brand exists, see above). Check the lines against
    the defaults craft.md lists and against each other (no shared font family, surface, signature
    or main-action pattern). `proto plan` turns each placeholder into its line, in its own face and
    colors, so the page shows every direction's look within seconds. This is the only planning
@@ -211,7 +204,7 @@ image-generation MCP), **the subject is photo-led** (food, places, products, peo
 **and the project has no images of its own, generating them is not optional.** Invoke that skill
 yourself, once, for every direction's images (a hero each, a few product shots), in the
 background into the app's `src/assets/`, named `<slug>-<letter>-<what>` (`kiosk-B-hero.jpg`),
-started as step 5 says. Variants use them through `image()` from `src/images.ts`, which is
+started as plan step 5 says. Variants use them through `image()` from `src/images.ts`, which is
 `undefined` until the file exists: a drawn shape holds the place, and the page swaps the image in
 by itself when it lands. Subagents don't generate images.
 
@@ -369,7 +362,7 @@ frames with `proto shoot --at` / `--frames`.
 
 **Build remaining requested variants in parallel when you can.** When there are 3 or more
 remaining variants to write and the harness has subagents, give each its own subagent, all
-started in one message. For a new product that is as soon as your own hero is on screen (step 5
+started in one message. For a new product that is as soon as your own hero is on screen (plan step 5
 above): each direction carries its own look, so nothing shared is written
 first except the facts every direction tells the same way (name, products, prices, hours,
 address), under the lines in the brief. For an existing product, once Current matches and the
@@ -400,7 +393,7 @@ or third rebuild of that region, and not for a one-off round of directions.
 
 When all are back, run one `proto shoot <slug> --sheet`, read it, fix what the sheet shows and
 what the subagents named, write each variant's `about` and `states` into `meta.ts`, then go on
-with step 5 (which starts with the critic). Without subagents, write every direction's hero first,
+with section 5 (which starts with the critic). Without subagents, write every direction's hero first,
 one after another, then build each out in turn and mark it done. The sheet is the same.
 
 ## 5. Look at it, then iterate

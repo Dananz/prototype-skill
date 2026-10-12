@@ -1,5 +1,6 @@
 import '../shell/shell.css'
 import { createShell } from '../shell/shell'
+import { refOfPath } from '../shell/building'
 import { mount } from './mount'
 import { protos } from './registry'
 import session from '../session.json'
@@ -21,7 +22,7 @@ if (import.meta.hot) {
   // would redraw. Hand the shell the fresh module; it remounts only in that case.
   import.meta.hot.on('vite:afterUpdate', async payload => {
     for (const u of payload.updates) {
-      if (u.type !== 'js-update' || !/\/src\/protos\/[^/]+\/[A-Z]{1,2}\.\w+$/.test(u.path) || !shell.shows(u.path)) continue
+      if (u.type !== 'js-update' || !refOfPath(u.path) || !shell.shows(u.path)) continue
       const mod = await import(/* @vite-ignore */ `${u.acceptedPath}?t=${u.timestamp}`)
       shell.replaceVariant(u.path, mod.default)
     }

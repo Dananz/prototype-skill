@@ -8,7 +8,6 @@
 //             [--from-picks]   built from every variant the user picked in this session
 //             [--kit[=<name>]] [--current <screen>]   on the project's design kit: its theme, parts and
 //             packages, and with --current that screen's saved Current as A (with its references)
-//   proto plan <slug>   each placeholder shows its direction's one-line plan from .proto/briefs/<slug>.json
 //   proto done <slug>/<letter>[ …] | <slug>   that variant is built: the page drops its Building mark
 //   proto shoot [route…] [--theme dark] [--focus] [--copy] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
 //             [--ref <png>]   instead, the variant's screen beside that screenshot of the real one
@@ -36,8 +35,8 @@
 //   proto kit save <slug> [--sources <file,…>] [--kit=<name>]   the session's theme.css and that prototype's
 //             parts, packages and screen, kept for the next session (--sources: the files they came from)
 //   proto kit screen <name> <slug>[/<letter>] [--sources <file,…>]   a Current that matches its reference
-//   proto fonts [--draw <n>] [--hebrew] [--avoid <family,…>]   font pairings from Google Fonts (references/
-//             fonts.json); --draw: n at random, no family twice, for the directions of one prototype
+//   proto plan <slug>   each placeholder shows its direction's one-line plan from .proto/briefs/<slug>.json
+//   proto fonts [--hebrew]   the title-and-body pairings (references/fonts.json) and the faces never used for a title
 //   proto archive <slug> [--off]    proto keep [--off]      proto url    proto stack
 //   proto stop    proto rm    proto ls    proto gc
 //
@@ -429,7 +428,6 @@ function add() {
   }
   mkdirSync(pdir, { recursive: true })
   const stub = readFileSync(join(APP, 'stubs', kit.stub), 'utf8')
-  const stubOf = (id, name) => stub.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name)
   // A saved Current is A, first in the list, whether or not --variants named it.
   if (flags.current && !current().variants.A && !list.some(e => e.split(':')[0] === 'A')) added.A = 'Current'
   for (const entry of list) {
@@ -438,10 +436,10 @@ function add() {
     const name = rest.join(':').trim() || id
     added[id] = name
     const file = join(pdir, `${id}.${kit.ext}`)
-    if (!existsSync(file)) { writeFileSync(file, stubOf(id, name)); fresh.push(id) }
+    if (!existsSync(file)) { writeFileSync(file, stubOf(stub, id, name)); fresh.push(id) }
   }
   if (design) {
-    useKit(dir, pdir, slug, design, flags.current && { file: join(pdir, `A.${kit.ext}`), stub: stubOf('A', added.A ?? current().variants.A) })
+    useKit(dir, pdir, slug, design, flags.current && { file: join(pdir, `A.${kit.ext}`), stub: stubOf(stub, 'A', added.A ?? current().variants.A) })
     // A saved Current is already built.
     if (flags.current && fresh.includes('A')) fresh.splice(fresh.indexOf('A'), 1)
   }
@@ -462,6 +460,12 @@ function add() {
   if (s.url) console.log(`${s.url}#/${slug}`)
 }
 
+// A placeholder for a variant, from one of app/stubs/: its name kept on one line, which the
+// "Placeholder while" header needs.
+const stubOf = (template, id, name) => template.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name.replace(/[\r\n]+/g, ' '))
+// What one line of a direction's plan holds (.proto/briefs/<slug>.json), shown on its placeholder.
+const PLAN_KEYS = ['name', 'concept', 'display', 'body', 'surface', 'ink', 'accent', 'signature']
+
 // The one-line plans are written: each variant still on its placeholder shows its own (name, concept,
 // display face, colors) until its first real write. A variant already written is left alone.
 function plan() {
@@ -471,35 +475,33 @@ function plan() {
   const pdir = join(dir, 'src', 'protos', slug || '')
   if (!slug || !existsSync(join(pdir, 'meta.ts'))) die('which prototype? proto plan <slug> (after proto add)')
   const file = join(dir, '.proto', 'briefs', `${slug}.json`)
-  const brief = readJson(file, null) || die(`write the one-line plans to ${tilde(file)} first: { "facts": "…", "directions": { "A": { "name", "concept", "display", "body", "surface", "ink", "accent", "signature" } } }`)
-  // Titles never use a face on the catalog's never-for-titles list; a plan that does is sent back.
-  // A Hebrew hand-lettered sign is part of the street's own look, so a few of them are fine in Hebrew.
-  // Title faces come from the catalog's display faces only (or the brand's own face, named in the
-  // brief's "brand"), so a type on its never-for-titles list can't slip in from outside it.
+  const brief = readJson(file, null) || die(`write the one-line plans to ${tilde(file)} first: { "facts": "…", "directions": { "A": { ${PLAN_KEYS.map(k => `"${k}"`).join(', ')} } } }`)
+  // Each direction once, its font specs without a font('…') around them. Its script is the one its
+  // name and concept are written in (a Hebrew word in the shared facts doesn't make it Hebrew).
+  const spec = v => String(v ?? '').trim().replace(/^font\(\s*['"]?|['"]?\s*\)$/g, '')
+  const directions = Object.entries(brief.directions || {}).map(([id, d]) => {
+    const p = { ...d, display: spec(d.display), body: spec(d.body) }
+    return [id, { ...p, family: p.display.split(':')[0].trim(), rtl: /[֐-ۿ]/.test(`${d.name} ${d.concept}`) }]
+  })
+  // Title faces come from the catalog's display faces for the direction's script, or the brand's own
+  // faces listed in "brandFonts"; the never-for-titles list only words the refusal.
   const cat = readJson(join(SKILL, 'references', 'fonts.json'), {})
-  const never = new Map((cat.neverTitle || []).map(n => [n.family.toLowerCase(), n]))
-  const allowed = new Set((cat.pairings || []).map(p => p.display.family.toLowerCase()))
-  const hebrew = d => /[\u0590-\u05FF]/.test(`${d.name} ${d.concept} ${brief.facts}`)
-  const brand = String(brief.brand || '').toLowerCase()
-  const why = (f, d) => {
-    const n = never.get(f.toLowerCase())
-    if (n && !(n.hebrewOk && hebrew(d))) return n.why
-    if (n?.hebrewOk && !hebrew(d)) return n.why
-    if (!f) return 'no display face'
-    if (!allowed.has(f.toLowerCase()) && !brand.includes(f.toLowerCase())) return 'not a title face in the catalog'
-  }
-  const banned = Object.entries(brief.directions || {}).map(([id, d]) => { const f = String(d.display || '').replace(/^font\(\s*['"]?|['"]?\s*\)$/g, '').split(':')[0].trim(); return [id, f, why(f, d)] }).filter(([, , w]) => w)
-  if (banned.length) die(`not a title face: ${banned.map(([id, f, w]) => `${id} ${f || '?'} (${w})`).join(', ')}. Title faces come from \`proto fonts\` (references/fonts.json), or the brand's own face named in "brand". Choose another for ${banned.map(([id]) => id).join(', ')}.`)
+  const never = new Map((cat.neverTitle || []).map(n => [n.family.toLowerCase(), n.why]))
+  const titles = rtl => new Set((cat.pairings || []).filter(p => (p.script === 'hebrew') === rtl).map(p => p.display.family.toLowerCase()))
+  const brand = new Set((brief.brandFonts || []).map(f => String(f).toLowerCase()))
+  const banned = directions.map(([id, d]) => {
+    const f = d.family.toLowerCase()
+    return [id, d.family, !f ? 'no display face' : brand.has(f) || titles(d.rtl).has(f) ? '' : never.get(f) || `not a ${d.rtl ? 'Hebrew' : 'Latin'} title face in the catalog`]
+  }).filter(([, , why]) => why)
+  if (banned.length) die(`not a title face: ${banned.map(([id, f, why]) => `${id} ${f || '?'} (${why})`).join(', ')}. Title faces come from \`proto fonts\` (references/fonts.json), or the brand's own faces in "brandFonts". Choose another for ${banned.map(([id]) => id).join(', ')}.`)
   const kit = STACKS[s.stack]
   const card = readFileSync(join(APP, 'stubs', kit.plan), 'utf8')
   const shown = []
-  for (const [id, d] of Object.entries(brief.directions || {})) {
+  for (const [id, d] of directions) {
     const f = join(pdir, `${id}.${kit.ext}`)
     if (!existsSync(f) || !/^(\/\/|<!--) Placeholder while /.test(readFileSync(f, 'utf8'))) continue
-    const keys = ['name', 'concept', 'display', 'body', 'surface', 'ink', 'accent', 'signature']
-    const data = JSON.stringify(Object.fromEntries(keys.map(k => [k, d[k] == null ? null : String(d[k])])))
-    const name = String(d.name || id)
-    writeFileSync(f, card.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name.replace(/[\r\n]+/g, ' ')).replace('__PLAN__', () => data))
+    const data = { ...Object.fromEntries(PLAN_KEYS.map(k => [k, d[k] ? String(d[k]) : null])), dir: d.rtl ? 'rtl' : 'ltr', displayFamily: d.family, bodyFamily: d.body.split(':')[0].trim() || null }
+    writeFileSync(f, stubOf(card, id, String(d.name || id)).replace('__PLAN__', () => JSON.stringify(data)))
     shown.push(id)
   }
   console.log(shown.length ? `plans shown: ${shown.join(', ')}` : 'no placeholders left to show a plan on')
@@ -509,16 +511,19 @@ function plan() {
 // again. `proto done <slug>` ends every variant of that prototype.
 function done() {
   const dir = sessionDir()
-  const s = need(dir)
+  need(dir)
   if (!args.length) die('which variant? proto done <slug>/<letter> (or <slug> for all of its variants)')
-  const building = { ...s.building }
-  const ended = []
-  for (const ref of args) {
-    const [slug, letter] = ref.split('/')
-    for (const k of Object.keys(building)) if (letter ? k === `${slug}/${letter}` : k.startsWith(`${slug}/`)) { delete building[k]; ended.push(k) }
-  }
-  patchSession(dir, { building })
+  const ended = endBuilding(dir, args)
   console.log(ended.length ? `built: ${ended.join(', ')}` : `nothing was building there (${args.join(', ')})`)
+}
+
+// Ends the Building mark of each <slug>/<letter> (or every variant of a <slug>); returns the keys ended.
+function endBuilding(dir, refs) {
+  const building = { ...readSession(dir).building }
+  const ended = Object.keys(building).filter(k => refs.some(ref => ref.includes('/') ? k === ref : k.startsWith(`${ref}/`)))
+  for (const k of ended) delete building[k]
+  if (ended.length) patchSession(dir, { building })
+  return ended
 }
 
 // meta.ts with its object replaced. Through a function: a replacement string would read `$&` or `$$`
@@ -628,8 +633,7 @@ function archive() {
   meta.archived = !flags.off
   writeWhole(metaFile, withMeta(text, meta), scratchOf(dir))
   if (meta.archived && readSession(dir).work?.proto === args[0]) patchSession(dir, { work: null })
-  const b = readSession(dir).building || {}
-  if (meta.archived && Object.keys(b).some(k => k.startsWith(`${args[0]}/`))) patchSession(dir, { building: Object.fromEntries(Object.entries(b).filter(([k]) => !k.startsWith(`${args[0]}/`))) })
+  if (meta.archived) endBuilding(dir, [args[0]])
   console.log(`${args[0]} ${meta.archived ? 'archived' : 'restored'}`)
 }
 
@@ -1703,22 +1707,13 @@ function useKit(dir, pdir, slug, { name, k, kd }, a) {
 // two sessions with the same brief don't land on the same faces; no family appears twice in a draw.
 function fonts() {
   const cat = readJson(join(SKILL, 'references', 'fonts.json'), null) || die('references/fonts.json is missing')
-  const avoid = new Set(String(flags.avoid || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean))
-  const fams = p => ['display', 'body', 'utility'].filter(r => p[r]).map(r => p[r].family)
-  let pool = cat.pairings.filter(p => p.script === (flags.hebrew ? 'hebrew' : 'latin') && !fams(p).some(f => avoid.has(f.toLowerCase())))
-  if (flags.draw) {
-    const n = Number(flags.draw) || 1, out = [], used = new Set()
-    pool = pool.map(p => [Math.random(), p]).sort((a, b) => a[0] - b[0]).map(x => x[1])
-    for (const p of pool) { if (out.length >= n) break; if (fams(p).some(f => used.has(f))) continue; fams(p).forEach(f => used.add(f)); out.push(p) }
-    pool = out
+  for (const p of cat.pairings.filter(p => p.script === (flags.hebrew ? 'hebrew' : 'latin'))) {
+    const roles = ['display', 'body', 'utility'].filter(r => p[r])
+    console.log(`${p.mood} (${p.script}): ${roles.map(r => p[r].family).join(' / ')}`)
+    console.log(`  font(${[...new Set(roles.map(r => p[r].spec))].map(s => `'${s}'`).join(', ')})`)
   }
-  for (const p of pool) {
-    const specs = [...new Set(['display', 'body', 'utility'].filter(r => p[r]).map(r => p[r].spec))]
-    console.log(`${p.mood} (${p.script}): ${fams(p).join(' / ')}`)
-    console.log(`  font(${specs.map(s => `'${s}'`).join(', ')})`)
-  }
-  if (flags.hebrew && !flags.draw) console.log(`\nEvery Google family with Hebrew: ${cat.hebrew.join(', ')}`)
-  console.log(`\nNever for a title: ${(cat.neverTitle || []).map(n => n.hebrewOk ? `${n.family} (a Hebrew title is fine)` : n.family).join(', ')}`)
+  if (flags.hebrew) console.log(`\nEvery Google family with Hebrew: ${cat.hebrew.join(', ')}`)
+  console.log(`\nNever for a title: ${(cat.neverTitle || []).map(n => n.family).join(', ')}`)
 }
 
 const commands = {

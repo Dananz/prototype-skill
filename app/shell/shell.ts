@@ -11,6 +11,7 @@
 // First: it wraps the page listeners every later import, and every design, adds (see quiet.ts).
 import { listen, quiet } from './quiet'
 import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } from './ui'
+import { BUILDING_CLASS, ERROR_CLASS, refOfPath } from './building'
 import { dock, edge, smooth, runDock, restoreEdgeLabels, stageHover, installPointerTracking, fadeOut } from './motion'
 import { hints, fillField, type Hint } from './hints'
 import { copy } from './copy'
@@ -192,16 +193,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const archived = () => protos.filter(p => p.archived)
   const byId = (id: string) => protos.find(p => p.id === id)
   // A variant is building from `proto add` until `proto done` (or, if that never comes, a few
-  // minutes after its last edit): it is marked, and a render error keeps its last good frame.
-  const editedAt = new Map<string, number>()
+  // minutes after its last edit, which the dev server stamps into session.json): it is marked, and
+  // a render error keeps its last good frame.
   const BUILD_IDLE = 180_000
   const building = (p: string, v: string) => {
     const at = session.building?.[`${p}/${v}`]
-    return !!at && Date.now() - Math.max(Date.parse(at), editedAt.get(`${p}/${v}`) ?? 0) < BUILD_IDLE
+    return !!at && Date.now() - Date.parse(at) < BUILD_IDLE
   }
   const buildingIn = (p: string) => Object.keys(session.building ?? {}).some(k => k.startsWith(`${p}/`) && building(p, k.slice(p.length + 1)))
   const markBuilding = (host: HTMLElement) => { const [p, v] = (host.dataset.route ?? '').split('/'); host.toggleAttribute('data-building', !!v && building(p, v)) }
-  const BUILDING_BOX = '<div class="grid min-h-full place-items-center p-10 text-xs text-zinc-400">Building…</div>'
   const editing = (p: string, v?: string) => (!!st.editing && st.editing.proto === p && (!v || st.editing.variant === v)) || (v ? building(p, v) : buildingIn(p))
   const cur = () => (st.place.view === 'session' ? undefined : byId(st.place.proto))
 
@@ -504,7 +504,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         },
         // A file that doesn't load yet while it is being built says so, quietly; its error shows
         // once it is done (setSession tries it again then).
-        e => { if (here()) host.innerHTML = host.hasAttribute('data-building') ? BUILDING_BOX : `<pre class="m-4 whitespace-pre-wrap rounded-lg bg-rose-50 p-4 text-xs text-rose-700 dark:bg-rose-950 dark:text-rose-200">${esc(e?.stack || e)}</pre>` })
+        e => { if (here()) host.innerHTML = host.hasAttribute('data-building') ? `<div class="${BUILDING_CLASS}">Building…</div>` : `<pre class="${ERROR_CLASS}">${esc(e?.stack || e)}</pre>` })
     }
     const stop = (host: HTMLElement) => {
       const off = live.get(host)
@@ -706,23 +706,27 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // At Fit a phone card stays 16:10 with the phone as it would sit in a 1200px-wide frame. At a
     // set scale the card grows to the phone at that size, kept within the card's width.
     const scale = st.place.view === 'session' ? 0 : st.scale
-    for (const t of layers.querySelectorAll<HTMLElement>('[data-thumb]')) {
-      if (!t.clientWidth) continue
+    // A web design's card shows it at the width the page is seen at: desktop on a wide screen, the
+    // phone layout on a phone (its breakpoints follow the window, so a 1200px canvas there drew the
+    // phone layout stretched).
+    const narrow = innerWidth < 640, w = narrow ? Math.max(320, Math.round(innerWidth)) : 1200, h = narrow ? Math.round(w * 1.4) : 750
+    const thumbs = [...layers.querySelectorAll<HTMLElement>('[data-thumb]')]
+    // Every size written first, then every width read once, so the page lays out once, not per card.
+    for (const t of thumbs) {
       const inner = t.firstElementChild as HTMLElement
-      // A web design's card shows it at the width the page is seen at: desktop on a wide screen, the
-      // phone layout on a phone (its breakpoints follow the window, so a 1200px canvas there drew the
-      // phone layout stretched).
       if (!t.hasAttribute('data-pthumb')) {
-        const narrow = innerWidth < 640, w = narrow ? Math.max(320, Math.round(innerWidth)) : 1200, h = narrow ? Math.round(w * 1.4) : 750
         inner.style.width = `${w}px`
         inner.style.height = `${h}px`
         t.style.aspectRatio = narrow ? `${w} / ${h}` : ''
-        inner.style.zoom = String(t.clientWidth / w)
-        continue
+      } else {
+        t.style.aspectRatio = scale ? 'auto' : ''
+        t.style.paddingBlock = scale ? '20px' : ''
       }
-      t.style.aspectRatio = scale ? 'auto' : ''
-      t.style.paddingBlock = scale ? '20px' : ''
-      inner.style.zoom = String(scale ? Math.min(scale / 100, (t.clientWidth - 24) / parseFloat(inner.style.width)) : .78 * t.clientWidth / 1200)
+    }
+    for (const [t, cw] of thumbs.map(t => [t, t.clientWidth] as const)) {
+      if (!cw) continue
+      const inner = t.firstElementChild as HTMLElement
+      inner.style.zoom = String(!t.hasAttribute('data-pthumb') ? cw / w : scale ? Math.min(scale / 100, (cw - 24) / parseFloat(inner.style.width)) : .78 * cw / 1200)
     }
     if (layer) fitBox(layer.el)
   }
@@ -786,7 +790,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const openProto = (id: string) => {
     const proto = byId(id)!
     const w = workOf()
-    const v = w?.p === proto ? w.v.id : editing(id) ? st.editing!.variant : proto.variants[0]?.id
+    const v = w?.p === proto ? w.v.id : st.editing?.proto === id ? st.editing.variant : proto.variants[0]?.id
     go(v ? { view: 'variant', proto: id, variant: v } : { view: 'proto', proto: id })
   }
 
@@ -2205,11 +2209,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   document.addEventListener('visibilitychange', ping)
   setInterval(() => document.querySelectorAll<HTMLElement>('[data-ago]').forEach(el => { el.textContent = ago(Number(el.dataset.ago)) }), 1000)
   // A Building mark that was never ended by `proto done` goes out a few minutes after the last edit.
-  let wasBuilding = 0
-  setInterval(() => {
-    const n = Object.keys(session.building ?? {}).filter(k => { const [p, v] = k.split('/'); return building(p, v) }).length
-    if (n !== wasBuilding) { if (n < wasBuilding && failed.size) show(false); wasBuilding = n; render() }
-  }, 15_000)
+  let expiry = 0
+  const watchExpiry = () => {
+    clearTimeout(expiry)
+    const ends = Object.values(session.building ?? {}).map(at => Date.parse(at) + BUILD_IDLE).filter(t => t > Date.now())
+    if (ends.length) expiry = window.setTimeout(() => { builtFailed(); render(); watchExpiry() }, Math.min(...ends) - Date.now() + 50)
+  }
+  // A variant that ended building while its file couldn't load shows its error now.
+  const builtFailed = () => { if ([...failed].some(f => { const r = refOfPath(f); return r && !building(r.proto, r.variant) })) show(false) }
+  watchExpiry()
 
   // ---------- boot ----------
   installPointerTracking()
@@ -2266,10 +2274,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // A working variant Claude moved shows where it came from, with Undo, for a few seconds.
     setSession(next: Session) {
       const was = session.work
-      const builtNow = Object.keys(session.building ?? {}).some(k => !next.building?.[k])
       session = next
-      // A variant just marked done that couldn't load shows its error now.
-      if (builtNow && failed.size) show(false)
+      builtFailed()
+      watchExpiry()
       if (!same(was, next.work)) {
         // Any move ends the wait: one that isn't the expected one is Claude's.
         const own = same(next.work, expected)
@@ -2290,8 +2297,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     /** A compile error from Vite: one in a variant that is still building is expected mid-build, so
      *  its overlay is taken away (the variant keeps its last good frame). */
     viteError(file: string) {
-      const m = file.match(/\/src\/protos\/([^/]+)\/([A-Z]{1,2})\.\w+/)
-      if (m && building(m[1], m[2])) setTimeout(() => document.querySelector('vite-error-overlay')?.remove())
+      const r = refOfPath(file)
+      if (r && building(r.proto, r.variant)) setTimeout(() => document.querySelector('vite-error-overlay')?.remove())
     },
     edited(paths: string[]) {
       let retrying = false
@@ -2299,8 +2306,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         if (!path.includes('/src/protos/')) continue
         if (failed.has(path)) { failed.delete(path); retry.set(path, Date.now()); retrying = true }
         st.lastEdit = Date.now()
-        const m = path.match(/\/src\/protos\/([^/]+)\/([A-Z]{1,2})\.\w+/)
-        if (m) { st.editing = { proto: m[1], variant: m[2] }; editedAt.set(`${m[1]}/${m[2]}`, Date.now()) }
+        const r = refOfPath(path)
+        if (r) st.editing = r
       }
       if (retrying) show(false)
       motionDock.edited(paths, st.place.view === 'variant' ? st.place.proto : null)

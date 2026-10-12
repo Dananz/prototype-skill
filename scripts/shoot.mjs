@@ -39,7 +39,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { startChrome, stopChrome } from './chrome.mjs'
+import { startChrome, stopChrome, waitReady } from './chrome.mjs'
 
 const args = process.argv.slice(2)
 const flags = Object.fromEntries(args.filter(a => a.startsWith('--') && !a.startsWith('--click=')).map(a => a.slice(2).split('=')))
@@ -135,6 +135,7 @@ try {
     ws.send(JSON.stringify({ id, method, params, sessionId }))
   })
   const sleep = ms => new Promise(r => setTimeout(r, ms))
+  const inPage = sessionId => expression => send('Runtime.evaluate', { expression, returnByValue: true }, sessionId).then(r => r.result?.value)
   // A --click reaches inside the stage, and the copy picker's list of a line's options.
   const clickIn = sel => `(() => { const el = document.querySelector('[data-layers]').querySelector(${JSON.stringify(sel)}) ?? document.querySelector('[data-copy-list]')?.querySelector(${JSON.stringify(sel)}); el?.click(); return !!el })()`
   // With --copy, waits until the bar under the stage has slid in and stopped growing (at most 2 s),
@@ -207,11 +208,7 @@ try {
       const url = new URL(base)
       url.hash = '/' + route.replace(/^\/+/, '')
       await send('Page.navigate', { url: url.href }, sessionId)
-      for (let i = 0; i < 100; i++) {
-        const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement?.dataset.ready === "1"', returnByValue: true }, sessionId)
-        if (result.value) break
-        await sleep(100)
-      }
+      await waitReady(inPage(sessionId))
       // With --copy, as any shot: copy mode on once its bar is in, or named as one at rest, saying so.
       const copyOn = await copied(sessionId, route), sfx = flags.copy && !copyOn ? suffix.replace('-copy', '') : suffix
       await settle(sessionId)
@@ -311,11 +308,7 @@ try {
     url.hash = '/' + route.replace(/^\/+/, '')
     at.push(performance.now())
     await send('Page.navigate', { url: url.href }, sessionId)
-    let ready = false
-    for (let i = 0; i < 100 && !ready; i++) {
-      const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement?.dataset.ready === "1"', returnByValue: true }, sessionId)
-      if (!(ready = result.value)) await sleep(100)
-    }
+    const ready = await waitReady(inPage(sessionId))
     at.push(performance.now())
     const copyOn = await copied(sessionId, route)
     await settle(sessionId)
@@ -378,11 +371,7 @@ try {
       const url = new URL(base)
       url.hash = '/' + route.replace(/^\/+/, '')
       await send('Page.navigate', { url: url.href }, sessionId)
-      for (let i = 0; i < 100; i++) {
-        const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement?.dataset.ready === "1"', returnByValue: true }, sessionId)
-        if (result.value) break
-        await sleep(100)
-      }
+      await waitReady(inPage(sessionId))
       await copied(sessionId, route)
       await settle(sessionId)
       for (const sel of clicks) {

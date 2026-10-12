@@ -26,12 +26,16 @@ label, its window), used plainly.
 
 ## 1. Ground it in the subject
 
-When the subject already has a brand somewhere (a repo, a site, a store page the request points
-to), treat it as an anchor, not a template: the logo file as it is, the name, the voice and one
-clear moment of its key color are given; the surface, palette, type, composition and risk are
-still yours, as freely as without a brand. A brand kills distinctiveness only when it becomes the
-whole look: five directions in the brand's lavender with its screenshot as the hero is one
-direction five times.
+**A brand is an anchor, not a template.** When the subject already has a brand somewhere (a repo,
+a site, a store page the request points to; its files are in `src/assets/brand/` and its notes
+under `"brand"` in the brief), every direction keeps the logo file as it is (never redrawn,
+recolored or replaced by a wordmark of your own), the name, the voice and one clear moment of its
+key color. The surface, palette, type, composition and risk stay each direction's own, as freely
+as without a brand; at most one direction lives entirely in the brand's palette, and the others
+don't share a surface color with it. Its assets are raw material for the risk (the logo's shape
+as an object or a pattern, a screenshot as an artifact in a scene), not the hero by default. A
+brand kills distinctiveness only when it becomes the whole look: five directions in the brand's
+lavender with its screenshot as the hero is one direction five times.
 
 If the brief does not pin down what the product or subject is, pin it yourself before designing:
 name one concrete subject, its audience, and the page's single job, and state your choice. What
@@ -68,7 +72,7 @@ well.
 **Words are design material** (section 8): copy can make a design feel as templated as the
 design itself.
 
-## 3. Process: brainstorm, plan, critique, build, critique again
+## 3. Process: hero from the line, plan, check, build
 
 For calibration: AI-generated design right now clusters around a few looks that appear
 regardless of subject. Where the brief pins down a visual direction, follow it exactly, the
@@ -106,16 +110,11 @@ Imagery:   what fills the visual space (photo, generated image, drawn shapes, da
 Motion:    the one moment that moves, or none
 ```
 
-Then review each plan against the brief before building. If any part reads like the generic
-default you would produce for any similar page (work through a similar prompt and see whether
-you arrive somewhere similar), revise that part and say what you changed and why. Check the
-plans against each other too: no two directions share a font family, a dominant surface color, a
-signature or a pattern for the main action, unless the feature itself requires it (shared facts
-like the business name, address and prices are fine). Only then write the code, following the
-revised plan exactly and deriving every color and type decision from it.
-
-Do most of this planning and iteration in your thinking; show the user ideas you are confident
-will delight them.
+Then check the plan against the brief. If any part reads like the generic default you would
+produce for any similar page (work through a similar prompt and see whether you arrive somewhere
+similar), revise it and say what you changed and why; the directions were already checked
+against each other in their one-line plans. Build the rest from the revised plan exactly,
+deriving every color and type decision from it, and bring the hero in line if the plan moved.
 
 ## 4. Restraint and self-critique
 
@@ -155,24 +154,19 @@ is what gets picked. And the house rules of the tooling:
 2. **A catalog**, `references/fonts.json`: about 50 display, body and utility pairings by mood,
    each spec checked against Google Fonts, 20 of them Hebrew. `proto fonts` lists them (`--hebrew`
    for the Hebrew ones and every Google family that has Hebrew).
-3. **Title faces come from the catalog only** (or the brand's own display face, named in the
-   brief's `brand`). Choose by the direction's concept, never at random, and say in the plan why
+3. **Title faces come from the catalog only** (or the brand's own display faces, listed in the
+   brief's `brandFonts`). Choose by the direction's concept, never at random, and say in the plan why
    the type fits. Body and utility faces may go past the catalog to any Google Font that reads
    well. `proto plan` refuses a title face from anywhere else.
-4. **Never a title, by type** (the catalog holds none of these; `proto fonts` prints the named
-   families):
+4. **Never a title, by type** (`proto fonts` prints every face on the list; `proto plan` refuses
+   a title face that isn't in the catalog for the direction's script):
    - **Hairline, thin or light:** a title under weight 400, a face that only comes thin, or a
-     high-contrast fashion serif whose hairlines vanish on a phone (Bodoni, Didot, Cormorant,
-     Caslon Display, Playfair).
-   - **Script and handwriting:** calligraphy, brush, marker, casual hand. One exception: a Hebrew
-     hand-lettered sign face (Gveret Levin) for a Hebrew title.
-   - **Novelty and costume:** pixel and retro-game, outline, shadow and inline, distressed,
-     horror, comic, toy-like rounded, modular gimmicks.
-   - **Defaults:** the neutral sans every generated page reaches for (Inter, Roboto, Open Sans,
-     Montserrat, Poppins, Geist, DM Sans; in Hebrew Heebo, Assistant, Noto) and the stock
-     elegant serif (Playfair).
-   - **Text faces drawn for reading at 16 px:** book serifs and UI sans (EB Garamond, Spectral,
-     Public Sans, Hanken Grotesk). They are body faces.
+     high-contrast fashion serif whose hairlines vanish on a phone (Bodoni, Cormorant).
+   - **Script and handwriting:** calligraphy, brush, marker, casual hand. One exception, in the
+     Hebrew catalog only: a hand-lettered sign face (Gveret Levin) for a Hebrew title.
+   - **Novelty and costume:** pixel, outline, shadow, distressed, horror, comic, toy-like rounded.
+   - **Defaults:** the type defaults in section 3, and in Hebrew Heebo, Assistant and Noto.
+   - **Text faces drawn for reading at 16 px:** book serifs and UI sans (EB Garamond, Public Sans).
    - **Monospace,** unless the direction's concept is code or a terminal.
 
    And a title must read at a glance on a phone: if its thinnest stroke disappears in the
@@ -253,7 +247,8 @@ own variant; the critic covers the rest.
 Once every direction is built, one subagent with fresh eyes reviews them all, so the work isn't
 only graded by whoever made it. Start it with:
 
-- the paths of this file, `.proto/briefs/<slug>.json`, the contact sheet and each variant's
+- the paths of this file, `.proto/briefs/<slug>.json` and the full plans beside it
+  (`<slug>-<letter>.md`), the contact sheet and each variant's
   `-desktop.png` and `-mobile.png` (it reads images; it edits nothing and runs no `proto`
   command other than `proto shoot` with `--session`);
 - the job: for each direction, the three changes that would most raise it, most important first,

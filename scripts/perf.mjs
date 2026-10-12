@@ -24,7 +24,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startChrome, stopChrome } from './chrome.mjs'
+import { startChrome, stopChrome, waitReady } from './chrome.mjs'
 
 const argv = process.argv.slice(2)
 const flags = Object.fromEntries(argv.filter(a => a.startsWith('--') && !a.startsWith('--click=')).map(a => { const [k, ...v] = a.slice(2).split('='); return [k, v.join('=')] }))
@@ -89,7 +89,7 @@ try {
   const url = new URL(rawUrl)
   url.hash = '/' + route.replace(/^\/+/, '')
   await send('Page.navigate', { url: url.href }, s)
-  for (let i = 0; i < 100 && !await ev('document.documentElement.dataset.ready === "1"'); i++) await sleep(100)
+  await waitReady(ev)
   await sleep(1500)   // past the design's entrance and first layout
   const inStage = sel => `document.querySelector('[data-layers]')?.querySelector(${JSON.stringify(sel)})`
   // A step that can't be taken means the state to measure was never reached: an error, not a
