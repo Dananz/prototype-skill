@@ -135,7 +135,7 @@ export function createActions(store: Store, host: Host) {
         comments: [{ route: `${to.proto}/${to.variant}`, text: words ? `${say}: ${words}` : say, action }],
       })
       const item: Item = { id: uid(), proto: to.proto, variant: to.variant, n: 0, body: words ? [words] : [], tags: [], action, at: Date.now(), sent: { batch: sent.id, i: 1 } }
-      set(s => ({ items: [...s.items, item] }))
+      set(s => ({ items: s.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? s.items : [...s.items, item] }))
       const r = sent.results[0]
       if (!r?.failed) return
       if (r.nothing) throw new Error(`${to.variant} isn’t picked any more, so there was nothing to take back.`)

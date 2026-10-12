@@ -2,7 +2,7 @@
 // the guard that keeps every press from reaching the design while commenting, and the live boxes
 // pins and outlines are drawn from.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { describe, find, labelOf, seen, spot, spotAt } from './dom'
+import { describe, find, seen, spot, spotAt } from './dom'
 import { Icon } from './ui'
 import type { Box, Target } from './types'
 import { useCtx } from './ctx'
@@ -17,8 +17,7 @@ export const HOLD_MS = 500
 /**
  * One box that follows whatever it is told to point at: it glides between targets with a long
  * ease-out, fades in where it first appears (landing in place, never sliding in from where it
- * last was) and fades out when it has nothing to point at. The inspect outline and the spotlight
- * for a row in the @ menu are both this, so they move the same way.
+ * last was) and fades out when it has nothing to point at. The comment outlines share this motion.
  */
 export function Glide<T extends { box: Box }>({ item, pad, className = '', style, children }: { item: T | null; pad: number; className?: string; style?: CSSProperties; children: (item: T) => ReactNode }) {
   const last = useRef<T | null>(null)
@@ -67,7 +66,7 @@ export function useBoxes(list: { id: string; t: Target }[]) {
   return boxes
 }
 
-export type Inspect = { box: Box; label: string; touch: boolean; parent: string | null } | null
+export type Inspect = { box: Box; touch: boolean; parent: boolean } | null
 
 /**
  * While commenting, the design is only looked at, never used: no press, tap or key reaches it.
@@ -127,7 +126,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       raised.current = false
       const up = el && parentOf(el)
       const box = el && seen(el, host.mount()!, host.layer)
-      setHover(el && box ? { box, label: labelOf(el), touch, parent: up ? labelOf(up) : null } : null)
+      setHover(el && box ? { box, touch, parent: !!up } : null)
     }
     // Skips to the parent of what is outlined, as often as there is one.
     raise.current = () => {
@@ -304,7 +303,7 @@ export function HoldRing({ at }: { at: { x: number; y: number } | null }) {
 
 /**
  * The outline on what is being inspected, with a button to skip to its parent. A finger gets
- * two icon buttons (parent, comment); a pointer gets the name, and the parent named beside it.
+ * two icon buttons (parent, comment); a pointer gets the action and the parent arrow.
  */
 export function HoverBox({ hover, verb, onConfirm, onUp }: { hover: Inspect; verb: string; onConfirm: () => void; onUp: () => void }) {
   const { host } = useCtx()
@@ -323,12 +322,12 @@ export function HoverBox({ hover, verb, onConfirm, onUp }: { hover: Inspect; ver
     <Glide item={hover} pad={3} className={`rounded-md border-2 border-proto-primary-ring ${hover?.touch ? 'bg-proto-primary/[.10]' : 'bg-proto-primary/[.06]'}`}>
       {h => h.touch
         ? <div data-inspect-ui style={spot(h.box, 36, h.parent ? 190 : 150)} className={`absolute flex h-9 items-center whitespace-nowrap rounded-lg bg-proto-primary text-xs font-medium text-proto-primary-fg shadow-lg ${hover ? 'pointer-events-auto' : ''}`}>
-            {h.parent && <><button aria-label={`Select the parent, ${h.parent}`} onClick={onUp} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); onUp() }} className="grid size-9 place-items-center rounded-l-lg active:bg-white/15"><Icon name="up" className="size-4" /></button><span className="h-4 w-px bg-white/30" /></>}
+            {h.parent && <><button aria-label="Select the parent" onClick={onUp} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); onUp() }} className="grid size-9 place-items-center rounded-l-lg active:bg-white/15"><Icon name="up" className="size-4" /></button><span className="h-4 w-px bg-white/30" /></>}
             <button onClick={onConfirm} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); onConfirm() }} className={`inline-flex h-9 items-center gap-1.5 pl-2.5 pr-3 active:bg-white/15 ${h.parent ? 'rounded-r-lg' : 'rounded-lg'}`}><Icon name="comment" className="size-3.5" />{verb}</button>
           </div>
         : <span data-inspect-ui style={spot(h.box, 24, 260)} className={`absolute flex h-6 items-stretch whitespace-nowrap rounded-md bg-proto-primary text-[11px] font-medium text-proto-primary-fg shadow ${hover ? 'pointer-events-auto' : ''}`}>
-            <span className="inline-flex items-center px-1.5">{verb === 'Comment' ? '' : `${verb} · `}{h.label}</span>
-            {h.parent && <button onClick={onUp} title="Select the parent · ↑" className="inline-flex items-center gap-1 rounded-r-md border-l border-white/30 px-1.5 hover:bg-white/15"><Icon name="up" className="size-3" /><span className="max-w-32 truncate">{h.parent}</span></button>}
+            <span className="inline-flex items-center px-1.5">{verb}</span>
+            {h.parent && <button onClick={onUp} aria-label="Select the parent" title="Select the parent · ↑" className="inline-flex items-center gap-1 rounded-r-md border-l border-white/30 px-1.5 hover:bg-white/15"><Icon name="up" className="size-3" /></button>}
           </span>}
     </Glide>
   )

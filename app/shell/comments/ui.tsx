@@ -96,10 +96,10 @@ export function SrcTag({ t, className = 'max-w-[50%] shrink-0' }: { t?: Pick<Tar
   return s ? <span title={s.full} className={`truncate font-mono text-[11px] text-zinc-400 ${className}`}>{s.short}</span> : null
 }
 
-export const Chip = ({ t }: { t?: Target }) => <span title={srcOf(t)?.full} className="mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg">@{t?.label ?? '?'}</span>
+export const Chip = ({ t, n }: { t?: Target; n: number }) => <span title={srcOf(t)?.full} className="mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg">@{n}</span>
 
 export function Body({ c, className = '' }: { c: { body: Seg[]; tags: Target[] }; className?: string }): ReactNode {
-  return <span dir="auto" className={className}>{c.body.map((s, i) => typeof s === 'string' ? <span key={i}>{s}</span> : <Chip key={i} t={c.tags[s.tag]} />)}</span>
+  return <span dir="auto" className={className}>{c.body.map((s, i) => typeof s === 'string' ? <span key={i}>{s}</span> : <Chip key={i} t={c.tags[s.tag]} n={s.tag + 1} />)}</span>
 }
 
 /** A decision on a variant: what it says (to the agent, and as its line in the list) and its icon. */
@@ -108,15 +108,17 @@ export const ACTION: Record<Action, { say: (v: string) => string; icon: string }
   unpick: { say: v => `Unpicked ${v}`, icon: 'undo' },
   more: { say: v => `More like ${v}`, icon: 'more' },
   build: { say: v => `Build ${v}`, icon: 'code' },
+  'try-it': { say: v => `Add Try it for ${v}`, icon: 'key' },
+  'copy-options': { say: v => `Add copy options for ${v}`, icon: 'text' },
   copy: { say: v => `Copy for ${v}`, icon: 'text' },
 }
 /** A moment or a range of the motion, as the dock and the inbox write it: `0.35 s`, `0.30–0.62 s`. */
 export const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `${(t.at / 1000).toFixed(2)} s` : `${(t.at / 1000).toFixed(2)}–${(t.to / 1000).toFixed(2)} s`
 /** What a row of the list is about: the element a comment is on, the moment of the motion, or what a decision asked. */
-export const aboutOf = (i: Item) => i.action ? ACTION[i.action].say(i.variant) : i.time ? `${i.time.to === undefined ? 'At' : 'Over'} ${spanOf(i.time)}` : i.target?.label ?? ''
+export const aboutOf = (i: Item) => i.action ? ACTION[i.action].say(i.variant) : i.time ? `${i.time.to === undefined ? 'At' : 'Over'} ${spanOf(i.time)}` : `Comment ${i.n}`
 
-/** The words of a comment as plain text, tags written as @Name: what the agent reads. */
-export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : `@${c.tags[s.tag]?.label ?? '?'}`).join('').replace(/ /g, ' ').trim()
+/** The words of a comment as plain text, tags written as @1, @2, …: their order in the accompanying targets. */
+export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : `@${s.tag + 1}`).join('').replace(/ /g, ' ').trim()
 
 export type { Item }
 

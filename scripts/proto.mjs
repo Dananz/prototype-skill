@@ -1137,6 +1137,8 @@ const ACTIONS = {
   unpick: 'done: the pick is off in the page; a reply is only a note',
   more: 'new variants in this prototype, named after this one',
   build: 'build this variant into the codebase',
+  'try-it': 'add useHints for this variant only: useful demo values, steps and scenarios; preserve the working design; reply --done after checking it',
+  'copy-options': 'add useCopy for this variant only: headline and primary text by default, or the requested lines; keep current words first, add 2 to 4 alternatives; reply --done after checking fit',
   copy: 'make this the line\'s text in the variant: put it first in that line\'s useCopy options',
 }
 const FAILED = {
@@ -1163,7 +1165,7 @@ function printBatch(dir, b) {
     if (c.target) console.log(`   ${c.point ? 'in' : 'on'}: ${where(c.target)}`)
     // Written in the page's device view: about that layout, which a shot at that size shows.
     if (c.view) console.log(`   view: ${c.view.size} ${c.view.w}x${c.view.h} (shoot it: proto shoot ${c.route} --size ${c.view.w}x${c.view.h})`)
-    for (const t of c.tags || []) console.log(`   with: ${where(t)}`)
+    for (const [i, t] of (c.tags || []).entries()) console.log(`   with @${i + 1}: ${where(t)}`)
     for (const img of c.images || []) console.log(`   image: ${join(inboxDir(dir), 'taken', b.id, img.file)}${img.name ? `  (${img.name})` : ''}`)
   }
   console.log(`\nReply: proto reply ${b.id}/<n> "…" --done   (or ${b.id} for the whole batch)\n`)

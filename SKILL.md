@@ -152,12 +152,39 @@ screenshot's pixel positions: RTL layout comes from the flow, not from coordinat
   way they go. A product that also ships LTR: flip the root's `dir` once and check the variant
   mirrors cleanly.
 
-## 3. Pick genuinely different directions
+## 3. One usable direction first, then the exploration
 
-**How many.** The user's number when they give one ("/prototype 3 …"). Otherwise the scope sets
-it: 5 for a screen or a flow, 3 for a component or a section, 2 for a choice between two
-behaviors (follow the system setting or not, a sheet or a page). More directions than the
-question has make the real ones harder to see.
+**First usable output: one complete, high-quality direction.** No special prompt is needed.
+Keep the real-product grounding, exact Current/reference match, real tokens/assets/chrome,
+working interactions, responsive layout and necessary visual QA below. For an existing
+product, retain A:Current and build the first proposed direction as B; for a new product,
+build A. Finish and check that proposed direction before writing the remaining variants,
+so the user can use it while the rest of the exploration follows through HMR. Do not weaken
+Current's reconstruction or fidelity checks to get there sooner.
+
+Deliver that first usable direction before optional review content. Do not author `useHints`,
+scenario-control wiring, guided spotlight tours or `useCopy` alternatives on the initial pass
+unless the user explicitly requested that capability. These are generated content, unlike the
+shell's already-available panels and controls. Do not just hide pre-generated extras. A core
+flow must still work without Try it: use visible demo values or sensible prefilled inputs when
+needed; keep essential empty, loading and error behavior. State selectors needed for QA stay.
+Do not spend the initial pass naming or annotating elements for Comments. Comments uses direct
+visual targeting; source file/line attributes are automatic. There is no named-element catalog.
+Add `data-shoot` only for selectors needed by interaction/QA checks, and preserve accessibility.
+
+The page's **Actions → Add Try it / Add Copy options** submits a request for the current
+variant with an optional note; no chat prompt is required. A request shows Requested until it
+is answered or deleted from Comments. Ready means the variant already exposes the capability;
+use the existing Try it panel or T button (the pill's menu on a phone).
+
+**Preserve the design exploration.** The user's number when they give one ("/prototype 3 …").
+Otherwise the scope sets it: 5 for a screen or a flow, 3 for a component or a section, 2 for a
+choice between two behaviors (follow the system setting or not, a sheet or a page). The first
+usable output changes the order of delivery, not this count. After that first direction is
+usable and checked, continue the remaining requested/default directions without waiting for
+another prompt. More like this in Actions asks for additional directions later (two without
+a count). If Try it or copy alternatives were explicitly requested at the outset, add them
+after the first usable prototype is in place.
 
 Name each direction in a few words. Vary something structural: where it lives, how it is
 triggered, how much it shows, the interaction model. Two directions that differ only in color
@@ -243,7 +270,8 @@ columns, each with its line, beside Autoplay, All states and Compare:
 - Put `data-diff` on what a variant adds; Compare outlines it.
 - `proto add`, `pick` and `archive` keep these fields; edit `meta.ts` after `proto add`.
 
-**Say what to type and try.** When getting through a variant takes something a reviewer can't
+**Only on request: say what to type and try.** After an explicit request in chat or
+`action: try-it` from the page, when getting through a variant takes something a reviewer can't
 guess (a login, a code, a search that returns results), or it has scenarios, outside events or
 limits worth knowing, report them with `useHints` from `src/hints.ts`, once, in the variant's
 component. The page shows them in a Try it panel beside the design (on a phone, a sheet from Try it
@@ -282,7 +310,7 @@ useHints([
 - Vue: `useHints(() => [...])` in `<script setup>`. A variant with nothing to say makes no call.
 
 **Offer other copy when asked.** When the user asks for other words ("better headlines", "try other
-button text"), don't write a variant per wording: give the lines they asked about options with
+button text") or sends `action: copy-options` from the page, don't write a variant per wording: give the lines they asked about options with
 `useCopy` from `src/copy.ts`, in the variant being worked on. The page then shows a T button beside
 Comment (on a phone, Copy options in the pill's menu); in copy mode each of those lines is marked, a click lists its options and points one into
 place, and the user sends the choices back (`action: copy`, below). A variant without `useCopy` shows
@@ -300,7 +328,8 @@ const copy = useCopy([
 ```
 
 - The first option is the line as it reads today; then 2 to 4 others. Only the lines they asked
-  about, never every string on the screen.
+  about, never every string on the screen. A page request without a note means the headline and
+  primary supporting text/CTA. Preserve the design and its current words until they choose.
 - Real copy in the product's language and rules (its locale files, gender, register, length), the
   same as any copy in a variant.
 - `useCopy` returns the words to show per line (the user's pick, or the first option). Put
@@ -353,7 +382,8 @@ useMotion({
 - Pressing anything in the design lets it run live; the dock's next move takes it back. An edit
   to the variant records the take again.
 
-**Build the variants in parallel when you can.** When there are 3 or more variants to write, the
+**Build remaining requested variants in parallel when you can.** After the first proposed
+direction is usable and checked, when there are 3 or more remaining variants to write, the
 harness has subagents, and Current matches its reference (for a new product: once the tokens and
 `parts.tsx` exist), give each variant its own subagent. First write everything shared yourself
 (`parts.tsx`, `src/theme.css`, `meta.ts`, packages), then start every subagent in one message.
@@ -481,9 +511,11 @@ element (or, on a phone, hold a finger on a spot), write, tag other elements wit
 screenshot and mark it up (or paste an image with Ctrl/⌘ V, or drop one on the comment), then send
 every draft at once. Commenting never reaches the design, so a menu or popover open in it stays
 open and what is in it can be commented on. The side panel's Comments tab lists
-them and shows what became of each. Name the things worth pointing at with `data-shoot="…"`: it
-is how a comment, and the `@` menu, call an element ("Pricing card"), and without it they fall
-back to its text or tag. Each send is a batch waiting for you in the app's inbox. You hear
+them and shows what became of each. `@` opens the existing visual picker to tag another
+element. Do not author special comment-element names or a catalog of elements. The outline
+and numbered references identify selected targets; source locations are stamped automatically.
+The design's native accessibility labels and semantics must remain intact. Keep `data-shoot` only where a QA/state selector
+needs it; Comments does not use it as a display name. Existing comments keep their targets. Each send is a batch waiting for you in the app's inbox. You hear
 about it only while you listen, so **at the end of every turn in a prototype session,
 listen**: run, in the background, with the Bash tool's longest timeout (2 hours),
 
@@ -499,7 +531,7 @@ something is listening.
 Each comment prints its route (`<slug>/<letter>[/<state>]`), the user's words, the element
 it is on (tag, text, `data-shoot` or selector, its box in CSS px from the variant's top left,
 and where it is written: its file from the app's folder, line and component, as
-`src/protos/today/parts.tsx:30 (PriceCard)`; open it there) and any elements it tags, and the absolute path of each image attached to it:
+`src/protos/today/parts.tsx:30 (PriceCard)`; open it there) and any elements it tags (numbered `with @1`, `with @2`, matching the comment), and the absolute path of each image attached to it:
 `(marked up)` is a screenshot of the design, `(pasted by the user)` an image they pasted or
 dropped (a reference, another app, anything). A comment
 pinned to a spot with a long press (on a phone, where no element fit) prints `at:` the spot, in
@@ -511,7 +543,10 @@ comment alone. Read every image. Then, per comment:
 
 1. The same as a request typed in chat: `proto ask` (or `proto work … --ask`) in the user's
    words, then edit the variant.
-2. `proto reply <batch>/<n> "<what you changed, one line>" --done` (Codex adds `--as codex`, which
+2. For optional extras, recheck the batch's `batch.json` for `withdrawn` before editing and
+   before replying. A withdrawn request is canceled: stop optional work, and do not claim delivery.
+   If no useful extra applies, reply with that reason and `--done`, so it can be requested again.
+   `proto reply <batch>/<n> "<what you changed, one line>" --done` (Codex adds `--as codex`, which
    puts its mark beside the reply instead of Claude's). The page shows it on the
    comment. A comment you can't act on gets a reply without `--done` saying why.
 3. When the batch is handled, listen again.
@@ -540,6 +575,8 @@ the text.
 | `unpick` | the pick is off, and the comment done | nothing. When the line says nothing changed (that variant wasn't the pick), say so in a reply with `--done`; when it says it wasn't taken off, run the `proto pick … --off` it names |
 | `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you added |
 | `build` | nothing | `proto pick` it if it isn't the pick, then step 7; reply when it is in |
+| `try-it` | queued only; no content generated yet | check that the request is not withdrawn; add useful `useHints` to this variant only (section 4), preserve its working flow, verify it, then reply `--done`; if it already has useful hints, reuse them |
+| `copy-options` | queued only; no alternatives generated yet | check that the request is not withdrawn; add `useCopy` to the requested lines in this variant only (headline and primary text/CTA without a note), current words first, verify fit, then reply `--done`; reuse existing options |
 | `copy` | nothing (one comment per line changed since the last send, on that line's element; the text says option k of n, their own words, or back to today's words) | put the chosen words first in that line's `useCopy` options and keep the rest; then one `proto reply <batch> "…" --done` for the batch, in one line. The page drops its own choice once the words are first |
 
 ## 7. Only if asked: build it

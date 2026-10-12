@@ -115,6 +115,7 @@ function writeWhole(to, text) {
 }
 const alive = pid => { if (!pid) return false; try { process.kill(pid, 0); return true } catch { return false } }
 const readJson = (f, fallback) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return fallback } }
+const readdirSyncSafe = path => { try { return readdirSync(path).filter(f => !f.startsWith('.')) } catch { return [] } }
 const list = sub => { try { return readdirSync(join(inbox, sub)).filter(f => !f.startsWith('.')) } catch { return [] } }
 
 /** Where the inbox stands, for the page: what waits, whether an agent is listening, the batches' states. */
@@ -124,10 +125,10 @@ export function inboxStatus() {
     const b = readJson(join(inbox, where, id, 'batch.json'), null)
     return b && {
       id, at: b.at, state: b.done ? 'done' : where === 'new' ? 'sent' : 'seen', reply: b.reply ?? null,
-      comments: b.comments.map(c => ({ n: c.n, route: c.route, done: !!c.done, ...(c.withdrawn ? { withdrawn: true } : {}), reply: c.reply ?? null })),
+      comments: b.comments.map(c => ({ n: c.n, route: c.route, action: c.action, done: !!c.done, ...(c.withdrawn ? { withdrawn: true } : {}), reply: c.reply ?? null })),
     }
   }).filter(Boolean).sort((a, b) => a.at < b.at ? 1 : -1)
-  return { new: list('new').length, listening: !!waiter && alive(waiter.pid), batches: batches.slice(0, 20) }
+  return { new: list('new').length, listening: !!waiter && alive(waiter.pid), batches: batches.filter((b, i) => i < 20 || b.comments.some(c => ['try-it', 'copy-options'].includes(c.action) && !c.done && !c.withdrawn)) }
 }
 
 const box = r => r && typeof r === 'object' ? { x: Math.round(+r.x || 0), y: Math.round(+r.y || 0), w: Math.round(+r.w || 0), h: Math.round(+r.h || 0) } : undefined
@@ -160,7 +161,7 @@ const viewOf = c => {
 // A decision on a variant made in the page (its Pick, More like this and Build it) comes as a
 // comment with one of these and no element. A copy choice (the copy picker's Send) is one too, on
 // the element of the line it changes.
-const ACTIONS = new Set(['pick', 'unpick', 'more', 'build', 'copy'])
+const ACTIONS = new Set(['pick', 'unpick', 'more', 'build', 'copy', 'try-it', 'copy-options'])
 
 /**
  * Writes one send from the page as a new batch; images come as data URLs and are stored as files.
@@ -191,7 +192,7 @@ function receive(data) {
     if (view && (c.action !== undefined || time)) throw bad(i, ': a comment in a device view is on the design, with no action and no moment of the motion')
     if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
-      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build or copy, on a variant (<slug>/<letter>)')
+      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it or copy-options, on a variant (<slug>/<letter>)')
       if (c.action === 'pick' || c.action === 'unpick') {
         let meta
         try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { throw bad(i, `: src/protos/${slug}/meta.ts is missing or isn't plain JSON, so a pick can't be marked in it`) }
@@ -216,6 +217,19 @@ function receive(data) {
       images,
     }
   })
+  // Optional generation is one request per variant/capability until answered or withdrawn.
+  // Read disk (not the UI's cached status): retries, reloads and two tabs cannot enqueue it twice.
+  const optional = list.filter(c => ['try-it', 'copy-options'].includes(c.action))
+  if (optional.length) {
+    if (list.length !== 1) throw bad(0, ': request one optional capability at a time')
+    const wanted = optional[0]
+    for (const sub of ['new', 'taken']) {
+      for (const folder of readdirSyncSafe(join(inbox, sub))) {
+        const previous = readJson(join(inbox, sub, folder, 'batch.json'), null)
+        if (previous?.comments.some(c => c.route === wanted.route && c.action === wanted.action && !c.done && !c.withdrawn)) return { batch: previous, moved: false }
+      }
+    }
+  }
   // A pick is made before the batch is seen, so the agent reads about one already made, and it is
   // done: nothing is left to do but note it. One that can't be made stays open and says why (marked:
   // meta.ts has it, only the working variant didn't move), and so does an unpick that changed nothing.
