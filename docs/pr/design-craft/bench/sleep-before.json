@@ -1,0 +1,21 @@
+{
+  "name": "sleep-before",
+  "skill": "/Users/tomer/Code/proto-bench/skill-before",
+  "uuid": "c73ccecf-8c9e-451d-9f1e-5e1f87de4bfb",
+  "session": "/Users/tomer/Code/proto-bench/runs/sleep-before/.prototypes/c73ccecf",
+  "url": "https://studio.tail08ad7c.ts.net:9532/",
+  "exit": 0,
+  "seconds": {
+    "link": 10.021,
+    "added": 118.204,
+    "first": 238.423,
+    "allBuilt": 1632.746,
+    "done": 484
+  },
+  "craftKit": false,
+  "briefs": false,
+  "cost": 4.2555411,
+  "turns": 1,
+  "apiSeconds": 525.339,
+  "note": "final reply at 484 s; a late scheduled self-check kept the process alive until 1633 s"
+}

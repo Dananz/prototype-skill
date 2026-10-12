@@ -1,0 +1,21 @@
+{
+  "name": "landing-after",
+  "skill": "/Users/tomer/Code/prototype-craft",
+  "uuid": "15a74f7b-d4e5-4f7c-8d2b-87fc47d82b36",
+  "session": "/Users/tomer/Code/proto-bench/runs/landing-after/.prototypes/15a74f7b",
+  "url": "https://studio.tail08ad7c.ts.net:9531/",
+  "exit": 143,
+  "seconds": {
+    "link": 12.024,
+    "added": 50.086,
+    "first": 103.177,
+    "allBuilt": 497,
+    "done": 516
+  },
+  "craftKit": true,
+  "briefs": true,
+  "cost": 5.571629300000002,
+  "turns": 7,
+  "apiSeconds": 947.901,
+  "note": "process stayed alive after its final reply at 516 s (killed later); done = time of final reply"
+}
