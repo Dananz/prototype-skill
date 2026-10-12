@@ -6,7 +6,7 @@ at the same time. `bench/bench.mjs` times each run from the session folder, once
 
 | Prompt | Arm | Link ready | First variant on screen | All 4 written | Final reply | Cost |
 |---|---|---|---|---|---|---|
-| Pricing | before | 10 s | 67 s | 3:37 | 3:58 | $1.52 |
+| Pricing | before | 10 s | 67 s | 3:38 | 3:58 | $1.52 |
 | Pricing | after | 11 s | 101 s | 4:41 | 5:09 | $3.13 |
 | Landing | before | 10 s | 99 s | 6:03 | 6:28 | $4.39 |
 | Landing | after | 12 s | 103 s | 8:17 | 8:36 | $5.57 |
