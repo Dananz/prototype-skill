@@ -3,12 +3,15 @@
 // more than 32 (in any channel, of 255) and the mean error, overall, per column band and per third,
 // plus one image to read (reference, build, difference x4). It is the stopping signal for a build:
 // iterate until the number is under the target, or until two tries in a row stop improving it.
-// Usage: compare.mjs <app-url> <out-dir> <route> --ref=<png> [--el=<css>] [--click=<css>]...
+// Usage: compare.mjs <app-url> <out-dir> <route> --ref=<png> [--el=<css>] [--size=<w>x<h>] [--click=<css>]...
 // Normally run through `proto compare`, which fills in the URL and folder.
 //
-// The element (--el, inside the design; default the variant's root) is shot at the scale that
-// makes it as wide as the reference, so a 1:1 screenshot compares at 1x and a 2x one at 2x. Pixels
-// the reference left transparent (rounded corners, a cut-out) are left out of every number.
+// The page is laid out at --size (CSS px, default 1440x900: the width the reference was taken at,
+// so the same breakpoints and wrapping apply), and the element (--el, inside the design; default
+// the variant's root) is shot at the pixel density that makes it as wide as the reference, so a
+// 1:1 screenshot compares at 1x and a 2x one at 2x. Layout and density are separate: a wider
+// viewport would switch breakpoints (a layout matching its 1440 px reference scored 100 % off at
+// 2400 px). Pixels the reference left transparent (rounded corners, a cut-out) are left out.
 //
 // Why (measured 2026-10-12, 11 timed rebuilds of two regions of a plugin UI): builders given this
 // score finished in 0.5-8 minutes at or beyond the fidelity of earlier builders that took 8-23
@@ -29,9 +32,10 @@ const refB64 = readFileSync(flags.ref).toString('base64')
 // PNG width and height sit at fixed offsets of the IHDR chunk.
 const refBuf = Buffer.from(refB64, 'base64')
 const [RW, RH] = [refBuf.readUInt32BE(16), refBuf.readUInt32BE(20)]
+const [VW, VH] = String(flags.size || '1440x900').split('x').map(Number)
 
 const profile = mkdtempSync(join(tmpdir(), 'proto-compare-'))
-const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--hide-scrollbars'])
+const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', `--window-size=${VW},${VH}`])
 const cleanup = () => { stopChrome(chrome); try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) } catch { /* temp dir */ } }
 const timer = setTimeout(() => { console.error('compare: timed out'); cleanup(); process.exit(1) }, 90_000)
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { cleanup(); process.exit(1) })
@@ -57,7 +61,7 @@ try {
     const { targetId } = await send('Target.createTarget', { url: 'about:blank', newWindow: true })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
     await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId)
-    await send('Emulation.setDeviceMetricsOverride', { width: 2400, height: 1600, deviceScaleFactor: scale, mobile: false }, sessionId)
+    await send('Emulation.setDeviceMetricsOverride', { width: VW, height: VH, deviceScaleFactor: scale, mobile: VW < 640 }, sessionId)
     const ev = async expression => {
       const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)
       if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text)

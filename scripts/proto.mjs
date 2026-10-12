@@ -15,10 +15,10 @@
 //             [--frames <n>] [--at <ms>-<ms>]   n frames of the take on one sheet, with its curves
 //             [--size <w>x<h>]   instead of desktop and phone, that viewport (a layout from the page's device view)
 //   proto shoot [slug…] --sheet [--state <id>] [--theme dark]   every variant on one contact sheet per prototype
-//   proto compare <slug>/<letter>[/<state>] --ref <png> [--el <css>] [--click <css>]
+//   proto compare <slug>/<letter>[/<state>] --ref <png> [--el <css>] [--size <w>x<h>] [--click <css>]
 //             how far an element of the variant (default: the whole variant) is from a screenshot of
 //             the real one, as % of pixels off, per column and per third, with a difference image
-//   proto perf <slug>/<letter>[/<state>] [--drag <css>] [--click <css>] [--size <w>x<h>] [--dpr 2] [--seconds 3]
+//   proto perf <slug>/<letter>[/<state>] [--drag <css>] [--click <css>] [--size <w>x<h>] [--dpr 2] [--hz <n>] [--seconds 3]
 //             frames per second at rest (or while dragging that element), how busy the main and GPU
 //             threads are, and the design's slowest functions; run it on anything that animates
 //   proto handoff <slug>/<letter>   a checklist of what that variant has, for building it into the codebase
@@ -1312,11 +1312,12 @@ async function compare() {
   if (!await running(s)) die('the server is stopped. Run: proto up')
   const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
   const route = args.filter(a => !clicked.has(a))[0]
-  if (!route || !route.includes('/') || typeof flags.ref !== 'string') die('usage: proto compare <slug>/<letter>[/<state>] --ref <png> [--el <css>] [--click <css>]')
+  if (!route || !route.includes('/') || typeof flags.ref !== 'string') die('usage: proto compare <slug>/<letter>[/<state>] --ref <png> [--el <css>] [--size <w>x<h>] [--click <css>]')
+  if (flags.size !== undefined && !/^\d+x\d+$/.test(String(flags.size))) die('--size is the layout viewport in CSS px, the width the reference was taken at: --size 1440x900')
   // Relative to where Claude stands, or to the app (where `.proto/ref/` lives).
   const ref = [resolve(flags.ref), resolve(dir, flags.ref)].find(f => existsSync(f))
   if (!ref) die(`--ref: no file ${flags.ref} here or in ${tilde(dir)}`)
-  const extra = [`--ref=${ref}`, ...(typeof flags.el === 'string' ? [`--el=${flags.el}`] : [])]
+  const extra = [`--ref=${ref}`, ...['el', 'size'].filter(k => typeof flags[k] === 'string').map(k => `--${k}=${flags[k]}`)]
   argv.forEach((a, i) => { if (a === '--click' && argv[i + 1]) extra.push(`--click=${argv[i + 1]}`); else if (a.startsWith('--click=')) extra.push(a) })
   const out = resolve(flags.out || join(dir, '.proto', 'shots'))
   const r = run(process.execPath, [join(SKILL, 'scripts', 'compare.mjs'), s.localUrl, out, route, ...extra], { stdio: 'inherit' })
@@ -1331,8 +1332,8 @@ async function perf() {
   if (!await running(s)) die('the server is stopped. Run: proto up')
   const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
   const route = args.filter(a => !clicked.has(a))[0]
-  if (!route || !route.includes('/')) die('usage: proto perf <slug>/<letter>[/<state>] [--drag <css>] [--click <css>] [--size <w>x<h>] [--dpr 2] [--seconds 3]')
-  const extra = ['drag', 'size', 'dpr', 'seconds'].filter(k => typeof flags[k] === 'string').map(k => `--${k}=${flags[k]}`)
+  if (!route || !route.includes('/')) die('usage: proto perf <slug>/<letter>[/<state>] [--drag <css>] [--click <css>] [--size <w>x<h>] [--dpr 2] [--hz <screen Hz>] [--seconds 3]')
+  const extra = ['drag', 'size', 'dpr', 'hz', 'seconds'].filter(k => typeof flags[k] === 'string').map(k => `--${k}=${flags[k]}`)
   if (flags.size !== undefined && !/^\d+x\d+$/.test(String(flags.size))) die('--size is a viewport in CSS px: --size 1440x900')
   argv.forEach((a, i) => { if (a === '--click' && argv[i + 1]) extra.push(`--click=${argv[i + 1]}`); else if (a.startsWith('--click=')) extra.push(a) })
   const r = run(process.execPath, [join(SKILL, 'scripts', 'perf.mjs'), s.localUrl, route, ...extra], { stdio: 'inherit' })

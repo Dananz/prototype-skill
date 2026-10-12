@@ -475,8 +475,10 @@ they press Send until the last change is in, and the time goes into round trips 
 into the edits. Measured on 12 small comments: one pass took 48 s; a worker per file took 86 s
 (each worker loads its context before it starts, and the slowest sets the finish).
 
-1. Read every image. One `proto ask --each "<comment 1, their words>" "<comment 2>" …` for the
-   batch (`proto work … --ask` first when the batch is about another variant).
+1. Read every image. Record the asks once per variant the batch is on (each comment's route says
+   which; a batch can hold comments on several): `proto ask --to <slug>/<letter> --each "<comment,
+   their words>" "<comment>" …`, one call per variant (`proto work … --ask` first when the user is
+   moving on to another variant).
 2. What the printed source doesn't show (a class defined elsewhere, a constant), read for all
    comments together, in one call: one `sed -n`/`grep` per file in a single command, not a tool
    call per comment.
@@ -557,7 +559,7 @@ When the user wants the prototypes in a doc or artifact to share: read `${CLAUDE
 | A comment in a view (`view: tablet 834x1194` in a batch) | the shoot its line names, change that layout's breakpoints, reply naming the size (Comments from the page) |
 | To drop a direction or prototype | `proto archive <slug>` (still reachable under Archived) |
 | The prototypes in a doc to share | `proto snap`, then a Claude Doc (section above) |
-| Comments sent from the page (a `proto inbox --wait` exited) | the batch as one job: one `proto ask --each`, edits, one shot, one `proto reply <batch> 1 "…" 2 "…" --done`, listen again |
+| Comments sent from the page (a `proto inbox --wait` exited) | the batch as one job: one `proto ask --to <slug>/<letter> --each` per variant in it, edits, one shot, one `proto reply <batch> 1 "…" 2 "…" --done`, listen again |
 | Prototypes for a different project | `proto up --project <dir>`: a separate app for that project |
 
 ## Lifecycle
