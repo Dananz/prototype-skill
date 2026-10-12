@@ -362,12 +362,12 @@ enters, a toast lands, the feel of a spring), or a comment arrives on the motion
 frames with `proto shoot --at` / `--frames`.
 
 **Build remaining requested variants in parallel when you can.** When there are 3 or more
-remaining variants to write and the harness has subagents, give each its own subagent, all
-started in one message. For a new product that is as soon as your own hero is on screen (plan step 5
-above): each direction carries its own look, so nothing shared is written
-first except the facts every direction tells the same way (name, products, prices, hours,
-address), under the lines in the brief. For an existing product, once Current matches and the
-shared chrome (`parts.tsx`, `src/theme.css`, packages) exists.
+remaining variants to write and the harness has subagents, give each its own subagent, with the
+model and effort from the table below, all started in one message. For a new product that is as
+soon as your own hero is on screen (plan step 5 above): each direction carries its own look, so
+nothing shared is written first except the facts every direction tells the same way (name,
+products, prices, hours, address), under the lines in the brief. For an existing product, once
+Current matches and the shared chrome (`parts.tsx`, `src/theme.css`, packages) exists.
 
 A subagent's prompt is short: its letter, the app's folder, the brief's path
 (`.proto/briefs/<slug>.json`, with the must-dos under the facts), its flags
@@ -376,21 +376,36 @@ works in another folder), with a Current the reference screenshots and `A.tsx` t
 and the line "Read `${CLAUDE_SKILL_DIR}/references/direction.md` first and follow it." That file
 holds everything standing (hero first, plan, passes, images, limits, the reply); don't restate it.
 
-Effort: a subagent designing a direction runs at the session's own effort; design quality drops
-visibly at medium. A subagent rebuilding a region against a reference can start at medium (the
-Agent tool's `effort: "medium"`): measured on two regions of a plugin UI rebuilt from source,
-medium matched high on the simpler one in 0.9x the time; on the harder one high was closer
-(0.8 % vs 1.2 % of pixels off) in 2.3x the time. Keep high for a last polish pass on a region the
-user is judging closely.
+**Which model and effort each subagent gets.** Look the job up here and pass that `model` and
+`effort` on the Agent call; there is nothing to decide. A row names a cheaper model only where one
+was measured to hold up; everything else runs on the session's own model.
+
+| Job | Model, effort | Measured (one plugin UI, 2-3 runs per arm) |
+|---|---|---|
+| Build or rebuild a region from its written spec | Sonnet, medium | with the spec's one-SVG line: 21-23 s, 2.43-2.50 % of pixels off; Opus high without it: 130 s, 2.46 % |
+| Polish a region toward its screenshot | Opus, high | the only arm that kept improving past the first build (2.46 %, 2.68 %) |
+| A comment worker (a pin that needs real design work) | Opus, medium | Sonnet never moved menus along with the buttons it moved (0 of 6 runs); Opus high and medium did (4 of 4) |
+| A new direction without a spec, a region's spec, the critic | session's model | not measured on another model |
+| Any job | never Haiku | slower than Sonnet, no more accurate |
+
+A comment batch is not routed: the main session handles it itself. Handing the simple pins to a
+primed Sonnet helper was measured slower (56 s against 52 s, median of 3) and no more accurate.
 
 **A region worked on again and again: write its spec once.** When the user keeps refining the same
-part (a rebuild of a real product they perfect over many rounds), have one subagent extract it
+part (a rebuild of a real product they perfect over many rounds), have one subagent (session's model) extract it
 from the source and the reference into `src/protos/<slug>/spec/<region>.md`: every box, colour,
 font, icon path and layer as numbers, with the source line each came from, the screenshot winning
 where they disagree. Later builds and changes read the spec, not the source: measured, builds from
 a spec took 30-90 s against 150-470 s from source, at slightly lower fidelity on the first try
 (the loop above closes most of it). Writing the spec costs 3-9 minutes, so it pays from the second
 or third rebuild of that region, and not for a one-off round of directions.
+
+The spec also says how to draw the region: everything that isn't text (icons, pills, dividers,
+logos, outlines) in one absolutely positioned SVG in the region's own coordinates, at the spec's
+fractional positions; only the text is HTML boxes on top. Measured on a plugin toolbar: without this line every
+model's first build scored 3.64 % of pixels off, and only Opus at high effort found the SVG
+approach itself (2.46 % in 130 s); with it, Sonnet at medium effort scored 2.43-2.50 % on its first
+build in 21-23 s, three runs out of three.
 
 When all are back, run one `proto shoot <slug> --sheet`, read it, fix what the sheet shows and
 what the subagents named, write each variant's `about` and `states` into `meta.ts`, then go on
@@ -401,7 +416,7 @@ one after another, then build each out in turn and mark it done. The sheet is th
 
 **Craft first, then defects.** The first direction gets craft.md's full craft check from you,
 on its single shots at full size, once it is built (the others are building meanwhile). Once every direction is built,
-start **the critic** (craft.md, section 10): one subagent with fresh eyes that reads the plans,
+start **the critic** (craft.md, section 10): one subagent (session's model) with fresh eyes that reads the plans,
 the sheet and the single shots and returns the three changes that would most raise each
 direction. Apply them (without subagents, run that review yourself as a separate pass). Then the
 defect rounds below.
@@ -571,7 +586,7 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
 6. Listen again.
 
 Use workers only when comments in one batch each need real design work (a new variant, a section
-rewritten) in separate files: then one subagent per file, at medium effort, all started together.
+rewritten) in separate files: then one subagent per file, on Opus at medium effort, all started together.
 
 **Send each comment as you add it.** A switch under the Send button (kept per browser) sends each
 comment the moment it is added, so batches of one arrive while the user writes the next. Handle
