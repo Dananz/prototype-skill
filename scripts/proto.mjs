@@ -26,8 +26,10 @@
 //   proto pick <slug> <letter> [--off]   the user chose this variant: marked in the page
 //   proto work <slug>/<letter> [--ask "…"] [--off]   the variant being worked on: pinned in the page
 //   proto ask "…" [--to <slug>/<letter>]   a change the user asked for, kept with that variant
+//   proto ask --each "…" "…" …   several at once (a batch of comments)
 //   proto inbox [--wait] [--timeout <min>]   comments sent from the page; --wait blocks until some arrive
 //   proto reply <batch>[/<n>] "…" [--done] [--as codex]   answer a comment (or a whole batch) in the page
+//   proto reply <batch> 1 "…" 2 "…" … [--done]   answer many comments of a batch in one call
 //   proto kit [--kit=<name>]   the project's design kit: what it has, and whether the app moved on since
 //   proto kit save <slug> [--sources <file,…>] [--kit=<name>]   the session's theme.css and that prototype's
 //             parts, packages and screen, kept for the next session (--sources: the files they came from)
@@ -71,7 +73,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy', 'kit'])
+const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy', 'kit', 'each'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -530,13 +532,14 @@ function work() {
 function ask() {
   const dir = sessionDir()
   const s = need(dir)
-  const text = args.join(' ').trim()
-  if (!text) die('what did the user ask for? proto ask "…"')
+  // --each: every quoted argument is one ask (a batch of comments in one call); else the words are one.
+  const texts = (flags.each ? args.map(a => a.trim()) : [args.join(' ').trim()]).filter(Boolean)
+  if (!texts.length) die('what did the user ask for? proto ask "…"   (several: proto ask --each "…" "…")')
   const t = flags.to ? target(dir, flags.to) : s.work
   if (!t) die('no working variant yet: proto work <slug>/<letter> --ask "…"')
-  const key = `${t.proto}/${t.variant}`
-  patchSession(dir, { asks: { ...s.asks, [key]: [...(s.asks?.[key] || []), { at: new Date().toISOString(), text }] } })
-  console.log(`${key}: ${(s.asks?.[key]?.length || 0) + 1} asks`)
+  const key = `${t.proto}/${t.variant}`, at = new Date().toISOString()
+  patchSession(dir, { asks: { ...s.asks, [key]: [...(s.asks?.[key] || []), ...texts.map(text => ({ at, text }))] } })
+  console.log(`${key}: ${(s.asks?.[key]?.length || 0) + texts.length} asks`)
 }
 
 function archive() {
@@ -1174,6 +1177,23 @@ const FAILED = {
 }
 const secs = ms => `${(ms / 1000).toFixed(2)} s`
 const spanOf = c => c.to === undefined ? secs(c.at) : `${(c.at / 1000).toFixed(2)}–${secs(c.to)}`
+// The source around where a commented element is written (its src, `today/parts.tsx:30`), so a batch
+// can be acted on without opening each file first. Measured on a 12-comment batch: the comments
+// were done in 48 s, two of the tool calls in it only reading these lines.
+const SNIP = 5
+function printSource(dir, src) {
+  const m = String(src).match(/^(.*):(\d+)$/)
+  if (!m) return
+  let lines
+  try { lines = readFileSync(join(dir, 'src', 'protos', m[1]), 'utf8').split(/\r?\n/) } catch { return }
+  const at = Number(m[2]), from = Math.max(1, at - SNIP), to = Math.min(lines.length, at + SNIP)
+  const w = String(to).length
+  for (let i = from; i <= to; i++) {
+    const l = lines[i - 1], cut = l.length > 200 ? l.slice(0, 200) + ' …' : l
+    console.log(`   ${i === at ? '>' : ' '} ${String(i).padStart(w)}| ${cut}`)
+  }
+}
+
 function printBatch(dir, b) {
   const vp = b.viewport ? ` · page ${b.viewport.w}x${b.viewport.h}${b.viewport.phone ? ' (phone)' : ''}` : ''
   // A comment the user deleted in the page after sending it is withdrawn: left out, only counted.
@@ -1188,12 +1208,13 @@ function printBatch(dir, b) {
     // On the motion (the page's motion dock): a moment or a range of its take, and how to see it.
     if (c.take) console.log(`   at: ${spanOf(c)} of the motion (its take is ${secs(c.take)}): see it with proto shoot ${c.route} ${c.to !== undefined ? `--frames 8 --at ${c.at}-${c.to}` : `--at ${c.at}`}`)
     if (c.target) console.log(`   ${c.point ? 'in' : 'on'}: ${where(c.target)}`)
+    if (c.target?.src) printSource(dir, c.target.src)
     // Written in the page's device view: about that layout, which a shot at that size shows.
     if (c.view) console.log(`   view: ${c.view.size} ${c.view.w}x${c.view.h} (shoot it: proto shoot ${c.route} --size ${c.view.w}x${c.view.h})`)
     for (const [i, t] of (c.tags || []).entries()) console.log(`   with @${i + 1}: ${where(t)}`)
     for (const img of c.images || []) console.log(`   image: ${join(inboxDir(dir), 'taken', b.id, img.file)}${img.name ? `  (${img.name})` : ''}`)
   }
-  console.log(`\nReply: proto reply ${b.id}/<n> "…" --done   (or ${b.id} for the whole batch)\n`)
+  console.log(`\nReply to all at once: proto reply ${b.id} 1 "…" 2 "…" … --done   (or ${b.id}/<n> "…" for one, ${b.id} "…" for the batch)\n`)
 }
 
 async function inbox() {
@@ -1245,8 +1266,10 @@ function reply() {
   const dir = sessionDir()
   need(dir)
   const [ref, ...words] = args
-  const text = words.join(' ').trim()
-  if (!ref || (!text && !flags.done)) die('proto reply <batch>[/<n>] "…" [--done]')
+  // Many at once: proto reply <batch> 1 "…" 2 "…" [--done], one write and one line for a whole batch.
+  const pairs = !ref?.includes('/') && words.length >= 2 && words.length % 2 === 0 && words.every((w, i) => i % 2 || /^\d+$/.test(w))
+  const text = pairs ? '' : words.join(' ').trim()
+  if (!ref || (!text && !flags.done && !pairs)) die('proto reply <batch>[/<n>] "…" [--done]   or   proto reply <batch> 1 "…" 2 "…" … [--done]')
   const [prefix, n] = ref.split('/')
   const ids = batchesIn(dir, 'taken').filter(id => id.startsWith(prefix))
   if (ids.length !== 1) die(ids.length ? `"${prefix}" matches ${ids.length} batches; give more of the id` : `no taken batch "${prefix}" (run proto inbox first)`)
@@ -1255,6 +1278,19 @@ function reply() {
   const at = new Date().toISOString()
   // Whose mark the page puts beside the reply.
   const by = flags.as === 'codex' ? 'codex' : 'claude'
+  if (pairs) {
+    const answered = []
+    for (let i = 0; i < words.length; i += 2) {
+      const c = b.comments.find(x => x.n === Number(words[i])) || die(`batch ${ids[0]} has no comment ${words[i]} (1-${b.comments.length})`)
+      if (c.withdrawn) console.log(`(comment ${words[i]} was withdrawn in the page: the user deleted it after sending)`)
+      c.reply = { text: words[i + 1], at, by }
+      if (flags.done) c.done = true
+      answered.push(words[i])
+    }
+    b.done = b.comments.every(c => c.done)
+    writeJson(file, b)
+    return console.log(`${ids[0]}: replied to ${answered.join(', ')}${flags.done ? ', done' : ''}${b.done ? ' (batch done)' : ''}`)
+  }
   if (n) {
     const c = b.comments.find(x => x.n === Number(n)) || die(`batch ${ids[0]} has no comment ${n} (1-${b.comments.length})`)
     if (c.withdrawn) console.log(`(comment ${n} was withdrawn in the page: the user deleted it after sending)`)

@@ -467,17 +467,34 @@ the same px, and `in:` the element under it: the change is about that spot, not 
 element. The user can delete a comment after sending it: one deleted before you took its batch
 never reaches you, and one deleted after is withdrawn: `proto inbox` leaves it out (the batch
 line counts it, `(1 withdrawn in the page)`) and `proto reply` to it says so. Leave a withdrawn
-comment alone. Read every image. Then, per comment:
+comment alone. Under each comment with an element, the source around its line is printed (`>`
+marks the line), so most comments can be acted on without opening a file.
 
-1. The same as a request typed in chat: `proto ask` (or `proto work … --ask`) in the user's
-   words, then edit the variant.
-2. For optional extras, recheck the batch's `batch.json` for `withdrawn` before editing and
+**Handle a batch as one job, not one comment at a time.** The user is waiting from the moment
+they press Send until the last change is in, and the time goes into round trips and lookups, not
+into the edits. Measured on 12 small comments: one pass took 48 s; a worker per file took 86 s
+(each worker loads its context before it starts, and the slowest sets the finish).
+
+1. Read every image. One `proto ask --each "<comment 1, their words>" "<comment 2>" …` for the
+   batch (`proto work … --ask` first when the batch is about another variant).
+2. What the printed source doesn't show (a class defined elsewhere, a constant), read for all
+   comments together, in one call: one `sed -n`/`grep` per file in a single command, not a tool
+   call per comment.
+3. Make every edit in as few calls as the files allow. Then check what each change pushes into:
+   text that grew, a button that moved or widened, a size that changed can now overlap its
+   neighbour or overflow its box. Fix that in the same pass, and name it in the reply.
+   For optional extras, recheck the batch's `batch.json` for `withdrawn` before editing and
    before replying. A withdrawn request is canceled: stop optional work, and do not claim delivery.
    If no useful extra applies, reply with that reason and `--done`, so it can be requested again.
-   `proto reply <batch>/<n> "<what you changed, one line>" --done` (Codex adds `--as codex`, which
-   puts its mark beside the reply instead of Claude's). The page shows it on the
-   comment. A comment you can't act on gets a reply without `--done` saying why.
-3. When the batch is handled, listen again.
+4. One shot of what changed (`proto shoot <route>`, or `--size` for the view the comments were
+   written in), read once. Skip it when every change is invisible in a shot (hover, behaviour).
+5. One reply call for the batch: `proto reply <batch> 1 "<what you changed>" 2 "…" … --done`
+   (Codex adds `--as codex`, which puts its mark beside the reply instead of Claude's). A comment
+   you can't act on is left out of that call and gets its own reply without `--done` saying why.
+6. Listen again.
+
+Use workers only when comments in one batch each need real design work (a new variant, a section
+rewritten) in separate files: then one subagent per file, at medium effort, all started together.
 
 **A comment on the motion** (`at: 0.35 s` or `at: 0.30–0.62 s`): see `${CLAUDE_SKILL_DIR}/references/motion.md`.
 
@@ -533,7 +550,7 @@ When the user wants the prototypes in a doc or artifact to share: read `${CLAUDE
 | A comment in a view (`view: tablet 834x1194` in a batch) | the shoot its line names, change that layout's breakpoints, reply naming the size (Comments from the page) |
 | To drop a direction or prototype | `proto archive <slug>` (still reachable under Archived) |
 | The prototypes in a doc to share | `proto snap`, then a Claude Doc (section above) |
-| Comments sent from the page (a `proto inbox --wait` exited) | handle each, `proto reply … --done`, listen again |
+| Comments sent from the page (a `proto inbox --wait` exited) | the batch as one job: one `proto ask --each`, edits, one shot, one `proto reply <batch> 1 "…" 2 "…" --done`, listen again |
 | Prototypes for a different project | `proto up --project <dir>`: a separate app for that project |
 
 ## Lifecycle
