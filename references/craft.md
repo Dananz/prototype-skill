@@ -155,17 +155,28 @@ is what gets picked. And the house rules of the tooling:
 2. **A catalog**, `references/fonts.json`: about 50 display, body and utility pairings by mood,
    each spec checked against Google Fonts, 20 of them Hebrew. `proto fonts` lists them (`--hebrew`
    for the Hebrew ones and every Google family that has Hebrew).
-3. **Title faces come from the catalog only** (or the brand's own display face, when the brief
-   has a brand). Choose by the direction's concept, never at random, and say in the plan why the
-   type fits. Body and utility faces may go past the catalog to any Google Font that reads well.
-4. **Never for a title:** the catalog's `neverTitle` list (`proto fonts` prints it): hairline or
-   single-thin-weight faces, high-contrast serifs whose hairlines vanish on a phone (Bodoni,
-   Cormorant, Caslon Display), the defaults every generated page reaches for, novelty and costume
-   faces, scripts and handwriting. One exception: a Hebrew hand-lettered face (Gveret Levin) for a
-   Hebrew title, where a hand-lettered sign is the street's own look; never for a Latin title.
-   A title must read at a glance on a phone: if its thinnest stroke disappears in the mobile
-   shot, change the face, not the size. It is set at weight 400 or heavier; light and thin
-   weights are for body text at most. `proto plan` refuses a plan that breaks this.
+3. **Title faces come from the catalog only** (or the brand's own display face, named in the
+   brief's `brand`). Choose by the direction's concept, never at random, and say in the plan why
+   the type fits. Body and utility faces may go past the catalog to any Google Font that reads
+   well. `proto plan` refuses a title face from anywhere else.
+4. **Never a title, by type** (the catalog holds none of these; `proto fonts` prints the named
+   families):
+   - **Hairline, thin or light:** a title under weight 400, a face that only comes thin, or a
+     high-contrast fashion serif whose hairlines vanish on a phone (Bodoni, Didot, Cormorant,
+     Caslon Display, Playfair).
+   - **Script and handwriting:** calligraphy, brush, marker, casual hand. One exception: a Hebrew
+     hand-lettered sign face (Gveret Levin) for a Hebrew title.
+   - **Novelty and costume:** pixel and retro-game, outline, shadow and inline, distressed,
+     horror, comic, toy-like rounded, modular gimmicks.
+   - **Defaults:** the neutral sans every generated page reaches for (Inter, Roboto, Open Sans,
+     Montserrat, Poppins, Geist, DM Sans; in Hebrew Heebo, Assistant, Noto) and the stock
+     elegant serif (Playfair).
+   - **Text faces drawn for reading at 16 px:** book serifs and UI sans (EB Garamond, Spectral,
+     Public Sans, Hanken Grotesk). They are body faces.
+   - **Monospace,** unless the direction's concept is code or a terminal.
+
+   And a title must read at a glance on a phone: if its thinnest stroke disappears in the
+   mobile shot, change the face, not the size.
 
 **Hebrew is a must** in a Hebrew product, and for Arabic the same with its script:
 

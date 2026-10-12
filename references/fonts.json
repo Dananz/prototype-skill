@@ -221,19 +221,6 @@
    }
   },
   {
-   "mood": "Essay",
-   "script": "latin",
-   "display": {
-    "family": "Spectral",
-    "spec": "Spectral:wght@200;300;400;500;600;700;800",
-    "category": "Serif"
-   },
-   "body": {
-    "family": "Karla",
-    "spec": "Karla:ital,wght@0,200..800;1,200..800"
-   }
-  },
-  {
    "mood": "Newsroom data",
    "script": "latin",
    "display": {
@@ -244,19 +231,6 @@
    "body": {
     "family": "Chivo Mono",
     "spec": "Chivo Mono:ital,wght@0,100..900;1,100..900"
-   }
-  },
-  {
-   "mood": "Old-style and modern",
-   "script": "latin",
-   "display": {
-    "family": "EB Garamond",
-    "spec": "EB Garamond:ital,wght@0,400..800;1,400..800",
-    "category": "Serif"
-   },
-   "body": {
-    "family": "Schibsted Grotesk",
-    "spec": "Schibsted Grotesk:ital,wght@0,400..900;1,400..900"
    }
   },
   {
@@ -351,19 +325,6 @@
    }
   },
   {
-   "mood": "Neutral system, many weights",
-   "script": "hebrew",
-   "display": {
-    "family": "Noto Serif Hebrew",
-    "spec": "Noto Serif Hebrew:wght@100..900",
-    "category": "Serif"
-   },
-   "body": {
-    "family": "Noto Sans Hebrew",
-    "spec": "Noto Sans Hebrew:wght@100..900"
-   }
-  },
-  {
    "mood": "Hand-lettered sign",
    "script": "hebrew",
    "display": {
@@ -443,23 +404,6 @@
    "body": {
     "family": "David Libre",
     "spec": "David Libre:wght@400;500;700"
-   }
-  },
-  {
-   "mood": "Product UI, Hebrew",
-   "script": "hebrew",
-   "display": {
-    "family": "Heebo",
-    "spec": "Heebo:wght@100..900",
-    "category": "Sans Serif"
-   },
-   "body": {
-    "family": "Heebo",
-    "spec": "Heebo:wght@100..900"
-   },
-   "utility": {
-    "family": "Cousine",
-    "spec": "Cousine:wght@400;700"
    }
   }
  ],
@@ -728,6 +672,58 @@
   {
    "family": "Bellefair",
    "why": "light hairline display"
+  },
+  {
+   "family": "Heebo",
+   "why": "the Hebrew default"
+  },
+  {
+   "family": "Assistant",
+   "why": "the Hebrew default"
+  },
+  {
+   "family": "Noto Sans Hebrew",
+   "why": "the system default"
+  },
+  {
+   "family": "Noto Serif Hebrew",
+   "why": "the system default"
+  },
+  {
+   "family": "EB Garamond",
+   "why": "a text face"
+  },
+  {
+   "family": "Spectral",
+   "why": "a text face"
+  },
+  {
+   "family": "Public Sans",
+   "why": "a text face"
+  },
+  {
+   "family": "Hanken Grotesk",
+   "why": "a text face"
+  },
+  {
+   "family": "Didot",
+   "why": "high-contrast hairlines"
+  },
+  {
+   "family": "GFS Didot",
+   "why": "high-contrast hairlines"
+  },
+  {
+   "family": "Playfair",
+   "why": "the default elegant serif"
   }
+ ],
+ "neverTitleTypes": [
+  "Hairline, thin or light: a title under weight 400, a face that only comes thin, or a high-contrast fashion serif whose hairlines vanish on a phone (Bodoni, Didot, Cormorant, Caslon Display, Playfair)",
+  "Script and handwriting: calligraphy, brush, marker, casual hand. One exception: a Hebrew hand-lettered sign face for a Hebrew title",
+  "Novelty and costume: pixel and retro-game, outline, shadow and inline, distressed, horror, comic, toy-like rounded, modular gimmicks",
+  "Defaults: the neutral sans every generated page reaches for (Inter, Roboto, Open Sans, Montserrat, Poppins, Geist, DM Sans; in Hebrew Heebo, Assistant, Noto) and the stock elegant serif (Playfair)",
+  "Text faces drawn for reading at 16px: book serifs and UI sans (EB Garamond, Spectral, Public Sans, Hanken Grotesk). They are body faces",
+  "Monospace, except when the direction's concept is code or a terminal"
  ]
 }

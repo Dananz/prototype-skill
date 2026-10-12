@@ -228,14 +228,14 @@ if (!/nothing matches \[data-shoot=missing\]/.test(stateOut)) fail('proto shoot 
 proto(['add', 'home', '--variants', 'C:Map first'])
 // The one-line plans show on the placeholders they name, and only there.
 mkdirSync(join(app, '.proto', 'briefs'), { recursive: true })
-writeFileSync(join(app, '.proto', 'briefs', 'home.json'), JSON.stringify({ facts: 'Fuel prices', directions: { C: { name: 'Map first', concept: 'The map is the page', display: 'Fraunces', body: 'Inter', surface: '#0b1d2a', ink: '#f2efe6', accent: '#ff6a3d', signature: 'Pins as prices' } } }))
+writeFileSync(join(app, '.proto', 'briefs', 'home.json'), JSON.stringify({ facts: 'Fuel prices', directions: { C: { name: 'Map first', concept: 'The map is the page', display: 'Young Serif', body: 'Inter', surface: '#0b1d2a', ink: '#f2efe6', accent: '#ff6a3d', signature: 'Pins as prices' } } }))
 if (!/plans shown: C/.test(proto(['plan', 'home']))) fail('proto plan home did not show C\'s plan')
 const planned = readFileSync(join(app, 'src', 'protos', 'home', 'C.tsx'), 'utf8')
 if (!planned.startsWith('// Placeholder while') || !planned.includes('"Map first"') || !planned.includes('#ff6a3d')) fail(`home/C.tsx is not its plan card: ${planned.slice(0, 300)}`)
 if (readFileSync(join(app, 'src', 'protos', 'home', 'B.tsx'), 'utf8').includes('one-line plan')) fail('proto plan wrote over B, which had no plan')
 // A title face on the never-for-titles list is refused.
 writeFileSync(join(app, '.proto', 'briefs', 'home.json'), JSON.stringify({ directions: { B: { name: 'Thin', display: "font('Italiana')", body: 'Inter' } } }))
-if (!/never a title face/.test(proto(['plan', 'home'], { ok: false }))) fail('proto plan took Italiana as a title face')
+if (!/not a title face/.test(proto(['plan', 'home'], { ok: false }))) fail('proto plan took Italiana as a title face')
 const sheetOut = proto(['shoot', 'home', '--sheet'])
 const sheet = sheetOut.split(/\r?\n/)[0].trim()
 if (!sheet.endsWith('home-sheet.png') || !existsSync(sheet)) fail(`proto shoot --sheet should print home-sheet.png first, printed: ${sheetOut}`)

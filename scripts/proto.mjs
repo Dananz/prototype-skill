@@ -474,11 +474,22 @@ function plan() {
   const brief = readJson(file, null) || die(`write the one-line plans to ${tilde(file)} first: { "facts": "…", "directions": { "A": { "name", "concept", "display", "body", "surface", "ink", "accent", "signature" } } }`)
   // Titles never use a face on the catalog's never-for-titles list; a plan that does is sent back.
   // A Hebrew hand-lettered sign is part of the street's own look, so a few of them are fine in Hebrew.
-  const never = new Map((readJson(join(SKILL, 'references', 'fonts.json'), {}).neverTitle || []).map(n => [n.family.toLowerCase(), n]))
+  // Title faces come from the catalog's display faces only (or the brand's own face, named in the
+  // brief's "brand"), so a type on its never-for-titles list can't slip in from outside it.
+  const cat = readJson(join(SKILL, 'references', 'fonts.json'), {})
+  const never = new Map((cat.neverTitle || []).map(n => [n.family.toLowerCase(), n]))
+  const allowed = new Set((cat.pairings || []).map(p => p.display.family.toLowerCase()))
   const hebrew = d => /[\u0590-\u05FF]/.test(`${d.name} ${d.concept} ${brief.facts}`)
-  const banned = Object.entries(brief.directions || {}).map(([id, d]) => [id, String(d.display || '').replace(/^font\(\s*['"]?|['"]?\s*\)$/g, '').split(':')[0].trim(), d])
-    .filter(([, f, d]) => never.has(f.toLowerCase()) && !(never.get(f.toLowerCase()).hebrewOk && hebrew(d)))
-  if (banned.length) die(`never a title face (references/fonts.json, neverTitle): ${banned.map(([id, f]) => `${id} ${f} (${never.get(f.toLowerCase()).why})`).join(', ')}. Choose another display face for ${banned.map(([id]) => id).join(', ')}.`)
+  const brand = String(brief.brand || '').toLowerCase()
+  const why = (f, d) => {
+    const n = never.get(f.toLowerCase())
+    if (n && !(n.hebrewOk && hebrew(d))) return n.why
+    if (n?.hebrewOk && !hebrew(d)) return n.why
+    if (!f) return 'no display face'
+    if (!allowed.has(f.toLowerCase()) && !brand.includes(f.toLowerCase())) return 'not a title face in the catalog'
+  }
+  const banned = Object.entries(brief.directions || {}).map(([id, d]) => { const f = String(d.display || '').replace(/^font\(\s*['"]?|['"]?\s*\)$/g, '').split(':')[0].trim(); return [id, f, why(f, d)] }).filter(([, , w]) => w)
+  if (banned.length) die(`not a title face: ${banned.map(([id, f, w]) => `${id} ${f || '?'} (${w})`).join(', ')}. Title faces come from \`proto fonts\` (references/fonts.json), or the brand's own face named in "brand". Choose another for ${banned.map(([id]) => id).join(', ')}.`)
   const kit = STACKS[s.stack]
   const card = readFileSync(join(APP, 'stubs', kit.plan), 'utf8')
   const shown = []
