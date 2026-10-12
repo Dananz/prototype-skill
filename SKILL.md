@@ -189,8 +189,8 @@ about half a minute, so the order is:
 1. `proto add` with the directions' names, so the page shows their placeholders at once.
 2. Read `${CLAUDE_SKILL_DIR}/references/craft.md` and take its stance: a studio design lead whose
    client rejected anything templated, one real aesthetic risk per direction, in the look, with
-   a simple experience. Draw a pool of type (`proto fonts --draw 10`, with `--hebrew` for a Hebrew
-   product).
+   a simple experience. Read the type catalog (`proto fonts`, with `--hebrew` for a Hebrew
+   product): title faces come from it only, never from its never-for-titles list.
 3. **One line per direction** into the app's `.proto/briefs/<slug>.json`, then `proto plan <slug>`:
    `{ "facts": "…", "brand": "…", "directions": { "A": { "name", "concept", "display", "body",
    "surface", "ink", "accent", "signature" } } }` (display and body are `font()` specs; `brand`

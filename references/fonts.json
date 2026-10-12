@@ -217,32 +217,6 @@
    }
   },
   {
-   "mood": "Gallery and fashion",
-   "script": "latin",
-   "display": {
-    "family": "Italiana",
-    "spec": "Italiana",
-    "category": "Sans Serif"
-   },
-   "body": {
-    "family": "Jost",
-    "spec": "Jost:ital,wght@0,100..900;1,100..900"
-   }
-  },
-  {
-   "mood": "Friendly and round",
-   "script": "latin",
-   "display": {
-    "family": "Fredoka",
-    "spec": "Fredoka:wght@300..700",
-    "category": "Sans Serif"
-   },
-   "body": {
-    "family": "Nunito Sans",
-    "spec": "Nunito Sans:ital,wght@0,200..1000;1,200..1000"
-   }
-  },
-  {
    "mood": "Condensed utility",
    "script": "latin",
    "display": {
@@ -312,36 +286,6 @@
    }
   },
   {
-   "mood": "Tall and light",
-   "script": "latin",
-   "display": {
-    "family": "Darker Grotesque",
-    "spec": "Darker Grotesque:wght@300..900",
-    "category": "Sans Serif"
-   },
-   "body": {
-    "family": "Spline Sans",
-    "spec": "Spline Sans:wght@300..700"
-   },
-   "utility": {
-    "family": "Spline Sans Mono",
-    "spec": "Spline Sans Mono:ital,wght@0,300..700;1,300..700"
-   }
-  },
-  {
-   "mood": "Diner retro",
-   "script": "latin",
-   "display": {
-    "family": "Shrikhand",
-    "spec": "Shrikhand",
-    "category": "Display"
-   },
-   "body": {
-    "family": "Work Sans",
-    "spec": "Work Sans:ital,wght@0,100..900;1,100..900"
-   }
-  },
-  {
    "mood": "Old-style and modern",
    "script": "latin",
    "display": {
@@ -352,23 +296,6 @@
    "body": {
     "family": "Schibsted Grotesk",
     "spec": "Schibsted Grotesk:ital,wght@0,400..900;1,400..900"
-   }
-  },
-  {
-   "mood": "Precise product UI",
-   "script": "latin",
-   "display": {
-    "family": "Geist",
-    "spec": "Geist:ital,wght@0,100..900;1,100..900",
-    "category": "Sans Serif"
-   },
-   "body": {
-    "family": "Geist",
-    "spec": "Geist:ital,wght@0,100..900;1,100..900"
-   },
-   "utility": {
-    "family": "Geist Mono",
-    "spec": "Geist Mono:ital,wght@0,100..900;1,100..900"
    }
   },
   {
@@ -502,19 +429,6 @@
    }
   },
   {
-   "mood": "Chalkboard, playful",
-   "script": "hebrew",
-   "display": {
-    "family": "Amatic SC",
-    "spec": "Amatic SC:wght@400;700",
-    "category": "Handwriting"
-   },
-   "body": {
-    "family": "Varela Round",
-    "spec": "Varela Round"
-   }
-  },
-  {
    "mood": "Old-style serif",
    "script": "hebrew",
    "display": {
@@ -525,19 +439,6 @@
    "body": {
     "family": "IBM Plex Sans Hebrew",
     "spec": "IBM Plex Sans Hebrew:wght@100;200;300;400;500;600;700"
-   }
-  },
-  {
-   "mood": "Soft and friendly",
-   "script": "hebrew",
-   "display": {
-    "family": "Playpen Sans Hebrew",
-    "spec": "Playpen Sans Hebrew:wght@100..800",
-    "category": "Handwriting"
-   },
-   "body": {
-    "family": "Rubik",
-    "spec": "Rubik:ital,wght@0,300..900;1,300..900"
    }
   },
   {
@@ -564,58 +465,6 @@
     "family": "Rubik",
     "spec": "Rubik:ital,wght@0,300..900;1,300..900",
     "category": "Sans Serif"
-   },
-   "body": {
-    "family": "Assistant",
-    "spec": "Assistant:wght@200..800"
-   }
-  },
-  {
-   "mood": "Modular, digital",
-   "script": "hebrew",
-   "display": {
-    "family": "Handjet",
-    "spec": "Handjet:wght@100..900",
-    "category": "Display"
-   },
-   "body": {
-    "family": "Rubik",
-    "spec": "Rubik:ital,wght@0,300..900;1,300..900"
-   }
-  },
-  {
-   "mood": "Heritage script",
-   "script": "hebrew",
-   "display": {
-    "family": "Solitreo",
-    "spec": "Solitreo",
-    "category": "Handwriting"
-   },
-   "body": {
-    "family": "Frank Ruhl Libre",
-    "spec": "Frank Ruhl Libre:wght@300..900"
-   }
-  },
-  {
-   "mood": "Soft rounded",
-   "script": "hebrew",
-   "display": {
-    "family": "Fredoka",
-    "spec": "Fredoka:wght@300..700",
-    "category": "Sans Serif"
-   },
-   "body": {
-    "family": "Heebo",
-    "spec": "Heebo:wght@100..900"
-   }
-  },
-  {
-   "mood": "Rough street display",
-   "script": "hebrew",
-   "display": {
-    "family": "Rubik Dirt",
-    "spec": "Rubik Dirt",
-    "category": "Display"
    },
    "body": {
     "family": "Assistant",
@@ -729,5 +578,183 @@
   "Suez One",
   "Tinos",
   "Varela Round"
+ ],
+ "neverTitle": [
+  {
+   "family": "Italiana",
+   "why": "hairline, one thin weight"
+  },
+  {
+   "family": "Poiret One",
+   "why": "hairline"
+  },
+  {
+   "family": "Julius Sans One",
+   "why": "hairline"
+  },
+  {
+   "family": "Josefin Sans",
+   "why": "thin geometric, reads as a template"
+  },
+  {
+   "family": "Raleway",
+   "why": "thin default of a decade of templates"
+  },
+  {
+   "family": "Darker Grotesque",
+   "why": "light and tall, falls apart large"
+  },
+  {
+   "family": "Megrim",
+   "why": "hairline novelty"
+  },
+  {
+   "family": "Inter",
+   "why": "the default"
+  },
+  {
+   "family": "Roboto",
+   "why": "the default"
+  },
+  {
+   "family": "Open Sans",
+   "why": "the default"
+  },
+  {
+   "family": "Lato",
+   "why": "the default"
+  },
+  {
+   "family": "Montserrat",
+   "why": "the default"
+  },
+  {
+   "family": "Poppins",
+   "why": "the default"
+  },
+  {
+   "family": "Nunito",
+   "why": "the default"
+  },
+  {
+   "family": "Space Grotesk",
+   "why": "the AI default"
+  },
+  {
+   "family": "Playfair Display",
+   "why": "the default 'elegant' serif"
+  },
+  {
+   "family": "Geist",
+   "why": "the default product face"
+  },
+  {
+   "family": "DM Sans",
+   "why": "the default product face"
+  },
+  {
+   "family": "Plus Jakarta Sans",
+   "why": "the default product face"
+  },
+  {
+   "family": "Lobster",
+   "why": "costume"
+  },
+  {
+   "family": "Pacifico",
+   "why": "costume"
+  },
+  {
+   "family": "Bungee",
+   "why": "novelty"
+  },
+  {
+   "family": "Bungee Shade",
+   "why": "novelty"
+  },
+  {
+   "family": "Righteous",
+   "why": "novelty"
+  },
+  {
+   "family": "Press Start 2P",
+   "why": "novelty"
+  },
+  {
+   "family": "Creepster",
+   "why": "novelty"
+  },
+  {
+   "family": "Monoton",
+   "why": "novelty"
+  },
+  {
+   "family": "Bangers",
+   "why": "novelty"
+  },
+  {
+   "family": "Fredoka",
+   "why": "toy-like"
+  },
+  {
+   "family": "Baloo 2",
+   "why": "toy-like"
+  },
+  {
+   "family": "Comic Neue",
+   "why": "novelty"
+  },
+  {
+   "family": "Shrikhand",
+   "why": "costume"
+  },
+  {
+   "family": "Abril Fatface",
+   "why": "overused costume"
+  },
+  {
+   "family": "Permanent Marker",
+   "why": "novelty"
+  },
+  {
+   "family": "Rubik Dirt",
+   "why": "distressed novelty"
+  },
+  {
+   "family": "Handjet",
+   "why": "modular novelty"
+  },
+  {
+   "family": "Dancing Script",
+   "why": "script"
+  },
+  {
+   "family": "Great Vibes",
+   "why": "script"
+  },
+  {
+   "family": "Satisfy",
+   "why": "script"
+  },
+  {
+   "family": "Caveat",
+   "why": "handwriting"
+  },
+  {
+   "family": "Kalam",
+   "why": "handwriting"
+  },
+  {
+   "family": "Amatic SC",
+   "why": "thin handwriting"
+  },
+  {
+   "family": "Playpen Sans Hebrew",
+   "why": "handwriting"
+  },
+  {
+   "family": "Solitreo",
+   "why": "script"
+  }
  ]
 }

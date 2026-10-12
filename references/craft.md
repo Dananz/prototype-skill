@@ -155,11 +155,13 @@ is what gets picked. And the house rules of the tooling:
 2. **A catalog**, `references/fonts.json`: about 50 display, body and utility pairings by mood,
    each spec checked against Google Fonts, 20 of them Hebrew. `proto fonts` lists them (`--hebrew`
    for the Hebrew ones and every Google family that has Hebrew).
-3. **A pool to choose from**, `proto fonts --draw 10 [--hebrew]`: ten pairings at random, no family
-   twice, so you start from faces you wouldn't reach for by habit. Choose the one that fits each
-   direction's concept, never one because it was drawn; mix faces across pairings, or go past the
-   pool to any Google Font the subject calls for (its spec is on its page at fonts.google.com; a
-   wrong weight in the spec fails the whole request). Say in the plan why the type fits.
+3. **Title faces come from the catalog only** (or the brand's own display face, when the brief
+   has a brand). Choose by the direction's concept, never at random, and say in the plan why the
+   type fits. Body and utility faces may go past the catalog to any Google Font that reads well.
+4. **Never for a title:** the catalog's `neverTitle` list (`proto fonts` prints it): hairline or
+   single-thin-weight faces, the defaults every generated page reaches for, novelty and costume
+   faces, scripts and handwriting. A title is set at weight 400 or heavier; light and thin
+   weights are for body text at most. `proto plan` refuses a plan that breaks this.
 
 **Hebrew is a must** in a Hebrew product, and for Arabic the same with its script:
 

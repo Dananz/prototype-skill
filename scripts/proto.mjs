@@ -472,6 +472,10 @@ function plan() {
   if (!slug || !existsSync(join(pdir, 'meta.ts'))) die('which prototype? proto plan <slug> (after proto add)')
   const file = join(dir, '.proto', 'briefs', `${slug}.json`)
   const brief = readJson(file, null) || die(`write the one-line plans to ${tilde(file)} first: { "facts": "…", "directions": { "A": { "name", "concept", "display", "body", "surface", "ink", "accent", "signature" } } }`)
+  // Titles never use a face on the catalog's never-for-titles list; a plan that does is sent back.
+  const never = new Map((readJson(join(SKILL, 'references', 'fonts.json'), {}).neverTitle || []).map(n => [n.family.toLowerCase(), n.why]))
+  const banned = Object.entries(brief.directions || {}).map(([id, d]) => [id, String(d.display || '').replace(/^font\(\s*['"]?|['"]?\s*\)$/g, '').split(':')[0].trim()]).filter(([, f]) => never.has(f.toLowerCase()))
+  if (banned.length) die(`never a title face (references/fonts.json, neverTitle): ${banned.map(([id, f]) => `${id} ${f} (${never.get(f.toLowerCase())})`).join(', ')}. Choose another display face for ${banned.map(([id]) => id).join(', ')}.`)
   const kit = STACKS[s.stack]
   const card = readFileSync(join(APP, 'stubs', kit.plan), 'utf8')
   const shown = []
@@ -1700,6 +1704,7 @@ function fonts() {
     console.log(`  font(${specs.map(s => `'${s}'`).join(', ')})`)
   }
   if (flags.hebrew && !flags.draw) console.log(`\nEvery Google family with Hebrew: ${cat.hebrew.join(', ')}`)
+  console.log(`\nNever for a title: ${(cat.neverTitle || []).map(n => n.family).join(', ')}`)
 }
 
 const commands = {
