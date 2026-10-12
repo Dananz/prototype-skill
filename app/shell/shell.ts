@@ -722,6 +722,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (moved) side.querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'nearest' })
   }
   addEventListener('hashchange', () => {
+    // The page in a view goes where the page outside is. A place it doesn't know yet (a variant just
+    // added, before its module reaches this page) it waits for (setProtos), instead of falling back
+    // somewhere the page outside would then follow.
+    if (framed && !parseHash()) return
     const p = parseHash() ?? defaultPlace()
     if (location.hash !== hashOf(p)) history.replaceState(null, '', hashOf(p))
     arrive(p, true)
@@ -2173,13 +2177,20 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     setProtos(next: Proto[]) {
       const before = new Map(protos.map(p => [p.id, new Set(p.variants.map(v => v.id))]))
       protos = next
-      const fresh = next.filter(p => !p.archived && !before.has(p.id))
-      const grown = next.map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
-      if (fresh.length) return go({ view: 'proto', proto: fresh.at(-1)!.id })
-      const here = st.place.view === 'proto' ? st.place.proto : null
-      const g = grown.find(x => x.p.id !== here)
-      if (g) return go(g.added.length === 1 ? { view: 'variant', proto: g.p.id, variant: g.added[0].id } : { view: 'proto', proto: g.p.id })
-      if (!valid(st.place)) return go(defaultPlace())
+      if (framed) {
+        // The page in a view follows nothing itself: the page outside does, and it goes along. A place
+        // it was waiting for (see hashchange) is one it knows now.
+        const p = parseHash()
+        if (p && hashOf(p) !== hashOf(st.place)) return arrive(p, false)
+      } else {
+        const fresh = next.filter(p => !p.archived && !before.has(p.id))
+        const grown = next.map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
+        if (fresh.length) return go({ view: 'proto', proto: fresh.at(-1)!.id })
+        const here = st.place.view === 'proto' ? st.place.proto : null
+        const g = grown.find(x => x.p.id !== here)
+        if (g) return go(g.added.length === 1 ? { view: 'variant', proto: g.p.id, variant: g.added[0].id } : { view: 'proto', proto: g.p.id })
+        if (!valid(st.place)) return go(defaultPlace())
+      }
       // Same place, new modules (a meta edit or a re-evaluated file): swap without a fade. A
       // variant that failed to load gets another try with the fresh registry.
       const refs = refsFor(st.place)
