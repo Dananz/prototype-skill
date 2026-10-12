@@ -3,8 +3,7 @@
 // them (one by one and on a contact sheet) and snapshot them, open a state listed in meta.ts,
 // print a variant's handoff checklist, send comments, decisions and copy choices from the page,
 // record, scrub and comment on a variant's motion, view and comment on it at another size, then
-// stop and delete the session. Run by
-// .github/workflows/smoke.yml on Windows, Linux and macOS.
+// stop and delete the session. Run locally with node .github/smoke.mjs.
 import { spawn, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { get, request } from 'node:http'

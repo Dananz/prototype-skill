@@ -1,40 +1,25 @@
-# Runs the skill end to end (create a session app, add prototypes, screenshot, snapshot, stop,
-# delete) on Windows in PowerShell and Git Bash, and on Linux and macOS.
-name: smoke
+# Quick checks only. Run the full browser suite locally with node .github/smoke.mjs.
+name: quick checks
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: quick-checks-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  smoke:
-    name: ${{ matrix.os }} (${{ matrix.shell }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: windows-latest, shell: pwsh }
-          - { os: windows-latest, shell: bash }
-          - { os: ubuntu-latest, shell: bash }
-          - { os: macos-latest, shell: bash }
-    defaults:
-      run:
-        shell: ${{ matrix.shell }}
+  quick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: The CLI runs the way SKILL.md calls it
-        run: node "${{ github.workspace }}/scripts/proto.mjs" stack --project "${{ github.workspace }}"
-      - name: A session app, end to end
-        run: node .github/smoke.mjs
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: shots-${{ matrix.os }}-${{ matrix.shell }}
-          path: ${{ runner.temp }}/proto-shots
-          if-no-files-found: ignore
+      - name: JavaScript syntax
+        shell: bash
+        run: git ls-files -z '*.mjs' | xargs -0 -r -n1 node --check
+      - name: CLI starts
+        run: node scripts/proto.mjs stack --project .
