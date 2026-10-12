@@ -129,7 +129,7 @@ the app), do the steps below and save one at the end.
    on it (% of pixels off, per column and per third, and a difference image): keep going while it
    falls, aim under about 2 % on what the user will judge, and stop when two tries in a row don't
    lower it. A number to stop at is faster than judging by eye; measured, it also replaces writing
-   pixel-measuring scripts.
+   pixel-measuring scripts. Once it matches, `proto done <slug>/A`.
 7. **Save the kit** as soon as Current matches, before the other variants, so the next session
    starts here instead of at step 1:
 
@@ -180,9 +180,27 @@ and the subject is photo-led, start its images while you write the code (craft.m
 Keep the real-product grounding, exact Current/reference match, real tokens/assets/chrome,
 working interactions, responsive layout and necessary visual QA below. For an existing
 product, retain A:Current and build the first proposed direction as B; for a new product,
-build A. Finish and check that proposed direction before writing the remaining variants,
-so the user can use it while the rest of the exploration follows through HMR. Do not weaken
-Current's reconstruction or fidelity checks to get there sooner.
+build A. It comes first and is finished first, but the others don't wait for it: once the plans
+and the shared parts exist (and Current matches, for an existing product), the remaining
+directions start building alongside it, so the user watches all of them take shape (below). Do
+not weaken Current's reconstruction or fidelity checks to get there sooner.
+
+**Build live, in passes.** The user watches every variant fill in, so nothing is written whole at
+the end. Each variant goes in passes, saved after each:
+
+1. **Skeleton**, one write, within about a minute of `proto add`: the screen at rest laid out,
+   real copy, the plan's palette and fonts (`font()`), plain shapes where images will go. It
+   already reads as its direction.
+2. **Sections**, one edit each: the real content, the main interaction, images as they land.
+3. **Finish:** states, motion, details, the checks (craft check, shots). Then
+   `proto done <slug>/<letter>`.
+
+Every save must render: write each pass whole (no half-written JSX), and import only files that
+already exist. From `proto add` until `proto done`, the page marks the variant Building, and an
+edit that throws keeps its last good frame (frozen) instead of showing an error, so a mistake
+mid-build costs nothing on screen; after `done`, errors show again. A variant never marked done
+stops being marked a few minutes after its last edit. Shots, the sheet and the critic are for
+finished variants: don't spend them on a half-built one.
 
 Deliver that first usable direction before optional review content. Do not author `useHints`,
 scenario-control wiring, guided spotlight tours or `useCopy` alternatives on the initial pass
@@ -202,9 +220,8 @@ use the existing Try it panel or T button (the pill's menu on a phone).
 **Preserve the design exploration.** The user's number when they give one ("/prototype 3 …").
 Otherwise the scope sets it: 5 for a screen or a flow, 3 for a component or a section, 2 for a
 choice between two behaviors (follow the system setting or not, a sheet or a page). The first
-usable output changes the order of delivery, not this count. After that first direction is
-usable and checked, continue the remaining requested/default directions without waiting for
-another prompt. More like this in Actions asks for additional directions later (two without
+usable output changes the order of delivery, not this count. Build the remaining
+requested/default directions alongside it (above), without waiting for another prompt. More like this in Actions asks for additional directions later (two without
 a count). If Try it or copy alternatives were explicitly requested at the outset, add them
 after the first usable prototype is in place.
 
@@ -309,8 +326,8 @@ enters, a toast lands, the feel of a spring), or a comment arrives on the motion
 `${CLAUDE_SKILL_DIR}/references/motion.md` first: `useMotion`, motion written in CSS or `element.animate()`, and reading it in
 frames with `proto shoot --at` / `--frames`.
 
-**Build remaining requested variants in parallel when you can.** After the first proposed
-direction is usable and checked, when there are 3 or more remaining variants to write, the
+**Build remaining requested variants in parallel when you can.** As soon as the plans and the
+shared parts exist, while you build the first direction, when there are 3 or more remaining variants to write, the
 harness has subagents, and Current matches its reference (for a new product: once the tokens and
 `parts.tsx` exist), give each variant its own subagent. First write everything shared yourself
 (`parts.tsx`, `src/theme.css`, `meta.ts`, packages), then start every subagent in one message.
@@ -327,6 +344,8 @@ Each is told:
   nothing; it asks for those in its reply;
 - `--session <the main session's $CLAUDE_CODE_SESSION_ID>` on every `proto` call, plus
   `--project <project root>` if it works in another folder; never `proto up`, `add`, `pick` or `work`;
+- to build live in passes (skeleton first, saved within about a minute, then section by section;
+  every save renders), and to run `proto done <slug>/<letter>` when its checks pass;
 - to shoot only its own variant (`proto shoot <slug>/<letter>`), read both single shots at full
   size, run craft.md's short craft check (questions 1, 5 and 7) on them, fix, and shoot again;
   where it rebuilds something that has a reference, to loop on `proto compare` with the stop rule above;
@@ -349,12 +368,14 @@ or third rebuild of that region, and not for a one-off round of directions.
 
 When all are back, run one `proto shoot <slug> --sheet`, read it, fix what the sheet shows and
 what the subagents named, write each variant's `about` and `states` into `meta.ts`, then go on
-with step 5 (which starts with the critic). Without subagents, write the variants one after another; the sheet is the same.
+with step 5 (which starts with the critic). Without subagents, write every direction's skeleton
+first, one after another, then build each out in turn and mark it done: the user sees them all
+within minutes either way. The sheet is the same.
 
 ## 5. Look at it, then iterate
 
 **Craft first, then defects.** The first direction gets craft.md's full craft check from you,
-on its single shots at full size, before the others are written. Once every direction is built,
+on its single shots at full size, once it is built (the others are building meanwhile). Once every direction is built,
 start **the critic** (craft.md, section 10): one subagent with fresh eyes that reads the plans,
 the sheet and the single shots and returns the three changes that would most raise each
 direction. Apply them (without subagents, run that review yourself as a separate pass). Then the

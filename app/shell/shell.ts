@@ -36,7 +36,7 @@ export type Proto = { id: string; title: string; ask: string; kind: 'web' | 'pho
 export type Ref = { proto: string; variant: string }
 /** work: the variant being changed now; before: the ones worked on before it (newest first);
  *  asks: what the user asked for on each variant ("pricing/C"), oldest first. */
-export type Session = { id: string; name: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]> }
+export type Session = { id: string; name: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
 type Mount = (el: HTMLElement, component: any) => () => void
 // A variant can be shown in one of its states, or through a tool: all its states at once
 // (all), playing through them (play), or next to another variant (compare).
@@ -191,7 +191,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const active = () => protos.filter(p => !p.archived)
   const archived = () => protos.filter(p => p.archived)
   const byId = (id: string) => protos.find(p => p.id === id)
-  const editing = (p: string, v?: string) => !!st.editing && st.editing.proto === p && (!v || st.editing.variant === v)
+  // A variant is building from `proto add` until `proto done` (or, if that never comes, a few
+  // minutes after its last edit): it is marked, and a render error keeps its last good frame.
+  const editedAt = new Map<string, number>()
+  const BUILD_IDLE = 180_000
+  const building = (p: string, v: string) => {
+    const at = session.building?.[`${p}/${v}`]
+    return !!at && Date.now() - Math.max(Date.parse(at), editedAt.get(`${p}/${v}`) ?? 0) < BUILD_IDLE
+  }
+  const buildingIn = (p: string) => Object.keys(session.building ?? {}).some(k => k.startsWith(`${p}/`) && building(p, k.slice(p.length + 1)))
+  const markBuilding = (host: HTMLElement) => { const [p, v] = (host.dataset.route ?? '').split('/'); host.toggleAttribute('data-building', !!v && building(p, v)) }
+  const BUILDING_BOX = '<div class="grid min-h-full place-items-center p-10 text-xs text-zinc-400">Building…</div>'
+  const editing = (p: string, v?: string) => (!!st.editing && st.editing.proto === p && (!v || st.editing.variant === v)) || (v ? building(p, v) : buildingIn(p))
   const cur = () => (st.place.view === 'session' ? undefined : byId(st.place.proto))
 
   // ---------- the working variant ----------
@@ -482,6 +493,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       live.set(host, () => {})
       // Copy choices are kept per variant, so every place it is mounted reads the same words.
       copy.bind(host, routeOfFile(v.file))
+      host.dataset.route = routeOfFile(v.file)
+      markBuilding(host)
       const here = () => !gone && live.has(host)
       return load(v).then(
         c => {
@@ -489,7 +502,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           live.set(host, mount(host, c))
           if (s?.click.length) return replay(host, s.click, here).then(miss => { if (miss && here()) missed(host, s, miss) })
         },
-        e => { if (here()) host.innerHTML = `<pre class="m-4 whitespace-pre-wrap rounded-lg bg-rose-50 p-4 text-xs text-rose-700 dark:bg-rose-950 dark:text-rose-200">${esc(e?.stack || e)}</pre>` })
+        // A file that doesn't load yet while it is being built says so, quietly; its error shows
+        // once it is done (setSession tries it again then).
+        e => { if (here()) host.innerHTML = host.hasAttribute('data-building') ? BUILDING_BOX : `<pre class="m-4 whitespace-pre-wrap rounded-lg bg-rose-50 p-4 text-xs text-rose-700 dark:bg-rose-950 dark:text-rose-200">${esc(e?.stack || e)}</pre>` })
     }
     const stop = (host: HTMLElement) => {
       const off = live.get(host)
@@ -813,7 +828,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const k = pickOf(p)
     return `<div class="${GRID} p-4 sm:p-6">${lobbyOrder(p).map(v => `<div class="min-w-0 ${k && v.id !== k ? 'opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" class="group block w-full min-w-0 text-left">
         <div class="overflow-hidden rounded-lg transition ${v.id === k ? 'ring-2 ring-emerald-500' : 'ring-1 ring-black/10 group-hover:ring-2 group-hover:ring-zinc-900 dark:ring-white/10 dark:group-hover:ring-white'}">${thumb(p, 'aspect-[16/10]')}</div>
-        <div class="mt-2 flex items-center gap-2"><span class="font-semibold">${v.id}</span><span class="truncate text-zinc-500">${esc(v.name)}</span>${v.id === k ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}Picked</span>` : ''}${editing(p.id, v.id) ? `<span class="ml-auto inline-flex items-center gap-1.5 text-xs text-emerald-600">${pulse('size-1.5')}editing</span>` : ''}</div></button>${kidChips(p, v.id)}</div>`).join('')}</div>`
+        <div class="mt-2 flex items-center gap-2"><span class="font-semibold">${v.id}</span><span class="truncate text-zinc-500">${esc(v.name)}</span>${v.id === k ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}Picked</span>` : ''}${editing(p.id, v.id) ? `<span class="ml-auto inline-flex items-center gap-1.5 text-xs text-emerald-600">${pulse('size-1.5')}${building(p.id, v.id) ? 'building' : 'editing'}</span>` : ''}</div></button>${kidChips(p, v.id)}</div>`).join('')}</div>`
   }
 
   // Every variant at full size, one after another, live. Each frame is at least as tall as the
@@ -826,6 +841,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- chrome ----------
   function render() {
+    layers.querySelectorAll<HTMLElement>('[data-route]').forEach(markBuilding)
     // Scrolled lists in the chrome keep their place when it is redrawn (a status ping, an edit).
     const keepScroll = (host: HTMLElement, html: string) => {
       const was = new Map([...host.querySelectorAll<HTMLElement>('[data-k]')].map(el => [el.dataset.k!, [el.scrollTop, el.scrollLeft]]))
@@ -963,6 +979,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const dockBtn = 'grid size-9 shrink-0 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white'
     const dockSep = '<span class="mx-1 h-5 w-px shrink-0 bg-white/15"></span>'
     overlay.innerHTML = framed || view !== 'variant' || !p ? '' : `
+      ${building(p.id, vid) ? `<div data-building-chip title="Claude is still building this one" class="pointer-events-none absolute left-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}Building</div>` : ''}
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
       ${!st.focus ? `<button data-act="focus" data-focus-btn title="Focus mode · F" class="absolute right-[calc(var(--hw,0px)+1rem)] top-3 z-10 hidden h-9 [@media(hover:hover)]:inline-flex items-center gap-1.5 rounded-full bg-zinc-900/80 px-3 text-xs font-medium text-white shadow-lg backdrop-blur transition-opacity duration-200 focus-visible:!opacity-100" style="opacity:${stageHover.on ? 1 : 0}">${ic('grow', 'size-3.5')}Focus</button>` : `
       ${st.open === 'fproto' ? `<div data-pop class="fixed bottom-[76px] left-1/2 z-20 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">${protoMenu}</div>` : ''}
@@ -2177,6 +2194,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   setInterval(ping, 60_000)
   document.addEventListener('visibilitychange', ping)
   setInterval(() => document.querySelectorAll<HTMLElement>('[data-ago]').forEach(el => { el.textContent = ago(Number(el.dataset.ago)) }), 1000)
+  // A Building mark that was never ended by `proto done` goes out a few minutes after the last edit.
+  let wasBuilding = 0
+  setInterval(() => {
+    const n = Object.keys(session.building ?? {}).filter(k => { const [p, v] = k.split('/'); return building(p, v) }).length
+    if (n !== wasBuilding) { if (n < wasBuilding && failed.size) show(false); wasBuilding = n; render() }
+  }, 15_000)
 
   // ---------- boot ----------
   installPointerTracking()
@@ -2233,7 +2256,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // A working variant Claude moved shows where it came from, with Undo, for a few seconds.
     setSession(next: Session) {
       const was = session.work
+      const builtNow = Object.keys(session.building ?? {}).some(k => !next.building?.[k])
       session = next
+      // A variant just marked done that couldn't load shows its error now.
+      if (builtNow && failed.size) show(false)
       if (!same(was, next.work)) {
         // Any move ends the wait: one that isn't the expected one is Claude's.
         const own = same(next.work, expected)
@@ -2251,6 +2277,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     setLive(live: boolean) { st.live = live; render() },
     setInbox(inbox: Inbox) { if (st.status) { st.status = { ...st.status, inbox }; render() } },
     sendComments: sendBatch,
+    /** A compile error from Vite: one in a variant that is still building is expected mid-build, so
+     *  its overlay is taken away (the variant keeps its last good frame). */
+    viteError(file: string) {
+      const m = file.match(/\/src\/protos\/([^/]+)\/([A-Z]{1,2})\.\w+/)
+      if (m && building(m[1], m[2])) setTimeout(() => document.querySelector('vite-error-overlay')?.remove())
+    },
     edited(paths: string[]) {
       let retrying = false
       for (const path of paths) {
@@ -2258,7 +2290,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         if (failed.has(path)) { failed.delete(path); retry.set(path, Date.now()); retrying = true }
         st.lastEdit = Date.now()
         const m = path.match(/\/src\/protos\/([^/]+)\/([A-Z]{1,2})\.\w+/)
-        if (m) st.editing = { proto: m[1], variant: m[2] }
+        if (m) { st.editing = { proto: m[1], variant: m[2] }; editedAt.set(`${m[1]}/${m[2]}`, Date.now()) }
       }
       if (retrying) show(false)
       motionDock.edited(paths, st.place.view === 'variant' ? st.place.proto : null)

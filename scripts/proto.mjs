@@ -8,6 +8,7 @@
 //             [--from-picks]   built from every variant the user picked in this session
 //             [--kit[=<name>]] [--current <screen>]   on the project's design kit: its theme, parts and
 //             packages, and with --current that screen's saved Current as A (with its references)
+//   proto done <slug>/<letter>[ …] | <slug>   that variant is built: the page drops its Building mark
 //   proto shoot [route…] [--theme dark] [--focus] [--copy] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
 //             [--ref <png>]   instead, the variant's screen beside that screenshot of the real one
 //             [--as built]    with --ref: the png is the variant built in the codebase (<route>-vs-built.png)
@@ -418,6 +419,7 @@ function add() {
     if (flags['from-picks']) console.log(`from ${refs.join(', ')}`)
   }
   const list = String(flags.variants || '').split(',').map(x => x.trim()).filter(Boolean)
+  const fresh = []
   // On the design kit: a new prototype takes its frame from it, unless told otherwise.
   const design = flags.kit || flags.current ? kitFor(s) : null
   if (design && !existsSync(metaFile)) {
@@ -435,10 +437,12 @@ function add() {
     const name = rest.join(':').trim() || id
     added[id] = name
     const file = join(pdir, `${id}.${kit.ext}`)
-    if (!existsSync(file)) writeFileSync(file, stubOf(id, name))
+    if (!existsSync(file)) { writeFileSync(file, stubOf(id, name)); fresh.push(id) }
   }
   if (design) {
     useKit(dir, pdir, slug, design, flags.current && { file: join(pdir, `A.${kit.ext}`), stub: stubOf('A', added.A ?? current().variants.A) })
+    // A saved Current is already built.
+    if (flags.current && fresh.includes('A')) fresh.splice(fresh.indexOf('A'), 1)
   }
   // meta.ts goes last, so the page sees the prototype with all its variants at once. It is read
   // again just before: a pick made in the page meanwhile is written by the dev server, and stays.
@@ -447,8 +451,30 @@ function add() {
   for (const k of drop) delete head[k]
   const meta = { ...head, variants: { ...variants, ...added } }
   writeWhole(metaFile, `// Prototype: ${String(meta.title).replace(/[\r\n\u2028\u2029]+/g, ' ')}. Variant files are named by their letter; names live here.\nexport default ${JSON.stringify(meta, null, 2)}\n`, scratchOf(dir))
+  // A new variant is building until `proto done`: the page marks it, and an edit that throws keeps
+  // its last good frame instead of an error.
+  if (fresh.length) {
+    const at = new Date().toISOString()
+    patchSession(dir, { building: { ...readSession(dir).building, ...Object.fromEntries(fresh.map(id => [`${slug}/${id}`, at])) } })
+  }
   console.log(`${pdir}: ${Object.keys(meta.variants).map(id => `${id}.${kit.ext}`).join(' ') || 'no variants'}`)
   if (s.url) console.log(`${s.url}#/${slug}`)
+}
+
+// A variant is built (its checks passed): the page drops its Building mark and shows its errors
+// again. `proto done <slug>` ends every variant of that prototype.
+function done() {
+  const dir = sessionDir()
+  const s = need(dir)
+  if (!args.length) die('which variant? proto done <slug>/<letter> (or <slug> for all of its variants)')
+  const building = { ...s.building }
+  const ended = []
+  for (const ref of args) {
+    const [slug, letter] = ref.split('/')
+    for (const k of Object.keys(building)) if (letter ? k === `${slug}/${letter}` : k.startsWith(`${slug}/`)) { delete building[k]; ended.push(k) }
+  }
+  patchSession(dir, { building })
+  console.log(ended.length ? `built: ${ended.join(', ')}` : `nothing was building there (${args.join(', ')})`)
 }
 
 // meta.ts with its object replaced. Through a function: a replacement string would read `$&` or `$$`
@@ -558,6 +584,8 @@ function archive() {
   meta.archived = !flags.off
   writeWhole(metaFile, withMeta(text, meta), scratchOf(dir))
   if (meta.archived && readSession(dir).work?.proto === args[0]) patchSession(dir, { work: null })
+  const b = readSession(dir).building || {}
+  if (meta.archived && Object.keys(b).some(k => k.startsWith(`${args[0]}/`))) patchSession(dir, { building: Object.fromEntries(Object.entries(b).filter(([k]) => !k.startsWith(`${args[0]}/`))) })
   console.log(`${args[0]} ${meta.archived ? 'archived' : 'restored'}`)
 }
 
@@ -1649,7 +1677,7 @@ function fonts() {
 }
 
 const commands = {
-  up, add, pick, work, ask, archive, shoot, compare, perf, handoff, snap, inbox, reply, gc: () => gc(false), ls,
+  up, add, done, pick, work, ask, archive, shoot, compare, perf, handoff, snap, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
   rm: () => rm(),
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },
