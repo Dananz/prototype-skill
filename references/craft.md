@@ -82,8 +82,9 @@ free, don't spend that freedom on a default:
   button; emoji as icons; glass on every surface; a shadow and a hover lift on every card.
 - **Motion:** a fade-and-slide-up on every section and a hover transition on every card.
 
-Work in two passes. First, brainstorm in your thinking and write a plan per direction to
-`.proto/briefs/<slug>.md` in the app's folder:
+Work in two passes. First, brainstorm in your thinking and write the direction's full plan (the
+main agent's one-line plans and shared facts are in `.proto/briefs/<slug>.md`; a full plan goes
+to `.proto/briefs/<slug>-<letter>.md`):
 
 ```
 ## B · Tide table

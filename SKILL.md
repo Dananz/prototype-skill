@@ -166,41 +166,50 @@ sides only, never drawn left to right and flipped.
 
 ## 3. One usable direction first, then the exploration
 
-**Plan the look before code.** Run `proto add` with the directions' names first, so the page
-shows their placeholders while you plan. Read `${CLAUDE_SKILL_DIR}/references/craft.md` before the first variant and take its stance:
-a studio design lead whose client rejected anything templated, one real aesthetic risk per
-direction. Draw a pool of type (`proto fonts --draw 10`, with `--hebrew` for a Hebrew product)
-and choose from it per direction, then write each direction's plan (concept, palette, type,
-layout, pattern, signature, imagery, motion) into the app's `.proto/briefs/<slug>.md`, check the
-plans against the defaults that file lists, against a similar prompt, and against each other (no
-shared font family, surface, signature or main-action pattern), and build from them. With a Current the plan is short (what changes
-and why) and Current's look holds; without one it is the whole look. This takes a minute per
-direction and is what keeps the result from looking generated. **Images: when an image tool is
-available** (the `codex-image` skill, or an image-generation MCP), **the subject is photo-led**
-(food, places, products, people, interiors) **and the project has no images of its own, generating
-them is not optional.** Right after the plans, invoke that skill yourself, once, for every
-direction's images (a hero each, a few product shots), run in the background into the app's
-`src/assets/`, then write the code: drawn shapes hold each place until its image lands, and the
-variant swaps it in (craft.md, Imagery). Subagents don't generate images; they use what is in
+**Plan the look, fast, then let every direction start.** The user expects to see design within
+about half a minute, so the order is:
+
+1. `proto add` with the directions' names, so the page shows their placeholders at once.
+2. Read `${CLAUDE_SKILL_DIR}/references/craft.md` and take its stance: a studio design lead whose
+   client rejected anything templated, one real aesthetic risk per direction, in the look, with
+   a simple experience. Draw a pool of type (`proto fonts --draw 10`, with `--hebrew` for a Hebrew
+   product).
+3. **One line per direction** into the app's `.proto/briefs/<slug>.md`: concept, display and body
+   face, dominant surface color, signature. Check the lines against the defaults craft.md lists
+   and against each other (no shared font family, surface, signature or main-action pattern).
+   This is the only planning before code that waits for you.
+4. **Start the images** when the subject is photo-led (below), in the background.
+5. **Start the other directions** (subagents, section 4) with their line; each writes its own full
+   plan (craft.md, section 3) before its code. Then write your own direction's full plan, and
+   build it.
+
+With a Current the plan is short (what changes and why) and Current's look holds; without one it
+is the whole look. **Images: when an image tool is available** (the `codex-image` skill, or an
+image-generation MCP), **the subject is photo-led** (food, places, products, people, interiors)
+**and the project has no images of its own, generating them is not optional.** Invoke that skill
+yourself, once, for every direction's images (a hero each, a few product shots), in the
+background into the app's `src/assets/`: drawn shapes hold each place until its image lands, and
+the variant swaps it in (craft.md, Imagery). Subagents don't generate images; they use what is in
 `src/assets/`.
 
 **First usable output: one complete, high-quality direction.** No special prompt is needed.
 Keep the real-product grounding, exact Current/reference match, real tokens/assets/chrome,
 working interactions, responsive layout and necessary visual QA below. For an existing
 product, retain A:Current and build the first proposed direction as B; for a new product,
-build A. It comes first and is finished first, but the others don't wait for it: once the plans
-and the shared parts exist (and Current matches, for an existing product), the remaining
-directions start building alongside it, so the user watches all of them take shape (below). Do
+build A. It comes first and is finished first, but the others don't wait for it: once the
+one-line plans exist (and Current matches, for an existing product), the remaining directions
+start building alongside it, so the user watches all of them take shape (below). Do
 not weaken Current's reconstruction or fidelity checks to get there sooner.
 
 **Build live, in passes.** The user watches every variant fill in (the placeholders from
 `proto add` hold their places meanwhile), so a variant is saved as it grows, not written whole at
 the end:
 
-1. **The screen at rest, as planned:** the layout, real copy, the plan's palette and fonts
-   (`font()`), the signature, plain shapes where images will go. Take the time the design
-   needs: this is the considered design, not a sketch to fix later.
-2. **Sections**, one edit each: the rest of the content, the main interaction, images as they land.
+1. **The hero, final:** the top of the page at rest, exactly as planned and finished: the real
+   type (`font()`), palette, copy and signature, a plain shape where its image will go. Small, so
+   it lands within seconds of the plan, and not a sketch to fix later: the rest is built under it.
+2. **Sections**, one edit each, top to bottom: the rest of the content, the main interaction,
+   images as they land.
 3. **Finish:** states, motion, details, the checks (craft check, shots). Then
    `proto done <slug>/<letter>`.
 
@@ -335,26 +344,28 @@ enters, a toast lands, the feel of a spring), or a comment arrives on the motion
 `${CLAUDE_SKILL_DIR}/references/motion.md` first: `useMotion`, motion written in CSS or `element.animate()`, and reading it in
 frames with `proto shoot --at` / `--frames`.
 
-**Build remaining requested variants in parallel when you can.** As soon as the plans and the
-shared parts exist, while you build the first direction, when there are 3 or more remaining variants to write, the
-harness has subagents, and Current matches its reference (for a new product: once the tokens and
-`parts.tsx` exist), give each variant its own subagent. First write everything shared yourself
-(`parts.tsx`, `src/theme.css`, `meta.ts`, packages), then start every subagent in one message.
-Each is told:
+**Build remaining requested variants in parallel when you can.** When there are 3 or more
+remaining variants to write and the harness has subagents, give each its own subagent, all
+started in one message, before you build your own direction. For a new product that is as soon
+as the one-line plans exist: each direction carries its own look, so nothing shared is written
+first except the facts every direction tells the same way (name, products, prices, hours,
+address), under the lines in the brief. For an existing product, once Current matches and the
+shared chrome (`parts.tsx`, `src/theme.css`, packages) exists. Each is told:
 
-- its letter and its direction's whole plan from `.proto/briefs/<slug>.md` (concept, palette
-  as hex values, type pairing as `font()` specs, layout and its wireframe, pattern, signature,
-  imagery, motion), and the feature's must-do lines;
+- its letter, its one-line plan and the shared facts from `.proto/briefs/<slug>.md`, and the
+  feature's must-do lines; it writes its own full plan to `.proto/briefs/<slug>-<letter>.md`;
 - to read `${CLAUDE_SKILL_DIR}/references/craft.md` (its absolute path; not pasted into the brief) before writing,
   and to build from the plan exactly, deriving every color and type decision from it;
-- the app's folder, the reference screenshots, and `A.tsx` to start from;
+- the app's folder, and with a Current, the reference screenshots and `A.tsx` to start from;
 - to write only `src/protos/<slug>/<letter>.tsx` and lowercase helpers of its own (`c-map.tsx`).
   `parts.tsx`, `meta.ts`, `theme.css` and the other variants are read-only to it, and it installs
   nothing; it asks for those in its reply;
 - `--session <the main session's $CLAUDE_CODE_SESSION_ID>` on every `proto` call, plus
   `--project <project root>` if it works in another folder; never `proto up`, `add`, `pick` or `work`;
-- to build live in passes (the screen at rest as planned first, then section by section; every
-  save renders), and to run `proto done <slug>/<letter>` when its checks pass;
+- to write that full plan first (craft.md, section 3, including the check against a similar
+  prompt), then build live in
+  passes (the hero, final, first; then section by section; every save renders), and to run
+  `proto done <slug>/<letter>` when its checks pass;
 - to shoot only its own variant (`proto shoot <slug>/<letter>`), read both single shots at full
   size, run craft.md's short craft check (questions 1, 5 and 7) on them, fix, and shoot again;
   where it rebuilds something that has a reference, to loop on `proto compare` with the stop rule above;
@@ -379,8 +390,8 @@ or third rebuild of that region, and not for a one-off round of directions.
 
 When all are back, run one `proto shoot <slug> --sheet`, read it, fix what the sheet shows and
 what the subagents named, write each variant's `about` and `states` into `meta.ts`, then go on
-with step 5 (which starts with the critic). Without subagents, write every direction's screen at
-rest first, one after another, then build each out in turn and mark it done. The sheet is the same.
+with step 5 (which starts with the critic). Without subagents, write every direction's hero first,
+one after another, then build each out in turn and mark it done. The sheet is the same.
 
 ## 5. Look at it, then iterate
 
