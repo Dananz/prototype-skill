@@ -181,28 +181,28 @@ about half a minute, so the order is:
    or main-action pattern). `proto plan` turns each placeholder into its line, in its own face and
    colors, so the page shows every direction's look within seconds. This is the only planning
    before code that waits for you.
-4. **In one message:** the other directions' subagents (section 4, short briefs) and, when the
-   subject is photo-led (below), the image generation as **one** background command. Don't read
-   its help, test it or check on it now: it reports when it is done, and a failure is fixed after
-   your hero is on screen.
-5. **Your own direction's hero, straight from its line.** Then its full plan (craft.md,
-   section 3), then the rest of it.
+4. **Your own direction's hero, right away**, straight from its line (the first pass below).
+5. **Then, in one message:** the other directions' subagents (section 4, short prompts) and,
+   when the subject is photo-led (below), the image generation as **one** background command.
+   Don't read its help, test it or wait on it: it reports when it is done, and only then do you
+   look at what it wrote. Meanwhile write your full plan (craft.md, section 3) and build the rest.
 
 With a Current the plan is short (what changes and why) and Current's look holds; without one it
 is the whole look. **Images: when an image tool is available** (the `codex-image` skill, or an
 image-generation MCP), **the subject is photo-led** (food, places, products, people, interiors)
 **and the project has no images of its own, generating them is not optional.** Invoke that skill
 yourself, once, for every direction's images (a hero each, a few product shots), in the
-background into the app's `src/assets/`, started as step 4 says: drawn shapes hold each place until its image lands, and
-the variant swaps it in (craft.md, Imagery). Subagents don't generate images; they use what is in
-`src/assets/`.
+background into the app's `src/assets/`, named `<slug>-<letter>-<what>` (`kiosk-B-hero.jpg`),
+started as step 5 says. Variants use them through `image()` from `src/images.ts`, which is
+`undefined` until the file exists: a drawn shape holds the place, and the page swaps the image in
+by itself when it lands. Subagents don't generate images.
 
 **First usable output: one complete, high-quality direction.** No special prompt is needed.
 Keep the real-product grounding, exact Current/reference match, real tokens/assets/chrome,
 working interactions, responsive layout and necessary visual QA below. For an existing
 product, retain A:Current and build the first proposed direction as B; for a new product,
-build A. It comes first and is finished first, but the others don't wait for it: once the
-one-line plans exist (and Current matches, for an existing product), the remaining directions
+build A. It comes first and is finished first, but the others don't wait for it: once its
+hero is on screen (and Current matches, for an existing product), the remaining directions
 start building alongside it, so the user watches all of them take shape (below). Do
 not weaken Current's reconstruction or fidelity checks to get there sooner.
 
@@ -351,34 +351,18 @@ frames with `proto shoot --at` / `--frames`.
 
 **Build remaining requested variants in parallel when you can.** When there are 3 or more
 remaining variants to write and the harness has subagents, give each its own subagent, all
-started in one message, before you build your own direction. For a new product that is as soon
-as the one-line plans exist: each direction carries its own look, so nothing shared is written
+started in one message. For a new product that is as soon as your own hero is on screen (step 5
+above): each direction carries its own look, so nothing shared is written
 first except the facts every direction tells the same way (name, products, prices, hours,
 address), under the lines in the brief. For an existing product, once Current matches and the
-shared chrome (`parts.tsx`, `src/theme.css`, packages) exists. Each is told:
+shared chrome (`parts.tsx`, `src/theme.css`, packages) exists.
 
-- its letter and the path of `.proto/briefs/<slug>.json` (its line and the shared facts), the
-  feature's must-do lines, and the path of `${CLAUDE_SKILL_DIR}/references/craft.md`. Keep the
-  brief short: everything below is standing practice, not something to restate at length;
-- that its **first write is `src/protos/<slug>/<letter>.tsx` itself: the hero, final, straight
-  from its line**, before reading craft.md in full, before any helper file, and without reading
-  `node_modules`. Then it reads craft.md, writes its full plan to
-  `.proto/briefs/<slug>-<letter>.md` and builds the rest from it, deriving every color and type
-  decision from it;
-- the app's folder, and with a Current, the reference screenshots and `A.tsx` to start from;
-- to write only `src/protos/<slug>/<letter>.tsx` and lowercase helpers of its own (`c-map.tsx`).
-  `parts.tsx`, `meta.ts`, `theme.css` and the other variants are read-only to it, and it installs
-  nothing; it asks for those in its reply;
-- `--session <the main session's $CLAUDE_CODE_SESSION_ID>` on every `proto` call, plus
-  `--project <project root>` if it works in another folder; never `proto up`, `add`, `pick` or `work`;
-- to build live in passes (the hero first; then section by section; every save renders; a
-  helper file only once the variant file already imports something that exists), and to run
-  `proto done <slug>/<letter>` when its checks pass;
-- to shoot only its own variant (`proto shoot <slug>/<letter>`), read both single shots at full
-  size, run craft.md's short craft check (questions 1, 5 and 7) on them, fix, and shoot again;
-  where it rebuilds something that has a reference, to loop on `proto compare` with the stop rule above;
-- to reply in at most five lines: what it built, its weakest point, and which default from
-  craft.md it is closest to.
+A subagent's prompt is short: its letter, the app's folder, the brief's path
+(`.proto/briefs/<slug>.json`, with the must-dos under the facts), its flags
+(`--session <the main session's $CLAUDE_CODE_SESSION_ID>`, plus `--project <project root>` if it
+works in another folder), with a Current the reference screenshots and `A.tsx` to start from,
+and the line "Read `${CLAUDE_SKILL_DIR}/references/direction.md` first and follow it." That file
+holds everything standing (hero first, plan, passes, images, limits, the reply); don't restate it.
 
 Effort: a subagent designing a direction runs at the session's own effort; design quality drops
 visibly at medium. A subagent rebuilding a region against a reference can start at medium (the

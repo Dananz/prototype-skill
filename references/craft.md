@@ -178,10 +178,11 @@ preference:
    skill, or an image-generation MCP) and the subject is photo-led (food, places, products,
    people, interiors). Then it is not optional: a drawn pastry where a photo belongs is the
    weakest part of the page. One hero image and a few product shots per direction, in the
-   direction's own light and styling, saved into the app's `src/assets/`. The main agent
-   generates them for all directions at once, as one background command right after the plans,
-   and doesn't wait on it or debug it before its own hero is on screen; drawn
-   shapes hold each place until its image lands. No tool available: skip this, don't ask.
+   direction's own light and styling, saved into the app's `src/assets/` as
+   `<slug>-<letter>-<what>`. The main agent generates them for all directions at once, as one
+   background command right after its own hero, and doesn't wait on it. Variants read them with
+   `image()` from `src/images.ts` (undefined until the file lands): a drawn shape holds the place
+   and the page swaps the image in by itself. No tool available: skip this, don't ask.
 3. Drawing from the subject in code: SVG shapes, a chart, a map, a gradient with grain.
 
 Depth comes from layering and light, not from a shadow on everything.
