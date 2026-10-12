@@ -26,6 +26,10 @@ label, its window), used plainly.
 
 ## 1. Ground it in the subject
 
+When the subject already has a brand somewhere (a repo, a site, a store page the request points
+to), its logo, colors and type are given, not chosen: the plan works inside them, and its risk
+is in layout, composition and imagery.
+
 If the brief does not pin down what the product or subject is, pin it yourself before designing:
 name one concrete subject, its audience, and the page's single job, and state your choice. What
 you know of the user's preferences, what they are building and designs made for them before are

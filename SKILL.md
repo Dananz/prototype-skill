@@ -158,6 +158,17 @@ type pairing (from the `proto fonts` pool), and tell the user it is invented. On
 its tokens in a `@theme {}` block and save the kit (`proto kit save <slug>`), so the next
 prototype keeps that look.
 
+**A brand that lives somewhere else.** When the request names or points to a source outside this
+folder (a GitHub repo, a website, an App Store page, "based on what you know from …"), go there
+before the plans; never design it from memory. Resolve it (`gh repo view <owner>/<name>`,
+`gh search repos`, `gh api repos/<owner>/<name>/contents/<path>` for files, a browser for a
+site) and collect its logo files, colors, fonts, screenshots and voice: logos and images into
+the app's `src/assets/brand/`, everything else as lines under `"brand"` in the brief. The brand
+is then a given, like Current's look: the real logo file as it is (never redrawn, recolored or
+replaced by a wordmark of your own), its colors and type as every direction's base. Directions
+differ in layout, composition, imagery and their one risk; one that pushes the brand (a new
+accent, a second face) says so in its line. Tell the user what you took and from where.
+
 ## Right to left (Hebrew, Arabic, Persian, Urdu)
 
 When the product reads right to left, read `${CLAUDE_SKILL_DIR}/references/rtl.md` before writing any variant (Current and
@@ -175,8 +186,9 @@ about half a minute, so the order is:
    a simple experience. Draw a pool of type (`proto fonts --draw 10`, with `--hebrew` for a Hebrew
    product).
 3. **One line per direction** into the app's `.proto/briefs/<slug>.json`, then `proto plan <slug>`:
-   `{ "facts": "…", "directions": { "A": { "name", "concept", "display", "body", "surface", "ink",
-   "accent", "signature" } } }` (display and body are `font()` specs). Check the lines against
+   `{ "facts": "…", "brand": "…", "directions": { "A": { "name", "concept", "display", "body",
+   "surface", "ink", "accent", "signature" } } }` (display and body are `font()` specs; `brand`
+   only when one exists, see above). Check the lines against
    the defaults craft.md lists and against each other (no shared font family, surface, signature
    or main-action pattern). `proto plan` turns each placeholder into its line, in its own face and
    colors, so the page shows every direction's look within seconds. This is the only planning

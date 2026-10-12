@@ -7,11 +7,15 @@ every `proto` call (`--session <id>`, and `--project <root>` when given), and fo
 product, the reference screenshots and `A.tsx` to start from. `proto` is
 `node <this skill>/scripts/proto.mjs`. Everything else is here.
 
+When the brief has a `"brand"`, it binds you: its logo files in `src/assets/brand/`, used as they
+are (imported, never redrawn or recolored), and its colors and type as your base.
+
 ## First write: your hero, on screen
 
 Your first write is `src/protos/<slug>/<letter>.tsx` itself: the top of the page at rest, final,
 straight from your line. Its display and body faces through `font()` (`src/fonts.ts`), its
-colors, its signature, the real copy from the facts. Where an image goes, a drawn shape. No
+colors, its signature, the real copy from the facts, the brand's logo when there is one. Where
+an image goes, a drawn shape. No
 helper file, no reading of `craft.md` in full and no reading of `node_modules` before it. It
 replaces your placeholder the moment you save it.
 
