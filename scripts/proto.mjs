@@ -15,6 +15,9 @@
 //             [--frames <n>] [--at <ms>-<ms>]   n frames of the take on one sheet, with its curves
 //             [--size <w>x<h>]   instead of desktop and phone, that viewport (a layout from the page's device view)
 //   proto shoot [slug…] --sheet [--state <id>] [--theme dark]   every variant on one contact sheet per prototype
+//   proto perf <slug>/<letter>[/<state>] [--drag <css>] [--click <css>] [--size <w>x<h>] [--dpr 2] [--seconds 3]
+//             frames per second at rest (or while dragging that element), how busy the main and GPU
+//             threads are, and the design's slowest functions; run it on anything that animates
 //   proto handoff <slug>/<letter>   a checklist of what that variant has, for building it into the codebase
 //   proto snap <slug>[/<letter>]… [--width 672]   static HTML snapshots for a Claude Doc
 //   proto pick <slug> <letter> [--off]   the user chose this variant: marked in the page
@@ -1251,6 +1254,22 @@ function reply() {
   console.log(`${ids[0]}${n ? `/${n}` : ''}: ${text ? 'replied' : ''}${text && flags.done ? ', ' : ''}${flags.done ? 'done' : ''}${b.done ? ' (batch done)' : ''}`)
 }
 
+// How smoothly one variant runs (perf.mjs): at rest, or while --drag moves an element in it, after
+// any --click steps to reach a state. Headless, at --dpr 2 by default.
+async function perf() {
+  const dir = sessionDir()
+  const s = need(dir)
+  if (!await running(s)) die('the server is stopped. Run: proto up')
+  const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
+  const route = args.filter(a => !clicked.has(a))[0]
+  if (!route || !route.includes('/')) die('usage: proto perf <slug>/<letter>[/<state>] [--drag <css>] [--click <css>] [--size <w>x<h>] [--dpr 2] [--seconds 3]')
+  const extra = ['drag', 'size', 'dpr', 'seconds'].filter(k => typeof flags[k] === 'string').map(k => `--${k}=${flags[k]}`)
+  if (flags.size !== undefined && !/^\d+x\d+$/.test(String(flags.size))) die('--size is a viewport in CSS px: --size 1440x900')
+  argv.forEach((a, i) => { if (a === '--click' && argv[i + 1]) extra.push(`--click=${argv[i + 1]}`); else if (a.startsWith('--click=')) extra.push(a) })
+  const r = run(process.execPath, [join(SKILL, 'scripts', 'perf.mjs'), s.localUrl, route, ...extra], { stdio: 'inherit' })
+  process.exit(r.status ?? 1)
+}
+
 async function snap() {
   const dir = sessionDir()
   const s = need(dir)
@@ -1532,7 +1551,7 @@ function useKit(dir, pdir, slug, { name, k, kd }, a) {
 }
 
 const commands = {
-  up, add, pick, work, ask, archive, shoot, handoff, snap, inbox, reply, gc: () => gc(false), ls,
+  up, add, pick, work, ask, archive, shoot, perf, handoff, snap, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
   rm: () => rm(),
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },
