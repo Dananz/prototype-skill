@@ -15,6 +15,7 @@ import { startChrome, stopChrome } from '../scripts/chrome.mjs'
 import { optionalExtras } from './optional-extras.mjs'
 import { designKit } from './design-kit.mjs'
 import { speedChecks } from './speed-checks.mjs'
+import { commentParentChecks } from './comment-parent-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -140,6 +141,8 @@ const css = () => new Promise(ok => get(`${local}shell/shell.css?direct`, { agen
   r.setEncoding('utf8').on('data', c => { text += c }).on('end', () => r.statusCode === 200 ? ok(text) : fail(`the stylesheet answered ${r.statusCode}: ${text.slice(0, 400)}`))
 }).on('error', e => fail(`could not read the stylesheet: ${e.message}`)))
 await css()
+
+await commentParentChecks({ proto, app, openPage, fail })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
 proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--variants', 'A:Price only,B:Fuel tabs'])
