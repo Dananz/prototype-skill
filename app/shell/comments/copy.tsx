@@ -83,6 +83,9 @@ export function createCopyActions(cs: CopyStore, host: Host, comments: Store, st
     want() { set({ wanted: true, still: true }) },
     toggle() {
       const s = get()
+      // Pressed before the design is there (the stage's own artboard is still loading its frame): it
+      // turns on once the design is, with its lines (setStage).
+      if (!s.on && !s.stage) { set({ wanted: true }); return }
       if (!s.on && !lines().length) return
       unpeek()
       // Closed once Claude is done with what was sent: the bar starts over the next time.
