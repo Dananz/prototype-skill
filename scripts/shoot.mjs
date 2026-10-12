@@ -218,8 +218,9 @@ try {
         if (!await page(clickIn(sel))) console.error(`shoot: nothing matches ${sel} on ${route}`)
         await sleep(400)
       }
-      // The design declares its motion once it is mounted: wait for that, a moment at most.
-      for (let i = 0; i < 20 && !await page('!!window.__protoMotion?.state()'); i++) await sleep(100)
+      // The design declares its motion once it is mounted: wait for that, a few seconds at most (a slow
+      // machine takes a while).
+      for (let i = 0; i < 50 && !await page('!!window.__protoMotion?.state()'); i++) await sleep(100)
       const take = await page('window.__protoMotion ? window.__protoMotion.take() : { error: "this page has no motion dock (a session app made before it?)" }')
       if (take?.error || take?.status !== 'ready') {
         console.error(`shoot: ${route}: ${take?.error || 'the take caught no motion. Only CSS transitions, CSS animations and element.animate() can be recorded, not motion run from script (requestAnimationFrame, react-spring, GSAP)'}`)

@@ -1605,7 +1605,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // What the bar and the panel count while a view's frame is still loading: the same design on the
   // stage under it, so its buttons and tabs don't go and come back. Only what they show; what acts
   // on the design (a spot, Fill in, copy mode) waits for the frame's.
-  const countHost = () => toolHost() ?? hintHost()
+  // Also once the frame has its design but before it has declared anything (its hints, copy lines
+  // and motion come in effects, a moment after it mounts): the stage's copy has declared the same.
+  const countHost = () => { const t = toolHost(); return t && (hints.of(t).length || copy.of(t).length || motion.of(t)) ? t : hintHost() ?? t }
   const hintList = () => framed || q.get('hints') === '0' ? [] : hints.of(countHost())
   const valueOf = (h: Extract<Hint, { kind: 'value' }>) => { try { return String(typeof h.value === 'function' ? h.value() : h.value) } catch { return '' } }
   const flash = () => { clearTimeout(hintTimer); hintTimer = window.setTimeout(() => { hintSaid = ''; hintCopied = -1; paintHints() }, 1400) }
