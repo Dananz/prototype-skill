@@ -6,7 +6,7 @@ import type { CommentBatch } from '../shell'
 import { find } from './dom'
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
-import type { Store } from './store'
+import { progress, type Store } from './store'
 import type { Action, Draft, Item, Place, Target, Time } from './types'
 import { routeOf } from './types'
 import { sameView } from '../view/sizes'
@@ -60,13 +60,8 @@ export function createActions(store: Store, host: Host) {
     discardHeld() { set({ held: null }) },
     /** Called as a new comment is written, so it survives being put away. */
     hold(d: Draft, target?: Target, time?: Time) { set({ held: hasWords(d) ? { ...d, ...(time ? { time } : { target }) } : null }) },
-    /** Acting on the design while a comment is open: an empty one moves to the new element, a written one says no. */
-    guard(el: Target) {
-      const m = get().mode
-      if (m.kind !== 'compose') return
-      if (get().held || m.id) set(s => ({ nudge: s.nudge + 1 }))
-      else set({ mode: { kind: 'compose', target: el } })
-    },
+    /** Pressing the design while a comment is open: the comment stays where it is and the composer says so. */
+    guard() { if (get().mode.kind === 'compose') set(s => ({ nudge: s.nudge + 1 })) },
 
     save(d: Draft, target: Target | undefined, id?: string, time?: Time) {
       const p = get().place
@@ -79,7 +74,21 @@ export function createActions(store: Store, host: Host) {
       }
     },
     cancel() { set({ held: null, mode: { kind: 'idle' }, active: null, pendingTag: null }) },
-    remove(id: string) { set(s => ({ items: s.items.filter(i => i.id !== id), mode: { kind: 'idle' }, active: null })) },
+    remove(id: string) { act.removeAll([id]) },
+    /**
+     * Deletes comments from the list, whatever became of them. One sent and not done is taken back
+     * from Claude too (the server marks it withdrawn, or drops a batch nobody took yet); a done one,
+     * or one whose batch the server no longer lists (an old one that got stuck), only leaves the list.
+     * What is open stays open unless it is one of these.
+     */
+    removeAll(ids: string[]) {
+      const gone = new Set(ids), s = get()
+      if (!gone.size) return
+      const m = s.mode
+      const open = (s.active && gone.has(s.active)) || ((m.kind === 'compose' || m.kind === 'tag' || m.kind === 'time') && !!m.id && gone.has(m.id))
+      for (const i of s.items) if (gone.has(i.id) && i.sent && progress(i, s.inbox).state !== 'done') void host.withdraw(i.sent.batch, i.sent.i)
+      set(x => ({ items: x.items.filter(i => !gone.has(i.id)), ...(open ? { mode: { kind: 'idle' as const }, active: null } : {}) }))
+    },
 
     /** Every draft, as one batch. */
     async send() {
@@ -99,7 +108,7 @@ export function createActions(store: Store, host: Host) {
           // On the motion: a moment or a range, in ms of the take, and how long the take is.
           ...(i.time ? { at: i.time.at, ...(i.time.to !== undefined ? { to: i.time.to } : {}), take: i.time.take } : {}),
           ...(i.tags.length ? { tags: i.tags } : {}),
-          ...(i.shot ? { images: [{ dataUrl: i.shot, name: 'marked up' }] } : {}),
+          ...(i.shot ? { images: [{ dataUrl: i.shot, name: i.pasted ? 'pasted by the user' : 'marked up' }] } : {}),
         })),
       }
       set({ sending: true, error: '' })

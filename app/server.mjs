@@ -124,7 +124,7 @@ export function inboxStatus() {
     const b = readJson(join(inbox, where, id, 'batch.json'), null)
     return b && {
       id, at: b.at, state: b.done ? 'done' : where === 'new' ? 'sent' : 'seen', reply: b.reply ?? null,
-      comments: b.comments.map(c => ({ n: c.n, route: c.route, done: !!c.done, reply: c.reply ?? null })),
+      comments: b.comments.map(c => ({ n: c.n, route: c.route, done: !!c.done, ...(c.withdrawn ? { withdrawn: true } : {}), reply: c.reply ?? null })),
     }
   }).filter(Boolean).sort((a, b) => a.at < b.at ? 1 : -1)
   return { new: list('new').length, listening: !!waiter && alive(waiter.pid), batches: batches.slice(0, 20) }
@@ -249,6 +249,36 @@ function receive(data) {
   return { batch, moved }
 }
 
+/**
+ * A sent comment the user deleted in the page: taken back. It is marked withdrawn (and done, so
+ * its batch can finish without it) where it waits. A batch still in new/ that has nothing left is
+ * removed, so the agent never hears of it; `proto inbox` leaves withdrawn comments out of what it
+ * prints, and `proto reply` says so when one is answered anyway. Says what it did: 'withdrawn',
+ * 'dropped' (the whole batch went) or 'gone' (no such batch or comment any more, which is fine).
+ */
+function withdraw(data) {
+  const id = data.batch, n = Number(data.n)
+  if (typeof id !== 'string' || !/^[\w-]{1,64}$/.test(id) || !Number.isInteger(n) || n < 1) throw Object.assign(new Error('withdraw takes { batch, n }: a batch id and a comment number from 1'), { status: 400 })
+  // new/ first: `proto inbox` can move the batch to taken/ between the read and the write, and then
+  // the write there fails and taken/ is where it is.
+  for (const where of ['new', 'taken']) {
+    const folder = join(inbox, where, id), f = join(folder, 'batch.json')
+    const b = readJson(f, null)
+    if (!b) continue
+    const c = b.comments.find(x => x.n === n)
+    if (!c) return 'gone'
+    c.withdrawn = true
+    c.done = true
+    b.done = b.comments.every(x => x.done) || undefined
+    if (where === 'new' && b.comments.every(x => x.withdrawn)) {
+      try { rmSync(folder, { recursive: true, force: true }) } catch { /* busy: it is written withdrawn below instead */ }
+      if (!existsSync(folder)) { if (existsSync(join(inbox, 'taken', id))) continue; return 'dropped' }
+    }
+    try { writeWhole(f, JSON.stringify(b, null, 2) + '\n'); return 'withdrawn' } catch (e) { if (e?.code !== 'ENOENT') throw e }
+  }
+  return 'gone'
+}
+
 export function prototypeServer(session) {
   let activity = Date.now()
   // With the working variant as the server left it, so the page knows a move it asked for when
@@ -327,10 +357,14 @@ export function prototypeServer(session) {
               activity = Date.now()
               try { got = receive(data) } catch (e) { return fail(e.status || 500, e.message) }
             }
+            let took
+            if (route === '/withdraw') {
+              try { took = withdraw(data) } catch (e) { return fail(e.status || 500, e.message) }
+            }
             // A send answers with its batch, whether a pick in it moved the working variant, and how
             // each decision in it went: done, or failed and why.
             const results = got && got.batch.comments.filter(c => c.action).map(c => ({ n: c.n, action: c.action, done: !!c.done, ...(c.failed ? { failed: c.failed } : {}), ...(c.marked ? { marked: true } : {}), ...(c.nothing ? { nothing: true } : {}) }))
-            const body = JSON.stringify(got ? { ...status(), sent: got.batch.id, moved: got.moved, results } : status())
+            const body = JSON.stringify(got ? { ...status(), sent: got.batch.id, moved: got.moved, results } : took ? { ...status(), withdrawn: took } : status())
             res.setHeader('content-type', 'application/json')
             res.end(body)
             if (route === '/stop') setTimeout(() => stop('stopped from the page'), 100)

@@ -321,6 +321,16 @@ if (state.inbox.batches.find(b => b.id === batch)?.state !== 'done') fail('the b
 proto(['reply', 'nope/1', 'x'], { ok: false })
 const postJson = (path, body) => fetch(`${local}__proto/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) })
 if ((await postJson('comments', '{"comments":[{"route":"BAD","text":"x"}]}')).status !== 400) fail('a comment with a bad route was accepted')
+// A sent comment deleted in the page is withdrawn: `proto inbox` leaves it out and counts it, and
+// a waiting batch left with nothing is dropped, so the agent never hears of it.
+const two = await send([{ route: 'hero/A', text: 'Keep this one' }, { route: 'hero/A', text: 'Never mind this' }])
+if ((await (await postJson('withdraw', { batch: two.sent, n: 2 })).json()).withdrawn !== 'withdrawn') fail('withdrawing a sent comment did not mark it withdrawn')
+const kept = proto(['inbox'])
+if (!/Keep this one/.test(kept) || /Never mind this/.test(kept) || !/1 withdrawn in the page/.test(kept)) fail(`proto inbox printed a withdrawn comment, or not the one kept: ${kept}`)
+const lone = await send([{ route: 'hero/A', text: 'Oops' }])
+if ((await (await postJson('withdraw', { batch: lone.sent, n: 1 })).json()).withdrawn !== 'dropped') fail('withdrawing the only comment of a waiting batch did not drop it')
+if (!/no new comments/.test(proto(['inbox']))) fail('a dropped batch still reached the inbox')
+if ((await postJson('withdraw', { batch: '../x', n: 1 })).status !== 400) fail('a withdraw of a bad batch id was accepted')
 
 // Only the page itself changes anything: a body that isn't JSON (what a page on another site can
 // send without a preflight), a foreign Origin, or a GET to a route that changes something are

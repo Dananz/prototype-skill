@@ -6,6 +6,7 @@ import { describe, find, labelOf, seen, spot, spotAt } from './dom'
 import { Icon } from './ui'
 import type { Box, Target } from './types'
 import { useCtx } from './ctx'
+import { listen } from '../quiet'
 
 export const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 export const GLIDE_MS = 110
@@ -73,10 +74,11 @@ export type Inspect = { box: Box; label: string; touch: boolean; parent: string 
  * A mouse inspects by hovering and acts on click. A finger inspects with the first tap and acts
  * with a second tap on the same element (a drag still scrolls), or holds still for HOLD_MS to act
  * on that exact spot, for when no element fits. `on` is picking (the act starts a comment, or a
- * tag); `guard` is a comment being written (the act is `onGuard`). `hold` is a finger holding,
- * from the layer's corner.
+ * tag); `guard` is a comment being written: then nothing is inspected or picked, so the comment
+ * stays on what it was started on, and a press on an element only calls `onGuard`. `hold` is a
+ * finger holding, from the layer's corner.
  */
-export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Target) => void; onCancel: () => void; onGuard: (t: Target) => void }) {
+export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Target) => void; onCancel: () => void; onGuard: () => void }) {
   const { host } = useCtx()
   const [hover, setHover] = useState<Inspect>(null)
   const [hold, setHold] = useState<{ x: number; y: number } | null>(null)
@@ -137,15 +139,14 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     }
     act.current = el => {
       show(null, false)
-      const t = onView(describe(host.mount()!, el))
-      if (on) cb.current.onPick(t); else cb.current.onGuard(t)
+      cb.current.onPick(onView(describe(host.mount()!, el)))
     }
     // Moving between elements is debounced: the outline waits for the pointer to settle, so
     // sweeping across the design doesn't make it flicker through everything on the way.
     let timer = 0, pending: HTMLElement | null | undefined
     const settle = () => { clearTimeout(timer); pending = undefined }
     const move = (e: PointerEvent) => {
-      if (e.pointerType !== 'mouse') return
+      if (!on || e.pointerType !== 'mouse') return
       if ((e.target as Element).closest?.('[data-inspect-ui]')) return settle()
       const el = part(targetOf(e))
       if (el === cur.current) return settle()
@@ -169,8 +170,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       setHold(null)
       show(null, true)
       navigator.vibrate?.(10)
-      const t = onView(spot(host.mount()!, el, x, y))
-      if (on) cb.current.onPick(t); else cb.current.onGuard(t)
+      cb.current.onPick(onView(spot(host.mount()!, el, x, y)))
     }
     const touchStart = (e: TouchEvent) => {
       const v = viewAt(e)
@@ -181,7 +181,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       if (e.touches.length > 1) { start = null; return }
       const t = e.touches[0], el = part(v ? v.el : e.target)
       start = { x: t.clientX, y: t.clientY }
-      if (!el) return
+      if (!el || !on) return
       const L = host.layer.getBoundingClientRect()
       setHold({ x: t.clientX - L.left, y: t.clientY - L.top })
       // A spot is in the design's own px: the frame's, in a device view.
@@ -206,6 +206,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       // A tap: no click follows it, so nothing in the design fires.
       e.preventDefault()
       const el = part(target)
+      if (!on) { if (el) cb.current.onGuard(); return }
       if (!el) return show(null, true)
       if (cur.current === el) act.current(el)
       else show(el, true)
@@ -217,7 +218,8 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       if (justPinned()) return
       settle()
       const el = part(target)
-      if (el) act.current(raised.current && cur.current?.contains(el) ? cur.current : el)
+      if (el && !on) cb.current.onGuard()
+      else if (el) act.current(raised.current && cur.current?.contains(el) ? cur.current : el)
     }
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && on) { e.preventDefault(); e.stopPropagation(); cb.current.onCancel() }
@@ -249,15 +251,15 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     designs?.style.setProperty('-webkit-touch-callout', 'none')
     const noMenu = (e: Event) => { if (inDesign(e.target)) e.preventDefault() }
     stage.addEventListener('pointermove', move)
-    for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'contextmenu']) document.addEventListener(t, press, true)
-    document.addEventListener('touchstart', touchStart, opts)
-    document.addEventListener('touchend', touchEnd, opts)
-    document.addEventListener('touchmove', touchMove, opts)
-    document.addEventListener('touchcancel', touchCancel, opts)
-    document.addEventListener('contextmenu', noMenu, true)
-    document.addEventListener('selectstart', noMenu, true)
-    document.addEventListener('click', click, true)
-    document.addEventListener('keydown', key, true)
+    for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'contextmenu']) listen(document, t, press, true)
+    listen(document, 'touchstart', touchStart, opts)
+    listen(document, 'touchend', touchEnd, opts)
+    listen(document, 'touchmove', touchMove, opts)
+    listen(document, 'touchcancel', touchCancel, opts)
+    listen(document, 'contextmenu', noMenu, true)
+    listen(document, 'selectstart', noMenu, true)
+    listen(document, 'click', click, true)
+    listen(document, 'keydown', key, true)
     stage.addEventListener('scroll', scroll, true)
     return () => {
       settle()

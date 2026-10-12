@@ -2,6 +2,8 @@
 // crossfade between designs. All of it is driven from script, with eased values kept
 // outside the DOM, so re-rendering the chrome never restarts an animation.
 
+import { listen } from './quiet'
+
 export const smooth = (x: number) => x * x * (3 - 2 * x)
 const ease = (from: number, to: number, dt: number) => from + (to - from) * (1 - Math.exp(-dt / 90))
 const inside = (e: PointerEvent, r: DOMRect) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
@@ -140,7 +142,7 @@ export function installPointerTracking() {
     if (b && b.isConnected && !b.contains(e.relatedTarget as Node)) { edge.hover[b.dataset.edge!] = false; setEdgeLabel(b, false) }
   })
   // Touch has no hover: a tap on the closed dock opens it for a few seconds.
-  addEventListener('pointerdown', e => {
+  listen(window, 'pointerdown', e => {
     if (!document.querySelector('[data-dock]') || e.pointerType === 'mouse') return
     if ((e.target as Element).closest('[data-dock]')) { if (dock.t < 0.6) dock.hold = performance.now() + 4000 }
     else if (!(e.target as Element).closest('[data-pop]')) dock.hold = 0

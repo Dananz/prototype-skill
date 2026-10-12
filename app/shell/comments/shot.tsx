@@ -5,6 +5,7 @@ import { domToCanvas } from 'modern-screenshot'
 import { find, zoomOf } from './dom'
 import { Icon, MOD, PRIMARY } from './ui'
 import type { Target } from './types'
+import { listen } from '../quiet'
 
 /** The variant, drawn as it is and cropped to a margin around `target`, as a PNG data URL. Null when it can't be found. */
 export async function capture(mount: HTMLElement | null, target: Target, dark: boolean) {
@@ -82,7 +83,7 @@ export function ShotEditor({ src, onCancel, onDone }: { src: string; onCancel: (
       if (e.key === 'Escape' && !typing) { e.preventDefault(); e.stopPropagation(); onCancel() }
       if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); e.stopPropagation(); setMarks(m => m.slice(0, -1)) }
     }
-    document.addEventListener('keydown', key, true)
+    listen(document, 'keydown', key, true)
     return () => document.removeEventListener('keydown', key, true)
   }, [onCancel, typing])
 

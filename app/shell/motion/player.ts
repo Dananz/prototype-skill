@@ -5,6 +5,7 @@ import { motion, type Moment } from './registry'
 import { clock, errorOf, frame, hold, record, release, seek, settle, type Take } from './take'
 import { tracksOf, type Track } from './curves'
 import { animationsOf, portaled } from '../portals'
+import { listen } from '../quiet'
 
 /** off: nothing recorded yet; taking: recording now; ready: held; empty: it recorded no motion. */
 export type Status = 'off' | 'taking' | 'ready' | 'empty'
@@ -120,7 +121,7 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
     let moved = -1e9
     const mark = (e: Event) => { if (e.isTrusted && e.target instanceof Node && (host.contains(e.target) || portaled(e.target))) moved = performance.now() }
     const kinds = ['pointermove', 'pointerover', 'pointerout', 'focusin', 'focusout']
-    kinds.forEach(k => document.addEventListener(k, mark, true))
+    kinds.forEach(k => listen(document, k, mark, true))
     const copyMode = new MutationObserver(() => { moved = performance.now() })
     copyMode.observe(host, { attributes: true, attributeFilter: ['data-copy-on'] })
     try {

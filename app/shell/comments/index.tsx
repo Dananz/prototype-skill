@@ -53,6 +53,11 @@ export function createComments(host: Host, sessionId: string) {
       }
       return { drafts, total: s.items.length, by, picking: s.mode.kind === 'pick' || s.mode.kind === 'tag' || (s.mode.kind === 'time' && !!s.mode.tagging), held: !!s.held }
     },
+    /** Picking what to comment on (or tag), or writing a comment on the design: the design is only looked at. */
+    busy() {
+      const m = store.get().mode
+      return m.kind === 'pick' || m.kind === 'tag' || m.kind === 'compose' || (m.kind === 'time' && !!m.tagging)
+    },
     /** Esc, from the shell's own key handling: true when it put something away. */
     escape(): boolean {
       const s = store.get()

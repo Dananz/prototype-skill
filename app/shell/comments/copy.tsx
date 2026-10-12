@@ -13,6 +13,7 @@ import { Drawer } from '@base-ui/react/drawer'
 import { copy, type Choice, type CopyLine } from '../copy'
 import { useCtx, type Host } from './ctx'
 import { describe } from './dom'
+import { listen } from '../quiet'
 import { useStore, type Store } from './store'
 import { IB, Icon, Listening, PRIMARY, Reply } from './ui'
 
@@ -417,7 +418,7 @@ function CopyLayer() {
   useEffect(() => {
     if (!open) return
     const out = (e: MouseEvent) => { if (!(e.target as Element).closest?.('[data-copy-list], [data-copy-mark]')) copyAct.close() }
-    document.addEventListener('click', out, true)
+    listen(document, 'click', out, true)
     return () => document.removeEventListener('click', out, true)
   }, [open, copyAct])
 

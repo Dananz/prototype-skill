@@ -11,6 +11,7 @@ import { createPlayer, type Player } from './player'
 import { motion } from './registry'
 import { frame } from './take'
 import { portaled } from '../portals'
+import { listen } from '../quiet'
 
 export type MotionHost = {
   /** Where the dock is drawn: a box along the bottom of the stage. */
@@ -56,8 +57,8 @@ export function createMotion(o: MotionHost) {
     const usePortal = (e: Event) => { if (e.target instanceof Node && portaled(e.target)) use(e) }
     h.addEventListener('pointerdown', use, true)
     h.addEventListener('keydown', use, true)
-    document.addEventListener('pointerdown', usePortal, true)
-    document.addEventListener('keydown', usePortal, true)
+    listen(document, 'pointerdown', usePortal, true)
+    listen(document, 'keydown', usePortal, true)
     return () => {
       h.removeEventListener('pointerdown', use, true); h.removeEventListener('keydown', use, true)
       document.removeEventListener('pointerdown', usePortal, true); document.removeEventListener('keydown', usePortal, true)

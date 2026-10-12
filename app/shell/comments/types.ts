@@ -17,7 +17,8 @@ export type Target = { label: string; selector: string; shoot?: string; src?: st
 
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
 export type Seg = string | { tag: number }
-export type Draft = { body: Seg[]; tags: Target[]; shot?: string }
+/** `shot` is a picture of the design (the camera, marked up or not), or an image the user pasted or dropped (`pasted`). */
+export type Draft = { body: Seg[]; tags: Target[]; shot?: string; pasted?: boolean }
 /**
  * A moment of the design's motion, in ms of its take (the motion dock, motion/), or a range of it
  * from `at` to `to`; `take` is how long the take is.
