@@ -15,6 +15,9 @@
 //             [--frames <n>] [--at <ms>-<ms>]   n frames of the take on one sheet, with its curves
 //             [--size <w>x<h>]   instead of desktop and phone, that viewport (a layout from the page's device view)
 //   proto shoot [slug…] --sheet [--state <id>] [--theme dark]   every variant on one contact sheet per prototype
+//   proto compare <slug>/<letter>[/<state>] --ref <png> [--el <css>] [--click <css>]
+//             how far an element of the variant (default: the whole variant) is from a screenshot of
+//             the real one, as % of pixels off, per column and per third, with a difference image
 //   proto perf <slug>/<letter>[/<state>] [--drag <css>] [--click <css>] [--size <w>x<h>] [--dpr 2] [--seconds 3]
 //             frames per second at rest (or while dragging that element), how busy the main and GPU
 //             threads are, and the design's slowest functions; run it on anything that animates
@@ -1266,6 +1269,24 @@ function reply() {
   console.log(`${ids[0]}${n ? `/${n}` : ''}: ${text ? 'replied' : ''}${text && flags.done ? ', ' : ''}${flags.done ? 'done' : ''}${b.done ? ' (batch done)' : ''}`)
 }
 
+// How close one variant (or an element of it) is to a screenshot of the real thing (compare.mjs).
+async function compare() {
+  const dir = sessionDir()
+  const s = need(dir)
+  if (!await running(s)) die('the server is stopped. Run: proto up')
+  const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
+  const route = args.filter(a => !clicked.has(a))[0]
+  if (!route || !route.includes('/') || typeof flags.ref !== 'string') die('usage: proto compare <slug>/<letter>[/<state>] --ref <png> [--el <css>] [--click <css>]')
+  // Relative to where Claude stands, or to the app (where `.proto/ref/` lives).
+  const ref = [resolve(flags.ref), resolve(dir, flags.ref)].find(f => existsSync(f))
+  if (!ref) die(`--ref: no file ${flags.ref} here or in ${tilde(dir)}`)
+  const extra = [`--ref=${ref}`, ...(typeof flags.el === 'string' ? [`--el=${flags.el}`] : [])]
+  argv.forEach((a, i) => { if (a === '--click' && argv[i + 1]) extra.push(`--click=${argv[i + 1]}`); else if (a.startsWith('--click=')) extra.push(a) })
+  const out = resolve(flags.out || join(dir, '.proto', 'shots'))
+  const r = run(process.execPath, [join(SKILL, 'scripts', 'compare.mjs'), s.localUrl, out, route, ...extra], { stdio: 'inherit' })
+  process.exit(r.status ?? 1)
+}
+
 // How smoothly one variant runs (perf.mjs): at rest, or while --drag moves an element in it, after
 // any --click steps to reach a state. Headless, at --dpr 2 by default.
 async function perf() {
@@ -1563,7 +1584,7 @@ function useKit(dir, pdir, slug, { name, k, kd }, a) {
 }
 
 const commands = {
-  up, add, pick, work, ask, archive, shoot, perf, handoff, snap, inbox, reply, gc: () => gc(false), ls,
+  up, add, pick, work, ask, archive, shoot, compare, perf, handoff, snap, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
   rm: () => rm(),
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },
