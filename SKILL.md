@@ -347,6 +347,13 @@ a spec took 30-90 s against 150-470 s from source, at slightly lower fidelity on
 (the loop above closes most of it). Writing the spec costs 3-9 minutes, so it pays from the second
 or third rebuild of that region, and not for a one-off round of directions.
 
+The spec also says how to draw the region: everything that isn't text (icons, pills, dividers,
+logos, outlines) in one absolutely positioned SVG in the region's own coordinates, at the spec's
+fractional positions; only the text is HTML boxes on top. Measured on a plugin toolbar: without this line every
+model's first build scored 3.64 % of pixels off, and only Opus at high effort found the SVG
+approach itself (2.46 % in 130 s); with it, Sonnet at medium effort scored 2.43-2.50 % on its first
+build in 21-23 s, three runs out of three.
+
 When all are back, run one `proto shoot <slug> --sheet`, read it, fix what the sheet shows and
 what the subagents named, write each variant's `about` and `states` into `meta.ts`, then go on
 with step 5 (which starts with the critic). Without subagents, write the variants one after another; the sheet is the same.
