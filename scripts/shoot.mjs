@@ -97,6 +97,8 @@ const fit = (n, ratio, fixed, most, high = SHEET) => {
 }
 
 mkdirSync(outDir, { recursive: true })
+// Tabs shooting at once. Measured on a 7-variant sheet (14 shots): 8.8 s one after the other, 4.7-4.9 s four at a time.
+const TABS = 4
 const profile = mkdtempSync(join(tmpdir(), 'proto-shoot-'))
 const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--hide-scrollbars'])
 const cleanup = () => {
@@ -286,73 +288,87 @@ try {
       console.log(`${shots.length} frames in ${resolve(outDir)} (${basename(shots[0].file)} …): open one only for a detail`)
     }
   }
-  for (const size of flags.ref || motion ? [] : SIZES) {
-    for (const route of routes.filter(r => size.mobile || size.every || !phoneOnly(r))) {
-      // A fresh tab per shot: the page reads its route and theme only at load.
-      const at = [performance.now()]
-      const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
-      const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
-      await send('Emulation.setDeviceMetricsOverride', {
-        width: size.width, height: size.height, deviceScaleFactor: size.deviceScaleFactor, mobile: size.mobile,
-      }, sessionId)
-      if (size.mobile) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
-      const url = new URL(base)
-      url.hash = '/' + route.replace(/^\/+/, '')
-      at.push(performance.now())
-      await send('Page.navigate', { url: url.href }, sessionId)
-      let ready = false
-      for (let i = 0; i < 100 && !ready; i++) {
-        const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement.dataset.ready === "1"', returnByValue: true }, sessionId)
-        if (!(ready = result.value)) await sleep(100)
-      }
-      at.push(performance.now())
-      const copyOn = await copied(sessionId, route)
-      await settle(sessionId)
-      at.push(performance.now())
-      // A state route whose clicks found nothing still shoots, but says so.
-      const { result: miss } = await send('Runtime.evaluate', { expression: `[...document.querySelectorAll('[data-missed]')].map(e => e.textContent).join('; ')`, returnByValue: true }, sessionId)
-      if (miss.value) console.error(`shoot: ${miss.value} on ${route}`)
-      // Interaction states: click each selector inside the design, in order.
-      for (const sel of clicks) {
-        const { result } = await send('Runtime.evaluate', { expression: clickIn(sel), returnByValue: true }, sessionId)
-        if (!result.value) console.error(`shoot: nothing matches ${sel} on ${route}`)
-        await sleep(400)
-      }
-      at.push(performance.now())
-      // The stage, and the copy picker's bar under it when copy mode is on: together they are the
-      // stage's own size, so a shot in copy mode lines up with one at rest.
-      const { result: stage } = await send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
-        document.querySelector('[data-overlay]')?.style.setProperty('display', 'none')
-        const r = document.querySelector('[data-layers]').getBoundingClientRect()
-        const bar = document.querySelector('[data-copy-bar]')?.getBoundingClientRect().height ?? 0
-        return { x: r.x, y: r.y, width: r.width, height: r.height + bar, scale: 1 }
-      })()` }, sessionId)
-      const { data } = await send('Page.captureScreenshot', { format: 'png', clip: stage.value }, sessionId)
-      const file = resolve(outDir, `${fileOf(route)}-${size.name}${flags.copy && !copyOn ? suffix.replace('-copy', '') : suffix}.png`)
-      writeFileSync(file, Buffer.from(data, 'base64'))
-      // For a sheet, the singles are kept for it and summed up in one line after it. A phone
-      // prototype's sheet shows the phone alone, cut from its shot: in a phone-size page it sits
-      // small in the middle of the stage, and five of them uncut would be half their size.
-      if (sheets) {
-        const { result: phone } = phoneOnly(route) ? await send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
-          const r = document.querySelector('[data-layers] [data-phone]')?.getBoundingClientRect()
-          return r && { x: r.x, y: r.y, w: r.width, h: r.height }
-        })()` }, sessionId) : {}
-        const { x, y, width, height } = stage.value, p = phone?.value, m = 6
-        const [x0, y0] = p ? [Math.max(0, p.x - x - m), Math.max(0, p.y - y - m)] : [0, 0]
-        const [x1, y1] = p ? [Math.min(width, p.x - x + p.w + m), Math.min(height, p.y - y + p.h + m)] : [width, height]
-        taken.set(route, [...taken.get(route) || [], { file, x: x0, y: y0, w: x1 - x0, h: y1 - y0, full: width, px: (x1 - x0) * size.deviceScaleFactor }])
-      } else console.log(file)
-      at.push(performance.now())
-      // A shot normally takes under a second; a slow one says where its time went.
-      if (at.at(-1) - at[0] > 3000) {
-        const s = i => ((at[i + 1] - at[i]) / 1000).toFixed(1)
-        const why = !ready ? ', the page never said it was ready' : at[2] - at[1] > 4900 ? ', the page stopped waiting for the design after 5 s' : ''
-        console.error(`shoot: slow ${fileOf(route)} ${size.name} ${((at.at(-1) - at[0]) / 1000).toFixed(1)}s (new tab ${s(0)}s, page ready ${s(1)}s${why}, settle ${s(2)}s, clicks ${s(3)}s, capture ${s(4)}s)`)
-      }
-      await send('Target.closeTarget', { targetId })
+  // Every shot is a fresh tab, and most of its time is the page loading and settling, not Chrome
+  // working, so a few run at once. They are listed, and their sheet columns kept, in the order the
+  // loop used to take them (desktop before phone), whichever tab finishes first.
+  const jobs = (flags.ref || motion ? [] : SIZES).flatMap((size, order) =>
+    routes.filter(r => size.mobile || size.every || !phoneOnly(r)).map(route => ({ size, route, order })))
+  const printed = []
+  const shootOne = async ({ size, route, order }, i) => {
+    // A fresh tab per shot: the page reads its route and theme only at load. Each in a window of
+    // its own and told it has focus: headless Chrome holds back the frames of a tab that is not in
+    // front, and with several open some waited 1-6 s for the design to say it was ready (5 s is
+    // when the page stops waiting, so a shot could catch it unfinished). Measured both ways.
+    const at = [performance.now()]
+    const { targetId } = await send('Target.createTarget', { url: 'about:blank', newWindow: true })
+    const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+    await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId)
+    await send('Emulation.setDeviceMetricsOverride', {
+      width: size.width, height: size.height, deviceScaleFactor: size.deviceScaleFactor, mobile: size.mobile,
+    }, sessionId)
+    if (size.mobile) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
+    const url = new URL(base)
+    url.hash = '/' + route.replace(/^\/+/, '')
+    at.push(performance.now())
+    await send('Page.navigate', { url: url.href }, sessionId)
+    let ready = false
+    for (let i = 0; i < 100 && !ready; i++) {
+      const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement.dataset.ready === "1"', returnByValue: true }, sessionId)
+      if (!(ready = result.value)) await sleep(100)
     }
+    at.push(performance.now())
+    const copyOn = await copied(sessionId, route)
+    await settle(sessionId)
+    at.push(performance.now())
+    // A state route whose clicks found nothing still shoots, but says so.
+    const { result: miss } = await send('Runtime.evaluate', { expression: `[...document.querySelectorAll('[data-missed]')].map(e => e.textContent).join('; ')`, returnByValue: true }, sessionId)
+    if (miss.value) console.error(`shoot: ${miss.value} on ${route}`)
+    // Interaction states: click each selector inside the design, in order.
+    for (const sel of clicks) {
+      const { result } = await send('Runtime.evaluate', { expression: clickIn(sel), returnByValue: true }, sessionId)
+      if (!result.value) console.error(`shoot: nothing matches ${sel} on ${route}`)
+      await sleep(400)
+    }
+    at.push(performance.now())
+    // The stage, and the copy picker's bar under it when copy mode is on: together they are the
+    // stage's own size, so a shot in copy mode lines up with one at rest.
+    const { result: stage } = await send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
+      document.querySelector('[data-overlay]')?.style.setProperty('display', 'none')
+      const r = document.querySelector('[data-layers]').getBoundingClientRect()
+      const bar = document.querySelector('[data-copy-bar]')?.getBoundingClientRect().height ?? 0
+      return { x: r.x, y: r.y, width: r.width, height: r.height + bar, scale: 1 }
+    })()` }, sessionId)
+    const { data } = await send('Page.captureScreenshot', { format: 'png', clip: stage.value }, sessionId)
+    const file = resolve(outDir, `${fileOf(route)}-${size.name}${flags.copy && !copyOn ? suffix.replace('-copy', '') : suffix}.png`)
+    writeFileSync(file, Buffer.from(data, 'base64'))
+    // For a sheet, the singles are kept for it and summed up in one line after it. A phone
+    // prototype's sheet shows the phone alone, cut from its shot: in a phone-size page it sits
+    // small in the middle of the stage, and five of them uncut would be half their size.
+    if (sheets) {
+      const { result: phone } = phoneOnly(route) ? await send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
+        const r = document.querySelector('[data-layers] [data-phone]')?.getBoundingClientRect()
+        return r && { x: r.x, y: r.y, w: r.width, h: r.height }
+      })()` }, sessionId) : {}
+      const { x, y, width, height } = stage.value, p = phone?.value, m = 6
+      const [x0, y0] = p ? [Math.max(0, p.x - x - m), Math.max(0, p.y - y - m)] : [0, 0]
+      const [x1, y1] = p ? [Math.min(width, p.x - x + p.w + m), Math.min(height, p.y - y + p.h + m)] : [width, height]
+      taken.set(route, [...taken.get(route) || [], { order, file, x: x0, y: y0, w: x1 - x0, h: y1 - y0, full: width, px: (x1 - x0) * size.deviceScaleFactor }])
+    } else printed[i] = file
+    at.push(performance.now())
+    // A shot normally takes under a second; a slow one says where its time went.
+    if (at.at(-1) - at[0] > 3000) {
+      const s = i => ((at[i + 1] - at[i]) / 1000).toFixed(1)
+      const why = !ready ? ', the page never said it was ready' : at[2] - at[1] > 4900 ? ', the page stopped waiting for the design after 5 s' : ''
+      console.error(`shoot: slow ${fileOf(route)} ${size.name} ${((at.at(-1) - at[0]) / 1000).toFixed(1)}s (new tab ${s(0)}s, page ready ${s(1)}s${why}, settle ${s(2)}s, clicks ${s(3)}s, capture ${s(4)}s)`)
+    }
+    await send('Target.closeTarget', { targetId })
   }
+  let next = 0
+  await Promise.all(Array.from({ length: Math.min(TABS, jobs.length) }, async () => {
+    while (next < jobs.length) { const i = next++; await shootOne(jobs[i], i) }
+  }))
+  for (const shots of taken.values()) shots.sort((x, y) => x.order - y.order)
+  printed.forEach(f => f && console.log(f))
   if (flags.ref) {
     for (const route of routes) {
       const { targetId } = await send('Target.createTarget', { url: 'about:blank' })

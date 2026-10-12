@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { startChrome, stopChrome } from '../scripts/chrome.mjs'
 import { optionalExtras } from './optional-extras.mjs'
 import { designKit } from './design-kit.mjs'
+import { speedChecks } from './speed-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -1519,6 +1520,7 @@ proto(['shoot', 'tryit', '--sheet', '--size', '834x1194'], { ok: false })
 
 await optionalExtras({ proto, app, local, openPage, postJson, fail, keepShots })
 await designKit({ proto, app, project, local, fail })
+await speedChecks({ proto, app, openPage, fail })
 
 proto(['stop'])
 for (let i = 0; i < 40 && await answers(`${local}__proto/status`); i++) await new Promise(r => setTimeout(r, 250))

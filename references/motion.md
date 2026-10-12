@@ -1,13 +1,13 @@
-# Motion
+# Motion (useMotion)
 
-Read when the request is about motion, or a batch has a comment on the motion.
+Part of the prototype skill: SKILL.md links here, and `proto` is the command SKILL.md defines.
 
 **Let the motion be reviewed.** When the request is about motion (how a sheet opens, a list
 enters, a toast lands, the feel of a spring), call `useMotion` from `src/motion.ts` once, in the
 variant's own component. The page then offers Motion (a curves button beside Comment, or Motion in
 the pill's menu on a phone), which docks a slim bar under the design: play, the time, a slider to
 scrub forward and back, the curves of every animation, speed and loop, and comments on a moment or
-a range, which reach you like any comment (references/comments.md). The design makes room for it; it is never
+a range, which reach you like any comment (below). The design makes room for it; it is never
 covered. Until the user turns it on the design runs live and nothing is recorded, so when you add
 `useMotion`, tell them where to find it.
 
@@ -40,11 +40,9 @@ useMotion({
   take is empty.
 - Name the moving parts with `data-shoot`: the curves are labelled by it.
 - Motion the design renders on `<body>` through a portal (a sheet, a toast) is recorded too, but
-  it covers the dock there: give the portal a `container` in the variant (SKILL.md section 4).
+  it covers the dock there: give the portal a `container` in the variant (above).
 - Pressing anything in the design lets it run live; the dock's next move takes it back. An edit
   to the variant records the take again.
-
-## Reading motion in frames
 
 You can't watch motion, so read it in frames. A plain shot of a variant with `useMotion` shows it
 before `start`. `--at` and `--frames` record its take from rest, the way the dock does, then shoot
@@ -53,8 +51,6 @@ writes `<slug>-<letter>-frames.png`, the moments in order with their times, cut 
 happens, and every animation's curve under them on the same clock. Read the frames sheet whenever
 you write or change motion: an overshoot, a stagger's rhythm, something landing early all show
 there.
-
-## A comment on the motion
 
 **A comment on the motion** (written in the motion dock, under a variant with `useMotion`) is on a
 moment or a range of its take rather than an element: its `at:` is a time, `at: 0.35 s` or

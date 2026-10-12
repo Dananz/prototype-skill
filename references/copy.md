@@ -1,6 +1,6 @@
-# Copy options
+# Copy options (useCopy)
 
-Read when the user asks for other words or sends `action: copy-options` / `action: copy` from the page.
+Part of the prototype skill: SKILL.md links here, and `proto` is the command SKILL.md defines.
 
 **Offer other copy when asked.** When the user asks for other words ("better headlines", "try other
 button text") or sends `action: copy-options` from the page, don't write a variant per wording: give the lines they asked about options with

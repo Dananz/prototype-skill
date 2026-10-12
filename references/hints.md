@@ -1,6 +1,6 @@
-# Try it: say what to type and try
+# Try it hints (useHints)
 
-Read on an explicit request in chat or an `action: try-it` from the page.
+Part of the prototype skill: SKILL.md links here, and `proto` is the command SKILL.md defines.
 
 **Only on request: say what to type and try.** After an explicit request in chat or
 `action: try-it` from the page, when getting through a variant takes something a reviewer can't

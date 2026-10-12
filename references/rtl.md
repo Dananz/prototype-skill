@@ -1,6 +1,6 @@
 # Right to left (Hebrew, Arabic, Persian, Urdu)
 
-Read when the product reads right to left, before the first variant.
+Part of the prototype skill: SKILL.md links here, and `proto` is the command SKILL.md defines.
 
 When the product reads right to left, every variant (Current and new designs alike) is built
 right to left from its first line. Never draw it left to right and flip it, and never copy a

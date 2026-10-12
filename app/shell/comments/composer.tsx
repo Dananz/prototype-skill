@@ -98,7 +98,8 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const box = useRef<HTMLDivElement>(null)
   const [empty, setEmpty] = useState(!initial || !initial.body.some(s => typeof s !== 'string' || s.trim()))
   const emit = () => { if (!editing && ed.current) act.hold({ body: readEditor(ed.current), tags: tagsRef.current, shot: shotRef.current, pasted: pastedRef.current }, target, time) }
-  useEffect(emit, [tags, shot, pasted]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Moving the comment to the parent (or back) keeps what is held on the element it is on now.
+  useEffect(emit, [tags, shot, pasted, target?.selector]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (nudge) box.current?.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(-3px)' }, { transform: 'translateX(0)' }], { duration: 320, easing: 'ease-out' })
   }, [nudge])

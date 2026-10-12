@@ -7,6 +7,9 @@ import type { Inbox } from '../shell'
 import type { CState, Held, Item, State } from './types'
 
 type Saved = { items: Item[]; held: Held | null }
+// Send as I add is the reviewer's way of working, not one session's: kept per browser.
+const LIVE_KEY = 'proto-comments-live'
+const readLive = () => { try { return localStorage.getItem(LIVE_KEY) === '1' } catch { return false } }
 
 export function createStore(sessionId: string) {
   const key = `proto-comments-${sessionId}`
@@ -17,7 +20,7 @@ export function createStore(sessionId: string) {
     } catch { return { items: [], held: null } }
   }
   const saved = read()
-  let state: State = { items: saved.items, held: saved.held, mode: { kind: 'idle' }, active: null, nudge: 0, pendingTag: null, place: null, sheet: false, sending: false, error: '' }
+  let state: State = { items: saved.items, held: saved.held, mode: { kind: 'idle' }, active: null, nudge: 0, pendingTag: null, place: null, sheet: false, sending: false, live: readLive(), error: '' }
   const listeners = new Set<() => void>()
   let timer = 0
   const persist = () => {
@@ -37,6 +40,7 @@ export function createStore(sessionId: string) {
       const keep = next.items !== undefined || next.held !== undefined
       state = { ...state, ...next }
       if (keep) persist()
+      if (next.live !== undefined) try { localStorage.setItem(LIVE_KEY, next.live ? '1' : '0') } catch { /* private window: on for this page only */ }
       listeners.forEach(l => l())
     },
     subscribe(l: () => void) { listeners.add(l); return () => { listeners.delete(l) } },

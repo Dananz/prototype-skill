@@ -5,14 +5,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useCtx } from './ctx'
 import { frameClicks } from '../view/frame'
-import { describe } from './dom'
+import { climb, describe, find } from './dom'
 import { listen } from '../quiet'
 import { Glide, HoldRing, HoverBox, useBoxes, usePick } from './inspect'
 import { Composer } from './composer'
 import { useRows } from './list'
 import { progress, type Said } from './store'
-import type { Box, Item } from './types'
-import { PinDot, Reply, STATE, Body } from './ui'
+import type { Box, Item, Target } from './types'
+import { Icon, PinDot, Reply, STATE, Body } from './ui'
 import { sameView } from '../view/sizes'
 
 function Pins({ items, boxes, active, onOpen }: { items: { item: Item; done: boolean }[]; boxes: Record<string, Box>; active: string | null; onOpen: (id: string) => void }) {
@@ -84,16 +84,43 @@ export function Layer() {
     <>
       <HoverBox hover={hover} verb={verb} onConfirm={confirm} onUp={up} />
       <HoldRing at={hold} />
-      <Glide item={onNew && !onSpot ? { box: onNew } : null} pad={3} className="rounded-md border-2 border-proto-primary-ring bg-proto-primary/[.08]">{() => null}</Glide>
+      <Glide item={onNew && !onSpot ? { box: onNew } : null} pad={3} className="rounded-md border-2 border-proto-primary-ring bg-proto-primary/[.08]">
+        {h => m.kind === 'compose' && <Climb box={h.box} up={canClimb(host.mount(), m.target)} down={!!m.trail?.length} />}
+      </Glide>
       {onNew && onSpot && <div className="pointer-events-none absolute z-10 size-8 rounded-full ring-2 ring-proto-primary-ring" style={{ left: onNew.x - 16, top: onNew.y - 16 }} />}
       <Pins items={here.map(r => ({ item: r.item, done: r.state === 'done' }))} boxes={boxes} active={s.active} onOpen={act.open} />
       {editing && (
-        <Composer key={editing.id ?? editing.target.selector} target={editing.target} n={editedItem?.n ?? nextN} place={boxes[editing.id ?? '__new'] ?? null}
+        <Composer key={editing.id ?? '__new'} target={editing.target} n={editedItem?.n ?? nextN} place={boxes[editing.id ?? '__new'] ?? null}
           sheet={phone} tagging={m.kind === 'tag'} editing={!!editedItem} id={editedItem?.id}
           initial={editedItem ?? (s.held?.target ? s.held : undefined)} />
       )}
       {opened && <ReadCard row={opened} box={boxes[opened.item.id]} />}
     </>
+  )
+}
+
+/** Whether the element a comment is on has a parent inside the design to move up to. */
+function canClimb(mount: HTMLElement | null, t: Target) {
+  const el = mount && find(mount, t)
+  return !!el && !!climb(mount!, el)
+}
+
+/**
+ * The tab on the top edge of a new comment's outline: Parent moves the comment up to the element
+ * around it, and the arrow beside it steps back down to where it came from. Drawn inside the
+ * outline's top edge when there is no room above it.
+ */
+function Climb({ box, up, down }: { box: Box; up: boolean; down: boolean }) {
+  const { act } = useCtx()
+  if (!up && !down) return null
+  const inside = box.y < 34
+  const btn = 'inline-flex h-7 items-center gap-1.5 px-2.5 hover:bg-white/15'
+  return (
+    <div data-inspect-ui className={`pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-stretch whitespace-nowrap bg-proto-primary text-xs font-semibold text-proto-primary-fg shadow ${inside ? 'top-0 rounded-b-md' : 'bottom-full rounded-t-md'}`}>
+      {up && <button onClick={act.parent} title="Comment on the element around it" className={`${btn} ${inside ? 'rounded-bl-md' : 'rounded-tl-md'} ${down ? '' : inside ? 'rounded-br-md' : 'rounded-tr-md'}`}><Icon name="up" className="size-3.5" />Parent</button>}
+      {up && down && <span className="my-1.5 w-px bg-white/30" />}
+      {down && <button onClick={act.down} aria-label="Back to the element inside" title="Back to the element inside" className={`${btn} px-2 ${inside ? 'rounded-br-md' : 'rounded-tr-md'} ${up ? '' : inside ? 'rounded-bl-md' : 'rounded-tl-md'}`}><Icon name="child" className="size-3.5" /></button>}
+    </div>
   )
 }
 
