@@ -7,6 +7,7 @@
 // draws it, in a layer over the stage that never takes the pointer.
 import type { Act, Hint } from './hints'
 import { esc } from './ui'
+import { frameOf } from './comments/dom'
 
 type Try = Extract<Hint, { kind: 'try' }>
 type Box = { x: number; y: number; w: number; h: number }
@@ -52,17 +53,29 @@ function targetOf(host: Element, t: Try): { el: Element | null; step: number | n
   return { el: query(host, t.at), step: null }
 }
 /** Only the part of el that shows, relative to o: anything between it and stop that clips (a
- *  scrolling list, the stage) cuts the box down; a box cut away entirely is null. */
+ *  scrolling list, the stage) cuts the box down; a box cut away entirely is null. An element in a
+ *  device view's frame is clipped in its own page first, then drawn where the frame draws it (scaled,
+ *  from the frame's corner) and clipped by what shows of the frame. */
 function visible(el: Element | null, o: DOMRect, stop: Element): Box | null {
   if (!el) return null
   const r = el.getBoundingClientRect()
   if (!r.width && !r.height) return null
   let [l, t, rt, b] = [r.left, r.top, r.right, r.bottom]
-  for (let p = el.parentElement; p && p !== stop; p = p.parentElement) {
-    const cs = getComputedStyle(p)
-    if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
-    const c = p.getBoundingClientRect()
-    l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); b = Math.min(b, c.bottom)
+  const clip = (from: Element | null) => {
+    for (let p = from; p && p !== stop; p = p.parentElement) {
+      const cs = (p.ownerDocument.defaultView ?? window).getComputedStyle(p)
+      if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
+      const c = p.getBoundingClientRect()
+      l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); b = Math.min(b, c.bottom)
+    }
+  }
+  clip(el.parentElement)
+  const f = frameOf(el)
+  if (f) {
+    const fr = f.getBoundingClientRect(), s = fr.width / (f.offsetWidth || 1)
+    ;[l, t, rt, b] = [fr.left + l * s, fr.top + t * s, fr.left + rt * s, fr.top + b * s]
+    l = Math.max(l, fr.left); t = Math.max(t, fr.top); rt = Math.min(rt, fr.right); b = Math.min(b, fr.bottom)
+    clip(f.parentElement)
   }
   return rt - l > 1 && b - t > 1 ? { x: l - o.left, y: t - o.top, w: rt - l, h: b - t } : null
 }
@@ -204,7 +217,7 @@ export function createSpotlight(layer: HTMLElement) {
     // in (the stage itself, for a long page); the light rides along.
     const { el } = targetOf(host, t)
     for (let p = el?.parentElement; el && p && p !== layer.parentElement; p = p.parentElement) {
-      const oy = getComputedStyle(p).overflowY
+      const oy = (p.ownerDocument.defaultView ?? window).getComputedStyle(p).overflowY
       if (oy !== 'auto' && oy !== 'scroll') continue
       const c = p.getBoundingClientRect(), r = el.getBoundingClientRect()
       if (r.top < c.top || r.bottom > c.bottom) p.scrollTo({ top: p.scrollTop + r.top - c.top - (c.height - r.height) / 2, behavior: still() ? 'auto' : 'smooth' })

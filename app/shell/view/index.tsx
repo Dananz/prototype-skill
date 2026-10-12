@@ -1,13 +1,15 @@
 // The device view: this page at a phone's, a tablet's or a desktop's size, shown in the stage (the
 // bar and the pill stay), so a phone can see the desktop layout and a desktop the phone's. The view
-// shows the page's own place: the page moves it, and when the page in it moves (its own chrome),
-// the page follows. A quiet line on top says the size and the zoom; under it the page in a frame,
-// as wide as the area (never above 100%), which two fingers or a pinch zoom, from Fit to 200%.
+// shows the page's own place: the page moves it, and when the page in it moves (a link in the
+// design; it draws no bar, pill or sidebar of its own, only the design), the page follows. A quiet
+// line on top says the size and the zoom; under it the page in a frame, as wide as the area (never
+// above 100%), which two fingers or a pinch zoom, from 10% to 200%, and Space and a drag move.
 //
 // While a view is on, the page's own Comment button and C comment on the design in it: a layer
 // covers the frame, the comment layer's inspect looks through it (host.view().at), a drag on it
 // scrolls, and what is written is about that layout (comments/). The shell draws the controls (the
-// bar's three sizes, the Layout row of the pill's menu); this draws the view, in [data-view].
+// bar's three sizes and its scale button, which zooms the view; the Layout and Zoom rows of the
+// pill's menu); this draws the view, in [data-view].
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type RefObject } from 'react'
 import { createRoot } from 'react-dom/client'
 import { useRows } from '../comments/list'
@@ -199,10 +201,10 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
               <button type="button" data-view-turn onClick={() => set({ land: !view.land, zoom: 0 })} aria-label={view.land ? 'Turn upright' : 'Turn on its side'} title={view.land ? 'Upright' : 'On its side'}
                 className="grid size-8 shrink-0 place-items-center rounded-full text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><Icon name="rotate" className="size-[17px]" /></button>
             )}
-            <button type="button" data-view-zoom onClick={() => set({ zoom: view.zoom ? 0 : 100 })} aria-label={view.zoom ? 'Fit the width' : 'Actual size'}
-              className="h-8 min-w-11 shrink-0 rounded-full px-2 text-xs font-medium tabular-nums text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{view.zoom ? `${pct}%` : 'Fit'}</button>
           </div>}
-      <div ref={area} data-view-area className="min-h-0 flex-1 overflow-auto overscroll-contain" style={{ touchAction: 'pan-x pan-y' }}>
+      {/* No scrollbars, as on a canvas: one coming and going changes the area's width, and with it Fit, which
+          brings it back (the zoom flickered between two values). It moves by drag, wheel and fingers. */}
+      <div ref={area} data-view-area className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ touchAction: 'pan-x pan-y' }}>
         <div ref={wrap} className="flex h-max min-h-full w-max min-w-full items-start justify-start">
           <LiveFrame hash={hash} dark={dark} w={d.w} h={d.h} scale={scale} route={route} bind={bind}
             ring={`bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${pad ? 'rounded-[10px]' : ''}`}>

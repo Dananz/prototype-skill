@@ -14,7 +14,7 @@ export const zoomOf = (mount: HTMLElement) => parseFloat(mount.closest<HTMLEleme
 
 /** The frame a device view (view/) draws the page in, when el is in it. Nothing here is an
  *  instanceof check: an element in the frame belongs to another window, whose classes are its own. */
-const frameOf = (el: Element) => el.ownerDocument !== document ? el.ownerDocument.defaultView?.frameElement as HTMLElement | null ?? null : null
+export const frameOf = (el: Element) => el.ownerDocument !== document ? el.ownerDocument.defaultView?.frameElement as HTMLElement | null ?? null : null
 /** How much bigger el is drawn on the page than in its own px: a device view's frame is scaled. */
 export const scaleOf = (el: Element) => { const f = frameOf(el); return f ? f.getBoundingClientRect().width / (f.offsetWidth || 1) : 1 }
 
