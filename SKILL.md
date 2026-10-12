@@ -125,7 +125,11 @@ the app), do the steps below and save one at the end.
    `<slug>-A-vs-ref.png`, a sheet with the variant, the reference and the two laid over each
    other. Read the sheet (the `-screen.png` beside the reference for small detail), list every difference (position, size, color, type, copy, missing
    pieces), fix, and shoot again until the overlay shows no double edges on the layout. Only
-   then write the other variants.
+   then write the other variants. `proto compare <slug>/A --ref <png> [--el <css>]` puts a number
+   on it (% of pixels off, per column and per third, and a difference image): keep going while it
+   falls, aim under about 2 % on what the user will judge, and stop when two tries in a row don't
+   lower it. A number to stop at is faster than judging by eye; measured, it also replaces writing
+   pixel-measuring scripts.
 7. **Save the kit** as soon as Current matches, before the other variants, so the next session
    starts here instead of at step 1:
 
@@ -305,7 +309,22 @@ Each is told:
 - `--session <the main session's $CLAUDE_CODE_SESSION_ID>` on every `proto` call, plus
   `--project <project root>` if it works in another folder; never `proto up`, `add`, `pick` or `work`;
 - to shoot only its own variant (`proto shoot <slug>/<letter>`), read the shots, fix, and shoot again;
+  where it rebuilds something that has a reference, to loop on `proto compare` with the stop rule above;
 - to reply in at most five lines: what it built, and its weakest point.
+
+Start them at medium effort (the Agent tool's `effort: "medium"`). Measured on two regions of a
+plugin UI rebuilt from source: medium matched high on the simpler one in 0.9x the time; on the
+harder one high was closer (0.8 % vs 1.2 % of pixels off) in 2.3x the time. Keep high for a last
+polish pass on a region the user is judging closely.
+
+**A region worked on again and again: write its spec once.** When the user keeps refining the same
+part (a rebuild of a real product they perfect over many rounds), have one subagent extract it
+from the source and the reference into `src/protos/<slug>/spec/<region>.md`: every box, colour,
+font, icon path and layer as numbers, with the source line each came from, the screenshot winning
+where they disagree. Later builds and changes read the spec, not the source: measured, builds from
+a spec took 30-90 s against 150-470 s from source, at slightly lower fidelity on the first try
+(the loop above closes most of it). Writing the spec costs 3-9 minutes, so it pays from the second
+or third rebuild of that region, and not for a one-off round of directions.
 
 When all are back, run one `proto shoot <slug> --sheet`, read it, fix what the sheet shows and
 what the subagents named, write each variant's `about` and `states` into `meta.ts`, then go on
