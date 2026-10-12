@@ -166,7 +166,8 @@ sides only, never drawn left to right and flipped.
 
 ## 3. One usable direction first, then the exploration
 
-**Plan the look before code.** Read `${CLAUDE_SKILL_DIR}/references/craft.md` before the first variant. Draw the
+**Plan the look before code.** Run `proto add` with the directions' names first, so the page
+shows their placeholders while you plan. Read `${CLAUDE_SKILL_DIR}/references/craft.md` before the first variant. Draw the
 type (`proto fonts --draw <n>`, with `--hebrew` for a Hebrew product), then write each
 direction's plan (concept, palette, type, layout, pattern, signature, imagery, motion, volume)
 into the app's `.proto/briefs/<slug>.md`, check the plans against the defaults that file lists
@@ -352,10 +353,12 @@ Each is told:
 - to reply in at most five lines: what it built, its weakest point, and which default from
   craft.md it is closest to.
 
-Start them at medium effort (the Agent tool's `effort: "medium"`). Measured on two regions of a
-plugin UI rebuilt from source: medium matched high on the simpler one in 0.9x the time; on the
-harder one high was closer (0.8 % vs 1.2 % of pixels off) in 2.3x the time. Keep high for a last
-polish pass on a region the user is judging closely.
+Effort: a subagent designing a direction runs at the session's own effort; design quality drops
+visibly at medium. A subagent rebuilding a region against a reference can start at medium (the
+Agent tool's `effort: "medium"`): measured on two regions of a plugin UI rebuilt from source,
+medium matched high on the simpler one in 0.9x the time; on the harder one high was closer
+(0.8 % vs 1.2 % of pixels off) in 2.3x the time. Keep high for a last polish pass on a region the
+user is judging closely.
 
 **A region worked on again and again: write its spec once.** When the user keeps refining the same
 part (a rebuild of a real product they perfect over many rounds), have one subagent extract it
