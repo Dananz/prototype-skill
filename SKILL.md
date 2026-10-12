@@ -56,6 +56,32 @@ a screenshot of the real app at a glance. Every other variant starts as a copy o
 changes only what its direction is about. Variants drawn on an invented look get rejected
 however good the idea is, so this step comes before any idea.
 
+**First, the project's design kit.** Run `proto kit` (`proto up` also prints a line per kit). A
+kit is what an earlier session already built and matched for this project: `src/theme.css`,
+the chrome in `parts`, the extra packages, the phone screen, and Currents already matched to
+their screenshots, with `design-system.md` on what they are and what took rounds to get right.
+When there is one, read its `design-system.md`, then add the prototype on it:
+
+```
+proto add <slug> --title "…" --variants "A:Current,B:…" --kit [--current <screen>]
+```
+
+`--current <screen>` puts a saved Current in as A, with its references in `.proto/ref/<slug>/`;
+without it, write A on the kit's parts. Then what `proto add` prints decides what is left:
+
+- **Up to date**: steps 2 to 5 below are done. With a saved Current, shoot it once against its
+  reference (the command is printed) and go on to the other variants; no matching rounds. A new
+  screen still needs its screenshot (step 1) and its Current matched (step 6), but on the kit's
+  theme and parts, so only what is particular to that screen is new.
+- **Out of date** (it names the changed files): bring `theme.css` and the parts in line with
+  those files only, take a fresh screenshot, match Current again (step 6), then save the kit
+  again (below). Still much less than starting over.
+- **Commits since the save, tracked files unchanged**: the kit holds; a quick look at a fresh
+  screenshot beside the saved reference shows whether the screen itself moved.
+
+With no kit, or `--kit=<name>` for a second product in the same repository (a back office beside
+the app), do the steps below and save one at the end.
+
 1. **Screenshots of the real thing.** Capture the screen and its states the user will judge
    against, into the app's `.proto/ref/<slug>/`, and read every one:
    - Web: run the project's app and screenshot the page in a browser, at 1440 wide (desktop)
@@ -98,6 +124,22 @@ however good the idea is, so this step comes before any idea.
    other. Read the sheet (the `-screen.png` beside the reference for small detail), list every difference (position, size, color, type, copy, missing
    pieces), fix, and shoot again until the overlay shows no double edges on the layout. Only
    then write the other variants.
+7. **Save the kit** as soon as Current matches, before the other variants, so the next session
+   starts here instead of at step 1:
+
+   ```
+   proto kit save <slug> --sources <the files the tokens and chrome came from, from the project's root>
+   proto kit screen <screen> <slug>/A --sources <the screen's own component files>
+   ```
+
+   `--sources` is what lets a later session see that the real app moved on: name the theme
+   config and every component the parts were measured from (what `theme.css` and the parts
+   import through `@project/…` or a relative path is tracked by itself). Then fill in the
+   kit's `design-system.md` (the path is printed): the product, the tokens worth knowing by
+   name, which values are invented, what each part is for, and the traps that took rounds. Save
+   again whenever the theme or the parts change for the better (a later Current that needed a
+   fix), and `proto kit screen` each new Current that matched. The kit lives in
+   `.prototypes/_kits/`, git-ignored like the sessions; `proto rm` and `gc` never touch it.
 
 The feature itself: write down in two or three lines what it must do. Every variant does all of it.
 
@@ -105,7 +147,8 @@ The feature itself: write down in two or three lines what it must do. Every vari
 components if it has any (`@import` its token CSS in `src/theme.css`; import presentational
 components through `@project/…` and add `@source "../../../src/components";` so their classes
 are generated). With none, choose a restrained palette and type that fit the product, put them
-in a `@theme {}` block, and tell the user they are invented.
+in a `@theme {}` block, and tell the user they are invented. Save the kit once those and the
+first parts exist (`proto kit save <slug>`), so the next prototype keeps the same invented look.
 
 ## Right to left (Hebrew, Arabic, Persian, Urdu)
 
@@ -666,6 +709,10 @@ prototype in the session is picked or archived), and every
 `proto up` deletes sessions untouched for 14 days unless kept and drops leftover tailnet
 rules (`proto gc` does the same on demand). The user can also Keep or Stop from the session
 menu in the page.
+
+The project's design kits (`.prototypes/_kits/`) outlive every session. When the user wants one
+gone (a redesign shipped and it no longer looks like the app), delete its folder; the next
+session builds and saves a new one.
 
 ## When something is off
 

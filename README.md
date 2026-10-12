@@ -97,6 +97,7 @@ Or just ask for "a few versions of the settings drawer". Keep talking in the sam
 - Step through the variants, see them side by side or full size, or hide everything but the design.
 - Open menus, drawers and steps from a list, autoplay them, or compare two variants in the same state.
 - A Try it panel tells you what to type and where to click.
+- The first session on a project saves its look (tokens, rebuilt tab bars and headers, matched screens) as a design kit. Later sessions start from it instead of rebuilding it, and Claude checks whether your app has changed since.
 - Comment directly on any part of a design, and visually select other elements to reference. No custom element names or named-element dropdown. Claude makes the change and replies.
 - See the page at a phone's, a tablet's or a desktop's size from any screen, and comment on that layout.
 - Ask for other copy, then try Claude's options on the design itself and send back the ones you pick.
