@@ -1,89 +1,118 @@
 # Craft: designs that look made, not generated
 
 Read before the first variant of a prototype. Variant subagents and the critic read it too, by
-its path (don't paste it into a brief). Adapted from Anthropic's `frontend-design` skill
-(Apache 2.0) and the house rules below.
+its path (don't paste it into a brief). Sections 1 to 4 are Anthropic's `frontend-design` skill
+(Apache 2.0), kept close to its own words; the rest is how this skill builds on it.
 
 **Where it applies.** Everywhere a look is being chosen: a new product with nothing shipping
 yet, a direction that is about the look, a "go wild" request. With a Current, Current's look
 wins: a direction keeps its palette, type and chrome unless the direction is about them, and
-this file still governs how well the new parts are made (hierarchy, spacing, type, motion).
+this file still governs how well the new parts are made (hierarchy, type, layout, motion, words).
 
-Without direction, a model samples from the middle of everything it has seen, and the middle is
-what reads as generated. Every rule below is a way out of the middle.
+Approach this as the design lead at a small studio known for giving every client a visual
+identity that could not be mistaken for anyone else's. This client has already rejected
+proposals that felt templated, and is paying for a distinctive point of view: make deliberate,
+opinionated choices about palette, typography and layout that are specific to this brief, and
+take one real aesthetic risk you can justify.
 
 ## 1. Ground it in the subject
 
-Before any design, name the product's subject, who uses it, and the screen's single job. When
-the request doesn't pin these down, pin them yourself and say so in the plan. The subject's own
-world (its materials, instruments, artifacts, places, vernacular) is where distinctive choices
-come from: a sailing app can take its palette from a chart and its numbers from a logbook; a
-bakery from its trays, paper bags and price board. Use real content from that world everywhere,
-never filler.
+If the brief does not pin down what the product or subject is, pin it yourself before designing:
+name one concrete subject, its audience, and the page's single job, and state your choice. What
+you know of the user's preferences, what they are building and designs made for them before are
+hints. The subject's own world, its materials, instruments, artifacts and vernacular, is where
+distinctive choices come from. Build with the brief's real content and subject matter throughout.
 
-## 2. A plan per direction, before code
+## 2. Design principles
 
-Start the type from a draw: `proto fonts --draw <number of directions>` (add `--hebrew` for a
-Hebrew product) prints that many pairings at random, no family twice. Take one per direction,
-or replace one with another Google Font the subject calls for (section 5). Then write the plans
-to `.proto/briefs/<slug>.md` in the app's folder, one section per direction:
+**The hero is a thesis.** Open with the most characteristic thing in the subject's world, in
+whatever form makes sense for it: a headline, an image, an animation, a live demo, an interactive
+moment. Be deliberate with the choice: a big number with a small label, supporting stats and a
+gradient accent is the template answer; use it only if it is truly the best option.
+
+**Typography carries the personality.** Pair the display and body faces deliberately, not the
+same families you would reach for on any other project, and set a clear type scale with
+intentional weights, widths and spacing. Make the type treatment itself a memorable part of the
+design, not a neutral delivery vehicle for the content.
+
+**Structure is information.** Numbering, eyebrows, dividers and labels should encode something
+true about the content, not decorate it. Numbered markers (01 / 02 / 03) belong only on a real
+sequence, where order carries information the reader needs.
+
+**Motion, deliberately.** Think about where and if animation serves the subject: a page-load
+sequence, a scroll-triggered reveal, hover micro-interactions, ambient atmosphere. An
+orchestrated moment usually lands harder than scattered effects. Sometimes less is more: extra
+animation adds to the feeling that a design is AI-generated.
+
+**Match complexity to the vision.** Maximalist directions need elaborate execution; minimal
+directions need precision in spacing, type and detail. Elegance is executing the chosen vision
+well.
+
+**Words are design material** (section 8): copy can make a design feel as templated as the
+design itself.
+
+## 3. Process: brainstorm, plan, critique, build, critique again
+
+For calibration: AI-generated design right now clusters around a few looks that appear
+regardless of subject. Where the brief pins down a visual direction, follow it exactly, the
+brief's own words always win, including when it asks for one of these. Where it leaves an axis
+free, don't spend that freedom on a default:
+
+- **Type:** Inter, Roboto, Arial, Open Sans or the system font as the display face; Space
+  Grotesk, Fraunces and Instrument Serif as the "interesting" picks; one family at one weight for
+  everything; the same few faces in every direction and every session.
+- **Color:** a warm cream background (near `#F4F1EA`) with a high-contrast serif and a terracotta
+  accent; a near-black background with a single bright acid-green or vermilion accent; a purple
+  or blue-violet gradient on white; every color used evenly so nothing leads.
+- **Layout:** a broadsheet with hairline rules, zero radius and dense newspaper columns; the SaaS
+  card kit (three icon cards in a row, a big number with a small label); a centred hero with two
+  buttons over a gradient blob; cards with a colored left border; the same sticky bottom bar in
+  every direction.
+- **Details:** a tracked all-caps eyebrow over every heading; `→` appended to every link and
+  button; emoji as icons; glass on every surface; a shadow and a hover lift on every card.
+- **Motion:** a fade-and-slide-up on every section and a hover transition on every card.
+
+Work in two passes. First, brainstorm in your thinking and write a plan per direction to
+`.proto/briefs/<slug>.md` in the app's folder:
 
 ```
 ## B · Tide table
 Concept:   one line, what it is and why it fits this subject
 Palette:   4-6 named hex values by role: surface, ink, muted, accent (+ one support)
-Type:      display, body, utility for numbers if needed, as font('…') specs; the scale
-           (e.g. 64 / 20 / 15 / 12) and weights
+Type:      display (characterful, used with restraint), body (complementary), utility for
+           numbers if needed, as font('…') specs (section 5); the scale and weights
 Layout:    one sentence, plus an ASCII wireframe of the screen at rest
 Pattern:   how the main action works (a sticky bar, a form in the hero, a picker, a drawer)
-Signature: the one thing this direction will be remembered by
+Signature: the single element this direction will be remembered by
 Imagery:   what fills the visual space (photo, generated image, drawn shapes, data, none)
-Motion:    the one moment that moves (an entrance, a state change), or none
-Volume:    quiet or loud (section 4)
+Motion:    the one moment that moves, or none
 ```
 
-Then review the plans before writing a line:
+Then review each plan against the brief before building. If any part reads like the generic
+default you would produce for any similar page (work through a similar prompt and see whether
+you arrive somewhere similar), revise that part and say what you changed and why. Check the
+plans against each other too: no two directions share a font family, a dominant surface color, a
+signature or a pattern for the main action, unless the feature itself requires it (shared facts
+like the business name, address and prices are fine). Only then write the code, following the
+revised plan exactly and deriving every color and type decision from it.
 
-- **Against the defaults** (section 3): any part that reads like what you would make for any
-  similar brief gets revised, and the plan says what changed.
-- **Against each other.** No two directions share a font family, a dominant surface color, a
-  signature or a pattern for the main action, unless the feature itself requires it (shared
-  facts like the business name, address and prices are fine; a shared bottom order bar in every
-  direction is not). With a Current, directions differ in structure, and in look only when the
-  direction is about the look.
-- **Volume:** at most one loud direction per prototype (section 4).
+Do most of this planning and iteration in your thinking; show the user ideas you are confident
+will delight them.
 
-## 3. The defaults to steer away from
+## 4. Restraint and self-critique
 
-These appear regardless of subject, so they read as generated. Each is fine when the brief asks
-for it; none is a choice when the brief leaves that axis free.
+Spend your boldness in one place. Let the signature be the one memorable thing, keep everything
+around it quiet and disciplined, and cut any decoration that does not serve the brief. **Not
+taking a risk can be a risk itself.** Build to a quality floor without announcing it: responsive
+down to mobile, visible keyboard focus, reduced motion respected. Critique your own work as you
+build, from screenshots (section 9). Consider Chanel's advice: before leaving the house, look in
+the mirror and remove one accessory.
 
-- **Type:** Inter, Roboto, Arial, Open Sans or the system font as the display face; Space
-  Grotesk, Fraunces and Instrument Serif as the "interesting" picks; one family at one weight for
-  everything; the same few faces in every direction and every session (a house style is a
-  default too, which is what the random draw is for).
-- **Color:** a purple or blue-violet gradient on white; a warm cream background (near `#F4F1EA`)
-  with a high-contrast serif and a terracotta accent; near-black with one acid green or vermilion
-  accent; every color used evenly so nothing leads.
-- **Layout:** the SaaS card kit (three icon cards in a row, a big number with a small label and a
-  gradient accent); a broadsheet with hairline rules and zero radius; a centred hero with two
-  buttons over a gradient blob; cards with a colored left border; the same sticky bottom bar in
-  every direction.
-- **Details:** a tracked all-caps eyebrow over every heading; `→` appended to every link and
-  button; 01 / 02 / 03 markers on content that isn't a sequence; emoji as icons; glass on every
-  surface; a shadow and a hover lift on every card.
-- **Motion:** a fade-and-slide-up on every section and a hover transition on every card.
+**House taste, as a tiebreaker, not a cap.** Premium, calm execution: busy, cute decoration reads
+childish, and dark is welcome where it fits (layered near-blacks with real separation, a rare
+accent). That is about execution, not about avoiding risk: a bold idea carried out with precision
+is what gets picked. And the house rules of the tooling:
 
-## 4. House taste
-
-- **Restrained over playful.** One subject, calm motion. Busy, cute visuals read childish. Spend
-  boldness in one place (the signature) and keep everything around it quiet. Before finishing,
-  remove one accessory.
-- **One loud direction at most.** In a prototype, at most one direction is loud (saturated
-  color everywhere, a costume of the subject like a drawn shopfront, novelty type). The rest are
-  quiet and premium: distinct through type, composition and one signature, not through volume.
-- **Dark done properly** where it fits the subject: layered near-blacks with real separation, not
-  one flat `#000`, and an accent that is rare.
 - **Concentric corners:** an inner radius is at most the outer radius minus the padding between.
 - **Quiet utility chrome:** share, clear, settings and locale are 32-36 px icon buttons or text
   links, never pill buttons that compete with the primary action.
@@ -93,8 +122,6 @@ for it; none is a choice when the brief leaves that axis free.
 - **Tailwind classes** for styling; inline styles only for computed values.
 
 ## 5. Type: the font kit
-
-The font kit is three things:
 
 1. **Every Google Font, with no install.** `font()` from `src/fonts.ts` adds a family to the page
    from Google Fonts (an install would reload the page). Call it at the top of the variant's
@@ -107,34 +134,28 @@ The font kit is three things:
    font('Karantina:wght@300;400;700', 'Assistant:wght@200..800')
    ```
 
-2. **A catalog of pairings**, `references/fonts.json`: about 50 display, body and utility
-   pairings by mood, each spec checked against Google Fonts, 20 of them Hebrew. `proto fonts`
-   lists them (`--hebrew` for the Hebrew ones and every Google family that has Hebrew).
-3. **A random draw**, `proto fonts --draw <n> [--hebrew] [--avoid <family,…>]`: n pairings, no
-   family twice, so each direction starts from a different voice and two sessions with the same
-   brief don't land on the same faces.
-
-A family outside the catalog is fine when the subject calls for it: its spec is on its page at
-fonts.google.com (a wrong weight in the spec fails the whole request; a family name alone gets
-weight 400). Say why in the plan.
+2. **A catalog**, `references/fonts.json`: about 50 display, body and utility pairings by mood,
+   each spec checked against Google Fonts, 20 of them Hebrew. `proto fonts` lists them (`--hebrew`
+   for the Hebrew ones and every Google family that has Hebrew).
+3. **A pool to choose from**, `proto fonts --draw 10 [--hebrew]`: ten pairings at random, no family
+   twice, so you start from faces you wouldn't reach for by habit. Choose the one that fits each
+   direction's concept, never one because it was drawn; mix faces across pairings, or go past the
+   pool to any Google Font the subject calls for (its spec is on its page at fonts.google.com; a
+   wrong weight in the spec fails the whole request). Say in the plan why the type fits.
 
 **Hebrew is a must** in a Hebrew product, and for Arabic the same with its script:
 
-- Every face that sets text in the product's script supports it. Pick from `proto fonts --hebrew`;
-  a Latin-only face falls back silently to a system font and changes every width.
-- A Hebrew display face with character (Karantina, Suez One, Secular One, Gveret Levin, Frank
-  Ruhl Libre, Bellefair, Rubik at 800 and up) carries the personality; a Hebrew body face
-  (Assistant, Heebo, IBM Plex Sans Hebrew, Rubik, Miriam Libre) carries the reading.
-- Latin brand names and numbers inside Hebrew use the same faces when they have Latin glyphs;
-  the RTL rules in references/rtl.md (no letter-spacing, no italics, no uppercase) still hold.
+- Every face that sets text in the product's script supports it; a Latin-only face falls back
+  silently to a system font and changes every width.
+- A Hebrew display face with character carries the personality (Karantina, Suez One, Secular One,
+  Frank Ruhl Libre, Bellefair, Rubik at 800 and up, Gveret Levin for a hand-lettered sign); a
+  Hebrew body face carries the reading (Assistant, Heebo, IBM Plex Sans Hebrew, Rubik, Miriam
+  Libre). Novelty and handwriting faces only where the concept is about them.
+- The RTL rules in references/rtl.md (no letter-spacing, no italics, no uppercase) still hold.
 
-Then the mechanics:
-
-- **Contrast you can see:** display at least 2.5 to 3 times the body size, or a clear weight
-  jump (300 against 700). A scale of four or five steps, used consistently.
-- **Numbers** in tables, prices and timers use `tabular-nums`.
-- **Palette by role:** one dominant surface, ink, a muted tone, one accent used rarely. Text on
-  any surface passes WCAG AA.
+Then the mechanics: display at least 2.5 to 3 times the body size, or a clear weight jump; a
+scale of four or five steps, used consistently; `tabular-nums` for prices, tables and timers;
+each color with a role, the accent rare; text on any surface at WCAG AA.
 
 ## 6. Imagery and depth
 
@@ -145,29 +166,28 @@ preference:
 2. **A generated image, only when an image tool is available** in this session (an image skill
    such as `codex-image`, or an image-generation MCP). Use it for photo-led subjects (food,
    places, products, people, interiors): one hero image and at most a few product shots per
-   direction, saved into the app's `src/assets/`. Start the generation while you write the code,
-   not before it, and never wait on it to deliver the first direction: drawn shapes first, the
-   image swapped in when it lands. No tool available: skip this, don't ask.
+   direction, saved into the app's `src/assets/`. Start the generation while you write the code;
+   drawn shapes hold the place until the image lands. No tool available: skip this, don't ask.
 3. Drawing from the subject in code: SVG shapes, a chart, a map, a gradient with grain.
 
 Depth comes from layering and light, not from a shadow on everything.
 
-## 7. Motion
+## 7. Motion in this tooling
 
-One orchestrated moment lands harder than effects everywhere: a page-load sequence, the state
-change at the heart of the feature, or ambient movement for an atmospheric subject. Less is often
-more; extra animation is what makes a design feel generated. Respect `prefers-reduced-motion`.
-`motion` (React: `motion/react`; Vue: `motion-v`) is installed for gestures and layout changes;
-when the design calls `useMotion` (references/motion.md), write the motion in CSS or
-`element.animate()` so it can be recorded.
+`motion` (React: `motion/react`; Vue: `motion-v`) is installed for gestures and layout changes.
+When the design calls `useMotion` (references/motion.md), write the motion in CSS or
+`element.animate()` so it can be recorded. Respect `prefers-reduced-motion`.
 
 ## 8. Words
 
-Words are material, not filler. Write from the user's side of the screen: name things by what
-people control, not how the system is built. A control says what happens ("Save changes", not
-"Submit"), and an action keeps its name through the flow (Publish, then "Published"). Errors say
-what happened and how to fix it, without apologising; an empty state invites the next action.
-Sentence case, plain verbs, no filler.
+Words appear in a design for one reason: to make it easier to understand, and therefore easier
+to use. Bring the same intentionality to copy as to spacing and color. Write from the end user's
+side of the screen: name things by what people control and recognize, never by how the system is
+built. Being specific is always better than being clever. A control says exactly what happens
+("Save changes", not "Submit"), and an action keeps its name through the whole flow (Publish,
+then "Published"). Failure and emptiness are moments for direction: say what went wrong and how
+to fix it, in the interface's voice, without apologising; an empty screen is an invitation to
+act. Plain verbs, sentence case, no filler; each element does exactly one job.
 
 ## 9. The craft check
 
@@ -176,11 +196,11 @@ On a direction's single shots at full size (`proto shoot <slug>/<letter>`, then 
 and fix every no:
 
 1. Is the signature visible at first glance, on desktop and phone?
-2. Is there one focal point per screen, and does the eye land there first?
-3. Do display and body type differ clearly, and is the type itself part of the look?
+2. Is the hero a thesis: the most characteristic thing in the subject's world, not a template?
+3. Is the type itself part of the look, display and body clearly apart?
 4. Is the accent rare, and does each color have a role?
 5. Which default in section 3 is it closest to? If a similar brief would get the same screen, it
-   isn't done.
+   isn't done. Where is its one real risk?
 6. What is the one accessory to remove?
 7. The floor: works from 360 px, focus visible, reduced motion respected, contrast AA, and in a
    Hebrew product no Latin fallback font in Hebrew text.
@@ -198,8 +218,9 @@ only graded by whoever made it. Start it with:
   command other than `proto shoot` with `--session`);
 - the job: for each direction, the three changes that would most raise it, most important first,
   each naming the element and the change (not "improve hierarchy" but "the price is the focal
-  point; the headline at 64 px competes with it, take it to 40"); then any two directions that
-  are too close, and which defaults from section 3 it sees;
+  point; the headline at 64 px competes with it, take it to 40"); which direction plays it too
+  safe and what its risk could be; any two directions that are too close; which defaults from
+  section 3 it sees;
 - a reply of at most four lines per direction.
 
 Apply what it found, skipping only what contradicts the plan or the user's request (say which),

@@ -154,7 +154,7 @@ components if it has any (`@import` its token CSS in `src/theme.css`; import pre
 components through `@project/…` and add `@source "../../../src/components";` so their classes
 are generated). With none, the look is yours to choose, and it is chosen per direction by the
 plan in craft.md (next section), not once for the session: name it, give it a palette and a
-type pairing (`proto fonts --draw`), and tell the user it is invented. Once the user picks one, put
+type pairing (from the `proto fonts` pool), and tell the user it is invented. Once the user picks one, put
 its tokens in a `@theme {}` block and save the kit (`proto kit save <slug>`), so the next
 prototype keeps that look.
 
@@ -167,12 +167,13 @@ sides only, never drawn left to right and flipped.
 ## 3. One usable direction first, then the exploration
 
 **Plan the look before code.** Run `proto add` with the directions' names first, so the page
-shows their placeholders while you plan. Read `${CLAUDE_SKILL_DIR}/references/craft.md` before the first variant. Draw the
-type (`proto fonts --draw <n>`, with `--hebrew` for a Hebrew product), then write each
-direction's plan (concept, palette, type, layout, pattern, signature, imagery, motion, volume)
-into the app's `.proto/briefs/<slug>.md`, check the plans against the defaults that file lists
-and against each other (no shared font family, surface, signature or main-action pattern; at
-most one loud direction), and build from them. With a Current the plan is short (what changes
+shows their placeholders while you plan. Read `${CLAUDE_SKILL_DIR}/references/craft.md` before the first variant and take its stance:
+a studio design lead whose client rejected anything templated, one real aesthetic risk per
+direction. Draw a pool of type (`proto fonts --draw 10`, with `--hebrew` for a Hebrew product)
+and choose from it per direction, then write each direction's plan (concept, palette, type,
+layout, pattern, signature, imagery, motion) into the app's `.proto/briefs/<slug>.md`, check the
+plans against the defaults that file lists, against a similar prompt, and against each other (no
+shared font family, surface, signature or main-action pattern), and build from them. With a Current the plan is short (what changes
 and why) and Current's look holds; without one it is the whole look. This takes a minute per
 direction and is what keeps the result from looking generated. When an image tool is available
 and the subject is photo-led, start its images while you write the code (craft.md, Imagery).
@@ -186,13 +187,14 @@ and the shared parts exist (and Current matches, for an existing product), the r
 directions start building alongside it, so the user watches all of them take shape (below). Do
 not weaken Current's reconstruction or fidelity checks to get there sooner.
 
-**Build live, in passes.** The user watches every variant fill in, so nothing is written whole at
-the end. Each variant goes in passes, saved after each:
+**Build live, in passes.** The user watches every variant fill in (the placeholders from
+`proto add` hold their places meanwhile), so a variant is saved as it grows, not written whole at
+the end:
 
-1. **Skeleton**, one write, within about a minute of `proto add`: the screen at rest laid out,
-   real copy, the plan's palette and fonts (`font()`), plain shapes where images will go. It
-   already reads as its direction.
-2. **Sections**, one edit each: the real content, the main interaction, images as they land.
+1. **The screen at rest, as planned:** the layout, real copy, the plan's palette and fonts
+   (`font()`), the signature, plain shapes where images will go. Take the time the design
+   needs: this is the considered design, not a sketch to fix later.
+2. **Sections**, one edit each: the rest of the content, the main interaction, images as they land.
 3. **Finish:** states, motion, details, the checks (craft check, shots). Then
    `proto done <slug>/<letter>`.
 
@@ -345,8 +347,8 @@ Each is told:
   nothing; it asks for those in its reply;
 - `--session <the main session's $CLAUDE_CODE_SESSION_ID>` on every `proto` call, plus
   `--project <project root>` if it works in another folder; never `proto up`, `add`, `pick` or `work`;
-- to build live in passes (skeleton first, saved within about a minute, then section by section;
-  every save renders), and to run `proto done <slug>/<letter>` when its checks pass;
+- to build live in passes (the screen at rest as planned first, then section by section; every
+  save renders), and to run `proto done <slug>/<letter>` when its checks pass;
 - to shoot only its own variant (`proto shoot <slug>/<letter>`), read both single shots at full
   size, run craft.md's short craft check (questions 1, 5 and 7) on them, fix, and shoot again;
   where it rebuilds something that has a reference, to loop on `proto compare` with the stop rule above;
@@ -371,9 +373,8 @@ or third rebuild of that region, and not for a one-off round of directions.
 
 When all are back, run one `proto shoot <slug> --sheet`, read it, fix what the sheet shows and
 what the subagents named, write each variant's `about` and `states` into `meta.ts`, then go on
-with step 5 (which starts with the critic). Without subagents, write every direction's skeleton
-first, one after another, then build each out in turn and mark it done: the user sees them all
-within minutes either way. The sheet is the same.
+with step 5 (which starts with the critic). Without subagents, write every direction's screen at
+rest first, one after another, then build each out in turn and mark it done. The sheet is the same.
 
 ## 5. Look at it, then iterate
 
