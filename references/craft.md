@@ -159,10 +159,12 @@ is what gets picked. And the house rules of the tooling:
    has a brand). Choose by the direction's concept, never at random, and say in the plan why the
    type fits. Body and utility faces may go past the catalog to any Google Font that reads well.
 4. **Never for a title:** the catalog's `neverTitle` list (`proto fonts` prints it): hairline or
-   single-thin-weight faces, the defaults every generated page reaches for, novelty and costume
+   single-thin-weight faces, high-contrast serifs whose hairlines vanish on a phone (Bodoni,
+   Cormorant, Caslon Display), the defaults every generated page reaches for, novelty and costume
    faces, scripts and handwriting. One exception: a Hebrew hand-lettered face (Gveret Levin) for a
    Hebrew title, where a hand-lettered sign is the street's own look; never for a Latin title.
-   A title is set at weight 400 or heavier; light and thin
+   A title must read at a glance on a phone: if its thinnest stroke disappears in the mobile
+   shot, change the face, not the size. It is set at weight 400 or heavier; light and thin
    weights are for body text at most. `proto plan` refuses a plan that breaks this.
 
 **Hebrew is a must** in a Hebrew product, and for Arabic the same with its script:
@@ -170,7 +172,7 @@ is what gets picked. And the house rules of the tooling:
 - Every face that sets text in the product's script supports it; a Latin-only face falls back
   silently to a system font and changes every width.
 - A Hebrew display face with character carries the personality (Karantina, Suez One, Secular One,
-  Frank Ruhl Libre, Bellefair, Rubik at 800 and up, Gveret Levin for a hand-lettered sign); a
+  Frank Ruhl Libre at 500 and up, Rubik at 800 and up, Gveret Levin for a hand-lettered sign); a
   Hebrew body face carries the reading (Assistant, Heebo, IBM Plex Sans Hebrew, Rubik, Miriam
   Libre). Novelty and handwriting faces only where the concept is about them.
 - The RTL rules in references/rtl.md (no letter-spacing, no italics, no uppercase) still hold.

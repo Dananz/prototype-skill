@@ -19,19 +19,6 @@
    }
   },
   {
-   "mood": "Literary, quiet luxury",
-   "script": "latin",
-   "display": {
-    "family": "Cormorant Garamond",
-    "spec": "Cormorant Garamond:ital,wght@0,300..700;1,300..700",
-    "category": "Serif"
-   },
-   "body": {
-    "family": "Figtree",
-    "spec": "Figtree:ital,wght@0,300..900;1,300..900"
-   }
-  },
-  {
    "mood": "Swiss precision",
    "script": "latin",
    "display": {
@@ -89,19 +76,6 @@
    "body": {
     "family": "Epilogue",
     "spec": "Epilogue:ital,wght@0,100..900;1,100..900"
-   }
-  },
-  {
-   "mood": "High-contrast fashion",
-   "script": "latin",
-   "display": {
-    "family": "Bodoni Moda",
-    "spec": "Bodoni Moda:ital,wght@0,400..900;1,400..900",
-    "category": "Serif"
-   },
-   "body": {
-    "family": "Albert Sans",
-    "spec": "Albert Sans:ital,wght@0,100..900;1,100..900"
    }
   },
   {
@@ -201,19 +175,6 @@
    "body": {
     "family": "Lexend",
     "spec": "Lexend:wght@100..900"
-   }
-  },
-  {
-   "mood": "Classic book",
-   "script": "latin",
-   "display": {
-    "family": "Libre Caslon Display",
-    "spec": "Libre Caslon Display",
-    "category": "Serif"
-   },
-   "body": {
-    "family": "Libre Caslon Text",
-    "spec": "Libre Caslon Text:wght@400;700"
    }
   },
   {
@@ -374,19 +335,6 @@
    "body": {
     "family": "IBM Plex Sans Hebrew",
     "spec": "IBM Plex Sans Hebrew:wght@100;200;300;400;500;600;700"
-   }
-  },
-  {
-   "mood": "Elegant, light display",
-   "script": "hebrew",
-   "display": {
-    "family": "Bellefair",
-    "spec": "Bellefair",
-    "category": "Serif"
-   },
-   "body": {
-    "family": "Heebo",
-    "spec": "Heebo:wght@100..900"
    }
   },
   {
@@ -760,6 +708,26 @@
    "family": "Gveret Levin",
    "why": "handwriting; a Hebrew title only",
    "hebrewOk": true
+  },
+  {
+   "family": "Bodoni Moda",
+   "why": "high-contrast hairlines vanish on a phone"
+  },
+  {
+   "family": "Cormorant Garamond",
+   "why": "hairlines vanish on a phone"
+  },
+  {
+   "family": "Cormorant",
+   "why": "hairlines vanish on a phone"
+  },
+  {
+   "family": "Libre Caslon Display",
+   "why": "hairlines vanish on a phone"
+  },
+  {
+   "family": "Bellefair",
+   "why": "light hairline display"
   }
  ]
 }
