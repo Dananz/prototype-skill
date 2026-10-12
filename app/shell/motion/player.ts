@@ -37,9 +37,11 @@ const ARRIVE = 350
 const LATE = 3000
 // A transition of a color, an underline, a focus ring or a shadow: what hover, focus and copy mode
 // change, so one that starts up to 1.5 s after the pointer, focus or copy mode moved isn't a step.
-const chrome = (a: Animation) => typeof CSSTransition !== 'undefined' && a instanceof CSSTransition && /^(-webkit-)?(text-decoration|box-shadow|outline)|color$/.test(a.transitionProperty)
+const chrome = (a: Animation) => a.constructor?.name === 'CSSTransition' && /^(-webkit-)?(text-decoration|box-shadow|outline)|color$/.test((a as CSSTransition).transitionProperty)
 
 export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unknown> }) {
+  // The design's document: a device view's frame is another one (view/frame.ts).
+  const doc = host.ownerDocument
   let s: PlayState = { status: 'off', take: null, tracks: [], t: 0, duration: 0, playing: false, speed: 1, loop: false, span: null, live: false, error: null, late: null }
   const subs = new Set<() => void>()
   const set = (patch: Partial<PlayState>) => { s = { ...s, ...patch }; subs.forEach(f => f()) }
@@ -48,7 +50,7 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
   // such a portal came or went): then its take is out of date.
   let changed = false
   const watch = new MutationObserver(records => {
-    if (records.some(r => r.target !== document.body || [...r.addedNodes, ...r.removedNodes].some(n => n instanceof Element && !n.hasAttribute('data-proto-ui')))) changed = true
+    if (records.some(r => r.target !== doc.body || [...r.addedNodes, ...r.removedNodes].some(n => n.nodeType === 1 && !(n as Element).hasAttribute('data-proto-ui')))) changed = true
   })
   const stopClock = () => { cancelAnimationFrame(raf); raf = 0 }
 
@@ -119,9 +121,9 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
   async function lateStep(my: number, got: Take) {
     const known = new Set(got.parts.map(p => p.anim)), began = performance.now()
     let moved = -1e9
-    const mark = (e: Event) => { if (e.isTrusted && e.target instanceof Node && (host.contains(e.target) || portaled(e.target))) moved = performance.now() }
+    const mark = (e: Event) => { const t = e.target as Node | null; if (e.isTrusted && t?.nodeType && (host.contains(t) || portaled(t))) moved = performance.now() }
     const kinds = ['pointermove', 'pointerover', 'pointerout', 'focusin', 'focusout']
-    kinds.forEach(k => listen(document, k, mark, true))
+    kinds.forEach(k => listen(doc, k, mark, true))
     const copyMode = new MutationObserver(() => { moved = performance.now() })
     copyMode.observe(host, { attributes: true, attributeFilter: ['data-copy-on'] })
     try {
@@ -133,11 +135,11 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
           known.add(a)
           // A color alone can be a step (a Save turning green): it is only taken for chrome just after a move.
           if (now - moved < 300 || (chrome(a) && now - moved < 1500)) continue
-          return set({ late: Math.round((a.startTime === null ? clock() : Number(a.startTime)) - (got.t0 ?? 0)) })
+          return set({ late: Math.round((a.startTime === null ? clock(doc) : Number(a.startTime)) - (got.t0 ?? 0)) })
         }
       }
     } finally {
-      kinds.forEach(k => document.removeEventListener(k, mark, true))
+      kinds.forEach(k => doc.removeEventListener(k, mark, true))
       copyMode.disconnect()
     }
   }
@@ -199,10 +201,10 @@ export function createPlayer(host: HTMLElement, o: { remount: () => Promise<unkn
       release(s.take)
       changed = false
       watch.observe(host, { subtree: true, childList: true, attributes: true, characterData: true })
-      watch.observe(document.body, { childList: true })
+      watch.observe(doc.body, { childList: true })
       // What it renders on <body> through a portal (a sheet going to its next step), never the
       // shell's root, where every design and the shell's chrome are.
-      for (const el of document.body.children) if (portaled(el)) watch.observe(el, { subtree: true, childList: true, attributes: true, characterData: true })
+      for (const el of doc.body.children) if (portaled(el)) watch.observe(el, { subtree: true, childList: true, attributes: true, characterData: true })
       set({ live: true, playing: false, span: null, t: s.duration })
     },
     /** The design's files changed: take it again (Fast Refresh keeps its state, not its old animations). */

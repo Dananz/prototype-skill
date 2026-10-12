@@ -12,7 +12,7 @@ import { Component, useEffect, useLayoutEffect, useRef, useState, useSyncExterna
 import { Drawer } from '@base-ui/react/drawer'
 import { copy, type Choice, type CopyLine } from '../copy'
 import { useCtx, type Host } from './ctx'
-import { describe } from './dom'
+import { describe, frameOf, scaleOf } from './dom'
 import { listen } from '../quiet'
 import { useStore, type Store } from './store'
 import { IB, Icon, Listening, PRIMARY, Reply } from './ui'
@@ -83,6 +83,9 @@ export function createCopyActions(cs: CopyStore, host: Host, comments: Store, st
     want() { set({ wanted: true, still: true }) },
     toggle() {
       const s = get()
+      // Pressed before the design is there (the stage's own artboard is still loading its frame): it
+      // turns on once the design is, with its lines (setStage).
+      if (!s.on && !s.stage) { set({ wanted: true }); return }
       if (!s.on && !lines().length) return
       unpeek()
       // Closed once Claude is done with what was sent: the bar starts over the next time.
@@ -171,37 +174,48 @@ const lightText = (color: string) => { const [r, g, b] = rgbaOf(color); return 0
 const filled = (color: string) => color !== 'transparent' && rgbaOf(color)[3] > 0.05
 /** What is behind an element: the nearest background that isn't see-through. */
 function backdropOf(el: Element | null) {
-  for (let e = el; e; e = e.parentElement) { const bg = getComputedStyle(e).backgroundColor; if (filled(bg)) return bg }
+  for (let e = el; e; e = e.parentElement) { const bg = styleOf(e).backgroundColor; if (filled(bg)) return bg }
   return 'transparent'
+}
+
+/** An element's style, from its own window: a device view's frame is another one. */
+const styleOf = (el: Element) => (el.ownerDocument.defaultView ?? window).getComputedStyle(el)
+/** A box of an element as the page draws it: in a device view's frame, scaled from the frame's corner. */
+function drawn(el: Element, r: DOMRect) {
+  const f = frameOf(el)
+  if (!f) return r
+  const o = f.getBoundingClientRect(), s = scaleOf(el)
+  return new DOMRect(o.left + r.left * s, o.top + r.top * s, r.width * s, r.height * s)
 }
 
 /** The words inside an element: all of them, and the last line's piece (where the count goes). */
 function wordsOf(el: HTMLElement) {
-  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: n => n.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT })
+  const doc = el.ownerDocument
+  const walk = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: n => n.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT })
   const nodes: Text[] = []
   for (let n = walk.nextNode(); n; n = walk.nextNode()) nodes.push(n as Text)
   if (!nodes.length) return null
-  const range = document.createRange()
+  const range = doc.createRange()
   range.setStart(nodes[0], 0)
   range.setEnd(nodes.at(-1)!, nodes.at(-1)!.length)
-  const all = range.getBoundingClientRect()
+  const all = drawn(el, range.getBoundingClientRect())
   range.selectNodeContents(nodes.at(-1)!)
-  const last = [...range.getClientRects()].filter(r => r.width > 0).at(-1)
+  const last = [...range.getClientRects()].filter(r => r.width > 0).map(r => drawn(el, r)).at(-1)
   return all.width && last ? { all, last } : null
 }
 
 /** A line as it sits on the stage: a button-like element (its own background or border) is marked
  *  around its box, a line of text around its words; its count goes 6 px after its last letter. */
 function measure(el: HTMLElement, o: DOMRect, key: string): Mark | null {
-  const r = el.getBoundingClientRect()
+  const r = drawn(el, el.getBoundingClientRect())
   if (!r.width || !r.height) return null
-  const cs = getComputedStyle(el)
+  const cs = styleOf(el)
   const words = wordsOf(el)
   const boxed = filled(cs.backgroundColor) || parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderBottomWidth) > 0
   const text = !boxed && !!words
   const box = text
     ? { x: words!.all.left - o.left - 8, y: r.top - o.top, w: words!.all.width + 16, h: r.height, r: 8 }
-    : { x: r.left - o.left - 4, y: r.top - o.top - 4, w: r.width + 8, h: r.height + 8, r: (parseFloat(cs.borderTopLeftRadius) || 0) + 4 }
+    : { x: r.left - o.left - 4, y: r.top - o.top - 4, w: r.width + 8, h: r.height + 8, r: (parseFloat(cs.borderTopLeftRadius) || 0) * scaleOf(el) + 4 }
   const rtl = cs.direction === 'rtl', end = words?.last ?? r
   const badge = { x: (rtl ? end.left - 6 : end.right + 6) - o.left, y: (end.top + end.bottom) / 2 - o.top, rtl }
   const round = (n: number) => Math.round(n * 2) / 2
@@ -214,7 +228,7 @@ function measure(el: HTMLElement, o: DOMRect, key: string): Mark | null {
 /** The element that scrolls an element of the design, inside the stage's layer. */
 function scrollerOf(el: HTMLElement, stop: Element | null) {
   for (let e = el.parentElement; e && e !== stop; e = e.parentElement) {
-    const y = getComputedStyle(e).overflowY
+    const y = styleOf(e).overflowY
     if ((y === 'auto' || y === 'scroll') && e.scrollHeight > e.clientHeight) return e
   }
   return null
@@ -414,13 +428,15 @@ function CopyLayer() {
   }, [stage, on, copyAct])
 
   // A click anywhere but a line or the list closes the list (a click, not a press, so the design
-  // still scrolls under an open sheet).
+  // still scrolls under an open sheet), in a device view's frame too.
   useEffect(() => {
     if (!open) return
     const out = (e: MouseEvent) => { if (!(e.target as Element).closest?.('[data-copy-list], [data-copy-mark]')) copyAct.close() }
+    const inner = stage && stage.ownerDocument !== document ? stage.ownerDocument : null
     listen(document, 'click', out, true)
-    return () => document.removeEventListener('click', out, true)
-  }, [open, copyAct])
+    inner?.addEventListener('click', out, true)
+    return () => { document.removeEventListener('click', out, true); inner?.removeEventListener('click', out, true) }
+  }, [open, copyAct, stage])
 
   // A list whose line went away (its component unmounted) closes.
   useEffect(() => {

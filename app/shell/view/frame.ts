@@ -1,12 +1,18 @@
 // The page inside a device view: this same page in a same-origin iframe, at the device's size. The
 // page in it knows it is framed (framed, below) and keeps to itself: it doesn't count as someone
 // looking (its pings only ask for the status), never writes where it is or what it chose to this
-// browser's storage, keeps its comments and copy choices apart, and offers no device view of its own.
+// browser's storage, keeps its comments apart, and offers no device view of its own. What its design
+// reports (Try it, copy lines, motion) goes to the page outside, which runs those tools (shared.ts).
 
 /** Whether this page is the one inside a device view: opened with ?dv (as the view loads it), or in a
  *  frame of this page's own (same origin, with a view). Any other frame (an editor's preview pane, a
  *  page on another origin) is someone looking at the page itself, with all of it. */
 export const framed = new URLSearchParams(location.search).has('dv') || (() => { try { return window.top !== window && !!window.parent.document.querySelector('[data-view]') } catch { return false } })()
+
+/** Clicks in the page in the frame, heard out here: a frame's events stay in its own document, and
+ *  the page outside acts on some of them (⌥-click comments on the design). The view adds each
+ *  frame's (view/index.tsx). */
+export const frameClicks = new Set<(e: MouseEvent) => void>()
 
 /** The page at a place, as a device view loads it: framed, in the theme of the page outside. */
 export const frameUrl = (hash: string, dark: boolean) => `${location.origin}${location.pathname}?dv=1&theme=${dark ? 'dark' : 'light'}${hash.startsWith('#') ? hash : `#${hash}`}`

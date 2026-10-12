@@ -4,6 +4,7 @@
 // the one being written, and a sent comment's card.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useCtx } from './ctx'
+import { frameClicks } from '../view/frame'
 import { describe } from './dom'
 import { listen } from '../quiet'
 import { Glide, HoldRing, HoverBox, useBoxes, usePick } from './inspect'
@@ -52,7 +53,7 @@ export function Layer() {
   })
   const verb = tagging ? 'Tag' : s.held ? 'Continue your comment' : 'Comment'
 
-  // ⌥-click comments on one element without turning comment mode on.
+  // ⌥-click comments on one element without turning comment mode on, in a device view's frame too.
   useEffect(() => {
     if (!s.place || m.kind !== 'idle') return
     const alt = (e: MouseEvent) => {
@@ -62,7 +63,8 @@ export function Layer() {
       act.begin(describe(mount, t))
     }
     listen(document, 'click', alt, true)
-    return () => document.removeEventListener('click', alt, true)
+    frameClicks.add(alt)
+    return () => { document.removeEventListener('click', alt, true); frameClicks.delete(alt) }
   }, [host, act, s.place, m.kind])
 
   // Only comments are on the design; a decision (Pick, More, Build) is on the variant as a whole.

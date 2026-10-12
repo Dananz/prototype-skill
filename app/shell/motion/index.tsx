@@ -54,14 +54,16 @@ export function createMotion(o: MotionHost) {
       if (h.hasAttribute('data-copy-on') && (e.target as Element | null)?.closest?.('[data-copy]')) return
       p.letGo()
     }
-    const usePortal = (e: Event) => { if (e.target instanceof Node && portaled(e.target)) use(e) }
+    const usePortal = (e: Event) => { const t = e.target as Node | null; if (t?.nodeType && portaled(t)) use(e) }
+    // The design's document: in a device view, the frame's.
+    const d = h.ownerDocument
     h.addEventListener('pointerdown', use, true)
     h.addEventListener('keydown', use, true)
-    listen(document, 'pointerdown', usePortal, true)
-    listen(document, 'keydown', usePortal, true)
+    listen(d, 'pointerdown', usePortal, true)
+    listen(d, 'keydown', usePortal, true)
     return () => {
       h.removeEventListener('pointerdown', use, true); h.removeEventListener('keydown', use, true)
-      document.removeEventListener('pointerdown', usePortal, true); document.removeEventListener('keydown', usePortal, true)
+      d.removeEventListener('pointerdown', usePortal, true); d.removeEventListener('keydown', usePortal, true)
     }
   }
 

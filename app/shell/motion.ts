@@ -6,7 +6,7 @@ import { listen } from './quiet'
 
 export const smooth = (x: number) => x * x * (3 - 2 * x)
 const ease = (from: number, to: number, dt: number) => from + (to - from) * (1 - Math.exp(-dt / 90))
-const inside = (e: PointerEvent, r: DOMRect) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+const inside = (e: { clientX: number; clientY: number }, r: DOMRect) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
 
 // ---------- dock: a thin bar that grows as the pointer comes near ----------
 // Distance is measured to where the open dock sits (a fixed zone), so growing never
@@ -102,30 +102,34 @@ function showFocusBtn(on: boolean) {
 
 export const canHover = () => matchMedia('(hover: hover)').matches
 
+/** The mouse at a point of the page: the dock grows near it, the edge arrows and the Focus button
+ *  show over the stage. A device view's frame passes its own moves here too (view/index.tsx), since
+ *  a pointer over a frame moves in that page, not this one. */
+export function trackPointer(e: { clientX: number; clientY: number }) {
+  const d = document.querySelector<HTMLElement>('[data-dock]')
+  if (d) {
+    const half = (d.querySelector<HTMLElement>('[data-dock-full]')!.offsetWidth + 8) / 2
+    const dx = Math.max(0, Math.abs(e.clientX - innerWidth / 2) - half)
+    const dy = Math.max(0, innerHeight - 64 - e.clientY)
+    dock.target = Math.min(1, Math.max(0, 1 - (Math.hypot(dx, dy) - 12) / 170))
+    runDock()
+  }
+  const arrows = document.querySelectorAll<HTMLElement>('[data-edge]')
+  for (const el of arrows) {
+    const z = el.closest('[data-zone]')!.getBoundingClientRect()
+    const dist = el.dataset.edge!.endsWith('prev') ? e.clientX - z.left : z.right - e.clientX
+    edge.target[el.dataset.edge!] = inside(e, z) ? Math.min(1, Math.max(0, 1 - (dist - 24) / 160)) : 0
+  }
+  if (arrows.length) runEdges()
+  const b = document.querySelector<HTMLElement>('[data-focus-btn]')
+  if (b) {
+    const on = inside(e, b.closest('[data-zone]')!.getBoundingClientRect())
+    if (on !== stageHover.on) showFocusBtn(on)
+  }
+}
+
 export function installPointerTracking() {
-  addEventListener('pointermove', e => {
-    if (e.pointerType !== 'mouse') return
-    const d = document.querySelector<HTMLElement>('[data-dock]')
-    if (d) {
-      const half = (d.querySelector<HTMLElement>('[data-dock-full]')!.offsetWidth + 8) / 2
-      const dx = Math.max(0, Math.abs(e.clientX - innerWidth / 2) - half)
-      const dy = Math.max(0, innerHeight - 64 - e.clientY)
-      dock.target = Math.min(1, Math.max(0, 1 - (Math.hypot(dx, dy) - 12) / 170))
-      runDock()
-    }
-    const arrows = document.querySelectorAll<HTMLElement>('[data-edge]')
-    for (const el of arrows) {
-      const z = el.closest('[data-zone]')!.getBoundingClientRect()
-      const dist = el.dataset.edge!.endsWith('prev') ? e.clientX - z.left : z.right - e.clientX
-      edge.target[el.dataset.edge!] = inside(e, z) ? Math.min(1, Math.max(0, 1 - (dist - 24) / 160)) : 0
-    }
-    if (arrows.length) runEdges()
-    const b = document.querySelector<HTMLElement>('[data-focus-btn]')
-    if (b) {
-      const on = inside(e, b.closest('[data-zone]')!.getBoundingClientRect())
-      if (on !== stageHover.on) showFocusBtn(on)
-    }
-  })
+  addEventListener('pointermove', e => { if (e.pointerType === 'mouse') trackPointer(e) })
   document.addEventListener('mouseleave', () => {
     dock.target = 0
     runDock()

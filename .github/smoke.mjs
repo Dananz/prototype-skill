@@ -676,16 +676,22 @@ export default function Q() {
 }
 `)
 const near = (a, b, by) => typeof a === 'number' && Math.abs(a - b) <= by
+// The design's own document (in the view's frame on a wide page, else the page) and a box of an
+// element of it in the page's px, for checks that read or press the design itself.
+const HELPERS = `window.__D = () => window.__protoDesign?.()?.ownerDocument ?? document; window.__R = el => { const r = el.getBoundingClientRect(), f = el.ownerDocument === document ? null : el.ownerDocument.defaultView.frameElement; if (!f) return r; const o = f.getBoundingClientRect(), s = o.width / (f.offsetWidth || 1); return { x: o.left + r.x * s, y: o.top + r.y * s, width: r.width * s, height: r.height * s } }`
 const motionPage = await openPage(`${local}?theme=light#/move/A`)
 try {
-  const run = motionPage.run
+  // The design is in the stage's own artboard, a frame of the page: __D is its document (portals
+  // included) and __R a box of it where the page draws it, for a real press.
+  const run = expr => motionPage.run(`${HELPERS};${expr}`)
   const until = async (expr, what, ms = 15_000) => {
     for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 100))) if (await run(expr)) return
     fail(`${what} (waited ${ms / 1000} s)`)
   }
   // The dock waits to be asked for: until then the design runs live, nothing is recorded and nothing
   // sits under it; the bar offers it. Asked for, it shows under the design and records a take.
-  await until(`!!document.querySelector('[data-bar] [data-act=motion]')`, 'the bar offers no Motion for a design with motion')
+  // (The bar offers it as soon as the page has the design; the take waits for the artboard's frame.)
+  await until(`!!document.querySelector('[data-bar] [data-act=motion]') && !!window.__protoMotion?.state()`, 'the bar offers no Motion for a design with motion')
   const rest = await run(`[document.querySelector('[data-motion-dock]').hidden, window.__protoMotion?.state()?.status, getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h').trim()]`)
   if (!rest[0] || rest[1] !== 'off' || rest[2] !== '0px') fail(`before it's asked for, the motion dock should be hidden, with no take and no room: ${JSON.stringify(rest)}`)
   await run(`document.querySelector('[data-bar] [data-act=motion]').click()`)
@@ -698,7 +704,7 @@ try {
   if (!near(panel?.start, 0, 50) || !near(panel?.end, 400, 50) || rows.length !== 3 || !rows.every((t, i) => near(t, 100 + 100 * i, 50)) || !near(take.duration, 500, 50)) fail(`the take's parts are off: ${JSON.stringify(take)}`)
   if (!take.tracks?.some(t => t.name === 'Row ×3')) fail(`the three rows should be one staggered group in the curves: ${JSON.stringify(take.tracks)}`)
   // Scrubbing sets the design to that moment: the panel halfway at 200 ms, the second row a quarter in at 250.
-  const at = t => run(`window.__protoMotion.seek(${t}).then(() => [new DOMMatrix(getComputedStyle(document.querySelector('[data-shoot=panel]')).transform).m42, +getComputedStyle(document.querySelectorAll('[data-shoot=row]')[1]).opacity])`)
+  const at = t => run(`window.__protoMotion.seek(${t}).then(() => [new DOMMatrix(getComputedStyle(__D().querySelector('[data-shoot=panel]')).transform).m42, +getComputedStyle(__D().querySelectorAll('[data-shoot=row]')[1]).opacity])`)
   const [y200] = await at(200), [, o250] = await at(250), [y0, o0] = await at(0)
   if (!near(y200, 50, 2) || !near(o250, 0.25, 0.05) || !near(y0, 100, 2) || !near(o0, 0, 0.01)) fail(`scrubbing didn't set the design: at 200 ms the panel is ${y200}px down (50), at 250 the row's opacity ${o250} (0.25), at 0 ${y0}px and ${o0}`)
   // A comment on the range 0.10–0.30 s, drawn on the track and written in the page's own composer.
@@ -767,13 +773,13 @@ try {
   // each moment it shows that moment, not the later fade's first frame.
   const design = (route, sel) => run(`(async () => {
     location.hash = '#/${route}'
-    for (let i = 0; i < 100 && !document.querySelector('[data-layers] ${sel}'); i++) await new Promise(r => setTimeout(r, 100))
+    for (let i = 0; i < 100 && !__D().querySelector('[data-layers] ${sel}'); i++) await new Promise(r => setTimeout(r, 100))
     // It declares its motion (useMotion, in an effect) a moment after it renders, on a slow runner later.
     for (let i = 0; i < 100 && !window.__protoMotion.state(); i++) await new Promise(r => setTimeout(r, 100))
     for (let i = 0; i < 100 && window.__protoMotion.state()?.status === 'taking'; i++) await new Promise(r => setTimeout(r, 100))
     return window.__protoMotion.take()
   })()`)
-  const value = (sel, read, t) => run(`window.__protoMotion.seek(${t}).then(() => { const cs = getComputedStyle(document.querySelector('[data-layers] ${sel}')); return ${read} })`)
+  const value = (sel, read, t) => run(`window.__protoMotion.seek(${t}).then(() => { const cs = getComputedStyle(__D().querySelector('[data-layers] ${sel}')); return ${read} })`)
   const twice = await design('move/C', '[data-shoot=toast]')
   if (twice.parts?.filter(p => p.shoot === 'toast').length !== 2) fail(`move/C's take should have the toast's two fades: ${JSON.stringify(twice)}`)
   const fades = [await value('[data-shoot=toast]', '+cs.opacity', 0), await value('[data-shoot=toast]', '+cs.opacity', 150), await value('[data-shoot=toast]', '+cs.opacity', 300)]
@@ -789,7 +795,7 @@ try {
   await run('window.__protoMotion.take()')
   const again = await run('window.__protoMotion.take()')
   if (again.parts?.length !== 1 || !near(again.duration, 300, 40)) fail(`a fourth take should be the one move, 0.30 s: ${JSON.stringify(again)}`)
-  const piled = await run(`document.querySelector('[data-layers] [data-shoot=slide]').getAnimations().length`)
+  const piled = await run(`__D().querySelector('[data-layers] [data-shoot=slide]').getAnimations().length`)
   if (piled > 2) fail(`four takes left ${piled} animations on the element`)
   // A transition, then a CSS animation (H) or element.animate() (I) on the same property: at each
   // moment the part moving then shows, whichever the browser draws on top.
@@ -844,33 +850,33 @@ try {
     await run('window.__protoMotion.seek(100)')
   }
   await run('window.__protoMotion.take()')
-  const left = await run(`document.querySelector('[data-layers] [data-shoot=box]').getAnimations().length`)
+  const left = await run(`__D().querySelector('[data-layers] [data-shoot=box]').getAnimations().length`)
   if (left > 2) fail(`five takes of move/P, let go and held again between them, left ${left} animations on the element`)
   // A sheet rendered on <body> through a portal: the take has it, it scrubs, and a press on it lets
   // the design go (as one inside the stage does).
   const portaled = await design('move/Q', '[data-shoot=label]')
   if (portaled.parts?.length !== 1 || portaled.parts[0].shoot !== 'sheet' || !near(portaled.duration, 400, 40)) fail(`move/Q's take should have the sheet it renders on <body>, 0.40 s: ${JSON.stringify(portaled)}`)
-  const onBody = t => run(`window.__protoMotion.seek(${t}).then(() => new DOMMatrix(getComputedStyle(document.querySelector('body > [data-shoot=sheet]')).transform).m42)`)
+  const onBody = t => run(`window.__protoMotion.seek(${t}).then(() => new DOMMatrix(getComputedStyle(__D().querySelector('body > [data-shoot=sheet]')).transform).m42)`)
   const qy = [await onBody(0), await onBody(200), await onBody(400)]
   if (!qy.every((y, i) => near(y, [300, 150, 0][i], 6))) fail(`the sheet on <body> should be at 300, 150 and 0 px at 0, 200 and 400 ms: ${qy}`)
-  const [px, py] = await run(`(() => { const r = document.querySelector('body > [data-shoot=sheet]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
+  const [px, py] = await run(`(() => { const r = __R(__D().querySelector('body > [data-shoot=sheet]')); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
   await motionPage.press(px, py)
   await until(`window.__protoMotion.state().live`, 'a press on the sheet the design renders on <body> should let it go', 3000)
   // Held again, the sheet closed from the keyboard (Enter on its Close) lets it go and runs its exit.
   await run('window.__protoMotion.seek(100)')
-  await run(`document.querySelector('body > [data-shoot=sheet] [data-shoot=close]').focus()`)
+  await run(`__D().querySelector('body > [data-shoot=sheet] [data-shoot=close]').focus()`)
   await motionPage.enter()
-  const exit = await run(`document.querySelector('body > [data-shoot=sheet]').getAnimations().filter(a => a.playState === 'running').map(a => a.transitionProperty).join()`)
+  const exit = await run(`__D().querySelector('body > [data-shoot=sheet]').getAnimations().filter(a => a.playState === 'running').map(a => a.transitionProperty).join()`)
   if (exit !== 'transform' || !await run('window.__protoMotion.state().live')) fail(`the held sheet closed by Enter on its Close should let the design go and run its exit transition: ${exit || 'none'}`)
   // A change inside the sheet while the design runs live (Next, to its second step) makes the
   // dock's next move take it again, as a change in the stage does.
   await run('window.__protoMotion.seek(400)')
-  const starts = await run('window.__starts')
-  const [nx, ny] = await run(`(() => { const r = document.querySelector('body > [data-shoot=sheet] [data-shoot=next]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
+  const starts = await run('__D().defaultView.__starts')
+  const [nx, ny] = await run(`(() => { const r = __R(__D().querySelector('body > [data-shoot=sheet] [data-shoot=next]')); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
   await motionPage.press(nx, ny)
-  await until(`window.__protoMotion.state().live && document.querySelector('[data-shoot=step]')?.textContent === 'Step 2'`, 'Next in the sheet on <body> should let the design go to its second step', 3000)
+  await until(`window.__protoMotion.state().live && __D().querySelector('[data-shoot=step]')?.textContent === 'Step 2'`, 'Next in the sheet on <body> should let the design go to its second step', 3000)
   await run('window.__protoMotion.seek(100)')
-  if (!(await run('window.__starts') > starts)) fail(`after the sheet on <body> went to its second step, the dock's next move should take the design again (it held the old take)`)
+  if (!(await run('__D().defaultView.__starts') > starts)) fail(`after the sheet on <body> went to its second step, the dock's next move should take the design again (it held the old take)`)
   // A start() that throws: the take is empty and says why, and the dock isn't left recording.
   await run(`location.hash = '#/move/E'`)
   await until(`window.__protoMotion.state()?.status === 'empty' && /boom/.test(window.__protoMotion.state().error) && /start\\(\\) threw Error: boom/.test(document.querySelector('[data-motion=error]')?.textContent)`, 'a start() that throws should end the take with its error in the dock')
@@ -974,7 +980,8 @@ writeFileSync(join(app, 'src', 'protos', 'words', 'B.tsx'), 'export default func
 const plain = await inPage(`${local}?theme=light#/words/B`, 'new Promise(r => setTimeout(r, 800)).then(() => document.querySelectorAll("[data-act=copymode]").length)')
 if (plain !== 0) fail(`a variant without copy options shows ${plain} T buttons`)
 const words = await openPage(`${local}?theme=light#/words/A`).catch(e => fail(`copy options in the page: ${e.message}`))
-const until = `const until = async (f, ms = 4000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } return null }`
+// With HELPERS: __D, the design's document (the artboard's frame on a wide page).
+const until = `${HELPERS}; const until = async (f, ms = 4000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } return null }`
 // Chooses a row of the pill's menu on a phone (copy options, Try it, Motion, a size).
 // The menu lists what the design has declared when it opens; one opened before the design declared
 // it is closed and opened again.
@@ -1005,7 +1012,7 @@ const pick = (id, i, words) => `
     const option = await until(() => document.querySelector('[data-copy-list] [data-copy-option="${i}"]'))
     if (!option) return 'clicking the ${id} line listed no options'
     option.click()
-    const line = () => document.querySelector('[data-mount] [data-copy=${id}]')?.textContent
+    const line = () => __D().querySelector('[data-mount] [data-copy=${id}]')?.textContent
     if (!await until(() => line() === '${words}')) return 'the ${id} line should read ${words}, reads ' + line()`
 const sendOne = `
     const send = await until(() => document.querySelector('[data-shoot=send-copy]:not([disabled])'))
@@ -1063,7 +1070,7 @@ try {
     document.querySelector('[data-copy-mark=title]').click()
     if (!await until(() => document.querySelector('[data-copy-list] [data-copy-option="0"]')?.textContent.includes('Pay less'), 8000)) return 'the edit never reached the page'
     document.querySelector('[data-copy-mark=title]').click()
-    const line = () => document.querySelector('[data-mount] [data-copy=title]')?.textContent
+    const line = () => __D().querySelector('[data-mount] [data-copy=title]')?.textContent
     if (!await until(() => line() === 'Save more')) return 'the line should still read Save more, reads ' + line()
     if (!await until(() => document.querySelector('[data-shoot=send-copy]:not([disabled])'))) return 'the way back is not there to send'
     return 'ok'
@@ -1101,7 +1108,7 @@ try {
   writeFileSync(aFile, readFileSync(aFile, 'utf8').replace("['Pay less', 'Save more', 'Keep more']", "['Keep more', 'Pay less', 'Save more']"))
   const unsent = await words.run(`(async () => {
     ${until}
-    const line = () => document.querySelector('[data-mount] [data-copy=title]')?.textContent
+    const line = () => __D().querySelector('[data-mount] [data-copy=title]')?.textContent
     const t = () => document.querySelector('[data-bar] [data-act=copymode]')
     if (!await until(() => line() === 'Keep more', 8000)) return 'the line should read Keep more once it is first, reads ' + line() + ' (' + t()?.title + ')'
     if (t().title !== 'Copy options for 3 lines') return 'nothing should be changed: ' + t().title
@@ -1114,14 +1121,14 @@ try {
   // marked (also after closing and opening copy mode again), and ⌥-click still opens a comment.
   const gone = await words.run(`(async () => {
     ${until}
-    document.querySelector('[data-mount] [data-hide-go]').click()
+    __D().querySelector('[data-mount] [data-hide-go]').click()
     if (!await until(() => !document.querySelector('[data-copy-mark=go], [data-copy-mark=note]'))) return 'the hidden lines are still marked'
     const t = () => document.querySelector('[data-bar] [data-act=copymode]')
     t().click()
     if (!await until(() => /^Copy options for 1 line(,|$)/.test(t().title))) return 'the T button should say 1 line: ' + t().title
     t().click()
     if (!await until(() => document.querySelector('[data-copy-mark=title]'))) return 'copy mode marks nothing after it opens again'
-    document.querySelector('[data-mount] [data-hide-go]').dispatchEvent(new MouseEvent('click', { altKey: true, bubbles: true, cancelable: true }))
+    __D().querySelector('[data-mount] [data-hide-go]').dispatchEvent(new MouseEvent('click', { altKey: true, bubbles: true, cancelable: true }))
     if (!await until(() => document.querySelector('[data-composer]'))) return 'an option-click opened no comment'
     return 'ok'
   })()`)
@@ -1357,8 +1364,10 @@ try {
     ${frameOf}
     const tabs = await until(() => document.querySelector('[data-bar] [data-size-tabs]'), 8000)
     if (!tabs) return 'the bar has no sizes'
+    // At rest the design is on the stage's own artboard, laid out for the stage's width: that layout is selected.
+    const own = (w => w < 640 ? 'phone' : w < 1024 ? 'tablet' : 'desktop')(document.querySelector('[data-layers]').clientWidth)
     const sizes = [...tabs.querySelectorAll('[role=radio]')].map(b => b.dataset.act + '=' + b.getAttribute('aria-checked'))
-    if (sizes.join() !== 'size:phone=false,size:tablet=false,size:desktop=true') return 'the bar should have phone, tablet and desktop, desktop selected: ' + sizes.join()
+    if (sizes.join() !== ['phone', 'tablet', 'desktop'].map(x => 'size:' + x + '=' + (x === own)).join()) return 'the bar should have phone, tablet and desktop, ' + own + ' (the stage\\'s) selected: ' + sizes.join()
     if (tabs.querySelector('[data-act="size:desktop"]').title !== 'Desktop · 1440 × 900') return 'the desktop size says ' + tabs.querySelector('[data-act="size:desktop"]').title
     if (tabs.nextElementSibling?.dataset.act !== 'comment:toggle') return 'the sizes should come just before Comment'
     tabs.querySelector('[data-act="size:phone"]').click()
@@ -1417,13 +1426,15 @@ try {
     ${until}
     const pins = () => [...document.querySelectorAll('[data-comments] button')].filter(b => /^\\d+$/.test(b.textContent.trim())).length
     if (!await until(() => pins() === 1)) return 'the comment should have its pin over the phone, has ' + pins()
-    document.querySelector('[data-size-tabs] [data-act="size:tablet"]').click()
+    // Another size than the phone and the stage's own (which is the artboard, with no line for a chip).
+    const own = (w => w < 640 ? 'phone' : w < 1024 ? 'tablet' : 'desktop')(document.querySelector('[data-layers]').clientWidth)
+    document.querySelector('[data-size-tabs] [data-act="size:' + (own === 'tablet' ? 'desktop' : 'tablet') + '"]').click()
     const chip = await until(() => document.querySelector('[data-view-other=phone]'))
-    if (!chip || pins()) return 'on the tablet the pin should go and a chip lead back to the phone (' + pins() + ' pins)'
+    if (!chip || pins()) return 'on another size the pin should go and a chip lead back to the phone (' + pins() + ' pins)'
     chip.click()
     if (!await until(() => /^390 × 844/.test(document.querySelector('[data-view-line]')?.textContent) && pins() === 1)) return 'the chip should go back to the phone, with its pin'
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    if (!await until(() => document.querySelector('[data-view]').hidden && !document.querySelector('[data-view] iframe'))) return 'Esc should leave the view'
+    if (!await until(() => !document.querySelector('[data-view-line], [data-view-banner]'))) return 'Esc should leave the phone for the stage\\'s own artboard'
     return pins() ? 'out of the view the pin should go' : 'ok'
   })()`)
   if (pins !== 'ok') fail(`a comment's layout: ${pins}`)
@@ -1486,7 +1497,8 @@ try {
 // Sizes and variants switched fast with a view open: the page answers every step and ends in step.
 const viewFast = await openPage(`${local}?theme=dark#/home/A`)
 try {
-  for (const step of ['size:phone', 'v:B', 'size:tablet', 'v:C', 'size:desktop', 'size:phone', 'v:A', 'size:tablet', 'v:B', 'size:phone', 'v:A', 'size:tablet']) {
+  // It ends on the phone, which a desktop's stage never is (the tablet can be its own artboard).
+  for (const step of ['size:phone', 'v:B', 'size:tablet', 'v:C', 'size:desktop', 'size:phone', 'v:A', 'size:tablet', 'v:B', 'size:phone', 'v:A', 'size:tablet', 'size:phone']) {
     const [k, a] = step.split(':')
     const r = await viewFast.run(k === 'v' ? `(location.hash = '#/home/${a}', 'ok')` : `(() => { const b = document.querySelector('[data-size-tabs] [data-act="size:${a}"]'); if (!b) return 'no ${a} in the bar'; b.click(); return 'ok' })()`, 8000)
     if (r !== 'ok') fail(`switching fast with a view open, ${step}: ${r}`)
@@ -1496,7 +1508,7 @@ try {
     ${until}
     ${frameOf}
     if (!await until(() => inFrame()?.defaultView.location.hash === location.hash, 15000)) return 'the view never caught up: ' + location.hash + ' in the page, ' + frame()?.contentWindow.location.hash + ' in the view'
-    return /^834 × 1194/.test(document.querySelector('[data-view-line]').textContent) && document.querySelectorAll('[data-view] iframe').length === 1 ? 'ok' : 'the view should be one tablet: ' + document.querySelector('[data-view-line]').textContent
+    return /^390 × 844/.test(document.querySelector('[data-view-line]')?.textContent ?? '') && document.querySelectorAll('[data-view] iframe').length === 1 ? 'ok' : 'the view should be one phone: ' + document.querySelector('[data-view-line]')?.textContent
   })()`, 20_000)
   if (end !== 'ok') fail(`switching fast with a view open: ${end}`)
 } finally { viewFast.close() }

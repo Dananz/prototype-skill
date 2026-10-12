@@ -1,23 +1,27 @@
 // The device view: this page at a phone's, a tablet's or a desktop's size, shown in the stage (the
 // bar and the pill stay), so a phone can see the desktop layout and a desktop the phone's. The view
-// shows the page's own place: the page moves it, and when the page in it moves (its own chrome),
-// the page follows. A quiet line on top says the size and the zoom; under it the page in a frame,
-// as wide as the area (never above 100%), which two fingers or a pinch zoom, from Fit to 200%.
+// shows the page's own place: the page moves it, and when the page in it moves (a link in the
+// design; it draws no bar, pill or sidebar of its own, only the design), the page follows. A quiet
+// line on top says the size and the zoom; under it the page in a frame, as wide as the area (never
+// above 100%), which two fingers or a pinch zoom, from 10% to 200%, and Space and a drag move.
 //
 // While a view is on, the page's own Comment button and C comment on the design in it: a layer
 // covers the frame, the comment layer's inspect looks through it (host.view().at), a drag on it
 // scrolls, and what is written is about that layout (comments/). The shell draws the controls (the
-// bar's three sizes, the Layout row of the pill's menu); this draws the view, in [data-view].
+// bar's three sizes and its scale button, which zooms the view; the Layout and Zoom rows of the
+// pill's menu); this draws the view, in [data-view].
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type RefObject } from 'react'
 import { createRoot } from 'react-dom/client'
 import { useRows } from '../comments/list'
 import { useCtx } from '../comments/ctx'
 import { Icon } from '../comments/ui'
-import { designIn, frameUrl, openFrame, type Frame } from './frame'
-import { fitOf, pinchOn, room, useBox, useGestures, usePinch, usePlace } from './gestures'
+import { designIn, frameClicks, frameUrl, openFrame, type Frame } from './frame'
+import { fitOf, outOf, pinchOn, room, useBox, useGestures, usePinch, usePlace } from './gestures'
+import { trackPointer } from '../motion'
 import { dims, ORDER, SIZES, type Size } from './sizes'
 
-export type View = { size: Size; land: boolean; zoom: number }
+/** size null: the stage's own artboard (fill), as big as the stage, with no line over it. */
+export type View = { size: Size | null; land: boolean; zoom: number }
 export type ViewProps = {
   /** The view on, or null. zoom: 0 is Fit, else a percentage. */
   view: View | null
@@ -154,8 +158,9 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
   const { act } = useCtx()
   const { s, rows } = useRows()
   const [area, box] = useBox<HTMLDivElement>()
-  const d = dims(view.size, view.land)
-  const pad = box.w < 640 ? 0 : 16
+  // The stage's own artboard is the area's size: at 100% it is the stage as it always was.
+  const d = view.size ? dims(view.size, view.land) : { w: box.w, h: box.h }
+  const pad = !view.size || box.w < 640 ? 0 : 16
   const fit = fitOf(box, d, pad)
   const scale = view.zoom ? view.zoom / 100 : fit
   const zoomed = scale > fit + 0.001
@@ -167,19 +172,25 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
   keys.current = onKey
   const bind = (doc: Document) => {
     const a = pinchOn(doc, pinch), b = gestures(doc), k = (e: KeyboardEvent) => keys.current(e)
+    // The mouse over the frame moves in its page: told here as a point of this page, so the stage's
+    // Focus button and edge arrows show as they do over the stage itself.
+    const m = (e: PointerEvent) => { if (e.pointerType !== 'mouse') return; const [x, y] = outOf(doc.defaultView?.frameElement as HTMLElement | null, e.clientX, e.clientY); trackPointer({ clientX: x, clientY: y }) }
+    const c = (e: MouseEvent) => frameClicks.forEach(f => f(e))
     doc.addEventListener('keydown', k)
-    return () => { a(); b(); doc.removeEventListener('keydown', k) }
+    doc.addEventListener('pointermove', m, true)
+    doc.addEventListener('click', c, true)
+    return () => { a(); b(); doc.removeEventListener('keydown', k); doc.removeEventListener('pointermove', m, true); doc.removeEventListener('click', c, true) }
   }
   const [, redraw] = useState(0)
   useEffect(() => { const f = () => redraw(n => n + 1); coarse.addEventListener('change', f); return () => coarse.removeEventListener('change', f) }, [])
   const picking = s.mode.kind === 'pick' || s.mode.kind === 'tag'
-  const name = SIZES[view.size].name
+  const name = view.size ? SIZES[view.size].name : ''
   // Comments written on the other sizes, open ones, as a chip each that switches to that size.
   const others = ORDER.filter(x => x !== view.size).map(x => ({ x, k: rows.filter(r => r.here && r.state !== 'done' && r.item.target?.view?.size === x).length })).filter(o => o.k)
   const pct = Math.round(scale * 100)
   return (
     <div data-view-stage className="relative flex h-full flex-col bg-zinc-100 text-[13px] text-zinc-900 dark:bg-[#111113] dark:text-zinc-100">
-      {picking
+      {!view.size ? null : picking
         ? <div data-view-banner className="flex h-10 shrink-0 items-center gap-2 bg-proto-primary pe-1.5 ps-3 text-xs font-medium text-proto-primary-fg [@media(hover:hover)]:pe-28">
             <Icon name="comment" className="size-4" />
             <span className="min-w-0 flex-1 truncate">{coarse.matches ? 'Tap' : 'Click'} what to change on {name.toLowerCase()}</span>
@@ -199,13 +210,13 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
               <button type="button" data-view-turn onClick={() => set({ land: !view.land, zoom: 0 })} aria-label={view.land ? 'Turn upright' : 'Turn on its side'} title={view.land ? 'Upright' : 'On its side'}
                 className="grid size-8 shrink-0 place-items-center rounded-full text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><Icon name="rotate" className="size-[17px]" /></button>
             )}
-            <button type="button" data-view-zoom onClick={() => set({ zoom: view.zoom ? 0 : 100 })} aria-label={view.zoom ? 'Fit the width' : 'Actual size'}
-              className="h-8 min-w-11 shrink-0 rounded-full px-2 text-xs font-medium tabular-nums text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{view.zoom ? `${pct}%` : 'Fit'}</button>
           </div>}
-      <div ref={area} data-view-area className="min-h-0 flex-1 overflow-auto overscroll-contain" style={{ touchAction: 'pan-x pan-y' }}>
+      {/* No scrollbars, as on a canvas: one coming and going changes the area's width, and with it Fit, which
+          brings it back (the zoom flickered between two values). It moves by drag, wheel and fingers. */}
+      <div ref={area} data-view-area className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ touchAction: 'pan-x pan-y' }}>
         <div ref={wrap} className="flex h-max min-h-full w-max min-w-full items-start justify-start">
           <LiveFrame hash={hash} dark={dark} w={d.w} h={d.h} scale={scale} route={route} bind={bind}
-            ring={`bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${pad ? 'rounded-[10px]' : ''}`}>
+            ring={!view.size ? 'bg-white dark:bg-zinc-950' : `bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${pad ? 'rounded-[10px]' : ''}`}>
             {picking && <Pick area={area} scale={scale} zoomed={zoomed} />}
           </LiveFrame>
         </div>
@@ -217,10 +228,20 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
 /** Mounts the view once, in `host`; paint draws it with new props (null view: none, and its frame goes). */
 export function createView(host: HTMLElement, wrap: (el: ReactElement) => ReactElement) {
   const root = createRoot(host)
+  let wait = 0
   return {
     paint(p: ViewProps) {
       host.hidden = !p.view
       root.render(wrap(p.view ? <ViewStage {...p} view={p.view} /> : <></>))
+      // The stage's own artboard stays unseen (laid out, so the frame loads at its size) until the
+      // design is in its frame: meanwhile the stage under it shows the same design, not an empty frame.
+      cancelAnimationFrame(wait)
+      const show = () => {
+        const on = !p.view || !!p.view.size || !!designIn(live?.doc() ?? null)
+        host.style.visibility = on ? '' : 'hidden'
+        if (!on) wait = requestAnimationFrame(show)
+      }
+      show()
     },
     /** The design in the frame, while a view is on and the page in it has one on its stage. */
     mount: () => designIn(live?.doc() ?? null),
