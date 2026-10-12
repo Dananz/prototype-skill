@@ -13,6 +13,7 @@ export type Box = { x: number; y: number; w: number; h: number }
  * `component` the component it is written in (both stamped by source.mjs). One picked in a device
  * view (view/) has its `view`: the layout it is on, which its rect is measured in.
  */
+/** label stays in saved data for compatibility; the UI uses numbered references, not element names. */
 export type Target = { label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; point?: { x: number; y: number }; view?: ViewSize }
 
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
@@ -32,7 +33,7 @@ export type Held = Draft & { target?: Target; time?: Time }
  * it. It goes to Claude as a comment with this and no element; its body is the optional note. A
  * copy choice (copy.tsx) is one too, on the element of the line it changes.
  */
-export type Action = 'pick' | 'unpick' | 'more' | 'build' | 'copy'
+export type Action = 'pick' | 'unpick' | 'more' | 'build' | 'copy' | 'try-it' | 'copy-options'
 
 export type Item = Draft & {
   id: string

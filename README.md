@@ -18,7 +18,7 @@
 
 </div>
 
-Prototype is a skill for Claude Code. Ask for a few versions of a screen and Claude opens one live app for your session, sends you its link, and builds five different takes into it while you watch. Each one starts from a faithful rebuild of your real screen, so they all look like your product. Then Claude checks its own screenshots and tells you which one it would ship, and why.
+Prototype is a skill for Claude Code. Ask for a few versions of a screen and Claude opens one live app for your session, sends you its link, and builds one usable direction first, then fills in the remaining requested or default design exploration while you watch. Each one starts from a faithful rebuild of your real screen, so they all look like your product. Then Claude checks its own screenshots and tells you what it recommends, and why. Ask for more directions from Actions → More like this. Actions → Add Try it or Add Copy options requests guided demo content or alternative headlines and text later, without another chat prompt. On a phone these actions live in the variant sheet. Requests wait in Comments, where you can delete one to cancel it; completed extras use the existing Try it panel and copy picker.
 
 <p align="center">
 <picture>
@@ -97,7 +97,7 @@ Or just ask for "a few versions of the settings drawer". Keep talking in the sam
 - Step through the variants, see them side by side or full size, or hide everything but the design.
 - Open menus, drawers and steps from a list, autoplay them, or compare two variants in the same state.
 - A Try it panel tells you what to type and where to click.
-- Comment on any part of a design. Claude makes the change and replies.
+- Comment directly on any part of a design, and visually select other elements to reference. No custom element names or named-element dropdown. Claude makes the change and replies.
 - See the page at a phone's, a tablet's or a desktop's size from any screen, and comment on that layout.
 - Ask for other copy, then try Claude's options on the design itself and send back the ones you pick.
 - Scrub an animation forward and back, see each part's curve, and comment on one moment of it or a stretch of it. Claude reads the frames, changes the timing and replies.

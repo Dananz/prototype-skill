@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startChrome, stopChrome } from '../scripts/chrome.mjs'
+import { optionalExtras } from './optional-extras.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -111,7 +112,12 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
     const enter = async () => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ...(type === 'keyDown' ? { text: '\r' } : {}) }, sessionId) }
     // Real fingers (Input.dispatchTouchEvent): touchStart, touchMove or touchEnd, with [x, y] per finger.
     const touch = (type, fingers) => send('Input.dispatchTouchEvent', { type, touchPoints: fingers.map(([x, y], id) => ({ x, y, id })) }, sessionId)
-    return { run, close, press, enter, touch }
+    const screenshot = async file => {
+      const { data } = await send('Page.captureScreenshot', { format: 'png' }, sessionId)
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, Buffer.from(data, 'base64'))
+    }
+    return { run, close, press, enter, touch, screenshot }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {
@@ -741,9 +747,9 @@ try {
     ed.focus()
     document.execCommand('insertText', false, '@')
     await new Promise(r => setTimeout(r, 300))
-    const m = document.querySelector('[data-tag-menu]')
-    const r = m?.getBoundingClientRect(), hit = r && document.elementFromPoint(r.left + r.width / 2, r.top + 12)
-    const said = !m ? 'typing @ opened no menu' : r.height > 80 && r.top >= 0 && r.bottom <= innerHeight && m.contains(hit) ? 'ok' : 'the @ menu is cut off or covered: ' + JSON.stringify([r.top, r.bottom, r.height, hit?.tagName])
+    const composer = document.querySelector('[data-motion-bar] [data-composer]')
+    const said = !document.querySelector('[data-tag-menu]') && composer?.classList.contains('opacity-60') ? 'ok' : '@ should start visual tagging without a named-element menu'
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     ed.textContent = ''
     ed.dispatchEvent(new Event('input', { bubbles: true }))
     document.querySelector('[data-motion=compose]').click()
@@ -1497,6 +1503,8 @@ proto(['shoot', 'tryit/A', '--size', '834x1194'])
 if (!pngs(shots).includes('tryit-A-834x1194.png')) fail('proto shoot --size 834x1194 should write tryit-A-834x1194.png')
 proto(['shoot', 'tryit/A', '--size', '834'], { ok: false })
 proto(['shoot', 'tryit', '--sheet', '--size', '834x1194'], { ok: false })
+
+await optionalExtras({ proto, app, local, openPage, postJson, fail, keepShots })
 
 proto(['stop'])
 for (let i = 0; i < 40 && await answers(`${local}__proto/status`); i++) await new Promise(r => setTimeout(r, 250))

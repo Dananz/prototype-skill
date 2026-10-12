@@ -1,15 +1,11 @@
 // Writing a comment on one element, or on a moment or a range of the design's motion (in the motion
-// dock, with the time where the element's name would be). `@` (or the @ button) offers the design's
-// named parts, or picking any element on the page; the camera captures the design around the
+// dock). `@` or Tag another element starts the existing visual picker, without a named-element menu; the camera captures the design around the
 // element (all of it, on a moment) and opens the editor; an image pasted (Ctrl+V) or dropped on the
 // composer is attached in its place; ⌘↩ adds it. Whatever is written is held by
 // the store as it is typed, so putting the composer away any way but Cancel or Add loses nothing.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
-import { createPortal } from 'react-dom'
-import { uiBox } from '../portals'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { useCtx } from './ctx'
-import { find, groupOf, parts } from './dom'
-import { EASE, GLIDE_MS, Glide, useBoxes } from './inspect'
+import { find } from './dom'
 import { capture, ShotEditor } from './shot'
 import type { Box, Draft, Seg, Target, Time } from './types'
 import { IB, Icon, MOD, PinDot, PRIMARY, spanOf, SrcTag, srcOf, ImageChip, ViewChip } from './ui'
@@ -31,7 +27,7 @@ const chipNode = (t: Target | undefined, i: number) => {
   const src = srcOf(t)
   if (src) s.title = src.full
   s.className = 'mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg'
-  s.textContent = `@${t?.label ?? '?'}`
+  s.textContent = `@${i + 1}`
   return s
 }
 const endRange = (el: HTMLElement) => { const x = document.createRange(); x.selectNodeContents(el); x.collapse(false); return x }
@@ -99,61 +95,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const [pasted, setPasted] = useState(!!initial?.pasted)
   const pastedRef = useRef(pasted)
   pastedRef.current = pasted
-  const [menu, setMenu] = useState(false)
-  // The @ menu: what was typed after @ filters it; row 0 is Pick on the design, the parts follow.
-  const [q, setQ] = useState('')
-  const [row, setRow] = useState(0)
-  const [up, setUp] = useState(false)
-  // Docked (in the motion dock, which clips what overflows it), the menu is drawn over the page,
-  // fixed above or below the editor.
-  const [fixedAt, setFixedAt] = useState<CSSProperties | null>(null)
-  const anchor = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLDivElement>(null)
-  const list = useRef<HTMLDivElement>(null)
-
-  const all = menu ? parts(host.mount()).filter(p => p.t.selector !== target?.selector && !tags.some(t => t.selector === p.t.selector)) : []
-  const ql = q.toLowerCase()
-  const hits = all.filter(p => !ql || p.t.label.toLowerCase().includes(ql) || p.group.toLowerCase().includes(ql))
-  // The commented element's own group comes first: what sits next to it is what gets tagged most.
-  const el0 = target ? find(host.mount(), target) : null
-  const mine = el0 ? groupOf(el0) : 'Top of the page'
-  const groups = [...new Set([mine, ...hits.map(p => p.group)])].map(g => ({ g, here: g === mine, parts: hits.filter(p => p.group === g) })).filter(x => x.parts.length)
-  const flat = groups.flatMap(x => x.parts)
-  // The part a row points at is lit on the design while the pointer is on the list or the arrows are used.
-  const [peeking, setPeeking] = useState(false)
-  const peek = menu && peeking && row > 0 ? flat[row - 1] ?? null : null
-  // The row highlight is one box that glides to the active row, the way the inspect outline does.
-  const menuBox = useRef<HTMLDivElement>(null)
-  const [hl, setHl] = useState<{ top: number; height: number; still: boolean } | null>(null)
-  const settle = useRef(0)
-  const measure = (still: boolean) => {
-    const m = menuBox.current, r = m?.querySelector<HTMLElement>(`[data-i="${row}"]`)
-    if (!m || !r) return setHl(null)
-    const a = r.getBoundingClientRect(), b = m.getBoundingClientRect()
-    const top = a.top - b.top - m.clientTop
-    setHl(h => h && Math.abs(h.top - top) < 0.5 && h.height === a.height && h.still === still ? h : { top, height: a.height, still })
-  }
-  useLayoutEffect(() => { if (menu) measure(false); else setHl(null) }, [menu, row, q, flat.length]) // eslint-disable-line react-hooks/exhaustive-deps
-  // Scrolling the list moves the rows under a highlight that is already on one: it follows at once.
-  const onListScroll = () => {
-    measure(true)
-    clearTimeout(settle.current)
-    settle.current = window.setTimeout(() => setHl(h => h && { ...h, still: false }), 160)
-  }
-  const peekBox = useBoxes(peek ? [{ id: 'peek', t: peek.t }] : [])['peek']
-  useEffect(() => { if (peek) find(host.mount(), peek.t)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [peek?.t.selector]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { list.current?.querySelector(`[data-i="${row}"]`)?.scrollIntoView({ block: 'nearest' }) }, [row])
-  const openMenu = () => {
-    const r = box.current?.getBoundingClientRect(), h = host.layer.getBoundingClientRect()
-    if (docked && anchor.current) {
-      const a = anchor.current.getBoundingClientRect(), goUp = a.top > innerHeight - a.bottom
-      setUp(goUp)
-      setFixedAt({ left: a.left + 8, width: a.width - 16, ...(goUp ? { bottom: innerHeight - a.top + 4, maxHeight: Math.min(352, a.top - 12) } : { top: a.bottom + 4, maxHeight: Math.min(352, innerHeight - a.bottom - 12) }) })
-    } else setUp(sheet || (!!r && r.bottom + 360 > h.bottom && r.top - 360 > h.top))
-    setRow(0); setPeeking(false); setMenu(true)
-  }
-
-  const over = (el: ReactElement) => docked ? createPortal(el, uiBox()) : el
   const [empty, setEmpty] = useState(!initial || !initial.body.some(s => typeof s !== 'string' || s.trim()))
   const emit = () => { if (!editing && ed.current) act.hold({ body: readEditor(ed.current), tags: tagsRef.current, shot: shotRef.current, pasted: pastedRef.current }, target, time) }
   useEffect(emit, [tags, shot, pasted]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -194,7 +136,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     r.insertNode(space); r.insertNode(chip)
     const after = document.createRange(); after.setStartAfter(space); after.collapse(true)
     const s = getSelection(); s?.removeAllRanges(); s?.addRange(after)
-    setEmpty(false); setMenu(false)
+    setEmpty(false)
     saveRange()
   }
   // Something picked on the design to tag comes back here.
@@ -230,21 +172,12 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     style = { left: x, top: Math.max(8, y), width: W }
   }
   const keys = (e: React.KeyboardEvent) => {
-    if (menu && !e.metaKey && !e.ctrlKey) {
-      const count = flat.length + 1
-      if (e.key === 'ArrowDown') { e.preventDefault(); setPeeking(true); setRow(a => (a + 1) % count); return }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setPeeking(true); setRow(a => (a - 1 + count) % count); return }
-      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); if (row === 0) { setMenu(false); act.tagPick() } else insert(flat[row - 1].t); return }
-    }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); void act.send() }
-    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (menu) setMenu(false); else act.close() }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); act.close() }
   }
   const refocus = () => requestAnimationFrame(() => ed.current?.focus())
   return (
     <>
-      <Glide item={peek && peekBox ? { box: peekBox, label: peek.t.label } : null} pad={4} className="rounded-lg ring-2 ring-proto-primary-ring" style={{ boxShadow: '0 0 0 9999px rgb(9 9 11 / 0.32)' }}>
-        {h => <span className="absolute -top-7 left-0 whitespace-nowrap rounded-md bg-proto-primary px-1.5 py-0.5 text-[11px] font-medium text-proto-primary-fg shadow">@{h.label}</span>}
-      </Glide>
       <div ref={box} data-composer onKeyDown={keys}
         onDragOver={e => { if (!carriesImage(e.dataTransfer)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDropping(true) }}
         onDragLeave={e => { if (!box.current?.contains(e.relatedTarget as Node)) setDropping(false) }}
@@ -255,53 +188,21 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           {time
             ? <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[11px] font-semibold tabular-nums text-proto-primary-soft-fg"><svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={time.to === undefined ? TIME_PATH.at : TIME_PATH.range} /></svg>{time.to === undefined ? `At ${spanOf(time)}` : spanOf(time)}</span>
             // In a view the size takes the file's place: the list shows the file under the words.
-            : <><ViewChip v={target?.view} /><span dir="auto" className="min-w-0 flex-1 truncate text-xs font-medium">{target?.label}</span>{!target?.view && <SrcTag t={target} />}</>}
+            : <><ViewChip v={target?.view} /><span dir="auto" className="min-w-0 flex-1 truncate text-xs font-medium">Comment</span>{!target?.view && <SrcTag t={target} />}</>}
         </div>
-        <div ref={anchor} className="relative px-3 pt-1.5">
+        <div className="relative px-3 pt-1.5">
           <div ref={ed} contentEditable suppressContentEditableWarning role="textbox" aria-label="Comment" aria-multiline="true" dir="auto"
             onInput={() => {
               saveRange(); setEmpty(!ed.current!.innerText.trim()); emit()
               const s = getSelection(), node = s?.anchorNode
-              const m = (node?.nodeType === 3 ? node.textContent!.slice(0, s!.anchorOffset) : '').match(/@([^\s@]{0,24})$/)
-              if (m) { if (!menu) openMenu(); setQ(m[1]); setRow(m[1] ? 1 : 0); setPeeking(!!m[1]) } else if (menu) setMenu(false)
+              const text = node?.nodeType === 3 ? node.textContent!.slice(0, s!.anchorOffset) : ''
+              if (/(^|\s)@$/.test(text)) act.tagPick()
             }}
             onKeyUp={saveRange} onMouseUp={saveRange} onBlur={saveRange}
             onPaste={e => { const f = imageIn(e.clipboardData); if (!f) return; e.preventDefault(); void attach(f) }}
             className="max-h-40 min-h-[52px] overflow-y-auto whitespace-pre-wrap break-words py-1 leading-5 outline-none [@media(pointer:coarse)]:min-h-[60px] [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6" />
           {empty && <span className="pointer-events-none absolute left-3 top-2.5 text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">{time ? `What should change ${time.to === undefined ? 'at this moment' : 'over this range'}? @ tags an element` : 'What should change? @ tags another element'}</span>}
-          {menu && over(
-            <div ref={menuBox} data-tag-menu className={`flex max-h-[min(22rem,60vh)] flex-col overflow-hidden rounded-xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 ${docked ? 'fixed z-[60]' : `absolute inset-x-2 z-10 ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}`} style={docked ? fixedAt ?? undefined : undefined}>
-              {hl && <div className="pointer-events-none absolute inset-x-1 rounded-lg bg-proto-primary-soft" style={{ top: hl.top, height: hl.height, transition: hl.still ? 'none' : ['top', 'height'].map(k => `${k} ${GLIDE_MS}ms ${EASE}`).join(', ') }} />}
-              <div className="relative shrink-0 p-1 pb-0">
-                <button data-i="0" onMouseDown={e => { e.preventDefault(); setMenu(false); act.tagPick() }} onMouseEnter={() => { setRow(0); setPeeking(false) }}
-                  className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-start font-medium text-proto-primary-soft-fg"><Icon name="target" className="size-4" />Pick on the design…<span className="ms-auto text-[11px] font-normal text-zinc-400">anything</span></button>
-              </div>
-              <div ref={list} onScroll={onListScroll} onMouseLeave={() => setPeeking(false)} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-1">
-                {groups.map(({ g, here, parts: ps }) => (
-                  <div key={g}>
-                    <div className="sticky top-0 z-[2] flex items-center gap-1.5 bg-white px-2 pb-1 pt-2 text-[11px] font-medium text-zinc-400 dark:bg-zinc-900">
-                      <span dir="auto" className="truncate">{g}</span>{here && <span className="rounded bg-proto-primary-soft px-1 text-[10px] text-proto-primary-soft-fg">here</span>}<span className="ms-auto font-normal tabular-nums">{ps.length}</span>
-                    </div>
-                    {ps.map(p => {
-                      const i = flat.indexOf(p) + 1, at = ql ? p.t.label.toLowerCase().indexOf(ql) : -1
-                      return (
-                        <button key={p.t.selector} data-i={i} onMouseDown={e => { e.preventDefault(); insert(p.t) }} onMouseEnter={() => { setRow(i); setPeeking(true) }}
-                          className={`flex h-8 w-full items-center gap-2 rounded-lg px-2 text-start transition-colors duration-150 ${row === i ? 'text-proto-primary-soft-fg' : 'text-zinc-600 dark:text-zinc-400'}`}>
-                          <span dir="auto" className="min-w-0 flex-1 truncate">{at >= 0 ? <>{p.t.label.slice(0, at)}<b className="font-semibold text-zinc-900 dark:text-white">{p.t.label.slice(at, at + ql.length)}</b>{p.t.label.slice(at + ql.length)}</> : p.t.label}</span>
-                          <SrcTag t={p.t} />
-                        </button>
-                      )
-                    })}
-                  </div>
-                ))}
-                {!flat.length && <p className="px-3 py-5 text-center text-xs text-zinc-400">Nothing named “{q}”. Pick it on the design instead.</p>}
-              </div>
-              <div className="relative z-[2] flex shrink-0 items-center gap-2 border-t border-black/[.06] bg-white px-3 py-1.5 text-[11px] text-zinc-400 dark:border-white/10 dark:bg-zinc-900">
-                <span><kbd className="font-sans">↑↓</kbd> move · <kbd className="font-sans">Enter</kbd> tag · <kbd className="font-sans">Esc</kbd> close</span>
-                <span className="ms-auto tabular-nums">{q ? `${flat.length} of ${all.length}` : `${all.length} parts`}</span>
-              </div>
-            </div>
-          )}
+
         </div>
         {(capturing || (shot && !pasted)) && (
           <div className="flex items-center gap-2 px-3 pb-1 pt-1.5">
@@ -311,14 +212,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           </div>
         )}
         <div className="flex items-center gap-1 px-2 pb-2 pt-1">
-          <button onMouseDown={e => {
-            e.preventDefault()
-            if (menu) { setMenu(false); return }
-            const el = ed.current!; el.focus()
-            const r = range.current && el.contains(range.current.startContainer) ? range.current : endRange(el)
-            const sel = getSelection(); sel?.removeAllRanges(); sel?.addRange(r)
-            document.execCommand('insertText', false, '@')
-          }} title="Tag another element (@)" aria-label="Tag another element" className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="at" /></button>
+          <button onClick={() => { saveRange(); act.tagPick() }} title="Tag another element on the design" aria-label="Tag another element" className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="target" /></button>
           <button onClick={shoot} title={`Screenshot this part of the design, then draw on it (or paste an image: ${MOD} V, or drop one here)`} aria-label="Attach a screenshot" className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="camera" /></button>
           {shot && pasted && !capturing && <ImageChip src={shot} onOpen={() => setMarking(shot)} onRemove={() => { setShot(undefined); setPasted(false) }} />}
           {editing && <button onClick={() => id && act.remove(id)} title="Delete" aria-label="Delete comment" className={`${IB} h-8 min-w-8 px-1.5 hover:text-rose-600`}><Icon name="trash" /></button>}

@@ -47,7 +47,7 @@ export type Inbox = {
   new: number
   listening: boolean
   batches: { id: string; at: string; state: 'sent' | 'seen' | 'done'; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null
-    comments: { n: number; route: string; done: boolean; withdrawn?: boolean; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null }[] }[]
+    comments: { n: number; route: string; action?: Action; done: boolean; withdrawn?: boolean; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null }[] }[]
 }
 /** An element a comment is on or tags. Rect is in CSS px from the variant root's top left; src and
  *  component say where it is written (`today/parts.tsx:30`, `PriceCard`). */
@@ -1746,14 +1746,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function decideOf(): Subject | null {
     const p = cur(), pl = st.place
     const v = p && pl.view === 'variant' ? p.variants.find(x => x.id === pl.variant) : undefined
-    return p && v ? { proto: p.id, variant: v.id, name: v.name, picked: pickOf(p) === v.id } : null
+    return p && v ? { proto: p.id, variant: v.id, name: v.name, picked: pickOf(p) === v.id, hints: hints.of(hintHost()).length > 0, copy: copy.of(hintHost()).length > 0 } : null
   }
   function decideBtn() {
     const d = decideOf()
     if (!d) return ''
     const on = st.open === 'decide'
-    const say = d.picked ? `Picked ${d.variant} · take it back, or ask for more like it` : 'Pick this design, or ask for more like it'
-    return `<button data-act="open:decide" data-decide-btn aria-haspopup="menu" aria-expanded="${on}" aria-label="${say}" title="${say} · P" class="${IB} ${on ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}">${ic('check')}</button>`
+    const say = d.picked ? `Picked ${d.variant} · design actions, Try it and copy options` : 'Design actions: pick, more like this, Try it and copy options'
+    return `<button data-act="open:decide" data-decide-btn aria-haspopup="menu" aria-expanded="${on}" aria-label="${say}" title="${say} · P" class="${IB} ${on ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}">${ic('check')}<span class="hidden px-1 text-xs sm:inline">Actions</span></button>`
   }
   const drawDecide = comments.mountDecide(root.querySelector<HTMLElement>('[data-decide]')!)
   // The button is redrawn with the bar, so the menu finds it again each time it is drawn.
@@ -1914,7 +1914,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     fillTry()
   }
   // The pill's menu button is Try it's way out while its sheet is up or away.
-  hints.subscribe(() => { paintHints(); paintPill() })
+  hints.subscribe(() => { paintHints(); paintPill(); paintDecide() })
   wideMq.addEventListener('change', () => { hintsOpen = wideMq.matches && localStorage.getItem('proto-hints') !== '0'; paintHints() })
   // A live value (a code that changes every 30 seconds) is re-read every second, in place.
   setInterval(() => {

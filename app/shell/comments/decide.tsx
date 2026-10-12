@@ -11,17 +11,22 @@ import type { Action } from './types'
 import { ACTION, Icon, MOD, PRIMARY, Pulse } from './ui'
 
 /** The variant on screen, and whether it is the prototype's pick. */
-export type Subject = { proto: string; variant: string; name: string; picked: boolean }
-type Ask = 'more' | 'build'
+export type Subject = { proto: string; variant: string; name: string; picked: boolean; hints?: boolean; copy?: boolean }
+type Ask = 'more' | 'build' | 'try-it' | 'copy-options'
 
 const NOTE: Record<Ask, { title: (v: string) => string; hint: string; done: (v: string) => string }> = {
+  'try-it': { title: v => `Add Try it for ${v}`, hint: 'Optional: a flow or scenario to explain', done: v => `Asked for Try it for ${v}` },
+  'copy-options': { title: v => `Add copy options for ${v}`, hint: 'Optional: which lines or tone? Starts with the headline and primary text.', done: v => `Asked for copy options for ${v}` },
   more: { title: v => `More like ${v}`, hint: 'Optional: what to keep, what to push further', done: v => `Asked for more like ${v}` },
   build: { title: v => `Build ${v}`, hint: 'Optional: anything to know before building it', done: v => `Asked to build ${v}` },
 }
 
 export function Decide({ subject, sheet = false, onDone }: { subject: Subject; sheet?: boolean; onDone?: () => void }) {
   const { store, act } = useCtx()
-  const listening = !!useStore(store).inbox?.listening
+  const state = useStore(store)
+  const listening = !!state.inbox?.listening
+  const pending = (a: Ask) => state.inbox?.batches.some(b => b.comments.some(c => c.route === `${subject.proto}/${subject.variant}` && c.action === a && !c.done && !c.withdrawn))
+  const sending = useRef(false)
   const [ask, setAsk] = useState<Ask | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
@@ -35,7 +40,8 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
   const menu = useRef<HTMLDivElement>(null)
 
   const send = async (a: Action, words = '') => {
-    if (busy) return
+    if (sending.current) return
+    sending.current = true
     const flip = a === 'pick' || a === 'unpick'
     setBusy(true); setError('')
     // A pick shows at once, and goes back with the reason when the server couldn't make it.
@@ -47,7 +53,7 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
     } catch (e) {
       if (flip) setWant(null)
       setError(e instanceof Error ? e.message : 'Could not send')
-    } finally { setBusy(false) }
+    } finally { sending.current = false; setBusy(false) }
   }
   // What was asked is said for a moment, then the menu goes away (the sheet goes back to its choices).
   useEffect(() => {
@@ -60,12 +66,12 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
   const arrows = (e: KeyboardEvent) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
     e.preventDefault()
-    const items = [...menu.current!.querySelectorAll<HTMLElement>('[role=menuitem]')], i = items.indexOf(document.activeElement as HTMLElement)
+    const items = [...menu.current!.querySelectorAll<HTMLElement>('[role=menuitem]:not([disabled])')], i = items.indexOf(document.activeElement as HTMLElement)
     items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
   }
   // In the note, Esc goes back to the choices instead of closing everything, and ⌘↩ sends.
   const keys = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setAsk(null); setError('') }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!sending.current) { setAsk(null); setNote(''); setError('') } }
     else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && ask) { e.preventDefault(); void send(ask, note) }
   }
   const status = <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-zinc-500"><Pulse on={listening} className="size-1.5" /><span className="truncate">{listening ? 'Claude is listening' : 'Claude sees this on its next turn'}</span></span>
@@ -81,7 +87,7 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
   if (ask) return (
     <div className={sheet ? 'px-1' : 'p-2'} onKeyDown={keys}>
       <div className="flex items-center gap-1 pb-1.5">
-        <button onClick={() => { setAsk(null); setError('') }} aria-label="Back" className="grid size-8 shrink-0 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white"><Icon name="left" /></button>
+        <button onClick={() => { if (!sending.current) { setAsk(null); setNote(''); setError('') } }} aria-label="Back" className="grid size-8 shrink-0 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white"><Icon name="left" /></button>
         <Icon name={ACTION[ask].icon} className="size-3.5 text-zinc-400" />
         <span className="text-[13px] font-semibold">{NOTE[ask].title(v)}</span>
       </div>
@@ -89,12 +95,28 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
         className="block w-full resize-none rounded-xl bg-zinc-900/[.04] px-3 py-2 text-[13px] leading-5 outline-none ring-1 ring-inset ring-transparent placeholder:text-zinc-400 focus:ring-proto-primary-ring dark:bg-white/[.06] [@media(pointer:coarse)]:text-base" />
       {oops}
       <div className="mt-2 flex items-center justify-end gap-1.5">
-        <button onClick={() => { setAsk(null); setError('') }} className="h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Cancel</button>
+        <button onClick={() => { if (!sending.current) { setAsk(null); setNote(''); setError('') } }} className="h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Cancel</button>
         <button onClick={() => send(ask, note)} disabled={busy} title={`${MOD} Enter`} className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-50 ${PRIMARY}`}><Icon name="send" className="size-3.5" />{busy ? 'Sending…' : 'Send'}</button>
       </div>
       <div className={sheet ? 'mt-1 px-1' : 'mx-1 mt-2 border-t border-black/[.06] pt-2 dark:border-white/10'}>{status}</div>
     </div>
   )
+
+  const extras = <div className="mt-2 border-t border-black/[.06] pt-2 dark:border-white/10">
+    <p className="px-2 pb-1 text-[11px] text-zinc-500">Optional extras</p>
+    {(['try-it', 'copy-options'] as const).map(a => {
+      const ready = a === 'try-it' ? subject.hints : subject.copy
+      const waiting = pending(a)
+      const label = a === 'try-it' ? 'Try it' : 'Copy options'
+      return <button key={a} role={sheet ? undefined : 'menuitem'} data-request-extra={a} disabled={busy || waiting || ready}
+        onClick={() => { setNote(''); setError(''); setAsk(a) }}
+        className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-start text-[13px] hover:bg-zinc-900/[.04] disabled:text-zinc-400 dark:hover:bg-white/[.06]">
+        <Icon name={ACTION[a].icon} className="size-4" /><span className="flex-1">{ready ? label : `Add ${label}`}</span>
+        <span className="text-xs text-zinc-500">{ready ? 'Ready' : waiting ? 'Requested' : '…'}</span>
+      </button>
+    })}
+    {(['try-it', 'copy-options'] as const).some(pending) && <p className="px-2 pb-1 text-xs text-zinc-500">Requests wait in Comments. Delete one there to cancel it.</p>}
+  </div>
 
   // The choices: a menu down the side of a wide page, three quiet buttons across a phone's sheet.
   const pickLabel = picked ? `Picked ${v}` : `Pick ${v}`
@@ -111,6 +133,7 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
           <button onClick={() => setAsk('more')} className={`flex-1 px-2 ${quiet}`}><Icon name="more" className="size-4" />More like this</button>
           <button onClick={() => setAsk('build')} className={`shrink-0 px-3 ${quiet}`}><Icon name="code" className="size-4" />Build it</button>
         </div>
+        {extras}
         {oops}
         <p className="mt-2 flex items-center px-1">{status}</p>
       </div>
@@ -125,6 +148,7 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
       </button>
       <button role="menuitem" onClick={() => setAsk('more')} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="more" className="size-4" /><span className="flex-1">More like this…</span></button>
       <button role="menuitem" onClick={() => setAsk('build')} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="code" className="size-4" /><span className="flex-1">Build it…</span></button>
+      {extras}
       {oops}
       <div className="mx-2 mt-1.5 border-t border-black/[.06] pb-1 pt-2 dark:border-white/10">{status}</div>
     </div>

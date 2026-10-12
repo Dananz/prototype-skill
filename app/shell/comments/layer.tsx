@@ -128,7 +128,7 @@ function ReadCard({ row, box }: { row: { item: Item; state: ReturnType<typeof pr
     <div ref={el} className="pointer-events-auto absolute z-30 w-[min(15rem,calc(100%-1rem))] rounded-xl border border-black/10 bg-white p-2 text-[11px] leading-4 shadow-xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900" style={{ left: at?.left ?? box.x, top: at?.top ?? box.y + box.h + 10, visibility: at ? 'visible' : 'hidden' }}>
       <div className="flex items-center gap-1.5 text-[10px]">
         <PinDot n={item.n} done={state === 'done'} size="sm" />
-        <span dir="auto" className="min-w-0 flex-1 truncate font-medium text-zinc-500">{item.target?.label}</span>
+        <span dir="auto" className="min-w-0 flex-1 truncate font-medium text-zinc-500">Comment</span>
         <span className={`shrink-0 ${STATE[state].cls}`}>{STATE[state].label}</span>
       </div>
       <Body c={item} className="mt-1 block text-zinc-800 dark:text-zinc-200" />
