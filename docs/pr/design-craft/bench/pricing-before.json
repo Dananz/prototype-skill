@@ -1,0 +1,20 @@
+{
+  "name": "pricing-before",
+  "skill": "/Users/tomer/Code/proto-bench/skill-before",
+  "uuid": "01051e16-8769-42dd-aa05-ff26395ce4ed",
+  "session": "/Users/tomer/Code/proto-bench/runs/pricing-before/.prototypes/01051e16",
+  "url": "https://studio.tail08ad7c.ts.net:9534/",
+  "exit": 0,
+  "seconds": {
+    "link": 10.021,
+    "added": 25.047,
+    "first": 67.126,
+    "allBuilt": 237.418,
+    "done": 237.996
+  },
+  "craftKit": false,
+  "briefs": false,
+  "cost": 1.5230864000000002,
+  "turns": 23,
+  "apiSeconds": 190.745
+}

@@ -10,6 +10,10 @@
 html, body, #app { height: 100%; }
 body { margin: 0; }
 
+/* A grid card is a text-left button; without this its physical alignment leaks into the
+   variant and an RTL screen's text sits on the left there, though the variant page is right. */
+[data-mount] { text-align: start; }
+
 /* Compare: what a variant marks as new (data-diff) is outlined on its side. */
 [data-compare] [data-diff] { outline: 2px dashed #f59e0b; outline-offset: 3px; border-radius: 6px; }
 

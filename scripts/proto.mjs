@@ -15,17 +15,27 @@
 //             [--frames <n>] [--at <ms>-<ms>]   n frames of the take on one sheet, with its curves
 //             [--size <w>x<h>]   instead of desktop and phone, that viewport (a layout from the page's device view)
 //   proto shoot [slug…] --sheet [--state <id>] [--theme dark]   every variant on one contact sheet per prototype
+//   proto compare <slug>/<letter>[/<state>] --ref <png> [--el <css>] [--size <w>x<h>] [--click <css>]
+//             how far an element of the variant (default: the whole variant) is from a screenshot of
+//             the real one, as % of pixels off, per column and per third, with a difference image
+//   proto perf <slug>/<letter>[/<state>] [--drag <css>] [--click <css>] [--size <w>x<h>] [--dpr 2] [--hz <n>] [--seconds 3]
+//             frames per second at rest (or while dragging that element), how busy the main and GPU
+//             threads are, and the design's slowest functions; run it on anything that animates
 //   proto handoff <slug>/<letter>   a checklist of what that variant has, for building it into the codebase
 //   proto snap <slug>[/<letter>]… [--width 672]   static HTML snapshots for a Claude Doc
 //   proto pick <slug> <letter> [--off]   the user chose this variant: marked in the page
 //   proto work <slug>/<letter> [--ask "…"] [--off]   the variant being worked on: pinned in the page
 //   proto ask "…" [--to <slug>/<letter>]   a change the user asked for, kept with that variant
+//   proto ask --each "…" "…" …   several at once (a batch of comments)
 //   proto inbox [--wait] [--timeout <min>]   comments sent from the page; --wait blocks until some arrive
 //   proto reply <batch>[/<n>] "…" [--done] [--as codex]   answer a comment (or a whole batch) in the page
+//   proto reply <batch> 1 "…" 2 "…" … [--done]   answer many comments of a batch in one call
 //   proto kit [--kit=<name>]   the project's design kit: what it has, and whether the app moved on since
 //   proto kit save <slug> [--sources <file,…>] [--kit=<name>]   the session's theme.css and that prototype's
 //             parts, packages and screen, kept for the next session (--sources: the files they came from)
 //   proto kit screen <name> <slug>[/<letter>] [--sources <file,…>]   a Current that matches its reference
+//   proto fonts [--draw <n>] [--hebrew] [--avoid <family,…>]   font pairings from Google Fonts (references/
+//             fonts.json); --draw: n at random, no family twice, for the directions of one prototype
 //   proto archive <slug> [--off]    proto keep [--off]      proto url    proto stack
 //   proto stop    proto rm    proto ls    proto gc
 //
@@ -34,7 +44,7 @@
 
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
@@ -53,9 +63,13 @@ const BASE = { vite: '^8.3.0', tailwindcss: '^4.3.0', '@tailwindcss/vite': '^4.3
 // UI's Drawer, which is React, and so is the comment layer (which takes its screenshots with
 // modern-screenshot).
 const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.9.0', 'modern-screenshot': '^4.7.0' }
+// What a variant can reach for without an install (an install reloads the page): icons and
+// motion. Fonts come from Google Fonts at run time (src/fonts.ts, `proto fonts`). New sessions
+// only; `proto up` never adds them to an existing one, so a running session isn't reinstalled and
+// restarted for packages it never asked for.
 const STACKS = {
-  react: { deps: {}, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', stub: 'react.tsx' },
-  vue: { deps: { vue: '^3.5.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue' },
+  react: { deps: {}, craft: { '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', stub: 'react.tsx' },
+  vue: { deps: { vue: '^3.5.0' }, craft: { '@phosphor-icons/vue': '^2.2.1', 'motion-v': '^2.7.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue' },
 }
 
 // ---------- arguments ----------
@@ -65,7 +79,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy', 'kit'])
+const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy', 'kit', 'each', 'hebrew'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -218,7 +232,7 @@ function scaffold(dir, project) {
   cpSync(join(APP, 'adapters', kit.motion), join(dir, 'src', 'motion.ts'))
   writeJson(join(dir, 'package.json'), {
     name: `prototype-${basename(dir)}`, private: true, type: 'module',
-    dependencies: { ...SHELL, ...kit.deps }, devDependencies: { ...BASE, ...kit.dev },
+    dependencies: { ...SHELL, ...kit.deps, ...kit.craft }, devDependencies: { ...BASE, ...kit.dev },
   })
   const id = sessionId()
   writeJson(sessionFile(dir), {
@@ -524,13 +538,14 @@ function work() {
 function ask() {
   const dir = sessionDir()
   const s = need(dir)
-  const text = args.join(' ').trim()
-  if (!text) die('what did the user ask for? proto ask "…"')
+  // --each: every quoted argument is one ask (a batch of comments in one call); else the words are one.
+  const texts = (flags.each ? args.map(a => a.trim()) : [args.join(' ').trim()]).filter(Boolean)
+  if (!texts.length) die('what did the user ask for? proto ask "…"   (several: proto ask --each "…" "…")')
   const t = flags.to ? target(dir, flags.to) : s.work
   if (!t) die('no working variant yet: proto work <slug>/<letter> --ask "…"')
-  const key = `${t.proto}/${t.variant}`
-  patchSession(dir, { asks: { ...s.asks, [key]: [...(s.asks?.[key] || []), { at: new Date().toISOString(), text }] } })
-  console.log(`${key}: ${(s.asks?.[key]?.length || 0) + 1} asks`)
+  const key = `${t.proto}/${t.variant}`, at = new Date().toISOString()
+  patchSession(dir, { asks: { ...s.asks, [key]: [...(s.asks?.[key] || []), ...texts.map(text => ({ at, text }))] } })
+  console.log(`${key}: ${(s.asks?.[key]?.length || 0) + texts.length} asks`)
 }
 
 function archive() {
@@ -1168,6 +1183,23 @@ const FAILED = {
 }
 const secs = ms => `${(ms / 1000).toFixed(2)} s`
 const spanOf = c => c.to === undefined ? secs(c.at) : `${(c.at / 1000).toFixed(2)}–${secs(c.to)}`
+// The source around where a commented element is written (its src, `today/parts.tsx:30`), so a batch
+// can be acted on without opening each file first. Measured on a 12-comment batch: the comments
+// were done in 48 s, two of the tool calls in it only reading these lines.
+const SNIP = 5
+function printSource(dir, src) {
+  const m = String(src).match(/^(.*):(\d+)$/)
+  if (!m) return
+  let lines
+  try { lines = readFileSync(join(dir, 'src', 'protos', m[1]), 'utf8').split(/\r?\n/) } catch { return }
+  const at = Number(m[2]), from = Math.max(1, at - SNIP), to = Math.min(lines.length, at + SNIP)
+  const w = String(to).length
+  for (let i = from; i <= to; i++) {
+    const l = lines[i - 1], cut = l.length > 200 ? l.slice(0, 200) + ' …' : l
+    console.log(`   ${i === at ? '>' : ' '} ${String(i).padStart(w)}| ${cut}`)
+  }
+}
+
 function printBatch(dir, b) {
   const vp = b.viewport ? ` · page ${b.viewport.w}x${b.viewport.h}${b.viewport.phone ? ' (phone)' : ''}` : ''
   // A comment the user deleted in the page after sending it is withdrawn: left out, only counted.
@@ -1182,12 +1214,13 @@ function printBatch(dir, b) {
     // On the motion (the page's motion dock): a moment or a range of its take, and how to see it.
     if (c.take) console.log(`   at: ${spanOf(c)} of the motion (its take is ${secs(c.take)}): see it with proto shoot ${c.route} ${c.to !== undefined ? `--frames 8 --at ${c.at}-${c.to}` : `--at ${c.at}`}`)
     if (c.target) console.log(`   ${c.point ? 'in' : 'on'}: ${where(c.target)}`)
+    if (c.target?.src) printSource(dir, c.target.src)
     // Written in the page's device view: about that layout, which a shot at that size shows.
     if (c.view) console.log(`   view: ${c.view.size} ${c.view.w}x${c.view.h} (shoot it: proto shoot ${c.route} --size ${c.view.w}x${c.view.h})`)
     for (const [i, t] of (c.tags || []).entries()) console.log(`   with @${i + 1}: ${where(t)}`)
     for (const img of c.images || []) console.log(`   image: ${join(inboxDir(dir), 'taken', b.id, img.file)}${img.name ? `  (${img.name})` : ''}`)
   }
-  console.log(`\nReply: proto reply ${b.id}/<n> "…" --done   (or ${b.id} for the whole batch)\n`)
+  console.log(`\nReply to all at once: proto reply ${b.id} 1 "…" 2 "…" … --done   (or ${b.id}/<n> "…" for one, ${b.id} "…" for the batch)\n`)
 }
 
 async function inbox() {
@@ -1209,6 +1242,18 @@ async function inbox() {
   for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, () => { done(); process.exit(0) })
   console.log(`listening for comments on ${s.url || s.localUrl || 'the page'}`)
   const end = Date.now() + minutes * 60e3
+  // Wakes the moment the page's server renames a batch into new/ (it arrives whole), or after a
+  // second to check the server is still up. Polling once a second added half a second on average
+  // between Send and this waking. The watcher is closed before a batch is moved out of new/:
+  // Windows can refuse a rename in a directory something holds open.
+  const fresh = join(inboxDir(dir), 'new')
+  mkdirSync(fresh, { recursive: true })
+  const arrival = () => new Promise(ok => {
+    let w = null
+    const go = () => { clearTimeout(t); try { w?.close() } catch { /* gone */ } ok() }
+    const t = setTimeout(go, 1000)
+    try { w = watch(fresh, go) } catch { /* no watcher here: the second's check still runs */ }
+  })
   while (Date.now() < end) {
     if (batchesIn(dir, 'new').length) {
       // A reviewer often sends twice in a row: a moment's grace takes both in one wake.
@@ -1217,7 +1262,7 @@ async function inbox() {
       if (got.length) { done(); got.forEach(b => printBatch(dir, b)); return }
     }
     if (!alive(readSession(dir)?.pid)) { done(); return console.log('the server stopped, so no comments can come. `proto up`, then listen again.') }
-    await sleep(1000)
+    await arrival()
   }
   done()
   console.log(`no comments in ${minutes} min. Listen again: proto inbox --wait`)
@@ -1227,8 +1272,10 @@ function reply() {
   const dir = sessionDir()
   need(dir)
   const [ref, ...words] = args
-  const text = words.join(' ').trim()
-  if (!ref || (!text && !flags.done)) die('proto reply <batch>[/<n>] "…" [--done]')
+  // Many at once: proto reply <batch> 1 "…" 2 "…" [--done], one write and one line for a whole batch.
+  const pairs = !ref?.includes('/') && words.length >= 2 && words.length % 2 === 0 && words.every((w, i) => i % 2 || /^\d+$/.test(w))
+  const text = pairs ? '' : words.join(' ').trim()
+  if (!ref || (!text && !flags.done && !pairs)) die('proto reply <batch>[/<n>] "…" [--done]   or   proto reply <batch> 1 "…" 2 "…" … [--done]')
   const [prefix, n] = ref.split('/')
   const ids = batchesIn(dir, 'taken').filter(id => id.startsWith(prefix))
   if (ids.length !== 1) die(ids.length ? `"${prefix}" matches ${ids.length} batches; give more of the id` : `no taken batch "${prefix}" (run proto inbox first)`)
@@ -1237,6 +1284,19 @@ function reply() {
   const at = new Date().toISOString()
   // Whose mark the page puts beside the reply.
   const by = flags.as === 'codex' ? 'codex' : 'claude'
+  if (pairs) {
+    const answered = []
+    for (let i = 0; i < words.length; i += 2) {
+      const c = b.comments.find(x => x.n === Number(words[i])) || die(`batch ${ids[0]} has no comment ${words[i]} (1-${b.comments.length})`)
+      if (c.withdrawn) console.log(`(comment ${words[i]} was withdrawn in the page: the user deleted it after sending)`)
+      c.reply = { text: words[i + 1], at, by }
+      if (flags.done) c.done = true
+      answered.push(words[i])
+    }
+    b.done = b.comments.every(c => c.done)
+    writeJson(file, b)
+    return console.log(`${ids[0]}: replied to ${answered.join(', ')}${flags.done ? ', done' : ''}${b.done ? ' (batch done)' : ''}`)
+  }
   if (n) {
     const c = b.comments.find(x => x.n === Number(n)) || die(`batch ${ids[0]} has no comment ${n} (1-${b.comments.length})`)
     if (c.withdrawn) console.log(`(comment ${n} was withdrawn in the page: the user deleted it after sending)`)
@@ -1249,6 +1309,41 @@ function reply() {
   b.done = b.comments.every(c => c.done)
   writeJson(file, b)
   console.log(`${ids[0]}${n ? `/${n}` : ''}: ${text ? 'replied' : ''}${text && flags.done ? ', ' : ''}${flags.done ? 'done' : ''}${b.done ? ' (batch done)' : ''}`)
+}
+
+// How close one variant (or an element of it) is to a screenshot of the real thing (compare.mjs).
+async function compare() {
+  const dir = sessionDir()
+  const s = need(dir)
+  if (!await running(s)) die('the server is stopped. Run: proto up')
+  const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
+  const route = args.filter(a => !clicked.has(a))[0]
+  if (!route || !route.includes('/') || typeof flags.ref !== 'string') die('usage: proto compare <slug>/<letter>[/<state>] --ref <png> [--el <css>] [--size <w>x<h>] [--click <css>]')
+  if (flags.size !== undefined && !/^\d+x\d+$/.test(String(flags.size))) die('--size is the layout viewport in CSS px, the width the reference was taken at: --size 1440x900')
+  // Relative to where Claude stands, or to the app (where `.proto/ref/` lives).
+  const ref = [resolve(flags.ref), resolve(dir, flags.ref)].find(f => existsSync(f))
+  if (!ref) die(`--ref: no file ${flags.ref} here or in ${tilde(dir)}`)
+  const extra = [`--ref=${ref}`, ...['el', 'size'].filter(k => typeof flags[k] === 'string').map(k => `--${k}=${flags[k]}`)]
+  argv.forEach((a, i) => { if (a === '--click' && argv[i + 1]) extra.push(`--click=${argv[i + 1]}`); else if (a.startsWith('--click=')) extra.push(a) })
+  const out = resolve(flags.out || join(dir, '.proto', 'shots'))
+  const r = run(process.execPath, [join(SKILL, 'scripts', 'compare.mjs'), s.localUrl, out, route, ...extra], { stdio: 'inherit' })
+  process.exit(r.status ?? 1)
+}
+
+// How smoothly one variant runs (perf.mjs): at rest, or while --drag moves an element in it, after
+// any --click steps to reach a state. Headless, at --dpr 2 by default.
+async function perf() {
+  const dir = sessionDir()
+  const s = need(dir)
+  if (!await running(s)) die('the server is stopped. Run: proto up')
+  const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
+  const route = args.filter(a => !clicked.has(a))[0]
+  if (!route || !route.includes('/')) die('usage: proto perf <slug>/<letter>[/<state>] [--drag <css>] [--click <css>] [--size <w>x<h>] [--dpr 2] [--hz <screen Hz>] [--seconds 3]')
+  const extra = ['drag', 'size', 'dpr', 'hz', 'seconds'].filter(k => typeof flags[k] === 'string').map(k => `--${k}=${flags[k]}`)
+  if (flags.size !== undefined && !/^\d+x\d+$/.test(String(flags.size))) die('--size is a viewport in CSS px: --size 1440x900')
+  argv.forEach((a, i) => { if (a === '--click' && argv[i + 1]) extra.push(`--click=${argv[i + 1]}`); else if (a.startsWith('--click=')) extra.push(a) })
+  const r = run(process.execPath, [join(SKILL, 'scripts', 'perf.mjs'), s.localUrl, route, ...extra], { stdio: 'inherit' })
+  process.exit(r.status ?? 1)
 }
 
 async function snap() {
@@ -1433,7 +1528,7 @@ function kitSave() {
   // Each file is read where it lives in the prototype, so its relative imports resolve from there.
   const texts = [[theme, join(dir, 'src')], ...filesIn(join(kd, 'parts')).map(p => [readFileSync(p, 'utf8'), dirname(join(pdir, relative(join(kd, 'parts'), p)))])]
   // The packages the session added on top of the template (an icon set): the next one gets them too.
-  const tpl = STACKS[s.stack], base = new Set(Object.keys({ ...SHELL, ...tpl.deps, ...BASE, ...tpl.dev }))
+  const tpl = STACKS[s.stack], base = new Set(Object.keys({ ...SHELL, ...tpl.deps, ...tpl.craft, ...BASE, ...tpl.dev }))
   const pkg = readJson(join(dir, 'package.json'), {})
   const packages = Object.fromEntries(Object.entries({ ...pkg.devDependencies, ...pkg.dependencies }).filter(([p]) => !base.has(p)).sort())
   const meta = metaIn(join(pdir, 'meta.ts'))
@@ -1531,13 +1626,36 @@ function useKit(dir, pdir, slug, { name, k, kd }, a) {
   if (a && refs.length) console.log(`check it once: proto shoot ${slug}/A --ref .proto/ref/${slug}/${refs[0]}`)
 }
 
+// ---------- fonts ----------
+// The pairings in references/fonts.json, checked against Google Fonts. --draw picks at random, so
+// two sessions with the same brief don't land on the same faces; no family appears twice in a draw.
+function fonts() {
+  const cat = readJson(join(SKILL, 'references', 'fonts.json'), null) || die('references/fonts.json is missing')
+  const avoid = new Set(String(flags.avoid || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean))
+  const fams = p => ['display', 'body', 'utility'].filter(r => p[r]).map(r => p[r].family)
+  let pool = cat.pairings.filter(p => p.script === (flags.hebrew ? 'hebrew' : 'latin') && !fams(p).some(f => avoid.has(f.toLowerCase())))
+  if (flags.draw) {
+    const n = Number(flags.draw) || 1, out = [], used = new Set()
+    pool = pool.map(p => [Math.random(), p]).sort((a, b) => a[0] - b[0]).map(x => x[1])
+    for (const p of pool) { if (out.length >= n) break; if (fams(p).some(f => used.has(f))) continue; fams(p).forEach(f => used.add(f)); out.push(p) }
+    pool = out
+  }
+  for (const p of pool) {
+    const specs = [...new Set(['display', 'body', 'utility'].filter(r => p[r]).map(r => p[r].spec))]
+    console.log(`${p.mood} (${p.script}): ${fams(p).join(' / ')}`)
+    console.log(`  font(${specs.map(s => `'${s}'`).join(', ')})`)
+  }
+  if (flags.hebrew && !flags.draw) console.log(`\nEvery Google family with Hebrew: ${cat.hebrew.join(', ')}`)
+}
+
 const commands = {
-  up, add, pick, work, ask, archive, shoot, handoff, snap, inbox, reply, gc: () => gc(false), ls,
+  up, add, pick, work, ask, archive, shoot, compare, perf, handoff, snap, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
   rm: () => rm(),
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },
   url: () => { const s = need(sessionDir()); console.log(s.url || s.localUrl || 'not started') },
   stack: () => { const d = detectStack(projectRoot()); console.log(`${d.stack} (${d.why})`) },
+  fonts,
   kit: () => !args[0] ? kitStatus() : args[0] === 'save' ? kitSave() : args[0] === 'screen' ? kitScreen() : die(`proto kit ${args[0]}? It is proto kit, proto kit save or proto kit screen`),
 }
 // The help is this file's opening comment, however many lines it grows to.

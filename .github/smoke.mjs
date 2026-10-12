@@ -3,8 +3,7 @@
 // them (one by one and on a contact sheet) and snapshot them, open a state listed in meta.ts,
 // print a variant's handoff checklist, send comments, decisions and copy choices from the page,
 // record, scrub and comment on a variant's motion, view and comment on it at another size, then
-// stop and delete the session. Run by
-// .github/workflows/smoke.yml on Windows, Linux and macOS.
+// stop and delete the session. Run locally with node .github/smoke.mjs.
 import { spawn, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { get, request } from 'node:http'
@@ -14,6 +13,8 @@ import { fileURLToPath } from 'node:url'
 import { startChrome, stopChrome } from '../scripts/chrome.mjs'
 import { optionalExtras } from './optional-extras.mjs'
 import { designKit } from './design-kit.mjs'
+import { speedChecks } from './speed-checks.mjs'
+import { commentParentChecks } from './comment-parent-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -139,6 +140,8 @@ const css = () => new Promise(ok => get(`${local}shell/shell.css?direct`, { agen
   r.setEncoding('utf8').on('data', c => { text += c }).on('end', () => r.statusCode === 200 ? ok(text) : fail(`the stylesheet answered ${r.statusCode}: ${text.slice(0, 400)}`))
 }).on('error', e => fail(`could not read the stylesheet: ${e.message}`)))
 await css()
+
+await commentParentChecks({ proto, app, openPage, fail })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
 proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--variants', 'A:Price only,B:Fuel tabs'])
@@ -1519,6 +1522,7 @@ proto(['shoot', 'tryit', '--sheet', '--size', '834x1194'], { ok: false })
 
 await optionalExtras({ proto, app, local, openPage, postJson, fail, keepShots })
 await designKit({ proto, app, project, local, fail })
+await speedChecks({ proto, app, openPage, fail })
 
 proto(['stop'])
 for (let i = 0; i < 40 && await answers(`${local}__proto/status`); i++) await new Promise(r => setTimeout(r, 250))

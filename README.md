@@ -10,7 +10,6 @@
 **Several live, clickable versions of any UI, built while you watch.**
 
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-4f46e5)](#install)
-[![Smoke tests](https://github.com/DananzMolt/prototype-skill/actions/workflows/smoke.yml/badge.svg)](https://github.com/DananzMolt/prototype-skill/actions/workflows/smoke.yml)
 [![License](https://img.shields.io/github/license/DananzMolt/prototype-skill?color=4f46e5)](LICENSE)
 [![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-1a1a1a)](#install)
 
@@ -113,7 +112,7 @@ Each session's app lives in `<project>/.prototypes/<session>/`, git-ignored, so 
 
 ## Contributing
 
-Issues and pull requests are welcome. `SKILL.md` is what Claude follows, `scripts/proto.mjs` runs the sessions, and `app/` is the template each session starts from.
+Issues and pull requests are welcome. `SKILL.md` is what Claude follows (with `references/`, the parts it reads only when a request needs them), `scripts/proto.mjs` runs the sessions, and `app/` is the template each session starts from.
 
 ## License
 

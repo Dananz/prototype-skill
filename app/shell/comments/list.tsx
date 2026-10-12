@@ -182,6 +182,10 @@ export function SendBar({ className = '', onAdd }: { className?: string; onAdd?:
         <button data-shoot="add" onClick={onAdd ?? act.toggle} aria-label="Add a comment" title="Comment on the design · C" className="grid size-12 shrink-0 place-items-center rounded-full ring-1 ring-inset ring-black/10 hover:bg-zinc-900/5 dark:ring-white/15 dark:hover:bg-white/10"><Icon name="plus" className="size-5" /></button>
         <SendButton className="flex-1" />
       </div>
+      <label data-shoot="send-live" className="flex cursor-pointer items-center justify-center gap-2 text-xs text-zinc-500 dark:text-zinc-400" title="Each comment goes to Claude the moment you add it, so it is worked on while you write the next">
+        <input type="checkbox" checked={s.live} onChange={e => act.setLive(e.target.checked)} className="size-3.5 accent-[var(--proto-primary)]" />
+        Send each comment as you add it
+      </label>
       <Listening on={!!store.get().inbox?.listening} className="justify-center" />
     </div>
   )

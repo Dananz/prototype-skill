@@ -1,0 +1,20 @@
+{
+  "name": "landing-before",
+  "skill": "/Users/tomer/Code/proto-bench/skill-before",
+  "uuid": "a57799cf-6a8f-4f15-9898-6c0af08d0fbf",
+  "session": "/Users/tomer/Code/proto-bench/runs/landing-before/.prototypes/a57799cf",
+  "url": "https://studio.tail08ad7c.ts.net:9530/",
+  "exit": 0,
+  "seconds": {
+    "link": 10.022,
+    "added": 25.055,
+    "first": 99.186,
+    "allBuilt": 387.736,
+    "done": 388.51
+  },
+  "craftKit": false,
+  "briefs": false,
+  "cost": 4.385328099999999,
+  "turns": 7,
+  "apiSeconds": 621.679
+}
