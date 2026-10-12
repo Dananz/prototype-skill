@@ -160,7 +160,9 @@ is what gets picked. And the house rules of the tooling:
    type fits. Body and utility faces may go past the catalog to any Google Font that reads well.
 4. **Never for a title:** the catalog's `neverTitle` list (`proto fonts` prints it): hairline or
    single-thin-weight faces, the defaults every generated page reaches for, novelty and costume
-   faces, scripts and handwriting. A title is set at weight 400 or heavier; light and thin
+   faces, scripts and handwriting. One exception: a Hebrew hand-lettered face (Gveret Levin) for a
+   Hebrew title, where a hand-lettered sign is the street's own look; never for a Latin title.
+   A title is set at weight 400 or heavier; light and thin
    weights are for body text at most. `proto plan` refuses a plan that breaks this.
 
 **Hebrew is a must** in a Hebrew product, and for Arabic the same with its script:

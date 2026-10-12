@@ -755,6 +755,11 @@
   {
    "family": "Solitreo",
    "why": "script"
+  },
+  {
+   "family": "Gveret Levin",
+   "why": "handwriting; a Hebrew title only",
+   "hebrewOk": true
   }
  ]
 }
