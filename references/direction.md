@@ -7,8 +7,10 @@ every `proto` call (`--session <id>`, and `--project <root>` when given), and fo
 product, the reference screenshots and `A.tsx` to start from. `proto` is
 `node <this skill>/scripts/proto.mjs`. Everything else is here.
 
-When the brief has a `"brand"`, it binds you: its logo files in `src/assets/brand/`, used as they
-are (imported, never redrawn or recolored), and its colors and type as your base.
+When the brief has a `"brand"`, it is an anchor, not a template: its logo files in
+`src/assets/brand/` used as they are (imported, never redrawn or recolored), its name, its voice
+and one clear moment of its key color. Your surface, palette, type, composition and risk are
+still your own line's, as freely as without a brand.
 
 ## First write: your hero, on screen
 

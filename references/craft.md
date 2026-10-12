@@ -27,8 +27,11 @@ label, its window), used plainly.
 ## 1. Ground it in the subject
 
 When the subject already has a brand somewhere (a repo, a site, a store page the request points
-to), its logo, colors and type are given, not chosen: the plan works inside them, and its risk
-is in layout, composition and imagery.
+to), treat it as an anchor, not a template: the logo file as it is, the name, the voice and one
+clear moment of its key color are given; the surface, palette, type, composition and risk are
+still yours, as freely as without a brand. A brand kills distinctiveness only when it becomes the
+whole look: five directions in the brand's lavender with its screenshot as the hero is one
+direction five times.
 
 If the brief does not pin down what the product or subject is, pin it yourself before designing:
 name one concrete subject, its audience, and the page's single job, and state your choice. What
@@ -242,8 +245,12 @@ only graded by whoever made it. Start it with:
   safe in the look and what its risk could be; which one asks the user to learn something new to
   do the main thing, and how to make it plain; any two directions that are too close; which defaults from
   section 3 it sees;
+- a score per direction from 1 to 10 on two things: **distinctive** (would a design lead
+  remember it tomorrow, or could it be any product's page) and **right for the subject** (with a
+  brand: unmistakably that brand, from the logo, name, voice and key color alone);
 - a reply of at most four lines per direction.
 
+A direction under 7 on distinctive gets a bolder risk, rebuilt from its plan, not polish.
 Apply what it found, skipping only what contradicts the plan or the user's request (say which),
 then go on with the defect rounds. Without subagents, do the same review yourself from the sheet
 and the single shots, as a separate pass.

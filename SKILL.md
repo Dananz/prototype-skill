@@ -163,11 +163,17 @@ folder (a GitHub repo, a website, an App Store page, "based on what you know fro
 before the plans; never design it from memory. Resolve it (`gh repo view <owner>/<name>`,
 `gh search repos`, `gh api repos/<owner>/<name>/contents/<path>` for files, a browser for a
 site) and collect its logo files, colors, fonts, screenshots and voice: logos and images into
-the app's `src/assets/brand/`, everything else as lines under `"brand"` in the brief. The brand
-is then a given, like Current's look: the real logo file as it is (never redrawn, recolored or
-replaced by a wordmark of your own), its colors and type as every direction's base. Directions
-differ in layout, composition, imagery and their one risk; one that pushes the brand (a new
-accent, a second face) says so in its line. Tell the user what you took and from where.
+the app's `src/assets/brand/`, everything else as lines under `"brand"` in the brief.
+
+A brand is an anchor, not a template (it is not Current: nothing ships yet to match). Like a
+campaign for a known brand, every direction keeps **the logo file as it is** (never redrawn,
+recolored or replaced by a wordmark of your own), **the name, the voice, and one clear moment of
+the brand's key color**. Everything else stays each direction's own, exactly as without a brand:
+surface, palette, type, composition, imagery, its one risk. At most one direction lives entirely
+in the brand's palette; the others don't share a surface color with it or with each other. The
+brand's assets are raw material for the risk (the logo's shape as an object or a pattern, a
+screenshot as an artifact in a scene), not the hero by default: "the product screenshot, big,
+beside the headline" is the template answer. Tell the user what you took and from where.
 
 ## Right to left (Hebrew, Arabic, Persian, Urdu)
 
