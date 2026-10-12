@@ -62,6 +62,9 @@ try {
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
     await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId)
     await send('Emulation.setDeviceMetricsOverride', { width: VW, height: VH, deviceScaleFactor: scale, mobile: VW < 640 }, sessionId)
+    // Below 640 px a phone, with touch, as shoot's phone shots are: (pointer: coarse) and
+    // navigator.maxTouchPoints then match the reference shot at that size.
+    if (VW < 640) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
     const ev = async expression => {
       const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)
       if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text)
