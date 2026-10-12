@@ -33,3 +33,30 @@ What changed in the output:
 
 The isolation check passed: every after session has the font kit and `.proto/briefs/`, no
 before session does.
+
+## Round 2: Google Fonts kit, Hebrew, distinct directions, critic, images
+
+One Hebrew prompt (`bench/rugelach.txt`, five variants, all copy in Hebrew), run on main, on the
+first commit of this branch, and on round 2.
+
+| Arm | First variant on screen | All written | Final reply | Cost |
+|---|---|---|---|---|
+| main | 136 s | 8:21 | 8:21 | $5.79 |
+| round 1 | 149 s | 11:20 | 11:20 | $8.03 |
+| round 2 | 148 s | 15:05 | 15:05 | $11.18 |
+
+- **main:** five layouts in one cream-and-brown look.
+- **round 1:** five looks, but the same bottom order bar in all five and a few loud ones.
+- **round 2:** five looks with five Hebrew pairings from the draw (Gveret Levin, Frank Ruhl
+  Libre with IBM Plex Sans Hebrew, Heebo, Miriam Libre with David Libre, Playpen Sans Hebrew), two
+  generated photos (codex-image), one loud direction, no shared order bar, and a critic pass.
+  The time and cost went up with the critic and the images: the first variant is no later, the
+  whole run is about 80% longer than main.
+
+An existing product (a private app, kept out of this repo) was also run on main and round 2 with a
+Current: both kept the product's look, chrome and type; round 2 changed only what the directions
+were about.
+
+![](sheets/rugelach-before.png)
+![](sheets/rugelach-after.png)
+![](sheets/rugelach-after2.png)

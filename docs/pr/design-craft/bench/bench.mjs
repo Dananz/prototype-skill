@@ -5,9 +5,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, create
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
-const [name, skill, promptFile] = process.argv.slice(2)
+const [name, skill, promptFile, projectArg] = process.argv.slice(2)
 const root = '/Users/tomer/Code/proto-bench'
-const project = join(root, 'runs', name)
+const project = projectArg || join(root, 'runs', name)
 mkdirSync(project, { recursive: true })
 if (!existsSync(join(project, '.git'))) {
   writeFileSync(join(project, 'README.md'), `# ${name}\n`)
@@ -25,7 +25,7 @@ const child = spawn('claude', ['-p', '--plugin-dir', skill, '--session-id', uuid
 let result = null, buf = ''
 child.stdout.on('data', d => {
   out.write(d); buf += d
-  let i; while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); try { const e = JSON.parse(line); if (e.type === 'result') result = e } catch {} }
+  let i; while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); try { const e = JSON.parse(line); if (e.type === 'result') { result = e; at.lastReply = (Date.now() - t0) / 1000; log(`reply ${at.lastReply}s`) } } catch {} }
 })
 child.stderr.on('data', d => out.write(d))
 
