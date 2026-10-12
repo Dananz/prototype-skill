@@ -17,7 +17,7 @@ const PATHS: Record<string, string> = {
   text: 'M5 6h14M12 6v13M9 19h6', hash: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM10.5 8.5h2v7',
   undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3', trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
   target: 'M12 3v4M12 17v4M3 12h4M17 12h4M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
-  plus: 'M12 6v12M6 12h12', up: 'M12 19V5M6 11l6-6 6 6', branch: 'M6 3v8a4 4 0 0 0 4 4h8M14 11l4 4-4 4',
+  plus: 'M12 6v12M6 12h12', up: 'M12 19V5M6 11l6-6 6 6', child: 'M18 4v8a4 4 0 0 1-4 4H6M10 12l-4 4 4 4', branch: 'M6 3v8a4 4 0 0 0 4 4h8M14 11l4 4-4 4',
   more: 'M9 9h11v11H9zM5 15V4h11', code: 'M9 7l-5 5 5 5M15 7l5 5-5 5',
 }
 export function Icon({ name, className = 'size-4' }: { name: string; className?: string }) {

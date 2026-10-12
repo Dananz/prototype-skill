@@ -113,7 +113,7 @@ Each session's app lives in `<project>/.prototypes/<session>/`, git-ignored, so 
 
 ## Contributing
 
-Issues and pull requests are welcome. `SKILL.md` is what Claude follows, `scripts/proto.mjs` runs the sessions, and `app/` is the template each session starts from.
+Issues and pull requests are welcome. `SKILL.md` is what Claude follows (with `references/`, the parts it reads only when a request needs them), `scripts/proto.mjs` runs the sessions, and `app/` is the template each session starts from.
 
 ## License
 
