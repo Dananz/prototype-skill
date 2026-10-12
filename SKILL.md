@@ -185,9 +185,10 @@ about half a minute, so the order is:
    a simple experience. Read the type catalog (`proto fonts`, with `--hebrew` for a Hebrew
    product): title faces come from it only, never from its never-for-titles list.
 3. **One line per direction** into the app's `.proto/briefs/<slug>.json`, then `proto plan <slug>`:
-   `{ "facts": "…", "brand": "…", "brandFonts": […], "directions": { "A": { "name", "concept",
-   "display", "body", "surface", "ink", "accent", "signature" } } }` (display and body are
-   `font()` specs; `brand` and `brandFonts` only when a brand exists, see above). Check the lines against
+   `{ "facts": "…", "script": "hebrew", "brand": "…", "brandFonts": […], "directions": { "A": {
+   "name", "concept", "display", "body", "surface", "ink", "accent", "signature" } } }` (display
+   and body are `font()` specs; `script` is the product's writing system, `latin`, `hebrew` or
+   `arabic`; `brand` and `brandFonts` only when a brand exists, see above). Check the lines against
    the defaults craft.md lists and against each other (no shared font family, surface, signature
    or main-action pattern). `proto plan` turns each placeholder into its line, in its own face and
    colors, so the page shows every direction's look within seconds. This is the only planning

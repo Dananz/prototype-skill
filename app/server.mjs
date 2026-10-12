@@ -3,7 +3,7 @@
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync, watch } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const dir = fileURLToPath(new URL('.', import.meta.url))
@@ -12,8 +12,25 @@ const file = join(dir, 'session.json')
 const slash = p => p.replaceAll('\\', '/')
 const stylesheet = slash(join(dir, 'shell', 'shell.css'))
 const read = () => JSON.parse(readFileSync(file, 'utf8'))
-// Read again right before writing (`proto` writes session.json too), and written whole.
-const write = patch => writeWhole(file, JSON.stringify({ ...read(), ...patch }, null, 2) + '\n')
+// Read again right before writing, and written whole, under the lock `proto` takes too (it writes
+// session.json as well; see locked() in scripts/proto.mjs). patch: the fields, or a function of the
+// session as it is now that returns them (nothing to write: null).
+const write = patch => locked(() => {
+  const now = read(), change = typeof patch === 'function' ? patch(now) : patch
+  if (change) writeWhole(file, JSON.stringify({ ...now, ...change }, null, 2) + '\n')
+})
+function locked(fn) {
+  const lock = join(dir, '.proto', 'session.lock')
+  mkdirSync(dirname(lock), { recursive: true })
+  let mine = false
+  for (let i = 0; i < 200 && !mine; i++) {
+    try { mkdirSync(lock); mine = true } catch {
+      try { if (Date.now() - statSync(lock).mtimeMs > 5000) rmSync(lock, { recursive: true, force: true }) } catch { /* just released */ }
+      if (!mine) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+    }
+  }
+  try { return fn() } finally { if (mine) rmSync(lock, { recursive: true, force: true }) }
+}
 
 // Newest change to any prototype file; the session's own start time if there are none.
 export function lastEdit(root = dir) {
@@ -331,9 +348,12 @@ export function prototypeServer(session) {
         const [slug, name = ''] = rel.split('/')
         const letter = (name.match(/^([A-Z]{1,2})\.\w+$/) || name.match(/^([a-z]{1,2})-/) || [])[1]
         if (!letter) return
+        const key = `${slug}/${letter.toUpperCase()}`
         try {
-          const key = `${slug}/${letter.toUpperCase()}`, building = read().building || {}
-          if (building[key] && Date.now() - Date.parse(building[key]) > 5000) write({ building: { ...building, [key]: new Date().toISOString() } })
+          write(now => {
+            const at = now.building?.[key]
+            return at && Date.now() - Date.parse(at) > 5000 ? { building: { ...now.building, [key]: new Date().toISOString() } } : null
+          })
         } catch { /* session.json mid-rewrite: the next edit stamps it */ }
       }
       // Anything but /status changes something, so it must come from the page itself: a POST with a

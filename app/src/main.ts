@@ -16,12 +16,14 @@ if (import.meta.hot) {
   // reports modules the page has loaded).
   import.meta.hot.on('proto:edit', (data: { path: string }) => shell.edited([data.path]))
   // A syntax error in a variant that is still being written: no overlay over the page (the shell decides).
-  import.meta.hot.on('vite:error', ({ err }: { err: { id?: string; loc?: { file?: string } } }) => shell.viteError(err.id || err.loc?.file || ''))
+  import.meta.hot.on('vite:error', ({ err }: { err: { id?: string; loc?: { file?: string } } }) => shell.viteError(err.id || err.loc?.file || '', err))
   // A variant whose component got a new name (the placeholder's `Variant` becoming
   // `SplitMedia`) is a different component to React Fast Refresh, so nothing on screen
   // would redraw. Hand the shell the fresh module; it remounts only in that case.
+  import.meta.hot.on('vite:beforeUpdate', () => shell.updating())
   import.meta.hot.on('vite:afterUpdate', async payload => {
     for (const u of payload.updates) {
+      shell.compiled(u.path)
       if (u.type !== 'js-update' || !refOfPath(u.path) || !shell.shows(u.path)) continue
       const mod = await import(/* @vite-ignore */ `${u.acceptedPath}?t=${u.timestamp}`)
       shell.replaceVariant(u.path, mod.default)

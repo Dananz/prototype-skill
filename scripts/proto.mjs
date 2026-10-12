@@ -142,10 +142,29 @@ const sessionFile = dir => join(dir, 'session.json')
 const readSession = dir => readJson(sessionFile(dir), null)
 // The page hot-reloads session.json, so a write that changes nothing is skipped. Read right
 // before it is written, since the dev server writes it too (a pick made in the page).
+// session.json is read, changed and written by several processes at once (subagents' parallel
+// `proto done`, the dev server stamping edits), so each change is made under a lock: a directory,
+// which only one of them can create. One held past 5 s was left by a crash and is taken over.
+// app/server.mjs takes the same lock.
+function locked(dir, fn) {
+  const lock = join(dir, '.proto', 'session.lock')
+  mkdirSync(dirname(lock), { recursive: true })
+  let mine = false
+  for (let i = 0; i < 200 && !mine; i++) {
+    try { mkdirSync(lock); mine = true } catch {
+      try { if (Date.now() - statSync(lock).mtimeMs > 5000) rmSync(lock, { recursive: true, force: true }) } catch { /* just released */ }
+      if (!mine) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+    }
+  }
+  try { return fn() } finally { if (mine) rmSync(lock, { recursive: true, force: true }) }
+}
+// patch: the fields to change, or a function of the session as it is now that returns them.
 function patchSession(dir, patch) {
-  const was = readSession(dir), s = { ...was, ...patch }
-  if (JSON.stringify(s) !== JSON.stringify(was)) writeJson(sessionFile(dir), s, scratchOf(dir))
-  return s
+  return locked(dir, () => {
+    const was = readSession(dir), s = { ...was, ...(typeof patch === 'function' ? patch(was) : patch) }
+    if (JSON.stringify(s) !== JSON.stringify(was)) writeJson(sessionFile(dir), s, scratchOf(dir))
+    return s
+  })
 }
 function need(dir) { if (!existsSync(sessionFile(dir))) die(`no prototype session here yet (${tilde(dir)}). Run: proto up`); return readSession(dir) }
 
@@ -454,7 +473,7 @@ function add() {
   // its last good frame instead of an error.
   if (fresh.length) {
     const at = new Date().toISOString()
-    patchSession(dir, { building: { ...readSession(dir).building, ...Object.fromEntries(fresh.map(id => [`${slug}/${id}`, at])) } })
+    patchSession(dir, now => ({ building: { ...now.building, ...Object.fromEntries(fresh.map(id => [`${slug}/${id}`, at])) } }))
   }
   console.log(`${pdir}: ${Object.keys(meta.variants).map(id => `${id}.${kit.ext}`).join(' ') || 'no variants'}`)
   if (s.url) console.log(`${s.url}#/${slug}`)
@@ -476,22 +495,24 @@ function plan() {
   if (!slug || !existsSync(join(pdir, 'meta.ts'))) die('which prototype? proto plan <slug> (after proto add)')
   const file = join(dir, '.proto', 'briefs', `${slug}.json`)
   const brief = readJson(file, null) || die(`write the one-line plans to ${tilde(file)} first: { "facts": "…", "directions": { "A": { ${PLAN_KEYS.map(k => `"${k}"`).join(', ')} } } }`)
-  // Each direction once, its font specs without a font('…') around them. Its script is the one its
-  // name and concept are written in (a Hebrew word in the shared facts doesn't make it Hebrew).
+  // Each direction once, its font specs without a font('…') around them, and its script: the
+  // brief's "script" (or the direction's own), else the one its name and concept are written in.
   const spec = v => String(v ?? '').trim().replace(/^font\(\s*['"]?|['"]?\s*\)$/g, '')
+  const scriptOf = d => d.script || brief.script || (/[֐-׿]/.test(`${d.name} ${d.concept}`) ? 'hebrew' : /[؀-ۿ]/.test(`${d.name} ${d.concept}`) ? 'arabic' : 'latin')
   const directions = Object.entries(brief.directions || {}).map(([id, d]) => {
-    const p = { ...d, display: spec(d.display), body: spec(d.body) }
-    return [id, { ...p, family: p.display.split(':')[0].trim(), rtl: /[֐-ۿ]/.test(`${d.name} ${d.concept}`) }]
+    const p = { ...d, display: spec(d.display), body: spec(d.body), script: scriptOf(d) }
+    return [id, { ...p, family: p.display.split(':')[0].trim(), rtl: ['hebrew', 'arabic', 'persian', 'urdu'].includes(p.script) }]
   })
   // Title faces come from the catalog's display faces for the direction's script, or the brand's own
-  // faces listed in "brandFonts"; the never-for-titles list only words the refusal.
+  // faces listed in "brandFonts". A script the catalog has no pairings for keeps only the
+  // never-for-titles list, which otherwise just words the refusal.
   const cat = readJson(join(SKILL, 'references', 'fonts.json'), {})
   const never = new Map((cat.neverTitle || []).map(n => [n.family.toLowerCase(), n.why]))
-  const titles = rtl => new Set((cat.pairings || []).filter(p => (p.script === 'hebrew') === rtl).map(p => p.display.family.toLowerCase()))
+  const titles = script => new Set((cat.pairings || []).filter(p => p.script === script).map(p => p.display.family.toLowerCase()))
   const brand = new Set((brief.brandFonts || []).map(f => String(f).toLowerCase()))
   const banned = directions.map(([id, d]) => {
-    const f = d.family.toLowerCase()
-    return [id, d.family, !f ? 'no display face' : brand.has(f) || titles(d.rtl).has(f) ? '' : never.get(f) || `not a ${d.rtl ? 'Hebrew' : 'Latin'} title face in the catalog`]
+    const f = d.family.toLowerCase(), ok = titles(d.script)
+    return [id, d.family, !f ? 'no display face' : brand.has(f) ? '' : never.get(f) || (!ok.size || ok.has(f) ? '' : `not a ${d.script} title face in the catalog`)]
   }).filter(([, , why]) => why)
   if (banned.length) die(`not a title face: ${banned.map(([id, f, why]) => `${id} ${f || '?'} (${why})`).join(', ')}. Title faces come from \`proto fonts\` (references/fonts.json), or the brand's own faces in "brandFonts". Choose another for ${banned.map(([id]) => id).join(', ')}.`)
   const kit = STACKS[s.stack]
@@ -519,10 +540,13 @@ function done() {
 
 // Ends the Building mark of each <slug>/<letter> (or every variant of a <slug>); returns the keys ended.
 function endBuilding(dir, refs) {
-  const building = { ...readSession(dir).building }
-  const ended = Object.keys(building).filter(k => refs.some(ref => ref.includes('/') ? k === ref : k.startsWith(`${ref}/`)))
-  for (const k of ended) delete building[k]
-  if (ended.length) patchSession(dir, { building })
+  let ended = []
+  patchSession(dir, now => {
+    const building = { ...now.building }
+    ended = Object.keys(building).filter(k => refs.some(ref => ref.includes('/') ? k === ref : k.startsWith(`${ref}/`)))
+    for (const k of ended) delete building[k]
+    return { building }
+  })
   return ended
 }
 
@@ -619,7 +643,7 @@ function ask() {
   const t = flags.to ? target(dir, flags.to) : s.work
   if (!t) die('no working variant yet: proto work <slug>/<letter> --ask "…"')
   const key = `${t.proto}/${t.variant}`, at = new Date().toISOString()
-  patchSession(dir, { asks: { ...s.asks, [key]: [...(s.asks?.[key] || []), ...texts.map(text => ({ at, text }))] } })
+  patchSession(dir, now => ({ asks: { ...now.asks, [key]: [...(now.asks?.[key] || []), ...texts.map(text => ({ at, text }))] } }))
   console.log(`${key}: ${(s.asks?.[key]?.length || 0) + texts.length} asks`)
 }
 

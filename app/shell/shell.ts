@@ -11,7 +11,7 @@
 // First: it wraps the page listeners every later import, and every design, adds (see quiet.ts).
 import { listen, quiet } from './quiet'
 import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } from './ui'
-import { BUILDING_CLASS, ERROR_CLASS, refOfPath } from './building'
+import { BUILDING_CLASS, ERROR_CLASS, ownerOfPath, refOfPath } from './building'
 import { dock, edge, smooth, runDock, restoreEdgeLabels, stageHover, installPointerTracking, fadeOut } from './motion'
 import { hints, fillField, type Hint } from './hints'
 import { copy } from './copy'
@@ -2215,8 +2215,19 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const ends = Object.values(session.building ?? {}).map(at => Date.parse(at) + BUILD_IDLE).filter(t => t > Date.now())
     if (ends.length) expiry = window.setTimeout(() => { builtFailed(); render(); watchExpiry() }, Math.min(...ends) - Date.now() + 50)
   }
-  // A variant that ended building while its file couldn't load shows its error now.
-  const builtFailed = () => { if ([...failed].some(f => { const r = refOfPath(f); return r && !building(r.proto, r.variant) })) show(false) }
+  // A variant that ended building shows what went wrong while it was: a file that couldn't load
+  // (shown again), and a compile error whose overlay was taken away (put back).
+  const hidden = new Map<string, unknown>(), erred = new Set<string>()
+  const builtFailed = () => {
+    if ([...failed].some(f => { const r = refOfPath(f); return r && !building(r.proto, r.variant) })) show(false)
+    for (const [key, err] of hidden) {
+      const [p, v] = key.split('/')
+      if (building(p, v)) continue
+      hidden.delete(key)
+      const Overlay = customElements.get('vite-error-overlay')
+      if (Overlay && !document.querySelector('vite-error-overlay')) document.body.append(new (Overlay as unknown as new (err: unknown) => HTMLElement)(err))
+    }
+  }
   watchExpiry()
 
   // ---------- boot ----------
@@ -2294,11 +2305,22 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     setLive(live: boolean) { st.live = live; render() },
     setInbox(inbox: Inbox) { if (st.status) { st.status = { ...st.status, inbox }; render() } },
     sendComments: sendBatch,
-    /** A compile error from Vite: one in a variant that is still building is expected mid-build, so
-     *  its overlay is taken away (the variant keeps its last good frame). */
-    viteError(file: string) {
-      const r = refOfPath(file)
-      if (r && building(r.proto, r.variant)) setTimeout(() => document.querySelector('vite-error-overlay')?.remove())
+    /** A compile error from Vite: one in a variant (or a helper of its own) that is still building is
+     *  expected mid-build, so its overlay is taken away and kept until the variant is built. */
+    viteError(file: string, err: unknown) {
+      const r = ownerOfPath(file)
+      if (!r || !building(r.proto, r.variant)) return
+      hidden.set(`${r.proto}/${r.variant}`, err)
+      erred.add(`${r.proto}/${r.variant}`)
+      setTimeout(() => document.querySelector('vite-error-overlay')?.remove())
+    },
+    /** A hot update starts: errors from here on belong to it. */
+    updating() { erred.clear() },
+    /** A hot update ended (Vite says so even when the file didn't compile): an error kept for a
+     *  variant it touched is over, unless this update raised it. */
+    compiled(path: string) {
+      const r = ownerOfPath(path)
+      if (r && !erred.has(`${r.proto}/${r.variant}`)) hidden.delete(`${r.proto}/${r.variant}`)
     },
     edited(paths: string[]) {
       let retrying = false

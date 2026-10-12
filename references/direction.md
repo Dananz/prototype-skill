@@ -50,7 +50,8 @@ const hero = image('kiosk-B-hero')
 
 ## Limits
 
-- You write only `src/protos/<slug>/<letter>.tsx` and your own lowercase helpers. `parts.tsx`,
+- You write only `src/protos/<slug>/<letter>.tsx`, your own lowercase helpers and your full plan
+  (`.proto/briefs/<slug>-<letter>.md`). `parts.tsx`,
   `meta.ts`, `theme.css` and the other variants are read-only, and you install nothing; ask for
   those in your reply.
 - Every `proto` call carries the flags from your prompt. Never `proto up`, `add`, `pick` or `work`.

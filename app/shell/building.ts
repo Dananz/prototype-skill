@@ -8,3 +8,29 @@ export const refOfPath = (path: string) => {
   const m = path.match(/\/src\/protos\/([^/]+)\/([A-Z]{1,2})\.\w+(?:[?#]|$)/)
   return m ? { proto: m[1], variant: m[2] } : null
 }
+
+/** A variant's own file or one of its helpers (c-map.tsx belongs to C) as its prototype and letter. */
+export const ownerOfPath = (path: string) => {
+  const m = path.match(/\/src\/protos\/([^/]+)\/(?:([A-Z]{1,2})\.\w+|([a-z]{1,2})-[^/?#]*)(?:[?#]|$)/)
+  return m ? { proto: m[1], variant: (m[2] || m[3]).toUpperCase() } : null
+}
+
+/** While its host is marked data-building, keeps a copy of the variant's last complete frame, so an
+ *  edit that throws can show it, frozen. The copy is taken 300 ms after the page changes (at most
+ *  that often, so a variant that animates is copied too) and never while an error is showing, so a
+ *  frame a failed update left half-patched is never kept. onMark runs whenever the mark changes. */
+export function keepFrame(host: HTMLElement, failing: () => boolean, onMark: (building: boolean) => void) {
+  let frame = '', t = 0
+  const snap = () => { t = 0; if (!failing() && host.hasAttribute('data-building')) frame = host.innerHTML }
+  const content = new MutationObserver(() => { t ||= window.setTimeout(snap, 300) })
+  const sync = () => {
+    const building = host.hasAttribute('data-building')
+    if (building) { content.observe(host, { childList: true, subtree: true, characterData: true, attributes: true }); t ||= window.setTimeout(snap, 300) }
+    else { content.disconnect(); clearTimeout(t); t = 0; frame = '' }
+    onMark(building)
+  }
+  const mark = new MutationObserver(sync)
+  mark.observe(host, { attributes: true, attributeFilter: ['data-building'] })
+  sync()
+  return { frame: () => frame, stop: () => { mark.disconnect(); content.disconnect(); clearTimeout(t) } }
+}
