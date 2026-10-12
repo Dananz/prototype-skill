@@ -314,10 +314,14 @@ export function prototypeServer(session) {
   let activity = Date.now()
   // With the working variant as the server left it, so the page knows a move it asked for when
   // session.json brings it.
+  // When each variant (its own file or a helper of its own, c-map.tsx for C) was last edited, for
+  // the page's Building marks, which count from there. Kept here, not in session.json: rewriting
+  // that on every edit can reach Vite as a deleted file and reload the page.
+  const edits = {}
   const status = () => {
     let s = {}
     try { s = read() } catch { /* being rewritten by hand; the rest still answers */ }
-    return { lastEdit: lastEdit(), keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, inbox: inboxStatus() }
+    return { lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, inbox: inboxStatus() }
   }
   const stop = reason => {
     // The tailnet port as session.json has it now: on a session's first run, `proto up` gives it one
@@ -340,22 +344,10 @@ export function prototypeServer(session) {
         activity = Date.now()
         if (!slash(path).startsWith(`${src}/protos/`)) return
         server.ws.send({ type: 'custom', event: 'proto:edit', data: { path: slash(path).slice(slash(dir).length - 1) } })
-        stampBuilding(slash(path).slice(src.length + '/protos/'.length))
-      })
-      // A variant still building counts its time from its last edit (its own file or a helper of
-      // its own, c-map.tsx for C), kept in session.json so a reloaded page knows it too.
-      const stampBuilding = rel => {
-        const [slug, name = ''] = rel.split('/')
+        const [slug, name = ''] = slash(path).slice(src.length + '/protos/'.length).split('/')
         const letter = (name.match(/^([A-Z]{1,2})\.\w+$/) || name.match(/^([a-z]{1,2})-/) || [])[1]
-        if (!letter) return
-        const key = `${slug}/${letter.toUpperCase()}`
-        try {
-          write(now => {
-            const at = now.building?.[key]
-            return at && Date.now() - Date.parse(at) > 5000 ? { building: { ...now.building, [key]: new Date().toISOString() } } : null
-          })
-        } catch { /* session.json mid-rewrite: the next edit stamps it */ }
-      }
+        if (letter) edits[`${slug}/${letter.toUpperCase()}`] = Date.now()
+      })
       // Anything but /status changes something, so it must come from the page itself: a POST with a
       // JSON body (which a page on another site can only send after a CORS preflight, and none is
       // ever answered: Vite's own CORS is off too) and, when the browser names its origin, the host

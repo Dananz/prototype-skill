@@ -69,7 +69,7 @@ export type CommentBatch = {
  *  (marked: the pick is in meta.ts and only the working variant didn't move; nothing: an unpick of a
  *  variant that wasn't the pick). */
 export type Sent = { id: string; results: { n: number; action: Action; done: boolean; failed?: string; marked?: boolean; nothing?: boolean }[] }
-type Status = { lastEdit: number; keep: boolean; idleHours: number; deleteDays: number; work?: Ref | null; inbox?: Inbox }
+type Status = { lastEdit: number; edits?: Record<string, number>; keep: boolean; idleHours: number; deleteDays: number; work?: Ref | null; inbox?: Inbox }
 
 const PHONE = 'shrink-0 overflow-hidden rounded-[55px] border-[10px] border-zinc-900 bg-white text-zinc-900 shadow-xl dark:border-zinc-700 dark:bg-black dark:text-white'
 // The phone scale: Fit (0) or a percentage. The menu offers these in a row and a slider for
@@ -193,13 +193,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const archived = () => protos.filter(p => p.archived)
   const byId = (id: string) => protos.find(p => p.id === id)
   // A variant is building from `proto add` until `proto done` (or, if that never comes, a few
-  // minutes after its last edit, which the dev server stamps into session.json): it is marked, and
-  // a render error keeps its last good frame.
+  // minutes after its last edit: seen here, or, for edits before this page loaded, known to the
+  // dev server's status): it is marked, and a render error keeps its last good frame.
   const BUILD_IDLE = 180_000
-  const building = (p: string, v: string) => {
-    const at = session.building?.[`${p}/${v}`]
-    return !!at && Date.now() - Date.parse(at) < BUILD_IDLE
+  const editedAt = new Map<string, number>()
+  const buildingUntil = (key: string) => {
+    const at = session.building?.[key]
+    return at ? Math.max(Date.parse(at), editedAt.get(key) ?? 0, st.status?.edits?.[key] ?? 0) + BUILD_IDLE : 0
   }
+  const building = (p: string, v: string) => buildingUntil(`${p}/${v}`) > Date.now()
   const buildingIn = (p: string) => Object.keys(session.building ?? {}).some(k => k.startsWith(`${p}/`) && building(p, k.slice(p.length + 1)))
   const markBuilding = (host: HTMLElement) => { const [p, v] = (host.dataset.route ?? '').split('/'); host.toggleAttribute('data-building', !!v && building(p, v)) }
   const editing = (p: string, v?: string) => (!!st.editing && st.editing.proto === p && (!v || st.editing.variant === v)) || (v ? building(p, v) : buildingIn(p))
@@ -2212,7 +2214,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let expiry = 0
   const watchExpiry = () => {
     clearTimeout(expiry)
-    const ends = Object.values(session.building ?? {}).map(at => Date.parse(at) + BUILD_IDLE).filter(t => t > Date.now())
+    const ends = Object.keys(session.building ?? {}).map(buildingUntil).filter(t => t > Date.now())
     if (ends.length) expiry = window.setTimeout(() => { builtFailed(); render(); watchExpiry() }, Math.min(...ends) - Date.now() + 50)
   }
   // A variant that ended building shows what went wrong while it was: a file that couldn't load
@@ -2328,8 +2330,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         if (!path.includes('/src/protos/')) continue
         if (failed.has(path)) { failed.delete(path); retry.set(path, Date.now()); retrying = true }
         st.lastEdit = Date.now()
-        const r = refOfPath(path)
+        const r = refOfPath(path), owner = ownerOfPath(path)
         if (r) st.editing = r
+        if (owner) editedAt.set(`${owner.proto}/${owner.variant}`, Date.now())
       }
       if (retrying) show(false)
       motionDock.edited(paths, st.place.view === 'variant' ? st.place.proto : null)
