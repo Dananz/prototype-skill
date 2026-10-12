@@ -175,8 +175,14 @@ layout, pattern, signature, imagery, motion) into the app's `.proto/briefs/<slug
 plans against the defaults that file lists, against a similar prompt, and against each other (no
 shared font family, surface, signature or main-action pattern), and build from them. With a Current the plan is short (what changes
 and why) and Current's look holds; without one it is the whole look. This takes a minute per
-direction and is what keeps the result from looking generated. When an image tool is available
-and the subject is photo-led, start its images while you write the code (craft.md, Imagery).
+direction and is what keeps the result from looking generated. **Images: when an image tool is
+available** (the `codex-image` skill, or an image-generation MCP), **the subject is photo-led**
+(food, places, products, people, interiors) **and the project has no images of its own, generating
+them is not optional.** Right after the plans, invoke that skill yourself, once, for every
+direction's images (a hero each, a few product shots), run in the background into the app's
+`src/assets/`, then write the code: drawn shapes hold each place until its image lands, and the
+variant swaps it in (craft.md, Imagery). Subagents don't generate images; they use what is in
+`src/assets/`.
 
 **First usable output: one complete, high-quality direction.** No special prompt is needed.
 Keep the real-product grounding, exact Current/reference match, real tokens/assets/chrome,

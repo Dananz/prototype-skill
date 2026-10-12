@@ -173,11 +173,13 @@ An empty gray box where an image goes makes everything around it look unfinished
 preference:
 
 1. The project's own images.
-2. **A generated image, only when an image tool is available** in this session (an image skill
-   such as `codex-image`, or an image-generation MCP). Use it for photo-led subjects (food,
-   places, products, people, interiors): one hero image and at most a few product shots per
-   direction, saved into the app's `src/assets/`. Start the generation while you write the code;
-   drawn shapes hold the place until the image lands. No tool available: skip this, don't ask.
+2. **A generated image, whenever an image tool is available** in this session (the `codex-image`
+   skill, or an image-generation MCP) and the subject is photo-led (food, places, products,
+   people, interiors). Then it is not optional: a drawn pastry where a photo belongs is the
+   weakest part of the page. One hero image and a few product shots per direction, in the
+   direction's own light and styling, saved into the app's `src/assets/`. The main agent
+   generates them for all directions at once, in the background, right after the plans; drawn
+   shapes hold each place until its image lands. No tool available: skip this, don't ask.
 3. Drawing from the subject in code: SVG shapes, a chart, a map, a gradient with grain.
 
 Depth comes from layering and light, not from a shadow on everything.
