@@ -85,7 +85,7 @@ export function Layer() {
       <HoverBox hover={hover} verb={verb} onConfirm={confirm} onUp={up} />
       <HoldRing at={hold} />
       <Glide item={onNew && !onSpot ? { box: onNew } : null} pad={3} className="rounded-md border-2 border-proto-primary-ring bg-proto-primary/[.08]">
-        {h => m.kind === 'compose' && <Climb box={h.box} up={canClimb(host.mount(), m.target)} down={!!m.trail?.length} />}
+        {h => onNew && !onSpot && m.kind === 'compose' && <Climb box={h.box} up={canClimb(host.mount(), m.target)} down={!!m.trail?.length} />}
       </Glide>
       {onNew && onSpot && <div className="pointer-events-none absolute z-10 size-8 rounded-full ring-2 ring-proto-primary-ring" style={{ left: onNew.x - 16, top: onNew.y - 16 }} />}
       <Pins items={here.map(r => ({ item: r.item, done: r.state === 'done' }))} boxes={boxes} active={s.active} onOpen={act.open} />
