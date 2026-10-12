@@ -709,7 +709,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     for (const t of layers.querySelectorAll<HTMLElement>('[data-thumb]')) {
       if (!t.clientWidth) continue
       const inner = t.firstElementChild as HTMLElement
-      if (!t.hasAttribute('data-pthumb')) { inner.style.zoom = String(t.clientWidth / 1200); continue }
+      // A web design's card shows it at the width the page is seen at: desktop on a wide screen, the
+      // phone layout on a phone (its breakpoints follow the window, so a 1200px canvas there drew the
+      // phone layout stretched).
+      if (!t.hasAttribute('data-pthumb')) {
+        const narrow = innerWidth < 640, w = narrow ? Math.max(320, Math.round(innerWidth)) : 1200, h = narrow ? Math.round(w * 1.4) : 750
+        inner.style.width = `${w}px`
+        inner.style.height = `${h}px`
+        t.style.aspectRatio = narrow ? `${w} / ${h}` : ''
+        inner.style.zoom = String(t.clientWidth / w)
+        continue
+      }
       t.style.aspectRatio = scale ? 'auto' : ''
       t.style.paddingBlock = scale ? '20px' : ''
       inner.style.zoom = String(scale ? Math.min(scale / 100, (t.clientWidth - 24) / parseFloat(inner.style.width)) : .78 * t.clientWidth / 1200)
