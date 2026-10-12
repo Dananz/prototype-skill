@@ -312,7 +312,8 @@ frames with `proto shoot --at` / `--frames`.
 **Build remaining requested variants in parallel when you can.** After the first proposed
 direction is usable and checked, when there are 3 or more remaining variants to write, the
 harness has subagents, and Current matches its reference (for a new product: once the tokens and
-`parts.tsx` exist), give each variant its own subagent. First write everything shared yourself
+`parts.tsx` exist), give each variant its own subagent, with the model and effort from the table
+below. First write everything shared yourself
 (`parts.tsx`, `src/theme.css`, `meta.ts`, packages), then start every subagent in one message.
 Each is told:
 
@@ -333,13 +334,23 @@ Each is told:
 - to reply in at most five lines: what it built, its weakest point, and which default from
   craft.md it is closest to.
 
-Start them at medium effort (the Agent tool's `effort: "medium"`). Measured on two regions of a
-plugin UI rebuilt from source: medium matched high on the simpler one in 0.9x the time; on the
-harder one high was closer (0.8 % vs 1.2 % of pixels off) in 2.3x the time. Keep high for a last
-polish pass on a region the user is judging closely.
+**Which model and effort each subagent gets.** Look the job up here and pass that `model` and
+`effort` on the Agent call; there is nothing to decide. A row names a cheaper model only where one
+was measured to hold up; everything else runs on the session's own model.
+
+| Job | Model, effort | Measured (one plugin UI, 2-3 runs per arm) |
+|---|---|---|
+| Build or rebuild a region from its written spec | Sonnet, medium | with the spec's one-SVG line: 21-23 s, 2.43-2.50 % of pixels off; Opus high without it: 130 s, 2.46 % |
+| Polish a region toward its screenshot | Opus, high | the only arm that kept improving past the first build (2.46 %, 2.68 %) |
+| A comment worker (a pin that needs real design work) | Opus, medium | Sonnet never moved menus along with the buttons it moved (0 of 6 runs); Opus high and medium did (4 of 4) |
+| A new direction without a spec, a region's spec, the critic | session's model | not measured on another model |
+| Any job | never Haiku | slower than Sonnet, no more accurate |
+
+A comment batch is not routed: the main session handles it itself. Handing the simple pins to a
+primed Sonnet helper was measured slower (56 s against 52 s, median of 3) and no more accurate.
 
 **A region worked on again and again: write its spec once.** When the user keeps refining the same
-part (a rebuild of a real product they perfect over many rounds), have one subagent extract it
+part (a rebuild of a real product they perfect over many rounds), have one subagent (session's model) extract it
 from the source and the reference into `src/protos/<slug>/spec/<region>.md`: every box, colour,
 font, icon path and layer as numbers, with the source line each came from, the screenshot winning
 where they disagree. Later builds and changes read the spec, not the source: measured, builds from
@@ -362,7 +373,7 @@ with step 5 (which starts with the critic). Without subagents, write the variant
 
 **Craft first, then defects.** The first direction gets craft.md's full craft check from you,
 on its single shots at full size, before the others are written. Once every direction is built,
-start **the critic** (craft.md, section 10): one subagent with fresh eyes that reads the plans,
+start **the critic** (craft.md, section 10): one subagent (session's model) with fresh eyes that reads the plans,
 the sheet and the single shots and returns the three changes that would most raise each
 direction. Apply them (without subagents, run that review yourself as a separate pass). Then the
 defect rounds below.
@@ -532,7 +543,7 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
 6. Listen again.
 
 Use workers only when comments in one batch each need real design work (a new variant, a section
-rewritten) in separate files: then one subagent per file, at medium effort, all started together.
+rewritten) in separate files: then one subagent per file, on Opus at medium effort, all started together.
 
 **Send each comment as you add it.** A switch under the Send button (kept per browser) sends each
 comment the moment it is added, so batches of one arrive while the user writes the next. Handle
