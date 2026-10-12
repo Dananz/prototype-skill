@@ -12,9 +12,9 @@ export type Host = {
   /** The mounted design of the variant on screen (in a device view's frame while one is on); null
    *  where comments are off (a lobby, a tool). */
   mount: () => HTMLElement | null
-  /** The device view while one is on (view/): its layout, and what is under a point of the page in
+  /** The device view while one is on (view/): its layout (none for the stage's own artboard), and what is under a point of the page in
    *  its frame (the element, and the point in the frame's own px). */
-  view?: () => (ViewSize & { at: (x: number, y: number) => { el: Element; x: number; y: number } | null }) | null
+  view?: () => (Partial<ViewSize> & { at: (x: number, y: number) => { el: Element; x: number; y: number } | null }) | null
   /** Shows a comment's layout: its device view, or none. */
   setView?: (v: ViewSize | null) => void
   go: (proto: string, variant: string, state?: string) => void

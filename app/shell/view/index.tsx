@@ -16,10 +16,12 @@ import { useRows } from '../comments/list'
 import { useCtx } from '../comments/ctx'
 import { Icon } from '../comments/ui'
 import { designIn, frameUrl, openFrame, type Frame } from './frame'
-import { fitOf, pinchOn, room, useBox, useGestures, usePinch, usePlace } from './gestures'
+import { fitOf, outOf, pinchOn, room, useBox, useGestures, usePinch, usePlace } from './gestures'
+import { trackPointer } from '../motion'
 import { dims, ORDER, SIZES, type Size } from './sizes'
 
-export type View = { size: Size; land: boolean; zoom: number }
+/** size null: the stage's own artboard (fill), as big as the stage, with no line over it. */
+export type View = { size: Size | null; land: boolean; zoom: number }
 export type ViewProps = {
   /** The view on, or null. zoom: 0 is Fit, else a percentage. */
   view: View | null
@@ -156,8 +158,9 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
   const { act } = useCtx()
   const { s, rows } = useRows()
   const [area, box] = useBox<HTMLDivElement>()
-  const d = dims(view.size, view.land)
-  const pad = box.w < 640 ? 0 : 16
+  // The stage's own artboard is the area's size: at 100% it is the stage as it always was.
+  const d = view.size ? dims(view.size, view.land) : { w: box.w, h: box.h }
+  const pad = !view.size || box.w < 640 ? 0 : 16
   const fit = fitOf(box, d, pad)
   const scale = view.zoom ? view.zoom / 100 : fit
   const zoomed = scale > fit + 0.001
@@ -169,19 +172,23 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
   keys.current = onKey
   const bind = (doc: Document) => {
     const a = pinchOn(doc, pinch), b = gestures(doc), k = (e: KeyboardEvent) => keys.current(e)
+    // The mouse over the frame moves in its page: told here as a point of this page, so the stage's
+    // Focus button and edge arrows show as they do over the stage itself.
+    const m = (e: PointerEvent) => { if (e.pointerType !== 'mouse') return; const [x, y] = outOf(doc.defaultView?.frameElement as HTMLElement | null, e.clientX, e.clientY); trackPointer({ clientX: x, clientY: y }) }
     doc.addEventListener('keydown', k)
-    return () => { a(); b(); doc.removeEventListener('keydown', k) }
+    doc.addEventListener('pointermove', m, true)
+    return () => { a(); b(); doc.removeEventListener('keydown', k); doc.removeEventListener('pointermove', m, true) }
   }
   const [, redraw] = useState(0)
   useEffect(() => { const f = () => redraw(n => n + 1); coarse.addEventListener('change', f); return () => coarse.removeEventListener('change', f) }, [])
   const picking = s.mode.kind === 'pick' || s.mode.kind === 'tag'
-  const name = SIZES[view.size].name
+  const name = view.size ? SIZES[view.size].name : ''
   // Comments written on the other sizes, open ones, as a chip each that switches to that size.
   const others = ORDER.filter(x => x !== view.size).map(x => ({ x, k: rows.filter(r => r.here && r.state !== 'done' && r.item.target?.view?.size === x).length })).filter(o => o.k)
   const pct = Math.round(scale * 100)
   return (
     <div data-view-stage className="relative flex h-full flex-col bg-zinc-100 text-[13px] text-zinc-900 dark:bg-[#111113] dark:text-zinc-100">
-      {picking
+      {!view.size ? null : picking
         ? <div data-view-banner className="flex h-10 shrink-0 items-center gap-2 bg-proto-primary pe-1.5 ps-3 text-xs font-medium text-proto-primary-fg [@media(hover:hover)]:pe-28">
             <Icon name="comment" className="size-4" />
             <span className="min-w-0 flex-1 truncate">{coarse.matches ? 'Tap' : 'Click'} what to change on {name.toLowerCase()}</span>
@@ -207,7 +214,7 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
       <div ref={area} data-view-area className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ touchAction: 'pan-x pan-y' }}>
         <div ref={wrap} className="flex h-max min-h-full w-max min-w-full items-start justify-start">
           <LiveFrame hash={hash} dark={dark} w={d.w} h={d.h} scale={scale} route={route} bind={bind}
-            ring={`bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${pad ? 'rounded-[10px]' : ''}`}>
+            ring={!view.size ? 'bg-white dark:bg-zinc-950' : `bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${pad ? 'rounded-[10px]' : ''}`}>
             {picking && <Pick area={area} scale={scale} zoomed={zoomed} />}
           </LiveFrame>
         </div>

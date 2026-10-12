@@ -118,7 +118,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     }
     const targetOf = (e: Event) => viewAt(e)?.el ?? e.target
     // What is picked carries the layout it was picked on, in a device view.
-    const onView = (t: Target): Target => { const v = host.view?.(); return v ? { ...t, view: { size: v.size, w: v.w, h: v.h } } : t }
+    const onView = (t: Target): Target => { const v = host.view?.(); return v?.size ? { ...t, view: { size: v.size, w: v.w!, h: v.h! } } : t }
     const part = (t: EventTarget | null) => { const el = inDesign(t); return el && el !== host.mount() ? el : null }
     const parentOf = (el: HTMLElement) => { const m = host.mount(), p = el.parentElement; return m && p && p !== m && m.contains(p) ? p : null }
     const show = (el: HTMLElement | null, touch: boolean) => {

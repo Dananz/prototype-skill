@@ -441,12 +441,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // The 10px bezel sits outside the screen, so the frame is the screen plus 20 each way.
   // The scale control works on the device view while one is on, else on a phone prototype's phones.
-  const scaleNow = () => (viewOn() ? st.view.zoom : st.scale)
-  const scaleRange = () => (viewOn() ? [ZOOM_MIN, ZOOM_MAX] : [SCALE_MIN, SCALE_MAX])
+  const scaleNow = () => (frameOn() ? st.view.zoom : st.scale)
+  const scaleRange = () => (frameOn() ? [ZOOM_MIN, ZOOM_MAX] : [SCALE_MIN, SCALE_MAX])
   const rangeAt = (v: number) => { const [lo, hi] = scaleRange(); return ((v - lo) / (hi - lo)) * 100 }
   const scaleLabel = () => (scaleNow() ? `${Math.round(scaleNow())}%` : 'Fit')
   function setScale(v: number) {
-    if (viewOn()) return patchView({ zoom: v })
+    if (frameOn()) return patchView({ zoom: v })
     st.scale = v; render(); fit()
   }
   const phoneSize = (proto: Proto) => `width:${proto.screen[0] + 20}px;height:${proto.screen[1] + 20}px`
@@ -820,7 +820,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const scaleStep = (d: number, icon: string, label: string) => `<button data-act="scalestep:${d}" aria-label="${label}" title="${label}" class="grid size-10 shrink-0 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white">${ic(icon)}</button>`
     const sc = scaleNow(), [scLo, scHi] = scaleRange()
     const scaleMenu = `<div class="space-y-1.5 p-2"><div class="flex gap-0.5 rounded-lg bg-zinc-900/[.04] p-0.5 dark:bg-white/[.06]">${SCALES.map(s => `<button data-act="scale:${s}" data-scale-seg="${s}" aria-pressed="${sc === s}" class="${segCls(sc === s)}">${s ? s + '%' : 'Fit'}</button>`).join('')}</div>
-      <div class="flex items-center">${scaleStep(-5, 'minus', 'Smaller')}<input data-scale-range type="range" min="${scLo}" max="${scHi}" step="1" value="${sc || 50}" aria-label="${viewOn() ? 'Zoom' : 'Phone scale'}" class="${RANGE} ${sc ? '' : 'opacity-40'}" style="--p:${rangeAt(sc || 50)}%">${scaleStep(5, 'plus', 'Bigger')}</div></div>`
+      <div class="flex items-center">${scaleStep(-5, 'minus', 'Smaller')}<input data-scale-range type="range" min="${scLo}" max="${scHi}" step="1" value="${sc || 50}" aria-label="${frameOn() ? 'Zoom' : 'Phone scale'}" class="${RANGE} ${sc ? '' : 'opacity-40'}" style="--p:${rangeAt(sc || 50)}%">${scaleStep(5, 'plus', 'Bigger')}</div></div>`
 
     const row = (lead: string, body: string, end = '') => `<div class="flex min-h-10 items-center gap-3 rounded-lg px-2.5 py-2 text-[13px] text-zinc-700 dark:text-zinc-300">${lead}<div class="min-w-0 flex-1">${body}</div>${end}</div>`
 
@@ -885,7 +885,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <div class="ml-auto flex shrink-0 items-center gap-1">
         ${stepper}${stepper && (viewOk() || commentHost() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
         ${sizeTabs()}${commentBtn()}${copyBtn()}${motionBtn()}${decideBtn()}
-        ${phones || viewOn() ? `<div class="relative"><button data-act="open:scale" aria-expanded="${st.open === 'scale'}" aria-label="${viewOn() ? 'Zoom' : 'Phone scale'}" class="${IB} text-xs tabular-nums ${st.open === 'scale' ? 'bg-zinc-900/5 text-zinc-900 dark:bg-white/10 dark:text-white' : ''}">${ic(viewOn() ? sizeIcon(st.view.size!, st.view.land) : 'phone')}<span data-scale-label>${scaleLabel()}</span></button>${pop(st.open === 'scale', scaleMenu, 'right-0 top-11 w-72')}</div>`
+        ${phones || frameOn() ? `<div class="relative"><button data-act="open:scale" aria-expanded="${st.open === 'scale'}" aria-label="${frameOn() ? 'Zoom' : 'Phone scale'}" class="${IB} text-xs tabular-nums ${st.open === 'scale' ? 'bg-zinc-900/5 text-zinc-900 dark:bg-white/10 dark:text-white' : ''}">${ic(viewOn() ? sizeIcon(st.view.size!, st.view.land) : frameOn() ? sizeIcon(shownSize() ?? 'desktop') : 'phone')}<span data-scale-label>${scaleLabel()}</span></button>${pop(st.open === 'scale', scaleMenu, 'right-0 top-11 w-72')}</div>`
           // On the stage the design is at its own size: the button stays, so choosing a layout doesn't move the bar.
           : viewOk() ? `<button type="button" aria-disabled="true" aria-label="Zoom" title="The design is at its full size here. Choose a layout to zoom it" class="${IB} cursor-default text-xs tabular-nums opacity-40 hover:bg-transparent">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth)))}<span>100%</span></button>` : ''}
       </div></div>`)
@@ -1092,7 +1092,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     ].join('')
     const layout = viewOk() ? menuSegs('Layout', ORDER.map(s => `<button data-act="size:${s}:card" data-shoot="size-${s}" aria-label="${SIZES[s].name}" aria-pressed="${shownSize() === s}" class="grid place-items-center ${DARK_SEG(shownSize() === s)}">${ic(sizeIcon(s, s === 'tablet' && st.view.land), 'size-[18px]')}</button>`).join(''),
       viewOn() && st.view.size === 'tablet' ? `<button data-act="turn" data-shoot="turn" aria-label="${st.view.land ? 'Turn upright' : 'Turn on its side'}" class="grid size-10 shrink-0 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white">${ic('rotate', 'size-5')}</button>` : '') : ''
-    const scale = p.kind === 'phone' || viewOn() ? menuSegs(viewOn() ? 'Zoom' : 'Scale', SCALES.map(s => `<button data-act="scale:${s}" data-scale-seg="${s}" data-dark aria-pressed="${scaleNow() === s}" class="${DARK_SEG(scaleNow() === s)}">${s ? s + '%' : 'Fit'}</button>`).join('')) : ''
+    const scale = p.kind === 'phone' || frameOn() ? menuSegs(frameOn() ? 'Zoom' : 'Scale', SCALES.map(s => `<button data-act="scale:${s}" data-scale-seg="${s}" data-dark aria-pressed="${scaleNow() === s}" class="${DARK_SEG(scaleNow() === s)}">${s ? s + '%' : 'Fit'}</button>`).join('')) : ''
     return `<div data-scale-backdrop class="fixed inset-0 z-20"></div>
       <div data-card data-menu-card role="dialog" aria-label="Menu" class="${CARD_CLS}" style="transform-origin:0 0"><div class="space-y-px">${rows}</div>${layout}${scale}</div>`
   }
@@ -1510,7 +1510,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       input.value = String(at)
       input.style.setProperty('--p', `${rangeAt(at)}%`)
       input.classList.remove('opacity-40')
-      if (viewOn()) { st.view = { ...st.view, zoom: at }; paintView(); return syncScale(input) }
+      if (frameOn()) { st.view = { ...st.view, zoom: at }; paintView(); return syncScale(input) }
       st.scale = at
       syncScale(input)
       return fit()
@@ -1596,7 +1596,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const hintHost = () => st.place.view === 'variant' && !st.place.tool ? layer?.el.querySelector<HTMLElement>('[data-mount]') ?? null : null
   // The design the tools work on: the one in the device view while it is on (it reports here, see
   // shared.ts), else the one on the stage. The page inside a view has none: the page outside runs them.
-  const toolHost = () => viewOn() ? deviceView.mount() : hintHost()
+  const toolHost = () => frameOn() ? deviceView.mount() : hintHost()
   // What the bar and the panel count while a view's frame is still loading: the same design on the
   // stage under it, so its buttons and tabs don't go and come back. Only what they show; what acts
   // on the design (a spot, Fill in, copy mode) waits for the frame's.
@@ -1617,8 +1617,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const comments = createComments({
     layer: zone.querySelector<HTMLElement>('[data-comments]')!,
     // While a device view is on, comments are on the design in its frame, about that layout.
-    mount: () => viewOn() ? deviceView.mount() : commentHost(),
-    view: () => viewOn() ? { ...viewSize(), at: deviceView.at } : null,
+    // The stage's own artboard is the stage's layout: what is written there carries no other.
+    mount: () => frameOn() ? deviceView.mount() : commentHost(),
+    view: () => frameOn() ? { ...(viewOn() ? viewSize() : {}), at: deviceView.at } : null,
     setView: v => {
       if (!v) { if (viewOn()) patchView({ size: null, zoom: 0 }); return }
       if (!viewOk()) return
@@ -1650,9 +1651,22 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // layout is native only while the stage is wide enough for it too: a desktop window with the side
   // panels open can leave the stage a tablet's width, where the design is cut off. Then none is, and
   // choosing the window's own layout shows it in the view, at its full size, to zoom and move.
-  const native = (): Size | null => { const s = nativeOf(innerWidth); return !layers.clientWidth || nativeOf(layers.clientWidth) === s ? s : null }
+  //
+  // At rest, a web prototype's variant on a wide screen is in the view too, as the stage's own
+  // artboard (fill): the stage's size at 100%, so it looks as it always did, with zoom and moving it
+  // on hand, and the design laid out for the stage's width (its breakpoints see the frame, not the
+  // window). Its layout is the one selected then. A lobby, a tool, focus mode, a shot and a phone
+  // keep the stage as it is.
   const viewOk = () => !framed && !st.focus && q.get('hints') !== '0' && st.place.view !== 'session' && cur()?.kind !== 'phone' && (!phoneMq.matches || pillOn())
+  const fillOk = () => viewOk() && !phoneMq.matches && st.place.view === 'variant' && !st.place.tool
+  const native = (): Size | null => {
+    if (fillOk()) return nativeOf(layers.clientWidth || innerWidth)
+    const s = nativeOf(innerWidth); return !layers.clientWidth || nativeOf(layers.clientWidth) === s ? s : null
+  }
+  /** A layout other than the stage's own is chosen. */
   const viewOn = () => !!st.view.size && viewOk()
+  /** The design is shown in the view's frame: a chosen layout, or the stage's own artboard. */
+  const frameOn = () => viewOn() || fillOk()
   const shownSize = (): Size | null => viewOn() ? st.view.size! : native()
   const viewSize = (): ViewSize => { const s = st.view.size!, d = dims(s, st.view.land); return { size: s, w: d.w, h: d.h } }
   const deviceView = createView(zone.querySelector<HTMLElement>('[data-view]')!, comments.wrap)
@@ -1673,7 +1687,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   function paintView() {
     deviceView.paint({
-      view: viewOn() ? { size: st.view.size!, land: st.view.land, zoom: st.view.zoom } : null,
+      view: frameOn() ? { size: viewOn() ? st.view.size! : null, land: st.view.land, zoom: st.view.zoom } : null,
       hash: hashOf(st.place),
       dark: st.dark,
       set: patchView,
@@ -1728,7 +1742,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const motionDock = createMotion({
     el: zone.querySelector<HTMLElement>('[data-motion-dock]')!, zone, stage: () => framed ? null : toolHost(), show: () => !!commentHost(), on: () => st.motion, focused: () => st.focus,
     remount: () => {
-      if (!viewOn()) return layer?.remount?.() ?? Promise.resolve()
+      if (!frameOn()) return layer?.remount?.() ?? Promise.resolve()
       const w = deviceView.mount()?.ownerDocument.defaultView as unknown as { __protoRemount?: () => Promise<unknown> } | null
       return w?.__protoRemount?.() ?? Promise.resolve()
     },
