@@ -15,6 +15,15 @@ proposals that felt templated, and is paying for a distinctive point of view: ma
 opinionated choices about palette, typography and layout that are specific to this brief, and
 take one real aesthetic risk you can justify.
 
+**The risk is in the look; the experience stays simple.** Put the boldness into type, color,
+composition and imagery, and keep the way it works obvious: a first-time visitor sees what this
+is and does the main thing (find, choose, order, book) in a glance and a couple of taps, with
+controls they already know. A new interaction model (a countdown that leads, ordering by chat, a
+receipt that prints, a box to fill) is a direction only when the brief is about the interaction;
+otherwise it is complexity the user has to learn, and it reads as cleverness, not design. The
+strongest directions are usually the subject's own artifact as the page (its price board, its
+label, its window), used plainly.
+
 ## 1. Ground it in the subject
 
 If the brief does not pin down what the product or subject is, pin it yourself before designing:
@@ -33,7 +42,8 @@ gradient accent is the template answer; use it only if it is truly the best opti
 **Typography carries the personality.** Pair the display and body faces deliberately, not the
 same families you would reach for on any other project, and set a clear type scale with
 intentional weights, widths and spacing. Make the type treatment itself a memorable part of the
-design, not a neutral delivery vehicle for the content.
+design, not a neutral delivery vehicle for the content. Character lives in the display face, used
+large and sparingly; the body face is plain and easy to read. Two faces is usually right.
 
 **Structure is information.** Numbering, eyebrows, dividers and labels should encode something
 true about the content, not decorate it. Numbered markers (01 / 02 / 03) belong only on a real
@@ -197,6 +207,7 @@ and fix every no:
 
 1. Is the signature visible at first glance, on desktop and phone?
 2. Is the hero a thesis: the most characteristic thing in the subject's world, not a template?
+   And is the main action obvious in a glance, done in a couple of taps with familiar controls?
 3. Is the type itself part of the look, display and body clearly apart?
 4. Is the accent rare, and does each color have a role?
 5. Which default in section 3 is it closest to? If a similar brief would get the same screen, it
@@ -219,7 +230,8 @@ only graded by whoever made it. Start it with:
 - the job: for each direction, the three changes that would most raise it, most important first,
   each naming the element and the change (not "improve hierarchy" but "the price is the focal
   point; the headline at 64 px competes with it, take it to 40"); which direction plays it too
-  safe and what its risk could be; any two directions that are too close; which defaults from
+  safe in the look and what its risk could be; which one asks the user to learn something new to
+  do the main thing, and how to make it plain; any two directions that are too close; which defaults from
   section 3 it sees;
 - a reply of at most four lines per direction.
 
