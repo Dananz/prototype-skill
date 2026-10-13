@@ -3,7 +3,7 @@
 // Send posts every draft as one batch. Whatever is being written when the composer is put away
 // any way but Cancel or Add is held, and comes back with the next comment.
 import type { CommentBatch } from '../shell'
-import { climb, describe, find, reveal } from './dom'
+import { climb, describe, find, reveal, openerOf } from './dom'
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import { progress, type Store } from './store'
@@ -17,6 +17,7 @@ const hasWords = (d: Draft) => d.body.some(s => typeof s !== 'string' || s.trim(
 export function createActions(store: Store, host: Host) {
   const get = store.get, set = store.set
   const here = (i: Item) => { const p = get().place; return !!p && i.proto === p.proto && i.variant === p.variant && (i.state ?? '') === (p.state ?? '') }
+  let opening = 0
   const act = {
     here,
     /** Comments on what is on screen. */
@@ -34,10 +35,10 @@ export function createActions(store: Store, host: Host) {
       set({ place, mode: { kind: 'idle' }, active: null, pendingTag: null })
     },
 
-    toggle() { if (get().place) set(s => ({ mode: s.mode.kind === 'pick' ? { kind: 'idle' } : { kind: 'pick' }, active: null })) },
-    stop() { set({ mode: { kind: 'idle' } }) },
-    close() { set({ mode: { kind: 'idle' }, active: null, pendingTag: null }) },
-    begin(target: Target) { set({ mode: { kind: 'compose', target }, active: null }) },
+    toggle() { opening++; if (get().place) set(s => ({ mode: s.mode.kind === 'pick' ? { kind: 'idle' } : { kind: 'pick' }, active: null })) },
+    stop() { opening++; set({ mode: { kind: 'idle' } }) },
+    close() { opening++; set({ mode: { kind: 'idle' }, active: null, pendingTag: null }) },
+    begin(target: Target) { opening++; set({ mode: { kind: 'compose', target }, active: null }) },
     /**
      * Moves the new comment being written up to the element around the one it is on, keeping what
      * was typed; `down` steps back to the element it came up from. A saved comment, or one on a
@@ -57,7 +58,7 @@ export function createActions(store: Store, host: Host) {
       set({ mode: { ...m, target: m.trail[m.trail.length - 1], trail: m.trail.slice(0, -1) } })
     },
     /** A comment on a moment or a range of the motion, written in the motion dock. */
-    beginTime(time: Time) { set({ mode: { kind: 'time', time }, active: null }) },
+    beginTime(time: Time) { opening++; set({ mode: { kind: 'time', time }, active: null }) },
     /** Pick an element to tag from the open composer; it comes back to it with the pick. */
     tagPick() { set(s => s.mode.kind === 'compose' ? { mode: { ...s.mode, kind: 'tag' } } : s.mode.kind === 'time' ? { mode: { ...s.mode, tagging: true } } : {}) },
     tagDone(picked: Target | null) {
@@ -68,15 +69,30 @@ export function createActions(store: Store, host: Host) {
     open(id: string) {
       const i = get().items.find(x => x.id === id)
       if (!i) return
+      const request = ++opening
       // A comment on the design shows on the layout it was written on: its device view, or none.
       if (i.target || i.time) host.setView?.(i.target?.view ?? null)
       // An element in a closed menu, tab or popup is shown first: what opens it is pressed.
-      const show = async () => { const el = i.target && await reveal(host.mount(), i.target); el?.scrollIntoView({ block: 'center', behavior: 'smooth' }) }
-      if (!here(i)) { host.go(i.proto, i.variant, i.state); set({ active: id }); window.setTimeout(() => void show(), 700); return }
-      set({ active: id, mode: i.sent ? { kind: 'idle' } : i.time ? { kind: 'time', time: i.time, id } : i.target ? { kind: 'compose', target: i.target, id } : { kind: 'idle' } })
+      const mode = () => ({ active: id, mode: i.sent ? { kind: 'idle' as const } : i.time ? { kind: 'time' as const, time: i.time, id } : i.target ? { kind: 'compose' as const, target: i.target, id } : { kind: 'idle' as const } })
+      const show = async () => {
+        if (!i.target) return
+        // The destination and its iframe can finish mounting after navigation. A later selection
+        // cancels this request before it can press controls in another comment's design.
+        for (const end = performance.now() + 5000; request === opening && performance.now() < end; await new Promise(r => setTimeout(r, 40))) {
+          const mount = host.mount()
+          if (!here(i) || !mount || mount.dataset.route !== routeOf(i) || !(find(mount, i.target) || openerOf(mount, i.target))) continue
+          set(mode())
+          const current = () => request === opening && get().active === id && here(i) && mount === host.mount() && mount.isConnected
+          const el = await reveal(mount, i.target, current)
+          if (current()) el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+          return
+        }
+      }
+      if (!here(i)) { host.go(i.proto, i.variant, i.state); set({ active: id }); void show(); return }
+      set(mode())
       void show()
     },
-    resume() { const h = get().held; if (h) set({ active: null, mode: h.time ? { kind: 'time', time: h.time } : { kind: 'compose', target: h.target! } }) },
+    resume() { opening++; const h = get().held; if (h) set({ active: null, mode: h.time ? { kind: 'time', time: h.time } : { kind: 'compose', target: h.target! } }) },
     discardHeld() { set({ held: null }) },
     /** Called as a new comment is written, so it survives being put away. */
     hold(d: Draft, target?: Target, time?: Time) { set({ held: hasWords(d) ? { ...d, ...(time ? { time } : { target }) } : null }) },
@@ -84,6 +100,7 @@ export function createActions(store: Store, host: Host) {
     guard() { if (get().mode.kind === 'compose') set(s => ({ nudge: s.nudge + 1 })) },
 
     save(d: Draft, target: Target | undefined, id?: string, time?: Time) {
+      opening++
       const p = get().place
       if (!p) return
       if (id) set(s => ({ items: s.items.map(i => i.id === id ? { ...i, ...d } : i), held: null, mode: { kind: 'idle' }, active: null }))
@@ -96,7 +113,7 @@ export function createActions(store: Store, host: Host) {
       }
     },
     setLive(on: boolean) { set({ live: on }) },
-    cancel() { set({ held: null, mode: { kind: 'idle' }, active: null, pendingTag: null }) },
+    cancel() { opening++; set({ held: null, mode: { kind: 'idle' }, active: null, pendingTag: null }) },
     remove(id: string) { act.removeAll([id]) },
     /**
      * Deletes comments from the list, whatever became of them. One sent and not done is taken back

@@ -2,7 +2,7 @@
 // the guard that keeps every press from reaching the design while commenting, and the live boxes
 // pins and outlines are drawn from.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { climb, describe, find, seen, spot, spotAt, openerOf, passing } from './dom'
+import { climb, describe, find, seen, spot, spotAt, openerOf, passing, shown } from './dom'
 import { Icon } from './ui'
 import type { Box, Target } from './types'
 import { useCtx } from './ctx'
@@ -55,10 +55,10 @@ export function useBoxes(list: { id: string; t: Target }[]) {
       const mount = host.mount()
       const next: Record<string, Box> = {}
       if (mount) for (const x of list) {
-        const el = find(mount, x.t), b = el && (x.t.point ? spotAt(x.t, el, mount, host.layer) : seen(el, mount, host.layer))
+        const el = find(mount, x.t), visible = el && shown(el), b = visible && (x.t.point ? spotAt(x.t, el, mount, host.layer) : seen(el, mount, host.layer))
         if (b) { next[x.id] = b; continue }
         // Hidden in a closed menu, tab or popup: its pin goes on what opens it.
-        const o = !el && x.t.route ? openerOf(mount, x.t) : null, ob = o && seen(o, mount, host.layer)
+        const o = !visible && x.t.route ? openerOf(mount, x.t) : null, ob = o && seen(o, mount, host.layer)
         if (ob) next[x.id] = { ...ob, via: true }
       }
       const s = JSON.stringify(next)

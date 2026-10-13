@@ -130,12 +130,23 @@ export function routeOf(mount: HTMLElement, el: HTMLElement): string[] {
   return out
 }
 
+/** Mounted panels may still be hidden by CSS or the hidden attribute. */
+export function shown(el: HTMLElement): boolean {
+  if (!el.getClientRects().length) return false
+  const w = el.ownerDocument.defaultView
+  if (!w) return false
+  const style = w.getComputedStyle(el)
+  if (style.visibility === 'hidden' || style.visibility === 'collapse') return false
+  for (let p: HTMLElement | null = el; p; p = p.parentElement) if (w.getComputedStyle(p).opacity === '0') return false
+  return true
+}
+
 const q = (mount: HTMLElement, sel: string) => { try { return mount.querySelector<HTMLElement>(sel) } catch { return null } }
-const partOpenedBy = (mount: HTMLElement, by: string) => [...mount.querySelectorAll<HTMLElement>('[data-opened-by]')].find(e => e.getAttribute('data-opened-by') === by) ?? null
+const partOpenedBy = (mount: HTMLElement, by: string) => [...mount.querySelectorAll<HTMLElement>('[data-opened-by]')].find(e => e.getAttribute('data-opened-by') === by && shown(e)) ?? null
 
 /** What opens a hidden element: the innermost control on its route that is on the page now. */
 export function openerOf(mount: HTMLElement, t: Pick<Target, 'route'>): HTMLElement | null {
-  for (let i = (t.route?.length ?? 0) - 1; i >= 0; i--) { const o = q(mount, t.route![i]); if (o) return o }
+  for (let i = (t.route?.length ?? 0) - 1; i >= 0; i--) { const o = q(mount, t.route![i]); if (o && shown(o)) return o }
   return null
 }
 
@@ -164,19 +175,21 @@ const until = async (f: () => boolean, ms = 1500) => { for (const end = performa
  * pressing its control, outermost first, waiting for it to show. A part already open is left as it
  * is (pressing its control again would close it). Resolves to the element, or null.
  */
-export async function reveal(mount: HTMLElement | null, t: Target): Promise<HTMLElement | null> {
-  if (!mount) return null
+export async function reveal(mount: HTMLElement | null, t: Target, current: () => boolean = () => true): Promise<HTMLElement | null> {
+  if (!mount || !current()) return null
   const have = find(mount, t)
-  if (have || !t.route?.length) return have
+  if ((have && shown(have)) || !t.route?.length) return have && shown(have) ? have : null
   for (const by of t.route) {
+    if (!current() || !mount.isConnected) return null
     if (partOpenedBy(mount, by)) continue
     const opener = q(mount, by)
     if (!opener) break
     pressOn(opener)
-    if (!await until(() => !!partOpenedBy(mount, by))) break
+    if (!await until(() => !current() || !!partOpenedBy(mount, by))) break
   }
-  await until(() => !!find(mount, t), 800)
-  return find(mount, t)
+  await until(() => { const el = find(mount, t); return !current() || (!!el && shown(el)) }, 800)
+  const el = find(mount, t)
+  return current() && el && shown(el) ? el : null
 }
 
 /** A spot pinned with a long press, at screen point (cx, cy), with the element under it. */
