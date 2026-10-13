@@ -1200,6 +1200,28 @@ function printSource(dir, src) {
   }
 }
 
+// Which use of a shared component a comment is on. `uses` (from the page) is the chain of places the
+// components around the element are used, innermost first. When the innermost one is used in more
+// than one place in the prototype, or drawn in a loop (it has a key), the comment is on that one use,
+// so its line is printed with the source around it: the change goes there, not into the component.
+function printUses(dir, t, route) {
+  const uses = (t.uses || []).filter(u => u && u.at)
+  if (!uses.length) return
+  const one = u => `${u.component || '?'} at ${u.at}${u.key != null ? ` (key ${u.key})` : ''}${u.props ? ` {${u.props}}` : ''}`
+  console.log(`   used: ${uses.map(one).join(' <- ')}`)
+  const u = uses[0], slug = String(route || '').split('/')[0]
+  let count = 0
+  if (u.component && /^[A-Za-z_$][\w$]*$/.test(u.component)) {
+    const re = new RegExp(`<${u.component}[\\s/>]`, 'g')
+    const walk = d => { for (const e of readdirSync(d, { withFileTypes: true })) { const f = join(d, e.name); if (e.isDirectory()) walk(f); else if (/\.(tsx|jsx|vue)$/.test(e.name)) count += (readFileSync(f, 'utf8').match(re) || []).length } }
+    try { walk(join(dir, 'src', 'protos', slug)) } catch { /* no such prototype */ }
+  }
+  if (count < 2 && u.key == null) return
+  const why = u.key != null ? `drawn in a loop${count > 1 ? `, and written in ${count} places` : ''}` : `used in ${count} places`
+  console.log(`   shared: ${u.component} is ${why}; this comment is on the one at ${u.at}${u.key != null ? ` with key ${u.key}` : ''}${u.props ? `, passed ${u.props}` : ''}. Change that one use, not ${u.component} itself, unless the words say all of them.`)
+  printSource(dir, u.at)
+}
+
 function printBatch(dir, b) {
   const vp = b.viewport ? ` · page ${b.viewport.w}x${b.viewport.h}${b.viewport.phone ? ' (phone)' : ''}` : ''
   // A comment the user deleted in the page after sending it is withdrawn: left out, only counted.
@@ -1215,6 +1237,7 @@ function printBatch(dir, b) {
     if (c.take) console.log(`   at: ${spanOf(c)} of the motion (its take is ${secs(c.take)}): see it with proto shoot ${c.route} ${c.to !== undefined ? `--frames 8 --at ${c.at}-${c.to}` : `--at ${c.at}`}`)
     if (c.target) console.log(`   ${c.point ? 'in' : 'on'}: ${where(c.target)}`)
     if (c.target?.src) printSource(dir, c.target.src)
+    if (c.target?.uses) printUses(dir, c.target, c.route)
     // Written in the page's device view: about that layout, which a shot at that size shows.
     if (c.view) console.log(`   view: ${c.view.size} ${c.view.w}x${c.view.h} (shoot it: proto shoot ${c.route} --size ${c.view.w}x${c.view.h})`)
     for (const [i, t] of (c.tags || []).entries()) console.log(`   with @${i + 1}: ${where(t)}`)

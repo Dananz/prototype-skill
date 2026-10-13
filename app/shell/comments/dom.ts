@@ -2,7 +2,7 @@
 // shell mounted for the variant (`[data-mount]`); every selector is rooted there, and every
 // position sent to the agent is from the variant root's top left in CSS px, with a phone frame's
 // zoom taken out, so it means the same on any screen.
-import type { Box, Target } from './types'
+import type { Box, Target, Use } from './types'
 
 const squash = (s: string) => s.replace(/\s+/g, ' ').trim()
 const textOf = (el: HTMLElement) => squash(el.innerText ?? '')
@@ -80,10 +80,36 @@ export function describe(mount: HTMLElement, el: HTMLElement): Target {
     selector: pathOf(mount, el),
     ...(el.dataset.shoot ? { shoot: el.dataset.shoot } : {}),
     ...(at ? { src: at.dataset.protoSrc, ...(at.dataset.protoComponent ? { component: at.dataset.protoComponent } : {}) } : {}),
+    ...(() => { const u = usesOf(el); return u.length ? { uses: u } : {} })(),
     tag: el.tagName.toLowerCase(),
     text: text.slice(0, 80),
     rect: { x: Math.round((r.left - o.left) / z), y: Math.round((r.top - o.top) / z), w: Math.round(r.width / z), h: Math.round(r.height / z) },
   }
+}
+
+/**
+ * Where the components around `el` are used, innermost first, up to four: going up React's fibers
+ * from the element, each component whose props jsx.ts saw used in the prototype's files (see there).
+ * Empty outside React, or for a part no prototype file wrote.
+ */
+export function usesOf(el: HTMLElement): Use[] {
+  const map = (el.ownerDocument.defaultView as unknown as { __protoUses?: WeakMap<object, string> } | null)?.__protoUses
+  const k = map && Object.keys(el).find(n => n.startsWith('__reactFiber$'))
+  type Fiber = { type: unknown; key: string | null; memoizedProps: unknown; return: Fiber | null }
+  const out: Use[] = []
+  for (let f = k ? (el as unknown as Record<string, Fiber>)[k] : null, n = 0; f && n < 300 && out.length < 4; f = f.return, n++) {
+    if (typeof f.type === 'string' || !f.memoizedProps || typeof f.memoizedProps !== 'object') continue
+    const at = map!.get(f.memoizedProps)
+    if (!at || out.at(-1)?.at === at) continue
+    const t = f.type as { displayName?: string; name?: string; type?: { name?: string }; render?: { name?: string } } | null
+    const component = t?.displayName || t?.name || t?.type?.name || t?.render?.name || '?'
+    // Up to three short text or number props, which name this use (`shoot="phase-menu"`).
+    const props = Object.entries(f.memoizedProps as Record<string, unknown>)
+      .filter(([k, v]) => !['children', 'className', 'style'].includes(k) && (typeof v === 'string' || typeof v === 'number') && String(v).length <= 60)
+      .slice(0, 3).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ')
+    out.push({ component, at, ...(f.key != null ? { key: String(f.key) } : {}), ...(props ? { props } : {}) })
+  }
+  return out
 }
 
 /** A spot pinned with a long press, at screen point (cx, cy), with the element under it. */

@@ -517,6 +517,17 @@ line counts it, `(1 withdrawn in the page)`) and `proto reply` to it says so. Le
 comment alone. Under each comment with an element, the source around its line is printed (`>`
 marks the line), so most comments can be acted on without opening a file.
 
+**A comment is about the one element it is on.** Its `used:` line says where the components around
+it are used, innermost first. When that element belongs to a component used in more than one
+place (one dropdown of several, one row of a list), `proto inbox` adds a `shared:` line with the
+one use the comment is on and the source around it. Change that use only: pass a prop, an option
+or a variant at that line (`<Menu … wide />`), and leave the shared component's look for the
+others as it is. When that line is inside a helper that draws several (`const menu = (shoot, …) =>
+<Menu shoot={shoot} …/>`), the values the use passed (`passed shoot="phase-menu"`) name the one:
+change the call that passes them. Change the component itself, and so every use, only when the words say so ("all
+dropdowns", "every row", "each menu"); when it is unclear, change the one and say in the reply
+that the others are untouched. The reply names which one changed ("only the Phase menu").
+
 **Handle a batch as one job, not one comment at a time.** The user is waiting from the moment
 they press Send until the last change is in, and the time goes into round trips and lookups, not
 into the edits. Measured on 12 small comments: one pass took 48 s; a worker per file took 86 s

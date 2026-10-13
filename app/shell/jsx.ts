@@ -4,6 +4,10 @@
 // (`today/parts.tsx:30`), `data-proto-component` the component it is written in. Names of their own,
 // so a design's own `data-src` (a lazy-loaded image) is neither read as a place nor left unstamped. The dev transform
 // passes every tag's file and line as jsxDEV's fifth argument, which React itself no longer reads.
+// A tag that uses a component (`<Menu …/>`) can't carry an attribute, so its place goes in a
+// WeakMap on its props instead: React keeps those props on the component's fiber, and the comment
+// layer reads the map going up from the element a comment is on, to say which use of a shared
+// component that element belongs to. Kept on the window, so a device view's own copy has its own.
 import { Fragment, jsxDEV as reactJsxDEV } from 'react/jsx-dev-runtime'
 
 export { Fragment }
@@ -11,6 +15,7 @@ export { Fragment }
 type Source = { fileName?: string; lineNumber?: number; columnNumber?: number }
 const E = Error as ErrorConstructor & { stackTraceLimit?: number }
 const names = new Map<string, string>()
+const uses: WeakMap<object, string> = ((globalThis as { __protoUses?: WeakMap<object, string> }).__protoUses ??= new WeakMap())
 // An edit can rename the function a tag sits in without moving the tag, so each update starts afresh.
 if (import.meta.hot) import.meta.hot.on('vite:beforeUpdate', () => names.clear())
 
@@ -47,5 +52,8 @@ export function jsxDEV(type: unknown, props: Record<string, unknown>, key: unkno
     const component = componentOf(file.slice(at), `${src}:${source.columnNumber ?? 0}`)
     props = { ...props, 'data-proto-src': src, ...(component ? { 'data-proto-component': component } : {}) }
   }
-  return (reactJsxDEV as (...a: unknown[]) => unknown)(type, props, key, isStatic, source, self)
+  const element = (reactJsxDEV as (...a: unknown[]) => unknown)(type, props, key, isStatic, source, self) as { props?: object }
+  if ((typeof type === 'function' || (typeof type === 'object' && type !== null)) && at >= 0 && source?.lineNumber && element?.props)
+    uses.set(element.props, `${file.slice(at + 12)}:${source.lineNumber}`)
+  return element
 }
