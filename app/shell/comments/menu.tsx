@@ -5,7 +5,7 @@
 // variants does. Shift + right-click is never taken: the shell leaves it to the browser, and the
 // footer says so.
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { useCtx } from './ctx'
+import { useAgentName, useCtx } from './ctx'
 import { useStore } from './store'
 import { Icon, MOD, PRIMARY, Pulse } from './ui'
 
@@ -46,6 +46,7 @@ export function MenuRows({ rows, onAsk, onDone }: { rows: MenuRow[]; onAsk: (a: 
 
 /** The note (and count) a row asked for, then Send. Esc or Back goes back to the rows. */
 export function AskForm({ ask, onBack, onDone }: { ask: MenuAsk; onBack: () => void; onDone: () => void }) {
+  const agent = useAgentName()
   const { store } = useCtx()
   const listening = !!useStore(store).inbox?.listening
   const [note, setNote] = useState('')
@@ -66,11 +67,11 @@ export function AskForm({ ask, onBack, onDone }: { ask: MenuAsk; onBack: () => v
     catch (e) { setError(e instanceof Error ? e.message : 'Could not send') }
     finally { sending.current = false; setBusy(false) }
   }
-  const status = <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-zinc-500"><Pulse on={listening} className="size-1.5" /><span className="truncate">{listening ? 'Agent is listening' : 'Agent sees this on its next turn'}</span></span>
+  const status = <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-zinc-500"><Pulse on={listening} className="size-1.5" /><span className="truncate">{listening ? `${agent} is listening` : `${agent} sees this on its next turn`}</span></span>
   if (said) return (
     <div role="status" className="p-3">
       <p className="flex items-center gap-2 text-[13px] font-medium"><span className="grid size-5 shrink-0 place-items-center rounded-full bg-proto-primary-soft text-proto-primary-soft-fg"><Icon name="check" className="size-3" /></span>{ask.done(count)}</p>
-      <p className="mt-1.5 ps-7 text-xs text-zinc-500">{listening ? 'Sent to Agent.' : 'It waits until Agent listens, on its next turn.'}</p>
+      <p className="mt-1.5 ps-7 text-xs text-zinc-500">{listening ? `Sent to ${agent}.` : `It waits until ${agent} listens, on its next turn.`}</p>
     </div>
   )
   const step = 'grid size-8 place-items-center rounded-lg text-zinc-600 hover:bg-zinc-900/5 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10'

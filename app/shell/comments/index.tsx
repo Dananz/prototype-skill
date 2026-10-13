@@ -29,6 +29,7 @@ export function createComments(host: Host, sessionId: string) {
   createRoot(host.layer).render(wrap(<><Layer /><Selection /><CopyMarks /></>))
   return {
     store,
+    hostChanged: () => store.set({}),
     act,
     /** The copy picker (copy.tsx): its state and actions, for the T buttons, Esc and the stage. */
     copy: { store: copyStore, ...copyAct },
