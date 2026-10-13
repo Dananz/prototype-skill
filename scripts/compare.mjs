@@ -76,6 +76,9 @@ try {
     const t = await tab(scale)
     const url = new URL(rawUrl)
     url.hash = '/' + route.replace(/^\/+/, '')
+    // As proto shoot: no artboard frame (the page's design in its own iframe since the stage's
+    // artboard), so --click, --drag and the measured element are the design that shows.
+    url.searchParams.set('hints', '0')
     await send('Page.navigate', { url: url.href }, t.sessionId)
     await waitReady(t.ev)
     await t.ev('document.fonts.ready.then(() => new Promise(r => setTimeout(r, 400)))')

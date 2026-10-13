@@ -8,11 +8,12 @@ import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import { progress, type Store } from './store'
 import type { Action, Draft, Item, Place, Target, Time } from './types'
+import { shotsOf } from './types'
 import { routeOf } from './types'
 import { sameView } from '../view/sizes'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
-const hasWords = (d: Draft) => d.body.some(s => typeof s !== 'string' || s.trim()) || d.tags.length > 0 || !!d.shot
+const hasWords = (d: Draft) => d.body.some(s => typeof s !== 'string' || s.trim()) || d.tags.length > 0 || shotsOf(d).length > 0
 
 export function createActions(store: Store, host: Host) {
   const get = store.get, set = store.set
@@ -148,7 +149,7 @@ export function createActions(store: Store, host: Host) {
           // On the motion: a moment or a range, in ms of the take, and how long the take is.
           ...(i.time ? { at: i.time.at, ...(i.time.to !== undefined ? { to: i.time.to } : {}), take: i.time.take } : {}),
           ...(i.tags.length ? { tags: i.tags } : {}),
-          ...(i.shot ? { images: [{ dataUrl: i.shot, name: i.pasted ? 'pasted by the user' : 'marked up' }] } : {}),
+          ...(shotsOf(i).length ? { images: shotsOf(i).map(s => ({ dataUrl: s.src, name: s.pasted ? 'pasted by the user' : 'marked up' })) } : {}),
         })),
       }
       set({ sending: true, error: '' })

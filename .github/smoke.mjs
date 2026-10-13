@@ -18,6 +18,7 @@ import { commentParentChecks } from './comment-parent-checks.mjs'
 import { commentUsesChecks } from './comment-uses-checks.mjs'
 import { commentRoutesChecks } from './comment-routes-checks.mjs'
 import { commentNavigationChecks } from './comment-navigation-checks.mjs'
+import { commentPicturesChecks } from './comment-pictures-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -148,6 +149,7 @@ await commentParentChecks({ proto, app, openPage, fail })
 await commentUsesChecks({ proto, app, openPage, fail })
 await commentRoutesChecks({ proto, app, openPage, fail })
 await commentNavigationChecks({ app, openPage, fail })
+await commentPicturesChecks({ proto, app, openPage, fail })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
 proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--variants', 'A:Price only,B:Fuel tabs'])

@@ -32,7 +32,7 @@ export async function speedChecks({ proto, app, openPage, fail }) {
     .catch(e => e.cause?.code === 'ECONNRESET' ? post(path, body) : Promise.reject(e))
     .catch(e => fail(`posting to ${local}__proto/${path}: ${e.message} (${e.cause?.code || ''} ${e.cause?.message || ''})`))
   const dir = join(app, 'src', 'protos', 'speedfx')
-  proto(['add', 'speedfx', '--title', 'Speed fixtures', '--variants', 'A:Busy,B:Idle,C:Breakpoint,D:Touch'])
+  proto(['add', 'speedfx', '--title', 'Speed fixtures', '--variants', 'A:Busy,B:Idle,C:Breakpoint,D:Touch,E:Click'])
   writeFileSync(join(dir, 'A.tsx'), `import { useEffect, useState } from 'react'
 export default function Busy() {
   const [n, setN] = useState(0)
@@ -67,6 +67,17 @@ export default function Busy() {
   )
 }
 `)
+  // A box that turns from green to red when clicked: what --click reaches is what is measured.
+  writeFileSync(join(dir, 'E.tsx'), `import { useState } from 'react'
+export default function Click() {
+  const [on, setOn] = useState(false)
+  return (
+    <div className="grid h-full place-items-center">
+      <button data-shoot="box" onClick={() => setOn(true)} style={{ width: 200, height: 100, border: 0, background: on ? '#f43f5e' : '#10b981' }} />
+    </div>
+  )
+}
+`)
   await sleep(1500)
 
   // proto perf
@@ -96,6 +107,12 @@ export default function Busy() {
   writeFileSync(touchRef, solidPng(200, 100, [0x10, 0xb9, 0x81]))
   const phone = proto(['compare', 'speedfx/D', '--ref', touchRef, '--el', '[data-shoot=box]', '--size', '390x844'])
   if (!(pct(phone) < 1)) fail(`proto compare at a phone's size should be a touch device, as proto shoot is ((pointer: coarse)): ${phone}`)
+  // --click reaches the design that shows (not a copy behind the page's artboard frame), so the
+  // clicked box is the one captured.
+  const redRef = join(app, '.proto', 'speedfx-red-ref.png')
+  writeFileSync(redRef, solidPng(200, 100, [0xf4, 0x3f, 0x5e]))
+  const clicked = proto(['compare', 'speedfx/E', '--ref', redRef, '--el', '[data-shoot=box]', '--click', '[data-shoot=box]'])
+  if (!(pct(clicked) < 1)) fail(`proto compare --click should capture the clicked design (the box turns red): ${clicked}`)
 
   // A batch on two variants: grouped asks, the source in the inbox, one reply call
   const sent = await postJson('comments', { theme: 'light', viewport: { w: 1440, h: 900, phone: false }, comments: [
