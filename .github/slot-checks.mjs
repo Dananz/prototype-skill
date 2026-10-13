@@ -25,6 +25,13 @@ export default function B() { return <main><h1>Home B</h1><Slot proto="slothome"
   writeFileSync(join(protos, 'slotbtn/B.tsx'), `export default function B({ label = 'Go' }: { label?: string }) { return <button>Rounded {label}</button> }`)
   writeFileSync(join(protos, 'slotbtn/C.tsx'), `export default function C(): never { throw new Error('broken variant') }`)
 
+  // A decision made in the page, as its buttons send it: the server marks it and moves the pointer.
+  const decide = async (route, action) => {
+    const res = await fetch(`${local}__proto/comments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comments: [{ route, text: action === 'pick' ? `Picked ${route.split('/')[1]}` : 'Took the pick back', action }] }) })
+    const body = await res.json().catch(() => ({}))
+    assert(res.ok && body.results?.[0]?.done, `${action} ${route} answered ${res.status}: ${JSON.stringify(body.results ?? body)}`)
+  }
+
   const page = await openPage(`${local}#/slothome/B`)
   const until = async (words, why) => {
     const seen = await page.run(`(async () => { for (const end = Date.now() + 10000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { if (document.body.innerText.includes(${JSON.stringify(words)})) return 'ok' } return document.body.innerText.slice(-300) })()`)
@@ -41,6 +48,27 @@ export default function B() { return <main><h1>Home B</h1><Slot proto="slothome"
     await until('Rounded Go', 'the slot recovers when the pointer moves to a working variant')
     setUse('')
     await until('Original button', 'a cleared pointer shows the original again')
+
+    // The child says what it stands in for (proto add --slot writes the same two keys).
+    const child = metaOf('slotbtn')
+    child.from = 'slothome/B'
+    child.slot = 'cta'
+    writeFileSync(metaFile('slotbtn'), `export default ${JSON.stringify(child, null, 2)}\n`)
+    await decide('slotbtn/B', 'pick')
+    await until('Rounded Go', 'picking B plugs it into slothome/B')
+    assert(metaOf('slothome').slots.cta.use === 'slotbtn/B', 'the pick did not write the parent\'s pointer')
+    await decide('slotbtn/A', 'pick')
+    await until('Original button', 'picking Current puts the original back')
+    assert(!metaOf('slothome').slots.cta.use, 'picking Current left a pointer')
+    await decide('slotbtn/B', 'pick')
+    await until('Rounded Go', 'picking B again plugs it in')
+    await decide('slotbtn/B', 'unpick')
+    await until('Original button', 'taking the pick back puts the original back')
+    assert(!metaOf('slothome').slots.cta.use, 'the unpick left a pointer')
+    await decide('slotbtn/C', 'pick')
+    await until('Original button', 'a picked variant that throws still shows the original')
+    await decide('slotbtn/C', 'unpick')
+    proto(['inbox']) // the page's picks arrive done; take them so later queue counts start clean
   } finally { page.close() }
   console.log('\nOK: a variant plugs into its parent from a pick in the page and from proto pick, and handoff and inbox know it')
 }

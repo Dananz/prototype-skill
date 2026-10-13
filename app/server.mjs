@@ -102,6 +102,26 @@ export function slotPointers() {
   }
   return out
 }
+// A prototype made to stand in for part of another (`slot` in its meta.ts, `from` naming the
+// parent) plugs its pick in there at once: the pick is the slot's `use`. The variant called
+// Current (or As built) is the original, and so is no pick, so those clear it. Undoing a pick
+// clears it only while it is that variant.
+const isCurrent = name => /^(current|as built)$/i.test(String(name || '').trim())
+function plug(slug, meta, id, off) {
+  if (!meta.slot || typeof meta.from !== 'string') return
+  const parent = meta.from.split('/')[0]
+  let text, pm
+  try { text = readFileSync(metaFile(parent), 'utf8'); pm = metaOf(text) } catch { return }
+  const slot = pm.slots?.[meta.slot]
+  if (!slot) return
+  const use = `${slug}/${id}`
+  if (off && slot.use !== use) return
+  const next = off || isCurrent(meta.variants?.[id]) ? '' : use
+  if ((slot.use || '') === next) return
+  const { use: _, ...rest } = slot
+  pm.slots[meta.slot] = next ? { ...rest, use: next } : rest
+  writeWhole(metaFile(parent), withMeta(text, pm))
+}
 // A pick made in the page is what `proto pick` does, done at once instead of when the agent next
 // looks: the variant is marked in its meta.ts and becomes the working variant, its history starting
 // with "Picked <letter>" (the page's strip knows those words). Taking the pick back unmarks it only
@@ -112,6 +132,8 @@ function pick(route, off) {
   const [slug, id] = route.split('/')
   const text = readFileSync(metaFile(slug), 'utf8'), meta = metaOf(text)
   if (off && meta.picked !== id) return 'nothing'
+  // Before the pick is marked: if the parent can't be written, nothing is marked and `proto pick` redoes both.
+  plug(slug, meta, id, off)
   if (off) delete meta.picked
   else meta.picked = id
   writeWhole(metaFile(slug), withMeta(text, meta))
