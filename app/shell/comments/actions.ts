@@ -9,7 +9,7 @@ import type { Ctx, Host } from './ctx'
 import { progress, type Store } from './store'
 import type { Action, Draft, Item, Place, Target, Time } from './types'
 import { shotsOf } from './types'
-import { routeOf } from './types'
+import { inScope, routeOf } from './types'
 import { sameView } from '../view/sizes'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
@@ -19,11 +19,50 @@ export function createActions(store: Store, host: Host) {
   const get = store.get, set = store.set
   const here = (i: Item) => { const p = get().place; return !!p && i.proto === p.proto && i.variant === p.variant && (i.state ?? '') === (p.state ?? '') }
   let opening = 0
+  // Sent from the prototype the page was on when it began: a continuation after navigating on must not
+  // widen to what the new page holds (in the session lobby, which holds every prototype's comments).
+  const drafts = (scope: string | null) => get().items.filter(i => !i.sent && inScope(scope, i.proto))
+  async function sendIn(scope: string | null) {
+    const todo = drafts(scope)
+    if (!todo.length || get().sending) return
+    const phone = get().place?.phone ?? false
+    const batch: CommentBatch = {
+      theme: host.dark() ? 'dark' : 'light',
+      viewport: { w: innerWidth, h: innerHeight, phone },
+      comments: todo.map(i => ({
+        route: routeOf(i),
+        text: plain(i),
+        ...(i.target?.point ? { point: i.target.point } : {}),
+        target: i.target,
+        // Written in a device view: about that layout.
+        ...(i.target?.view ? { view: i.target.view } : {}),
+        // On the motion: a moment or a range, in ms of the take, and how long the take is.
+        ...(i.time ? { at: i.time.at, ...(i.time.to !== undefined ? { to: i.time.to } : {}), take: i.time.take } : {}),
+        ...(i.tags.length ? { tags: i.tags } : {}),
+        ...(shotsOf(i).length ? { images: shotsOf(i).map(s => ({ dataUrl: s.src, name: s.pasted ? 'pasted by the user' : 'marked up' })) } : {}),
+      })),
+    }
+    set({ sending: true, error: '' })
+    try {
+      const { id: batchId } = await host.send(batch)
+      const at = new Map(todo.map((d, k) => [d.id, k + 1]))
+      set(s => ({ sending: false, items: s.items.map(i => at.has(i.id) ? { ...i, sent: { batch: batchId, i: at.get(i.id)! } } : i) }))
+      // One added while this send was on its way is still a draft: in Send as I add, it follows at once.
+      if (get().live && drafts(scope).length) void sendIn(scope)
+    } catch (e) {
+      set({ sending: false, error: e instanceof Error ? e.message : 'Could not send' })
+    }
+  }
   const act = {
     here,
     /** Comments on what is on screen. */
     onScreen: () => get().items.filter(here),
-    drafts: () => get().items.filter(i => !i.sent),
+    /** Comments of the prototype the page is on (all of them in the session lobby). */
+    inScope: () => get().items.filter(i => inScope(get().scope, i.proto)),
+    drafts: () => drafts(get().scope),
+
+    /** The prototype the page is on, or null in the session lobby. */
+    setScope(scope: string | null) { if (get().scope !== scope) set({ scope }) },
 
     /** The page moved (or stopped being somewhere comments can go). */
     setPlace(place: Place | null) {
@@ -121,7 +160,7 @@ export function createActions(store: Store, host: Host) {
     resume() { opening++; const h = get().held; if (h) set({ active: null, mode: h.time ? { kind: 'time', time: h.time } : { kind: 'compose', target: h.target! } }) },
     discardHeld() { set({ held: null }) },
     /** Called as a new comment is written, so it survives being put away. */
-    hold(d: Draft, target?: Target, time?: Time) { set({ held: hasWords(d) ? { ...d, ...(time ? { time } : { target }) } : null }) },
+    hold(d: Draft, target?: Target, time?: Time) { set(s => ({ held: hasWords(d) ? { ...d, ...(time ? { time } : { target }), ...(s.place ? { proto: s.place.proto } : {}) } : null })) },
     /** Pressing the design while a comment is open: the comment stays where it is and the composer says so. */
     guard() { if (get().mode.kind === 'compose') set(s => ({ nudge: s.nudge + 1 })) },
 
@@ -156,38 +195,8 @@ export function createActions(store: Store, host: Host) {
       set(x => ({ items: x.items.filter(i => !gone.has(i.id)), ...(open ? { mode: { kind: 'idle' as const }, active: null } : {}) }))
     },
 
-    /** Every draft, as one batch. */
-    async send() {
-      const drafts = get().items.filter(i => !i.sent)
-      if (!drafts.length || get().sending) return
-      const phone = get().place?.phone ?? false
-      const batch: CommentBatch = {
-        theme: host.dark() ? 'dark' : 'light',
-        viewport: { w: innerWidth, h: innerHeight, phone },
-        comments: drafts.map(i => ({
-          route: routeOf(i),
-          text: plain(i),
-          ...(i.target?.point ? { point: i.target.point } : {}),
-          target: i.target,
-          // Written in a device view: about that layout.
-          ...(i.target?.view ? { view: i.target.view } : {}),
-          // On the motion: a moment or a range, in ms of the take, and how long the take is.
-          ...(i.time ? { at: i.time.at, ...(i.time.to !== undefined ? { to: i.time.to } : {}), take: i.time.take } : {}),
-          ...(i.tags.length ? { tags: i.tags } : {}),
-          ...(shotsOf(i).length ? { images: shotsOf(i).map(s => ({ dataUrl: s.src, name: s.pasted ? 'pasted by the user' : 'marked up' })) } : {}),
-        })),
-      }
-      set({ sending: true, error: '' })
-      try {
-        const { id: batchId } = await host.send(batch)
-        const at = new Map(drafts.map((d, k) => [d.id, k + 1]))
-        set(s => ({ sending: false, items: s.items.map(i => at.has(i.id) ? { ...i, sent: { batch: batchId, i: at.get(i.id)! } } : i) }))
-        // One added while this send was on its way is still a draft: in Send as I add, it follows at once.
-        if (get().live && get().items.some(i => !i.sent)) void act.send()
-      } catch (e) {
-        set({ sending: false, error: e instanceof Error ? e.message : 'Could not send' })
-      }
-    },
+    /** Every draft of the prototype on screen, as one batch. */
+    send() { return sendIn(get().scope) },
     /**
      * A decision on a variant (Pick, More like this, Build it), sent at once as a batch of its own:
      * a comment with the action and no element, the note as its words. It joins the list as already

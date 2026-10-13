@@ -20,7 +20,7 @@ export function createStore(sessionId: string) {
     } catch { return { items: [], held: null } }
   }
   const saved = read()
-  let state: State = { items: saved.items, held: saved.held, mode: { kind: 'idle' }, active: null, nudge: 0, pendingTag: null, place: null, sheet: false, sending: false, wholeFocus: false, focusAsk: false, live: readLive(), error: '' }
+  let state: State = { items: saved.items, held: saved.held, mode: { kind: 'idle' }, active: null, nudge: 0, pendingTag: null, place: null, scope: null, sheet: false, sending: false, wholeFocus: false, focusAsk: false, live: readLive(), error: '' }
   const listeners = new Set<() => void>()
   let timer = 0
   const persist = () => {

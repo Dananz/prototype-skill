@@ -46,7 +46,8 @@ export const shotsOf = (d: Pick<Draft, 'shots' | 'shot' | 'pasted'>): Shot[] =>
  */
 export type Time = { at: number; to?: number; take: number }
 /** An unfinished new comment, and the element (or the moment of the motion) it was started on. */
-export type Held = Draft & { target?: Target; time?: Time }
+/** `proto` is the prototype it was started in; one saved before that was recorded has none and shows in any. */
+export type Held = Draft & { target?: Target; time?: Time; proto?: string }
 
 /**
  * A decision on a variant, made in the page: pick it (or take the pick back), more like it, build
@@ -96,6 +97,8 @@ export type State = {
   /** An element picked to be tagged, waiting for the open composer to take it. */
   pendingTag: Target | null
   place: Place | null
+  /** The prototype the page is on (in one of its variants or its lobby): the list shows its comments only. Null in the session lobby, which shows all. */
+  scope: string | null
   inbox?: Inbox
   /** The phone's list, in a sheet. */
   sheet: boolean
@@ -108,5 +111,8 @@ export type State = {
   live: boolean
   error: string
 }
+
+/** Whether a comment (or the unfinished one, which may have no prototype) belongs to what the page is on. */
+export const inScope = (scope: string | null, proto?: string) => scope === null || !proto || proto === scope
 
 export const routeOf = (p: { proto: string; variant: string; state?: string }) => `${p.proto}/${p.variant}${p.state ? `/${p.state}` : ''}`
