@@ -89,6 +89,8 @@ const RANGE = 'h-11 min-w-0 flex-1 cursor-pointer appearance-none bg-transparent
   + '[&::-moz-range-thumb]:size-6 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:shadow-[0_1px_4px_rgba(0,0,0,.25),0_0_0_1px_rgba(0,0,0,.08)]'
 // The sidebar's width: dragged between these, double-click resets it.
 const SIDE_W = 320, SIDE_MIN = 260, SIDE_MAX = 480
+// Where the sidebar's two columns meet, as the share the first one takes of them: dragged between these.
+const SPLIT_W = 0.5, SPLIT_LO = 0.2, SPLIT_HI = 0.8
 const INTERACTIVE = 'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="slider"], [role="listbox"], [role="menu"]'
 const TOOLS: Record<Tool, { name: string; icon: string; hint: string }> = {
   play: { name: 'Autoplay', icon: 'play', hint: 'Clicks through every state for you' },
@@ -160,6 +162,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     archived: false,
     side: q.has('side') ? q.get('side') !== '0' : localStorage.getItem('proto-side') !== '0',
     sideW: Math.min(SIDE_MAX, Math.max(SIDE_MIN, Number(localStorage.getItem('proto-side-w')) || SIDE_W)),
+    split: Math.min(SPLIT_HI, Math.max(SPLIT_LO, Number(localStorage.getItem('proto-split')) || SPLIT_W)),
     drawer: false,
     // The phone's variant sheet, opened from the bottom pill.
     sheet: false,
@@ -1400,7 +1403,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         <span class="min-w-0 flex-1 leading-tight"><span dir="auto" class="block truncate text-[10px] text-zinc-500">${esc(colName(c))}</span><span class="flex min-w-0 items-center gap-1 font-medium">${v ? `<span dir="auto" class="truncate">${esc(v.name)}</span>${c.kind === 'variants' && v.id === pickOf(c.p) ? ic('check', `size-3 shrink-0 ${PICK}`) : ''}` : k ? `<span dir="auto" class="truncate">${esc(k.title)}</span>` : '<span class="font-normal text-zinc-400">Choose one</span>'}</span></span>
         <span class="shrink-0 text-[10px] tabular-nums text-zinc-400">${colCount(c)}</span>${ic('chev', 'size-3 shrink-0 text-zinc-400')}</button>`
     }
-    const box = `<div class="my-1 flex max-h-[26rem] divide-x divide-black/[.06] overflow-hidden rounded-xl ring-1 ring-black/[.08] dark:divide-white/[.07] dark:ring-white/10">${pair.map((c, k) => `<div class="flex min-w-0 flex-1 flex-col pt-0.5 ${k === 0 && pair.length > 1 ? 'bg-zinc-900/[.02] dark:bg-white/[.02]' : ''}">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1 pb-1.5">${colRows(c)}</div></div>`).join('')}</div>`
+    // Two columns meet at a separator that can be dragged (see "resizing the columns"); the first takes
+    // its share from --split, the second the rest, and neither goes under 6rem.
+    const two = pair.length > 1
+    const split = `<div data-split role="separator" aria-orientation="vertical" aria-label="Resize columns" aria-valuemin="${SPLIT_LO * 100}" aria-valuemax="${SPLIT_HI * 100}" aria-valuenow="${Math.round(st.split * 100)}" tabindex="0" title="Drag to resize · double-click to reset" class="group/s relative z-10 -mx-[3px] w-1.5 shrink-0 cursor-col-resize touch-none outline-none"><span class="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-black/[.06] transition-colors group-hover/s:w-0.5 group-hover/s:bg-sky-500/50 group-focus-visible/s:w-0.5 group-focus-visible/s:bg-sky-500 [[data-splitting]_&]:w-0.5 [[data-splitting]_&]:bg-sky-500 dark:bg-white/[.07]"></span></div>`
+    const box = `<div class="my-1 flex max-h-[26rem] overflow-hidden rounded-xl ring-1 ring-black/[.08] dark:ring-white/10">${pair.map((c, k) => `${k ? split : ''}<div ${two && !k ? 'style="flex:0 1 calc(var(--split) * 100%)"' : ''} class="flex min-w-24 flex-col pt-0.5 ${two && !k ? 'bg-zinc-900/[.02] dark:bg-white/[.02]' : 'flex-1'}">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1 pb-1.5">${colRows(c)}</div></div>`).join('')}</div>`
 
     // The variant shown: its states (each opens it in that state) and its tools.
     const p = cur(), pv = st.place.view === 'variant' ? st.place : null
@@ -1681,6 +1688,43 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const d = e.key === 'ArrowLeft' ? -16 : e.key === 'ArrowRight' ? 16 : 0
     if (d) { e.preventDefault(); setSideW(st.sideW + d) }
   })
+
+  // ---------- resizing the columns ----------
+  // The separator is in markup the chrome redraws, so a drag is held by the sidebar and the drawer,
+  // which it never redraws, and the split is one variable on the shell's root: nothing redraws.
+  const setSplit = (f: number, save = true) => {
+    st.split = Math.round(Math.min(SPLIT_HI, Math.max(SPLIT_LO, f)) * 1000) / 1000
+    root.style.setProperty('--split', String(st.split))
+    root.querySelectorAll('[data-split]').forEach(el => el.setAttribute('aria-valuenow', String(Math.round(st.split * 100))))
+    if (save) remember('proto-split', String(st.split))
+  }
+  setSplit(st.split, false)
+  for (const host of [side, drawer]) {
+    const onSplit = (e: Event) => (e.target as HTMLElement).closest<HTMLElement>('[data-split]')
+    host.addEventListener('pointerdown', e => {
+      const h = onSplit(e)
+      if (!h || e.button !== 0) return
+      e.preventDefault()
+      host.setPointerCapture(e.pointerId)
+      host.dataset.splitting = ''
+      document.documentElement.style.cursor = 'col-resize'
+      const box = h.parentElement!.getBoundingClientRect()
+      const move = (m: PointerEvent) => setSplit((m.clientX - box.left) / box.width, false)
+      const end = () => {
+        host.removeEventListener('pointermove', move)
+        delete host.dataset.splitting
+        document.documentElement.style.cursor = ''
+        setSplit(st.split)
+      }
+      host.addEventListener('pointermove', move)
+      host.addEventListener('lostpointercapture', end, { once: true })
+    })
+    host.addEventListener('dblclick', e => { if (onSplit(e)) setSplit(SPLIT_W) })
+    host.addEventListener('keydown', e => {
+      const h = onSplit(e), d = e.key === 'ArrowLeft' ? -0.04 : e.key === 'ArrowRight' ? 0.04 : 0
+      if (h && d) { e.preventDefault(); setSplit(st.split + d) }
+    })
+  }
 
   // ---------- Try it: what the design on the stage says a reviewer needs ----------
   // Docked at the stage's right edge on a wide screen, so the design narrows instead of being
