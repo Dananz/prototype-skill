@@ -602,9 +602,10 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
    you can't act on is left out of that call and gets its own reply without `--done` saying why.
    A comment whose answer is new variants or a new prototype ("more variants for this", a `more`
    decision) is answered as soon as they are added, not when they are built: `proto add` them,
-   then `proto reply <batch>/<n> "<what is building, and where>" --until <slug>` (or
+   then `proto reply <batch>/<n> "<where they are, and what they are>" --until <slug>` (or
    `<slug>/<letter>,…`). The page shows that reply under "Claude is on it", and `proto done`
-   closes the comment when the last of those variants is built. Without `--done` or `--until`, a
+   closes the comment when the last of those variants is built, keeping the reply: write it to
+   read right both times ("In «Super set, more ways», under this case: …", not "Building now…"). Without `--done` or `--until`, a
    comment stays "on it" in the page for good; when comments arrive, `proto inbox` lists any still open.
 6. Listen again.
 
