@@ -9,15 +9,141 @@
 
 **Several live, clickable versions of any UI, built while you watch.**
 
-[![Agents](https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20OpenCode-skill-4f46e5)](#install)
+[![Agents](https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20OpenCode-skill-4f46e5)](#requirements)
 [![License](https://img.shields.io/github/license/DananzMolt/prototype-skill?color=4f46e5)](LICENSE)
-[![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-1a1a1a)](#install)
+[![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-1a1a1a)](#requirements)
 
-[Install](#install) &middot; [Use](#use) &middot; [Features](#features)
+[Claude Code](#claude-code) &middot; [Codex](#codex) &middot; [Other agents](#other-agents) &middot; [Features](#features)
 
 </div>
 
-Prototype is an Agent Skill for Claude Code, Codex, OpenCode and other coding agents that can read `SKILL.md` and run local commands. Ask for a few versions of a screen and your agent opens one live app for your session, sends you its link, and builds one usable direction first, then fills in the remaining requested or default design exploration while you watch. Each one starts from a faithful rebuild of your real screen, so they all look like your product. Then your agent checks its own screenshots and tells you what it recommends, and why. Ask for more directions from Actions → More like this, or right-click a prototype and choose More variants (it offers as many as the prototype started with). Right-click works on variants, prototypes, comments and the design itself; Shift + right-click is always the browser's own menu. Actions → Needs explanation or Generate copy options requests guided demo content or alternative headlines and text later, through the comments inbox; highlighting words on the page offers the same copy request, and a comment, on just those words. On a phone these actions live in the variant sheet. Requests wait in Comments, where you can delete one to cancel it; completed extras use the existing Try it panel and copy picker.
+Ask your agent for a few versions of a UI. Prototype opens one live app, builds clickable
+variants while you watch, and checks them against your real product. Review them, leave
+comments on the design, and choose which one to build into your codebase.
+
+## Requirements
+
+- Node **22.12+** (or a newer supported LTS) and pnpm or npm.
+- Chrome, Chromium or Edge for screenshots; terminal, file editing and image viewing in your agent.
+- macOS, Linux or Windows. Optional [Tailscale](https://tailscale.com) makes the link reachable on your phone; otherwise use the local URL.
+
+Subagents and image generation are optional. Sandboxed agents need package installation,
+access to the preview server, and write access to `<project>/.prototypes/` and `~/.prototypes/`.
+A remote container cannot reach a laptop's `localhost` directly.
+
+## Claude Code
+
+Install from the plugin marketplace:
+
+```text
+/plugin marketplace add DananzMolt/prototype-skill
+/plugin install prototype@prototype-skill
+```
+
+Then ask for a prototype:
+
+```text
+/prototype the checkout page
+/prototype 3 empty states for the inbox
+```
+
+Turn on auto-update under `/plugin` → Marketplaces → `prototype-skill`.
+
+<details>
+<summary>Install without the plugin system</summary>
+
+```sh
+git clone https://github.com/DananzMolt/prototype-skill ~/.claude/skills/prototype
+```
+
+Update with `git -C ~/.claude/skills/prototype pull --ff-only`. On Windows, use
+`"$HOME\.claude\skills\prototype"` as the clone destination in PowerShell.
+</details>
+
+## Codex
+
+Clone the complete repository into the [user skill directory](https://learn.chatgpt.com/docs/build-skills):
+
+```sh
+git clone https://github.com/DananzMolt/prototype-skill ~/.agents/skills/prototype
+```
+
+Then invoke the skill, or select it in the skill picker:
+
+```text
+$prototype 3 alternatives for the checkout page
+```
+
+Update with `git -C ~/.agents/skills/prototype pull --ff-only`. Restart Codex if the skill
+does not appear. For a project-only install, use `<project>/.agents/skills/prototype`.
+
+<details>
+<summary>Windows or an existing Claude installation</summary>
+
+In PowerShell:
+
+```powershell
+git clone https://github.com/DananzMolt/prototype-skill "$HOME\.agents\skills\prototype"
+```
+
+On macOS or Linux, reuse an existing Claude checkout with a symlink:
+
+```sh
+mkdir -p ~/.agents/skills
+ln -s ~/.claude/skills/prototype ~/.agents/skills/prototype
+```
+
+Use a clone or a symlink at that destination, not both.
+</details>
+
+## Other agents
+
+[OpenCode](https://opencode.ai/docs/skills/) also discovers the shared skill directory:
+
+```sh
+git clone https://github.com/DananzMolt/prototype-skill ~/.agents/skills/prototype
+```
+
+Ask it to use the skill:
+
+```text
+Use prototype to build a few versions of the settings drawer.
+```
+
+For another agent, install the complete repository in its documented skill directory,
+or ask it to read `<checkout>/SKILL.md` and follow it. The agent needs local command execution,
+file editing and image viewing. Slash commands and automatic discovery depend on the host.
+Copy the whole repository, not just `SKILL.md`.
+
+## Comments and follow-ups
+
+Keep talking in the same conversation and everything lands in the same app:
+
+| You say | You get |
+| --- | --- |
+| "two more" | D and E next to A, B and C |
+| "B, but with a map" | new variants built from B |
+| "try other headlines" | copy options you can pick on the design |
+| "go with A" | A marked as the pick |
+| "build it" | the real feature in your codebase |
+
+You can also send comments and requests from the prototype itself. **Automatic responses
+while the agent is idle require background wakeups from the host.** Otherwise comments stay
+saved until the next turn; send the agent "check the prototype comments" to pick them up.
+
+## Features
+
+- **Live variants:** one app and link per conversation, with placeholders that fill in as the agent writes. Changes appear without a reload.
+- **Your product first:** variant A, "Current", matches today's screen using its real assets, tokens and sizes. Other variants start from it. Supports React and Vue, including Hebrew and Arabic layouts.
+- **Design kits:** matched screens, tokens and shared chrome are saved for later sessions. The agent checks whether the real product has changed before reusing them.
+- **Review tools:** side-by-side views, focus mode, desktop/tablet/phone layouts, state lists, autoplay and comparison. The agent checks screenshots on desktop and phone, then recommends a direction.
+- **Comments, copy and motion:** pin comments and tag elements, try wording options, or scrub animations and comment on a moment or range. A Try it panel can explain inputs and scenarios.
+
+Actions → More like this and a prototype's More variants menu request more directions.
+Needs explanation and Generate copy options request review content through the comments
+inbox; highlighting text offers copy options and comments for those words. On phones,
+these tools live in the variant sheet and pill menu. Right-click opens menus throughout
+the app; Shift + right-click keeps the browser menu. Delete a pending request to cancel it.
 
 <p align="center">
 <picture>
@@ -35,163 +161,62 @@ Prototype is an Agent Skill for Claude Code, Codex, OpenCode and other coding ag
 <br><sub>Comments on the design go to your agent, who makes the change and replies.</sub>
 </p>
 
-## Install
-
-Needs Node **22.12+** (or a newer supported LTS), pnpm or npm, and Chrome, Chromium or Edge
-for screenshots. Runs on macOS, Linux and Windows. [Tailscale](https://tailscale.com) is
-optional, it makes the link reachable on your phone; without it, use the local URL.
-The agent needs terminal and file-editing access and image viewing for visual QA.
-Subagents and image generation improve the workflow when available, but are not required
-to run the app. The runtime writes app files under `<project>/.prototypes/` and its session
-registry under `~/.prototypes/`. Cloud or sandboxed agents need write access to both, package
-installation and access to the preview server; a laptop's `localhost` is not reachable from a remote container.
-
-### Codex and OpenCode
-
-Install the complete repository in the shared user skill directory:
-
-```sh
-git clone https://github.com/DananzMolt/prototype-skill ~/.agents/skills/prototype
-```
-
-In PowerShell:
-
-```powershell
-git clone https://github.com/DananzMolt/prototype-skill "$HOME\.agents\skills\prototype"
-```
-
-[Codex](https://learn.chatgpt.com/docs/build-skills) and
-[OpenCode](https://opencode.ai/docs/skills/) both discover `~/.agents/skills`.
-For a project-only installation, use `<project>/.agents/skills/prototype` instead.
-Clone the whole repository, `SKILL.md` alone cannot run the app. Update with
-`git -C ~/.agents/skills/prototype pull --ff-only`. Restart the agent if it does not
-show the new skill.
-
-If you already have this checkout installed for Claude, Codex also supports a symlink:
-
-```sh
-mkdir -p ~/.agents/skills
-ln -s ~/.claude/skills/prototype ~/.agents/skills/prototype
-```
-
-Use either a clone or a symlink at that destination, not both. Other agents can use their
-own documented skill directory, or read this repository's `SKILL.md` explicitly and follow
-it. Slash commands and automatic discovery depend on the host, not this CLI.
-
-### Claude Code
-
-From the plugin marketplace:
-
-```
-/plugin marketplace add DananzMolt/prototype-skill
-/plugin install prototype@prototype-skill
-```
-
-Turn on auto-update for `prototype-skill` under `/plugin` → Marketplaces. Without the
-plugin system, clone into `~/.claude/skills/prototype` (PowerShell:
-`"$HOME\.claude\skills\prototype"`) and update with `git pull --ff-only`.
-
-## Use
-
-In Codex, invoke `$prototype` (or select it in the skill picker):
-
-```text
-$prototype 3 alternatives for the checkout page
-```
-
-In Claude Code:
-
-```
-/prototype the checkout page
-/prototype 3 empty states for the inbox
-```
-
-In OpenCode or another skill-aware agent, ask it to use `prototype` for "a few versions of the settings drawer". Natural-language requests also work when the host supports automatic skill selection. Keep talking in the same session and everything lands in the same app:
-
-| You say | You get |
-|---|---|
-| "two more" | D and E next to A, B and C |
-| "B, but with a map" | new variants built from B |
-| "try other headlines" | options for those lines, picked on the design |
-| "go with A" | A marked as the pick |
-| "build it" | the real feature in your codebase |
-
-## Features
-
-### Live
-- One app and one link per session, which opens on your phone too.
-- Each variant appears as a placeholder and fills in the moment your agent writes it. No reloads.
-
-### Built from your product
-- Variant A, "Current", rebuilds today's screen from your real assets, colors and sizes, checked against a screenshot until they match. Every other variant starts from it.
-- Follows your stack (React or Vue), and lays out Hebrew and Arabic right to left from the first line.
-
-### Made for reviewing
-- Step through the variants, see them side by side or full size, or hide everything but the design.
-- Open menus, drawers and steps from a list, autoplay them, or compare two variants in the same state.
-- A Try it panel tells you what to type and where to click.
-- The first session on a project saves its look (tokens, rebuilt tab bars and headers, matched screens) as a design kit. Later sessions start from it instead of rebuilding it, and your agent checks whether your app has changed since.
-- Comment directly on any part of a design, and visually select other elements to reference. No custom element names or named-element dropdown. Your agent makes the change and replies.
-- See the page at a phone's, a tablet's or a desktop's size from any screen, and comment on that layout.
-- Ask for other copy, then try your agent's options on the design itself and send back the ones you pick.
-- Scrub an animation forward and back, see each part's curve, and comment on one moment of it or a stretch of it. Your agent reads the frames, changes the timing and replies.
-- Tools stay out of the way until you ask for them: on a phone the pill holds the variants and Comment, and one menu holds the rest.
-
-### A pick, not a pile
-- Your agent screenshots every variant on desktop and phone, fixes what it sees over two rounds, then recommends one and says why.
-
 ## How it works
 
-Each conversation's app lives in `<project>/.prototypes/<session>/`, git-ignored, so your project's files are never touched. It stops after 6 hours with nothing open and comes back on the same link when you ask again. Sessions untouched for 14 days are deleted unless you keep them.
+Apps live in `<project>/.prototypes/<session>/`, git-ignored, and leave your product files
+untouched. An app stops after 6 hours with nothing open and restarts on the same link.
+Sessions untouched for 14 days are deleted unless you keep them.
 
-### Session identity and comments
+<details>
+<summary>CLI, session identity and agent recovery</summary>
 
-The CLI uses `--session`, then `PROTO_SESSION_ID`, `CODEX_THREAD_ID`,
-`CLAUDE_CODE_SESSION_ID`, or `CLAUDE_SESSION_ID`, in that order. When a host does not expose
-an ID, the agent generates a unique ID once and reuses `--session <id>` on every call.
-Separate conversations must use different IDs. New UUID sessions keep the full ID, so
-time-based Codex IDs cannot share an app. Existing shortened UUID sessions resume only when
-the stored full ID matches. Workers always pass the parent's ID and
-`--project <root>` explicitly. `proto ls` lists prior sessions for resuming work.
-
-`proto` in the skill means `node "<installed-skill-dir>/scripts/proto.mjs"`. For example,
-run this from your product folder, reusing the same session name for later commands:
+`proto` in the skill means `node "<installed-skill-dir>/scripts/proto.mjs"`.
+From your product folder:
 
 ```sh
 node ~/.agents/skills/prototype/scripts/proto.mjs up --session checkout-demo --name "Checkout"
 node ~/.agents/skills/prototype/scripts/proto.mjs inbox --session checkout-demo
 ```
 
-Replies detect Codex and Claude when their identity variables exist. Other hosts use a
-neutral agent mark. `PROTO_AGENT=codex|claude|agent` or `reply --as codex|claude|agent`
-overrides the mark. `PROTO_AGENT_PID` optionally identifies a long-lived agent process
-for interrupted-comment recovery; never set it to a short-lived command's PID.
+The CLI chooses a session from `--session`, `PROTO_SESSION_ID`, `CODEX_THREAD_ID`,
+`CLAUDE_CODE_SESSION_ID`, or `CLAUDE_SESSION_ID`, in that order. Without a host ID, the agent
+generates a unique ID once and reuses it on every call. Separate conversations use different
+IDs. Workers pass the parent's ID and `--project <root>` explicitly. `proto ls` lists sessions
+to resume.
 
-Comments persist in the app's inbox. Automatic response while idle requires a host that
-wakes the agent when a background `inbox --wait` completes. Without that capability, the
-agent checks the inbox on active turns; send it a chat message to pick up new comments.
+New UUID sessions keep the full ID, preventing collisions between time-based Codex IDs.
+Existing shortened UUID sessions resume only when the stored full ID matches.
+
+Replies detect Codex or Claude when their identity variables exist; other agents get a
+neutral mark. Set `PROTO_AGENT` to `codex`, `claude` or `agent`, or pass `reply --as <agent>`,
+to override it. `PROTO_AGENT_PID` can identify a long-lived agent process for interrupted-comment
+recovery; never use a short-lived command's PID.
+
+The agent reads `proto inbox` on active turns. A host with background completion wakeups
+can also use `proto inbox --wait` to react to comments while idle.
+</details>
 
 ## Contributing
 
-Issues and pull requests are welcome. `SKILL.md` is what agents follow, `references/`
-contains conditional guidance, `scripts/proto.mjs` runs sessions, and `app/` is the template.
-`AGENTS.md` holds repository development instructions; `CLAUDE.md` imports it.
+`SKILL.md` is the workflow, `references/` contains conditional guidance, `scripts/proto.mjs`
+runs sessions, and `app/` is the template. Repository instructions live in `AGENTS.md`,
+which `CLAUDE.md` imports.
 
-Fast local checks (also run in CI):
+Fast checks, also run in CI:
 
 ```sh
 node --test .github/agent-checks.mjs
 node scripts/proto.mjs stack --project .
 ```
 
-The complete browser regression suite creates temporary apps and cleans up its servers:
+Full browser regression suite (requires the screenshot dependencies above):
 
 ```sh
 node .github/smoke.mjs
 ```
 
-It needs the runtime and screenshot dependencies listed above. Syntax/CLI checks alone
-cannot verify browser behavior.
+The suite creates temporary apps and cleans up its servers. Syntax and CLI checks alone
+cannot verify browser behavior. Issues and pull requests are welcome.
 
 ## License
 
