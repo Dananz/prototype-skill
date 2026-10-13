@@ -1,6 +1,8 @@
 // Small pieces the comment layer shares: icons (the shell's own set plus the comment tools), the
 // primary color classes (placeholder tokens in shell.css), and a few text pieces.
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { Tooltip } from '@base-ui/react/tooltip'
+import { uiBox } from '../portals'
 import { SIZE_PATHS, sizeIcon, sizeName, type ViewSize } from '../view/sizes'
 import type { Action, CState, Item, Seg, Target } from './types'
 
@@ -24,21 +26,55 @@ export function Icon({ name, className = 'size-4' }: { name: string; className?:
   return <svg className={`${className} shrink-0`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PATHS[name]} /></svg>
 }
 
-/**
- * An image the user pasted or dropped, as a chip: a small thumbnail and "Image", the full picture on hover. The composer
- * puts it in its action row (beside @ and the camera) with a remove ×; a click draws on it. The rail shows the same chip,
- * so a comment that carries a picture reads as one at a glance without taking the row's room.
- */
+/** One row of pictures, fading only the edges that have more content offscreen. */
+export function PictureStrip({ children, className = '' }: { children: ReactNode; className?: string }) {
+  const box = useRef<HTMLSpanElement>(null)
+  const row = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const el = box.current!, content = row.current!
+    let previous = ''
+    const update = () => {
+      const max = el.scrollWidth - el.clientWidth
+      const left = Math.max(0, Math.min(max, el.scrollLeft))
+      const start = left > 1, end = max - left > 1
+      const edges = `${start}:${end}:${max > 1}`
+      if (edges === previous) return
+      previous = edges
+      const mask = start || end
+        ? `linear-gradient(to right, ${start ? 'transparent' : '#000'}, #000 ${start ? '16px' : '0px'}, #000 calc(100% - ${end ? '16px' : '0px'}), ${end ? 'transparent' : '#000'})`
+        : 'none'
+      el.style.maskImage = mask
+      el.style.webkitMaskImage = mask
+      el.tabIndex = max > 1 ? 0 : -1
+    }
+    const observer = new ResizeObserver(update)
+    observer.observe(el); observer.observe(content)
+    el.addEventListener('scroll', update, { passive: true })
+    update()
+    return () => { observer.disconnect(); el.removeEventListener('scroll', update) }
+  }, [])
+  return <span ref={box} data-shoot="comment-pictures" dir="ltr" role="region" aria-label="Comment pictures" className={`block min-w-0 max-w-full overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-proto-primary-ring ${className}`}>
+    <span ref={row} className="flex w-max min-w-full items-center gap-2 px-2 py-2 [&>*]:shrink-0">{children}</span>
+  </span>
+}
+
+/** A pasted image as a chip, with a preview portaled outside the strip's clipping and mask. */
 export function ImageChip({ src, onOpen, onRemove, size = 'md' }: { src: string; onOpen?: () => void; onRemove?: () => void; size?: 'sm' | 'md' }) {
   const h = size === 'sm' ? 'h-6' : 'h-7'
   return (
-    <span data-shoot="image-chip" className={`group/chip relative inline-flex ${h} shrink-0 items-center gap-1.5 rounded-lg bg-proto-primary-soft ps-1 ${onRemove ? 'pe-0.5' : 'pe-2'} text-[11px] font-medium text-proto-primary-soft-fg`}>
-      {onOpen
-        ? <button onClick={onOpen} title="Draw on the image" className="inline-flex items-center gap-1.5"><img src={src} alt="" className="size-5 rounded object-cover ring-1 ring-black/10 dark:ring-white/20" />Image</button>
-        : <span className="inline-flex items-center gap-1.5"><img src={src} alt="" className="size-5 rounded object-cover ring-1 ring-black/10 dark:ring-white/20" />Image</span>}
-      {onRemove && <button onClick={onRemove} aria-label="Remove the image" title="Remove the image" className="grid size-6 place-items-center rounded-md hover:bg-zinc-900/5 dark:hover:bg-white/10"><Icon name="x" className="size-3" /></button>}
-      <span className="pointer-events-none absolute bottom-full start-0 z-20 mb-2 hidden w-56 overflow-hidden rounded-lg bg-white shadow-xl ring-1 ring-black/10 group-hover/chip:block dark:bg-zinc-900 dark:ring-white/15"><img src={src} alt="" className="block w-full" /></span>
-    </span>
+    <Tooltip.Root>
+      <Tooltip.Trigger delay={0} render={<span />} data-shoot="image-chip" className={`relative inline-flex ${h} shrink-0 items-center gap-1.5 rounded-lg bg-proto-primary-soft ps-1 ${onRemove ? 'pe-0.5' : 'pe-2'} text-[11px] font-medium text-proto-primary-soft-fg`}>
+        {onOpen
+          ? <button onClick={onOpen} title="Draw on the image" className="inline-flex items-center gap-1.5"><img src={src} alt="" className="size-5 rounded object-cover ring-1 ring-black/10 dark:ring-white/20" />Image</button>
+          : <span className="inline-flex items-center gap-1.5"><img src={src} alt="" className="size-5 rounded object-cover ring-1 ring-black/10 dark:ring-white/20" />Image</span>}
+        {onRemove && <button onClick={onRemove} aria-label="Remove the image" title="Remove the image" className="grid size-6 place-items-center rounded-md hover:bg-zinc-900/5 dark:hover:bg-white/10"><Icon name="x" className="size-3" /></button>}
+      </Tooltip.Trigger>
+      <Tooltip.Portal container={uiBox()}>
+        <Tooltip.Positioner side="top" align="start" sideOffset={8} collisionPadding={8} className="pointer-events-none z-[250]">
+          <Tooltip.Popup className="w-56 overflow-hidden rounded-lg bg-white shadow-xl ring-1 ring-black/10 dark:bg-zinc-900 dark:ring-white/15"><img src={src} alt="Image preview" className="block max-h-64 w-full object-contain" /></Tooltip.Popup>
+        </Tooltip.Positioner>
+      </Tooltip.Portal>
+    </Tooltip.Root>
   )
 }
 
