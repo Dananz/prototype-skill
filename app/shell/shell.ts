@@ -816,7 +816,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const newestFirst = () => active().slice().reverse()
   // The session lobby has a card per top-level prototype; what was built from it is listed in it.
   const lobbyRoots = () => newestFirst().filter(isRoot)
-  const GRID = 'grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4'
+  const GRID = 'grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
   const NEST = 'bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 dark:text-sky-300'
   // Where it came from, a chip each: what it nests under, then the others it combines after a
   // plus ("B" alone when it is another variant of the same prototype).
