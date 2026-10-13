@@ -1412,7 +1412,7 @@ const where = e => {
 // by the server as it arrives. A pick's note stays pending; plain picks come done, unless failed or, for
 // an unpick, there was no pick there to take back.
 const ACTIONS = {
-  pick: 'done: marked in the page and now the working variant (on a prototype made to stand in for part of another, it is already plugged in there); a reply is only a note',
+  pick: 'done: marked in the page and now the working variant; a reply is only a note',
   unpick: 'done: the pick is off in the page; a reply is only a note',
   more: 'new variants in this prototype, named after this one',
   'more-variants': 'new variants in this prototype (the route is the prototype; count says how many): continue its letters with proto add <slug> --variants "…", each a new direction, different from the existing variants and from each other',
