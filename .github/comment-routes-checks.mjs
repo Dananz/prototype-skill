@@ -87,6 +87,58 @@ export default function Menu() {
     })()`)
     if (res !== 'ok') fail(`menu route: ${res}`)
   } finally { page.close() }
+
+  // Harder: a menu that stays on the page while closed (hidden, not gone), opened by a control that
+  // toggles on its pointerdown and on its click alike, so a full mouse press opens and closes it.
+  writeFileSync(join(app, 'src', 'protos', 'routefx', 'A.tsx'), `import { useState } from 'react'
+export default function Menu() {
+  const [open, setOpen] = useState(false)
+  const flip = () => setOpen(o => !o)
+  return <main style={{ padding: 24 }}>
+    <button data-shoot="opener" onPointerDown={flip} onClick={flip} style={{ width: 120, height: 40 }}>Open</button>
+    <div data-shoot="menu" data-opened-by="[data-shoot=opener]" style={{ display: open ? 'block' : 'none', marginTop: 8, width: 220, padding: 8, background: '#eee' }}>
+      <button data-shoot="item" style={{ width: 180, height: 36 }}>Item</button>
+    </div>
+  </main>
+}
+`)
+  const page2 = await openPage(`${local}?theme=light#/routefx/A`)
+  try {
+    const shown = `(e => !!e && e.getBoundingClientRect().width > 0)`
+    // Open it as the user does: one of its two handlers, so it ends up open.
+    const at = await page2.run(`(async () => {
+      ${helpers}
+      if (!await until(() => q('[data-shoot=opener]'))) return 'the design never showed'
+      if (!await mode(false)) return 'comment mode did not turn off'
+      q('[data-shoot=opener]').click()
+      if (!await until(() => ${shown}(q('[data-shoot=item]')))) return 'the menu did not open'
+      if (!await mode(true)) return 'comment mode did not turn on'
+      await new Promise(r => setTimeout(r, 200))
+      const el = q('[data-shoot=item]'), r = el.getBoundingClientRect(), frame = el.ownerDocument.defaultView.frameElement
+      const f = frame?.getBoundingClientRect(), scale = frame ? f.width / frame.offsetWidth : 1
+      return [(f?.left ?? 0) + (r.left + r.width / 2) * scale, (f?.top ?? 0) + (r.top + r.height / 2) * scale]
+    })()`)
+    if (!Array.isArray(at)) fail(`hidden menu route: ${at}`)
+    await page2.press(...at)
+    const res = await page2.run(`(async () => {
+      ${helpers}
+      if (!await until(editor)) return 'picking the item opened no composer'
+      editor().textContent = 'In the hidden menu'
+      editor().dispatchEvent(new Event('input', { bubbles: true }))
+      if (!await until(() => !document.querySelector('[data-composer] button[title^="Add,"]').disabled)) return 'Add never became ready'
+      document.querySelector('[data-composer] button[title^="Add,"]').click()
+      if (!await until(() => !editor() && document.querySelector('button[aria-label^="Comment "]'))) return 'the comment has no pin'
+      if (!await mode(false)) return 'comment mode did not turn off'
+      q('[data-shoot=opener]').click()
+      if (!await until(() => !${shown}(q('[data-shoot=item]')))) return 'the menu did not close'
+      if (!await mode(true)) return 'comment mode did not turn back on'
+      if (!await until(via)) return 'a menu kept on the page but hidden should count as closed: the pin belongs on its opener'
+      via().click()
+      if (!await until(() => ${shown}(q('[data-shoot=item]')), 4000)) return 'the pin should open a menu whose control toggles on both its down and its click'
+      return 'ok'
+    })()`)
+    if (res !== 'ok') fail(`hidden menu route: ${res}`)
+  } finally { page2.close() }
   proto(['archive', 'routefx'])
-  console.log('\nOK: a comment inside a menu has its pin on the opener while closed, and its pin or list row opens the menu')
+  console.log('\nOK: a comment inside a menu has its pin on the opener while closed (gone or hidden), and its pin or list row opens the menu')
 }
