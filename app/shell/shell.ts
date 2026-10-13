@@ -1865,7 +1865,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   quiet(e => {
     if (comments.busy()) return true
     const t = e.target instanceof Element ? e.target : null
-    if (t?.closest(COMMENT_UI) || t?.closest('[data-settings-ui]')) return true
+    if (t?.closest(COMMENT_UI)) return true
+    if (t?.closest('[data-settings-ui]')) {
+      // Drawer release events finish its native swipe. Keys, presses and clicks still belong
+      // to Settings, so a design's page shortcuts or outside-click handlers stay quiet.
+      return !t.closest('[data-settings-drawer]') || (e.type !== 'pointerup' && e.type !== 'touchend')
+    }
     const k = e as KeyboardEvent
     return (e.type === 'keydown' || e.type === 'keyup') && k.key === 'c' && !k.metaKey && !k.ctrlKey && !k.altKey && !st.sheet && !!commentHost() && !t?.closest(INTERACTIVE)
   })
@@ -2054,6 +2059,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     drawSettings({
       open: settingsOpen, appearance, live: comments.store.get().live, sidebar: st.side,
       review: localStorage.getItem('proto-hints') !== '0', stack: st.stack,
+      session: { id: session.id, name: session.name, url: session.url || location.origin + '/', keep: !!st.status?.keep,
+        server: st.stopped ? 'stopped' : st.live ? 'live' : 'reconnecting',
+        listening: !!st.status?.inbox?.listening,
+        error: st.failed?.at === 'session' ? st.failed.text : null },
+      onKeep: async keep => { await post('keep', { keep }, 'session') },
+      onStop: async () => { await act('stop', '', '') },
       onClose: () => { settingsOpen = false; render() },
       onAppearance: setAppearance,
       onLive: on => { comments.act.setLive(on); paintSettings() },

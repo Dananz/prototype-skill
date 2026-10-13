@@ -174,6 +174,8 @@ export default function Click() {
   const setLive = async on => {
     const r = await page.run(`(async () => {
       document.querySelector('[data-bar] [data-act="settings"]').click()
+      for (let i = 0; i < 60 && !document.querySelector('[data-settings-category=feedback]'); i++) await new Promise(r => setTimeout(r, 25))
+      document.querySelector('[data-settings-category=feedback]')?.click()
       for (let i = 0; i < 60 && !document.querySelector('[data-shoot=send-live] input'); i++) await new Promise(r => setTimeout(r, 25))
       const box = document.querySelector('[data-shoot=send-live] input')
       if (!box) return 'no Send each comment as you add it switch in Settings'
