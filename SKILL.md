@@ -345,6 +345,12 @@ columns, each with its line, beside Autoplay, All states and Compare:
 - A state's `about`: the first variant's note says what the state is; the others say only what
   changed, or what it is when only they have it (both shown in amber). No note means unchanged.
 - Put `data-diff` on what a variant adds; Compare outlines it.
+- Mark what opens what: the root of every part that opens (a menu, a popup, a sheet, a dialog, a
+  tab's panel) gets `data-opened-by="<selector of the control that opens it>"`, inside the variant
+  (`<div data-shoot="phase-menu" data-opened-by="[data-shoot=phase-button]">`). A comment on
+  something inside then keeps the way there: while that part is closed its pin sits on the control,
+  and a click on the pin (or on the comment in the list) presses it open. A part inside another
+  marks only its own control; the way through both is read from the two.
 - `proto add`, `pick` and `archive` keep these fields; edit `meta.ts` after `proto add`.
 
 **Only on request: say what to type and try.** After an explicit request in chat or

@@ -2,7 +2,7 @@
 // the guard that keeps every press from reaching the design while commenting, and the live boxes
 // pins and outlines are drawn from.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { climb, describe, find, seen, spot, spotAt } from './dom'
+import { climb, describe, find, seen, spot, spotAt, openerOf, passing, shows, routeOf } from './dom'
 import { Icon } from './ui'
 import type { Box, Target } from './types'
 import { useCtx } from './ctx'
@@ -45,16 +45,34 @@ export function Glide<T extends { box: Box }>({ item, pad, className = '', style
 
 /** Live boxes (from the layer's corner) for each element, or an empty box on a pinned spot, kept in step with scrolling, resizing and reloads. */
 export function useBoxes(list: { id: string; t: Target }[]) {
-  const { host } = useCtx()
+  const { host, store } = useCtx()
   const [boxes, setBoxes] = useState<Record<string, Box>>({})
-  const key = list.map(x => x.id + x.t.selector).join('|')
+  // A route a comment learns (below) is part of the key, so its pin can then go on the opener.
+  const key = list.map(x => x.id + x.t.selector + (x.t.route?.join('>') ?? '')).join('|')
   useEffect(() => {
     if (!list.length) { setBoxes({}); return }
     let raf = 0, last = ''
+    const learned = new Set<string>()
     const tick = () => {
       const mount = host.mount()
       const next: Record<string, Box> = {}
-      if (mount) for (const x of list) { const el = find(mount, x.t), b = el && (x.t.point ? spotAt(x.t, el, mount, host.layer) : seen(el, mount, host.layer)); if (b) next[x.id] = b }
+      if (mount) for (const x of list) {
+        const el = find(mount, x.t), b = shows(el) && (x.t.point ? spotAt(x.t, el, mount, host.layer) : seen(el, mount, host.layer))
+        // A comment kept without a way there (written before designs marked what opens what, or
+        // before the design did) learns it the first time its element is on the page.
+        if (el && !x.t.route && x.id !== '__new' && !learned.has(x.id)) {
+          const route = routeOf(mount, el)
+          if (route.length) {
+            learned.add(x.id)
+            store.set(s => ({ items: s.items.map(i => i.id === x.id && i.target && !i.target.route ? { ...i, target: { ...i.target, route } } : i) }))
+          }
+        }
+        if (b) { next[x.id] = b; continue }
+        // Hidden in a closed menu, tab or popup (gone, or still there but not showing): its pin
+        // goes on what opens it.
+        const o = !shows(el) && x.t.route ? openerOf(mount, x.t) : null, ob = o && seen(o, mount, host.layer)
+        if (ob) next[x.id] = { ...ob, via: true }
+      }
       const s = JSON.stringify(next)
       if (s !== last) { last = s; setBoxes(next) }
       raf = requestAnimationFrame(tick)
@@ -157,7 +175,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     }
     // Presses never reach the design's own handlers; the default is kept off only for a mouse,
     // so a finger can still scroll the page.
-    const press = (e: Event) => { if (!inDesign(e.target)) return; e.stopPropagation(); if (!(e instanceof PointerEvent) || e.pointerType === 'mouse') e.preventDefault() }
+    const press = (e: Event) => { if (passing.on || !inDesign(e.target)) return; e.stopPropagation(); if (!(e instanceof PointerEvent) || e.pointerType === 'mouse') e.preventDefault() }
     let start: { x: number; y: number } | null = null
     // A finger that stays put for HOLD_MS pins the comment where it is; moving lets it scroll.
     let holdTimer = 0
@@ -211,6 +229,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       else show(el, true)
     }
     const click = (e: MouseEvent) => {
+      if (passing.on) return
       const target = targetOf(e)
       if (!inDesign(target)) return
       e.preventDefault(); e.stopPropagation()

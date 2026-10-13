@@ -16,9 +16,31 @@ import { Icon, PinDot, Reply, STATE, Body } from './ui'
 import { sameView } from '../view/sizes'
 
 function Pins({ items, boxes, active, onOpen }: { items: { item: Item; done: boolean }[]; boxes: Record<string, Box>; active: string | null; onOpen: (id: string) => void }) {
-  return <>{items.map(({ item: c, done }) => {
+  // Comments hidden in something closed share their opener: one pin there, with how many.
+  const via = new Map<string, { n: number; ids: string[] }>()
+  for (const { item: c, done } of items) {
     const b = boxes[c.id]
-    if (!b) return null
+    if (!b?.via || done) continue
+    const k = `${Math.round(b.x)},${Math.round(b.y)}`, g = via.get(k) ?? { n: c.n, ids: [] }
+    g.ids.push(c.id); g.n = Math.min(g.n, c.n); via.set(k, g)
+  }
+  return <>{[...via].map(([k, g]) => {
+    const b = boxes[g.ids[0]]
+    return (
+      <button key={`via-${k}`} data-shoot="comment-via" onClick={() => onOpen(g.ids[0])}
+        aria-label={g.ids.length > 1 ? `${g.ids.length} comments inside: open` : `Comment ${g.n}, inside: open`}
+        title={g.ids.length > 1 ? `${g.ids.length} comments are in what this opens. Click to open it.` : 'This comment is in what this opens. Click to open it.'}
+        className="pointer-events-auto absolute z-20 rounded-full shadow-md ring-2 ring-white ring-offset-0 transition hover:scale-110 dark:ring-zinc-950"
+        style={{ left: b.x + b.w - 10, top: b.y - 10 }}>
+        <span className="relative block">
+          <PinDot n={g.n} />
+          <span className="absolute -bottom-1 -right-1 grid min-w-3.5 place-items-center rounded-full bg-zinc-900 px-0.5 text-[9px] font-bold leading-[14px] text-white ring-1 ring-white dark:bg-white dark:text-zinc-900">{g.ids.length > 1 ? g.ids.length : '↓'}</span>
+        </span>
+      </button>
+    )
+  })}{items.map(({ item: c, done }) => {
+    const b = boxes[c.id]
+    if (!b || b.via) return null
     const on = active === c.id
     // A spot's pin sits on the spot; an element's on its top right corner.
     const pt = !!c.target?.point
