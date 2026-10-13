@@ -575,12 +575,12 @@ function Thread({ ctl, compact = false }: { ctl: Ctl; compact?: boolean }) {
 
 /** The page's own comment composer, on the moment or the range, laid out in the dock. */
 function DockComposer({ ctl }: { ctl: Ctl }) {
-  const { s } = useRows()
+  const { s, held } = useRows()
   const m = ctl.composing!
   const item = m.id ? s.items.find(i => i.id === m.id) : undefined
   const n = item?.n ?? Math.max(0, ...s.items.filter(i => i.proto === s.place?.proto && i.variant === s.place?.variant).map(i => i.n)) + 1
   return <Composer key={m.id ?? `${m.time.at}-${m.time.to ?? ''}`} time={m.time} docked n={n} place={null} sheet={false} tagging={!!m.tagging} editing={!!item} id={item?.id}
-    initial={item ?? (s.held?.time ? s.held : undefined)} />
+    initial={item ?? (held?.time ? held : undefined)} />
 }
 
 /** What the take has to say over the slider: its start threw, it saw no motion, or it missed a step. */
