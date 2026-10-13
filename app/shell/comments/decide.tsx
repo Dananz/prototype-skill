@@ -1,6 +1,7 @@
 // A variant's own decisions, made in the page instead of by pasting its link into chat: Pick
 // (marked at once; on the picked variant it reads Picked and takes the pick back), More like this
-// and Build it, each with an optional short note. All three reach Claude the way comments do, a
+// and Build it, each with an optional short note (Pick also as "Pick with a note…", so a choice can say why
+// or what to change in it). All three reach Claude the way comments do, a
 // batch of one comment with an action and no element, so the inbox, `proto reply` and the Comments
 // list treat them like any other. A wide page opens them from the bar's check button as a menu; a
 // phone has them at the top of the variant sheet.
@@ -12,9 +13,10 @@ import { ACTION, Icon, MOD, PRIMARY, Pulse } from './ui'
 
 /** The variant on screen, and whether it is the prototype's pick. */
 export type Subject = { proto: string; variant: string; name: string; picked: boolean; hints?: boolean; copy?: boolean }
-type Ask = 'more' | 'build' | 'try-it' | 'copy-options'
+type Ask = 'pick' | 'more' | 'build' | 'try-it' | 'copy-options'
 
 const NOTE: Record<Ask, { title: (v: string) => string; hint: string; done: (v: string) => string }> = {
+  pick: { title: v => `Pick ${v}`, hint: 'Optional: why this one, or what to change in it', done: v => `Picked ${v}` },
   'try-it': { title: v => `Add Try it for ${v}`, hint: 'Optional: a flow or scenario to explain', done: v => `Asked for Try it for ${v}` },
   'copy-options': { title: v => `Add copy options for ${v}`, hint: 'Optional: which lines or tone? Starts with the headline and primary text.', done: v => `Asked for copy options for ${v}` },
   more: { title: v => `More like ${v}`, hint: 'Optional: what to keep, what to push further', done: v => `Asked for more like ${v}` },
@@ -48,7 +50,7 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
     if (flip) setWant(a === 'pick')
     try {
       await act.decide(subject, a, words)
-      if (flip) onDone?.()
+      if (flip) { setAsk(null); setNote(''); onDone?.() }
       else { setAsk(null); setNote(''); setSaid(a as Ask) }
     } catch (e) {
       if (flip) setWant(null)
@@ -96,7 +98,7 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
       {oops}
       <div className="mt-2 flex items-center justify-end gap-1.5">
         <button onClick={() => { if (!sending.current) { setAsk(null); setNote(''); setError('') } }} className="h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Cancel</button>
-        <button onClick={() => send(ask, note)} disabled={busy} title={`${MOD} Enter`} className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-50 ${PRIMARY}`}><Icon name="send" className="size-3.5" />{busy ? 'Sending…' : 'Send'}</button>
+        <button onClick={() => send(ask, note)} disabled={busy} title={`${MOD} Enter`} className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-50 ${PRIMARY}`}><Icon name={ask === 'pick' ? 'check' : 'send'} className="size-3.5" />{busy ? 'Sending…' : ask === 'pick' ? `Pick ${v}` : 'Send'}</button>
       </div>
       <div className={sheet ? 'mt-1 px-1' : 'mx-1 mt-2 border-t border-black/[.06] pt-2 dark:border-white/10'}>{status}</div>
     </div>
@@ -133,6 +135,8 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
           <button onClick={() => setAsk('more')} className={`flex-1 px-2 ${quiet}`}><Icon name="more" className="size-4" />More like this</button>
           <button onClick={() => setAsk('build')} className={`shrink-0 px-3 ${quiet}`}><Icon name="code" className="size-4" />Build it</button>
         </div>
+        {!picked && <button data-pick-note onClick={() => { setNote(''); setError(''); setAsk('pick') }} disabled={busy}
+          className="mt-1.5 flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-start text-[13px] text-zinc-700 hover:bg-zinc-900/[.04] disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-white/[.06]"><Icon name="check" className="size-4" /><span className="flex-1">Pick with a note…</span></button>}
         {extras}
         {oops}
         <p className="mt-2 flex items-center px-1">{status}</p>
@@ -146,6 +150,7 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
       <button role="menuitem" onClick={() => send(picked ? 'unpick' : 'pick')} disabled={busy} title={pickTitle} className={`${row} ${picked ? 'font-medium text-emerald-700 dark:text-emerald-400' : 'text-zinc-700 dark:text-zinc-200'}`}>
         <Icon name="check" className="size-4" /><span className="min-w-0 flex-1 truncate">{pickLabel}</span>{picked && <span className="shrink-0 text-xs font-normal text-zinc-400">Undo</span>}
       </button>
+      {!picked && <button role="menuitem" data-pick-note onClick={() => { setNote(''); setError(''); setAsk('pick') }} disabled={busy} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="check" className="size-4 opacity-0" /><span className="flex-1">Pick with a note…</span></button>}
       <button role="menuitem" onClick={() => setAsk('more')} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="more" className="size-4" /><span className="flex-1">More like this…</span></button>
       <button role="menuitem" onClick={() => setAsk('build')} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="code" className="size-4" /><span className="flex-1">Build it…</span></button>
       {extras}

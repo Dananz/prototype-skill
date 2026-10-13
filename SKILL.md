@@ -492,8 +492,10 @@ user makes one (next section).
 
 The user chooses in chat ("go with A", "A it is", "build B", "let's move forward with C") or in
 the page, where each variant has Pick (the check button in the bar, or P; on a phone, the top of
-the variant sheet). A pick made in the page is already marked when you hear of it, as a comment
-with `action: pick` (see Comments from the page): don't run `proto pick` again.
+the variant sheet), or Pick with a note… when they want to say why or what to change in it. A pick
+made in the page is already marked when you hear of it, as a comment with `action: pick` (see
+Comments from the page), its note as the comment's words: don't run `proto pick` again, and do
+what the note asks.
 
 As soon as the user chooses in chat, run `proto pick <slug> <letter>` before anything else,
 without asking. If they don't
