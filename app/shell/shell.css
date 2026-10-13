@@ -51,6 +51,20 @@ body { margin: 0; }
   --color-proto-primary-ring: var(--proto-primary-ring);
 }
 
+/* Keyboard focus in the shell's own chrome: the one outline every row, button and link gets, so
+   none needs its own. Inset, so it follows the control's corners and stays inside a column's
+   padding, and in the navigation's sky, the hue of the lit row. Designs (data-mount) keep the
+   browser's. In the base layer, so a control with a ring of its own (a focus-visible: utility)
+   still wins. */
+:root { --proto-focus: oklch(68.5% 0.169 237.323 / 0.8); }
+.dark { --proto-focus: oklch(74.6% 0.16 232.661 / 0.8); }
+@layer base {
+  :where(#app) :where(button, a[href], summary, [tabindex]:not([tabindex="-1"])):focus-visible:not(:where([data-mount] *)) {
+    outline: 1.5px solid var(--proto-focus);
+    outline-offset: -1.5px;
+  }
+}
+
 /* Copy mode (comments/copy.tsx): each line with options gets a dotted underline. A line in light
    words (on a dark button) gets a light one, from a rule the picker writes for it. */
 [data-copy-on] [data-copy] {

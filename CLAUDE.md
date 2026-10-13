@@ -47,3 +47,13 @@ Never replace evidence with "screenshots taken locally", "happy to attach them",
 or an offer to upload later. If capture or publication fails, state the exact
 blocker and keep the PR draft until the images are published. Do not claim the
 screenshots are attached or the PR is ready without verifying publication.
+
+## Shell UI: keyboard focus
+
+The shell's chrome has one keyboard focus outline: the base rule in `app/shell/shell.css`
+(`--proto-focus`, a 1.5px inset line in the navigation's sky). Every button, link and
+focusable row in the shell gets it without a class. Don't add `focus-visible:outline-*` or
+`focus-visible:ring-*` to new shell controls. To restyle focus everywhere, change
+`--proto-focus` or that rule. A control that needs something else (a separator showing its
+line, a text field's ring) styles it with `focus-visible:` utilities, which override the base
+rule. Designs inside `[data-mount]` keep the browser's own focus style.

@@ -72,6 +72,11 @@ export async function keyboardColumnsChecks({ proto, app, local, openPage, fail,
     assert(await focused() === 'mv:keysdeep:A', `the dropdown opened with the focus on ${await focused()}`)
     await page.key('ArrowDown')
     assert(await focused() === 'mv:keysdeep:B', 'ArrowDown did not move down the column')
+    // The shell's one focus outline (shell.css, --proto-focus): an inset line, not the browser's ring.
+    // (1.5px, which a 1x screen draws as 1px.)
+    const ring = await page.run(`(() => { const s = getComputedStyle(document.activeElement); return [s.outlineStyle, s.outlineWidth, s.outlineOffset].join(' ') })()`)
+    const [style, width, offset] = ring.split(' ').map((x, i) => i ? parseFloat(x) : x)
+    assert(style === 'solid' && width >= 1 && width <= 1.5 && offset === -width, `a focused row has the outline ${ring}, not the shell's`)
     // Left goes to the lit row of the column before, without stepping the variant on screen.
     await page.key('ArrowLeft')
     assert(await focused() === 'mv:keys:F' && await hash() === '#/keys/F', `ArrowLeft went to ${await focused()} at ${await hash()}`)
