@@ -224,10 +224,6 @@ export function SendBar({ className = '', onAdd }: { className?: string; onAdd?:
           ? <button data-shoot="restart" onClick={copy} className="inline-flex h-12 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-amber-400 px-3 text-[12.5px] font-semibold text-amber-950 hover:bg-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"><Icon name={copied ? 'check' : 'more'} className="size-4" />{copied ? 'Copied' : 'Copy restart message'}</button>
           : <SendButton className="flex-1" />}
       </div>
-      <label data-shoot="send-live" className="flex cursor-pointer items-center justify-center gap-2 text-xs text-zinc-500 dark:text-zinc-400" title={`Each comment goes to ${agent} the moment you add it, so it is worked on while you write the next`}>
-        <input type="checkbox" checked={s.live} onChange={e => act.setLive(e.target.checked)} className="size-3.5 accent-[var(--proto-primary)]" />
-        Send each comment as you add it
-      </label>
       <Listening on={!!store.get().inbox?.listening} stalled={stalled > 0} className="justify-center" />
     </div>
   )

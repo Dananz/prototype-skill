@@ -28,6 +28,7 @@ import { contextMenuChecks } from './context-menu-checks.mjs'
 import { splitChecks } from './split-checks.mjs'
 import { keyboardColumnsChecks } from './keyboard-columns-checks.mjs'
 import { slotChecks } from './slot-checks.mjs'
+import { settingsChecks } from './settings-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -149,7 +150,8 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
       mkdirSync(dirname(file), { recursive: true })
       writeFileSync(file, Buffer.from(data, 'base64'))
     }
-    return { run, close, press, enter, key, touch, drag, hover, screenshot }
+    const appearance = value => send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value }] }, sessionId)
+    return { run, close, press, enter, key, touch, drag, hover, screenshot, appearance }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {
@@ -170,6 +172,7 @@ const css = () => new Promise(ok => get(`${local}shell/shell.css?direct`, { agen
   r.setEncoding('utf8').on('data', c => { text += c }).on('end', () => r.statusCode === 200 ? ok(text) : fail(`the stylesheet answered ${r.statusCode}: ${text.slice(0, 400)}`))
 }).on('error', e => fail(`could not read the stylesheet: ${e.message}`)))
 await css()
+await settingsChecks({ proto, app, local, openPage, fail })
 
 await commentParentChecks({ proto, app, openPage, fail })
 await commentWholeChecks({ proto, app, openPage, fail })

@@ -18,6 +18,15 @@ variants (on a phone, a pill at the bottom you drag along, with a menu for the p
 Comment, and the columns as a sheet you drill into), edge arrows, a focus mode with a dock, light and dark, phone frames, "editing" dots, a
 strip naming the variant your requests change). You only write variant files.
 
+The bar's Settings button opens browser preferences: System, Light or Dark appearance,
+instant comment sending (off by default, so drafts can be sent together), Grid or List
+overviews, and whether the sidebar and review panel stay open on wide screens. It also
+resets sidebar/column widths and lists keyboard shortcuts. Its Session category lets you
+copy the public URL, keep the session forever, stop its server, and copy a listener restart
+message to paste in the agent thread. On a phone, Settings is a swipeable bottom drawer.
+Preferences save automatically;
+use the page's layout, zoom and motion controls for the design currently on screen.
+
 Beside Comment the bar has three sizes, phone, tablet and desktop (on a phone, the Layout row of the
 pill's menu). On a wide screen a web variant sits on an artboard as big as the stage, laid out for
 the stage's width (its breakpoints see the stage, not the window); the stage's own layout is
