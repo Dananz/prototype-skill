@@ -88,6 +88,9 @@ try {
     requestAnimationFrame(f) })`)
   const url = new URL(rawUrl)
   url.hash = '/' + route.replace(/^\/+/, '')
+  // As proto shoot: no artboard frame (the page's design in its own iframe since the stage's
+  // artboard), so --click, --drag and the measured element are the design that shows.
+  url.searchParams.set('hints', '0')
   await send('Page.navigate', { url: url.href }, s)
   await waitReady(ev)
   await sleep(1500)   // past the design's entrance and first layout
