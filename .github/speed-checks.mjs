@@ -173,11 +173,16 @@ export default function Click() {
   }
   const setLive = async on => {
     const r = await page.run(`(async () => {
+      document.querySelector('[data-bar] [data-act="settings"]').click()
+      for (let i = 0; i < 60 && !document.querySelector('[data-shoot=send-live] input'); i++) await new Promise(r => setTimeout(r, 25))
       const box = document.querySelector('[data-shoot=send-live] input')
-      if (!box) return 'no Send each comment as you add it switch under Send'
+      if (!box) return 'no Send each comment as you add it switch in Settings'
       if (box.checked !== ${on}) box.click()
       await new Promise(r => setTimeout(r, 100))
-      return box.checked === ${on} ? 'ok' : 'the switch did not turn ' + (${on} ? 'on' : 'off')
+      const ok = box.checked === ${on}
+      document.querySelector('[data-settings-close]').click()
+      for (let i = 0; i < 60 && document.querySelector('[data-settings-dialog]'); i++) await new Promise(r => setTimeout(r, 25))
+      return ok ? 'ok' : 'the switch did not turn ' + (${on} ? 'on' : 'off')
     })()`)
     if (r !== 'ok') fail(`the live switch: ${r}`)
   }

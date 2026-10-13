@@ -24,6 +24,10 @@ export const frameSelections = new Set<() => void>()
 /** The page at a place, as a device view loads it: framed, in the theme of the page outside. */
 export const frameUrl = (hash: string, dark: boolean) => `${location.origin}${location.pathname}?dv=1&theme=${dark ? 'dark' : 'light'}${hash.startsWith('#') ? hash : `#${hash}`}`
 
+type ThemeWindow = Window & { __protoTheme?: (dark: boolean) => void }
+/** The same-origin frame accepts its parent's theme without remounting the design. */
+export function offerTheme(apply: (dark: boolean) => void) { (window as ThemeWindow).__protoTheme = apply }
+
 export type Frame = {
   el: HTMLIFrameElement
   /** The frame's document, once it is the page (not the blank one an iframe starts with). */
@@ -31,8 +35,7 @@ export type Frame = {
   /** Takes the frame to a place, without a reload; nothing when it is there already. */
   go(hash: string): void
   hash(): string
-  /** Loads it again where it is, from the url `next` makes of its place (a new theme). */
-  reload(next: (hash: string) => string): void
+  theme(dark: boolean): void
   close(): void
 }
 
@@ -72,7 +75,19 @@ export function openFrame(host: HTMLElement, url: string, on: { route: (hash: st
     doc: () => (page() === d ? d : null),
     go(hash) { try { const w = el.contentWindow!; if (w.location.hash !== hash) w.location.hash = hash } catch { /* gone */ } },
     hash() { try { return el.contentWindow!.location.hash } catch { return '' } },
-    reload(next) { try { const w = el.contentWindow!; w.location.replace(next(w.location.hash)) } catch { /* gone */ } },
+    theme(dark) {
+      try {
+        const w = el.contentWindow as ThemeWindow | null
+        if (w?.__protoTheme) {
+          const next = new URL(w.location.href)
+          next.searchParams.set('theme', dark ? 'dark' : 'light')
+          w.history.replaceState(w.history.state, '', next)
+          w.__protoTheme(dark)
+        }
+        // While still loading there is no design state to keep, and its URL supplies the theme.
+        else if (w) w.location.replace(frameUrl(w.location.hash, dark))
+      } catch { /* gone */ }
+    },
     close() { if (closed) return; closed = true; clearInterval(timer); unbind(); el.remove() },
   }
 }

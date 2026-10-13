@@ -59,7 +59,7 @@ body { margin: 0; }
 :root { --proto-focus: oklch(68.5% 0.169 237.323 / 0.8); }
 .dark { --proto-focus: oklch(74.6% 0.16 232.661 / 0.8); }
 @layer base {
-  :where(#app) :where(button, a[href], summary, [tabindex]:not([tabindex="-1"])):focus-visible:not(:where([data-mount] *)) {
+  :where(#app, [data-proto-ui]) :where(button, a[href], summary, input[type="checkbox"], [tabindex]:not([tabindex="-1"])):focus-visible:not(:where([data-mount] *)) {
     outline: 1.5px solid var(--proto-focus);
     outline-offset: -1.5px;
   }

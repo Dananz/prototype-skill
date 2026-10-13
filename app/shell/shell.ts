@@ -24,7 +24,8 @@ import type { Action } from './comments/types'
 import { tabIcon } from './favicon'
 import { setShellRoot } from './portals'
 import { createView } from './view/index'
-import { framed, frameClicks, frameMenus } from './view/frame'
+import { createSettings, type Appearance } from './settings'
+import { framed, frameClicks, frameMenus, offerTheme } from './view/frame'
 import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
 import { dims, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
 
@@ -151,6 +152,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   setShellRoot(root)
   const q = new URLSearchParams(location.search)
   const stored = localStorage.getItem('proto-theme')
+  let appearance: Appearance = stored === 'light' || stored === 'dark' ? stored : 'system'
+  let themeOverride = q.has('theme')
+  const systemTheme = matchMedia('(prefers-color-scheme: dark)')
+  let settingsOpen = false
+  let settingsOrigin: 'bar' | 'dock' = 'bar'
   const st = {
     place: { view: 'session' } as Place,
     focus: false,
@@ -174,7 +180,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // of the way until then, so a design with motion runs live and nothing sits under it.
     motion: false,
     stack: q.has('stack') ? q.get('stack') !== '0' : localStorage.getItem('proto-lobby') === 'stack',
-    dark: q.get('theme') ? q.get('theme') === 'dark' : stored ? stored === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches,
+    dark: q.get('theme') ? q.get('theme') === 'dark' : appearance === 'system' ? systemTheme.matches : appearance === 'dark',
     copied: false,
     live: true,
     stopped: false,
@@ -902,7 +908,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${row(ic('link', 'size-4 text-zinc-400'), `<span class="block truncate">${esc((session.url || location.origin).replace(/^https?:\/\//, ''))}</span>`, `<button data-act="copy" class="h-7 shrink-0 rounded-md px-2 text-xs text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">${st.copied ? 'Copied' : 'Copy'}</button>`)}
         ${lifecycle() ? row(ic('clock', 'size-4 self-start mt-0.5 text-zinc-400'), esc(lifecycle()).replace(' · ', '<span class="block text-xs leading-5 text-zinc-400">') + '</span>') : ''}
       </div>${SEP}
-      <div class="flex h-14 items-center justify-between px-4"><span class="text-zinc-700 dark:text-zinc-300">Appearance</span><div class="flex rounded-lg bg-zinc-900/[.04] p-0.5 dark:bg-white/[.06]">${([['light', 'sun', 'Light'], ['dark', 'moon', 'Dark']] as const).map(([m, i, l]) => { const on = st.dark === (m === 'dark'); return `<button data-act="theme:${m}" aria-pressed="${on}" class="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs ${on ? TAB_ON : TAB_OFF}">${ic(i, 'size-3.5')}${l}</button>` }).join('')}</div></div>${SEP}
+      <div class="p-1.5"><button data-act="settings" aria-haspopup="dialog" class="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-zinc-700 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/5">${ic('settings')}Settings<span class="ml-auto text-zinc-400">${ic('right', 'size-3.5')}</span></button></div>${SEP}
       <div class="flex gap-2 p-3"><button data-act="keep" ${st.stopped ? 'disabled' : ''} class="h-9 flex-1 rounded-lg border border-black/10 text-xs font-medium hover:bg-zinc-900/[.03] disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5">${keep ? 'Don’t keep' : 'Keep forever'}</button><button data-act="stop" ${st.stopped ? 'disabled' : ''} class="h-9 flex-1 rounded-lg text-xs text-zinc-500 hover:bg-zinc-900/5 disabled:opacity-40 dark:hover:bg-white/10">Stop server</button></div>${st.failed?.at === 'session' ? `<p role="alert" class="-mt-1 mx-3 mb-3 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-xs text-rose-700 dark:text-rose-300">${esc(st.failed.text)}</p>` : ''}`
     const sessionMenu = sessionHead + sessionBody
 
@@ -934,7 +940,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const phoneBar = `<div class="grid min-w-0 flex-1 grid-cols-[1fr_auto_1fr] items-center gap-1 sm:hidden">
         <div class="flex min-w-0">${up ? `<button data-act="${up.act}" class="flex h-9 min-w-0 items-center gap-0.5 rounded-lg pr-2 text-zinc-600 active:bg-zinc-900/5 dark:text-zinc-400 dark:active:bg-white/10">${ic('left', 'size-5')}<span dir="auto" class="truncate">${esc(up.label)}</span></button>` : ''}</div>
         <button data-act="menu:protos" aria-haspopup="dialog" class="flex h-10 min-w-0 max-w-[13rem] items-center gap-1 rounded-lg px-2 active:bg-zinc-900/5 dark:active:bg-white/10"><span class="min-w-0 leading-tight"><span dir="auto" class="block truncate font-semibold">${esc(view === 'session' ? session.name : p!.title)}</span>${where ? `<span dir="auto" class="block truncate text-[11px] font-medium text-sky-700 dark:text-sky-300">${whereHtml}</span>` : v ? `<span dir="auto" class="block truncate text-[11px] text-zinc-500">${v.id} · ${esc(v.name)}</span>` : ''}</span>${ic('chev', 'size-3.5 shrink-0 text-zinc-400')}</button>
-        <div class="flex justify-end"><button data-act="menu:session" aria-label="Session" aria-haspopup="dialog" class="${IB} relative">${ic('dots')}<span class="absolute right-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span></button></div>
+        <div class="flex justify-end">${settingsBtn()}<button data-act="menu:session" aria-label="Session" aria-haspopup="dialog" class="${IB} relative">${ic('dots')}<span class="absolute right-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span></button></div>
       </div>`
     // The switcher: where you are on two lines (the prototype and variant, then the session and
     // what it was built from), opening the whole session as columns.
@@ -955,7 +961,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ${switcher}
       <div class="ml-auto flex shrink-0 items-center gap-1">
         ${stepper}${stepper && (viewOk() || commentHost() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${sizeTabs()}${commentBtn()}${copyBtn()}${motionBtn()}${decideBtn()}
+        ${sizeTabs()}${commentBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${settingsBtn()}
         ${phones || frameOn() ? `<div class="relative"><button data-act="open:scale" aria-expanded="${st.open === 'scale'}" aria-label="${frameOn() ? 'Zoom' : 'Phone scale'}" class="${IB} text-xs tabular-nums ${st.open === 'scale' ? 'bg-zinc-900/5 text-zinc-900 dark:bg-white/10 dark:text-white' : ''}">${ic(viewOn() ? sizeIcon(st.view.size!, st.view.land) : frameOn() ? sizeIcon(shownSize() ?? 'desktop') : 'phone')}<span data-scale-label>${scaleLabel()}</span></button>${pop(st.open === 'scale', scaleMenu, 'right-0 top-11 w-72')}</div>`
           // On the stage the design is at its own size: the button stays, so choosing a layout doesn't move the bar.
           : viewOk() ? `<button type="button" aria-disabled="true" aria-label="Zoom" title="The design is at its full size here. Choose a layout to zoom it" class="${IB} cursor-default text-xs tabular-nums opacity-40 hover:bg-transparent">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth)))}<span>100%</span></button>` : ''}
@@ -1024,7 +1030,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             ${many ? `<button data-act="step:1" class="${dockBtn} w-7" aria-label="Next">${ic('right', 'size-3.5')}</button><span class="px-1.5 text-xs tabular-nums text-white/60">${at + 1}/${vs.length}</span>` : ''}${dockSep}
             ${(c => c.lines ? `<button data-act="copymode" aria-pressed="${c.on}" aria-label="Copy options" title="${copySay(c)}" class="${dockBtn} relative ${c.on ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic('text')}${copyCount(c, 'ring-zinc-900')}</button>` : '')(copyCounts())}
             ${phones ? `<button data-act="scale:${[0, 100, 75, 50][([0, 100, 75, 50].indexOf(st.scale) + 1) % 4]}" class="h-9 shrink-0 rounded-full px-2 text-xs tabular-nums text-white/70 hover:bg-white/10" title="Phone scale">${scaleLabel()}</button>` : ''}
-            <button data-act="theme:${st.dark ? 'light' : 'dark'}" class="${dockBtn}" aria-label="Theme">${ic(st.dark ? 'sun' : 'moon')}</button>
+            <button data-act="settings" class="${dockBtn}" aria-label="Settings" aria-haspopup="dialog">${ic('settings')}</button>
           </div>
         </div>
       </div>`}`
@@ -1048,6 +1054,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     paintHints()
     paintPill()
     paintDecide()
+    paintSettings()
     paintVmenu()
     paintCtx()
     paintView()
@@ -1495,6 +1502,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const p = cur()
     const here = st.place.view === 'variant' ? st.place : null
     switch (name) {
+      case 'settings': settingsOpen = true; st.open = null; st.menu = ''; st.drawer = false; render(); return
       case 'comment': if (arg === 'tap') { comments.copy.off(); return comments.tap() } return toggleComment()
       // The phone's Try it key: the sheet up, or down. Brought back from away, the spot goes out.
       case 'try': { const to = trySheet === 'open' ? 'closed' : 'open'; trySheet = to; setTry(null); return setTrySheet(to) }
@@ -1552,7 +1560,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'side': recenter = true; if (!wide()) { st.drawer = arg === '1'; return render() } st.side = arg === '1'; remember('proto-side', st.side ? '1' : '0'); return render()
       case 'drawer': st.drawer = arg === '1'; return render()
       case 'menu': st.menu = arg as typeof st.menu; recenter = true; return render()
-      case 'stack': st.stack = arg === '1'; remember('proto-lobby', st.stack ? 'stack' : 'grid'); return show(true)
+      case 'stack': {
+        const on = arg === '1'
+        if (st.stack === on) return
+        st.stack = on; remember('proto-lobby', on ? 'stack' : 'grid')
+        return st.place.view === 'variant' ? render() : show(true)
+      }
       case 'scale': return setScale(Number(arg))
       // The device view: a size, the tablet turned (its zoom is the scale control's, above).
       case 'size': return pickSize(arg as Size)
@@ -1577,6 +1590,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       return
     }
     const [name, arg = '', arg2 = '', arg3 = ''] = el.dataset.act!.split(':')
+    if (name === 'settings') settingsOrigin = el.closest('[data-overlay]') ? 'dock' : 'bar'
     // A row's own options (its ⋯): the same menu as right-click, beside the button.
     if (name === 'vm') {
       const r = el.getBoundingClientRect()
@@ -1689,6 +1703,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   listen(window, 'keydown', e => {
     const t = e.target as Element
+    if (settingsOpen) return
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); return act('side', (wide() ? st.side : st.drawer) ? '0' : '1', '') }
     // Cmd or Ctrl Enter sends what's ready to Claude, from anywhere but a field of the design's own.
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
@@ -1850,7 +1865,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   quiet(e => {
     if (comments.busy()) return true
     const t = e.target instanceof Element ? e.target : null
-    if (t?.closest(COMMENT_UI)) return true
+    if (t?.closest(COMMENT_UI) || t?.closest('[data-settings-ui]')) return true
     const k = e as KeyboardEvent
     return (e.type === 'keydown' || e.type === 'keyup') && k.key === 'c' && !k.metaKey && !k.ctrlKey && !k.altKey && !st.sheet && !!commentHost() && !t?.closest(INTERACTIVE)
   })
@@ -1914,6 +1929,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   /** Keys pressed in the page inside the view: C comments on it, F is focus mode and P the design's
    *  actions, as out here, and Esc stops. */
   function viewKey(e: KeyboardEvent) {
+    if (settingsOpen) return
     const t = e.target as Element
     if (e.metaKey || e.ctrlKey || e.altKey || t.closest?.('input, textarea, select, [contenteditable]')) return
     if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
@@ -2031,6 +2047,22 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const on = st.open === 'decide'
     const say = d.picked ? `Picked ${d.variant} · design actions, Try it and copy options` : 'Design actions: pick, more like this, Try it and copy options'
     return `<button data-act="open:decide" data-decide-btn aria-haspopup="menu" aria-expanded="${on}" aria-label="${say}" title="${say} · P" class="${IB} ${on ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}">${ic('check')}<span class="hidden px-1 text-xs sm:inline">Actions</span></button>`
+  }
+  const settingsBtn = () => `<button data-act="settings" aria-label="Settings" aria-haspopup="dialog" title="Settings" class="${IB}">${ic('settings')}</button>`
+  const drawSettings = createSettings()
+  function paintSettings() {
+    drawSettings({
+      open: settingsOpen, appearance, live: comments.store.get().live, sidebar: st.side,
+      review: localStorage.getItem('proto-hints') !== '0', stack: st.stack,
+      onClose: () => { settingsOpen = false; render() },
+      onAppearance: setAppearance,
+      onLive: on => { comments.act.setLive(on); paintSettings() },
+      onSidebar: on => { st.side = on; remember('proto-side', on ? '1' : '0'); render() },
+      onReview: on => { remember('proto-hints', on ? '1' : '0'); hintsOpen = wideMq.matches && on; if (!on) setTry(null); render() },
+      onLayout: on => { act('stack', on ? '1' : '0', ''); paintSettings() },
+      onResetWidths: () => { setSideW(SIDE_W); setSplit(SPLIT_W); render() },
+      returnFocus: () => [...(settingsOrigin === 'dock' ? overlay : bar).querySelectorAll<HTMLElement>('[data-act=settings]')].find(el => el.getClientRects().length > 0) ?? null,
+    })
   }
   const drawDecide = comments.mountDecide(root.querySelector<HTMLElement>('[data-decide]')!)
   // The button is redrawn with the bar, so the menu finds it again each time it is drawn.
@@ -2487,13 +2519,20 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }, true)
 
   // ---------- theme, status, server ----------
-  function setTheme(dark: boolean) {
+  function setAppearance(next: Appearance) {
+    appearance = next
+    themeOverride = false
+    remember('proto-theme', next)
+    applyTheme(next === 'system' ? systemTheme.matches : next === 'dark')
+  }
+  function setTheme(dark: boolean) { setAppearance(dark ? 'dark' : 'light') }
+  function applyTheme(dark: boolean) {
     st.dark = dark
     document.documentElement.classList.toggle('dark', dark)
     document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
-    remember('proto-theme', dark ? 'dark' : 'light')
     render()
   }
+  systemTheme.addEventListener('change', e => { if (appearance === 'system' && !themeOverride) applyTheme(e.matches) })
   // The lobby is drawn once per visit, so its lifecycle line is updated in place.
   const paintLifecycle = () => layers.querySelectorAll('[data-lifecycle]').forEach(el => { el.textContent = lifecycle() })
   async function refreshStatus() {
@@ -2577,7 +2616,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- boot ----------
   installPointerTracking()
-  setTheme(st.dark)
+  if (framed) offerTheme(applyTheme)
+  applyTheme(st.dark)
   // The link opens where it points; a bare link reopens where this browser last was.
   const start = parseHash() ?? parseHash(localStorage.getItem(`proto-place-${session.id}`) ?? '') ?? defaultPlace()
   if (location.hash !== hashOf(start)) history.replaceState(null, '', hashOf(start))

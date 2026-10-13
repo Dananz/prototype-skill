@@ -56,12 +56,12 @@ function LiveFrame({ hash, dark, w, h, scale, route, bind, ring, children }: {
   }, [])
   // The page moved: the frame goes there too, the same page, no reload.
   useEffect(() => { ctl.current?.go(hash) }, [hash])
-  // The theme changed: the frame loads again in it, where it was.
+  // The theme changes in place, keeping the design's inputs, menus and scroll.
   const was = useRef(dark)
   useEffect(() => {
     if (was.current === dark) return
     was.current = dark
-    ctl.current?.reload(h => frameUrl(h || now.current.hash, dark))
+    ctl.current?.theme(dark)
   }, [dark])
   useLayoutEffect(() => {
     const el = ctl.current?.el
