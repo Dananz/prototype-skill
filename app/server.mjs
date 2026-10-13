@@ -152,7 +152,8 @@ const box = r => r && typeof r === 'object' ? { x: Math.round(+r.x || 0), y: Mat
 const clip = (s, n) => typeof s === 'string' ? s.slice(0, n) : undefined
 const element = t => t && typeof t === 'object' ? {
   selector: clip(t.selector, 500), shoot: clip(t.shoot, 100), src: clip(t.src, 300), component: clip(t.component, 100),
-  tag: clip(t.tag, 40), text: clip(t.text, 300), rect: box(t.rect),
+  tag: clip(t.tag, 40), text: clip(t.text, 300), rect: box(t.rect), within: clip(t.within, 100),
+  ...(Array.isArray(t.uses) && t.uses.length ? { uses: t.uses.slice(0, 4).filter(u => u && typeof u === 'object').map(u => ({ component: clip(u.component, 100), at: clip(u.at, 300), ...(u.key != null ? { key: clip(String(u.key), 100) } : {}), ...(typeof u.props === 'string' ? { props: clip(u.props, 240) } : {}) })) } : {}),
 } : undefined
 // A comment on the design's motion (the page's motion dock) is on a moment of its take, `at`, or a
 // range of it, `at` to `to`, in ms, and says how long the take is: whole numbers of ms inside it.
