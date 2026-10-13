@@ -280,7 +280,7 @@ invented feature is never mistaken for one that ships.
 ## 4. Add the prototype, then build each variant
 
 ```
-proto add <slug> --title "Hero sections" --ask "<the user's request, in their words>" --variants "A:Current,B:Split media,C:Big price" [--kind phone] [--screen 402x874] [--from <slug>/<letter>[,<slug>/<letter>…] | --from-picks]
+proto add <slug> --title "Hero sections" --ask "<the user's request, in their words>" --variants "A:Current,B:Split media,C:Big price" [--kind phone] [--screen 402x874] [--from <slug>/<letter>[,<slug>/<letter>…] | --from-picks] [--slot <id>]
 ```
 
 `--from` is for a prototype built from part of an existing variant ("take the hero from
@@ -296,6 +296,26 @@ page names the others after a plus wherever it says where a prototype came from,
 their overviews links to it too. `--from-picks` uses every variant the user picked in this
 session (oldest prototype first, archived ones left out) and prints the list; it stops if
 nothing is picked yet. Say in `--ask` what the new design takes from each.
+
+**Plug a variant into what it was made from.** When the user points at one element of a variant
+and wants variants of it ("five more of this button"), the pick should replace that element
+where it came from. Before `proto add`, lift that one use into a slot, its markup left inside as
+the default, and pass the props it needs (React only; Vue stops):
+
+```tsx
+import { Slot } from '../../slot'
+<Slot proto="home" id="cta" label="Continue" onClick={next}><button …>Continue</button></Slot>
+```
+
+`id` is a short lowercase word; keep `proto` then `id` first, the tools read them that way. Then
+`proto add button --from home/B --slot cta --variants "A:Current,B:…,C:…"`. A is the lifted
+markup, matched to the original as Current always is. The rest are drop-ins: they read the props
+the slot passes, each with a default so it also renders alone on its artboard. The user's pick
+plugs a variant into `home/B` at once; picking Current, or taking the pick back, restores the
+original. `home/B.tsx` is not edited, and a pick leaves nothing for you to do. One written use is
+one slot (inside a loop it swaps every item); other variants and other uses of a shared component
+are untouched. Without `--slot` a prototype picks as before. `proto handoff home/B` builds the
+plugged-in design.
 
 This writes `src/protos/<slug>/meta.ts` and a "Building…" placeholder per variant, prints a
 direct link to the prototype (`…/#/<slug>`), and the page jumps there by itself. Then replace each placeholder file whole, one at a time,
@@ -656,7 +676,7 @@ the text.
 
 | `action:` | Already done | You |
 |---|---|---|
-| `pick` | marked and the working variant, unless its line says otherwise; with a note, the comment stays pending | handle or acknowledge the note, then `proto reply <id> --done`; plain picks are already done. When the line says it wasn't marked or the working variant didn't move, run the `proto pick` it names |
+| `pick` | marked and the working variant (and plugged into its parent, when the prototype has a slot), unless its line says otherwise; with a note, the comment stays pending | handle or acknowledge the note, then `proto reply <id> --done`; plain picks are already done. When the line says it wasn't marked or the working variant didn't move, run the `proto pick` it names |
 | `unpick` | the pick is off, and the comment done | nothing. When the line says nothing changed (that variant wasn't the pick), say so in a reply with `--done`; when it says it wasn't taken off, run the `proto pick … --off` it names |
 | `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you are adding and `--until <slug>/D,<slug>/E…` (step 5) |
 | `more-variants` | nothing | on the prototype (the route is `<slug>`, no letter), with a `count` the user chose: that many new variants, continuing the letters (`proto add <slug> --variants "<next letters>:…"`), each a new direction, different from the existing ones and from each other; their note, if any, is the direction. Reply with what you are adding and `--until <slug>/<first letter>,…` (step 5) |
@@ -682,6 +702,7 @@ When the user wants the prototypes in a doc or artifact to share: read `${CLAUDE
 | Something new ("now the pricing page") | `proto add <new slug> …` |
 | Variations of one variant ("B but with a map") | new letters in the same prototype, named after B |
 | A part of one variant, explored on its own ("B's hero, but better") | `proto add <new slug> --from <slug>/B …` |
+| Variants of one element that should replace it where it is ("more of this button") | lift it into a `<Slot>`, then `proto add <new slug> --from <slug>/<letter> --slot <id> …` |
 | Parts of several variants together ("E's layout with B's style") | `proto add <new slug> --from <slug>/E,<slug>/B …`, the one whose layout it keeps first |
 | One design from everything they picked ("a final design from all my picks") | `proto add <new slug> --from-picks …` |
 | A choice in chat ("go with A", "build B") | `proto pick <slug> <letter>` first, then what they asked |

@@ -83,6 +83,45 @@ function metaOf(text) { return JSON.parse(text.replace(/^[\s\S]*?export default\
 const withMeta = (text, meta) => text.replace(/export default[\s\S]*$/, () => `export default ${JSON.stringify(meta, null, 2)}\n`)
 // A variant is its file, as the page finds it (registry.ts): <letter>.tsx, .jsx, .vue or .svelte.
 const hasVariant = (slug, id) => ['tsx', 'jsx', 'vue', 'svelte'].some(x => existsSync(join(dir, 'src', 'protos', slug, `${id}.${x}`)))
+// What stands in each slot: `<prototype>/<slot id>` is `<child>/<letter>` while that is the
+// `use` in the prototype's meta.ts. A child that is archived, or whose file is gone, plugs
+// nothing in, so the original shows.
+export function slotPointers() {
+  const out = {}
+  let slugs = []
+  try { slugs = readdirSync(join(dir, 'src', 'protos')) } catch { /* none yet */ }
+  for (const slug of slugs) {
+    let meta
+    try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { continue }
+    for (const [id, slot] of Object.entries(meta.slots || {})) {
+      const [from, letter] = String(slot?.use || '').split('/')
+      if (!from || !letter || !hasVariant(from, letter)) continue
+      try { if (metaOf(readFileSync(metaFile(from), 'utf8')).archived) continue } catch { continue }
+      out[`${slug}/${id}`] = `${from}/${letter}`
+    }
+  }
+  return out
+}
+// A prototype made to stand in for part of another (`slot` in its meta.ts, `from` naming the
+// parent) plugs its pick in there at once: the pick is the slot's `use`. The variant called
+// Current (or As built) is the original, and so is no pick, so those clear it. Undoing a pick
+// clears it only while it is that variant.
+const isCurrent = name => /^(current|as built)$/i.test(String(name || '').trim())
+function plug(slug, meta, id, off) {
+  if (!meta.slot || typeof meta.from !== 'string') return
+  const parent = meta.from.split('/')[0]
+  let text, pm
+  try { text = readFileSync(metaFile(parent), 'utf8'); pm = metaOf(text) } catch { return }
+  const slot = pm.slots?.[meta.slot]
+  if (!slot) return
+  const use = `${slug}/${id}`
+  if (off && slot.use !== use) return
+  const next = off || isCurrent(meta.variants?.[id]) ? '' : use
+  if ((slot.use || '') === next) return
+  const { use: _, ...rest } = slot
+  pm.slots[meta.slot] = next ? { ...rest, use: next } : rest
+  writeWhole(metaFile(parent), withMeta(text, pm))
+}
 // A pick made in the page is what `proto pick` does, done at once instead of when the agent next
 // looks: the variant is marked in its meta.ts and becomes the working variant, its history starting
 // with "Picked <letter>" (the page's strip knows those words). Taking the pick back unmarks it only
@@ -93,6 +132,8 @@ function pick(route, off) {
   const [slug, id] = route.split('/')
   const text = readFileSync(metaFile(slug), 'utf8'), meta = metaOf(text)
   if (off && meta.picked !== id) return 'nothing'
+  // Before the pick is marked: if the parent can't be written, nothing is marked and `proto pick` redoes both.
+  plug(slug, meta, id, off)
   if (off) delete meta.picked
   else meta.picked = id
   writeWhole(metaFile(slug), withMeta(text, meta))
@@ -339,7 +380,7 @@ export function prototypeServer(session) {
   const status = () => {
     let s = {}
     try { s = read() } catch { /* being rewritten by hand; the rest still answers */ }
-    return { lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, inbox: inboxStatus() }
+    return { lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, slots: slotPointers(), inbox: inboxStatus() }
   }
   const stop = reason => {
     // The tailnet port as session.json has it now: on a session's first run, `proto up` gives it one
