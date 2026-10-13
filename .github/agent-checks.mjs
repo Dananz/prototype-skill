@@ -124,6 +124,26 @@ test('reply attribution follows the active agent and explicit overrides', () => 
   }
 }))
 
+test('session host follows detected agents and survives ordinary terminal commands', () => fixture(({ call, session }) => {
+  const dir = session('thread')
+  const file = join(dir, 'session.json')
+  for (const [extra, expected] of [
+    [{ CODEX_THREAD_ID: 'thread', CLAUDE_CODE_SESSION_ID: 'thread' }, 'codex'],
+    [{}, 'codex'],
+    [{ CLAUDE_SESSION_ID: 'thread' }, 'claude'],
+    [{ PROTO_AGENT: 'agent', CODEX_THREAD_ID: 'thread' }, 'agent'],
+    [{ PROTO_AGENT: 'claude', CODEX_THREAD_ID: 'thread' }, 'claude'],
+  ]) {
+    const r = call(['url', '--session', 'thread'], extra)
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).agent, expected)
+  }
+  const before = readFileSync(file, 'utf8')
+  const invalid = call(['url', '--session', 'thread'], { PROTO_AGENT: 'typo' })
+  assert.equal(invalid.status, 1)
+  assert.equal(readFileSync(file, 'utf8'), before)
+}))
+
 test('skill installed through a symlink in a path with spaces can locate its resources', () => fixture(({ project, call }) => {
   const installed = join(project, 'installed skills', 'prototype')
   mkdirSync(dirname(installed), { recursive: true })

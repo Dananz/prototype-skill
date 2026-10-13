@@ -191,12 +191,19 @@ function need(dir) {
 // comments is gone" (T3 Code restarted, the terminal closed) from "the agent is working on them" by
 // whether its long-lived process is still alive. Never use the short-lived CLI's own pid.
 const agentPid = () => Number(process.env.PROTO_AGENT_PID || process.env.CLAUDE_PID) || 0
+function detectedAgent() {
+  const by = process.env.PROTO_AGENT || (process.env.CODEX_THREAD_ID ? 'codex' : process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID ? 'claude' : null)
+  if (by && !['claude', 'codex', 'agent'].includes(by)) die('PROTO_AGENT must be claude, codex or agent')
+  return by
+}
 function replyAgent() {
-  const by = flags.as ?? process.env.PROTO_AGENT ?? (process.env.CODEX_THREAD_ID ? 'codex' : process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID ? 'claude' : 'agent')
+  const by = flags.as ?? detectedAgent() ?? 'agent'
   if (!['claude', 'codex', 'agent'].includes(by)) die('reply identity must be claude, codex or agent (--as or PROTO_AGENT)')
   return by
 }
 function beat(dir) {
+  const agent = detectedAgent()
+  if (agent) patchSession(dir, { agent })
   const pid = agentPid()
   if (!pid) return
   try { writeJson(join(dir, '.proto', 'inbox', 'agent.json'), { pid, session: sessionId(), at: new Date().toISOString() }) } catch { /* the page then just doesn't know */ }
@@ -291,7 +298,7 @@ function scaffold(dir, project) {
   })
   const id = sessionId()
   writeJson(sessionFile(dir), {
-    id, name: flags.name || basename(project), project, path: tilde(project), stack,
+    id, agent: detectedAgent() ?? 'agent', name: flags.name || basename(project), project, path: tilde(project), stack,
     createdAt: new Date().toISOString(), port: null, tailnetPort: null, pid: null,
     url: null, localUrl: null, keep: false, idleHours: IDLE_HOURS, deleteDays: DELETE_DAYS,
   })
@@ -381,6 +388,7 @@ async function up() {
   const dir = sessionDir()
   if (!existsSync(sessionFile(dir))) scaffold(dir, project)
   else await update(dir)
+  beat(dir)
   let s = readSession(dir)
   if (flags.name && flags.name !== s.name) s = patchSession(dir, { name: flags.name })
   if (!existsSync(join(dir, 'node_modules', 'vite'))) install(dir)

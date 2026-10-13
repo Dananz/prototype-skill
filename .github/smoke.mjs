@@ -21,6 +21,7 @@ import { commentRoutesChecks } from './comment-routes-checks.mjs'
 import { commentNavigationChecks } from './comment-navigation-checks.mjs'
 import { commentPicturesChecks } from './comment-pictures-checks.mjs'
 import { commentUntilChecks } from './comment-until-checks.mjs'
+import { hostLabelChecks } from './host-label-checks.mjs'
 import { listenerChecks } from './listener-checks.mjs'
 import { pickNoteChecks } from './pick-note-checks.mjs'
 import { contextMenuChecks } from './context-menu-checks.mjs'
@@ -181,6 +182,7 @@ await commentNavigationChecks({ app, openPage, fail })
 await commentPicturesChecks({ proto, app, openPage, fail })
 await commentUntilChecks({ proto, app, fail })
 await listenerChecks({ proto, app, fail })
+await hostLabelChecks({ proto, app, local, openPage, fail })
 await pickNoteChecks({ proto, app, local, openPage, fail, keepShots })
 await contextMenuChecks({ proto, app, local, openPage, fail })
 await splitChecks({ proto, app, local, openPage, fail, keepShots })

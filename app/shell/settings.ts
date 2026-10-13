@@ -14,7 +14,7 @@ type Props = {
   sidebar: boolean
   review: boolean
   stack: boolean
-  session: { id: string; name: string; url: string; keep: boolean; server: 'live' | 'reconnecting' | 'stopped'; listening: boolean; error: string | null }
+  session: { host: string; id: string; name: string; url: string; keep: boolean; server: 'live' | 'reconnecting' | 'stopped'; listening: boolean; error: string | null }
   onKeep: (value: boolean) => Promise<void>
   onStop: () => Promise<void>
   onClose: () => void
@@ -123,7 +123,7 @@ function Settings(p: Props) {
         h('div', null, h('p', { className: 'text-[13px] font-medium' }, 'Server'), h('p', { 'data-setting-server-status': '', className: muted }, p.session.server === 'live' ? 'Live' : p.session.server === 'stopped' ? 'Stopped. Run proto up to start it again.' : 'Reconnecting…')),
         h('button', { type: 'button', 'data-setting-stop': '', disabled: !!pending || p.session.server === 'stopped', onClick: () => void changeSession('stop', p.onStop), className: `${button} text-rose-600 dark:text-rose-400` }, pending === 'stop' ? 'Stopping…' : p.session.server === 'stopped' ? 'Stopped' : 'Stop server')),
       h('div', { className: 'flex flex-wrap items-center justify-between gap-3 border-t border-black/[.06] pt-4 dark:border-white/10' },
-        h('div', null, h('p', { className: 'text-[13px] font-medium' }, 'Agent listener'), h('p', { 'data-setting-listener-status': '', className: muted }, p.session.listening ? 'Connected' : 'Not listening'), h('p', { className: muted }, 'Paste the restart message in your agent thread.')),
+        h('div', null, h('p', { className: 'text-[13px] font-medium' }, `${p.session.host} listener`), h('p', { 'data-setting-listener-status': '', className: muted }, p.session.listening ? 'Connected' : 'Not listening'), h('p', { className: muted }, 'Paste the restart message in your agent thread.')),
         h('button', { type: 'button', 'data-setting-reconnect': '', disabled: copying, onClick: () => void copy(`Listen for my prototype comments again: run proto inbox --wait --session ${JSON.stringify(p.session.id)}. Handle waiting and unanswered comments first.`, 'Restart message copied. Paste it in your agent thread.'), className: button }, 'Copy restart message')),
       p.session.error ? h('p', { role: 'alert', className: 'text-xs text-rose-600 dark:text-rose-400' }, p.session.error) : null,
       notice ? h('p', { role: 'status', className: muted }, notice) : null,

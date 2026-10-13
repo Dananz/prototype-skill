@@ -3,7 +3,7 @@
 // finger, the outline that stays on what a new comment is being written on, the composer beside
 // the one being written, and a sent comment's card.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useCtx } from './ctx'
+import { useAgentName, useCtx } from './ctx'
 import { frameClicks } from '../view/frame'
 import { climb, describe, find } from './dom'
 import { listen } from '../quiet'
@@ -159,6 +159,7 @@ function Climb({ box, up, down }: { box: Box; up: boolean; down: boolean }) {
 
 /** A sent or answered comment, opened from the list: what was asked and what Claude did, small, under its element. */
 function ReadCard({ row, box }: { row: { item: Item; state: ReturnType<typeof progress>['state']; reply: Said | null; here: boolean }; box?: Box }) {
+  const agent = useAgentName()
   const { host, act } = useCtx()
   const el = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState<{ left: number; top: number } | null>(null)
@@ -191,7 +192,7 @@ function ReadCard({ row, box }: { row: { item: Item; state: ReturnType<typeof pr
       <div className="flex items-center gap-1.5 text-[10px]">
         <PinDot n={item.n} done={state === 'done'} size="sm" whole={item.target?.whole} />
         <span dir="auto" className="min-w-0 flex-1 truncate font-medium text-zinc-500">{item.target?.whole ? 'Whole variant' : 'Comment'}</span>
-        <span className={`shrink-0 ${STATE[state].cls}`}>{STATE[state].label}</span>
+        <span className={`shrink-0 ${STATE[state].cls}`}>{state === 'seen' ? `${agent} is on it` : STATE[state].label}</span>
       </div>
       <Body c={item} className="mt-1 block text-zinc-800 dark:text-zinc-200" />
       {reply && <span className="mt-1.5 block"><Reply text={reply.text} by={reply.by} small /></span>}

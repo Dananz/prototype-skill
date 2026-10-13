@@ -89,6 +89,17 @@ export async function settingsChecks({ proto, app, local, openPage, fail }) {
     await until(`document.querySelector("[data-setting=keep] input")?.checked === ${!keepBefore}`, 'opening Settings did not refresh externally changed session status')
     await click('[data-setting=keep] input')
     await until(`document.querySelector("[data-setting=keep] input").checked === ${keepBefore} && !document.querySelector("[data-setting=keep] input").disabled`, 'external-status check did not restore saved state')
+    const previousAgent = process.env.PROTO_AGENT
+    try {
+      for (const [host, label] of [['codex', 'Codex'], ['claude', 'Claude'], ['agent', 'Agent']]) {
+        process.env.PROTO_AGENT = host
+        proto(['url'])
+        await until(`document.querySelector("[data-settings-dialog]").textContent.includes(${JSON.stringify(label + ' listener')})`, 'Settings listener did not follow the current host')
+      }
+    } finally {
+      if (previousAgent === undefined) delete process.env.PROTO_AGENT; else process.env.PROTO_AGENT = previousAgent
+      proto(['url'])
+    }
     await click('[data-settings-category=shortcuts]')
     await until('document.querySelector("[data-settings-dialog]").textContent.includes("Send draft comments")', 'shortcuts tab is empty')
     const hash = await page.run('location.hash')

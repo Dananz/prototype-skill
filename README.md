@@ -203,8 +203,11 @@ Existing shortened UUID sessions resume only when the stored full ID matches.
 
 Replies detect Codex or Claude when their identity variables exist; other agents get a
 neutral mark. Set `PROTO_AGENT` to `codex`, `claude` or `agent`, or pass `reply --as <agent>`,
-to override it. `PROTO_AGENT_PID` can identify a long-lived agent process for interrupted-comment
-recovery; never use a short-lived command's PID.
+to override it. The session labels also detect Codex or Claude from their session variables
+and show that host (for example, **Send to Codex** and **With Codex**). `PROTO_AGENT`
+overrides those labels; `reply --as` changes only that reply. Unrecognized hosts show
+**Agent**, and ordinary terminal commands keep the last detected host. `PROTO_AGENT_PID`
+can identify a long-lived agent process for interrupted-comment recovery; never use a short-lived command's PID.
 
 The agent reads `proto inbox` on active turns. A host with background completion wakeups
 can also use `proto inbox --wait` to react to comments while idle.
