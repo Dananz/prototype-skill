@@ -5,7 +5,7 @@ your letter, the app's folder, the brief's path (`.proto/briefs/<slug>.json`: yo
 under `directions.<letter>`, the facts every direction shares, and any must-dos), the flags for
 every `proto` call (`--session <id>`, and `--project <root>` when given), and for an existing
 product, the reference screenshots and `A.tsx` to start from. `proto` is
-`node <this skill>/scripts/proto.mjs`. Everything else is here.
+`node "<resolved-skill-dir>/scripts/proto.mjs"`, using the absolute path from your prompt. Everything else is here.
 
 When the brief has a `"brand"`, craft.md section 1 says how it binds you: its logo files in
 `src/assets/brand/` imported as they are, its name, voice and one moment of its key color; your
@@ -36,7 +36,7 @@ replaces your placeholder the moment you save it.
 
 ## Images
 
-The main agent generates them in the background into `src/assets/`, named
+The main agent generates them (in the background when supported) into `src/assets/`, named
 `<slug>-<letter>-<what>` (`kiosk-B-hero.jpg`). Use them through `image()` from `src/images.ts`:
 `image('kiosk-B-hero')` is the URL once the file exists and `undefined` until then, so draw a
 shape in its place meanwhile. The page swaps the image in by itself when it lands; don't wait

@@ -1,4 +1,4 @@
-# Building the winner, and snapshots in a Claude Doc
+# Building the winner, and sharing snapshots
 
 Part of the prototype skill: SKILL.md links here, and `proto` is the command SKILL.md defines.
 
@@ -31,10 +31,11 @@ It writes `<slug>-<letter>-vs-built.png`: the variant, the build and the two lai
 Read it and fix the build until the overlay shows no double edges. Reply with that sheet,
 screenshots of the real feature, and any line of the handoff left unticked.
 
-## Only if asked: snapshots in a Claude Doc
+## Only if asked: share snapshots
 
-When the user wants the prototypes in a doc or artifact to share, and the Claude Docs
-connector is available (otherwise say so and offer the `proto shoot` images):
+When the user asks for a doc or artifact to share, use an available document tool to attach
+`proto shoot` images with captions. Ordinary document tools cannot execute JSX snapshots.
+If the host has a Claude Docs connector that supports JSX widgets, use this path instead:
 
 1. `proto snap <slug> …` (or `<slug>/<letter>`) renders each variant and writes it as a static
    HTML module to the app's `.proto/snaps/<slug>-<letter>.jsx`, plus `index.json` with a caption

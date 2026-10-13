@@ -192,13 +192,14 @@ An empty gray box where an image goes makes everything around it look unfinished
 preference:
 
 1. The project's own images.
-2. **A generated image, whenever an image tool is available** in this session (the `codex-image`
-   skill, or an image-generation MCP) and the subject is photo-led (food, places, products,
+2. **A generated image, whenever an image tool is available** in this session (an image-generation
+   skill or tool) and the subject is photo-led (food, places, products,
    people, interiors). Then it is not optional: a drawn pastry where a photo belongs is the
    weakest part of the page. One hero image and a few product shots per direction, in the
    direction's own light and styling, saved into the app's `src/assets/` as
    `<slug>-<letter>-<what>`. The main agent generates them for all directions at once, as one
-   background command right after its own hero, and doesn't wait on it. Variants read them with
+   request right after its own hero, using background completion when supported.
+   With a synchronous tool, save its output before continuing; do not invent a background API. Variants read them with
    `image()` from `src/images.ts` (undefined until the file lands): a drawn shape holds the place
    and the page swaps the image in by itself. No tool available: skip this, don't ask.
 3. Drawing from the subject in code: SVG shapes, a chart, a map, a gradient with grain.

@@ -216,8 +216,8 @@ export function createActions(store: Store, host: Host) {
       const r = sent.results[0]
       if (!r?.failed) return
       if (r.nothing) throw new Error(`${to.variant} isn’t picked any more, so there was nothing to take back.`)
-      if (r.marked) throw new Error(`Picked ${to.variant}, but your requests still change the variant they did (${r.failed}). Claude is told.`)
-      throw new Error(`Couldn’t ${action === 'pick' ? `pick ${to.variant}` : 'take the pick back'}: ${r.failed}. Claude is told.`)
+      if (r.marked) throw new Error(`Picked ${to.variant}, but your requests still change the variant they did (${r.failed}). Agent is told.`)
+      throw new Error(`Couldn’t ${action === 'pick' ? `pick ${to.variant}` : 'take the pick back'}: ${r.failed}. Agent is told.`)
     },
     /**
      * More variants of a prototype, a request of its own (action more-variants, on the prototype, not

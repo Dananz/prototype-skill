@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// proto: one live prototype app per Claude Code session, served on the tailnet.
+// proto: one live prototype app per agent session, served locally or on the tailnet.
 //
 //   proto up [--name "Session name"] [--stack react|vue]   create or restart, print the URL; an existing
 //             session's copy of the app (shell, config, packages) is brought up to date first
@@ -24,13 +24,13 @@
 //             frames per second at rest (or while dragging that element), how busy the main and GPU
 //             threads are, and the design's slowest functions; run it on anything that animates
 //   proto handoff <slug>/<letter>   a checklist of what that variant has, for building it into the codebase
-//   proto snap <slug>[/<letter>]… [--width 672]   static HTML snapshots for a Claude Doc
+//   proto snap <slug>[/<letter>]… [--width 672]   static HTML snapshots for a shared document
 //   proto pick <slug> <letter> [--off]   the user chose this variant: marked in the page
 //   proto work <slug>/<letter> [--ask "…"] [--off]   the variant being worked on: pinned in the page
 //   proto ask "…" [--to <slug>/<letter>]   a change the user asked for, kept with that variant
 //   proto ask --each "…" "…" …   several at once (a batch of comments)
 //   proto inbox [--wait] [--timeout <min>]   comments sent from the page; --wait blocks until some arrive
-//   proto reply <batch>[/<n>] "…" [--done | --until <slug>[/<letter>]] [--as codex]   answer a comment (or a whole batch) in the page;
+//   proto reply <batch>[/<n>] "…" [--done | --until <slug>[/<letter>]] [--as claude|codex|agent]   answer a comment (or a whole batch) in the page;
 //                                   --until keeps it open until that work is built (proto done closes it)
 //   proto reply <batch> 1 "…" 2 "…" … [--done | --until <slug>]   answer many comments of a batch in one call
 //   proto kit [--kit=<name>]   the project's design kit: what it has, and whether the app moved on since
@@ -43,7 +43,9 @@
 //   proto stop    proto rm    proto ls    proto gc
 //
 // Common flags: --project <dir> (default: git root of the cwd), --session <id>
-// (default: $CLAUDE_CODE_SESSION_ID).
+// (default: PROTO_SESSION_ID, CODEX_THREAD_ID, CLAUDE_CODE_SESSION_ID, CLAUDE_SESSION_ID, in that order).
+// Reply identity: --as claude|codex|agent, then PROTO_AGENT, then the detected agent (or agent).
+// Optional PROTO_AGENT_PID (or CLAUDE_PID) identifies the long-lived agent for comment recovery.
 
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
@@ -133,14 +135,25 @@ function projectRoot() {
   return git.status === 0 ? git.stdout.trim() : process.cwd()
 }
 function sessionId() {
-  const id = flags.session || process.env.CLAUDE_CODE_SESSION_ID
-  if (!id) die('no session id. Pass --session <id> (outside Claude Code, any stable name works).')
+  const id = flags.session || process.env.PROTO_SESSION_ID || process.env.CODEX_THREAD_ID || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID
+  if (!id || id === true) die('no session id. Pass --session <id> on every call, or set PROTO_SESSION_ID to one stable, unique name for this conversation.')
   return String(id)
 }
-// Claude Code session ids are UUIDs, whose first 8 characters are plenty; any other name
-// is kept whole so two different names never share a folder.
-const short = id => (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(id) ? id.slice(0, 8) : id.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 40)) || 'session'
-const sessionDir = () => join(projectRoot(), '.prototypes', short(sessionId()))
+// UUIDv7's first 8 characters are a timestamp shared by nearby threads. Keep full IDs for
+// new folders; reuse the old 8-character UUID folder only when its stored identity matches.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const short = id => id.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 40) || 'session'
+function sessionDir() {
+  const id = sessionId(), root = join(projectRoot(), '.prototypes')
+  const dir = join(root, short(id))
+  if (!existsSync(dir) && UUID.test(id)) {
+    const legacy = join(root, id.slice(0, 8))
+    if (readSession(legacy)?.id === id) return legacy
+  }
+  const stored = readSession(dir)?.id
+  if (stored && stored !== id) die(`folder ${tilde(dir)} belongs to a different session. Use a distinct --session name; no files were changed.`)
+  return dir
+}
 const sessionFile = dir => join(dir, 'session.json')
 const readSession = dir => readJson(sessionFile(dir), null)
 // The page hot-reloads session.json, so a write that changes nothing is skipped. Read right
@@ -175,13 +188,18 @@ function need(dir) {
   return readSession(dir)
 }
 // Who is running these commands, written as they run: the page tells "the session that took my
-// comments is gone" (T3 Code restarted, the terminal closed) from "Claude is working on them" by
-// whether this process is still alive. Only an agent that exports CLAUDE_PID has one.
-const agentPid = () => Number(process.env.CLAUDE_PID) || 0
+// comments is gone" (T3 Code restarted, the terminal closed) from "the agent is working on them" by
+// whether its long-lived process is still alive. Never use the short-lived CLI's own pid.
+const agentPid = () => Number(process.env.PROTO_AGENT_PID || process.env.CLAUDE_PID) || 0
+function replyAgent() {
+  const by = flags.as ?? process.env.PROTO_AGENT ?? (process.env.CODEX_THREAD_ID ? 'codex' : process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID ? 'claude' : 'agent')
+  if (!['claude', 'codex', 'agent'].includes(by)) die('reply identity must be claude, codex or agent (--as or PROTO_AGENT)')
+  return by
+}
 function beat(dir) {
   const pid = agentPid()
   if (!pid) return
-  try { writeJson(join(dir, '.proto', 'inbox', 'agent.json'), { pid, session: process.env.CLAUDE_CODE_SESSION_ID || null, at: new Date().toISOString() }) } catch { /* the page then just doesn't know */ }
+  try { writeJson(join(dir, '.proto', 'inbox', 'agent.json'), { pid, session: sessionId(), at: new Date().toISOString() }) } catch { /* the page then just doesn't know */ }
 }
 
 const index = () => readJson(INDEX, []).filter(d => typeof d === 'string')
@@ -1441,7 +1459,7 @@ async function inbox() {
     if (!got.length) console.log('no new comments')
     stillOpen(dir, got.map(b => b.id))
     const w = readJson(waiterFile(dir), null)
-    console.log(w && alive(w.pid) ? `listening (pid ${w.pid})` : 'not listening: run `proto inbox --wait` in the background')
+    console.log(w && alive(w.pid) ? `listening (pid ${w.pid})` : 'not listening: run `proto inbox` on active turns; use `proto inbox --wait` only with a supported background wakeup')
     return
   }
   const w = readJson(waiterFile(dir), null)
@@ -1505,7 +1523,7 @@ function reply() {
   const file = join(inboxDir(dir), 'taken', ids[0], 'batch.json')
   const at = new Date().toISOString()
   // Whose mark the page puts beside the reply.
-  const by = flags.as === 'codex' ? 'codex' : 'claude'
+  const by = replyAgent()
   // Every comment named is checked before the lock is taken: dying while holding it would leave it.
   const all = readJson(file, null)?.comments || []
   for (const k of pairs ? words.filter((w, i) => i % 2 === 0) : n ? [n] : []) if (!all.some(x => x.n === Number(k))) die(`batch ${ids[0]} has no comment ${k} (1-${all.length})`)
@@ -1566,7 +1584,7 @@ function stillOpen(dir, skip) {
       lines.push(`  ${id}/${c.n} "${clip(c.text, 50)}": ${c.until ? `closes itself when ${c.until.join(', ')} is built (${left} building)` : c.reply ? `replied "${clip(c.reply.text, 50)}", never closed` : 'not answered'}`)
     }
   }
-  if (lines.length) console.log(`Still open from earlier (the page says "Claude is on it"); once each one's work is in: proto reply <batch>/<n> "…" --done\n${lines.join('\n')}\n`)
+  if (lines.length) console.log(`Still open from earlier (the page says "Agent is on it"); once each one's work is in: proto reply <batch>/<n> "…" --done\n${lines.join('\n')}\n`)
 }
 
 // How close one variant (or an element of it) is to a screenshot of the real thing (compare.mjs).

@@ -50,8 +50,8 @@ export type Inbox = {
   listening: boolean
   /** The last agent that ran proto commands here: still running, or gone (T3 Code restarted, the terminal closed). */
   agent?: 'alive' | 'gone' | null
-  batches: { id: string; at: string; state: 'sent' | 'seen' | 'lost' | 'done'; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null
-    comments: { n: number; route: string; action?: Action; done: boolean; withdrawn?: boolean; scoped?: boolean; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null }[] }[]
+  batches: { id: string; at: string; state: 'sent' | 'seen' | 'lost' | 'done'; reply: { text: string; at: string; by?: 'claude' | 'codex' | 'agent' } | null
+    comments: { n: number; route: string; action?: Action; done: boolean; withdrawn?: boolean; scoped?: boolean; reply: { text: string; at: string; by?: 'claude' | 'codex' | 'agent' } | null }[] }[]
 }
 /** An element a comment is on or tags. Rect is in CSS px from the variant root's top left; src and
  *  component say where it is written (`today/parts.tsx:30`, `PriceCard`). */
@@ -810,7 +810,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // ---------- lobbies ----------
   function lifecycle() {
     const s = st.status
-    if (st.stopped) return 'Server stopped. Ask Claude to start it again.'
+    if (st.stopped) return 'Server stopped. Ask Agent to start it again.'
     if (!s) return ''
     const until = new Date(s.lastEdit + s.deleteDays * 864e5).toLocaleDateString([], { month: 'short', day: 'numeric' })
     return `Idle stop ${s.idleHours}h · ${s.keep ? 'Kept' : `Deletes ${until}`}`
@@ -1010,7 +1010,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const dockBtn = 'grid size-9 shrink-0 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white'
     const dockSep = '<span class="mx-1 h-5 w-px shrink-0 bg-white/15"></span>'
     overlay.innerHTML = framed || view !== 'variant' || !p ? '' : `
-      ${building(p.id, vid) ? `<div data-building-chip title="Claude is still building this one" class="pointer-events-none absolute left-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}Building</div>` : ''}
+      ${building(p.id, vid) ? `<div data-building-chip title="Agent is still building this one" class="pointer-events-none absolute left-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}Building</div>` : ''}
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
       ${!st.focus ? `<button data-act="focus" data-focus-btn title="Focus mode · F" class="absolute right-[calc(var(--hw,0px)+1rem)] top-3 z-10 hidden h-9 [@media(hover:hover)]:inline-flex items-center gap-1.5 rounded-full bg-zinc-900/80 px-3 text-xs font-medium text-white shadow-lg backdrop-blur transition-opacity duration-200 focus-visible:!opacity-100" style="opacity:${stageHover.on ? 1 : 0}">${ic('grow', 'size-3.5')}Focus</button>` : `
       ${st.open === 'fproto' ? `<div data-pop class="fixed bottom-[76px] left-1/2 z-20 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">${protoMenu}</div>` : ''}
