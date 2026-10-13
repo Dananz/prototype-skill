@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export async function commentRoutesChecks({ proto, app, openPage, fail }) {
-  for (const [slug, css, nested, dual] of [['routefx', false, false, false], ['routecss', true, false, false], ['routenested', true, true, false], ['routepress', true, false, true]]) {
+  for (const [slug, css, nested, dual, learn] of [['routefx', false, false, false, false], ['routecss', true, false, false, false], ['routenested', true, true, false, false], ['routepress', true, false, true, false], ['routelearn', true, false, false, true]]) {
   proto(['add', slug, '--title', 'Menu route', '--variants', 'A:Menu'])
   writeFileSync(join(app, 'src', 'protos', slug, 'A.tsx'), `import { useState } from 'react'
 export default function Menu() {
@@ -48,6 +48,7 @@ export default function Menu() {
       if (!await until(menu)) return 'the menu did not open'
       if (${nested}) q('[data-shoot=inner-opener]').click()
       if (!await until(item)) return 'the item did not show'
+      if (${learn}) q('[data-shoot=menu]').removeAttribute('data-opened-by')
       if (!await mode(true)) return 'comment mode did not turn on'
       await new Promise(r => setTimeout(r, 200))
       const el = q('[data-shoot=item]'), r = el.getBoundingClientRect(), frame = el.ownerDocument.defaultView.frameElement
@@ -66,6 +67,11 @@ export default function Menu() {
       if (!await until(() => !editor() && pin())) return 'the comment has no pin on the item'
       // Drafts are written to storage a moment after a change.
       await until(() => saved()?.target)
+      if (${learn}) {
+        if (saved()?.target?.route?.length) return 'the unmarked menu should start with no saved opener route'
+        q('[data-shoot=menu]').setAttribute('data-opened-by', '[data-shoot=opener]')
+        if (!await until(() => saved()?.target?.route?.length)) return 'a route-less comment must learn its opener when the marker arrives later'
+      }
       const route = saved()?.target?.route
       if (JSON.stringify(route) !== JSON.stringify(${JSON.stringify(nested ? ['[data-shoot=opener]', '[data-shoot=inner-opener]'] : ['[data-shoot=opener]'])})) return 'the comment should keep the way to the item, it kept ' + JSON.stringify(route) + ' | attr on page: ' + !!q('[data-opened-by]') + ' | target keys: ' + Object.keys(saved()?.target || {}).join(',')
 

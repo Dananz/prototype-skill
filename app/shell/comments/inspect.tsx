@@ -61,9 +61,11 @@ export function useBoxes(list: { id: string; t: Target }[]) {
         // A comment kept without a way there (written before designs marked what opens what, or
         // before the design did) learns it the first time its element is on the page.
         if (el && !x.t.route && x.id !== '__new' && !learned.has(x.id)) {
-          learned.add(x.id)
           const route = routeOf(mount, el)
-          if (route.length) store.set(s => ({ items: s.items.map(i => i.id === x.id && i.target && !i.target.route ? { ...i, target: { ...i.target, route } } : i) }))
+          if (route.length) {
+            learned.add(x.id)
+            store.set(s => ({ items: s.items.map(i => i.id === x.id && i.target && !i.target.route ? { ...i, target: { ...i.target, route } } : i) }))
+          }
         }
         if (b) { next[x.id] = b; continue }
         // Hidden in a closed menu, tab or popup (gone, or still there but not showing): its pin
