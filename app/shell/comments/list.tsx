@@ -6,7 +6,7 @@ import { useCtx } from './ctx'
 import { progress, useStore, type Said } from './store'
 import type { CState, Item } from './types'
 import { shotsOf } from './types'
-import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, Reply, since, spanOf, SrcTag, ViewChip, Working, ImageChip } from './ui'
+import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, Reply, since, spanOf, SrcTag, ViewChip, Working, ImageChip, PictureStrip } from './ui'
 
 export function useRows() {
   const { store, act } = useCtx()
@@ -49,10 +49,12 @@ const About = ({ item }: { item: Item }) => item.action
   : <span dir="auto">{aboutOf(item)}</span>
 // What a comment carries besides its words: its screenshot, how many it tags, where in the code it is.
 const Extras = ({ item }: { item: Item }) => (item.tags.length > 0 || shotsOf(item).length || item.target?.src) ? (
-  <span className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-zinc-400">
-    {shotsOf(item).map((p, k) => p.pasted ? <ImageChip key={k} src={p.src} size="sm" /> : <img key={k} src={p.src} alt="" className="h-9 w-14 rounded-md object-cover ring-1 ring-black/10" />)}
-    {item.tags.length > 0 && <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-proto-primary-soft px-1.5 text-proto-primary-soft-fg"><Icon name="at" className="size-3" />{item.tags.length} tagged</span>}
-    <SrcTag t={item.target} className="min-w-0" />
+  <span className="mt-2 block min-w-0 text-[11px] text-zinc-400">
+    {!!shotsOf(item).length && <PictureStrip>{shotsOf(item).map((p, k) => p.pasted ? <ImageChip key={k} src={p.src} size="sm" /> : <img key={k} src={p.src} alt="" className="h-9 w-14 rounded-md object-cover ring-1 ring-black/10" />)}</PictureStrip>}
+    <span className="flex min-w-0 flex-wrap items-center gap-2">
+      {item.tags.length > 0 && <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-proto-primary-soft px-1.5 text-proto-primary-soft-fg"><Icon name="at" className="size-3" />{item.tags.length} tagged</span>}
+      <SrcTag t={item.target} className="min-w-0" />
+    </span>
   </span>
 ) : null
 
@@ -84,7 +86,7 @@ function WithClaude({ r, active, roomy, onOpen }: { r: Row; active: boolean; roo
           <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} /><span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? 'Claude is on it' : 'Sent'}</span></span>
           <Body c={item} className={`mt-0.5 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
           <ViewChip v={item.target?.view} className="mt-1.5" />
-          {shotsOf(item).some(p => p.pasted) && <span className="mt-2 flex flex-wrap gap-1.5">{shotsOf(item).filter(p => p.pasted).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</span>}
+          {shotsOf(item).some(p => p.pasted) && <PictureStrip className="mt-2">{shotsOf(item).filter(p => p.pasted).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</PictureStrip>}
           {reply && <span data-shoot="comment-reply" className="mt-2 block"><Reply text={reply.text} by={reply.by} small /></span>}
         </span>
       </button>

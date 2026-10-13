@@ -9,7 +9,7 @@ import { find } from './dom'
 import { capture, ShotEditor } from './shot'
 import type { Box, Draft, Seg, Shot, Target, Time } from './types'
 import { MAX_SHOTS, shotsOf } from './types'
-import { IB, Icon, MOD, PinDot, PRIMARY, spanOf, SrcTag, srcOf, ImageChip, ViewChip } from './ui'
+import { IB, Icon, MOD, PinDot, PRIMARY, spanOf, SrcTag, srcOf, ImageChip, PictureStrip, ViewChip } from './ui'
 
 function readEditor(el: HTMLElement): Seg[] {
   const out: Seg[] = []
@@ -209,7 +209,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
 
         </div>
         {(capturing || shots.length > 0) && (
-          <div data-shoot="comment-pictures" className="flex flex-wrap items-center gap-2 px-3 pb-1 pt-1.5">
+          <PictureStrip className="mx-1">
             {shots.map((p, k) => p.pasted
               ? <ImageChip key={k} src={p.src} onOpen={() => setMarking({ src: p.src, at: k })} onRemove={() => setShots(s => s.filter((_, j) => j !== k))} />
               : <span key={k} className="relative">
@@ -217,7 +217,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
                   <button onClick={() => setShots(s => s.filter((_, j) => j !== k))} aria-label="Remove the screenshot" title="Remove the screenshot" className="absolute -end-1.5 -top-1.5 grid size-5 place-items-center rounded-full bg-zinc-900 text-[11px] leading-none text-white shadow ring-2 ring-white dark:bg-zinc-100 dark:text-zinc-900 dark:ring-zinc-900">×</button>
                 </span>)}
             {capturing && <span className="grid h-12 w-20 place-items-center rounded-lg bg-zinc-900/[.04] text-[11px] text-zinc-400 dark:bg-white/[.06]">{capturing}</span>}
-          </div>
+          </PictureStrip>
         )}
         <div className="flex items-center gap-1 px-2 pb-2 pt-1">
           <button onClick={() => { saveRange(); act.tagPick() }} title="Tag another element on the design" aria-label="Tag another element" className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="target" /></button>
