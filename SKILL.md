@@ -342,7 +342,8 @@ import { Slot } from '../../slot'
 markup, matched to the original as Current always is. The rest are drop-ins: they read the props
 the slot passes, each with a default so it also renders alone on its artboard. The user's pick
 plugs a variant into `home/B` at once; picking Current, or taking the pick back, restores the
-original. `home/B.tsx` is not edited, and a pick leaves nothing for you to do. One written use is
+original. `home/B.tsx` is not edited, and a pick leaves nothing for you to do: the plug-in is
+logged in both variants' history, too. One written use is
 one slot (inside a loop it swaps every item); other variants and other uses of a shared component
 are untouched. Without `--slot` a prototype picks as before. `proto handoff home/B` builds the
 plugged-in design.

@@ -1457,7 +1457,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const asks = asksOf(session.work!).slice().reverse()
     const mv = st.moved && refOk(st.moved)
     const picked = (t: string) => /^Picked [A-Z]{1,2}$/.test(t.trim())
-    const n = asks.filter(a => !picked(a.text)).length
+    // What a plug-in leaves on both variants (app/server.mjs plugLines): status lines like a pick, not requests.
+    const plugged = (t: string) => /^(Plugged in(to)?|Original back( in|, took out)) .+ [A-Z]{1,2}$/.test(t.trim())
+    const n = asks.filter(a => !picked(a.text) && !plugged(a.text)).length
     return `<div class="mx-2 mb-2 rounded-xl bg-zinc-900/[.04] p-2 text-[12px] dark:bg-white/[.05]">
         <button data-act="work:go" ${here ? 'aria-current="true"' : 'title="Go to it · W"'} class="flex w-full min-w-0 items-center gap-2.5 text-left">
           <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-emerald-500/15 text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">${w.v.id}</span>
@@ -1468,7 +1470,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${st.failed?.at === 'work' ? `<p role="alert" class="mt-2 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-[11px] text-rose-700 dark:text-rose-300">${esc(st.failed.text)}</p>` : ''}
         ${mv ? `<div class="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-500/[.08] px-2 py-1 text-[11px]"><span class="text-amber-600">${ic('from', 'size-3.5')}</span><span class="min-w-0 flex-1 truncate text-zinc-600 dark:text-zinc-300">Moved here from <b class="font-semibold">${mv.v.id}</b> · ${bd(mv.v.name)}${mv.p !== w.p ? ` <span class="text-zinc-400">in ${bd(mv.p.title)}</span>` : ''}</span><button data-act="work:undo" class="h-6 shrink-0 rounded-md px-1.5 font-medium text-zinc-900 hover:bg-zinc-900/[.06] dark:text-white dark:hover:bg-white/10">Undo</button></div>` : ''}
         ${asks.length ? `<button data-act="asks" aria-expanded="${st.asks}" class="mt-1.5 flex h-7 w-full items-center gap-1.5 rounded-md px-1 text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-white">${ic('clock', 'size-3.5')}${n} change${n === 1 ? '' : 's'} you asked for${ic('chev', `ml-auto size-3.5 transition-transform ${st.asks ? 'rotate-180' : ''}`)}</button>
-          ${st.asks ? `<ol class="max-h-48 space-y-1.5 overflow-y-auto overscroll-contain px-1 pb-1 pt-1">${asks.map(a => { const pk = picked(a.text), t = Date.parse(a.at); return `<li class="flex gap-2 text-[11px] leading-[15px]"><span class="mt-px grid size-3.5 shrink-0 place-items-center rounded-full ${pk ? 'bg-emerald-500 text-white' : 'bg-zinc-900/[.08] text-zinc-500 dark:bg-white/10 dark:text-zinc-400'}">${ic('check', 'size-2.5')}</span><span dir="auto" class="min-w-0 flex-1 ${pk ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-700 dark:text-zinc-300'}">${pk ? `You picked ${esc(a.text.trim().slice(7))}` : esc(a.text)}</span>${t ? `<span class="shrink-0 text-[10px] text-zinc-400" data-ago="${t}">${ago(t)}</span>` : ''}</li>` }).join('')}</ol>` : ''}` : ''}
+          ${st.asks ? `<ol class="max-h-48 space-y-1.5 overflow-y-auto overscroll-contain px-1 pb-1 pt-1">${asks.map(a => { const pk = picked(a.text), ok = pk || plugged(a.text), t = Date.parse(a.at); return `<li class="flex gap-2 text-[11px] leading-[15px]"><span class="mt-px grid size-3.5 shrink-0 place-items-center rounded-full ${ok ? 'bg-emerald-500 text-white' : 'bg-zinc-900/[.08] text-zinc-500 dark:bg-white/10 dark:text-zinc-400'}">${ic('check', 'size-2.5')}</span><span dir="auto" class="min-w-0 flex-1 ${ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-700 dark:text-zinc-300'}">${pk ? `You picked ${esc(a.text.trim().slice(7))}` : esc(a.text)}</span>${t ? `<span class="shrink-0 text-[10px] text-zinc-400" data-ago="${t}">${ago(t)}</span>` : ''}</li>` }).join('')}</ol>` : ''}` : ''}
       </div>`
   }
 
