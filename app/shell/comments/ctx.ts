@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useSyncExternalStore } from 'react'
 import type { CommentBatch, Sent } from '../shell'
 import type { Actions } from './actions'
 import type { CopyActions, CopyStore } from './copy'
@@ -22,9 +22,16 @@ export type Host = {
   send: (batch: CommentBatch) => Promise<Sent>
   /** Takes back a sent comment the user deleted (batch, and its number in it); never throws. */
   withdraw: (batch: string, n: number) => Promise<void>
+  agentName?: () => string
   dark: () => boolean
 }
 /** The comment layer's store and actions, and the copy picker's, which sends through it. */
 export type Ctx = { store: Store; host: Host; act: Actions; copyStore: CopyStore; copyAct: CopyActions }
 export const CommentsCtx = createContext<Ctx>(null as unknown as Ctx)
 export const useCtx = () => useContext(CommentsCtx)
+
+/** Subscribes to session changes as well as inbox changes, without persisting identity in drafts. */
+export function useAgentName() {
+  const { store, host } = useCtx()
+  return useSyncExternalStore(store.subscribe, () => host.agentName?.() ?? 'Agent')
+}

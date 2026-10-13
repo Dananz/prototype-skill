@@ -10,6 +10,7 @@
 
 // First: it wraps the page listeners every later import, and every design, adds (see quiet.ts).
 import { listen, quiet } from './quiet'
+import { agentName, type Agent } from './agent'
 import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } from './ui'
 import { BUILDING_CLASS, ERROR_CLASS, ownerOfPath, refOfPath } from './building'
 import { dock, edge, smooth, runDock, restoreEdgeLabels, stageHover, installPointerTracking, fadeOut } from './motion'
@@ -37,7 +38,7 @@ export type Proto = { id: string; title: string; ask: string; kind: 'web' | 'pho
 export type Ref = { proto: string; variant: string }
 /** work: the variant being changed now; before: the ones worked on before it (newest first);
  *  asks: what the user asked for on each variant ("pricing/C"), oldest first. */
-export type Session = { id: string; name: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
+export type Session = { agent?: Agent; id: string; name: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
 type Mount = (el: HTMLElement, component: any) => () => void
 // A variant can be shown in one of its states, or through a tool: all its states at once
 // (all), playing through them (play), or next to another variant (compare).
@@ -810,7 +811,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // ---------- lobbies ----------
   function lifecycle() {
     const s = st.status
-    if (st.stopped) return 'Server stopped. Ask Agent to start it again.'
+    if (st.stopped) return `Server stopped. Ask ${agentName(session.agent)} to start it again.`
     if (!s) return ''
     const until = new Date(s.lastEdit + s.deleteDays * 864e5).toLocaleDateString([], { month: 'short', day: 'numeric' })
     return `Idle stop ${s.idleHours}h · ${s.keep ? 'Kept' : `Deletes ${until}`}`
@@ -1010,7 +1011,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const dockBtn = 'grid size-9 shrink-0 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white'
     const dockSep = '<span class="mx-1 h-5 w-px shrink-0 bg-white/15"></span>'
     overlay.innerHTML = framed || view !== 'variant' || !p ? '' : `
-      ${building(p.id, vid) ? `<div data-building-chip title="Agent is still building this one" class="pointer-events-none absolute left-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}Building</div>` : ''}
+      ${building(p.id, vid) ? `<div data-building-chip title="${esc(agentName(session.agent))} is still building this one" class="pointer-events-none absolute left-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}Building</div>` : ''}
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
       ${!st.focus ? `<button data-act="focus" data-focus-btn title="Focus mode · F" class="absolute right-[calc(var(--hw,0px)+1rem)] top-3 z-10 hidden h-9 [@media(hover:hover)]:inline-flex items-center gap-1.5 rounded-full bg-zinc-900/80 px-3 text-xs font-medium text-white shadow-lg backdrop-blur transition-opacity duration-200 focus-visible:!opacity-100" style="opacity:${stageHover.on ? 1 : 0}">${ic('grow', 'size-3.5')}Focus</button>` : `
       ${st.open === 'fproto' ? `<div data-pop class="fixed bottom-[76px] left-1/2 z-20 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">${protoMenu}</div>` : ''}
@@ -1843,6 +1844,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     go: (proto, variant, state) => go(variant ? { view: 'variant', proto, variant, ...(state ? { state } : {}) } : { view: 'proto', proto }),
     send: sendBatch,
     withdraw: async (batch, n) => { await post('withdraw', { batch, n }) },
+    agentName: () => agentName(session.agent),
     dark: () => st.dark,
   }, framed ? `${session.id}~view` : session.id)
   // A design's own page listeners don't hear commenting: anything while picking or writing, a press
@@ -2632,7 +2634,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // A working variant Claude moved shows where it came from, with Undo, for a few seconds.
     setSession(next: Session) {
       const was = session.work
+      const hostChanged = session.agent !== next.agent
       session = next
+      if (hostChanged) comments.hostChanged()
       builtFailed()
       watchExpiry()
       if (!same(was, next.work)) {

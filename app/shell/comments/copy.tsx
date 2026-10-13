@@ -11,7 +11,7 @@
 import { Component, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
 import { Drawer } from '@base-ui/react/drawer'
 import { copy, type Choice, type CopyLine } from '../copy'
-import { useCtx, type Host } from './ctx'
+import { useAgentName, useCtx, type Host } from './ctx'
 import { describe, frameOf, scaleOf } from './dom'
 import { listen } from '../quiet'
 import { useStore, type Store } from './store'
@@ -592,6 +592,7 @@ function replyTo(batch: string, store: Store) {
 
 /** Sending the choices, as the comment panel sends: the primary button, then Claude's answer. */
 function SendChoices({ n, sending, sent, reply, listening, onSend, className = '' }: { n: number; sending: boolean; sent: boolean; reply: ReturnType<typeof replyTo>; listening: boolean; onSend: () => void; className?: string }) {
+  const agent = useAgentName()
   const waiting = !n && sent
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
@@ -599,7 +600,7 @@ function SendChoices({ n, sending, sent, reply, listening, onSend, className = '
         <button type="button" data-shoot="send-copy" disabled={!n || sending} onClick={onSend}
           className={`inline-flex h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition-colors disabled:cursor-default ${n && !sending ? PRIMARY : 'bg-zinc-900/[.06] text-zinc-400 dark:bg-white/10 dark:text-zinc-500'}`}>
           <Icon name="send" className="size-4" />
-          {sending ? 'Sending…' : waiting ? 'Sent to Agent' : n ? `Send ${n} choice${n === 1 ? '' : 's'} to Agent` : 'Nothing changed yet'}
+          {sending ? 'Sending…' : waiting ? `Sent to ${agent}` : n ? `Send ${n} choice${n === 1 ? '' : 's'} to ${agent}` : 'Nothing changed yet'}
         </button>
       )}
       <Listening on={listening} className="shrink-0 justify-center whitespace-nowrap" />

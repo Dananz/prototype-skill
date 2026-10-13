@@ -6,7 +6,7 @@
 // list treat them like any other. A wide page opens them from the bar's check button as a menu; a
 // phone has them at the top of the variant sheet.
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { useCtx } from './ctx'
+import { useAgentName, useCtx } from './ctx'
 import { useStore } from './store'
 import type { Action } from './types'
 import { ACTION, Icon, MOD, PRIMARY, Pulse } from './ui'
@@ -25,6 +25,7 @@ const NOTE: Record<Ask, { title: (v: string) => string; hint: string; done: (v: 
 }
 
 export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, commentLabel = 'Comment on this' }: { subject: Subject; sheet?: boolean; onDone?: () => void; onComment?: () => void; rows?: MenuRow[]; lead?: MenuRow[]; commentLabel?: string }) {
+  const agent = useAgentName()
   const { store, act } = useCtx()
   const state = useStore(store)
   const listening = !!state.inbox?.listening
@@ -77,13 +78,13 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!sending.current) { setAsk(null); setNote(''); setError('') } }
     else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && ask) { e.preventDefault(); void send(ask, note) }
   }
-  const status = <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-zinc-500"><Pulse on={listening} className="size-1.5" /><span className="truncate">{listening ? 'Agent is listening' : 'Agent sees this on its next turn'}</span></span>
+  const status = <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-zinc-500"><Pulse on={listening} className="size-1.5" /><span className="truncate">{listening ? `${agent} is listening` : `${agent} sees this on its next turn`}</span></span>
   const oops = error && <p role="alert" className="mt-2 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-xs text-rose-700 dark:text-rose-300">{error}</p>
 
   if (said) return (
     <div role="status" className={sheet ? 'px-1 py-1.5' : 'p-3'}>
       <p className="flex items-center gap-2 text-[13px] font-medium"><span className="grid size-5 shrink-0 place-items-center rounded-full bg-proto-primary-soft text-proto-primary-soft-fg"><Icon name="check" className="size-3" /></span>{NOTE[said].done(v)}</p>
-      <p className="mt-1.5 ps-7 text-xs text-zinc-500">{listening ? 'Sent to Agent.' : 'It waits until Agent listens, on its next turn.'}</p>
+      <p className="mt-1.5 ps-7 text-xs text-zinc-500">{listening ? `Sent to ${agent}.` : `It waits until ${agent} listens, on its next turn.`}</p>
     </div>
   )
 
@@ -106,7 +107,7 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
   )
 
   const extras = <div className="mt-2 border-t border-black/[.06] pt-2 dark:border-white/10">
-    <p className="px-2 pb-1 text-[11px] text-zinc-500">Ask Agent for</p>
+    <p className="px-2 pb-1 text-[11px] text-zinc-500">Ask {agent} for</p>
     {(['try-it', 'copy-options'] as const).map(a => {
       const ready = a === 'try-it' ? subject.hints : subject.copy
       const waiting = pending(a)

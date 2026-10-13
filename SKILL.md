@@ -623,6 +623,11 @@ them first. The page knows the taker ended because each taken batch can record `
 agent process. Set it only when the harness supplies a reliable PID, never the short-lived
 CLI PID. Without one, pending requests remain readable but exit detection is unavailable.
 Replies detect Codex or Claude from the harness environment; other agents use a neutral mark.
+Session labels detect Codex or Claude from the identity variables above and update when
+a different host runs a command. Unknown hosts show Agent. Ordinary terminal commands
+keep the last detected host. `PROTO_AGENT` overrides session labels; `reply --as` changes
+only the author mark on that reply.
+
 Set `PROTO_AGENT=codex|claude|agent` or pass `proto reply ... --as codex|claude|agent` when the
 harness does not expose identity, or when switching agents on an existing session.
 
