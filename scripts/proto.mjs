@@ -638,23 +638,42 @@ const withMeta = (text, meta) => text.replace(/export default[\s\S]*$/, () => `e
 
 // The same rule as the page's pick (app/server.mjs plug): a prototype with a slot plugs its pick
 // into the prototype it was made from; the variant called Current, or no pick, is the original.
-// Says where it changed, or '' when nothing did.
+// Says what it did ({ where, parent, letter, was, now }: `was` and `now` are the slot's `use`
+// before and after, '' for none), or null when nothing changed.
 const isCurrent = name => /^(current|as built)$/i.test(String(name || '').trim())
 function plug(dir, slug, meta, id, off) {
-  if (!meta.slot || typeof meta.from !== 'string' || !id) return ''
-  const f = join(dir, 'src', 'protos', meta.from.split('/')[0], 'meta.ts')
+  if (!meta.slot || typeof meta.from !== 'string' || !id) return null
+  const [parent, from] = meta.from.split('/')
+  const f = join(dir, 'src', 'protos', parent, 'meta.ts')
   let text, pm
-  try { text = readFileSync(f, 'utf8'); pm = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, '')) } catch { return '' }
+  try { text = readFileSync(f, 'utf8'); pm = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, '')) } catch { return null }
   const slot = pm.slots?.[meta.slot]
-  if (!slot) return ''
+  if (!slot) return null
   const use = `${slug}/${id}`
-  if (off && slot.use !== use) return ''
+  if (off && slot.use !== use) return null
   const next = off || isCurrent(meta.variants?.[id]) ? '' : use
-  if ((slot.use || '') === next) return ''
+  if ((slot.use || '') === next) return null
   const { use: _, ...rest } = slot
   pm.slots[meta.slot] = next ? { ...rest, use: next } : rest
   writeWhole(f, withMeta(text, pm), scratchOf(dir))
-  return `${meta.from} (${meta.slot})`
+  return { where: `${meta.from} (${meta.slot})`, parent, letter: String(slot.variant || from || ''), was: slot.use || '', now: next }
+}
+// What a plug-in says in the history of the two variants it touches, after the "Picked" line, with
+// the words the page's strip shows (app/server.mjs plugLines is the same). The working variant stays.
+function notePlug(dir, did, slug, id) {
+  const title = s => { try { return readMeta(dir, s)?.title || s } catch { return s } }
+  const [was, wasId] = did.was.split('/')
+  const into = [title(did.parent), did.letter].filter(Boolean).join(' ')
+  const lines = [
+    [`${slug}/${id}`, did.now ? `Plugged into ${into}` : `Original back in ${into}`],
+    ...(did.letter ? [[`${did.parent}/${did.letter}`, did.now ? `Plugged in ${title(slug)} ${id}` : `Original back, took out ${title(was)} ${wasId}`]] : []),
+  ]
+  const at = new Date().toISOString()
+  patchSession(dir, now => {
+    const asks = { ...now.asks }
+    for (const [key, text] of lines) asks[key] = [...(asks[key] || []), { at, text }]
+    return { asks }
+  })
 }
 
 // The user chose a variant ("go with A"): the page marks it and lists it first. The other
@@ -677,8 +696,9 @@ function pick() {
   writeWhole(metaFile, withMeta(text, meta), scratchOf(dir))
   // The pick is what gets worked on next; its history starts here.
   if (!flags.off) setWork(dir, { proto: slug, variant: id }, `Picked ${id}`)
+  if (plugged) try { notePlug(dir, plugged, slug, letter) } catch { /* a trace in the history, never a failed pick */ }
   const back = flags.off || isCurrent(meta.variants?.[letter])
-  console.log((flags.off ? `${slug}: no pick` : `${slug}: picked ${id} · ${meta.variants[id]}`) + (plugged ? ` · ${back ? 'original back in' : 'plugged into'} ${plugged}` : ''))
+  console.log((flags.off ? `${slug}: no pick` : `${slug}: picked ${id} · ${meta.variants[id]}`) + (plugged ? ` · ${back ? 'original back in' : 'plugged into'} ${plugged.where}` : ''))
 }
 
 // ---------- the working variant ----------
