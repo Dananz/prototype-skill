@@ -78,7 +78,10 @@ export function describe(mount: HTMLElement, el: HTMLElement): Target {
   return {
     label: 'Element',
     selector: pathOf(mount, el),
-    ...(el.dataset.shoot ? { shoot: el.dataset.shoot } : {}),
+    ...(el.dataset.shoot ? { shoot: el.dataset.shoot } : (() => {
+      const w = el.parentElement?.closest<HTMLElement>('[data-shoot]')
+      return w && mount.contains(w) ? { within: w.dataset.shoot } : {}
+    })()),
     ...(at ? { src: at.dataset.protoSrc, ...(at.dataset.protoComponent ? { component: at.dataset.protoComponent } : {}) } : {}),
     ...(() => { const u = usesOf(el); return u.length ? { uses: u } : {} })(),
     tag: el.tagName.toLowerCase(),
@@ -129,8 +132,15 @@ export function spotAt(t: Target, el: Element, mount: HTMLElement, host: Element
   return x >= m.x && x <= m.x + m.w && y >= m.y && y <= m.y + m.h ? { x, y, w: 0, h: 0 } : null
 }
 
-export function find(mount: HTMLElement | null, t: Pick<Target, 'selector'>): HTMLElement | null {
-  try { return mount ? mount.querySelector<HTMLElement>(t.selector) : null } catch { return null }
+export function find(mount: HTMLElement | null, t: Pick<Target, 'selector' | 'shoot' | 'within'>): HTMLElement | null {
+  let el: HTMLElement | null
+  try { el = mount ? mount.querySelector<HTMLElement>(t.selector) : null } catch { return null }
+  // One place in the page can hold another element later (the menu open now where another menu was
+  // open when the comment was made). The comment stays on its own: the element's data-shoot, or the
+  // nearest one around it, has to be the one it had.
+  const name = t.shoot ?? t.within
+  if (el && name && el.closest('[data-shoot]')?.getAttribute('data-shoot') !== name) return null
+  return el
 }
 
 /**

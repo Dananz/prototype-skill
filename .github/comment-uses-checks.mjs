@@ -64,5 +64,63 @@ export default function Two() {
   if (!/passed label="Size" shoot="second"/.test(heard)) fail(`shared component: proto inbox should name the use by what it passes: ${heard}`)
   if (!/^ {3}> +7\| +<Menu label="Size"/m.test(heard) || /^ {3}> +6\|/m.test(heard)) fail(`shared component: the use's line (7), not the other use's (6), should be marked: ${heard}`)
   proto(['archive', 'usesfx'])
-  console.log('\nOK: a comment on one use of a shared component names that use')
+
+  // Two menus open at the same place, one at a time: a comment on a word in the first stays there,
+  // never on the second (its place is the same; the data-shoot around it is not).
+  proto(['add', 'swapfx', '--title', 'Menus in one place', '--variants', 'A:Swap'])
+  // The test swaps them with a 'swapfx' event on the design's window: no click, so comment mode stays on.
+  writeFileSync(join(app, 'src', 'protos', 'swapfx', 'A.tsx'), `import { useEffect, useState } from 'react'
+export default function Swap() {
+  const [open, setOpen] = useState('a')
+  useEffect(() => { const f = () => setOpen(o => (o === 'a' ? 'b' : 'a')); addEventListener('swapfx', f); return () => removeEventListener('swapfx', f) }, [])
+  return <main style={{ padding: 24 }}>
+    <div>{open === 'a'
+      ? <div data-shoot="menu-a" style={{ width: 220, height: 120, background: '#ddd' }}><span style={{ fontSize: 24 }}>Phase</span></div>
+      : <div data-shoot="menu-b" style={{ width: 220, height: 120, background: '#ccc' }}><span style={{ fontSize: 24 }}>Size</span></div>}</div>
+  </main>
+}
+`)
+  const swap = await openPage(`${local}?theme=light#/swapfx/A`)
+  const h2 = `
+    const until = async (f, ms = 5000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
+    const editor = () => document.querySelector('[data-composer] [role=textbox]')
+    const design = () => document.querySelector('[data-view] iframe')?.contentDocument ?? document
+    const q = s => design().querySelector('[data-mount] ' + s)
+    const toggle = () => document.querySelector('[data-act="comment:toggle"]')
+    const pin = () => document.querySelector('button[aria-label="Comment 1"]')
+  `
+  try {
+    const at = await swap.run(`(async () => {
+      ${h2}
+      toggle().click()
+      if (!await until(() => toggle().getAttribute('aria-pressed') === 'true' && q('[data-shoot=menu-a] span'))) return null
+      await new Promise(r => setTimeout(r, 200))
+      const el = q('[data-shoot=menu-a] span'), r = el.getBoundingClientRect(), frame = el.ownerDocument.defaultView.frameElement
+      const f = frame?.getBoundingClientRect(), scale = frame ? f.width / frame.offsetWidth : 1
+      return [(f?.left ?? 0) + (r.left + r.width / 2) * scale, (f?.top ?? 0) + (r.top + r.height / 2) * scale]
+    })()`)
+    if (!at) fail('menus in one place: comment mode or the menu never became ready')
+    await swap.press(...at)
+    const res = await swap.run(`(async () => {
+      ${h2}
+      if (!await until(editor)) return 'picking the word opened no composer'
+      editor().textContent = 'Only this menu'
+      editor().dispatchEvent(new Event('input', { bubbles: true }))
+      if (!await until(() => !document.querySelector('[data-composer] button[title^="Add,"]').disabled)) return 'Add never became ready'
+      document.querySelector('[data-composer] button[title^="Add,"]').click()
+      if (!await until(() => !editor() && pin())) return 'the comment has no pin on its menu'
+      const flip = () => design().defaultView.dispatchEvent(new Event('swapfx'))
+      flip()
+      if (!await until(() => q('[data-shoot=menu-b]'))) return 'the second menu never opened'
+      await new Promise(r => setTimeout(r, 600))
+      if (pin()) return 'the comment on the first menu showed on the second menu, which stands at the same place'
+      flip()
+      if (!await until(() => q('[data-shoot=menu-a]'))) return 'the first menu never came back'
+      if (!await until(pin)) return 'the comment did not come back with its own menu'
+      return 'ok'
+    })()`)
+    if (res !== 'ok') fail(`menus in one place: ${res}`)
+  } finally { swap.close() }
+  proto(['archive', 'swapfx'])
+  console.log('\nOK: a comment on one use of a shared component names that use, and stays on its own element')
 }
