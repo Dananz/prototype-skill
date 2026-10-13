@@ -73,9 +73,9 @@ function Draft({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: b
   )
 }
 
-/** Sent, and not done: what Claude has. */
+/** Sent, and not done: what Claude has, and what it said so far ("building now…"). */
 function WithClaude({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: boolean; onOpen: () => void }) {
-  const { item } = r
+  const { item, reply } = r
   return (
     <div data-shoot="comment-row" className={`flex w-full items-start gap-1 rounded-2xl transition ${active ? 'bg-proto-primary-soft ring-1 ring-proto-primary-ring' : 'bg-proto-primary-soft/60 hover:bg-proto-primary-soft'}`}>
       <button onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 p-3 pe-0 text-start">
@@ -85,6 +85,7 @@ function WithClaude({ r, active, roomy, onOpen }: { r: Row; active: boolean; roo
           <Body c={item} className={`mt-0.5 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
           <ViewChip v={item.target?.view} className="mt-1.5" />
           {shotsOf(item).some(p => p.pasted) && <span className="mt-2 flex flex-wrap gap-1.5">{shotsOf(item).filter(p => p.pasted).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</span>}
+          {reply && <span data-shoot="comment-reply" className="mt-2 block"><Reply text={reply.text} by={reply.by} small /></span>}
         </span>
       </button>
       <Remove item={item} className="me-1 mt-1.5" />
