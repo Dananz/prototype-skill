@@ -3,7 +3,7 @@
 // Send posts every draft as one batch. Whatever is being written when the composer is put away
 // any way but Cancel or Add is held, and comes back with the next comment.
 import type { CommentBatch } from '../shell'
-import { climb, describe, find, reveal, openerOf } from './dom'
+import { climb, describe, find, reveal, openerOf, wholeTarget } from './dom'
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import { progress, type Store } from './store'
@@ -59,6 +59,30 @@ export function createActions(store: Store, host: Host) {
       if (m.kind !== 'compose' || !m.trail?.length) return
       set({ mode: { ...m, target: m.trail[m.trail.length - 1], trail: m.trail.slice(0, -1) } })
     },
+    /** The variant on screen as a target (in the device view's layout while one is on); null where there is no design. */
+    wholeTarget(): Target | null {
+      const mount = host.mount(), p = get().place
+      if (!mount || !p) return null
+      const t = wholeTarget(mount, p.title), v = host.view?.()
+      return v?.size ? { ...t, view: { size: v.size, w: v.w!, h: v.h! } } : t
+    },
+    /**
+     * A comment on the variant as a whole, from the box in the Comments panel: saved as a draft at
+     * once with no composer in between, so a comment half-written on an element is left as it is.
+     */
+    commentWhole(text: string) {
+      const p = get().place, t = act.wholeTarget(), words = text.trim()
+      if (!p || !t || !words) return false
+      const n = Math.max(0, ...get().items.filter(i => i.proto === p.proto && i.variant === p.variant).map(i => i.n)) + 1
+      const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, body: [words], tags: [], target: t, at: Date.now() }
+      set(s => ({ items: [...s.items, item] }))
+      if (get().live) void act.send()
+      return true
+    },
+    wholeFocus(on: boolean) { if (get().wholeFocus !== on) set({ wholeFocus: on }) },
+    /** Puts the focus in the whole-variant box (the shell has opened the panel or the sheet around it). */
+    askWhole() { set({ focusAsk: true }) },
+    askDone() { if (get().focusAsk) set({ focusAsk: false }) },
     /** A comment on a moment or a range of the motion, written in the motion dock. */
     beginTime(time: Time) { opening++; set({ mode: { kind: 'time', time }, active: null }) },
     /** Pick an element to tag from the open composer; it comes back to it with the pick. */

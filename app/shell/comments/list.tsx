@@ -6,6 +6,7 @@ import { useCtx } from './ctx'
 import { progress, useStore, type Said } from './store'
 import type { CState, Item } from './types'
 import { shotsOf } from './types'
+import { WholeBox } from './whole'
 import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, Reply, since, spanOf, SrcTag, ViewChip, Working, ImageChip, PictureStrip } from './ui'
 
 export function useRows() {
@@ -67,7 +68,7 @@ function Draft({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: b
   return (
     <div data-shoot="comment-row" className={`rounded-2xl border p-3 transition ${active ? 'border-proto-primary-ring bg-proto-primary-soft' : 'border-black/[.08] bg-white hover:border-black/20 dark:border-white/10 dark:bg-zinc-900 dark:hover:border-white/25'}`}>
       <div className="flex items-center gap-2">
-        <PinDot n={item.n} />
+        <PinDot n={item.n} whole={item.target?.whole} />
         <button onClick={onOpen} className="min-w-0 flex-1 truncate text-start text-xs font-medium text-zinc-500 dark:text-zinc-400"><span dir="auto">{aboutOf(item)}</span></button>
         <Where item={item} here={r.here} />
         <button onClick={() => act.remove(item.id)} aria-label="Remove this comment" className="-me-1 grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10"><Icon name="trash" className="size-4" /></button>
@@ -106,7 +107,7 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
     <div data-shoot="comment-row">
       <div className={`flex items-center rounded-xl ${active ? 'bg-emerald-500/10' : ''}`}>
         <button onClick={() => setOpen(!open)} aria-expanded={open} className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-1 text-start active:bg-zinc-900/[.04] dark:active:bg-white/5 ${roomy ? 'h-11' : 'h-9'}`}>
-          <PinDot n={item.n} done />
+          <PinDot n={item.n} done whole={item.target?.whole} />
           <span className={`min-w-0 flex-1 truncate text-zinc-500 ${roomy ? 'text-[13.5px]' : 'text-[12.5px]'}`}>{item.action ? <span dir="auto">{aboutOf(item)}{item.body.length ? `: ${item.body.join('')}` : ''}</span> : <Body c={item} />}</span>
           <Where item={item} here={r.here} />
           <Icon name="right" className={`size-4 text-zinc-400 transition-transform ${open ? 'rotate-90' : ''}`} />
@@ -200,6 +201,7 @@ export function SendBar({ className = '', onAdd }: { className?: string; onAdd?:
   const restart = stalled > 0 && !drafts
   return (
     <div className={`space-y-2 ${className}`}>
+      {s.place && <WholeBox />}
       {s.error && <p role="alert" className="flex items-start gap-2 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300"><span className="min-w-0 flex-1">{s.error}</span><button onClick={act.clearError} aria-label="Dismiss" className="shrink-0 opacity-70 hover:opacity-100"><Icon name="x" className="size-3.5" /></button></p>}
       {stalled > 0 && (
         <p data-shoot="stalled" className="flex items-start gap-2 px-1 text-xs leading-4 text-amber-700 dark:text-amber-300">

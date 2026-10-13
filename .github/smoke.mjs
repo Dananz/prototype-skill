@@ -15,6 +15,7 @@ import { optionalExtras } from './optional-extras.mjs'
 import { designKit } from './design-kit.mjs'
 import { speedChecks } from './speed-checks.mjs'
 import { commentParentChecks } from './comment-parent-checks.mjs'
+import { commentWholeChecks } from './comment-whole-checks.mjs'
 import { commentUsesChecks } from './comment-uses-checks.mjs'
 import { commentRoutesChecks } from './comment-routes-checks.mjs'
 import { commentNavigationChecks } from './comment-navigation-checks.mjs'
@@ -148,6 +149,7 @@ const css = () => new Promise(ok => get(`${local}shell/shell.css?direct`, { agen
 await css()
 
 await commentParentChecks({ proto, app, openPage, fail })
+await commentWholeChecks({ proto, app, openPage, fail })
 await commentUsesChecks({ proto, app, openPage, fail })
 await commentRoutesChecks({ proto, app, openPage, fail })
 await commentNavigationChecks({ app, openPage, fail })

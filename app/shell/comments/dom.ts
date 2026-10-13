@@ -99,6 +99,12 @@ export function describe(mount: HTMLElement, el: HTMLElement): Target {
   }
 }
 
+/** The variant as a whole, as a target: its root element, with the variant's name in place of the root's text. */
+export function wholeTarget(mount: HTMLElement, name = ''): Target {
+  const t = describe(mount, originOf(mount))
+  return { ...t, label: 'Variant', whole: true, text: name.slice(0, 80) }
+}
+
 /**
  * Where the components around `el` are used, innermost first, up to four: going up React's fibers
  * from the element, each component whose props jsx.ts saw used in the prototype's files (see there).

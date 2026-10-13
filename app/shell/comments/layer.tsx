@@ -43,15 +43,18 @@ function Pins({ items, boxes, active, onOpen }: { items: { item: Item; done: boo
     if (!b || b.via) return null
     const on = active === c.id
     // A spot's pin sits on the spot; an element's on its top right corner.
-    const pt = !!c.target?.point
+    const pt = !!c.target?.point, whole = !!c.target?.whole
     const ring = done ? 'ring-emerald-500' : 'ring-proto-primary-ring'
+    // The variant as a whole has no corner of its own to sit on: its pin is inside the top left, and its outline is the edge of the design.
     return (
       <div key={c.id}>
         {on && (pt
           ? <div className={`pointer-events-none absolute z-10 size-8 rounded-full ring-2 ${ring}`} style={{ left: b.x - 16, top: b.y - 16 }} />
-          : <div className={`pointer-events-none absolute z-10 rounded-md ring-2 ${ring}`} style={{ left: b.x - 3, top: b.y - 3, width: b.w + 6, height: b.h + 6 }} />)}
-        {!done && <button onClick={() => onOpen(c.id)} aria-label={`Comment ${c.n}`} className="pointer-events-auto absolute z-20 rounded-full shadow-md ring-2 ring-white transition hover:scale-110 dark:ring-zinc-950" style={pt ? { left: b.x - 10, top: b.y - 10 } : { left: b.x + b.w - 10, top: b.y - 10 }}>
-          <PinDot n={c.n} />
+          : whole
+            ? <div className={`pointer-events-none absolute z-10 ring-2 ring-inset ${ring}`} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} />
+            : <div className={`pointer-events-none absolute z-10 rounded-md ring-2 ${ring}`} style={{ left: b.x - 3, top: b.y - 3, width: b.w + 6, height: b.h + 6 }} />)}
+        {!done && <button onClick={() => onOpen(c.id)} aria-label={whole ? `Comment ${c.n}, on the whole variant` : `Comment ${c.n}`} className="pointer-events-auto absolute z-20 rounded-full shadow-md ring-2 ring-white transition hover:scale-110 dark:ring-zinc-950" style={pt ? { left: b.x - 10, top: b.y - 10 } : whole ? { left: b.x + 8, top: b.y + 8 } : { left: b.x + b.w - 10, top: b.y - 10 }}>
+          <PinDot n={c.n} whole={whole} />
         </button>}
       </div>
     )
@@ -94,6 +97,9 @@ export function Layer() {
   const here = rows.filter(r => r.here && r.item.target && !r.item.action && sameView(r.item.target.view, s.place?.view))
   const listed = here.map(r => ({ id: r.item.id, t: r.item.target! }))
   if (editing && !editing.id) listed.push({ id: '__new', t: editing.target })
+  // The whole-variant box has the focus: the variant is outlined edge to edge, with no composer.
+  const wholeT = s.wholeFocus && s.place ? act.wholeTarget() : null
+  if (wholeT) listed.push({ id: '__whole', t: wholeT })
   const boxes = useBoxes(listed)
   if (!s.place) return null
   const phone = s.place.phone
@@ -110,6 +116,11 @@ export function Layer() {
         {h => onNew && !onSpot && m.kind === 'compose' && <Climb box={h.box} up={canClimb(host.mount(), m.target)} down={!!m.trail?.length} />}
       </Glide>
       {onNew && onSpot && <div className="pointer-events-none absolute z-10 size-8 rounded-full ring-2 ring-proto-primary-ring" style={{ left: onNew.x - 16, top: onNew.y - 16 }} />}
+      {wholeT && boxes['__whole'] && (
+        <div data-whole-outline className="pointer-events-none absolute z-10 border-2 border-proto-primary-ring bg-proto-primary/[.05]" style={{ left: boxes['__whole'].x, top: boxes['__whole'].y, width: boxes['__whole'].w, height: boxes['__whole'].h }}>
+          <span className="absolute start-14 top-0 inline-flex h-6 items-center gap-1.5 rounded-b-md bg-proto-primary px-2 text-[11px] font-semibold text-proto-primary-fg"><Icon name="frame" className="size-3" />Whole variant</span>
+        </div>
+      )}
       <Pins items={here.map(r => ({ item: r.item, done: r.state === 'done' }))} boxes={boxes} active={s.active} onOpen={act.open} />
       {editing && (
         <Composer key={editing.id ?? '__new'} target={editing.target} n={editedItem?.n ?? nextN} place={boxes[editing.id ?? '__new'] ?? null}
@@ -178,8 +189,8 @@ function ReadCard({ row, box }: { row: { item: Item; state: ReturnType<typeof pr
   return (
     <div ref={el} className="pointer-events-auto absolute z-30 w-[min(15rem,calc(100%-1rem))] rounded-xl border border-black/10 bg-white p-2 text-[11px] leading-4 shadow-xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900" style={{ left: at?.left ?? box.x, top: at?.top ?? box.y + box.h + 10, visibility: at ? 'visible' : 'hidden' }}>
       <div className="flex items-center gap-1.5 text-[10px]">
-        <PinDot n={item.n} done={state === 'done'} size="sm" />
-        <span dir="auto" className="min-w-0 flex-1 truncate font-medium text-zinc-500">Comment</span>
+        <PinDot n={item.n} done={state === 'done'} size="sm" whole={item.target?.whole} />
+        <span dir="auto" className="min-w-0 flex-1 truncate font-medium text-zinc-500">{item.target?.whole ? 'Whole variant' : 'Comment'}</span>
         <span className={`shrink-0 ${STATE[state].cls}`}>{STATE[state].label}</span>
       </div>
       <Body c={item} className="mt-1 block text-zinc-800 dark:text-zinc-200" />

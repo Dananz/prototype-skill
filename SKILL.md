@@ -587,6 +587,12 @@ change the call that passes them. Change the component itself, and so every use,
 dropdowns", "every row", "each menu"); when it is unclear, change the one and say in the reply
 that the others are untouched. The reply names which one changed ("only the Phase menu").
 
+**A comment on the whole variant** (written in the box at the foot of the Comments panel, or from a
+sidebar row's Comment on this) prints `on: the whole variant (its root <div> at 0,0 WxH)`: it is
+about the design as a whole (its density, tone, structure or flow), not one element. Make the change
+where the design lives, across the parts it names, rather than on one element; the reply says what
+changed overall.
+
 **Handle a batch as one job, not one comment at a time.** The user is waiting from the moment
 they press Send until the last change is in, and the time goes into round trips and lookups, not
 into the edits. Measured on 12 small comments: one pass took 48 s; a worker per file took 86 s
