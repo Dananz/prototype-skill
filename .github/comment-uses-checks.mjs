@@ -67,6 +67,7 @@ ${nested ? `function Leaf({ label, shoot }: { label: string; shoot: string }) {
   const heard = proto(['inbox'], { stdout: true })
   if (!heard.includes(`Menu at ${slug}/A.tsx:7`)) fail(`shared component: proto inbox should print where this Menu is used: ${heard}`)
   if (!heard.includes(`shared: Menu is used in 2 places; this comment is on the one at ${slug}/A.tsx:7`)) fail(`shared component: proto inbox should say the comment is on one of two uses: ${heard}`)
+  if (nested && !heard.includes(`through: pass this use's variation through Leaf at ${slug}/A.tsx:2`)) fail('nested shared component: inbox should explain how to pass the variation through Leaf')
   if (!/passed label="Size" shoot="second"/.test(heard)) fail(`shared component: proto inbox should name the use by what it passes: ${heard}`)
   if (!/^ {3}> +7\| +<Menu label="Size"/m.test(heard) || /^ {3}> +6\|/m.test(heard)) fail(`shared component: the use's line (7), not the other use's (6), should be marked: ${heard}`)
   proto(['archive', slug])
