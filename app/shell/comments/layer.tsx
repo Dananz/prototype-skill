@@ -53,7 +53,7 @@ function Pins({ items, boxes, active, onOpen }: { items: { item: Item; done: boo
           : whole
             ? <div className={`pointer-events-none absolute z-10 ring-2 ring-inset ${ring}`} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} />
             : <div className={`pointer-events-none absolute z-10 rounded-md ring-2 ${ring}`} style={{ left: b.x - 3, top: b.y - 3, width: b.w + 6, height: b.h + 6 }} />)}
-        {!done && <button onClick={() => onOpen(c.id)} aria-label={whole ? `Comment ${c.n}, on the whole variant` : `Comment ${c.n}`} className="pointer-events-auto absolute z-20 rounded-full shadow-md ring-2 ring-white transition hover:scale-110 dark:ring-zinc-950" style={pt ? { left: b.x - 10, top: b.y - 10 } : whole ? { left: b.x + 8, top: b.y + 8 } : { left: b.x + b.w - 10, top: b.y - 10 }}>
+        {!done && <button data-comment={c.id} onClick={() => onOpen(c.id)} aria-label={whole ? `Comment ${c.n}, on the whole variant` : `Comment ${c.n}`} className="pointer-events-auto absolute z-20 rounded-full shadow-md ring-2 ring-white transition hover:scale-110 dark:ring-zinc-950" style={pt ? { left: b.x - 10, top: b.y - 10 } : whole ? { left: b.x + 8, top: b.y + 8 } : { left: b.x + b.w - 10, top: b.y - 10 }}>
           <PinDot n={c.n} whole={whole} />
         </button>}
       </div>

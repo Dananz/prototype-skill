@@ -267,7 +267,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     designs?.style.setProperty('user-select', 'none')
     designs?.style.setProperty('-webkit-user-select', 'none')
     designs?.style.setProperty('-webkit-touch-callout', 'none')
-    const noMenu = (e: Event) => { if (inDesign(e.target)) e.preventDefault() }
+    const noMenu = (e: Event) => { if (!(e as MouseEvent).shiftKey && inDesign(e.target)) e.preventDefault() }
     stage.addEventListener('pointermove', move)
     for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'contextmenu']) listen(document, t, press, true)
     listen(document, 'touchstart', touchStart, opts)

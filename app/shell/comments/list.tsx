@@ -69,7 +69,7 @@ function Draft({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: b
   const { act } = useCtx()
   const { item } = r
   return (
-    <div data-shoot="comment-row" className={`rounded-2xl border p-3 transition ${active ? 'border-proto-primary-ring bg-proto-primary-soft' : 'border-black/[.08] bg-white hover:border-black/20 dark:border-white/10 dark:bg-zinc-900 dark:hover:border-white/25'}`}>
+    <div data-comment={item.id} data-shoot="comment-row" className={`rounded-2xl border p-3 transition ${active ? 'border-proto-primary-ring bg-proto-primary-soft' : 'border-black/[.08] bg-white hover:border-black/20 dark:border-white/10 dark:bg-zinc-900 dark:hover:border-white/25'}`}>
       <div className="flex items-center gap-2">
         <PinDot n={item.n} whole={item.target?.whole} />
         <button onClick={onOpen} className="min-w-0 flex-1 truncate text-start text-xs font-medium text-zinc-500 dark:text-zinc-400"><span dir="auto">{aboutOf(item)}</span></button>
@@ -85,7 +85,7 @@ function Draft({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: b
 function WithClaude({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: boolean; onOpen: () => void }) {
   const { item, reply } = r
   return (
-    <div data-shoot="comment-row" className={`flex w-full items-start gap-1 rounded-2xl transition ${active ? 'bg-proto-primary-soft ring-1 ring-proto-primary-ring' : 'bg-proto-primary-soft/60 hover:bg-proto-primary-soft'}`}>
+    <div data-comment={item.id} data-shoot="comment-row" className={`flex w-full items-start gap-1 rounded-2xl transition ${active ? 'bg-proto-primary-soft ring-1 ring-proto-primary-ring' : 'bg-proto-primary-soft/60 hover:bg-proto-primary-soft'}`}>
       <button onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 p-3 pe-0 text-start">
         <span className="mt-1">{r.stopped ? <span data-shoot="comment-stopped" className="mt-0.5 block size-2 rounded-full border border-amber-500" /> : <Working />}</span>
         <span className="min-w-0 flex-1">
@@ -107,7 +107,7 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
   const { item, reply } = r
   const when = since(reply?.at)
   return (
-    <div data-shoot="comment-row">
+    <div data-comment={item.id} data-shoot="comment-row">
       <div className={`flex items-center rounded-xl ${active ? 'bg-emerald-500/10' : ''}`}>
         <button onClick={() => setOpen(!open)} aria-expanded={open} className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-1 text-start active:bg-zinc-900/[.04] dark:active:bg-white/5 ${roomy ? 'h-11' : 'h-9'}`}>
           <PinDot n={item.n} done whole={item.target?.whole} />
@@ -119,7 +119,7 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
       </div>
       {open && (
         <div className="space-y-2 pb-2 pe-1 ps-8">
-          <p className="flex items-center gap-2 text-xs text-zinc-400"><span className="min-w-0 truncate"><About item={item} /></span>{when &&<span className="shrink-0">· {when === 'now' ? 'just now' : `${when} ago`}</span>}<button onClick={onShow} className="ms-auto shrink-0 font-medium text-proto-primary-soft-fg hover:underline">{item.time ? `Show ${spanOf(item.time)}` : item.target ? 'Show on design' : `Go to ${item.variant}`}</button></p>
+          <p className="flex items-center gap-2 text-xs text-zinc-400"><span className="min-w-0 truncate"><About item={item} /></span>{when &&<span className="shrink-0">· {when === 'now' ? 'just now' : `${when} ago`}</span>}<button onClick={onShow} className="ms-auto shrink-0 font-medium text-proto-primary-soft-fg hover:underline">{item.time ? `Show ${spanOf(item.time)}` : item.target ? 'Show on design' : `Go to ${item.variant || 'the prototype'}`}</button></p>
           <ViewChip v={item.target?.view} />
           {reply ? <Reply text={reply.text} by={reply.by} small /> : <p className="text-xs text-zinc-400">Marked done, no note.</p>}
         </div>

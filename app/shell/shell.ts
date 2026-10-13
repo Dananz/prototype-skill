@@ -17,14 +17,14 @@ import { hints, fillField, type Hint } from './hints'
 import { copy } from './copy'
 import { createSheet, createMenuSheet, createTrySheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
-import { createComments, type Subject } from './comments/index'
+import { createComments, type MenuRow, type Subject } from './comments/index'
 import { createMotion } from './motion/index'
 import { motion } from './motion/registry'
 import type { Action } from './comments/types'
 import { tabIcon } from './favicon'
 import { setShellRoot } from './portals'
 import { createView } from './view/index'
-import { framed } from './view/frame'
+import { framed, frameClicks, frameMenus } from './view/frame'
 import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
 import { dims, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
 
@@ -32,7 +32,7 @@ export type Variant = { id: string; name: string; file: string; load: () => Prom
 /** Something behind clicks in a prototype's variants (a menu, a drawer, a dialog), reached by
  *  clicking its selectors in order. about: one line per variant; only: the variants that have it. */
 export type State = { id: string; name: string; click: string[]; about?: Record<string, string>; only?: string[] }
-export type Proto = { id: string; title: string; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; also: { proto: string; variant: string }[]; picked?: string; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[] }
+export type Proto = { id: string; title: string; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; also: { proto: string; variant: string }[]; picked?: string; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[] }
 /** A variant of one prototype ("pricing" and "C"). */
 export type Ref = { proto: string; variant: string }
 /** work: the variant being changed now; before: the ones worked on before it (newest first);
@@ -59,7 +59,7 @@ export type Pinned = { selector?: string; shoot?: string; src?: string; componen
 /** One send: route is <slug>/<letter>[/<state>]; images are data URLs (png, jpeg, webp). A decision
  *  on a variant (pick, unpick, more, build) is a comment with an action and no target. */
 export type CommentBatch = {
-  comments: { route: string; text: string; action?: Action; note?: string; point?: { x: number; y: number }; target?: Pinned; tags?: Pinned[]; images?: { dataUrl: string; name?: string }[]
+  comments: { route: string; text: string; action?: Action; note?: string; count?: number; point?: { x: number; y: number }; target?: Pinned; tags?: Pinned[]; images?: { dataUrl: string; name?: string }[]
     /** On the motion (motion/): a moment of its take in ms, or a range to `to`, and the take's length. */
     at?: number; to?: number; take?: number
     /** Written in a device view (view/): about that layout. */
@@ -156,7 +156,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     focus: false,
     open: null as string | null,
     /** The variant whose options are open (from its row in the sidebar), and where. */
-    vmenu: null as { proto: string; variant: string; x: number; y: number } | null,
+    vmenu: null as { proto: string; variant: string; x: number; y: number; hint?: boolean; el?: HTMLElement; art?: boolean } | null,
+    /** The right-click menu of what is not a variant: where, and on what. */
+    ctx: null as { x: number; y: number; on: CtxOn } | null,
     archived: false,
     side: q.has('side') ? q.get('side') !== '0' : localStorage.getItem('proto-side') !== '0',
     sideW: Math.min(SIDE_MAX, Math.max(SIDE_MIN, Number(localStorage.getItem('proto-side-w')) || SIDE_W)),
@@ -399,6 +401,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div data-comments-sheet></div>
     <div data-decide></div>
     <div data-vmenu></div>
+    <div data-ctx></div>
   </div>`
   const side = root.querySelector<HTMLElement>('[data-side]')!
   const grip = root.querySelector<HTMLElement>('[data-grip]')!
@@ -1042,6 +1045,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     paintPill()
     paintDecide()
     paintVmenu()
+    paintCtx()
     paintView()
     // What the bar was drawn with, so a change is told from it (a view's frame can draw it before
     // its design has declared its copy lines or its motion), not from the last change heard.
@@ -1576,14 +1580,30 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
     act(name, arg, arg2, arg3)
   })
-  // Right-click on a variant in the sidebar's columns opens the same options where the pointer is.
+  // Right-click: every surface with something to do has a menu at the pointer (see "right-click
+  // menus" below). Shift + right-click is never taken, so the browser's own menu (Inspect, Save
+  // image) is always one modifier away; so are fields, selected text, and a design that made its
+  // own menu. A touch screen's long press keeps its own gestures.
   root.addEventListener('contextmenu', e => {
-    const row = (e.target as Element).closest<HTMLElement>('[data-mv]')
-    if (!row) return
+    if (framed || e.shiftKey || e.defaultPrevented) return
+    const on = ctxOf(e.target as Element)
+    if (!on) return
+    // The columns' variant rows open before the touch check: a long press there always did.
+    if (on.kind !== 'variant' && (e as PointerEvent).pointerType === 'touch') return
     e.preventDefault()
-    const [proto, variant] = row.dataset.mv!.split(':')
-    openVmenu(proto, variant, e.clientX, e.clientY)
+    openCtx(on, e.clientX, e.clientY)
   })
+  // Right-click inside the artboard's frame: its document keeps its events, so the view hands them out here.
+  frameMenus.add((e, x, y) => {
+    if (e.shiftKey || e.defaultPrevented || (e as PointerEvent).pointerType === 'touch' || comments.busy()) return
+    const el = e.target as Element
+    if (el.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]') || (el.ownerDocument.getSelection()?.toString() ?? '')) return
+    if (st.place.view !== 'variant' || !commentHost()) return
+    e.preventDefault()
+    openCtx({ kind: 'art', el: htmlOf(el) }, x, y)
+  })
+  // A click in the artboard's frame is outside the menu too.
+  frameClicks.add(() => { if (st.open === 'ctx' || st.open === 'vmenu') { st.open = null; render() } })
 
   root.addEventListener('input', e => {
     const input = e.target as HTMLInputElement
@@ -1750,7 +1770,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const land = v.size === 'tablet' && v.w > v.h
       if (!viewOn() || st.view.size !== v.size || st.view.land !== land) patchView({ size: v.size, land, zoom: 0 })
     },
-    go: (proto, variant, state) => go({ view: 'variant', proto, variant, ...(state ? { state } : {}) }),
+    go: (proto, variant, state) => go(variant ? { view: 'variant', proto, variant, ...(state ? { state } : {}) } : { view: 'proto', proto }),
     send: sendBatch,
     withdraw: async (batch, n) => { await post('withdraw', { batch, n }) },
     dark: () => st.dark,
@@ -1956,8 +1976,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // Right-click on a row (or its ⋯): Comment on this, Pick, More like this, Build, Try it and copy
   // options, for that variant whether or not it is the one on screen. Only the one on screen has
   // its Try it list and copy lines read, so another's extras always offer to add them.
-  function openVmenu(proto: string, variant: string, x: number, y: number) {
-    st.vmenu = { proto, variant, x, y }
+  function openVmenu(proto: string, variant: string, x: number, y: number, more: { hint?: boolean; el?: HTMLElement; art?: boolean } = {}) {
+    st.vmenu = { proto, variant, x, y, ...more }
     st.open = 'vmenu'
     refreshStatus()
     render()
@@ -1974,6 +1994,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     at: st.vmenu ? { x: st.vmenu.x, y: st.vmenu.y } : undefined,
     onClose: () => { if (st.open === 'vmenu') { st.open = null; render() } },
     onComment: () => { const m = st.vmenu; if (m) commentWhole(m.proto, m.variant) },
+    hint: !!st.vmenu?.hint,
+    commentLabel: st.vmenu?.art ? 'Comment on the whole variant' : undefined,
+    ...vmenuRows(),
   })
   /**
    * Comment on the variant as a whole: opens where the box is (the docked panel's Comments tab, the
@@ -1988,6 +2011,154 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       paintHints()
     }
     comments.act.askWhole()
+  }
+
+  // ---------- right-click menus ----------
+  // What a right-click is on is read off the markup it is in: a row or card carries the same
+  // data-act its click does (a variant, a prototype, a state, the session), a comment its id, and
+  // the design (in the stage, or in the artboard's frame) is the element itself. A variant's menu is
+  // its decisions (comments/decide.tsx) with the page's own rows beside them; the others are rows
+  // drawn by comments/menu.tsx. Which rows there are is decided here, where the places are known.
+  type CtxOn =
+    | { kind: 'variant'; proto: string; variant: string }
+    | { kind: 'proto'; proto: string }
+    | { kind: 'state'; proto: string; variant: string; state: string }
+    | { kind: 'session' }
+    | { kind: 'comment'; id: string }
+    | { kind: 'art'; el: HTMLElement }
+  /** An SVG part (an icon, a chart) stands for the HTML element around it. */
+  const htmlOf = (el: Element): HTMLElement => { let e: Element | null = el; while (e && e.namespaceURI !== 'http://www.w3.org/1999/xhtml') e = e.parentElement; return (e ?? el) as HTMLElement }
+  function ctxOf(t: Element): CtxOn | null {
+    if (comments.busy()) return null
+    // Fields and selected text keep the browser's menu (paste, spelling, Look Up).
+    if (t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"], [data-context-menu], [data-composer]')) return null
+    if (getSelection()?.toString()) return null
+    // The design on the stage, where there is no frame (a phone's screen, or the page too narrow for one).
+    if (st.place.view === 'variant' && commentHost() && t.closest('[data-mount]') && !t.closest('[data-card]')) return { kind: 'art', el: htmlOf(t) }
+    const row = t.closest<HTMLElement>('[data-mv]')
+    if (row) { const [proto, variant] = row.dataset.mv!.split(':'); return { kind: 'variant', proto, variant } }
+    const note = t.closest<HTMLElement>('[data-comment]')
+    if (note) return { kind: 'comment', id: note.dataset.comment! }
+    const el = t.closest<HTMLElement>('[data-act]')
+    if (el) {
+      const [name, a = '', b = '', c = ''] = el.dataset.act!.split(':')
+      switch (name) {
+        case 'pv': case 'mv': return byId(a)?.variants.some(v => v.id === b) ? { kind: 'variant', proto: a, variant: b } : null
+        case 'pvs': return byId(a)?.variants.some(v => v.id === b) ? (c ? { kind: 'state', proto: a, variant: b, state: c } : { kind: 'variant', proto: a, variant: b }) : null
+        case 'variant': { const p = cur(); return p?.variants.some(v => v.id === a) ? { kind: 'variant', proto: p.id, variant: a } : null }
+        case 'mp': case 'proto': return byId(a) ? { kind: 'proto', proto: a } : null
+        case 'lobby': { if (a === 'session') return { kind: 'session' }; const id = a === 'proto' ? b : cur()?.id; return id && byId(id) ? { kind: 'proto', proto: id } : null }
+        case 'open': case 'menu': return a === 'session' ? { kind: 'session' } : null
+      }
+    }
+    return null
+  }
+  function openCtx(on: CtxOn, x: number, y: number) {
+    st.ctx = null
+    if (on.kind === 'variant') return openVmenu(on.proto, on.variant, x, y, { hint: true })
+    if (on.kind === 'art') {
+      const pl = st.place
+      if (pl.view !== 'variant') return
+      return openVmenu(pl.proto, pl.variant, x, y, { hint: true, art: true, el: on.el })
+    }
+    st.vmenu = null
+    st.ctx = { x, y, on }
+    st.open = 'ctx'
+    refreshStatus()
+    render()
+  }
+  const linkOf = (hash: string) => `${session.url || location.origin + location.pathname}${hash}`
+  const copyText = (text: string) => { void navigator.clipboard?.writeText(text) }
+  /** The rows a variant's menu has beside its decisions, and on the artboard the ones about the element and the view. */
+  function vmenuRows(): { rows?: MenuRow[]; lead?: MenuRow[] } {
+    const m = st.vmenu, q = m && byId(m.proto), v = q?.variants.find(x => x.id === m?.variant)
+    if (!m || !q || !v) return {}
+    const here = st.place.view === 'variant' && st.place.proto === q.id && st.place.variant === v.id
+    const rows: MenuRow[] = []
+    if (m.art) {
+      rows.push({ id: 'fit', label: frameOn() ? 'Zoom to fit' : 'Fit to the window', icon: 'grow', run: () => setScale(0) })
+      if (st.place.view === 'variant') rows.push({ id: 'focus', label: 'Focus mode', icon: 'shrink', run: () => act('focus', '', '') })
+      rows.push({ id: 'theme', label: st.dark ? 'Light theme' : 'Dark theme', icon: st.dark ? 'sun' : 'moon', run: () => setTheme(!st.dark) })
+    } else {
+      if (!here) rows.push({ id: 'open', label: `Open ${v.id}`, icon: 'right', run: () => go(keepIn(q, v.id)) })
+      for (const t of (['play', 'all', 'compare'] as Tool[]).filter(t => toolOk(q, v.id, t))) {
+        rows.push({ id: `tool-${t}`, label: TOOLS[t].name, icon: TOOLS[t].icon, hint: t === 'compare' ? otherOf(q, v.id) : undefined, on: here && st.place.view === 'variant' && st.place.tool === t, run: () => act('tool', q.id, v.id, t) })
+      }
+      rows.push({ id: 'link', label: 'Copy link', icon: 'link', run: () => copyText(linkOf(hashOf({ view: 'variant', proto: q.id, variant: v.id }))) })
+    }
+    const el = m.el
+    if (!m.art || !el) return { rows }
+    const lead: MenuRow[] = []
+    if (comments.inDesign(el)) {
+      lead.push({ id: 'comment-el', label: 'Comment on this element', icon: 'comment', run: () => { commentElement(el) } })
+      const up = comments.parentOf(el)
+      if (up) lead.push({ id: 'comment-up', label: 'Comment on the parent', icon: 'up', run: () => commentElement(up) })
+      const text = (el.innerText ?? el.textContent ?? '').trim()
+      if (text) lead.push({ id: 'copy-text', label: 'Copy text', icon: 'copy', run: () => copyText(text) })
+    }
+    return { lead, rows }
+  }
+  /** Comment on an element picked by a right-click: the panel (or the phone's list) opens around the new comment. */
+  function commentElement(el: HTMLElement) {
+    comments.copy.off()
+    comments.commentOn(el)
+    if (phoneMq.matches) comments.act.openSheet(true)
+    else if (railOn()) {
+      tab = 'comments'
+      if (!hintsOpen) { hintsOpen = true; remember('proto-hints', '1') }
+      paintHints()
+    }
+  }
+  const drawCtx = comments.mountContext(root.querySelector<HTMLElement>('[data-ctx]')!)
+  function ctxRows(on: CtxOn): { title?: string; sub?: string; rows: MenuRow[] } | null {
+    switch (on.kind) {
+      case 'proto': {
+        const p = byId(on.proto)
+        if (!p) return null
+        const n = p.count ?? 5
+        return { title: p.title, rows: [
+          { id: 'open', label: 'Open', icon: 'grid', run: () => go({ view: 'proto', proto: p.id }) },
+          { id: 'more-variants', label: `${n} more variant${n === 1 ? '' : 's'}…`, icon: 'more', ask: {
+            title: 'More variants', hint: `Optional: a direction for the new ${p.title} variants, or what to avoid`, count: n,
+            send: (note, count) => comments.act.moreVariants(p.id, count, note),
+            done: count => `Asked for ${count} more variant${count === 1 ? '' : 's'}`,
+          } },
+          { id: 'link', label: 'Copy link', icon: 'link', run: () => copyText(linkOf(hashOf({ view: 'proto', proto: p.id }))) },
+        ] }
+      }
+      case 'state': {
+        const p = byId(on.proto), s = p && stateOf(p, on.variant, on.state)
+        if (!p || !s) return null
+        const place: Place = { view: 'variant', proto: p.id, variant: on.variant, state: s.id }
+        return { title: on.variant, sub: s.name, rows: [
+          { id: 'open', label: 'Open this state', icon: 'right', run: () => go(place) },
+          { id: 'link', label: 'Copy link', icon: 'link', run: () => copyText(linkOf(hashOf(place))) },
+        ] }
+      }
+      case 'session':
+        return { title: session.name, rows: [
+          { id: 'overview', label: 'Overview', icon: 'grid', run: () => go({ view: 'session' }) },
+          { id: 'link', label: 'Copy link', icon: 'link', run: () => copyText(session.url || location.href) },
+          { id: 'keep', label: 'Keep this session', icon: 'pin', on: !!st.status?.keep, run: () => act('keep', '', '') },
+        ] }
+      case 'comment': {
+        const words = comments.wordsOf(on.id)
+        return { title: 'Comment', rows: [
+          { id: 'show', label: 'Show it', icon: 'target', run: () => comments.act.open(on.id) },
+          ...(words ? [{ id: 'copy', label: 'Copy text', icon: 'copy', run: () => copyText(words) }] : []),
+          { id: 'delete', label: 'Delete', icon: 'trash', danger: true, run: () => comments.act.remove(on.id) },
+        ] }
+      }
+      default: return null
+    }
+  }
+  function paintCtx() {
+    const m = st.open === 'ctx' ? st.ctx : null, model = m && ctxRows(m.on)
+    drawCtx({
+      open: !!m && !!model, at: m ? { x: m.x, y: m.y } : null,
+      title: model?.title, sub: model?.sub, rows: model?.rows ?? [],
+      onClose: () => { if (st.open === 'ctx') { st.open = null; render() } },
+    })
   }
 
   // ---------- the side panel: comments, and Try it ----------
@@ -2141,7 +2312,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     fillTry()
   }
   // The pill's menu button is Try it's way out while its sheet is up or away.
-  hints.subscribe(() => { paintHints(); paintPill(); paintDecide(); paintVmenu() })
+  hints.subscribe(() => { paintHints(); paintPill(); paintDecide(); paintVmenu(); paintCtx() })
   wideMq.addEventListener('change', () => { hintsOpen = wideMq.matches && localStorage.getItem('proto-hints') !== '0'; paintHints() })
   // A live value (a code that changes every 30 seconds) is re-read every second, in place.
   setInterval(() => {

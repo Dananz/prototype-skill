@@ -181,8 +181,9 @@ const viewOf = c => {
 
 // A decision on a variant made in the page (its Pick, More like this and Build it) comes as a
 // comment with one of these and no element. A copy choice (the copy picker's Send) is one too, on
-// the element of the line it changes.
-const ACTIONS = new Set(['pick', 'unpick', 'more', 'build', 'copy', 'try-it', 'copy-options'])
+// the element of the line it changes. More variants is the one made on a prototype (route <slug>),
+// with how many.
+const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'copy', 'try-it', 'copy-options'])
 
 /**
  * Writes one send from the page as a new batch; images come as data URLs and are stored as files.
@@ -211,7 +212,13 @@ function receive(data) {
     const view = viewOf(c)
     if (view === false) throw bad(i, ': view is { size: phone, tablet or desktop, w, h }, the layout\'s size in whole CSS px from 200 to 4000')
     if (view && (c.action !== undefined || time)) throw bad(i, ': a comment in a device view is on the design, with no action and no moment of the motion')
-    if (c.action !== undefined) {
+    if (c.action === 'more-variants') {
+      const [slug, ...rest] = c.route.split('/')
+      if (rest.length) throw bad(i, ': more-variants is on a prototype (<slug>), not a variant')
+      if (!existsSync(join(dir, 'src', 'protos', slug))) throw bad(i, `: there is no prototype ${slug}`)
+      if (!Number.isInteger(c.count) || c.count < 1 || c.count > 9) throw bad(i, ': count is a whole number from 1 to 9')
+      if (c.point !== undefined || c.target !== undefined || time) throw bad(i, ': more-variants has no element, spot or moment')
+    } else if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
       if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it or copy-options, on a variant (<slug>/<letter>)')
       if (c.action === 'pick' || c.action === 'unpick') {
@@ -230,6 +237,7 @@ function receive(data) {
     return {
       n: i + 1, route: c.route, text: c.text.trim().slice(0, 4000),
       ...(c.action ? { action: c.action } : {}),
+      ...(c.action === 'more-variants' ? { count: c.count } : {}),
       ...(c.action === 'pick' && typeof c.note === 'string' && c.note.trim() ? { note: c.note.trim().slice(0, 600) } : {}),
       point: c.point && { x: Math.round(+c.point.x || 0), y: Math.round(+c.point.y || 0) },
       ...time,

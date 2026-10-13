@@ -10,6 +10,7 @@ import { useCtx } from './ctx'
 import { useStore } from './store'
 import type { Action } from './types'
 import { ACTION, Icon, MOD, PRIMARY, Pulse } from './ui'
+import { BROWSER_HINT, MenuRows, type MenuRow } from './menu'
 
 /** The variant on screen, and whether it is the prototype's pick. */
 export type Subject = { proto: string; variant: string; name: string; picked: boolean; hints?: boolean; copy?: boolean }
@@ -23,7 +24,7 @@ const NOTE: Record<Ask, { title: (v: string) => string; hint: string; done: (v: 
   build: { title: v => `Build ${v}`, hint: 'Optional: anything to know before building it', done: v => `Asked to build ${v}` },
 }
 
-export function Decide({ subject, sheet = false, onDone, onComment }: { subject: Subject; sheet?: boolean; onDone?: () => void; onComment?: () => void }) {
+export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, commentLabel = 'Comment on this' }: { subject: Subject; sheet?: boolean; onDone?: () => void; onComment?: () => void; rows?: MenuRow[]; lead?: MenuRow[]; commentLabel?: string }) {
   const { store, act } = useCtx()
   const state = useStore(store)
   const listening = !!state.inbox?.listening
@@ -149,8 +150,9 @@ export function Decide({ subject, sheet = false, onDone, onComment }: { subject:
   return (
     <div ref={menu} role="menu" aria-label={`${v} · ${subject.name}`} onKeyDown={arrows} className="p-1.5">
       <div className="flex min-w-0 items-center gap-1.5 px-2 pb-1 pt-1 text-[11px] text-zinc-500"><b className="font-semibold text-zinc-700 dark:text-zinc-200">{v}</b><span dir="auto" className="truncate">{subject.name}</span></div>
+      {lead && lead.length > 0 && <div className="mb-1 border-b border-black/[.06] pb-1 dark:border-white/10"><MenuRows rows={lead} onAsk={() => {}} onDone={() => onDone?.()} /></div>}
       {onComment && <button role="menuitem" data-shoot="vm-comment" onClick={() => { onComment(); onDone?.() }} className={`${row} text-zinc-700 dark:text-zinc-200`}>
-        <Icon name="frame" className="size-4" /><span className="flex-1">Comment on this</span><kbd className="shrink-0 font-sans text-xs text-zinc-400">⇧C</kbd>
+        <Icon name="frame" className="size-4" /><span className="flex-1">{commentLabel}</span><kbd className="shrink-0 font-sans text-xs text-zinc-400">⇧C</kbd>
       </button>}
       <button role="menuitem" onClick={() => send(picked ? 'unpick' : 'pick')} disabled={busy} title={pickTitle} className={`${row} ${picked ? 'font-medium text-emerald-700 dark:text-emerald-400' : 'text-zinc-700 dark:text-zinc-200'}`}>
         <Icon name={picked ? 'picked' : 'pick'} className="size-4" /><span className="min-w-0 flex-1 truncate">{pickLabel}</span>{picked && <span className="shrink-0 text-xs font-normal text-zinc-400">Undo</span>}
@@ -158,6 +160,7 @@ export function Decide({ subject, sheet = false, onDone, onComment }: { subject:
       {!picked && <button role="menuitem" data-pick-note onClick={() => { setNote(''); setError(''); setAsk('pick') }} disabled={busy} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="check" className="size-4 opacity-0" /><span className="flex-1">Pick with a note…</span></button>}
       <button role="menuitem" onClick={() => setAsk('more')} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="more" className="size-4" /><span className="flex-1">More like this…</span></button>
       <button role="menuitem" onClick={() => setAsk('build')} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="code" className="size-4" /><span className="flex-1">Build it…</span></button>
+      {rows && rows.length > 0 && <div className="mt-1 border-t border-black/[.06] pt-1 dark:border-white/10"><MenuRows rows={rows} onAsk={() => {}} onDone={() => onDone?.()} /></div>}
       {extras}
       {oops}
       <div className="mx-2 mt-1.5 border-t border-black/[.06] pb-1 pt-2 dark:border-white/10">{status}</div>
@@ -166,8 +169,10 @@ export function Decide({ subject, sheet = false, onDone, onComment }: { subject:
 }
 
 /** Where the menu opens on a wide page: under the bar's check button, its right edge on the button's. */
-export type DecidePopProps = { open: boolean; anchor: () => HTMLElement | null; subject: Subject | null; onClose: () => void; at?: { x: number; y: number }; onComment?: () => void }
-export function DecidePop({ open, anchor, subject, onClose, at: pointer, onComment }: DecidePopProps) {
+export type DecidePopProps = { open: boolean; anchor: () => HTMLElement | null; subject: Subject | null; onClose: () => void; at?: { x: number; y: number }; onComment?: () => void; rows?: MenuRow[]; lead?: MenuRow[]; commentLabel?: string
+  /** Opened by right-click: says how to reach the browser's own menu. */
+  hint?: boolean }
+export function DecidePop({ open, anchor, subject, onClose, at: pointer, onComment, rows, lead, commentLabel, hint }: DecidePopProps) {
   const [, redraw] = useState(0)
   useEffect(() => {
     if (!open) return
@@ -184,8 +189,9 @@ export function DecidePop({ open, anchor, subject, onClose, at: pointer, onComme
   // The shell closes it on Esc and on a click outside. A click inside goes no further: a choice
   // redraws the menu under it, and the shell would take a click on a removed button for one outside.
   return (
-    <div data-pop onClick={e => e.stopPropagation()} className="fixed z-40 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={place}>
-      <Decide key={`${subject.proto}/${subject.variant}`} subject={subject} onDone={onClose} onComment={onComment} />
+    <div data-pop data-context-menu={pointer ? '' : undefined} onClick={e => e.stopPropagation()} onContextMenu={e => { if (pointer && !e.shiftKey) e.preventDefault() }} className="fixed z-40 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={place}>
+      <Decide key={`${subject.proto}/${subject.variant}`} subject={subject} onDone={onClose} onComment={onComment} rows={rows} lead={lead} commentLabel={commentLabel} />
+      {hint && <p className="border-t border-black/[.06] px-3.5 py-2 text-xs text-zinc-400 dark:border-white/10">{BROWSER_HINT}</p>}
     </div>
   )
 }

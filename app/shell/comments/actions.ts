@@ -220,6 +220,22 @@ export function createActions(store: Store, host: Host) {
       throw new Error(`Couldn’t ${action === 'pick' ? `pick ${to.variant}` : 'take the pick back'}: ${r.failed}. Claude is told.`)
     },
     /**
+     * More variants of a prototype, a request of its own (action more-variants, on the prototype, not
+     * a variant): `count` new directions, the note as its words. It joins the list as already sent,
+     * on no variant. Throws with the server's reason.
+     */
+    async moreVariants(proto: string, count: number, note = '') {
+      const words = note.trim(), n = Math.max(1, Math.min(9, Math.round(count)))
+      const say = `${n} more variant${n === 1 ? '' : 's'}`
+      const sent = await host.send({
+        theme: host.dark() ? 'dark' : 'light',
+        viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 },
+        comments: [{ route: proto, text: words ? `${say}: ${words}` : say, action: 'more-variants', count: n }],
+      })
+      const item: Item = { id: uid(), proto, variant: '', n: 0, body: words ? [words] : [], tags: [], action: 'more-variants', count: n, at: Date.now(), sent: { batch: sent.id, i: 1 } }
+      set(s => ({ items: s.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? s.items : [...s.items, item] }))
+    },
+    /**
      * Generate copy options for the words highlighted on the design: a request of its own (action
      * copy-options, on the element they are in, the words and the optional note as its text), not the
      * whole variant's. It joins the list as already sent, with no pin. Throws with the server's reason.
