@@ -91,7 +91,7 @@ export function Layer() {
 
   // Only comments are on the design; a decision (Pick, More, Build) is on the variant as a whole.
   // One written in a device view is on that layout: its pin shows over the view at that size only.
-  const here = rows.filter(r => r.here && r.item.target && sameView(r.item.target.view, s.place?.view))
+  const here = rows.filter(r => r.here && r.item.target && !r.item.action && sameView(r.item.target.view, s.place?.view))
   const listed = here.map(r => ({ id: r.item.id, t: r.item.target! }))
   if (editing && !editing.id) listed.push({ id: '__new', t: editing.target })
   const boxes = useBoxes(listed)
@@ -114,7 +114,7 @@ export function Layer() {
       {editing && (
         <Composer key={editing.id ?? '__new'} target={editing.target} n={editedItem?.n ?? nextN} place={boxes[editing.id ?? '__new'] ?? null}
           sheet={phone} tagging={m.kind === 'tag'} editing={!!editedItem} id={editedItem?.id}
-          initial={editedItem ?? (s.held?.target ? s.held : undefined)} />
+          initial={editedItem ?? (editing.kind === 'compose' && editing.quote ? { body: [`“${editing.quote}” `], tags: [] } : s.held?.target ? s.held : undefined)} />
       )}
       {opened && <ReadCard row={opened} box={boxes[opened.item.id]} />}
     </>

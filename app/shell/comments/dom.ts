@@ -27,6 +27,14 @@ export function rel(el: Element, host: Element): Box {
   return { x: o.left + r.left * s - h.left, y: o.top + r.top * s - h.top, w: r.width * s, h: r.height * s }
 }
 
+/** A rect read in `doc` (the page's own, or a device view's frame), as `rel` draws an element's: from `host`'s corner, scaled. */
+export function rectIn(r: DOMRect, doc: Document, host: Element): Box {
+  const h = host.getBoundingClientRect(), f = doc !== document ? doc.defaultView?.frameElement as HTMLElement | null : null
+  if (!f) return { x: r.left - h.left, y: r.top - h.top, w: r.width, h: r.height }
+  const o = f.getBoundingClientRect(), s = o.width / (f.offsetWidth || 1)
+  return { x: o.left + r.left * s - h.left, y: o.top + r.top * s - h.top, w: r.width * s, h: r.height * s }
+}
+
 /** The part of a device view's frame that shows, within host (its area scrolls around it when zoomed in). */
 function frameShown(el: Element, host: Element): Box | null {
   const f = frameOf(el)

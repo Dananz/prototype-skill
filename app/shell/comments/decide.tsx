@@ -15,8 +15,8 @@ export type Subject = { proto: string; variant: string; name: string; picked: bo
 type Ask = 'more' | 'build' | 'try-it' | 'copy-options'
 
 const NOTE: Record<Ask, { title: (v: string) => string; hint: string; done: (v: string) => string }> = {
-  'try-it': { title: v => `Add Try it for ${v}`, hint: 'Optional: a flow or scenario to explain', done: v => `Asked for Try it for ${v}` },
-  'copy-options': { title: v => `Add copy options for ${v}`, hint: 'Optional: which lines or tone? Starts with the headline and primary text.', done: v => `Asked for copy options for ${v}` },
+  'try-it': { title: v => `Needs explanation: ${v}`, hint: 'What is hard to figure out? Optional.', done: v => `Asked for an explanation of ${v}` },
+  'copy-options': { title: v => `Generate copy options for ${v}`, hint: 'Optional: which lines or what tone? Starts with the headline and primary text.', done: v => `Asked for copy options for ${v}` },
   more: { title: v => `More like ${v}`, hint: 'Optional: what to keep, what to push further', done: v => `Asked for more like ${v}` },
   build: { title: v => `Build ${v}`, hint: 'Optional: anything to know before building it', done: v => `Asked to build ${v}` },
 }
@@ -25,7 +25,7 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
   const { store, act } = useCtx()
   const state = useStore(store)
   const listening = !!state.inbox?.listening
-  const pending = (a: Ask) => state.inbox?.batches.some(b => b.comments.some(c => c.route === `${subject.proto}/${subject.variant}` && c.action === a && !c.done && !c.withdrawn))
+  const pending = (a: Ask) => state.inbox?.batches.some(b => b.comments.some(c => c.route === `${subject.proto}/${subject.variant}` && c.action === a && !c.scoped && !c.done && !c.withdrawn))
   const sending = useRef(false)
   const [ask, setAsk] = useState<Ask | null>(null)
   const [note, setNote] = useState('')
@@ -103,16 +103,18 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
   )
 
   const extras = <div className="mt-2 border-t border-black/[.06] pt-2 dark:border-white/10">
-    <p className="px-2 pb-1 text-[11px] text-zinc-500">Optional extras</p>
+    <p className="px-2 pb-1 text-[11px] text-zinc-500">Ask Claude for</p>
     {(['try-it', 'copy-options'] as const).map(a => {
       const ready = a === 'try-it' ? subject.hints : subject.copy
       const waiting = pending(a)
-      const label = a === 'try-it' ? 'Try it' : 'Copy options'
+      // Ready, a row is the thing itself; before, it says what asking for it does.
+      const label = ready ? (a === 'try-it' ? 'Try it' : 'Copy options') : a === 'try-it' ? 'Needs explanation' : 'Generate copy options'
+      const about = a === 'try-it' ? 'what to try' : 'headline, text'
       return <button key={a} role={sheet ? undefined : 'menuitem'} data-request-extra={a} disabled={busy || waiting || ready}
         onClick={() => { setNote(''); setError(''); setAsk(a) }}
         className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-start text-[13px] hover:bg-zinc-900/[.04] disabled:text-zinc-400 dark:hover:bg-white/[.06]">
-        <Icon name={ACTION[a].icon} className="size-4" /><span className="flex-1">{ready ? label : `Add ${label}`}</span>
-        <span className="text-xs text-zinc-500">{ready ? 'Ready' : waiting ? 'Requested' : '…'}</span>
+        <Icon name={ready && a === 'try-it' ? 'key' : ACTION[a].icon} className="size-4" /><span className="flex-1">{label}</span>
+        <span className="text-xs text-zinc-500">{ready ? 'Ready' : waiting ? 'Requested' : about}</span>
       </button>
     })}
     {(['try-it', 'copy-options'] as const).some(pending) && <p className="px-2 pb-1 text-xs text-zinc-500">Requests wait in Comments. Delete one there to cancel it.</p>}
