@@ -22,6 +22,7 @@ import { commentNavigationChecks } from './comment-navigation-checks.mjs'
 import { commentPicturesChecks } from './comment-pictures-checks.mjs'
 import { commentUntilChecks } from './comment-until-checks.mjs'
 import { listenerChecks } from './listener-checks.mjs'
+import { pickNoteChecks } from './pick-note-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -156,6 +157,7 @@ await commentNavigationChecks({ app, openPage, fail })
 await commentPicturesChecks({ proto, app, openPage, fail })
 await commentUntilChecks({ proto, app, fail })
 await listenerChecks({ proto, app, fail })
+await pickNoteChecks({ proto, app, local, openPage, fail, keepShots })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
 proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--variants', 'A:Price only,B:Fuel tabs'])

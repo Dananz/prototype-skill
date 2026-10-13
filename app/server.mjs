@@ -230,6 +230,7 @@ function receive(data) {
     return {
       n: i + 1, route: c.route, text: c.text.trim().slice(0, 4000),
       ...(c.action ? { action: c.action } : {}),
+      ...(c.action === 'pick' && typeof c.note === 'string' && c.note.trim() ? { note: c.note.trim().slice(0, 600) } : {}),
       point: c.point && { x: Math.round(+c.point.x || 0), y: Math.round(+c.point.y || 0) },
       ...time,
       ...(view ? { view } : {}),
@@ -253,7 +254,7 @@ function receive(data) {
     }
   }
   // A pick is made before the batch is seen, so the agent reads about one already made, and it is
-  // done: nothing is left to do but note it. One that can't be made stays open and says why (marked:
+  // done when it has no note; a note stays pending until the agent handles it. A failed pick says why (marked:
   // meta.ts has it, only the working variant didn't move), and so does an unpick that changed nothing.
   let moved = false
   for (const c of list) {
@@ -262,7 +263,11 @@ function receive(data) {
     try {
       const did = pick(c.route, c.action === 'unpick')
       if (did === 'nothing') Object.assign(c, { nothing: true, failed: `${letter} isn't the pick of ${slug}, so there was nothing to take back` })
-      else { c.done = true; moved = did === 'moved' || moved }
+      else {
+        if (c.action === 'pick' && c.note) c.marked = true
+        else c.done = true
+        moved = did === 'moved' || moved
+      }
     } catch (e) {
       c.failed = String(e?.message || e).slice(0, 300)
       if (e?.marked) c.marked = true

@@ -498,7 +498,8 @@ the page, where each variant has Pick (the check button in the bar, or P; on a p
 the variant sheet), or Pick with a note… when they want to say why or what to change in it. A pick
 made in the page is already marked when you hear of it, as a comment with `action: pick` (see
 Comments from the page), its note as the comment's words: don't run `proto pick` again, and do
-what the note asks.
+what the note asks, then `proto reply <id> --done`. A pick with a note stays pending until then;
+a plain pick is already done.
 
 As soon as the user chooses in chat, run `proto pick <slug> <letter>` before anything else,
 without asking. If they don't
@@ -651,7 +652,7 @@ the text.
 
 | `action:` | Already done | You |
 |---|---|---|
-| `pick` | marked, the working variant, and the comment done, unless its line says otherwise | do what the note asks, if anything; a reply is only a note. When the line says it wasn't marked or the working variant didn't move, run the `proto pick` it names |
+| `pick` | marked and the working variant, unless its line says otherwise; with a note, the comment stays pending | handle or acknowledge the note, then `proto reply <id> --done`; plain picks are already done. When the line says it wasn't marked or the working variant didn't move, run the `proto pick` it names |
 | `unpick` | the pick is off, and the comment done | nothing. When the line says nothing changed (that variant wasn't the pick), say so in a reply with `--done`; when it says it wasn't taken off, run the `proto pick … --off` it names |
 | `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you are adding and `--until <slug>/D,<slug>/E…` (step 5) |
 | `build` | nothing | `proto pick` it if it isn't the pick, then step 7; reply when it is in |
