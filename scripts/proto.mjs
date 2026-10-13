@@ -455,6 +455,19 @@ function add() {
     else drop.push('also')
     if (flags['from-picks']) console.log(`from ${refs.join(', ')}`)
   }
+  // A prototype made to stand in for one element of a variant: that variant must already hold the
+  // element in a <Slot>, so the page has something to plug the pick into.
+  let slotIn = null
+  if (flags.slot !== undefined) {
+    if (!kit.slot) die('--slot needs the React stack for now')
+    if (flags.slot === true || !/^[a-z][a-z0-9-]*$/.test(flags.slot)) die('--slot takes the slot\'s id, like cta')
+    const [parent, letter = ''] = (flags.from === undefined || flags.from === true ? '' : String(flags.from).split(',')[0].trim()).split('/')
+    if (!parent || !letter) die('--slot needs --from <slug>/<letter>: the variant that holds the slot')
+    const file = ['tsx', 'jsx'].map(x => join(dir, 'src', 'protos', parent, `${letter}.${x}`)).find(f => existsSync(f))
+    if (!file || !new RegExp(`<Slot\\s+proto="${parent}"\\s+id="${flags.slot}"`).test(readFileSync(file, 'utf8'))) die(`${parent}/${letter} has no <Slot proto="${parent}" id="${flags.slot}" …>: wrap the element in it first (SKILL.md, "Plug a variant into what it was made from")`)
+    set.slot = flags.slot
+    slotIn = { parent, letter, id: flags.slot }
+  }
   const list = String(flags.variants || '').split(',').map(x => x.trim()).filter(Boolean)
   const fresh = []
   // On the design kit: a new prototype takes its frame from it, unless told otherwise.
@@ -489,6 +502,13 @@ function add() {
   // How many directions it was started with: the page's More variants asks for that many again.
   if (!existsSync(metaFile) && !meta.count && Object.keys(meta.variants).length) meta.count = Object.keys(meta.variants).length
   writeWhole(metaFile, `// Prototype: ${String(meta.title).replace(/[\r\n\u2028\u2029]+/g, ' ')}. Variant files are named by their letter; names live here.\nexport default ${JSON.stringify(meta, null, 2)}\n`, scratchOf(dir))
+  // The parent learns where its slot is held; a pointer already set there is kept.
+  if (slotIn) {
+    const pf = join(dir, 'src', 'protos', slotIn.parent, 'meta.ts'), ptext = readFileSync(pf, 'utf8')
+    const pm = JSON.parse(ptext.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
+    pm.slots = { ...pm.slots, [slotIn.id]: { ...pm.slots?.[slotIn.id], variant: slotIn.letter } }
+    writeWhole(pf, withMeta(ptext, pm), scratchOf(dir))
+  }
   // A new variant is building until `proto done`: the page marks it, and an edit that throws keeps
   // its last good frame instead of an error.
   if (fresh.length) {
@@ -598,6 +618,27 @@ function closeWaiting(dir) {
 // in a variant's name as a pattern and write something else.
 const withMeta = (text, meta) => text.replace(/export default[\s\S]*$/, () => `export default ${JSON.stringify(meta, null, 2)}\n`)
 
+// The same rule as the page's pick (app/server.mjs plug): a prototype with a slot plugs its pick
+// into the prototype it was made from; the variant called Current, or no pick, is the original.
+// Says where it changed, or '' when nothing did.
+const isCurrent = name => /^(current|as built)$/i.test(String(name || '').trim())
+function plug(dir, slug, meta, id, off) {
+  if (!meta.slot || typeof meta.from !== 'string' || !id) return ''
+  const f = join(dir, 'src', 'protos', meta.from.split('/')[0], 'meta.ts')
+  let text, pm
+  try { text = readFileSync(f, 'utf8'); pm = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, '')) } catch { return '' }
+  const slot = pm.slots?.[meta.slot]
+  if (!slot) return ''
+  const use = `${slug}/${id}`
+  if (off && slot.use !== use) return ''
+  const next = off || isCurrent(meta.variants?.[id]) ? '' : use
+  if ((slot.use || '') === next) return ''
+  const { use: _, ...rest } = slot
+  pm.slots[meta.slot] = next ? { ...rest, use: next } : rest
+  writeWhole(f, withMeta(text, pm), scratchOf(dir))
+  return `${meta.from} (${meta.slot})`
+}
+
 // The user chose a variant ("go with A"): the page marks it and lists it first. The other
 // variants stay, and so does everything built from this prototype.
 function pick() {
@@ -608,13 +649,18 @@ function pick() {
   if (!slug || !existsSync(metaFile)) die('which prototype? proto pick <slug> <letter>')
   const text = readFileSync(metaFile, 'utf8')
   const meta = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
+  const was = meta.picked
   if (flags.off) delete meta.picked
   else if (!id || !meta.variants?.[id]) die(`which variant of ${slug}? (${Object.keys(meta.variants || {}).join(', ')})`)
   else meta.picked = id
+  // Before the pick is marked: if the parent can't be written, nothing is marked and this can be run again.
+  const letter = flags.off ? was : id
+  const plugged = plug(dir, slug, meta, letter, !!flags.off)
   writeWhole(metaFile, withMeta(text, meta), scratchOf(dir))
   // The pick is what gets worked on next; its history starts here.
   if (!flags.off) setWork(dir, { proto: slug, variant: id }, `Picked ${id}`)
-  console.log(flags.off ? `${slug}: no pick` : `${slug}: picked ${id} · ${meta.variants[id]}`)
+  const back = flags.off || isCurrent(meta.variants?.[letter])
+  console.log((flags.off ? `${slug}: no pick` : `${slug}: picked ${id} · ${meta.variants[id]}`) + (plugged ? ` · ${back ? 'original back in' : 'plugged into'} ${plugged}` : ''))
 }
 
 // ---------- the working variant ----------

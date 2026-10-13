@@ -1,5 +1,5 @@
 // A variant plugged into a slot shows in its parent, live; a pointer cleared, archived or broken shows the original.
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export async function slotChecks({ proto, app, local, openPage, fail }) {
@@ -17,10 +17,13 @@ export async function slotChecks({ proto, app, local, openPage, fail }) {
   writeFileSync(join(protos, 'slothome/A.tsx'), `export default function A() { return <main>Home A</main> }`)
   writeFileSync(join(protos, 'slothome/B.tsx'), `import { Slot } from '../../slot'
 export default function B() { return <main><h1>Home B</h1><Slot proto="slothome" id="cta" label="Go"><button>Original button</button></Slot></main> }`)
-  const meta = metaOf('slothome')
-  meta.slots = { cta: { variant: 'B' } }
-  writeFileSync(metaFile('slothome'), `export default ${JSON.stringify(meta, null, 2)}\n`)
-  proto(['add', 'slotbtn', '--title', 'Button', '--variants', 'A:Current,B:Rounded,C:Broken'])
+  // A variant with no <Slot> in it, or no variant named, has nothing to plug into.
+  proto(['add', 'slotbtn', '--from', 'slothome/A', '--slot', 'cta', '--variants', 'A:Current'], { ok: false })
+  proto(['add', 'slotbtn', '--from', 'slothome', '--slot', 'cta', '--variants', 'A:Current'], { ok: false })
+  assert(!existsSync(join(protos, 'slotbtn')), 'a refused add --slot left a prototype behind')
+  proto(['add', 'slotbtn', '--title', 'Button', '--from', 'slothome/B', '--slot', 'cta', '--variants', 'A:Current,B:Rounded,C:Broken'])
+  assert(metaOf('slothome').slots?.cta?.variant === 'B', 'add --slot did not record the slot in the parent')
+  assert(metaOf('slotbtn').slot === 'cta' && metaOf('slotbtn').from === 'slothome/B', 'add --slot did not record the slot in the child')
   writeFileSync(join(protos, 'slotbtn/A.tsx'), `export default function A() { return <button>Original button</button> }`)
   writeFileSync(join(protos, 'slotbtn/B.tsx'), `export default function B({ label = 'Go' }: { label?: string }) { return <button>Rounded {label}</button> }`)
   writeFileSync(join(protos, 'slotbtn/C.tsx'), `export default function C(): never { throw new Error('broken variant') }`)
@@ -49,11 +52,6 @@ export default function B() { return <main><h1>Home B</h1><Slot proto="slothome"
     setUse('')
     await until('Original button', 'a cleared pointer shows the original again')
 
-    // The child says what it stands in for (proto add --slot writes the same two keys).
-    const child = metaOf('slotbtn')
-    child.from = 'slothome/B'
-    child.slot = 'cta'
-    writeFileSync(metaFile('slotbtn'), `export default ${JSON.stringify(child, null, 2)}\n`)
     await decide('slotbtn/B', 'pick')
     await until('Rounded Go', 'picking B plugs it into slothome/B')
     assert(metaOf('slothome').slots.cta.use === 'slotbtn/B', 'the pick did not write the parent\'s pointer')
@@ -68,6 +66,18 @@ export default function B() { return <main><h1>Home B</h1><Slot proto="slothome"
     await decide('slotbtn/C', 'pick')
     await until('Original button', 'a picked variant that throws still shows the original')
     await decide('slotbtn/C', 'unpick')
+    // The CLI's pick follows the same rule as the page's.
+    proto(['pick', 'slotbtn', 'B'])
+    await until('Rounded Go', 'proto pick plugs the variant in')
+    assert(metaOf('slothome').slots.cta.use === 'slotbtn/B', 'proto pick did not write the parent\'s pointer')
+    proto(['pick', 'slotbtn', 'A'])
+    await until('Original button', 'proto pick of Current puts the original back')
+    assert(!metaOf('slothome').slots.cta.use, 'proto pick of Current left a pointer')
+    proto(['pick', 'slotbtn', 'B'])
+    await until('Rounded Go', 'proto pick plugs the variant in again')
+    proto(['pick', 'slotbtn', '--off'])
+    await until('Original button', 'proto pick --off puts the original back')
+    assert(!metaOf('slothome').slots.cta.use, 'proto pick --off left a pointer')
     proto(['inbox']) // the page's picks arrive done; take them so later queue counts start clean
   } finally { page.close() }
   console.log('\nOK: a variant plugs into its parent from a pick in the page and from proto pick, and handoff and inbox know it')
