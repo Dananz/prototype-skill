@@ -21,5 +21,7 @@ jobs:
       - name: JavaScript syntax
         shell: bash
         run: git ls-files -z '*.mjs' | xargs -0 -r -n1 node --check
+      - name: Agent compatibility
+        run: node --test .github/agent-checks.mjs
       - name: CLI starts
         run: node scripts/proto.mjs stack --project .

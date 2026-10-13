@@ -1,13 +1,13 @@
 ---
 name: prototype
-description: Use when the user asks to prototype a UI, wants several versions or variations of a screen, component, section or interaction, or says "/prototype", "/prototype 3 <feature>", "show me options for…", "give me a few versions of…". Also use for follow-up requests in the same session ("now 5 variations of the hero", "add two more", "try it on the phone"). NOT for a single straightforward UI change, logic with no visible surface, or comparing libraries or APIs.
+description: Build several live, clickable UI variants in one app for review. Use for UI prototyping, screen or interaction alternatives, and follow-up exploration. Not for a single straightforward UI edit or comparing libraries.
 allowed-tools:
   - Bash(node "${CLAUDE_SKILL_DIR}/scripts/proto.mjs" *)
 ---
 
 # Prototype
 
-Each Claude Code session gets **one live prototype app**. The user gets its link once, at
+Each agent conversation gets **one live prototype app**. The user gets its link once, at
 the start, and watches every prototype appear and fill in as you write the files: the page
 updates through hot module replacement, never a reload. Everything the user asks for in the
 session lives in that one app: **session › prototype › variant**.
@@ -26,11 +26,41 @@ phone, a phone on a desktop); the scale button zooms either from 10% to 200%, an
 pinch, Space-drag, comment, try things, pick copy and scrub motion there. Nothing to build for it
 beyond a web variant that lays out well at each width.
 
-`proto` below means `node "${CLAUDE_SKILL_DIR}/scripts/proto.mjs"` (through `node`, the path in
-double quotes, not a shell variable: the same command works in Bash, Git Bash and PowerShell). It
-finds the session from `$CLAUDE_CODE_SESSION_ID` and the project from the git root of the current
-folder. A subagent building into the main session's app passes `--session <the main session id>`
-on every call.
+## Agent setup (Claude Code, Codex and other harnesses)
+
+Resolve **the directory containing this loaded `SKILL.md`** to an absolute path before
+running anything. `proto` below is shorthand for `node "<skill-dir>/scripts/proto.mjs"`,
+not an installed command. Replace `<skill-dir>` with that actual path in commands and worker
+prompts. References such as `references/craft.md` are relative to this skill directory,
+not the product's working directory. Claude Code may substitute `${CLAUDE_SKILL_DIR}`;
+other agents must use the path supplied by their skill loader. Do not assume that token is
+an environment variable, or that the skill lives under `~/.claude`.
+
+Keep the **project root and session ID** for the whole conversation, including after
+compaction. Run from the product's folder, or pass `--project "<project-root>"` on every call.
+The CLI resolves identity in this order: `--session`, `PROTO_SESSION_ID`, `CODEX_THREAD_ID`,
+`CLAUDE_CODE_SESSION_ID`, `CLAUDE_SESSION_ID`. If the harness supplies a conversation ID,
+use it. If none is available, generate a unique ID once (`node -e
+"console.log(require('node:crypto').randomUUID())"`) and pass `--session "<id>"` on every call.
+Never generate a new ID per command or use one shared default for different conversations.
+To resume an earlier app, use its original project and ID (`proto ls` lists sessions).
+
+For example (replace all placeholders with actual values):
+
+```sh
+node "<skill-dir>/scripts/proto.mjs" up --project "<project-root>" --session "<id>" --name "Checkout alternatives"
+node "<skill-dir>/scripts/proto.mjs" add checkout --variants "A:Current,B:Compact" --project "<project-root>" --session "<id>"
+```
+
+Use the harness's shell, file-editing, image-viewing and browser tools. The `allowed-tools`
+frontmatter is Claude Code permission metadata, not a list of tools other agents must have.
+Use subagents only when available and allowed; otherwise build sequentially and perform the
+critic pass yourself. Never invent tool names, unavailable model IDs or background wakeups.
+For image generation, use the available tool's supported execution and file-export mechanism;
+background work is optional. Save its outputs in the app's `src/assets/` before final QA.
+If the harness cannot inspect images, report that visual QA is blocked rather than claiming
+that screenshots match. Start a comment listener only if background completion reaches this
+conversation; otherwise use `proto inbox` at the start and end of active turns (details below).
 
 ## 1. Start the session app, then send the link
 
@@ -48,7 +78,8 @@ in as I build"). Then continue. On later requests in the same session run `proto
 What `proto up` does: the app lives in `<project>/.prototypes/<session>/` (git-ignored, the
 project's own files are untouched), its stack follows the project (React for React, Next or
 Expo projects, Vue for Vue or Nuxt, React for anything else), it runs a Vite dev server and
-publishes it on the tailnet with `tailscale serve`, so the link opens on the user's phone too.
+publishes it on the tailnet with `tailscale serve` when available, so that link opens on
+the user's phone too. Without Tailscale, use the printed local URL.
 
 ## 2. Ground it in the real product: Current first
 
@@ -170,7 +201,7 @@ took and from where.
 
 ## Right to left (Hebrew, Arabic, Persian, Urdu)
 
-When the product reads right to left, read `${CLAUDE_SKILL_DIR}/references/rtl.md` before writing any variant (Current and
+When the product reads right to left, read `references/rtl.md` before writing any variant (Current and
 new designs alike) and follow it in every one: built right to left from the first line, logical
 sides only, never drawn left to right and flipped.
 
@@ -180,7 +211,7 @@ sides only, never drawn left to right and flipped.
 about half a minute, so the order is:
 
 1. `proto add` with the directions' names, so the page shows their placeholders at once.
-2. Read `${CLAUDE_SKILL_DIR}/references/craft.md` and take its stance: a studio design lead whose
+2. Read `references/craft.md` and take its stance: a studio design lead whose
    client rejected anything templated, one real aesthetic risk per direction, in the look, with
    a simple experience. Read the type catalog (`proto fonts`, with `--hebrew` for a Hebrew
    product): title faces come from it only, never from its never-for-titles list.
@@ -194,17 +225,16 @@ about half a minute, so the order is:
    colors, so the page shows every direction's look within seconds. This is the only planning
    before code that waits for you.
 4. **Your own direction's hero, right away**, straight from its line (the first pass below).
-5. **Then, in one message:** the other directions' subagents (section 4, short prompts) and,
-   when the subject is photo-led (below), the image generation as **one** background command.
-   Don't read its help, test it or wait on it: it reports when it is done, and only then do you
-   look at what it wrote. Meanwhile write your full plan (craft.md, section 3) and build the rest.
+5. **Then:** start the other directions' subagents when supported (section 4, short prompts)
+   and, when the subject is photo-led (below), generate all directions' images in one request.
+   Follow the image tool's instructions. If it supports background completion, build the rest
+   while it runs; otherwise finish the generation call, save its assets, then continue.
+   Write your full plan (craft.md, section 3) and build the rest.
 
 With a Current the plan is short (what changes and why) and Current's look holds; without one it
-is the whole look. **Images: when an image tool is available** (the `codex-image` skill, or an
-image-generation MCP), **the subject is photo-led** (food, places, products, people, interiors)
+is the whole look. **Images: when an image tool is available** (an image-generation skill or tool), **the subject is photo-led** (food, places, products, people, interiors)
 **and the project has no images of its own, generating them is not optional.** Invoke that skill
-yourself, once, for every direction's images (a hero each, a few product shots), in the
-background into the app's `src/assets/`, named `<slug>-<letter>-<what>` (`kiosk-B-hero.jpg`),
+yourself, once, for every direction's images (a hero each, a few product shots), into the app's `src/assets/`, named `<slug>-<letter>-<what>` (`kiosk-B-hero.jpg`),
 started as plan step 5 says. Variants use them through `image()` from `src/images.ts`, which is
 `undefined` until the file exists: a drawn shape holds the place, and the page swaps the image in
 by itself when it lands. Subagents don't generate images.
@@ -383,15 +413,15 @@ columns, each with its line, beside Autoplay, All states and Compare:
 **Only on request: say what to type and try.** After an explicit request in chat or
 `action: try-it` from the page, when getting through a variant takes something a reviewer can't
 guess (a login, a code, a search that returns results), or it has scenarios, outside events or
-limits worth knowing, report them with `useHints` from `src/hints.ts`: read `${CLAUDE_SKILL_DIR}/references/hints.md` first.
+limits worth knowing, report them with `useHints` from `src/hints.ts`: read `references/hints.md` first.
 
 **Offer other copy when asked.** When the user asks for other words ("better headlines", "try other
 button text") or sends `action: copy-options` from the page, don't write a variant per wording: give
-the lines they asked about options with `useCopy` from `src/copy.ts`. Read `${CLAUDE_SKILL_DIR}/references/copy.md` first.
+the lines they asked about options with `useCopy` from `src/copy.ts`. Read `references/copy.md` first.
 
 **Let the motion be reviewed.** When the request is about motion (how a sheet opens, a list
 enters, a toast lands, the feel of a spring), or a comment arrives on the motion, read
-`${CLAUDE_SKILL_DIR}/references/motion.md` first: `useMotion`, motion written in CSS or `element.animate()`, and reading it in
+`references/motion.md` first: `useMotion`, motion written in CSS or `element.animate()`, and reading it in
 frames with `proto shoot --at` / `--frames`.
 
 **Build remaining requested variants in parallel when you can.** When there are 3 or more
@@ -404,14 +434,17 @@ Current matches and the shared chrome (`parts.tsx`, `src/theme.css`, packages) e
 
 A subagent's prompt is short: its letter, the app's folder, the brief's path
 (`.proto/briefs/<slug>.json`, with the must-dos under the facts), its flags
-(`--session <the main session's $CLAUDE_CODE_SESSION_ID>`, plus `--project <project root>` if it
-works in another folder), with a Current the reference screenshots and `A.tsx` to start from,
-and the line "Read `${CLAUDE_SKILL_DIR}/references/direction.md` first and follow it." That file
+(`--session <main conversation id>` and `--project <project root>` on every call),
+the resolved absolute CLI path, with a Current the reference screenshots and `A.tsx` to start from,
+and the line "Read `references/direction.md` first and follow it." That file
 holds everything standing (hero first, plan, passes, images, limits, the reply); don't restate it.
 
-**Which model and effort each subagent gets.** Look the job up here and pass that `model` and
-`effort` on the Agent call; there is nothing to decide. A row names a cheaper model only where one
-was measured to hold up; everything else runs on the session's own model.
+**Which model and effort each subagent gets.** The measurements below apply to Claude models.
+Use these preferences only when the active harness exposes those models and effort settings,
+with its actual model IDs and supported delegation API. On Codex and other providers, keep the
+session's own model and effort; these results do not establish equivalent models elsewhere.
+When a tool cannot set model or effort, omit those arguments. Delegate into the same live app
+with the explicit parent session and project flags, never a separate conversation or app.
 
 | Job | Model, effort | Measured (one plugin UI, 2-3 runs per arm) |
 |---|---|---|
@@ -419,13 +452,13 @@ was measured to hold up; everything else runs on the session's own model.
 | Polish a region toward its screenshot | Opus, high | the only arm that kept improving past the first build (2.46 %, 2.68 %) |
 | A comment worker (a pin that needs real design work) | Opus, medium | Sonnet never moved menus along with the buttons it moved (0 of 6 runs); Opus high and medium did (4 of 4) |
 | A new direction without a spec, a region's spec, the critic | session's model | not measured on another model |
-| Any job | never Haiku | slower than Sonnet, no more accurate |
+| Claude jobs | avoid Haiku | slower than Sonnet, no more accurate |
 
 A comment batch is not routed: the main session handles it itself. Handing the simple pins to a
 primed Sonnet helper was measured slower (56 s against 52 s, median of 3) and no more accurate.
 
 **A region worked on again and again: write its spec once.** When the user keeps refining the same
-part (a rebuild of a real product they perfect over many rounds), have one subagent (session's model) extract it
+part (a rebuild of a real product they perfect over many rounds), extract it yourself or with one subagent (session's model)
 from the source and the reference into `src/protos/<slug>/spec/<region>.md`: every box, colour,
 font, icon path and layer as numbers, with the source line each came from, the screenshot winning
 where they disagree. Later builds and changes read the spec, not the source: measured, builds from
@@ -570,24 +603,27 @@ element. Do not author special comment-element names or a catalog of elements. T
 and numbered references identify selected targets; source locations are stamped automatically.
 The design's native accessibility labels and semantics must remain intact. Keep `data-shoot` only where a QA/state selector
 needs it; Comments does not use it as a display name. Existing comments keep their targets. Each send is a batch waiting for you in the app's inbox. You hear
-about it only while you listen, so **at the end of every turn in a prototype session,
-listen**: run, in the background, with the Bash tool's longest timeout (2 hours),
+about it only when you read the inbox. **At the start and end of every active prototype turn,
+run `proto inbox`** and handle pending requests before finishing.
 
-```
-proto inbox --wait
-```
-
-It exits when a batch arrives (printing it), which wakes you; after 115 minutes with nothing
-it exits saying so, and you listen again. If one is already listening it says so and exits;
-leave it. `proto inbox` without `--wait` takes whatever is waiting now and tells you whether
-something is listening.
+When the harness supports background jobs whose completion wakes this conversation, also
+start `proto inbox --wait` in that mechanism at the end of the turn. Use a timeout supported
+by the harness (`--timeout <minutes>`, default 115). It exits when a batch arrives; process
+that batch and rearm it. If one is already listening it says so and exits; leave it.
+Do not block the foreground turn waiting for future comments. Without a background wakeup,
+comments persist until the next turn: tell the user to send a chat message to have them read.
+Do not promise automatic reactions while the agent is idle.
 
 **When a session ends** (T3 Code restarted, the terminal closed) after taking comments and before
 answering them, the page shows them as "Not picked up" and offers the user a restart message to
 paste in the thread. That message makes you run `proto inbox` or `proto inbox --wait`, which hands
 those comments over again, once and in full, marked `taken earlier by a session that ended`: handle
-them first. The page knows the taker ended because each taken batch records `$CLAUDE_PID`; an
-agent without that variable (Codex) leaves nothing to judge by, and its batches read as before.
+them first. The page knows the taker ended because each taken batch can record `PROTO_AGENT_PID` (or `CLAUDE_PID`), the long-lived
+agent process. Set it only when the harness supplies a reliable PID, never the short-lived
+CLI PID. Without one, pending requests remain readable but exit detection is unavailable.
+Replies detect Codex or Claude from the harness environment; other agents use a neutral mark.
+Set `PROTO_AGENT=codex|claude|agent` or pass `proto reply ... --as codex|claude|agent` when the
+harness does not expose identity, or when switching agents on an existing session.
 
 Each comment prints its route (`<slug>/<letter>[/<state>]`), the user's words, the element
 it is on (tag, text, `data-shoot` or selector, its box in CSS px from the variant's top left,
@@ -641,12 +677,12 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
 4. One shot of what changed (`proto shoot <route>`, or `--size` for the view the comments were
    written in), read once. Skip it when every change is invisible in a shot (hover, behaviour).
 5. One reply call for the batch: `proto reply <batch> 1 "<what you changed>" 2 "…" … --done`
-   (Codex adds `--as codex`, which puts its mark beside the reply instead of Claude's). A comment
+   (use `--as codex`, `--as claude` or `--as agent` to override the detected reply mark). A comment
    you can't act on is left out of that call and gets its own reply without `--done` saying why.
    A comment whose answer is new variants or a new prototype ("more variants for this", a `more`
    decision) is answered as soon as they are added, not when they are built: `proto add` them,
    then `proto reply <batch>/<n> "<where they are, and what they are>" --until <slug>` (or
-   `<slug>/<letter>,…`). The page shows that reply under "Claude is on it", and `proto done`
+   `<slug>/<letter>,…`). The page shows that reply under "Agent is on it", and `proto done`
    closes the comment when the last of those variants is built, keeping the reply: write it to
    read right both times ("In «Super set, more ways», under this case: …", not "Building now…"). Without `--done` or `--until`, a
    comment stays "on it" in the page for good; when comments arrive, `proto inbox` lists any still open.
@@ -662,7 +698,7 @@ are one job. Measured with 12 comments added 15 s apart: everything was in 16 s 
 against 54 s after Send for the same 12 sent at once, because only the last one is left to do. A
 comment withdrawn in the page after it was handled is answered by undoing it, if the user asks.
 
-**A comment on the motion** (`at: 0.35 s` or `at: 0.30–0.62 s`): see `${CLAUDE_SKILL_DIR}/references/motion.md`.
+**A comment on the motion** (`at: 0.35 s` or `at: 0.30–0.62 s`): see `references/motion.md`.
 
 **A comment in a view** (written while the page showed another size, see the top) has a `view:`
 line, `view: desktop 1440x900`, and is about that layout, not the one the batch's page size says.
@@ -687,12 +723,12 @@ the text.
 
 ## 7. Only if asked: build it
 
-When the request says to implement the winner (the picked variant), read `${CLAUDE_SKILL_DIR}/references/build.md` and
+When the request says to implement the winner (the picked variant), read `references/build.md` and
 follow it: `proto handoff`, build with the project's own components, then the `--as built` overlay.
 
-## Only if asked: snapshots in a Claude Doc
+## Only if asked: share snapshots
 
-When the user wants the prototypes in a doc or artifact to share: read `${CLAUDE_SKILL_DIR}/references/build.md` (Snapshots).
+When the user wants the prototypes in a doc or artifact to share: read `references/build.md` (Snapshots).
 
 ## Follow-up requests in the same session
 
@@ -717,7 +753,7 @@ When the user wants the prototypes in a doc or artifact to share: read `${CLAUDE
 | A comment on the motion (`at: 0.30–0.62 s` in a batch) | the shoot its line names, change the motion, reply with the new timing (Comments from the page) |
 | A comment in a view (`view: tablet 834x1194` in a batch) | the shoot its line names, change that layout's breakpoints, reply naming the size (Comments from the page) |
 | To drop a direction or prototype | `proto archive <slug>` (still reachable under Archived) |
-| The prototypes in a doc to share | `proto snap`, then a Claude Doc (section above) |
+| The prototypes in a doc to share | Snapshots with an available document tool, or `proto shoot` images (section above) |
 | Comments sent from the page (a `proto inbox --wait` exited) | the batch as one job: one `proto ask --to <slug>/<letter> --each` per variant in it, edits, one shot, one `proto reply <batch> 1 "…" 2 "…" --done`, listen again |
 | Prototypes for a different project | `proto up --project <dir>`: a separate app for that project |
 
@@ -749,7 +785,7 @@ session builds and saves a new one.
 - **`proto shoot` prints `slow …`:** a shot took over 3 s, and the line says which step took
   the time. Pass the line on to the user.
 - **Don't edit** the app's `shell/`, `src/main.ts`, `src/registry.ts`, `src/mount.*`, `src/hints.ts`, `src/copy.ts`, `src/motion.ts` or `src/fonts.ts`. If the
-  shell itself misbehaves, say so; the template is `${CLAUDE_SKILL_DIR}/app/` (replaced on
+  shell itself misbehaves, say so; the template is `app/` in the resolved skill directory (replaced on
   every plugin update, so a fix belongs upstream). `proto up` copies the template over an
   existing session's app files (everything except `src/protos/` and `src/theme.css`) and adds
   the shell's packages, printing `updated the app: …` when it did; an edit to those files is
