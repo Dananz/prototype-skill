@@ -29,7 +29,7 @@ export function createStore(sessionId: string) {
       const write = (s: Saved) => localStorage.setItem(key, JSON.stringify(s))
       try { write({ items: state.items, held: state.held }) } catch {
         // Over quota (screenshots are data URLs): keep the words, drop the pictures.
-        try { write({ items: state.items.map(({ shot, ...i }) => i), held: state.held && (({ shot, ...h }) => h)(state.held) }) } catch { /* nothing more to do */ }
+        try { write({ items: state.items.map(({ shot, shots, ...i }) => i), held: state.held && (({ shot, shots, ...h }) => h)(state.held) }) } catch { /* nothing more to do */ }
       }
     }, 250)
   }

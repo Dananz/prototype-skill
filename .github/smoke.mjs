@@ -15,6 +15,7 @@ import { optionalExtras } from './optional-extras.mjs'
 import { designKit } from './design-kit.mjs'
 import { speedChecks } from './speed-checks.mjs'
 import { commentParentChecks } from './comment-parent-checks.mjs'
+import { commentPicturesChecks } from './comment-pictures-checks.mjs'
 import { commentUsesChecks } from './comment-uses-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -143,6 +144,7 @@ const css = () => new Promise(ok => get(`${local}shell/shell.css?direct`, { agen
 await css()
 
 await commentParentChecks({ proto, app, openPage, fail })
+await commentPicturesChecks({ proto, app, openPage, fail })
 await commentUsesChecks({ proto, app, openPage, fail })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
