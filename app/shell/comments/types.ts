@@ -54,7 +54,7 @@ export type Held = Draft & { target?: Target; time?: Time; proto?: string }
  * it. It goes to Claude as a comment with this and no element; its body is the optional note. A
  * copy choice (copy.tsx) is one too, on the element of the line it changes.
  */
-export type Action = 'pick' | 'unpick' | 'more' | 'build' | 'copy' | 'try-it' | 'copy-options'
+export type Action = 'pick' | 'unpick' | 'more' | 'more-variants' | 'build' | 'copy' | 'try-it' | 'copy-options'
 
 export type Item = Draft & {
   id: string
@@ -66,6 +66,8 @@ export type Item = Draft & {
   /** What it is on; an action has none. */
   target?: Target
   action?: Action
+  /** More variants: how many were asked for. The item has no variant (it is on the prototype). */
+  count?: number
   /** The moment or range of the motion it is on, when it was written in the motion dock. */
   time?: Time
   at: number

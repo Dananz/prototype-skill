@@ -484,6 +484,8 @@ function add() {
   const { variants, ...head } = { ...current(), ...set }
   for (const k of drop) delete head[k]
   const meta = { ...head, variants: { ...variants, ...added } }
+  // How many directions it was started with: the page's More variants asks for that many again.
+  if (!existsSync(metaFile) && !meta.count && Object.keys(meta.variants).length) meta.count = Object.keys(meta.variants).length
   writeWhole(metaFile, `// Prototype: ${String(meta.title).replace(/[\r\n\u2028\u2029]+/g, ' ')}. Variant files are named by their letter; names live here.\nexport default ${JSON.stringify(meta, null, 2)}\n`, scratchOf(dir))
   // A new variant is building until `proto done`: the page marks it, and an edit that throws keeps
   // its last good frame instead of an error.
@@ -1346,6 +1348,7 @@ const ACTIONS = {
   pick: 'done: marked in the page and now the working variant; a reply is only a note',
   unpick: 'done: the pick is off in the page; a reply is only a note',
   more: 'new variants in this prototype, named after this one',
+  'more-variants': 'new variants in this prototype (the route is the prototype; count says how many): continue its letters with proto add <slug> --variants "…", each a new direction, different from the existing variants and from each other',
   build: 'build this variant into the codebase',
   'try-it': 'add useHints for this variant only: useful demo values, steps and scenarios; preserve the working design; reply --done after checking it',
   'copy-options': 'add useCopy for this variant only: headline and primary text by default, or the requested lines; keep current words first, add 2 to 4 alternatives; reply --done after checking fit. On an element with quoted words (highlighted in the page): options for those words only, as one useCopy line on that element (data-copy)',
@@ -1411,6 +1414,7 @@ function printBatch(dir, b) {
   for (const c of live) {
     console.log(`\n${c.n}. ${c.route}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
+    if (c.action === 'more-variants') console.log(`   count: ${c.count} new variant${c.count === 1 ? '' : 's'}`)
     if (c.action) console.log(`   action: ${c.action} (${c.failed && FAILED[c.action] ? FAILED[c.action](c, c.failed) : c.action === 'pick' && c.note && !c.done ? 'marked in the page and now the working variant; handle the note, then reply --done' : ACTIONS[c.action] || ''})`)
     // A comment pinned with a long press is on a spot; its element is only where that spot is.
     if (c.point) console.log(`   at: ${c.point.x},${c.point.y} (a spot, pinned with a long press)`)

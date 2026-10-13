@@ -355,6 +355,10 @@ columns, each with its line, beside Autoplay, All states and Compare:
   and a click on the pin (or on the comment in the list) presses it open. A part inside another
   marks only its own control; the way through both is read from the two.
 - `proto add`, `pick` and `archive` keep these fields; edit `meta.ts` after `proto add`.
+- `count` is written by the first `proto add` (how many variants the prototype started with, the
+  user's number or the one you settled on): the page's More variants, from a right-click on the
+  prototype, offers that many again. Leave it as `proto add` wrote it; a prototype without one
+  offers 5.
 
 **Only on request: say what to type and try.** After an explicit request in chat or
 `action: try-it` from the page, when getting through a variant takes something a reviewer can't
@@ -655,6 +659,7 @@ the text.
 | `pick` | marked and the working variant, unless its line says otherwise; with a note, the comment stays pending | handle or acknowledge the note, then `proto reply <id> --done`; plain picks are already done. When the line says it wasn't marked or the working variant didn't move, run the `proto pick` it names |
 | `unpick` | the pick is off, and the comment done | nothing. When the line says nothing changed (that variant wasn't the pick), say so in a reply with `--done`; when it says it wasn't taken off, run the `proto pick … --off` it names |
 | `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you are adding and `--until <slug>/D,<slug>/E…` (step 5) |
+| `more-variants` | nothing | on the prototype (the route is `<slug>`, no letter), with a `count` the user chose: that many new variants, continuing the letters (`proto add <slug> --variants "<next letters>:…"`), each a new direction, different from the existing ones and from each other; their note, if any, is the direction. Reply with what you are adding and `--until <slug>/<first letter>,…` (step 5) |
 | `build` | nothing | `proto pick` it if it isn't the pick, then step 7; reply when it is in |
 | `try-it` | queued only; no content generated yet | check that the request is not withdrawn; add useful `useHints` to this variant only (section 4), preserve its working flow, verify it, then reply `--done`; if it already has useful hints, reuse them |
 | `copy-options` | queued only; no alternatives generated yet | check that the request is not withdrawn; add `useCopy` to the requested lines in this variant only (headline and primary text/CTA without a note), current words first, verify fit, then reply `--done`; reuse existing options. One with an element and quoted words (highlighted in the page) is for those words only: one `useCopy` line on that element, not the headline and primary text |

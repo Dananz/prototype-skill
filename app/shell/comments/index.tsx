@@ -8,12 +8,15 @@ import { CommentsCtx, type Ctx, type Host } from './ctx'
 import { CopyBar, CopyMarks, CopySheet, createCopyActions, createCopyStore } from './copy'
 import { Decide, DecidePop, type DecidePopProps, type Subject } from './decide'
 import { Layer } from './layer'
+import { ContextPop, type ContextPopProps } from './menu'
+import { climb, describe } from './dom'
 import { Selection } from './selection'
 import { PhoneSheet, Rail } from './rail'
 import { createStore, progress } from './store'
 import { inScope, type Place, type State } from './types'
 
-export type { DecidePopProps, Place, State, Subject }
+export type { ContextPopProps, DecidePopProps, Place, State, Subject }
+export type { MenuRow } from './menu'
 
 export function createComments(host: Host, sessionId: string) {
   const store = createStore(sessionId)
@@ -37,8 +40,26 @@ export function createComments(host: Host, sessionId: string) {
     mountSheet(el: HTMLElement) { createRoot(el).render(wrap(<PhoneSheet />)) },
     /** The bar's Pick, More and Build menu, mounted once; the returned function draws it with new props. */
     mountDecide(el: HTMLElement) { const root = createRoot(el); return (p: DecidePopProps) => root.render(wrap(<DecidePop {...p} />)) },
+    /** The right-click menu of everything but a variant (menu.tsx): mounted once, drawn with the rows the shell built. */
+    mountContext(el: HTMLElement) { const root = createRoot(el); return (p: ContextPopProps) => root.render(wrap(<ContextPop {...p} />)) },
     /** The same choices for the phone's variant sheet, which renders them in its own root. */
     decideIn: (subject: Subject) => wrap(<Decide key={`${subject.proto}/${subject.variant}`} subject={subject} sheet />),
+    /** Comment on an element of the design on the stage (a right-click on it); the layout it is seen in goes with it. */
+    commentOn(el: HTMLElement) {
+      const mount = host.mount()
+      if (!mount || el === mount || !mount.contains(el)) return
+      const t = describe(mount, el), v = host.view?.()
+      act.begin(v?.size ? { ...t, view: { size: v.size, w: v.w!, h: v.h! } } : t)
+    },
+    /** Whether an element is part of the design on the stage (not its page's body, nor the root itself). */
+    inDesign(el: Element) { const mount = host.mount(); return !!mount && el !== mount && mount.contains(el) },
+    /** The element around one of the design on the stage, if there is one inside it. */
+    parentOf(el: HTMLElement): HTMLElement | null { const mount = host.mount(); return mount && mount.contains(el) ? climb(mount, el) : null },
+    /** A comment as the list has it (its words as one line), for a menu on it. */
+    wordsOf(id: string): string {
+      const i = store.get().items.find(x => x.id === id)
+      return i ? i.body.map(s => typeof s === 'string' ? s : `@${s.tag + 1}`).join('').trim() : ''
+    },
     setPlace: act.setPlace,
     setInbox(inbox: Inbox | undefined) { store.set({ inbox }) },
     /** Comments waiting to be sent and all of them (those of the prototype on screen), and open (sent, not yet done) ones per variant: for the bar and the tree. */

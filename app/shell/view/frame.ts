@@ -14,6 +14,10 @@ export const framed = new URLSearchParams(location.search).has('dv') || (() => {
  *  frame's (view/index.tsx). */
 export const frameClicks = new Set<(e: MouseEvent) => void>()
 
+/** A right-click in the page in the frame, with its point in the page outside (the frame is scaled
+ *  and offset): the shell opens its menu there, unless the page in the frame made its own. */
+export const frameMenus = new Set<(e: MouseEvent, x: number, y: number) => void>()
+
 /** The page in the frame changed what is highlighted (its own document keeps its selection): heard out here for the floating menu on highlighted words. */
 export const frameSelections = new Set<() => void>()
 

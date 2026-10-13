@@ -15,7 +15,7 @@ import { createRoot } from 'react-dom/client'
 import { useRows } from '../comments/list'
 import { useCtx } from '../comments/ctx'
 import { Icon } from '../comments/ui'
-import { designIn, frameClicks, frameSelections, frameUrl, openFrame, type Frame } from './frame'
+import { designIn, frameClicks, frameMenus, frameSelections, frameUrl, openFrame, type Frame } from './frame'
 import { fitOf, outOf, pinchOn, room, useBox, useGestures, usePinch, usePlace } from './gestures'
 import { trackPointer } from '../motion'
 import { dims, ORDER, SIZES, type Size } from './sizes'
@@ -176,12 +176,15 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
     // Focus button and edge arrows show as they do over the stage itself.
     const m = (e: PointerEvent) => { if (e.pointerType !== 'mouse') return; const [x, y] = outOf(doc.defaultView?.frameElement as HTMLElement | null, e.clientX, e.clientY); trackPointer({ clientX: x, clientY: y }) }
     const c = (e: MouseEvent) => frameClicks.forEach(f => f(e))
+    // Heard after the design's own handlers (bubbling), so a design that made its own menu keeps it.
+    const cm = (e: MouseEvent) => { const [x, y] = outOf(doc.defaultView?.frameElement as HTMLElement | null, e.clientX, e.clientY); frameMenus.forEach(f => f(e, x, y)) }
     const sc = () => frameSelections.forEach(f => f())
     doc.addEventListener('keydown', k)
     doc.addEventListener('selectionchange', sc)
     doc.addEventListener('pointermove', m, true)
     doc.addEventListener('click', c, true)
-    return () => { a(); b(); doc.removeEventListener('keydown', k); doc.removeEventListener('selectionchange', sc); doc.removeEventListener('pointermove', m, true); doc.removeEventListener('click', c, true) }
+    doc.addEventListener('contextmenu', cm)
+    return () => { a(); b(); doc.removeEventListener('contextmenu', cm); doc.removeEventListener('keydown', k); doc.removeEventListener('selectionchange', sc); doc.removeEventListener('pointermove', m, true); doc.removeEventListener('click', c, true) }
   }
   const [, redraw] = useState(0)
   useEffect(() => { const f = () => redraw(n => n + 1); coarse.addEventListener('change', f); return () => coarse.removeEventListener('change', f) }, [])

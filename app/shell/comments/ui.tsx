@@ -29,7 +29,8 @@ const PATHS: Record<string, string> = {
 /** Phosphor's own files (see shell/ui.ts), for the ⋯ and the pick's check circle. */
 const PHOSPHOR = new Set(['dots', 'pick', 'picked'])
 export function Icon({ name, className = 'size-4' }: { name: string; className?: string }) {
-  if (PHOSPHOR.has(name)) return <span className="contents" dangerouslySetInnerHTML={{ __html: ic(name, className) }} />
+  // Names this file has no path for (link, play, grid, the theme's sun and moon) are the shell's own.
+  if (PHOSPHOR.has(name) || !PATHS[name]) return <span className="contents" dangerouslySetInnerHTML={{ __html: ic(name, className) }} />
   return <svg className={`${className} shrink-0`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PATHS[name]} /></svg>
 }
 
@@ -150,6 +151,7 @@ export function Body({ c, className = '' }: { c: { body: Seg[]; tags: Target[] }
 /** A decision on a variant: what it says (to the agent, and as its line in the list) and its icon. */
 export const ACTION: Record<Action, { say: (v: string) => string; icon: string }> = {
   pick: { say: v => `Picked ${v}`, icon: 'check' },
+  'more-variants': { say: () => 'More variants', icon: 'more' },
   unpick: { say: v => `Unpicked ${v}`, icon: 'undo' },
   more: { say: v => `More like ${v}`, icon: 'more' },
   build: { say: v => `Build ${v}`, icon: 'code' },
@@ -160,7 +162,7 @@ export const ACTION: Record<Action, { say: (v: string) => string; icon: string }
 /** A moment or a range of the motion, as the dock and the inbox write it: `0.35 s`, `0.30–0.62 s`. */
 export const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `${(t.at / 1000).toFixed(2)} s` : `${(t.at / 1000).toFixed(2)}–${(t.to / 1000).toFixed(2)} s`
 /** What a row of the list is about: the element a comment is on, the moment of the motion, or what a decision asked. */
-export const aboutOf = (i: Item) => i.action ? ACTION[i.action].say(i.variant) : i.time ? `${i.time.to === undefined ? 'At' : 'Over'} ${spanOf(i.time)}` : i.target?.whole ? 'Whole variant' : `Comment ${i.n}`
+export const aboutOf = (i: Item) => i.action === 'more-variants' ? `${i.count ?? 5} more variants` : i.action ? ACTION[i.action].say(i.variant) : i.time ? `${i.time.to === undefined ? 'At' : 'Over'} ${spanOf(i.time)}` : i.target?.whole ? 'Whole variant' : `Comment ${i.n}`
 
 /** The words of a comment as plain text, tags written as @1, @2, …: their order in the accompanying targets. */
 export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : `@${s.tag + 1}`).join('').replace(/ /g, ' ').trim()
