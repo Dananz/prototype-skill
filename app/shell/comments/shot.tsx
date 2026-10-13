@@ -12,9 +12,10 @@ export async function capture(mount: HTMLElement | null, target: Target, dark: b
   const root = (mount?.firstElementChild as HTMLElement | null) ?? mount, el = find(mount, target)
   if (!mount || !root || !el) return null
   const scale = 2, z = zoomOf(mount)
-  const full = await domToCanvas(root, { scale, backgroundColor: dark ? '#09090b' : '#ffffff' })
   const r = el.getBoundingClientRect(), o = root.getBoundingClientRect()
   const ow = o.width / z, oh = o.height / z
+  // Sized explicitly: left to measure the root, it takes its zoomed screen size and draws only that much of the design.
+  const full = await domToCanvas(root, { scale, width: ow, height: oh, backgroundColor: dark ? '#09090b' : '#ffffff' })
   const m = 48, x = Math.max(0, (r.left - o.left) / z - m), y = Math.max(0, (r.top - o.top) / z - m)
   const w = Math.min(ow - x, r.width / z + m * 2), h = Math.min(oh - y, r.height / z + m * 2)
   if (w <= 0 || h <= 0) return null
