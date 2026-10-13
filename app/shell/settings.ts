@@ -56,6 +56,8 @@ function Settings(p: Props) {
   const [pending, setPending] = useState<'keep' | 'stop' | null>(null)
   const [notice, setNotice] = useState('')
   const [manualCopy, setManualCopy] = useState('')
+  const [copying, setCopying] = useState(false)
+  const copyInFlight = useRef(false)
   const popup = useRef<HTMLDivElement>(null)
   const previousHeight = useRef(0), animation = useRef<Animation | null>(null)
   const timer = useRef(0)
@@ -79,8 +81,11 @@ function Settings(p: Props) {
   })
   const choose = (next: Category) => { previousHeight.current = popup.current?.getBoundingClientRect().height ?? 0; setNotice(''); setManualCopy(''); setCategory(next) }
   const copy = async (text: string, message: string) => {
+    if (copyInFlight.current) return
+    copyInFlight.current = true; setCopying(true)
     try { await navigator.clipboard.writeText(text); setManualCopy(''); setNotice(message) }
     catch { setManualCopy(text); setNotice('Could not copy automatically. Select and copy the text below.') }
+    finally { copyInFlight.current = false; setCopying(false) }
     clearTimeout(timer.current)
     timer.current = window.setTimeout(() => setNotice(''), 6000)
   }
@@ -112,14 +117,14 @@ function Settings(p: Props) {
       h('div', null, h('p', { dir: 'auto', className: 'text-[13px] font-medium' }, p.session.name),
         h('div', { className: 'mt-2 flex items-center gap-2 rounded-lg border border-black/10 px-3 py-2 dark:border-white/10' },
           h('input', { 'aria-label': 'Session URL', readOnly: true, value: p.session.url, className: 'min-w-0 flex-1 bg-transparent text-xs text-zinc-500 dark:text-zinc-400' }),
-          h('button', { type: 'button', 'data-setting-copy-url': '', onClick: () => void copy(p.session.url, 'Session URL copied.'), className: 'h-8 shrink-0 rounded-md px-2 text-xs font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800' }, 'Copy URL'))),
+          h('button', { type: 'button', 'data-setting-copy-url': '', disabled: copying, onClick: () => void copy(p.session.url, 'Session URL copied.'), className: 'h-8 shrink-0 rounded-md px-2 text-xs font-medium hover:bg-zinc-100 disabled:cursor-default disabled:opacity-50 dark:hover:bg-zinc-800' }, 'Copy URL'))),
       toggle('keep', 'Keep forever', 'Keep this session instead of removing it automatically.', p.session.keep, on => void changeSession('keep', () => p.onKeep(on)), !!pending || p.session.server === 'stopped'),
       h('div', { className: 'flex items-center justify-between gap-4 border-t border-black/[.06] pt-4 dark:border-white/10' },
         h('div', null, h('p', { className: 'text-[13px] font-medium' }, 'Server'), h('p', { 'data-setting-server-status': '', className: muted }, p.session.server === 'live' ? 'Live' : p.session.server === 'stopped' ? 'Stopped. Run proto up to start it again.' : 'Reconnecting…')),
         h('button', { type: 'button', 'data-setting-stop': '', disabled: !!pending || p.session.server === 'stopped', onClick: () => void changeSession('stop', p.onStop), className: `${button} text-rose-600 dark:text-rose-400` }, pending === 'stop' ? 'Stopping…' : p.session.server === 'stopped' ? 'Stopped' : 'Stop server')),
       h('div', { className: 'flex flex-wrap items-center justify-between gap-3 border-t border-black/[.06] pt-4 dark:border-white/10' },
         h('div', null, h('p', { className: 'text-[13px] font-medium' }, 'Agent listener'), h('p', { 'data-setting-listener-status': '', className: muted }, p.session.listening ? 'Connected' : 'Not listening'), h('p', { className: muted }, 'Paste the restart message in your agent thread.')),
-        h('button', { type: 'button', 'data-setting-reconnect': '', onClick: () => void copy(`Listen for my prototype comments again: run proto inbox --wait --session ${JSON.stringify(p.session.id)}. Handle waiting and unanswered comments first.`, 'Restart message copied. Paste it in your agent thread.'), className: button }, 'Copy restart message')),
+        h('button', { type: 'button', 'data-setting-reconnect': '', disabled: copying, onClick: () => void copy(`Listen for my prototype comments again: run proto inbox --wait --session ${JSON.stringify(p.session.id)}. Handle waiting and unanswered comments first.`, 'Restart message copied. Paste it in your agent thread.'), className: button }, 'Copy restart message')),
       p.session.error ? h('p', { role: 'alert', className: 'text-xs text-rose-600 dark:text-rose-400' }, p.session.error) : null,
       notice ? h('p', { role: 'status', className: muted }, notice) : null,
       manualCopy ? h('textarea', { 'aria-label': 'Text to copy', readOnly: true, value: manualCopy, rows: 3, className: 'block w-full resize-y rounded-lg border border-black/10 bg-transparent p-3 text-xs leading-5 dark:border-white/15' }) : null)

@@ -1504,7 +1504,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const p = cur()
     const here = st.place.view === 'variant' ? st.place : null
     switch (name) {
-      case 'settings': settingsOpen = true; st.open = null; st.menu = ''; st.drawer = false; render(); return
+      case 'settings': settingsOpen = true; st.open = null; st.menu = ''; st.drawer = false; render(); void refreshStatus(); return
       case 'comment': if (arg === 'tap') { comments.copy.off(); return comments.tap() } return toggleComment()
       // The phone's Try it key: the sheet up, or down. Brought back from away, the spot goes out.
       case 'try': { const to = trySheet === 'open' ? 'closed' : 'open'; trySheet = to; setTry(null); return setTrySheet(to) }
@@ -2563,15 +2563,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
    */
   async function post(path: string, body: unknown = {}, at?: 'session' | 'work'): Promise<Status | null> {
     try {
-      const res = await fetch(`/__proto/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-      const got = await res.json().catch(() => ({}))
+      const signal = at === 'session' ? AbortSignal.timeout(10_000) : undefined
+      const res = await fetch(`/__proto/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal })
+      const got = await res.json().catch(() => { if (signal?.aborted) throw signal.reason; return {} })
       if (!res.ok) throw new Error(got.error || `the server answered ${res.status}`)
       if (at) st.failed = null
       if (path !== 'stop') { st.status = got; paintLifecycle() }
       render()
       return got
     } catch (e) {
-      if (at) { st.failed = { at, text: e instanceof TypeError ? 'The server didn’t answer. Is it still running?' : `Couldn’t do that: ${e instanceof Error ? e.message : e}` }; render() }
+      if (at) { st.failed = { at, text: e instanceof Error && e.name === 'TimeoutError' ? 'The server took too long to respond. Try again.' : e instanceof TypeError ? 'The server didn’t answer. Is it still running?' : `Couldn’t do that: ${e instanceof Error ? e.message : e}` }; render() }
       return null
     }
   }
