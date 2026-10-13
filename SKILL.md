@@ -552,6 +552,13 @@ it exits saying so, and you listen again. If one is already listening it says so
 leave it. `proto inbox` without `--wait` takes whatever is waiting now and tells you whether
 something is listening.
 
+**When a session ends** (T3 Code restarted, the terminal closed) after taking comments and before
+answering them, the page shows them as "Not picked up" and offers the user a restart message to
+paste in the thread. That message makes you run `proto inbox` or `proto inbox --wait`, which hands
+those comments over again, once and in full, marked `taken earlier by a session that ended`: handle
+them first. The page knows the taker ended because each taken batch records `$CLAUDE_PID`; an
+agent without that variable (Codex) leaves nothing to judge by, and its batches read as before.
+
 Each comment prints its route (`<slug>/<letter>[/<state>]`), the user's words, the element
 it is on (tag, text, `data-shoot` or selector, its box in CSS px from the variant's top left,
 and where it is written: its file from the app's folder, line and component, as
