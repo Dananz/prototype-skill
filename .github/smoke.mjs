@@ -24,6 +24,7 @@ import { commentUntilChecks } from './comment-until-checks.mjs'
 import { listenerChecks } from './listener-checks.mjs'
 import { pickNoteChecks } from './pick-note-checks.mjs'
 import { splitChecks } from './split-checks.mjs'
+import { keyboardColumnsChecks } from './keyboard-columns-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -122,6 +123,14 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
     // A real Enter (Input.dispatchKeyEvent), as a person's: on a focused button it clicks it.
     const enter = async () => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ...(type === 'keyDown' ? { text: '\r' } : {}) }, sessionId) }
     // Real fingers (Input.dispatchTouchEvent): touchStart, touchMove or touchEnd, with [x, y] per finger.
+    // One key, as the keyboard sends it: key('ArrowDown'), key('b'), key('F10', ['Shift']).
+    const KEYS = { Enter: 13, Escape: 27, End: 35, Home: 36, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, F10: 121 }
+    const key = async (name, mods = []) => {
+      const one = name.length === 1, modifiers = (mods.includes('Alt') ? 1 : 0) | (mods.includes('Control') ? 2 : 0) | (mods.includes('Meta') ? 4 : 0) | (mods.includes('Shift') ? 8 : 0)
+      const code = one ? `Key${name.toUpperCase()}` : name, vk = one ? name.toUpperCase().charCodeAt(0) : KEYS[name]
+      const text = one ? name : name === 'Enter' ? '\r' : undefined
+      for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: name, code, windowsVirtualKeyCode: vk, modifiers, ...(type === 'keyDown' && text ? { text } : {}) }, sessionId)
+    }
     const touch = (type, fingers) => send('Input.dispatchTouchEvent', { type, touchPoints: fingers.map(([x, y], id) => ({ x, y, id })) }, sessionId)
     // A real drag (Input.dispatchMouseEvent): pressed at one point, moved to the other in steps, released.
     const drag = async ([x0, y0], [x1, y1], steps = 8) => {
@@ -137,7 +146,7 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
       mkdirSync(dirname(file), { recursive: true })
       writeFileSync(file, Buffer.from(data, 'base64'))
     }
-    return { run, close, press, enter, touch, drag, hover, screenshot }
+    return { run, close, press, enter, key, touch, drag, hover, screenshot }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {
@@ -169,6 +178,7 @@ await commentUntilChecks({ proto, app, fail })
 await listenerChecks({ proto, app, fail })
 await pickNoteChecks({ proto, app, local, openPage, fail, keepShots })
 await splitChecks({ proto, app, local, openPage, fail, keepShots })
+await keyboardColumnsChecks({ proto, app, local, openPage, fail, keepShots })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
 proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--variants', 'A:Price only,B:Fuel tabs'])
