@@ -48,7 +48,9 @@ type Layer = { el: HTMLElement; refs: unknown[]; ready: Promise<unknown>; dispos
 export type Inbox = {
   new: number
   listening: boolean
-  batches: { id: string; at: string; state: 'sent' | 'seen' | 'done'; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null
+  /** The last agent that ran proto commands here: still running, or gone (T3 Code restarted, the terminal closed). */
+  agent?: 'alive' | 'gone' | null
+  batches: { id: string; at: string; state: 'sent' | 'seen' | 'lost' | 'done'; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null
     comments: { n: number; route: string; action?: Action; done: boolean; withdrawn?: boolean; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null }[] }[]
 }
 /** An element a comment is on or tags. Rect is in CSS px from the variant root's top left; src and

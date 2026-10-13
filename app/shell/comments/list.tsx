@@ -1,7 +1,7 @@
 // The comments as a list, the rail's body and the phone sheet's, grouped by what needs you:
 // Ready to send (drafts, and the unfinished one), With Claude (sent, not done), and Done, which
 // folds to one line each and opens to show what Claude said. The bottom bar is Add and Send.
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useCtx } from './ctx'
 import { progress, useStore, type Said } from './store'
 import type { CState, Item } from './types'
@@ -11,9 +11,11 @@ import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, Reply, since, span
 export function useRows() {
   const { store, act } = useCtx()
   const s = useStore(store)
-  const rows = s.items.map(item => ({ item, ...progress(item, s.inbox), here: act.here(item) }))
+  // Nobody is listening and the agent that was is gone: what is sent is waiting for a session that ended.
+  const gone = !s.inbox?.listening && s.inbox?.agent === 'gone'
+  const rows = s.items.map(item => { const p = progress(item, s.inbox); return { item, ...p, stopped: !!p.lost || (gone && p.state === 'sent'), here: act.here(item) } })
   rows.sort((a, b) => b.item.at - a.item.at)
-  return { s, rows, drafts: s.items.filter(i => !i.sent).length }
+  return { s, rows, drafts: s.items.filter(i => !i.sent).length, stalled: rows.filter(r => r.stopped && (r.state === 'sent' || r.state === 'seen')).length }
 }
 type Row = ReturnType<typeof useRows>['rows'][number]
 
@@ -81,9 +83,9 @@ function WithClaude({ r, active, roomy, onOpen }: { r: Row; active: boolean; roo
   return (
     <div data-shoot="comment-row" className={`flex w-full items-start gap-1 rounded-2xl transition ${active ? 'bg-proto-primary-soft ring-1 ring-proto-primary-ring' : 'bg-proto-primary-soft/60 hover:bg-proto-primary-soft'}`}>
       <button onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 p-3 pe-0 text-start">
-        <span className="mt-1"><Working /></span>
+        <span className="mt-1">{r.stopped ? <span data-shoot="comment-stopped" className="mt-0.5 block size-2 rounded-full border border-amber-500" /> : <Working />}</span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} /><span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? 'Claude is on it' : 'Sent'}</span></span>
+          <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} />{r.stopped ? <span className="shrink-0 text-amber-600 dark:text-amber-300">{reply ? 'Stopped' : 'Not picked up'}</span> : <span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? 'Claude is on it' : 'Sent'}</span>}</span>
           <Body c={item} className={`mt-0.5 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
           <ViewChip v={item.target?.view} className="mt-1.5" />
           {shotsOf(item).some(p => p.pasted) && <PictureStrip className="mt-2">{shotsOf(item).filter(p => p.pasted).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</PictureStrip>}
@@ -175,22 +177,47 @@ export function SendButton({ className = '' }: { className?: string }) {
   )
 }
 
+/** What to paste in the agent's thread when its session has ended: the page can't wake it, one message does. */
+const restartMessage = (n: number) => `Listen for my prototype comments again: run proto inbox --wait. ${n} comment${n === 1 ? ' is' : 's are'} waiting, and some were taken before the last session stopped and never answered. Handle them first.`
+function copyText(text: string) {
+  try { void navigator.clipboard.writeText(text); return } catch { /* not a secure page: the old way */ }
+  const el = document.createElement('textarea')
+  el.value = text; el.style.position = 'fixed'; el.style.opacity = '0'
+  document.body.appendChild(el); el.select()
+  try { document.execCommand('copy') } finally { el.remove() }
+}
+
 /** Add (a round button, picking on the design) and Send, with the send error and who is listening. */
 export function SendBar({ className = '', onAdd }: { className?: string; onAdd?: () => void }) {
   const { store, act } = useCtx()
-  const { s } = useRows()
+  const { s, drafts, stalled } = useRows()
+  const [copied, setCopied] = useState(false)
+  const timer = useRef(0)
+  useEffect(() => { if (!stalled) setCopied(false) }, [stalled])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  const copy = () => { copyText(restartMessage(stalled)); setCopied(true); window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setCopied(false), 6000) }
+  // With nothing of its own to send, the send row gives way to the one action that helps.
+  const restart = stalled > 0 && !drafts
   return (
     <div className={`space-y-2 ${className}`}>
       {s.error && <p role="alert" className="flex items-start gap-2 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300"><span className="min-w-0 flex-1">{s.error}</span><button onClick={act.clearError} aria-label="Dismiss" className="shrink-0 opacity-70 hover:opacity-100"><Icon name="x" className="size-3.5" /></button></p>}
+      {stalled > 0 && (
+        <p data-shoot="stalled" className="flex items-start gap-2 px-1 text-xs leading-4 text-amber-700 dark:text-amber-300">
+          <Icon name="warn" className="mt-0.5 size-3.5" />
+          <span>{copied ? `Paste it in the T3 thread. Claude picks them up when it listens.` : `Claude is not listening. ${stalled} comment${stalled === 1 ? '' : 's'} wait${stalled === 1 ? 's' : ''}. Copy the message, paste it in the T3 thread.`}</span>
+        </p>
+      )}
       <div className="flex gap-2">
         <button data-shoot="add" onClick={onAdd ?? act.toggle} aria-label="Add a comment" title="Comment on the design · C" className="grid size-12 shrink-0 place-items-center rounded-full ring-1 ring-inset ring-black/10 hover:bg-zinc-900/5 dark:ring-white/15 dark:hover:bg-white/10"><Icon name="plus" className="size-5" /></button>
-        <SendButton className="flex-1" />
+        {restart
+          ? <button data-shoot="restart" onClick={copy} className="inline-flex h-12 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-amber-400 px-3 text-[12.5px] font-semibold text-amber-950 hover:bg-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"><Icon name={copied ? 'check' : 'more'} className="size-4" />{copied ? 'Copied' : 'Copy restart message'}</button>
+          : <SendButton className="flex-1" />}
       </div>
       <label data-shoot="send-live" className="flex cursor-pointer items-center justify-center gap-2 text-xs text-zinc-500 dark:text-zinc-400" title="Each comment goes to Claude the moment you add it, so it is worked on while you write the next">
         <input type="checkbox" checked={s.live} onChange={e => act.setLive(e.target.checked)} className="size-3.5 accent-[var(--proto-primary)]" />
         Send each comment as you add it
       </label>
-      <Listening on={!!store.get().inbox?.listening} className="justify-center" />
+      <Listening on={!!store.get().inbox?.listening} stalled={stalled > 0} className="justify-center" />
     </div>
   )
 }

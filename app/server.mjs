@@ -138,14 +138,15 @@ const list = sub => { try { return readdirSync(join(inbox, sub)).filter(f => !f.
 /** Where the inbox stands, for the page: what waits, whether an agent is listening, the batches' states. */
 export function inboxStatus() {
   const waiter = readJson(join(inbox, 'waiter.json'), null)
+  const agent = readJson(join(inbox, 'agent.json'), null)
   const batches = [...list('new').map(id => [id, 'new']), ...list('taken').map(id => [id, 'taken'])].map(([id, where]) => {
     const b = readJson(join(inbox, where, id, 'batch.json'), null)
     return b && {
-      id, at: b.at, state: b.done ? 'done' : where === 'new' ? 'sent' : 'seen', reply: b.reply ?? null,
+      id, at: b.at, state: b.done ? 'done' : where === 'new' ? 'sent' : b.takenBy?.pid && !alive(b.takenBy.pid) ? 'lost' : 'seen', reply: b.reply ?? null,
       comments: b.comments.map(c => ({ n: c.n, route: c.route, action: c.action, done: !!c.done, ...(c.withdrawn ? { withdrawn: true } : {}), reply: c.reply ?? null })),
     }
   }).filter(Boolean).sort((a, b) => a.at < b.at ? 1 : -1)
-  return { new: list('new').length, listening: !!waiter && alive(waiter.pid), batches: batches.filter((b, i) => i < 20 || b.comments.some(c => ['try-it', 'copy-options'].includes(c.action) && !c.done && !c.withdrawn)) }
+  return { new: list('new').length, listening: !!waiter && alive(waiter.pid), agent: agent?.pid ? (alive(agent.pid) ? 'alive' : 'gone') : null, batches: batches.filter((b, i) => i < 20 || b.comments.some(c => ['try-it', 'copy-options'].includes(c.action) && !c.done && !c.withdrawn)) }
 }
 
 const box = r => r && typeof r === 'object' ? { x: Math.round(+r.x || 0), y: Math.round(+r.y || 0), w: Math.round(+r.w || 0), h: Math.round(+r.h || 0) } : undefined
@@ -417,6 +418,9 @@ export function prototypeServer(session) {
       mkdirSync(inbox, { recursive: true })
       let pending
       const changed = () => { clearTimeout(pending); pending = setTimeout(() => server.ws.send({ type: 'custom', event: 'proto:inbox', data: inboxStatus() }), 100) }
+      // A process that dies makes no file event: look again every few seconds for who is alive.
+      let seen = ''
+      setInterval(() => { const s = inboxStatus(), k = JSON.stringify([s.listening, s.agent, s.batches.map(b => b.state)]); if (seen && k !== seen) changed(); seen = k }, 5e3).unref()
       // A watched folder that is removed (the session deleted) raises an error event on Windows; it must not stop the server.
       try { watch(inbox, { recursive: true }, changed).on('error', () => {}) } catch { /* no recursive watch here: the page's status ping still catches up */ }
       // A visible page pings every minute, so "idle" means no edits and nobody looking. Once

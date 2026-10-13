@@ -168,7 +168,20 @@ function patchSession(dir, patch) {
     return s
   })
 }
-function need(dir) { if (!existsSync(sessionFile(dir))) die(`no prototype session here yet (${tilde(dir)}). Run: proto up`); return readSession(dir) }
+function need(dir) {
+  if (!existsSync(sessionFile(dir))) die(`no prototype session here yet (${tilde(dir)}). Run: proto up`)
+  beat(dir)
+  return readSession(dir)
+}
+// Who is running these commands, written as they run: the page tells "the session that took my
+// comments is gone" (T3 Code restarted, the terminal closed) from "Claude is working on them" by
+// whether this process is still alive. Only an agent that exports CLAUDE_PID has one.
+const agentPid = () => Number(process.env.CLAUDE_PID) || 0
+function beat(dir) {
+  const pid = agentPid()
+  if (!pid) return
+  try { writeJson(join(dir, '.proto', 'inbox', 'agent.json'), { pid, session: process.env.CLAUDE_CODE_SESSION_ID || null, at: new Date().toISOString() }) } catch { /* the page then just doesn't know */ }
+}
 
 const index = () => readJson(INDEX, []).filter(d => typeof d === 'string')
 const remember = dir => { const all = new Set(index()); all.add(dir); writeJson(INDEX, [...all]) }
@@ -1272,11 +1285,39 @@ function take(dir) {
   for (const id of batchesIn(dir, 'new')) {
     const from = join(inboxDir(dir), 'new', id)
     try { moveDir(from, join(inboxDir(dir), 'taken', id)) } catch (e) { if (existsSync(from)) tell(id, `could not be taken (${e?.code ?? e?.message ?? e})`); continue /* else another reader took it */ }
-    const b = readJson(join(inboxDir(dir), 'taken', id, 'batch.json'), null)
-    if (b) taken.push(b)
+    const file = join(inboxDir(dir), 'taken', id, 'batch.json')
+    const b = readJson(file, null)
+    if (b) {
+      // Who took it, so a batch whose taker died before answering is told from one being worked on.
+      if (agentPid() && !b.done) { b.takenBy = { pid: agentPid(), at: new Date().toISOString() }; try { writeJson(file, b) } catch { /* the page then reads it as taken */ } }
+      taken.push(b)
+    }
     else tell(id, 'was taken, but its batch.json could not be read')
   }
   return taken
+}
+
+// Comments a session took and never answered, because it ended (T3 Code restarted, the terminal
+// closed): handed to the agent that takes the inbox next, in full and once. The batch becomes that
+// agent's, so if this one ends too, the next gets it.
+function orphans(dir) {
+  const found = []
+  for (const id of batchesIn(dir, 'taken')) {
+    const file = join(inboxDir(dir), 'taken', id, 'batch.json')
+    const b = readJson(file, null)
+    if (!b?.takenBy?.pid || b.done || alive(b.takenBy.pid)) continue
+    const open = b.comments.filter(c => !c.done && !c.withdrawn && !c.reply && !c.until)
+    if (!open.length) continue
+    const now = agentPid()
+    locked(dir, () => {
+      const cur = readJson(file, null)
+      if (cur?.takenBy?.pid !== b.takenBy.pid) return
+      if (now) cur.takenBy = { pid: now, at: new Date().toISOString() }; else delete cur.takenBy
+      writeJson(file, cur)
+    })
+    found.push({ ...b, comments: open, orphaned: true })
+  }
+  return found
 }
 
 // An element as the agent reads it: what it is, where it sits, and where it is written, the file
@@ -1359,6 +1400,7 @@ function printBatch(dir, b) {
   // A comment the user deleted in the page after sending it is withdrawn: left out, only counted.
   const live = b.comments.filter(c => !c.withdrawn), gone = b.comments.length - live.length
   console.log(`batch ${b.id} · ${live.length} comment${live.length === 1 ? '' : 's'}${gone ? ` (${gone} withdrawn in the page)` : ''}${vp} · ${b.theme}`)
+  if (b.orphaned) console.log('   taken earlier by a session that ended before it answered: handle these first')
   for (const c of live) {
     console.log(`\n${c.n}. ${c.route}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
@@ -1382,7 +1424,8 @@ async function inbox() {
   const dir = sessionDir()
   const s = need(dir)
   if (!flags.wait) {
-    const got = take(dir)
+    const lost = orphans(dir)
+    const got = [...lost, ...take(dir)]
     got.forEach(b => printBatch(dir, b))
     if (!got.length) console.log('no new comments')
     stillOpen(dir, got.map(b => b.id))
@@ -1392,6 +1435,9 @@ async function inbox() {
   }
   const w = readJson(waiterFile(dir), null)
   if (w && alive(w.pid) && w.pid !== process.pid) return console.log(`already listening (pid ${w.pid}); nothing to do`)
+  // Comments a session that ended took and never answered come first, as an arrival does.
+  const lost = orphans(dir)
+  if (lost.length) { lost.forEach(b => printBatch(dir, b)); stillOpen(dir, lost.map(b => b.id)); return }
   const minutes = Number(flags.timeout) || 115
   writeJson(waiterFile(dir), { pid: process.pid, at: new Date().toISOString(), until: new Date(Date.now() + minutes * 60e3).toISOString() })
   const done = () => { const now = readJson(waiterFile(dir), null); if (now?.pid === process.pid) rmSync(waiterFile(dir), { force: true }) }

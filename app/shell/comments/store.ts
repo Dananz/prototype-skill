@@ -55,7 +55,7 @@ export function useStore(store: Store): State {
 
 /** What became of a sent comment, from the inbox the server keeps. */
 export type Said = { text: string; by: 'claude' | 'codex'; at?: string }
-export function progress(item: Item, inbox?: Inbox): { state: CState; reply: Said | null } {
+export function progress(item: Item, inbox?: Inbox): { state: CState; reply: Said | null; lost?: boolean } {
   if (!item.sent) return { state: 'draft', reply: null }
   // Until the first status arrives there is nothing to say but that it was sent.
   if (!inbox) return { state: 'sent', reply: null }
@@ -66,5 +66,6 @@ export function progress(item: Item, inbox?: Inbox): { state: CState; reply: Sai
   const said = c?.reply ?? b.reply
   const reply = said ? { text: said.text, by: said.by ?? 'claude', at: said.at } : null
   if (c?.done) return { state: 'done', reply }
-  return { state: b.state === 'sent' ? 'sent' : 'seen', reply }
+  // lost: the session that took it ended before it was answered, so "Claude is on it" would be false.
+  return { state: b.state === 'sent' ? 'sent' : 'seen', reply, ...(b.state === 'lost' ? { lost: true } : {}) }
 }
