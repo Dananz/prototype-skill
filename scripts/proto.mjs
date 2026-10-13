@@ -1324,6 +1324,12 @@ function orphans(dir) {
 // from the app's folder with its line and the component (`src/protos/today/parts.tsx:30 (PriceCard)`).
 const where = e => {
   if (!e) return ''
+  // The variant as a whole (the box in the Comments panel): no element, the design's own root.
+  if (e.whole) {
+    const r = e.rect ? ` at ${e.rect.x},${e.rect.y} ${e.rect.w}x${e.rect.h}` : ''
+    const code = e.src ? `  src/protos/${e.src}${e.component ? ` (${e.component})` : ''}` : ''
+    return `the whole variant (its root <${e.tag || '?'}>${r})${code}`
+  }
   const name = e.shoot ? `[data-shoot=${e.shoot}]` : e.within ? `in [data-shoot=${e.within}]` : e.selector || ''
   const r = e.rect ? ` at ${e.rect.x},${e.rect.y} ${e.rect.w}x${e.rect.h}` : ''
   const code = e.src ? `  src/protos/${e.src}${e.component ? ` (${e.component})` : ''}` : ''

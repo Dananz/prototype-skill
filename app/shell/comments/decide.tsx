@@ -21,7 +21,7 @@ const NOTE: Record<Ask, { title: (v: string) => string; hint: string; done: (v: 
   build: { title: v => `Build ${v}`, hint: 'Optional: anything to know before building it', done: v => `Asked to build ${v}` },
 }
 
-export function Decide({ subject, sheet = false, onDone }: { subject: Subject; sheet?: boolean; onDone?: () => void }) {
+export function Decide({ subject, sheet = false, onDone, onComment }: { subject: Subject; sheet?: boolean; onDone?: () => void; onComment?: () => void }) {
   const { store, act } = useCtx()
   const state = useStore(store)
   const listening = !!state.inbox?.listening
@@ -145,6 +145,9 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
   return (
     <div ref={menu} role="menu" aria-label={`${v} · ${subject.name}`} onKeyDown={arrows} className="p-1.5">
       <div className="flex min-w-0 items-center gap-1.5 px-2 pb-1 pt-1 text-[11px] text-zinc-500"><b className="font-semibold text-zinc-700 dark:text-zinc-200">{v}</b><span dir="auto" className="truncate">{subject.name}</span></div>
+      {onComment && <button role="menuitem" data-shoot="vm-comment" onClick={() => { onComment(); onDone?.() }} className={`${row} text-zinc-700 dark:text-zinc-200`}>
+        <Icon name="frame" className="size-4" /><span className="flex-1">Comment on this</span><kbd className="shrink-0 font-sans text-xs text-zinc-400">⇧C</kbd>
+      </button>}
       <button role="menuitem" onClick={() => send(picked ? 'unpick' : 'pick')} disabled={busy} title={pickTitle} className={`${row} ${picked ? 'font-medium text-emerald-700 dark:text-emerald-400' : 'text-zinc-700 dark:text-zinc-200'}`}>
         <Icon name="check" className="size-4" /><span className="min-w-0 flex-1 truncate">{pickLabel}</span>{picked && <span className="shrink-0 text-xs font-normal text-zinc-400">Undo</span>}
       </button>
@@ -158,8 +161,8 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
 }
 
 /** Where the menu opens on a wide page: under the bar's check button, its right edge on the button's. */
-export type DecidePopProps = { open: boolean; anchor: () => HTMLElement | null; subject: Subject | null; onClose: () => void }
-export function DecidePop({ open, anchor, subject, onClose }: DecidePopProps) {
+export type DecidePopProps = { open: boolean; anchor: () => HTMLElement | null; subject: Subject | null; onClose: () => void; at?: { x: number; y: number }; onComment?: () => void }
+export function DecidePop({ open, anchor, subject, onClose, at: pointer, onComment }: DecidePopProps) {
   const [, redraw] = useState(0)
   useEffect(() => {
     if (!open) return
@@ -167,13 +170,17 @@ export function DecidePop({ open, anchor, subject, onClose }: DecidePopProps) {
     addEventListener('resize', f)
     return () => removeEventListener('resize', f)
   }, [open])
-  const at = open ? anchor()?.getBoundingClientRect() : null
-  if (!at || !subject) return null
+  const at = open && !pointer ? anchor()?.getBoundingClientRect() : null
+  if (!open || !subject || (!at && !pointer)) return null
+  // A row's menu opens where it was asked for (its ⋯, or the pointer), kept inside the window; the bar's under its button.
+  const place = pointer
+    ? { top: Math.max(8, Math.min(pointer.y, innerHeight - 420)), left: Math.max(8, Math.min(pointer.x, innerWidth - 296)) }
+    : { top: at!.bottom + 6, right: Math.max(8, innerWidth - at!.right) }
   // The shell closes it on Esc and on a click outside. A click inside goes no further: a choice
   // redraws the menu under it, and the shell would take a click on a removed button for one outside.
   return (
-    <div data-pop onClick={e => e.stopPropagation()} className="fixed z-40 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={{ top: at.bottom + 6, right: Math.max(8, innerWidth - at.right) }}>
-      <Decide key={`${subject.proto}/${subject.variant}`} subject={subject} onDone={onClose} />
+    <div data-pop onClick={e => e.stopPropagation()} className="fixed z-40 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={place}>
+      <Decide key={`${subject.proto}/${subject.variant}`} subject={subject} onDone={onClose} onComment={onComment} />
     </div>
   )
 }
