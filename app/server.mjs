@@ -145,6 +145,29 @@ function plugLines(did, slug, id) {
 // while it is still on that variant. Says what it did: 'moved' (the working variant moved too),
 // 'done', or 'nothing' (an unpick of a variant that isn't the pick). A failure once meta.ts is
 // written is marked as such, so nobody is told to mark it again.
+// A pick in a prototype built from another variant (`from: "<parent>/<letter>"`) picks that variant
+// too, all the way up: choosing a part of B means choosing B. Only the structural parent (`from`),
+// never the `also` list; an archived parent, or one picked already, is left as it is. Undoing a pick
+// leaves the parents picked. Returns the routes it picked, as <slug>/<letter>.
+export function pickParents(slug) {
+  const picked = [], seen = new Set([slug])
+  let from
+  try { from = metaOf(readFileSync(metaFile(slug), 'utf8')).from } catch { return picked }
+  while (typeof from === 'string' && from.includes('/')) {
+    const [parent, letter] = from.split('/')
+    if (!letter || seen.has(parent)) break
+    seen.add(parent)
+    let text, pm
+    try { text = readFileSync(metaFile(parent), 'utf8'); pm = metaOf(text) } catch { break }
+    if (!pm.archived && pm.variants?.[letter] && pm.picked !== letter) {
+      pm.picked = letter
+      writeWhole(metaFile(parent), withMeta(text, pm))
+      picked.push(`${parent}/${letter}`)
+    }
+    from = pm.from
+  }
+  return picked
+}
 function pick(route, off) {
   const [slug, id] = route.split('/')
   const text = readFileSync(metaFile(slug), 'utf8'), meta = metaOf(text)
@@ -154,6 +177,8 @@ function pick(route, off) {
   if (off) delete meta.picked
   else meta.picked = id
   writeWhole(metaFile(slug), withMeta(text, meta))
+  // the variants it was built from are chosen with it (never undone by an unpick)
+  if (!off) try { pickParents(slug) } catch { /* the pick itself is made; the parents can be picked by hand */ }
   let moved = false
   if (!off) {
     try { moved = work({ proto: slug, variant: id, ask: `Picked ${id}` }) }
