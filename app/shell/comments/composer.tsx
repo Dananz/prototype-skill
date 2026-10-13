@@ -151,7 +151,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const submit = () => {
     const body = readEditor(ed.current!)
     if (!body.some(s => typeof s !== 'string' || s.trim()) && !tags.length) return
-    act.save({ body, tags, ...(shots.length ? { shots } : {}) }, target, id, time)
+    act.save({ body, tags, shots, shot: undefined, pasted: undefined }, target, id, time)
   }
   const shoot = async () => {
     if (shotsRef.current.length >= MAX_SHOTS) return

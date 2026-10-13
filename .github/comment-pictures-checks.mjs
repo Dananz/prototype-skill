@@ -81,6 +81,61 @@ export async function commentPicturesChecks({ proto, app, openPage, fail }) {
       return 'ok'
     })()`)
     if (six !== 'ok') fail(`pictures: ${six}`)
+
+    // Removing the last picture from a saved draft must stay removed after Save and reload.
+    await open()
+    const removed = await page.run(`(async () => {
+      ${helpers}
+      if (!await until(editor)) return 'the removal comment opened no composer'
+      editor().textContent = 'Remove every picture'
+      editor().dispatchEvent(new Event('input', { bubbles: true }))
+      await paste(1)
+      if (!await until(() => pictures() === 1)) return 'the removal picture did not show'
+      document.querySelector('[data-composer] button[title^="Add,"]').click()
+      if (!await until(() => !editor())) return 'the removal draft was not saved'
+      const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.find(i => i.body.includes('Remove every picture'))
+      if (!await until(() => saved()?.shots?.length === 1)) return 'the original picture was not persisted'
+      const legacy = { ...saved(), id: 'legacy-picture', body: ['Legacy picture'], shot: saved().shots[0].src, pasted: true }; delete legacy.shots
+      const row = () => [...document.querySelectorAll('[data-shoot=comment-row]')].find(r => r.textContent.includes('Remove every picture'))
+      row().querySelector('button').click()
+      if (!await until(() => editor() && pictures() === 1)) return 'the saved draft did not reopen with its picture'
+      document.querySelector('[data-composer] button[aria-label="Remove the image"]').click()
+      if (!await until(() => pictures() === 0)) return 'the last picture did not disappear in the composer'
+      document.querySelector('[data-composer] button[title^="Add,"]').click()
+      if (!await until(() => !editor() && saved() && !(saved().shots?.length || saved().shot))) return 'Save restored the removed picture in the saved draft'
+      row().querySelector('button').click()
+      if (!await until(editor)) return 'the empty-picture draft did not reopen'
+      if (pictures() !== 0) return 'the removed picture came back on reopen'
+      ;[...document.querySelectorAll('[data-composer] button')].find(b => b.textContent === 'Cancel').click()
+      const data = JSON.parse(localStorage.getItem('proto-comments-smoke'))
+      data.items.push(legacy)
+      localStorage.setItem('proto-comments-smoke', JSON.stringify(data))
+      return 'ok'
+    })()`)
+    if (removed !== 'ok') fail(`pictures: ${removed}`)
+    await page.run('location.reload()')
+    const legacy = await page.run(`(async () => {
+      ${helpers}
+      const row = () => [...document.querySelectorAll('[data-shoot=comment-row]')].find(r => r.textContent.includes('Legacy picture'))
+      if (!await until(row)) return 'the legacy draft was not restored after reload'
+      row().querySelector('button').click()
+      if (!await until(() => editor() && pictures() === 1)) return 'the legacy picture did not reopen'
+      document.querySelector('[data-composer] button[aria-label="Remove the image"]').click()
+      if (!await until(() => pictures() === 0)) return 'the legacy picture did not disappear'
+      document.querySelector('[data-composer] button[title^="Add,"]').click()
+      const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.find(i => i.id === 'legacy-picture')
+      if (!await until(() => !editor() && saved() && !(saved().shots?.length || saved().shot))) return 'Save restored the legacy picture'
+      document.querySelector('[data-shoot=send]').click()
+      return 'ok'
+    })()`)
+    if (legacy !== 'ok') fail(`pictures: ${legacy}`)
+    let cleared = ''
+    for (let i = 0; i < 40 && !cleared.includes('Legacy picture'); i++) { cleared += proto(['inbox'], { stdout: true }); if (!cleared.includes('Legacy picture')) await new Promise(r => setTimeout(r, 250)) }
+    for (const words of ['Remove every picture', 'Legacy picture']) {
+      const comment = cleared.split(/^\d+\. /m).find(c => c.includes(words))
+      if (!comment || /^ {3}image:/m.test(comment)) fail('pictures: Send must omit the removed picture for ' + words)
+    }
+
   } finally { page.close() }
   proto(['archive', 'picsfx'])
   console.log('\nOK: a comment takes several pictures (up to six), and proto inbox lists each')
