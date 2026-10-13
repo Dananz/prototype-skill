@@ -135,13 +135,13 @@ function canClimb(mount: HTMLElement | null, t: Target) {
 function Climb({ box, up, down }: { box: Box; up: boolean; down: boolean }) {
   const { act } = useCtx()
   if (!up && !down) return null
-  const inside = box.y < 34
-  const btn = 'inline-flex h-7 items-center gap-1.5 px-2.5 hover:bg-white/15'
+  const inside = box.y < 26
+  const btn = 'inline-flex h-5 items-center gap-1 px-1.5 hover:bg-white/15'
   return (
-    <div data-inspect-ui className={`pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-stretch whitespace-nowrap bg-proto-primary text-xs font-semibold text-proto-primary-fg shadow ${inside ? 'top-0 rounded-b-md' : 'bottom-full rounded-t-md'}`}>
-      {up && <button onClick={act.parent} title="Comment on the element around it" className={`${btn} ${inside ? 'rounded-bl-md' : 'rounded-tl-md'} ${down ? '' : inside ? 'rounded-br-md' : 'rounded-tr-md'}`}><Icon name="up" className="size-3.5" />Parent</button>}
-      {up && down && <span className="my-1.5 w-px bg-white/30" />}
-      {down && <button onClick={act.down} aria-label="Back to the element inside" title="Back to the element inside" className={`${btn} px-2 ${inside ? 'rounded-br-md' : 'rounded-tr-md'} ${up ? '' : inside ? 'rounded-bl-md' : 'rounded-tl-md'}`}><Icon name="child" className="size-3.5" /></button>}
+    <div data-inspect-ui className={`pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-stretch whitespace-nowrap bg-proto-primary text-[11px] font-semibold text-proto-primary-fg shadow ${inside ? 'top-0 rounded-b' : 'bottom-full rounded-t'}`}>
+      {up && <button onClick={act.parent} title="Comment on the element around it" className={`${btn} ${inside ? 'rounded-bl' : 'rounded-tl'} ${down ? '' : inside ? 'rounded-br' : 'rounded-tr'}`}><Icon name="up" className="size-3" />Parent</button>}
+      {up && down && <span className="my-1 w-px bg-white/30" />}
+      {down && <button onClick={act.down} aria-label="Back to the element inside" title="Back to the element inside" className={`${btn} ${inside ? 'rounded-br' : 'rounded-tr'} ${up ? '' : inside ? 'rounded-bl' : 'rounded-tl'}`}><Icon name="child" className="size-3" /></button>}
     </div>
   )
 }
