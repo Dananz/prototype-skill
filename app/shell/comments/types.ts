@@ -11,10 +11,17 @@ export type Box = { x: number; y: number; w: number; h: number }
  * has a `point` too, in the same px: the spot itself, with the element under it for context.
  * `src` is where it is written, its file under src/protos and line (`today/parts.tsx:30`), and
  * `component` the component it is written in (both stamped by source.mjs). One picked in a device
- * view (view/) has its `view`: the layout it is on, which its rect is measured in.
+ * view (view/) has its `view`: the layout it is on, which its rect is measured in. `uses` is the
+ * chain of places the components around it are used, innermost first (`Menu` at `toolbar.tsx:183`,
+ * then what that sits in), each with its list key when it is drawn in a loop and the short values
+ * that use passes (`shoot="phase-menu"`), which tell apart uses written on one line (a helper that
+ * draws several): which one of a shared component the comment is on.
  */
+export type Use = { component: string; at: string; key?: string; props?: string }
+/** `within` is the data-shoot of the nearest element around it that has one, when it has none of its
+ * own: with `shoot`, what tells this element from another that later stands at the same place. */
 /** label stays in saved data for compatibility; the UI uses numbered references, not element names. */
-export type Target = { label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; point?: { x: number; y: number }; view?: ViewSize }
+export type Target = { label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; point?: { x: number; y: number }; view?: ViewSize; uses?: Use[]; within?: string }
 
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
 export type Seg = string | { tag: number }
