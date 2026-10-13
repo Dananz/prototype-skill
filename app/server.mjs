@@ -143,7 +143,7 @@ export function inboxStatus() {
     const b = readJson(join(inbox, where, id, 'batch.json'), null)
     return b && {
       id, at: b.at, state: b.done ? 'done' : where === 'new' ? 'sent' : b.takenBy?.pid && !alive(b.takenBy.pid) ? 'lost' : 'seen', reply: b.reply ?? null,
-      comments: b.comments.map(c => ({ n: c.n, route: c.route, action: c.action, done: !!c.done, ...(c.withdrawn ? { withdrawn: true } : {}), reply: c.reply ?? null })),
+      comments: b.comments.map(c => ({ n: c.n, route: c.route, action: c.action, done: !!c.done, ...(c.withdrawn ? { withdrawn: true } : {}), ...(c.action && c.target ? { scoped: true } : {}), reply: c.reply ?? null })),
     }
   }).filter(Boolean).sort((a, b) => a.at < b.at ? 1 : -1)
   return { new: list('new').length, listening: !!waiter && alive(waiter.pid), agent: agent?.pid ? (alive(agent.pid) ? 'alive' : 'gone') : null, batches: batches.filter((b, i) => i < 20 || b.comments.some(c => ['try-it', 'copy-options'].includes(c.action) && !c.done && !c.withdrawn)) }
@@ -154,6 +154,7 @@ const clip = (s, n) => typeof s === 'string' ? s.slice(0, n) : undefined
 const element = t => t && typeof t === 'object' ? {
   selector: clip(t.selector, 500), shoot: clip(t.shoot, 100), src: clip(t.src, 300), component: clip(t.component, 100),
   tag: clip(t.tag, 40), text: clip(t.text, 300), rect: box(t.rect), within: clip(t.within, 100),
+  ...(t.whole === true ? { whole: true } : {}),
   ...(Array.isArray(t.route) && t.route.length ? { route: t.route.slice(0, 6).filter(r => typeof r === 'string').map(r => clip(r, 200)) } : {}),
   ...(Array.isArray(t.uses) && t.uses.length ? { uses: t.uses.slice(0, 4).filter(u => u && typeof u === 'object').map(u => ({ component: clip(u.component, 100), at: clip(u.at, 300), ...(u.key != null ? { key: clip(String(u.key), 100) } : {}), ...(typeof u.props === 'string' ? { props: clip(u.props, 240) } : {}) })) } : {}),
 } : undefined
@@ -243,7 +244,8 @@ function receive(data) {
   if (optional.length) {
     if (list.length !== 1) throw bad(0, ': request one optional capability at a time')
     const wanted = optional[0]
-    for (const sub of ['new', 'taken']) {
+    // One on highlighted words (it has an element) is about those words, so it is never the variant's request again.
+    if (!wanted.target) for (const sub of ['new', 'taken']) {
       for (const folder of readdirSyncSafe(join(inbox, sub))) {
         const previous = readJson(join(inbox, sub, folder, 'batch.json'), null)
         if (previous?.comments.some(c => c.route === wanted.route && c.action === wanted.action && !c.done && !c.withdrawn)) return { batch: previous, moved: false }

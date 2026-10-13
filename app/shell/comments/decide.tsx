@@ -17,17 +17,17 @@ type Ask = 'pick' | 'more' | 'build' | 'try-it' | 'copy-options'
 
 const NOTE: Record<Ask, { title: (v: string) => string; hint: string; done: (v: string) => string }> = {
   pick: { title: v => `Pick ${v}`, hint: 'Optional: why this one, or what to change in it', done: v => `Picked ${v}` },
-  'try-it': { title: v => `Add Try it for ${v}`, hint: 'Optional: a flow or scenario to explain', done: v => `Asked for Try it for ${v}` },
-  'copy-options': { title: v => `Add copy options for ${v}`, hint: 'Optional: which lines or tone? Starts with the headline and primary text.', done: v => `Asked for copy options for ${v}` },
+  'try-it': { title: v => `Needs explanation: ${v}`, hint: 'What is hard to figure out? Optional.', done: v => `Asked for an explanation of ${v}` },
+  'copy-options': { title: v => `Generate copy options for ${v}`, hint: 'Optional: which lines or what tone? Starts with the headline and primary text.', done: v => `Asked for copy options for ${v}` },
   more: { title: v => `More like ${v}`, hint: 'Optional: what to keep, what to push further', done: v => `Asked for more like ${v}` },
   build: { title: v => `Build ${v}`, hint: 'Optional: anything to know before building it', done: v => `Asked to build ${v}` },
 }
 
-export function Decide({ subject, sheet = false, onDone }: { subject: Subject; sheet?: boolean; onDone?: () => void }) {
+export function Decide({ subject, sheet = false, onDone, onComment }: { subject: Subject; sheet?: boolean; onDone?: () => void; onComment?: () => void }) {
   const { store, act } = useCtx()
   const state = useStore(store)
   const listening = !!state.inbox?.listening
-  const pending = (a: Ask) => state.inbox?.batches.some(b => b.comments.some(c => c.route === `${subject.proto}/${subject.variant}` && c.action === a && !c.done && !c.withdrawn))
+  const pending = (a: Ask) => state.inbox?.batches.some(b => b.comments.some(c => c.route === `${subject.proto}/${subject.variant}` && c.action === a && !c.scoped && !c.done && !c.withdrawn))
   const sending = useRef(false)
   const [ask, setAsk] = useState<Ask | null>(null)
   const [note, setNote] = useState('')
@@ -105,16 +105,18 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
   )
 
   const extras = <div className="mt-2 border-t border-black/[.06] pt-2 dark:border-white/10">
-    <p className="px-2 pb-1 text-[11px] text-zinc-500">Optional extras</p>
+    <p className="px-2 pb-1 text-[11px] text-zinc-500">Ask Claude for</p>
     {(['try-it', 'copy-options'] as const).map(a => {
       const ready = a === 'try-it' ? subject.hints : subject.copy
       const waiting = pending(a)
-      const label = a === 'try-it' ? 'Try it' : 'Copy options'
+      // Ready, a row is the thing itself; before, it says what asking for it does.
+      const label = ready ? (a === 'try-it' ? 'Try it' : 'Copy options') : a === 'try-it' ? 'Needs explanation' : 'Generate copy options'
+      const about = a === 'try-it' ? 'what to try' : 'headline, text'
       return <button key={a} role={sheet ? undefined : 'menuitem'} data-request-extra={a} disabled={busy || waiting || ready}
         onClick={() => { setNote(''); setError(''); setAsk(a) }}
         className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-start text-[13px] hover:bg-zinc-900/[.04] disabled:text-zinc-400 dark:hover:bg-white/[.06]">
-        <Icon name={ACTION[a].icon} className="size-4" /><span className="flex-1">{ready ? label : `Add ${label}`}</span>
-        <span className="text-xs text-zinc-500">{ready ? 'Ready' : waiting ? 'Requested' : '…'}</span>
+        <Icon name={ready && a === 'try-it' ? 'key' : ACTION[a].icon} className="size-4" /><span className="flex-1">{label}</span>
+        <span className="text-xs text-zinc-500">{ready ? 'Ready' : waiting ? 'Requested' : about}</span>
       </button>
     })}
     {(['try-it', 'copy-options'] as const).some(pending) && <p className="px-2 pb-1 text-xs text-zinc-500">Requests wait in Comments. Delete one there to cancel it.</p>}
@@ -131,7 +133,7 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
       <div className="px-1">
         <p className="flex min-w-0 items-center gap-1.5 px-1 pb-2 text-xs text-zinc-500"><b className="font-semibold text-zinc-700 dark:text-zinc-200">{v}</b><span dir="auto" className="truncate">{subject.name}</span></p>
         <div className="flex gap-1.5">
-          <button onClick={() => send(picked ? 'unpick' : 'pick')} disabled={busy} aria-pressed={picked} aria-label={pickTitle} className={`shrink-0 px-3 ${picked ? `${btn} bg-emerald-500/10 text-emerald-700 ring-emerald-500/30 dark:text-emerald-300` : quiet}`}><Icon name="check" className="size-4" />{picked ? 'Picked' : 'Pick'}</button>
+          <button onClick={() => send(picked ? 'unpick' : 'pick')} disabled={busy} aria-pressed={picked} aria-label={pickTitle} className={`shrink-0 px-3 ${picked ? `${btn} bg-emerald-500/10 text-emerald-700 ring-emerald-500/30 dark:text-emerald-300` : quiet}`}><Icon name={picked ? 'picked' : 'pick'} className="size-4" />{picked ? 'Picked' : 'Pick'}</button>
           <button onClick={() => setAsk('more')} className={`flex-1 px-2 ${quiet}`}><Icon name="more" className="size-4" />More like this</button>
           <button onClick={() => setAsk('build')} className={`shrink-0 px-3 ${quiet}`}><Icon name="code" className="size-4" />Build it</button>
         </div>
@@ -147,8 +149,11 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
   return (
     <div ref={menu} role="menu" aria-label={`${v} · ${subject.name}`} onKeyDown={arrows} className="p-1.5">
       <div className="flex min-w-0 items-center gap-1.5 px-2 pb-1 pt-1 text-[11px] text-zinc-500"><b className="font-semibold text-zinc-700 dark:text-zinc-200">{v}</b><span dir="auto" className="truncate">{subject.name}</span></div>
+      {onComment && <button role="menuitem" data-shoot="vm-comment" onClick={() => { onComment(); onDone?.() }} className={`${row} text-zinc-700 dark:text-zinc-200`}>
+        <Icon name="frame" className="size-4" /><span className="flex-1">Comment on this</span><kbd className="shrink-0 font-sans text-xs text-zinc-400">⇧C</kbd>
+      </button>}
       <button role="menuitem" onClick={() => send(picked ? 'unpick' : 'pick')} disabled={busy} title={pickTitle} className={`${row} ${picked ? 'font-medium text-emerald-700 dark:text-emerald-400' : 'text-zinc-700 dark:text-zinc-200'}`}>
-        <Icon name="check" className="size-4" /><span className="min-w-0 flex-1 truncate">{pickLabel}</span>{picked && <span className="shrink-0 text-xs font-normal text-zinc-400">Undo</span>}
+        <Icon name={picked ? 'picked' : 'pick'} className="size-4" /><span className="min-w-0 flex-1 truncate">{pickLabel}</span>{picked && <span className="shrink-0 text-xs font-normal text-zinc-400">Undo</span>}
       </button>
       {!picked && <button role="menuitem" data-pick-note onClick={() => { setNote(''); setError(''); setAsk('pick') }} disabled={busy} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="check" className="size-4 opacity-0" /><span className="flex-1">Pick with a note…</span></button>}
       <button role="menuitem" onClick={() => setAsk('more')} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="more" className="size-4" /><span className="flex-1">More like this…</span></button>
@@ -161,8 +166,8 @@ export function Decide({ subject, sheet = false, onDone }: { subject: Subject; s
 }
 
 /** Where the menu opens on a wide page: under the bar's check button, its right edge on the button's. */
-export type DecidePopProps = { open: boolean; anchor: () => HTMLElement | null; subject: Subject | null; onClose: () => void }
-export function DecidePop({ open, anchor, subject, onClose }: DecidePopProps) {
+export type DecidePopProps = { open: boolean; anchor: () => HTMLElement | null; subject: Subject | null; onClose: () => void; at?: { x: number; y: number }; onComment?: () => void }
+export function DecidePop({ open, anchor, subject, onClose, at: pointer, onComment }: DecidePopProps) {
   const [, redraw] = useState(0)
   useEffect(() => {
     if (!open) return
@@ -170,13 +175,17 @@ export function DecidePop({ open, anchor, subject, onClose }: DecidePopProps) {
     addEventListener('resize', f)
     return () => removeEventListener('resize', f)
   }, [open])
-  const at = open ? anchor()?.getBoundingClientRect() : null
-  if (!at || !subject) return null
+  const at = open && !pointer ? anchor()?.getBoundingClientRect() : null
+  if (!open || !subject || (!at && !pointer)) return null
+  // A row's menu opens where it was asked for (its ⋯, or the pointer), kept inside the window; the bar's under its button.
+  const place = pointer
+    ? { top: Math.max(8, Math.min(pointer.y, innerHeight - 420)), left: Math.max(8, Math.min(pointer.x, innerWidth - 296)) }
+    : { top: at!.bottom + 6, right: Math.max(8, innerWidth - at!.right) }
   // The shell closes it on Esc and on a click outside. A click inside goes no further: a choice
   // redraws the menu under it, and the shell would take a click on a removed button for one outside.
   return (
-    <div data-pop onClick={e => e.stopPropagation()} className="fixed z-40 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={{ top: at.bottom + 6, right: Math.max(8, innerWidth - at.right) }}>
-      <Decide key={`${subject.proto}/${subject.variant}`} subject={subject} onDone={onClose} />
+    <div data-pop onClick={e => e.stopPropagation()} className="fixed z-40 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={place}>
+      <Decide key={`${subject.proto}/${subject.variant}`} subject={subject} onDone={onClose} onComment={onComment} />
     </div>
   )
 }

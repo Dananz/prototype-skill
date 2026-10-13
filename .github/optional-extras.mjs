@@ -56,7 +56,7 @@ export default function A() {
     await page.run(`location.reload(); true`)
     await run(`await until(() => document.documentElement?.dataset.ready === '1'); ${menu}; await until(() => document.querySelector('[data-request-extra="try-it"]')?.disabled)`)
 
-    await run(`const row = [...document.querySelectorAll('[data-shoot=comment-row]')].find(r => r.textContent.includes('Add Try it for A')); if (!row) throw new Error('requested extra absent from Comments'); row.querySelector('[data-shoot=remove]').click()`)
+    await run(`const row = [...document.querySelectorAll('[data-shoot=comment-row]')].find(r => r.textContent.includes('Needs explanation: A')); if (!row) throw new Error('requested extra absent from Comments'); row.querySelector('[data-shoot=remove]').click()`)
     await run(`await until(() => !document.querySelector('[data-request-extra="try-it"]')?.disabled); document.querySelector('[data-request-extra="try-it"]').click(); await until(() => document.querySelector('textarea')); [...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Send').click(); await until(() => document.querySelector('[data-decide] [role=status]'))`)
     requests = await matching('try-it')
     assert(requests.length === 1 && requests[0].id !== first, 'withdrawal did not allow a fresh request')
@@ -97,6 +97,15 @@ export default function A() {
     proto(['inbox'])
     await postJson('withdraw', { batch: retry.sent, n: 1 })
     assert((await matching('try-it')).length === 0, 'taken canceled request still pending')
+    // A request on highlighted words (it has an element) is its own: asked twice, both arrive, and neither is the variant's.
+    const words = { selector: ':scope > main > h1:nth-child(2)', tag: 'h1', text: 'Make room for your next idea.', rect: { x: 0, y: 0, w: 100, h: 40 } }
+    const askWords = async () => (await (await postJson('comments', { comments: [{ route: 'first/A', text: 'Generate copy options for “Make room”', action: 'copy-options', target: words }] })).json()).sent
+    const [w1, w2] = [await askWords(), await askWords()]
+    assert(w1 && w2 && w1 !== w2, 'a request on highlighted words was merged with another')
+    const status = (await (await fetch(`${local}__proto/status`)).json().catch(() => null))?.inbox
+    const mine = status?.batches?.filter(b => b.id === w1 || b.id === w2).flatMap(b => b.comments) ?? []
+    assert(status && mine.length === 2 && mine.every(c => c.scoped), 'the status did not mark requests on highlighted words as scoped')
+    for (const w of [w1, w2]) await postJson('withdraw', { batch: w, n: 1 })
     for (const route of ['first', 'first/Z', 'first/A/state']) assert((await postJson('comments', { comments: [{ route, text: 'Try it', action: 'try-it' }] })).status === 400, `accepted invalid route ${route}`)
   } finally { page.close() }
   const phone = await openPage(`${local}#/first/B`, { width: 390, height: 844, phone: true })

@@ -1,5 +1,11 @@
 // Small HTML building blocks for the shell chrome. Everything here returns strings.
 import { SIZE_PATHS } from './view/sizes'
+import dotsThree from '@phosphor-icons/core/assets/bold/dots-three-bold.svg?raw'
+import checkCircle from '@phosphor-icons/core/assets/regular/check-circle.svg?raw'
+import checkCircleFill from '@phosphor-icons/core/assets/fill/check-circle-fill.svg?raw'
+
+/** Icons that are Phosphor's own files, never drawn here: the ⋯ and the pick's check circle. */
+const PHOSPHOR: Record<string, string> = { dots: dotsThree, pick: checkCircle, picked: checkCircleFill }
 
 const PATHS: Record<string, string> = {
   ...SIZE_PATHS,
@@ -20,7 +26,6 @@ const PATHS: Record<string, string> = {
   home: 'M4 11l8-7 8 7v9h-5v-6H9v6H4z',
   branch: 'M6 3v8a4 4 0 0 0 4 4h8M14 11l4 4-4 4',
   from: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
-  dots: 'M5 12h.01M12 12h.01M19 12h.01',
   x: 'M6 6l12 12M18 6 6 18',
   play: 'M8 5v14l11-7z',
   pause: 'M8 5v14M16 5v14',
@@ -39,8 +44,9 @@ const PATHS: Record<string, string> = {
   curves: 'M3 19.5c3.6 0 4.6-14 9.2-14 2.6 0 3 3 5.6 3H21',
 }
 
-export const ic = (name: string, cls = 'size-4') =>
-  `<svg class="${cls} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${PATHS[name]}"/></svg>`
+export const ic = (name: string, cls = 'size-4') => PHOSPHOR[name]
+  ? PHOSPHOR[name].replace('<svg', `<svg class="${cls} shrink-0" aria-hidden="true"`)
+  : `<svg class="${cls} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${PATHS[name]}"/></svg>`
 
 export const esc = (s: unknown) =>
   String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)

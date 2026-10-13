@@ -8,6 +8,7 @@ import { CommentsCtx, type Ctx, type Host } from './ctx'
 import { CopyBar, CopyMarks, CopySheet, createCopyActions, createCopyStore } from './copy'
 import { Decide, DecidePop, type DecidePopProps, type Subject } from './decide'
 import { Layer } from './layer'
+import { Selection } from './selection'
 import { PhoneSheet, Rail } from './rail'
 import { createStore, progress } from './store'
 import type { Place, State } from './types'
@@ -22,7 +23,7 @@ export function createComments(host: Host, sessionId: string) {
   const copyAct = createCopyActions(copyStore, host, store, () => act.stop())
   const ctx: Ctx = { store, host, act, copyStore, copyAct }
   const wrap = (el: JSX.Element) => <CommentsCtx.Provider value={ctx}>{el}</CommentsCtx.Provider>
-  createRoot(host.layer).render(wrap(<><Layer /><CopyMarks /></>))
+  createRoot(host.layer).render(wrap(<><Layer /><Selection /><CopyMarks /></>))
   return {
     store,
     act,

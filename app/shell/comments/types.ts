@@ -16,7 +16,8 @@ export type Box = { x: number; y: number; w: number; h: number; via?: boolean }
  * chain of places the components around it are used, innermost first (`Menu` at `toolbar.tsx:183`,
  * then what that sits in), each with its list key when it is drawn in a loop and the short values
  * that use passes (`shoot="phase-menu"`), which tell apart uses written on one line (a helper that
- * draws several): which one of a shared component the comment is on.
+ * draws several): which one of a shared component the comment is on. `whole` is a comment on the
+ * variant as a whole: its element is the variant's root, which its rect is the box of.
  */
 export type Use = { component: string; at: string; key?: string; props?: string }
 /** `within` is the data-shoot of the nearest element around it that has one, when it has none of its
@@ -25,7 +26,7 @@ export type Use = { component: string; at: string; key?: string; props?: string 
  * the `data-opened-by` of each such part around it, outermost first, each the selector of the
  * control that opens that part. */
 /** label stays in saved data for compatibility; the UI uses numbered references, not element names. */
-export type Target = { label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; point?: { x: number; y: number }; view?: ViewSize; uses?: Use[]; within?: string; route?: string[] }
+export type Target = { label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; point?: { x: number; y: number }; view?: ViewSize; uses?: Use[]; within?: string; route?: string[]; whole?: true }
 
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
 export type Seg = string | { tag: number }
@@ -76,7 +77,7 @@ export type Mode =
   | { kind: 'idle' }
   | { kind: 'pick' }
   /** trail: the elements a new comment was moved up from with Parent, nearest last, so it can step back down. */
-  | { kind: 'compose'; target: Target; id?: string; trail?: Target[] }
+  | { kind: 'compose'; target: Target; id?: string; trail?: Target[]; quote?: string }
   | { kind: 'tag'; target: Target; id?: string; trail?: Target[] }
   /** Writing on a moment or a range of the motion, in the dock; tagging: picking an element to tag. */
   | { kind: 'time'; time: Time; id?: string; tagging?: boolean }
@@ -99,6 +100,10 @@ export type State = {
   /** The phone's list, in a sheet. */
   sheet: boolean
   sending: boolean
+  /** The whole-variant box has the focus: the variant is outlined edge to edge. */
+  wholeFocus: boolean
+  /** Set to put the focus in the whole-variant box (⇧C, a sidebar row's Comment on this); the box clears it once it has. */
+  focusAsk: boolean
   /** Send as I add: each comment goes to Claude the moment it is added, so work starts while the next is written. */
   live: boolean
   error: string

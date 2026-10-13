@@ -247,10 +247,13 @@ Do not spend the initial pass naming or annotating elements for Comments. Commen
 visual targeting; source file/line attributes are automatic. There is no named-element catalog.
 Add `data-shoot` only for selectors needed by interaction/QA checks, and preserve accessibility.
 
-The page's **Actions → Add Try it / Add Copy options** submits a request for the current
-variant with an optional note; no chat prompt is required. A request shows Requested until it
-is answered or deleted from Comments. Ready means the variant already exposes the capability;
-use the existing Try it panel or T button (the pill's menu on a phone).
+The page's **Actions → Needs explanation / Generate copy options** submits a request for the
+current variant with an optional note; no chat prompt is required. A request shows Requested until
+it is answered or deleted from Comments. Ready means the variant already exposes the capability;
+use the existing Try it panel or T button (the pill's menu on a phone). Highlighting words on the
+design floats a toolbar above them with the same two asks on just those words: Generate copy
+options (a `copy-options` request with an element and the quoted words) and Comment (a comment
+that starts with the words quoted).
 
 **Preserve the design exploration.** The user's number when they give one ("/prototype 3 …").
 Otherwise the scope sets it: 5 for a screen or a flow, 3 for a component or a section, 2 for a
@@ -586,6 +589,12 @@ change the call that passes them. Change the component itself, and so every use,
 dropdowns", "every row", "each menu"); when it is unclear, change the one and say in the reply
 that the others are untouched. The reply names which one changed ("only the Phase menu").
 
+**A comment on the whole variant** (written in the box at the foot of the Comments panel, or from a
+sidebar row's Comment on this) prints `on: the whole variant (its root <div> at 0,0 WxH)`: it is
+about the design as a whole (its density, tone, structure or flow), not one element. Make the change
+where the design lives, across the parts it names, rather than on one element; the reply says what
+changed overall.
+
 **Handle a batch as one job, not one comment at a time.** The user is waiting from the moment
 they press Send until the last change is in, and the time goes into round trips and lookups, not
 into the edits. Measured on 12 small comments: one pass took 48 s; a worker per file took 86 s
@@ -647,7 +656,7 @@ the text.
 | `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you are adding and `--until <slug>/D,<slug>/E…` (step 5) |
 | `build` | nothing | `proto pick` it if it isn't the pick, then step 7; reply when it is in |
 | `try-it` | queued only; no content generated yet | check that the request is not withdrawn; add useful `useHints` to this variant only (section 4), preserve its working flow, verify it, then reply `--done`; if it already has useful hints, reuse them |
-| `copy-options` | queued only; no alternatives generated yet | check that the request is not withdrawn; add `useCopy` to the requested lines in this variant only (headline and primary text/CTA without a note), current words first, verify fit, then reply `--done`; reuse existing options |
+| `copy-options` | queued only; no alternatives generated yet | check that the request is not withdrawn; add `useCopy` to the requested lines in this variant only (headline and primary text/CTA without a note), current words first, verify fit, then reply `--done`; reuse existing options. One with an element and quoted words (highlighted in the page) is for those words only: one `useCopy` line on that element, not the headline and primary text |
 | `copy` | nothing (one comment per line changed since the last send, on that line's element; the text says option k of n, their own words, or back to today's words) | put the chosen words first in that line's `useCopy` options and keep the rest; then one `proto reply <batch> "…" --done` for the batch, in one line. The page drops its own choice once the words are first |
 
 ## 7. Only if asked: build it

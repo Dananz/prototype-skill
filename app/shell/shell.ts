@@ -51,7 +51,7 @@ export type Inbox = {
   /** The last agent that ran proto commands here: still running, or gone (T3 Code restarted, the terminal closed). */
   agent?: 'alive' | 'gone' | null
   batches: { id: string; at: string; state: 'sent' | 'seen' | 'lost' | 'done'; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null
-    comments: { n: number; route: string; action?: Action; done: boolean; withdrawn?: boolean; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null }[] }[]
+    comments: { n: number; route: string; action?: Action; done: boolean; withdrawn?: boolean; scoped?: boolean; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null }[] }[]
 }
 /** An element a comment is on or tags. Rect is in CSS px from the variant root's top left; src and
  *  component say where it is written (`today/parts.tsx:30`, `PriceCard`). */
@@ -153,6 +153,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     place: { view: 'session' } as Place,
     focus: false,
     open: null as string | null,
+    /** The variant whose options are open (from its row in the sidebar), and where. */
+    vmenu: null as { proto: string; variant: string; x: number; y: number } | null,
     archived: false,
     side: q.has('side') ? q.get('side') !== '0' : localStorage.getItem('proto-side') !== '0',
     sideW: Math.min(SIDE_MAX, Math.max(SIDE_MIN, Number(localStorage.getItem('proto-side-w')) || SIDE_W)),
@@ -337,8 +339,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function vRow(q: Proto, v: Variant, sel: boolean, big = false) {
     const pl = st.place, here = pl.view === 'variant' && pl.proto === q.id && pl.variant === v.id
     const w = workOf(), kids = kidsOf(q, v.id).length > 0
-    return `<button data-act="mv:${esc(q.id)}:${v.id}" aria-current="${sel}" class="${rowCls(big)} ${here ? 'bg-sky-500/15 font-medium text-sky-950 dark:text-sky-50' : sel ? SELC : ROWC}">
-      <span class="w-3.5 shrink-0 text-center text-[11px] font-semibold ${sel ? '' : 'text-zinc-400'}">${v.id}</span><span dir="auto" class="min-w-0 flex-1 truncate">${esc(v.name)}</span>${v.id === pickOf(q) ? `<span title="Picked" class="shrink-0">${ic('check', `size-3 ${PICK}`)}</span>` : ''}${w?.p === q && w.v === v ? `<span title="Your requests change this one" class="shrink-0">${ic('pin', 'size-3 text-emerald-600 dark:text-emerald-400')}</span>` : ''}${openComments(q.id, v.id)}${editing(q.id, v.id) ? pulse('size-1.5') : ''}${kids ? ic('right', `size-3 shrink-0 ${sel ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400'}`) : ''}</button>`
+    return `<div data-mv="${esc(q.id)}:${v.id}" class="group/vr relative"><button data-act="mv:${esc(q.id)}:${v.id}" aria-current="${sel}" class="${rowCls(big)} ${here ? 'bg-sky-500/15 font-medium text-sky-950 dark:text-sky-50' : sel ? SELC : ROWC}">
+      <span class="w-3.5 shrink-0 text-center text-[11px] font-semibold ${sel ? '' : 'text-zinc-400'}">${v.id}</span><span dir="auto" class="min-w-0 flex-1 truncate">${esc(v.name)}</span><span class="flex shrink-0 items-center justify-end gap-1.5 ${big ? 'min-w-8' : 'min-w-6'} group-hover/vr:invisible group-has-[:focus-visible]/vr:invisible group-has-[[aria-expanded=true]]/vr:invisible [@media(pointer:coarse)]:me-6">${v.id === pickOf(q) ? `<span title="Picked" class="shrink-0">${ic('picked', `size-4 ${PICK}`)}</span>` : ''}${w?.p === q && w.v === v ? `<span title="Your requests change this one" class="shrink-0">${ic('pin', 'size-3 text-emerald-600 dark:text-emerald-400')}</span>` : ''}${openComments(q.id, v.id)}${editing(q.id, v.id) ? pulse('size-1.5') : ''}${kids ? ic('right', `size-3 shrink-0 ${sel ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400'}`) : ''}</span></button><button data-act="vm:${esc(q.id)}:${v.id}" aria-label="Options for ${esc(v.name)}" aria-haspopup="menu" aria-expanded="${st.open === 'vmenu' && st.vmenu?.proto === q.id && st.vmenu.variant === v.id}" title="Options: comment on this, pick, build, Try it, copy options" class="absolute ${big ? 'right-2 size-8' : 'right-1 size-6'} top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-zinc-500 opacity-0 hover:bg-zinc-900/10 hover:text-zinc-900 focus-visible:opacity-100 group-hover/vr:opacity-100 group-has-[:focus-visible]/vr:opacity-100 aria-expanded:bg-zinc-900/10 aria-expanded:opacity-100 dark:text-zinc-400 dark:hover:bg-white/15 dark:hover:text-white dark:aria-expanded:bg-white/15 [@media(pointer:coarse)]:opacity-100">${ic('dots', 'size-5')}</button></div>`
   }
   /** One prototype in a column; choosing it opens its variants. */
   const pRow = (k: Proto, sel: boolean, big = false) => `<button data-act="mp:${esc(k.id)}" aria-current="${sel}" class="${rowCls(big)} ${sel ? SELC : k.archived ? 'text-zinc-400 hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]' : ROWC}">
@@ -393,6 +395,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div data-menu-sheet></div>
     <div data-comments-sheet></div>
     <div data-decide></div>
+    <div data-vmenu></div>
   </div>`
   const side = root.querySelector<HTMLElement>('[data-side]')!
   const grip = root.querySelector<HTMLElement>('[data-grip]')!
@@ -1035,6 +1038,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     paintHints()
     paintPill()
     paintDecide()
+    paintVmenu()
     paintView()
     // What the bar was drawn with, so a change is told from it (a view's frame can draw it before
     // its design has declared its copy lines or its motion), not from the last change heard.
@@ -1558,7 +1562,20 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       return
     }
     const [name, arg = '', arg2 = '', arg3 = ''] = el.dataset.act!.split(':')
+    // A row's own options (its ⋯): the same menu as right-click, beside the button.
+    if (name === 'vm') {
+      const r = el.getBoundingClientRect()
+      return openVmenu(arg, arg2, r.right + 6, r.top)
+    }
     act(name, arg, arg2, arg3)
+  })
+  // Right-click on a variant in the sidebar's columns opens the same options where the pointer is.
+  root.addEventListener('contextmenu', e => {
+    const row = (e.target as Element).closest<HTMLElement>('[data-mv]')
+    if (!row) return
+    e.preventDefault()
+    const [proto, variant] = row.dataset.mv!.split(':')
+    openVmenu(proto, variant, e.clientX, e.clientY)
   })
 
   root.addEventListener('input', e => {
@@ -1604,6 +1621,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
     if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && st.place.view === 'variant') { e.preventDefault(); step(e.key === 'ArrowRight' ? 1 : -1) }
     else if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
+    else if (e.key === 'C' && commentHost() && st.place.view === 'variant') { e.preventDefault(); commentWhole() }
     // Focus mode and the design's actions are the page outside's, when this page is in its view (viewKey).
     else if (e.key === 'f' && st.place.view === 'variant' && !framed) act(st.focus ? 'unfocus' : 'focus', '', '')
     else if (e.key === 'w' && workOf()) act('work', 'go', '')
@@ -1767,6 +1785,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const t = e.target as Element
     if (e.metaKey || e.ctrlKey || e.altKey || t.closest?.('input, textarea, select, [contenteditable]')) return
     if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
+    else if (e.key === 'C' && commentHost() && st.place.view === 'variant') { e.preventDefault(); commentWhole() }
     else if (e.key === 'f' && st.place.view === 'variant') act(st.focus ? 'unfocus' : 'focus', '', '')
     else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches) act('open', 'decide', '')
     else if (e.key === 'Escape' && comments.counts().picking) { e.preventDefault(); comments.escape() }
@@ -1887,6 +1906,44 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     anchor: () => { const b = bar.querySelector<HTMLElement>('[data-decide-btn]'); return b?.offsetParent ? b : null },
     onClose: () => { if (st.open === 'decide') { st.open = null; render() } },
   })
+
+  // ---------- a variant's options, from its row in the sidebar ----------
+  // Right-click on a row (or its ⋯): Comment on this, Pick, More like this, Build, Try it and copy
+  // options, for that variant whether or not it is the one on screen. Only the one on screen has
+  // its Try it list and copy lines read, so another's extras always offer to add them.
+  function openVmenu(proto: string, variant: string, x: number, y: number) {
+    st.vmenu = { proto, variant, x, y }
+    st.open = 'vmenu'
+    refreshStatus()
+    render()
+  }
+  function vmenuSubject(): Subject | null {
+    const m = st.vmenu, q = m && byId(m.proto), v = q?.variants.find(x => x.id === m?.variant)
+    if (!q || !v) return null
+    const cur = decideOf(), same = !!cur && cur.proto === q.id && cur.variant === v.id
+    return { proto: q.id, variant: v.id, name: v.name, picked: pickOf(q) === v.id, hints: same ? cur.hints : false, copy: same ? cur.copy : false }
+  }
+  const drawVmenu = comments.mountDecide(root.querySelector<HTMLElement>('[data-vmenu]')!)
+  const paintVmenu = () => drawVmenu({
+    open: st.open === 'vmenu', subject: vmenuSubject(), anchor: () => null,
+    at: st.vmenu ? { x: st.vmenu.x, y: st.vmenu.y } : undefined,
+    onClose: () => { if (st.open === 'vmenu') { st.open = null; render() } },
+    onComment: () => { const m = st.vmenu; if (m) commentWhole(m.proto, m.variant) },
+  })
+  /**
+   * Comment on the variant as a whole: opens where the box is (the docked panel's Comments tab, the
+   * phone's list) and puts the cursor in it. From another variant's row it goes there first.
+   */
+  function commentWhole(proto?: string, variant?: string) {
+    if (proto && variant && !(st.place.view === 'variant' && st.place.proto === proto && st.place.variant === variant)) go({ view: 'variant', proto, variant })
+    if (phoneMq.matches) comments.act.openSheet(true)
+    else if (railOn()) {
+      tab = 'comments'
+      if (!hintsOpen) { hintsOpen = true; remember('proto-hints', '1') }
+      paintHints()
+    }
+    comments.act.askWhole()
+  }
 
   // ---------- the side panel: comments, and Try it ----------
   // One panel, two tabs. Docked it narrows the stage; narrower it is a sheet over the design;
@@ -2039,7 +2096,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     fillTry()
   }
   // The pill's menu button is Try it's way out while its sheet is up or away.
-  hints.subscribe(() => { paintHints(); paintPill(); paintDecide() })
+  hints.subscribe(() => { paintHints(); paintPill(); paintDecide(); paintVmenu() })
   wideMq.addEventListener('change', () => { hintsOpen = wideMq.matches && localStorage.getItem('proto-hints') !== '0'; paintHints() })
   // A live value (a code that changes every 30 seconds) is re-read every second, in place.
   setInterval(() => {

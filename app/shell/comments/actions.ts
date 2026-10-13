@@ -3,7 +3,7 @@
 // Send posts every draft as one batch. Whatever is being written when the composer is put away
 // any way but Cancel or Add is held, and comes back with the next comment.
 import type { CommentBatch } from '../shell'
-import { climb, describe, find, reveal, openerOf } from './dom'
+import { climb, describe, find, reveal, openerOf, wholeTarget } from './dom'
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import { progress, type Store } from './store'
@@ -39,7 +39,8 @@ export function createActions(store: Store, host: Host) {
     toggle() { opening++; if (get().place) set(s => ({ mode: s.mode.kind === 'pick' ? { kind: 'idle' } : { kind: 'pick' }, active: null })) },
     stop() { opening++; set({ mode: { kind: 'idle' } }) },
     close() { opening++; set({ mode: { kind: 'idle' }, active: null, pendingTag: null }) },
-    begin(target: Target) { opening++; set({ mode: { kind: 'compose', target }, active: null }) },
+    /** `quote`: the words highlighted on the design, which start the comment as a quote. */
+    begin(target: Target, quote?: string) { opening++; set({ mode: { kind: 'compose', target, ...(quote ? { quote } : {}) }, active: null }) },
     /**
      * Moves the new comment being written up to the element around the one it is on, keeping what
      * was typed; `down` steps back to the element it came up from. A saved comment, or one on a
@@ -58,6 +59,30 @@ export function createActions(store: Store, host: Host) {
       if (m.kind !== 'compose' || !m.trail?.length) return
       set({ mode: { ...m, target: m.trail[m.trail.length - 1], trail: m.trail.slice(0, -1) } })
     },
+    /** The variant on screen as a target (in the device view's layout while one is on); null where there is no design. */
+    wholeTarget(): Target | null {
+      const mount = host.mount(), p = get().place
+      if (!mount || !p) return null
+      const t = wholeTarget(mount, p.title), v = host.view?.()
+      return v?.size ? { ...t, view: { size: v.size, w: v.w!, h: v.h! } } : t
+    },
+    /**
+     * A comment on the variant as a whole, from the box in the Comments panel: saved as a draft at
+     * once with no composer in between, so a comment half-written on an element is left as it is.
+     */
+    commentWhole(text: string) {
+      const p = get().place, t = act.wholeTarget(), words = text.trim()
+      if (!p || !t || !words) return false
+      const n = Math.max(0, ...get().items.filter(i => i.proto === p.proto && i.variant === p.variant).map(i => i.n)) + 1
+      const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, body: [words], tags: [], target: t, at: Date.now() }
+      set(s => ({ items: [...s.items, item] }))
+      if (get().live) void act.send()
+      return true
+    },
+    wholeFocus(on: boolean) { if (get().wholeFocus !== on) set({ wholeFocus: on }) },
+    /** Puts the focus in the whole-variant box (the shell has opened the panel or the sheet around it). */
+    askWhole() { set({ focusAsk: true }) },
+    askDone() { if (get().focusAsk) set({ focusAsk: false }) },
     /** A comment on a moment or a range of the motion, written in the motion dock. */
     beginTime(time: Time) { opening++; set({ mode: { kind: 'time', time }, active: null }) },
     /** Pick an element to tag from the open composer; it comes back to it with the pick. */
@@ -184,6 +209,24 @@ export function createActions(store: Store, host: Host) {
       if (r.nothing) throw new Error(`${to.variant} isn’t picked any more, so there was nothing to take back.`)
       if (r.marked) throw new Error(`Picked ${to.variant}, but your requests still change the variant they did (${r.failed}). Claude is told.`)
       throw new Error(`Couldn’t ${action === 'pick' ? `pick ${to.variant}` : 'take the pick back'}: ${r.failed}. Claude is told.`)
+    },
+    /**
+     * Generate copy options for the words highlighted on the design: a request of its own (action
+     * copy-options, on the element they are in, the words and the optional note as its text), not the
+     * whole variant's. It joins the list as already sent, with no pin. Throws with the server's reason.
+     */
+    async askCopy(target: Target, quote: string, note = '') {
+      const p = get().place
+      if (!p) throw new Error('Nothing to ask about here')
+      const words = note.trim()
+      const text = `Generate copy options for “${quote}”${words ? `: ${words}` : ''}`
+      const sent = await host.send({
+        theme: host.dark() ? 'dark' : 'light',
+        viewport: { w: innerWidth, h: innerHeight, phone: p.phone },
+        comments: [{ route: `${p.proto}/${p.variant}`, text, action: 'copy-options', target }],
+      })
+      const item: Item = { id: uid(), proto: p.proto, variant: p.variant, n: 0, body: [`“${quote}”${words ? ` · ${words}` : ''}`], tags: [], action: 'copy-options', target, at: Date.now(), sent: { batch: sent.id, i: 1 } }
+      set(s => ({ items: s.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? s.items : [...s.items, item] }))
     },
     clearError() { set({ error: '' }) },
     openSheet(open: boolean) { set({ sheet: open }) },
