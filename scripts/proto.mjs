@@ -1249,6 +1249,24 @@ function handoff() {
   if (!file) die(`${t.proto}/${t.variant} has no file in ${tilde(pdir)}`)
   const files = variantFiles(join(dir, 'src', 'protos'), file)
   const rel = f => relative(pdir, f).split(sep).join('/')
+  // A <Slot> in a file stands for the variant the page has plugged in: that is what the build is of,
+  // so its files join the list (nested slots too, as the list grows). An archived child plugs
+  // nothing in, as in the page.
+  const fileOf = (proto, letter) => [STACKS[s.stack]?.ext, 'tsx', 'jsx', 'vue'].filter(Boolean).map(x => join(dir, 'src', 'protos', proto, `${letter}.${x}`)).find(f => existsSync(f))
+  const metaIn = slug => { try { return readMeta(dir, slug) } catch { return null } }
+  const slots = []
+  for (let i = 0; i < files.length; i++) {
+    for (const m of readFileSync(files[i].file, 'utf8').matchAll(/<Slot\s+proto="([^"]+)"\s+id="([^"]+)"/g)) {
+      const use = metaIn(m[1])?.slots?.[m[2]]?.use
+      const [from, letter] = String(use || '').split('/')
+      const f = from && letter && !metaIn(from)?.archived && fileOf(from, letter)
+      if (!f || slots.some(x => x.proto === m[1] && x.id === m[2])) continue
+      slots.push({ proto: m[1], id: m[2], use, file: f, in: files[i].file })
+      for (const x of variantFiles(join(dir, 'src', 'protos'), f)) {
+        if (!files.some(y => y.file === x.file)) files.push({ ...x, by: x.by || files[i].file, ...(x.by ? {} : { via: `${m[1]}/${m[2]}` }) })
+      }
+    }
+  }
   // Each finding once, with every place it is: the same classes on twelve lines are one line to tick.
   const found = { mark: new Map(), motion: new Map(), material: new Map(), interaction: new Map(), asset: new Map(), copy: new Map(), hints: new Map(), review: new Map() }
   const note = (group, tokens, f, n) => {
@@ -1283,7 +1301,8 @@ function handoff() {
   if (meta.picked) out.push(meta.picked === t.variant ? `- The user picked ${t.variant}` : `- The user picked ${meta.picked}, not ${t.variant}`)
   const section = (title, list) => { if (list.length) out.push('', `## ${title}`, ...list.map(x => `- [ ] ${x}`)) }
 
-  section('Files', files.map(x => `${x.file}${x.by ? ` (imported by ${rel(x.by)})` : ''}`))
+  section('Files', files.map(x => `${x.file}${x.via ? ` (plugged into ${rel(x.by)} by slot ${x.via})` : x.by ? ` (imported by ${rel(x.by)})` : ''}`))
+  section('Slots', slots.map(x => `${x.id} in ${rel(x.in)} is ${x.use} (${rel(x.file)}), not the markup written there: build the plugged-in design in its place`))
   // The states this variant has, with its own note where it has one, else the first variant's.
   const first = Object.keys(meta.variants || {}).sort((a, b) => a.length - b.length || a.localeCompare(b))[0]
   const states = (Array.isArray(meta.states) ? meta.states : []).filter(x => x?.id && Array.isArray(x.click) && (!x.only?.length || x.only.includes(t.variant)))
@@ -1393,7 +1412,7 @@ const where = e => {
 // by the server as it arrives. A pick's note stays pending; plain picks come done, unless failed or, for
 // an unpick, there was no pick there to take back.
 const ACTIONS = {
-  pick: 'done: marked in the page and now the working variant; a reply is only a note',
+  pick: 'done: marked in the page and now the working variant (on a prototype made to stand in for part of another, it is already plugged in there); a reply is only a note',
   unpick: 'done: the pick is off in the page; a reply is only a note',
   more: 'new variants in this prototype, named after this one',
   'more-variants': 'new variants in this prototype (the route is the prototype; count says how many): continue its letters with proto add <slug> --variants "…", each a new direction, different from the existing variants and from each other',
@@ -1453,6 +1472,17 @@ function printUses(dir, t, route) {
   }
 }
 
+// A pick or unpick on a prototype made to stand in for part of another is plugged in there (or out
+// again) by the page or `proto pick`: the source of that variant needs no edit for it.
+function standsIn(dir, c) {
+  if (c.action !== 'pick' && c.action !== 'unpick') return ''
+  const slug = c.route.split('/')[0]
+  try {
+    const m = readMeta(dir, slug)
+    return m?.slot && typeof m.from === 'string' ? `; ${slug} fills the ${m.slot} slot of ${m.from}, which follows the pick by itself: no source edit` : ''
+  } catch { return '' }
+}
+
 function printBatch(dir, b) {
   const vp = b.viewport ? ` · page ${b.viewport.w}x${b.viewport.h}${b.viewport.phone ? ' (phone)' : ''}` : ''
   // A comment the user deleted in the page after sending it is withdrawn: left out, only counted.
@@ -1463,7 +1493,7 @@ function printBatch(dir, b) {
     console.log(`\n${c.n}. ${c.route}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
     if (c.action === 'more-variants') console.log(`   count: ${c.count} new variant${c.count === 1 ? '' : 's'}`)
-    if (c.action) console.log(`   action: ${c.action} (${c.failed && FAILED[c.action] ? FAILED[c.action](c, c.failed) : c.action === 'pick' && c.note && !c.done ? 'marked in the page and now the working variant; handle the note, then reply --done' : ACTIONS[c.action] || ''})`)
+    if (c.action) console.log(`   action: ${c.action} (${c.failed && FAILED[c.action] ? FAILED[c.action](c, c.failed) : c.action === 'pick' && c.note && !c.done ? 'marked in the page and now the working variant; handle the note, then reply --done' : ACTIONS[c.action] || ''}${standsIn(dir, c)})`)
     // A comment pinned with a long press is on a spot; its element is only where that spot is.
     if (c.point) console.log(`   at: ${c.point.x},${c.point.y} (a spot, pinned with a long press)`)
     // On the motion (the page's motion dock): a moment or a range of its take, and how to see it.

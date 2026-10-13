@@ -78,6 +78,19 @@ export default function B() { return <main><h1>Home B</h1><Slot proto="slothome"
     proto(['pick', 'slotbtn', '--off'])
     await until('Original button', 'proto pick --off puts the original back')
     assert(!metaOf('slothome').slots.cta.use, 'proto pick --off left a pointer')
+    // A build of the parent is of the plugged-in design: its slot and that variant's file are named.
+    proto(['pick', 'slotbtn', 'B'])
+    const handoff = proto(['handoff', 'slothome/B'], { stdout: true })
+    assert(handoff.includes('## Slots') && handoff.includes('cta') && handoff.includes('slotbtn/B'), 'handoff does not name the slot and what is plugged in')
+    assert(handoff.includes('slotbtn/B.tsx'), 'handoff does not list the plugged-in variant\'s file')
+    proto(['pick', 'slotbtn', '--off'])
+    assert(!proto(['handoff', 'slothome/B'], { stdout: true }).includes('## Slots'), 'handoff names a slot with nothing plugged in')
+    // A pick in the page says it is already in the parent, so the agent edits no source for it.
+    proto(['inbox'])
+    await decide('slotbtn/B', 'pick')
+    const told = proto(['inbox'], { stdout: true })
+    assert(/action: pick \(done[^\n]*slotbtn fills the cta slot of slothome\/B/.test(told), `proto inbox does not say the pick is already plugged in: ${told}`)
+    await decide('slotbtn/B', 'unpick')
     proto(['inbox']) // the page's picks arrive done; take them so later queue counts start clean
   } finally { page.close() }
   console.log('\nOK: a variant plugs into its parent from a pick in the page and from proto pick, and handoff and inbox know it')
