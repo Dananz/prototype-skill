@@ -10,6 +10,7 @@ const PATHS: Record<string, string> = {
   ...SIZE_PATHS,
   chev: 'M6 9l6 6 6-6', right: 'M9 6l6 6-6 6', left: 'M15 6l-6 6 6 6',
   check: 'M5 12l5 5 9-10', x: 'M6 6l12 12M18 6 6 18',
+  help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.4 9.6a2.6 2.6 0 1 1 3.7 2.3c-.7.4-1.1.9-1.1 1.7M12 16.9v.1',
   key: 'M7.5 10a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM11.4 11.6 21 2M15.5 7.5l2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4',
   comment: 'M20 12a8 8 0 0 1-11.7 7.1L4 20l1-4.1A8 8 0 1 1 20 12z',
   at: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-3.5 7.1',
@@ -146,8 +147,8 @@ export const ACTION: Record<Action, { say: (v: string) => string; icon: string }
   unpick: { say: v => `Unpicked ${v}`, icon: 'undo' },
   more: { say: v => `More like ${v}`, icon: 'more' },
   build: { say: v => `Build ${v}`, icon: 'code' },
-  'try-it': { say: v => `Add Try it for ${v}`, icon: 'key' },
-  'copy-options': { say: v => `Add copy options for ${v}`, icon: 'text' },
+  'try-it': { say: v => `Needs explanation: ${v}`, icon: 'help' },
+  'copy-options': { say: v => `Generate copy options for ${v}`, icon: 'text' },
   copy: { say: v => `Copy for ${v}`, icon: 'text' },
 }
 /** A moment or a range of the motion, as the dock and the inbox write it: `0.35 s`, `0.30–0.62 s`. */

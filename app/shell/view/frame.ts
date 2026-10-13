@@ -14,6 +14,9 @@ export const framed = new URLSearchParams(location.search).has('dv') || (() => {
  *  frame's (view/index.tsx). */
 export const frameClicks = new Set<(e: MouseEvent) => void>()
 
+/** The page in the frame changed what is highlighted (its own document keeps its selection): heard out here for the floating menu on highlighted words. */
+export const frameSelections = new Set<() => void>()
+
 /** The page at a place, as a device view loads it: framed, in the theme of the page outside. */
 export const frameUrl = (hash: string, dark: boolean) => `${location.origin}${location.pathname}?dv=1&theme=${dark ? 'dark' : 'light'}${hash.startsWith('#') ? hash : `#${hash}`}`
 

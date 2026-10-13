@@ -1341,7 +1341,7 @@ const ACTIONS = {
   more: 'new variants in this prototype, named after this one',
   build: 'build this variant into the codebase',
   'try-it': 'add useHints for this variant only: useful demo values, steps and scenarios; preserve the working design; reply --done after checking it',
-  'copy-options': 'add useCopy for this variant only: headline and primary text by default, or the requested lines; keep current words first, add 2 to 4 alternatives; reply --done after checking fit',
+  'copy-options': 'add useCopy for this variant only: headline and primary text by default, or the requested lines; keep current words first, add 2 to 4 alternatives; reply --done after checking fit. On an element with quoted words (highlighted in the page): options for those words only, as one useCopy line on that element (data-copy)',
   copy: 'make this the line\'s text in the variant: put it first in that line\'s useCopy options',
 }
 const FAILED = {
