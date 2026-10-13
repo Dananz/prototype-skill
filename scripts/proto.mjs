@@ -1340,7 +1340,7 @@ const where = e => {
 }
 // A decision made on a variant in the page comes as a comment with an action and no element; the
 // line under it says what is already done and what is left for the agent. A pick or unpick is made
-// by the server as it arrives, so it comes done (a reply is only a note), unless it failed or, for
+// by the server as it arrives. A pick's note stays pending; plain picks come done, unless failed or, for
 // an unpick, there was no pick there to take back.
 const ACTIONS = {
   pick: 'done: marked in the page and now the working variant; a reply is only a note',
@@ -1411,7 +1411,7 @@ function printBatch(dir, b) {
   for (const c of live) {
     console.log(`\n${c.n}. ${c.route}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
-    if (c.action) console.log(`   action: ${c.action} (${c.failed && FAILED[c.action] ? FAILED[c.action](c, c.failed) : ACTIONS[c.action] || ''})`)
+    if (c.action) console.log(`   action: ${c.action} (${c.failed && FAILED[c.action] ? FAILED[c.action](c, c.failed) : c.action === 'pick' && c.note && !c.done ? 'marked in the page and now the working variant; handle the note, then reply --done' : ACTIONS[c.action] || ''})`)
     // A comment pinned with a long press is on a spot; its element is only where that spot is.
     if (c.point) console.log(`   at: ${c.point.x},${c.point.y} (a spot, pinned with a long press)`)
     // On the motion (the page's motion dock): a moment or a range of its take, and how to see it.

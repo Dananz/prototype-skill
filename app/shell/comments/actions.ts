@@ -200,7 +200,7 @@ export function createActions(store: Store, host: Host) {
       const sent = await host.send({
         theme: host.dark() ? 'dark' : 'light',
         viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 },
-        comments: [{ route: `${to.proto}/${to.variant}`, text: words ? `${say}: ${words}` : say, action }],
+        comments: [{ route: `${to.proto}/${to.variant}`, text: words ? `${say}: ${words}` : say, action, ...(action === 'pick' && words ? { note: words } : {}) }],
       })
       const item: Item = { id: uid(), proto: to.proto, variant: to.variant, n: 0, body: words ? [words] : [], tags: [], action, at: Date.now(), sent: { batch: sent.id, i: 1 } }
       set(s => ({ items: s.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? s.items : [...s.items, item] }))
