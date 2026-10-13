@@ -11,6 +11,7 @@
 // First: it wraps the page listeners every later import, and every design, adds (see quiet.ts).
 import { listen, quiet } from './quiet'
 import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } from './ui'
+import { BUILDING_CLASS, ERROR_CLASS, ownerOfPath, refOfPath } from './building'
 import { dock, edge, smooth, runDock, restoreEdgeLabels, stageHover, installPointerTracking, fadeOut } from './motion'
 import { hints, fillField, type Hint } from './hints'
 import { copy } from './copy'
@@ -36,7 +37,7 @@ export type Proto = { id: string; title: string; ask: string; kind: 'web' | 'pho
 export type Ref = { proto: string; variant: string }
 /** work: the variant being changed now; before: the ones worked on before it (newest first);
  *  asks: what the user asked for on each variant ("pricing/C"), oldest first. */
-export type Session = { id: string; name: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]> }
+export type Session = { id: string; name: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
 type Mount = (el: HTMLElement, component: any) => () => void
 // A variant can be shown in one of its states, or through a tool: all its states at once
 // (all), playing through them (play), or next to another variant (compare).
@@ -68,7 +69,7 @@ export type CommentBatch = {
  *  (marked: the pick is in meta.ts and only the working variant didn't move; nothing: an unpick of a
  *  variant that wasn't the pick). */
 export type Sent = { id: string; results: { n: number; action: Action; done: boolean; failed?: string; marked?: boolean; nothing?: boolean }[] }
-type Status = { lastEdit: number; keep: boolean; idleHours: number; deleteDays: number; work?: Ref | null; inbox?: Inbox }
+type Status = { lastEdit: number; edits?: Record<string, number>; keep: boolean; idleHours: number; deleteDays: number; work?: Ref | null; inbox?: Inbox }
 
 const PHONE = 'shrink-0 overflow-hidden rounded-[55px] border-[10px] border-zinc-900 bg-white text-zinc-900 shadow-xl dark:border-zinc-700 dark:bg-black dark:text-white'
 // The phone scale: Fit (0) or a percentage. The menu offers these in a row and a slider for
@@ -191,7 +192,19 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const active = () => protos.filter(p => !p.archived)
   const archived = () => protos.filter(p => p.archived)
   const byId = (id: string) => protos.find(p => p.id === id)
-  const editing = (p: string, v?: string) => !!st.editing && st.editing.proto === p && (!v || st.editing.variant === v)
+  // A variant is building from `proto add` until `proto done` (or, if that never comes, a few
+  // minutes after its last edit: seen here, or, for edits before this page loaded, known to the
+  // dev server's status): it is marked, and a render error keeps its last good frame.
+  const BUILD_IDLE = 180_000
+  const editedAt = new Map<string, number>()
+  const buildingUntil = (key: string) => {
+    const at = session.building?.[key]
+    return at ? Math.max(Date.parse(at), editedAt.get(key) ?? 0, st.status?.edits?.[key] ?? 0) + BUILD_IDLE : 0
+  }
+  const building = (p: string, v: string) => buildingUntil(`${p}/${v}`) > Date.now()
+  const buildingIn = (p: string) => Object.keys(session.building ?? {}).some(k => k.startsWith(`${p}/`) && building(p, k.slice(p.length + 1)))
+  const markBuilding = (host: HTMLElement) => { const [p, v] = (host.dataset.route ?? '').split('/'); host.toggleAttribute('data-building', !!v && building(p, v)) }
+  const editing = (p: string, v?: string) => (!!st.editing && st.editing.proto === p && (!v || st.editing.variant === v)) || (v ? building(p, v) : buildingIn(p))
   const cur = () => (st.place.view === 'session' ? undefined : byId(st.place.proto))
 
   // ---------- the working variant ----------
@@ -482,6 +495,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       live.set(host, () => {})
       // Copy choices are kept per variant, so every place it is mounted reads the same words.
       copy.bind(host, routeOfFile(v.file))
+      host.dataset.route = routeOfFile(v.file)
+      markBuilding(host)
       const here = () => !gone && live.has(host)
       return load(v).then(
         c => {
@@ -489,7 +504,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           live.set(host, mount(host, c))
           if (s?.click.length) return replay(host, s.click, here).then(miss => { if (miss && here()) missed(host, s, miss) })
         },
-        e => { if (here()) host.innerHTML = `<pre class="m-4 whitespace-pre-wrap rounded-lg bg-rose-50 p-4 text-xs text-rose-700 dark:bg-rose-950 dark:text-rose-200">${esc(e?.stack || e)}</pre>` })
+        // A file that doesn't load yet while it is being built says so, quietly; its error shows
+        // once it is done (setSession tries it again then).
+        e => { if (here()) host.innerHTML = host.hasAttribute('data-building') ? `<div class="${BUILDING_CLASS}">Building…</div>` : `<pre class="${ERROR_CLASS}">${esc(e?.stack || e)}</pre>` })
     }
     const stop = (host: HTMLElement) => {
       const off = live.get(host)
@@ -691,13 +708,27 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // At Fit a phone card stays 16:10 with the phone as it would sit in a 1200px-wide frame. At a
     // set scale the card grows to the phone at that size, kept within the card's width.
     const scale = st.place.view === 'session' ? 0 : st.scale
-    for (const t of layers.querySelectorAll<HTMLElement>('[data-thumb]')) {
-      if (!t.clientWidth) continue
+    // A web design's card shows it at the width the page is seen at: desktop on a wide screen, the
+    // phone layout on a phone (its breakpoints follow the window, so a 1200px canvas there drew the
+    // phone layout stretched).
+    const narrow = innerWidth < 640, w = narrow ? Math.max(320, Math.round(innerWidth)) : 1200, h = narrow ? Math.round(w * 1.4) : 750
+    const thumbs = [...layers.querySelectorAll<HTMLElement>('[data-thumb]')]
+    // Every size written first, then every width read once, so the page lays out once, not per card.
+    for (const t of thumbs) {
       const inner = t.firstElementChild as HTMLElement
-      if (!t.hasAttribute('data-pthumb')) { inner.style.zoom = String(t.clientWidth / 1200); continue }
-      t.style.aspectRatio = scale ? 'auto' : ''
-      t.style.paddingBlock = scale ? '20px' : ''
-      inner.style.zoom = String(scale ? Math.min(scale / 100, (t.clientWidth - 24) / parseFloat(inner.style.width)) : .78 * t.clientWidth / 1200)
+      if (!t.hasAttribute('data-pthumb')) {
+        inner.style.width = `${w}px`
+        inner.style.height = `${h}px`
+        t.style.aspectRatio = narrow ? `${w} / ${h}` : ''
+      } else {
+        t.style.aspectRatio = scale ? 'auto' : ''
+        t.style.paddingBlock = scale ? '20px' : ''
+      }
+    }
+    for (const [t, cw] of thumbs.map(t => [t, t.clientWidth] as const)) {
+      if (!cw) continue
+      const inner = t.firstElementChild as HTMLElement
+      inner.style.zoom = String(!t.hasAttribute('data-pthumb') ? cw / w : scale ? Math.min(scale / 100, (cw - 24) / parseFloat(inner.style.width)) : .78 * cw / 1200)
     }
     if (layer) fitBox(layer.el)
   }
@@ -761,7 +792,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const openProto = (id: string) => {
     const proto = byId(id)!
     const w = workOf()
-    const v = w?.p === proto ? w.v.id : editing(id) ? st.editing!.variant : proto.variants[0]?.id
+    const v = w?.p === proto ? w.v.id : st.editing?.proto === id ? st.editing.variant : proto.variants[0]?.id
     go(v ? { view: 'variant', proto: id, variant: v } : { view: 'proto', proto: id })
   }
 
@@ -813,7 +844,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const k = pickOf(p)
     return `<div class="${GRID} p-4 sm:p-6">${lobbyOrder(p).map(v => `<div class="min-w-0 ${k && v.id !== k ? 'opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" class="group block w-full min-w-0 text-left">
         <div class="overflow-hidden rounded-lg transition ${v.id === k ? 'ring-2 ring-emerald-500' : 'ring-1 ring-black/10 group-hover:ring-2 group-hover:ring-zinc-900 dark:ring-white/10 dark:group-hover:ring-white'}">${thumb(p, 'aspect-[16/10]')}</div>
-        <div class="mt-2 flex items-center gap-2"><span class="font-semibold">${v.id}</span><span class="truncate text-zinc-500">${esc(v.name)}</span>${v.id === k ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}Picked</span>` : ''}${editing(p.id, v.id) ? `<span class="ml-auto inline-flex items-center gap-1.5 text-xs text-emerald-600">${pulse('size-1.5')}editing</span>` : ''}</div></button>${kidChips(p, v.id)}</div>`).join('')}</div>`
+        <div class="mt-2 flex items-center gap-2"><span class="font-semibold">${v.id}</span><span class="truncate text-zinc-500">${esc(v.name)}</span>${v.id === k ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}Picked</span>` : ''}${editing(p.id, v.id) ? `<span class="ml-auto inline-flex items-center gap-1.5 text-xs text-emerald-600">${pulse('size-1.5')}${building(p.id, v.id) ? 'building' : 'editing'}</span>` : ''}</div></button>${kidChips(p, v.id)}</div>`).join('')}</div>`
   }
 
   // Every variant at full size, one after another, live. Each frame is at least as tall as the
@@ -826,6 +857,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- chrome ----------
   function render() {
+    layers.querySelectorAll<HTMLElement>('[data-route]').forEach(markBuilding)
     // Scrolled lists in the chrome keep their place when it is redrawn (a status ping, an edit).
     const keepScroll = (host: HTMLElement, html: string) => {
       const was = new Map([...host.querySelectorAll<HTMLElement>('[data-k]')].map(el => [el.dataset.k!, [el.scrollTop, el.scrollLeft]]))
@@ -963,6 +995,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const dockBtn = 'grid size-9 shrink-0 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white'
     const dockSep = '<span class="mx-1 h-5 w-px shrink-0 bg-white/15"></span>'
     overlay.innerHTML = framed || view !== 'variant' || !p ? '' : `
+      ${building(p.id, vid) ? `<div data-building-chip title="Claude is still building this one" class="pointer-events-none absolute left-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}Building</div>` : ''}
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
       ${!st.focus ? `<button data-act="focus" data-focus-btn title="Focus mode · F" class="absolute right-[calc(var(--hw,0px)+1rem)] top-3 z-10 hidden h-9 [@media(hover:hover)]:inline-flex items-center gap-1.5 rounded-full bg-zinc-900/80 px-3 text-xs font-medium text-white shadow-lg backdrop-blur transition-opacity duration-200 focus-visible:!opacity-100" style="opacity:${stageHover.on ? 1 : 0}">${ic('grow', 'size-3.5')}Focus</button>` : `
       ${st.open === 'fproto' ? `<div data-pop class="fixed bottom-[76px] left-1/2 z-20 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">${protoMenu}</div>` : ''}
@@ -2177,6 +2210,27 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   setInterval(ping, 60_000)
   document.addEventListener('visibilitychange', ping)
   setInterval(() => document.querySelectorAll<HTMLElement>('[data-ago]').forEach(el => { el.textContent = ago(Number(el.dataset.ago)) }), 1000)
+  // A Building mark that was never ended by `proto done` goes out a few minutes after the last edit.
+  let expiry = 0
+  const watchExpiry = () => {
+    clearTimeout(expiry)
+    const ends = Object.keys(session.building ?? {}).map(buildingUntil).filter(t => t > Date.now())
+    if (ends.length) expiry = window.setTimeout(() => { builtFailed(); render(); watchExpiry() }, Math.min(...ends) - Date.now() + 50)
+  }
+  // A variant that ended building shows what went wrong while it was: a file that couldn't load
+  // (shown again), and a compile error whose overlay was taken away (put back).
+  const hidden = new Map<string, unknown>(), erred = new Set<string>()
+  const builtFailed = () => {
+    if ([...failed].some(f => { const r = refOfPath(f); return r && !building(r.proto, r.variant) })) show(false)
+    for (const [key, err] of hidden) {
+      const [p, v] = key.split('/')
+      if (building(p, v)) continue
+      hidden.delete(key)
+      const Overlay = customElements.get('vite-error-overlay')
+      if (Overlay && !document.querySelector('vite-error-overlay')) document.body.append(new (Overlay as unknown as new (err: unknown) => HTMLElement)(err))
+    }
+  }
+  watchExpiry()
 
   // ---------- boot ----------
   installPointerTracking()
@@ -2234,6 +2288,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     setSession(next: Session) {
       const was = session.work
       session = next
+      builtFailed()
+      watchExpiry()
       if (!same(was, next.work)) {
         // Any move ends the wait: one that isn't the expected one is Claude's.
         const own = same(next.work, expected)
@@ -2251,14 +2307,32 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     setLive(live: boolean) { st.live = live; render() },
     setInbox(inbox: Inbox) { if (st.status) { st.status = { ...st.status, inbox }; render() } },
     sendComments: sendBatch,
+    /** A compile error from Vite: one in a variant (or a helper of its own) that is still building is
+     *  expected mid-build, so its overlay is taken away and kept until the variant is built. */
+    viteError(file: string, err: unknown) {
+      const r = ownerOfPath(file)
+      if (!r || !building(r.proto, r.variant)) return
+      hidden.set(`${r.proto}/${r.variant}`, err)
+      erred.add(`${r.proto}/${r.variant}`)
+      setTimeout(() => document.querySelector('vite-error-overlay')?.remove())
+    },
+    /** A hot update starts: errors from here on belong to it. */
+    updating() { erred.clear() },
+    /** A hot update ended (Vite says so even when the file didn't compile): an error kept for a
+     *  variant it touched is over, unless this update raised it. */
+    compiled(path: string) {
+      const r = ownerOfPath(path)
+      if (r && !erred.has(`${r.proto}/${r.variant}`)) hidden.delete(`${r.proto}/${r.variant}`)
+    },
     edited(paths: string[]) {
       let retrying = false
       for (const path of paths) {
         if (!path.includes('/src/protos/')) continue
         if (failed.has(path)) { failed.delete(path); retry.set(path, Date.now()); retrying = true }
         st.lastEdit = Date.now()
-        const m = path.match(/\/src\/protos\/([^/]+)\/([A-Z]{1,2})\.\w+/)
-        if (m) st.editing = { proto: m[1], variant: m[2] }
+        const r = refOfPath(path), owner = ownerOfPath(path)
+        if (r) st.editing = r
+        if (owner) editedAt.set(`${owner.proto}/${owner.variant}`, Date.now())
       }
       if (retrying) show(false)
       motionDock.edited(paths, st.place.view === 'variant' ? st.place.proto : null)
