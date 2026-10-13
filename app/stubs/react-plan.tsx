@@ -1,22 +1,38 @@
 // Placeholder while __ID__ · __NAME__ is being built: its one-line plan. Replace this whole file.
-import { font } from '../../fonts'
-
 const plan = __PLAN__
-const family = (name: string | null) => name ? `'${name}'` : undefined
+const steps = [
+  { label: 'Plan and look chosen', state: 'done' },
+  { label: 'Writing the first screen', state: 'active' },
+  { label: 'Content and interactions', state: 'wait' },
+  { label: 'Checks and screenshots', state: 'wait' },
+] as const
 
 export default function Variant() {
-  font(plan.display, plan.body)
   return (
-    <div dir={plan.dir} className="@container flex min-h-full flex-col p-[6cqi]" style={{ background: plan.surface, color: plan.ink }}>
-      <div className="flex items-center gap-2 text-[clamp(.75rem,1.4cqi,1rem)] opacity-60" style={{ fontFamily: family(plan.bodyFamily) }}>
-        <span className="size-2 animate-pulse rounded-full" style={{ background: plan.accent }} />
-        <span>Building __ID__ · __NAME__</span>
-      </div>
-      <h1 className="mt-[8cqi] text-[15cqi] leading-[0.95]" style={{ fontFamily: family(plan.displayFamily) }}>{plan.name}</h1>
-      {plan.concept && <p className="mt-6 max-w-[40ch] text-[clamp(1rem,2.6cqi,2rem)] opacity-80" style={{ fontFamily: family(plan.bodyFamily) }}>{plan.concept}</p>}
-      {plan.signature && <p className="mt-3 max-w-[40ch] text-[clamp(.875rem,1.8cqi,1.25rem)] opacity-60" style={{ fontFamily: family(plan.bodyFamily) }}>{plan.signature}</p>}
-      <div className="mt-auto flex gap-2 pt-[6cqi]">
-        {[plan.surface, plan.ink, plan.accent].filter(Boolean).map(c => <span key={c} className="size-6 rounded-full ring-1 ring-current/20" style={{ background: c }} />)}
+    <div dir="ltr" className="grid min-h-full place-items-center bg-zinc-50 p-6 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+      <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900" role="status" aria-live="polite">
+        <div className="flex items-center gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-sm font-semibold text-white dark:bg-zinc-100 dark:text-zinc-900">__ID__</span>
+          <div className="min-w-0">
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">Building</p>
+            <h1 className="truncate text-lg leading-tight font-semibold tracking-tight">{plan.name || '__NAME__'}</h1>
+          </div>
+        </div>
+        {plan.concept && <p className="mt-4 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">{plan.concept}</p>}
+        {plan.signature && <p className="mt-2 text-sm leading-relaxed text-zinc-500 dark:text-zinc-500">{plan.signature}</p>}
+        <ol className="mt-5 space-y-3 border-t border-zinc-100 pt-5 dark:border-zinc-800">
+          {steps.map(s => (
+            <li key={s.label} className="flex items-center gap-3 text-sm">
+              {s.state === 'done' && <span aria-hidden className="size-4 rounded-full bg-emerald-500" />}
+              {s.state === 'active' && <span aria-hidden className="size-4 rounded-full border-2 border-zinc-200 border-t-zinc-900 motion-safe:animate-spin dark:border-zinc-700 dark:border-t-zinc-100" />}
+              {s.state === 'wait' && <span aria-hidden className="size-4 rounded-full border-2 border-zinc-200 dark:border-zinc-700" />}
+              <span className={s.state === 'wait' ? 'text-zinc-400 dark:text-zinc-500' : s.state === 'active' ? 'font-medium' : 'text-zinc-600 dark:text-zinc-400'}>{s.label}</span>
+            </li>
+          ))}
+        </ol>
+        <div aria-hidden className="mt-5 flex gap-1.5">
+          {[plan.surface, plan.ink, plan.accent].filter(Boolean).map(c => <span key={c} className="size-3.5 rounded-full ring-1 ring-zinc-900/15 dark:ring-white/20" style={{ background: c }} />)}
+        </div>
       </div>
     </div>
   )

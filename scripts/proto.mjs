@@ -539,7 +539,7 @@ function plan() {
   for (const [id, d] of directions) {
     const f = join(pdir, `${id}.${kit.ext}`)
     if (!existsSync(f) || !/^(\/\/|<!--) Placeholder while /.test(readFileSync(f, 'utf8'))) continue
-    const data = { ...Object.fromEntries(PLAN_KEYS.map(k => [k, d[k] ? String(d[k]) : null])), dir: d.rtl ? 'rtl' : 'ltr', displayFamily: d.family, bodyFamily: d.body.split(':')[0].trim() || null }
+    const data = { ...Object.fromEntries(PLAN_KEYS.map(k => [k, d[k] ? String(d[k]) : null])), displayFamily: d.family, bodyFamily: d.body.split(':')[0].trim() || null }
     writeFileSync(f, stubOf(card, id, String(d.name || id)).replace('__PLAN__', () => JSON.stringify(data)))
     shown.push(id)
   }
