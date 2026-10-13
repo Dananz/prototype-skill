@@ -58,6 +58,7 @@ export async function pickNoteChecks({ proto, app, local, openPage, fail, keepSh
     const result = await response.json()
     const plain = JSON.parse(readFileSync(inboxFile(result.sent, 'new'), 'utf8'))
     assert(plain.done && plain.comments[0].done, 'plain pick no longer completes immediately')
+    proto(['inbox']) // Consume the completed plain-pick batch before later queue-count checks.
     proto(['pick', 'picknotes', '--off'])
     proto(['archive', 'picknotes'])
   }
