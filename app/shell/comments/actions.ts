@@ -78,7 +78,7 @@ export function createActions(store: Store, host: Host) {
         if (!i.target) return
         // The destination and its iframe can finish mounting after navigation. A later selection
         // cancels this request before it can press controls in another comment's design.
-        for (const end = performance.now() + 5000; request === opening && performance.now() < end; await new Promise(r => setTimeout(r, 40))) {
+        for (const end = performance.now() + 5000; request === opening && get().items.some(x => x.id === id) && performance.now() < end; await new Promise(r => setTimeout(r, 40))) {
           const mount = host.mount()
           if (!here(i) || !mount || mount.dataset.route !== routeOf(i) || !(find(mount, i.target) || openerOf(mount, i.target))) continue
           set(mode())

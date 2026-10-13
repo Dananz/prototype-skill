@@ -130,41 +130,48 @@ export function routeOf(mount: HTMLElement, el: HTMLElement): string[] {
   return out
 }
 
-/** Mounted panels may still be hidden by CSS or the hidden attribute. */
-export function shown(el: HTMLElement): boolean {
-  if (!el.getClientRects().length) return false
-  const w = el.ownerDocument.defaultView
-  if (!w) return false
-  const style = w.getComputedStyle(el)
-  if (style.visibility === 'hidden' || style.visibility === 'collapse') return false
-  for (let p: HTMLElement | null = el; p; p = p.parentElement) if (w.getComputedStyle(p).opacity === '0') return false
-  return true
-}
-
 const q = (mount: HTMLElement, sel: string) => { try { return mount.querySelector<HTMLElement>(sel) } catch { return null } }
-const partOpenedBy = (mount: HTMLElement, by: string) => [...mount.querySelectorAll<HTMLElement>('[data-opened-by]')].find(e => e.getAttribute('data-opened-by') === by && shown(e)) ?? null
+/**
+ * Whether an element shows: some size, and not hidden or transparent. A part can stay on the page
+ * while closed (a strip collapsed to nothing, a column faded out); that is closed, not open.
+ */
+export function shows(el: HTMLElement | null): el is HTMLElement {
+  if (!el?.isConnected) return false
+  const r = el.getBoundingClientRect()
+  if (r.width < 1 || r.height < 1) return false
+  const c = el as HTMLElement & { checkVisibility?: (o: object) => boolean }
+  return c.checkVisibility ? c.checkVisibility({ opacityProperty: true, visibilityProperty: true }) : el.ownerDocument.defaultView?.getComputedStyle(el).visibility !== 'hidden'
+}
+const partOpenedBy = (mount: HTMLElement, by: string) => [...mount.querySelectorAll<HTMLElement>('[data-opened-by]')].find(e => e.getAttribute('data-opened-by') === by && shows(e)) ?? null
 
 /** What opens a hidden element: the innermost control on its route that is on the page now. */
 export function openerOf(mount: HTMLElement, t: Pick<Target, 'route'>): HTMLElement | null {
-  for (let i = (t.route?.length ?? 0) - 1; i >= 0; i--) { const o = q(mount, t.route![i]); if (o && shown(o)) return o }
+  for (let i = (t.route?.length ?? 0) - 1; i >= 0; i--) { const o = q(mount, t.route![i]); if (shows(o)) return o }
   return null
 }
 
 /** Set while reveal presses an opener: the comment layer lets those presses reach the design. */
 export const passing = { on: false }
 
-/** A press the design takes as the user's: pointer and mouse down and up, then a click. */
-function pressOn(el: HTMLElement) {
+/**
+ * A press the design takes as the user's. `full` is what a mouse sends (pointer and mouse down and
+ * up, then a click); a control that acts on both its down and its click would open and close at
+ * once, so `click` sends the click alone and `down` the down and up alone.
+ */
+type Press = 'full' | 'click' | 'down'
+function pressOn(el: HTMLElement, how: Press) {
   const w = el.ownerDocument.defaultView as (Window & typeof globalThis) | null
   if (!w) return
   const r = el.getBoundingClientRect(), at = { bubbles: true, cancelable: true, composed: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 }
   passing.on = true
   try {
-    el.dispatchEvent(new w.PointerEvent('pointerdown', { ...at, pointerType: 'mouse', isPrimary: true }))
-    el.dispatchEvent(new w.MouseEvent('mousedown', at))
-    el.dispatchEvent(new w.PointerEvent('pointerup', { ...at, pointerType: 'mouse', isPrimary: true }))
-    el.dispatchEvent(new w.MouseEvent('mouseup', at))
-    el.click()
+    if (how !== 'click') {
+      el.dispatchEvent(new w.PointerEvent('pointerdown', { ...at, pointerType: 'mouse', isPrimary: true }))
+      el.dispatchEvent(new w.MouseEvent('mousedown', at))
+      el.dispatchEvent(new w.PointerEvent('pointerup', { ...at, pointerType: 'mouse', isPrimary: true }))
+      el.dispatchEvent(new w.MouseEvent('mouseup', at))
+    }
+    if (how !== 'down') el.click()
   } finally { passing.on = false }
 }
 
@@ -178,18 +185,25 @@ const until = async (f: () => boolean, ms = 1500) => { for (const end = performa
 export async function reveal(mount: HTMLElement | null, t: Target, current: () => boolean = () => true): Promise<HTMLElement | null> {
   if (!mount || !current()) return null
   const have = find(mount, t)
-  if ((have && shown(have)) || !t.route?.length) return have && shown(have) ? have : null
+  if (shows(have) || !t.route?.length) return shows(have) ? have : null
   for (const by of t.route) {
     if (!current() || !mount.isConnected) return null
     if (partOpenedBy(mount, by)) continue
-    const opener = q(mount, by)
-    if (!opener) break
-    pressOn(opener)
-    if (!await until(() => !current() || !!partOpenedBy(mount, by))) break
+    // The usual press first; if the part did not show (it opened and closed again, or the control
+    // listens to only one of them), the click alone, then the down alone.
+    let open = false
+    for (const how of ['full', 'click', 'down'] as const) {
+      if (!current() || !mount.isConnected) return null
+      const opener = q(mount, by)
+      if (!shows(opener)) break
+      pressOn(opener, how)
+      if ((open = await until(() => !current() || !!partOpenedBy(mount, by), 700))) break
+    }
+    if (!open) break
   }
-  await until(() => { const el = find(mount, t); return !current() || (!!el && shown(el)) }, 800)
+  await until(() => !current() || shows(find(mount, t)), 800)
   const el = find(mount, t)
-  return current() && el && shown(el) ? el : null
+  return current() && shows(el) ? el : null
 }
 
 /** A spot pinned with a long press, at screen point (cx, cy), with the element under it. */

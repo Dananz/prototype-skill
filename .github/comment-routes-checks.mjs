@@ -4,14 +4,14 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export async function commentRoutesChecks({ proto, app, openPage, fail }) {
-  for (const [slug, css, nested] of [['routefx', false, false], ['routecss', true, false], ['routenested', true, true]]) {
+  for (const [slug, css, nested, dual] of [['routefx', false, false, false], ['routecss', true, false, false], ['routenested', true, true, false], ['routepress', true, false, true]]) {
   proto(['add', slug, '--title', 'Menu route', '--variants', 'A:Menu'])
   writeFileSync(join(app, 'src', 'protos', slug, 'A.tsx'), `import { useState } from 'react'
 export default function Menu() {
   const [open, setOpen] = useState(false)
   const [inner, setInner] = useState(false)
   return <main style={{ padding: 24 }}>
-    <button data-shoot="opener" onClick={() => { setOpen(o => !o); setInner(false) }} style={{ width: 120, height: 40 }}>Open</button>
+    <button data-shoot="opener" ${dual ? 'onPointerDown={() => setOpen(o => !o)}' : ''} onClick={() => { setOpen(o => !o); setInner(false) }} style={{ width: 120, height: 40 }}>Open</button>
     ${css ? '' : '{open && '}<div data-shoot="menu" data-opened-by="[data-shoot=opener]" style={{ ${css ? "display: open ? 'block' : 'none'," : ''} marginTop: 8, width: 220, padding: 8, background: '#eee' }}>
       ${nested ? `<button data-shoot="inner-opener" onClick={() => setInner(o => !o)}>Inner</button>
       <div data-opened-by="[data-shoot=inner-opener]" hidden={!inner}>` : ''}

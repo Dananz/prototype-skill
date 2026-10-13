@@ -48,6 +48,14 @@ export async function commentNavigationChecks({ app, openPage, fail }) {
         if (!await until(() => current)) return 'the second destination never mounted'
         await new Promise(r => setTimeout(r, 900))
         if (clicks !== 0 || mount.querySelector('[data-shoot=nav-item]')) errors.push('a stale reveal opened the previous comment after another was selected')
+        // Deleting a comment while its destination loads must not resurrect its composer.
+        mount.innerHTML = ''; current = null; clicks = 0; delay = 100
+        store.set({ place: place('A') })
+        act.open('nav-target')
+        act.remove('nav-target')
+        if (!await until(() => current)) return 'the deletion destination never mounted'
+        await new Promise(r => setTimeout(r, 900))
+        if (clicks !== 0 || store.get().active === 'nav-target' || store.get().mode.kind === 'compose') errors.push('a deleted comment was reopened while its destination loaded')
         return errors.length ? errors.join('; ') : 'ok'
       } finally { clearTimeout(timer); act.close(); mount.remove(); localStorage.removeItem('proto-comments-nav-regression') }
     })()`)
