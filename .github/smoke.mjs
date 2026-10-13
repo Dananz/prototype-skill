@@ -23,6 +23,7 @@ import { commentPicturesChecks } from './comment-pictures-checks.mjs'
 import { commentUntilChecks } from './comment-until-checks.mjs'
 import { listenerChecks } from './listener-checks.mjs'
 import { pickNoteChecks } from './pick-note-checks.mjs'
+import { splitChecks } from './split-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -122,12 +123,21 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
     const enter = async () => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ...(type === 'keyDown' ? { text: '\r' } : {}) }, sessionId) }
     // Real fingers (Input.dispatchTouchEvent): touchStart, touchMove or touchEnd, with [x, y] per finger.
     const touch = (type, fingers) => send('Input.dispatchTouchEvent', { type, touchPoints: fingers.map(([x, y], id) => ({ x, y, id })) }, sessionId)
-    const screenshot = async file => {
-      const { data } = await send('Page.captureScreenshot', { format: 'png' }, sessionId)
+    // A real drag (Input.dispatchMouseEvent): pressed at one point, moved to the other in steps, released.
+    const drag = async ([x0, y0], [x1, y1], steps = 8) => {
+      const at = (type, x, y, extra = {}) => send('Input.dispatchMouseEvent', { type, x, y, button: 'left', ...extra }, sessionId)
+      await at('mouseMoved', x0, y0, { button: 'none' })
+      await at('mousePressed', x0, y0, { clickCount: 1, buttons: 1 })
+      for (let i = 1; i <= steps; i++) await at('mouseMoved', x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps, { buttons: 1 })
+      await at('mouseReleased', x1, y1, { clickCount: 1 })
+    }
+    const hover = (x, y) => send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' }, sessionId)
+    const screenshot = async (file, clip) => {
+      const { data } = await send('Page.captureScreenshot', { format: 'png', ...(clip ? { clip: { x: 0, y: 0, scale: 1, ...clip } } : {}) }, sessionId)
       mkdirSync(dirname(file), { recursive: true })
       writeFileSync(file, Buffer.from(data, 'base64'))
     }
-    return { run, close, press, enter, touch, screenshot }
+    return { run, close, press, enter, touch, drag, hover, screenshot }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {
@@ -158,6 +168,7 @@ await commentPicturesChecks({ proto, app, openPage, fail })
 await commentUntilChecks({ proto, app, fail })
 await listenerChecks({ proto, app, fail })
 await pickNoteChecks({ proto, app, local, openPage, fail, keepShots })
+await splitChecks({ proto, app, local, openPage, fail, keepShots })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
 proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--variants', 'A:Price only,B:Fuel tabs'])
