@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { startChrome, stopChrome } from './chrome.mjs'
+import { startChrome, stopChrome, waitReady } from './chrome.mjs'
 
 const argv = process.argv.slice(2)
 const flags = Object.fromEntries(argv.filter(a => a.startsWith('--') && !a.startsWith('--click=')).map(a => { const [k, ...v] = a.slice(2).split('='); return [k, v.join('=')] }))
@@ -77,7 +77,7 @@ try {
     const url = new URL(rawUrl)
     url.hash = '/' + route.replace(/^\/+/, '')
     await send('Page.navigate', { url: url.href }, t.sessionId)
-    for (let i = 0; i < 100 && !await t.ev('document.documentElement.dataset.ready === "1"'); i++) await sleep(100)
+    await waitReady(t.ev)
     await t.ev('document.fonts.ready.then(() => new Promise(r => setTimeout(r, 400)))')
     for (const sel of clicks) {
       if (!await t.ev(`(() => { const el = document.querySelector('[data-layers]')?.querySelector(${JSON.stringify(sel)}); el?.click(); return !!el })()`)) console.error(`compare: nothing matches --click ${sel} on ${route}`)

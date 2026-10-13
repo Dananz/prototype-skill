@@ -8,6 +8,7 @@
 //             [--from-picks]   built from every variant the user picked in this session
 //             [--kit[=<name>]] [--current <screen>]   on the project's design kit: its theme, parts and
 //             packages, and with --current that screen's saved Current as A (with its references)
+//   proto done <slug>/<letter>[ …] | <slug>   that variant is built: the page drops its Building mark
 //   proto shoot [route…] [--theme dark] [--focus] [--copy] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
 //             [--ref <png>]   instead, the variant's screen beside that screenshot of the real one
 //             [--as built]    with --ref: the png is the variant built in the codebase (<route>-vs-built.png)
@@ -34,8 +35,8 @@
 //   proto kit save <slug> [--sources <file,…>] [--kit=<name>]   the session's theme.css and that prototype's
 //             parts, packages and screen, kept for the next session (--sources: the files they came from)
 //   proto kit screen <name> <slug>[/<letter>] [--sources <file,…>]   a Current that matches its reference
-//   proto fonts [--draw <n>] [--hebrew] [--avoid <family,…>]   font pairings from Google Fonts (references/
-//             fonts.json); --draw: n at random, no family twice, for the directions of one prototype
+//   proto plan <slug>   each placeholder shows its direction's one-line plan from .proto/briefs/<slug>.json
+//   proto fonts [--hebrew]   the title-and-body pairings (references/fonts.json) and the faces never used for a title
 //   proto archive <slug> [--off]    proto keep [--off]      proto url    proto stack
 //   proto stop    proto rm    proto ls    proto gc
 //
@@ -68,8 +69,8 @@ const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.
 // only; `proto up` never adds them to an existing one, so a running session isn't reinstalled and
 // restarted for packages it never asked for.
 const STACKS = {
-  react: { deps: {}, craft: { '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', stub: 'react.tsx' },
-  vue: { deps: { vue: '^3.5.0' }, craft: { '@phosphor-icons/vue': '^2.2.1', 'motion-v': '^2.7.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue' },
+  react: { deps: {}, craft: { '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', stub: 'react.tsx', plan: 'react-plan.tsx' },
+  vue: { deps: { vue: '^3.5.0' }, craft: { '@phosphor-icons/vue': '^2.2.1', 'motion-v': '^2.7.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue', plan: 'vue-plan.vue' },
 }
 
 // ---------- arguments ----------
@@ -141,10 +142,29 @@ const sessionFile = dir => join(dir, 'session.json')
 const readSession = dir => readJson(sessionFile(dir), null)
 // The page hot-reloads session.json, so a write that changes nothing is skipped. Read right
 // before it is written, since the dev server writes it too (a pick made in the page).
+// session.json is read, changed and written by several processes at once (subagents' parallel
+// `proto done`, the dev server stamping edits), so each change is made under a lock: a directory,
+// which only one of them can create. One held past 5 s was left by a crash and is taken over.
+// app/server.mjs takes the same lock.
+function locked(dir, fn) {
+  const lock = join(dir, '.proto', 'session.lock')
+  mkdirSync(dirname(lock), { recursive: true })
+  let mine = false
+  for (let i = 0; i < 200 && !mine; i++) {
+    try { mkdirSync(lock); mine = true } catch {
+      try { if (Date.now() - statSync(lock).mtimeMs > 5000) rmSync(lock, { recursive: true, force: true }) } catch { /* just released */ }
+      if (!mine) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+    }
+  }
+  try { return fn() } finally { if (mine) rmSync(lock, { recursive: true, force: true }) }
+}
+// patch: the fields to change, or a function of the session as it is now that returns them.
 function patchSession(dir, patch) {
-  const was = readSession(dir), s = { ...was, ...patch }
-  if (JSON.stringify(s) !== JSON.stringify(was)) writeJson(sessionFile(dir), s, scratchOf(dir))
-  return s
+  return locked(dir, () => {
+    const was = readSession(dir), s = { ...was, ...(typeof patch === 'function' ? patch(was) : patch) }
+    if (JSON.stringify(s) !== JSON.stringify(was)) writeJson(sessionFile(dir), s, scratchOf(dir))
+    return s
+  })
 }
 function need(dir) { if (!existsSync(sessionFile(dir))) die(`no prototype session here yet (${tilde(dir)}). Run: proto up`); return readSession(dir) }
 
@@ -418,6 +438,7 @@ function add() {
     if (flags['from-picks']) console.log(`from ${refs.join(', ')}`)
   }
   const list = String(flags.variants || '').split(',').map(x => x.trim()).filter(Boolean)
+  const fresh = []
   // On the design kit: a new prototype takes its frame from it, unless told otherwise.
   const design = flags.kit || flags.current ? kitFor(s) : null
   if (design && !existsSync(metaFile)) {
@@ -426,7 +447,6 @@ function add() {
   }
   mkdirSync(pdir, { recursive: true })
   const stub = readFileSync(join(APP, 'stubs', kit.stub), 'utf8')
-  const stubOf = (id, name) => stub.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name)
   // A saved Current is A, first in the list, whether or not --variants named it.
   if (flags.current && !current().variants.A && !list.some(e => e.split(':')[0] === 'A')) added.A = 'Current'
   for (const entry of list) {
@@ -435,10 +455,12 @@ function add() {
     const name = rest.join(':').trim() || id
     added[id] = name
     const file = join(pdir, `${id}.${kit.ext}`)
-    if (!existsSync(file)) writeFileSync(file, stubOf(id, name))
+    if (!existsSync(file)) { writeFileSync(file, stubOf(stub, id, name)); fresh.push(id) }
   }
   if (design) {
-    useKit(dir, pdir, slug, design, flags.current && { file: join(pdir, `A.${kit.ext}`), stub: stubOf('A', added.A ?? current().variants.A) })
+    useKit(dir, pdir, slug, design, flags.current && { file: join(pdir, `A.${kit.ext}`), stub: stubOf(stub, 'A', added.A ?? current().variants.A) })
+    // A saved Current is already built.
+    if (flags.current && fresh.includes('A')) fresh.splice(fresh.indexOf('A'), 1)
   }
   // meta.ts goes last, so the page sees the prototype with all its variants at once. It is read
   // again just before: a pick made in the page meanwhile is written by the dev server, and stays.
@@ -447,8 +469,85 @@ function add() {
   for (const k of drop) delete head[k]
   const meta = { ...head, variants: { ...variants, ...added } }
   writeWhole(metaFile, `// Prototype: ${String(meta.title).replace(/[\r\n\u2028\u2029]+/g, ' ')}. Variant files are named by their letter; names live here.\nexport default ${JSON.stringify(meta, null, 2)}\n`, scratchOf(dir))
+  // A new variant is building until `proto done`: the page marks it, and an edit that throws keeps
+  // its last good frame instead of an error.
+  if (fresh.length) {
+    const at = new Date().toISOString()
+    patchSession(dir, now => ({ building: { ...now.building, ...Object.fromEntries(fresh.map(id => [`${slug}/${id}`, at])) } }))
+  }
   console.log(`${pdir}: ${Object.keys(meta.variants).map(id => `${id}.${kit.ext}`).join(' ') || 'no variants'}`)
   if (s.url) console.log(`${s.url}#/${slug}`)
+}
+
+// A placeholder for a variant, from one of app/stubs/: its name kept on one line, which the
+// "Placeholder while" header needs.
+const stubOf = (template, id, name) => template.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name.replace(/[\r\n]+/g, ' '))
+// What one line of a direction's plan holds (.proto/briefs/<slug>.json), shown on its placeholder.
+const PLAN_KEYS = ['name', 'concept', 'display', 'body', 'surface', 'ink', 'accent', 'signature']
+
+// The one-line plans are written: each variant still on its placeholder shows its own (name, concept,
+// display face, colors) until its first real write. A variant already written is left alone.
+function plan() {
+  const dir = sessionDir()
+  const s = need(dir)
+  const slug = args[0]
+  const pdir = join(dir, 'src', 'protos', slug || '')
+  if (!slug || !existsSync(join(pdir, 'meta.ts'))) die('which prototype? proto plan <slug> (after proto add)')
+  const file = join(dir, '.proto', 'briefs', `${slug}.json`)
+  const brief = readJson(file, null) || die(`write the one-line plans to ${tilde(file)} first: { "facts": "…", "directions": { "A": { ${PLAN_KEYS.map(k => `"${k}"`).join(', ')} } } }`)
+  // Each direction once, its font specs without a font('…') around them, and its script: the
+  // brief's "script" (or the direction's own), else the one its name and concept are written in.
+  const spec = v => String(v ?? '').trim().replace(/^font\(\s*['"]?|['"]?\s*\)$/g, '')
+  const scriptOf = d => d.script || brief.script || (/[֐-׿]/.test(`${d.name} ${d.concept}`) ? 'hebrew' : /[؀-ۿ]/.test(`${d.name} ${d.concept}`) ? 'arabic' : 'latin')
+  const directions = Object.entries(brief.directions || {}).map(([id, d]) => {
+    const p = { ...d, display: spec(d.display), body: spec(d.body), script: scriptOf(d) }
+    return [id, { ...p, family: p.display.split(':')[0].trim(), rtl: ['hebrew', 'arabic', 'persian', 'urdu'].includes(p.script) }]
+  })
+  // Title faces come from the catalog's display faces for the direction's script, or the brand's own
+  // faces listed in "brandFonts". A script the catalog has no pairings for keeps only the
+  // never-for-titles list, which otherwise just words the refusal.
+  const cat = readJson(join(SKILL, 'references', 'fonts.json'), {})
+  const never = new Map((cat.neverTitle || []).map(n => [n.family.toLowerCase(), n.why]))
+  const titles = script => new Set((cat.pairings || []).filter(p => p.script === script).map(p => p.display.family.toLowerCase()))
+  const brand = new Set((brief.brandFonts || []).map(f => String(f).toLowerCase()))
+  const banned = directions.map(([id, d]) => {
+    const f = d.family.toLowerCase(), ok = titles(d.script)
+    return [id, d.family, !f ? 'no display face' : brand.has(f) ? '' : never.get(f) || (!ok.size || ok.has(f) ? '' : `not a ${d.script} title face in the catalog`)]
+  }).filter(([, , why]) => why)
+  if (banned.length) die(`not a title face: ${banned.map(([id, f, why]) => `${id} ${f || '?'} (${why})`).join(', ')}. Title faces come from \`proto fonts\` (references/fonts.json), or the brand's own faces in "brandFonts". Choose another for ${banned.map(([id]) => id).join(', ')}.`)
+  const kit = STACKS[s.stack]
+  const card = readFileSync(join(APP, 'stubs', kit.plan), 'utf8')
+  const shown = []
+  for (const [id, d] of directions) {
+    const f = join(pdir, `${id}.${kit.ext}`)
+    if (!existsSync(f) || !/^(\/\/|<!--) Placeholder while /.test(readFileSync(f, 'utf8'))) continue
+    const data = { ...Object.fromEntries(PLAN_KEYS.map(k => [k, d[k] ? String(d[k]) : null])), dir: d.rtl ? 'rtl' : 'ltr', displayFamily: d.family, bodyFamily: d.body.split(':')[0].trim() || null }
+    writeFileSync(f, stubOf(card, id, String(d.name || id)).replace('__PLAN__', () => JSON.stringify(data)))
+    shown.push(id)
+  }
+  console.log(shown.length ? `plans shown: ${shown.join(', ')}` : 'no placeholders left to show a plan on')
+}
+
+// A variant is built (its checks passed): the page drops its Building mark and shows its errors
+// again. `proto done <slug>` ends every variant of that prototype.
+function done() {
+  const dir = sessionDir()
+  need(dir)
+  if (!args.length) die('which variant? proto done <slug>/<letter> (or <slug> for all of its variants)')
+  const ended = endBuilding(dir, args)
+  console.log(ended.length ? `built: ${ended.join(', ')}` : `nothing was building there (${args.join(', ')})`)
+}
+
+// Ends the Building mark of each <slug>/<letter> (or every variant of a <slug>); returns the keys ended.
+function endBuilding(dir, refs) {
+  let ended = []
+  patchSession(dir, now => {
+    const building = { ...now.building }
+    ended = Object.keys(building).filter(k => refs.some(ref => ref.includes('/') ? k === ref : k.startsWith(`${ref}/`)))
+    for (const k of ended) delete building[k]
+    return { building }
+  })
+  return ended
 }
 
 // meta.ts with its object replaced. Through a function: a replacement string would read `$&` or `$$`
@@ -544,7 +643,7 @@ function ask() {
   const t = flags.to ? target(dir, flags.to) : s.work
   if (!t) die('no working variant yet: proto work <slug>/<letter> --ask "…"')
   const key = `${t.proto}/${t.variant}`, at = new Date().toISOString()
-  patchSession(dir, { asks: { ...s.asks, [key]: [...(s.asks?.[key] || []), ...texts.map(text => ({ at, text }))] } })
+  patchSession(dir, now => ({ asks: { ...now.asks, [key]: [...(now.asks?.[key] || []), ...texts.map(text => ({ at, text }))] } }))
   console.log(`${key}: ${(s.asks?.[key]?.length || 0) + texts.length} asks`)
 }
 
@@ -558,6 +657,7 @@ function archive() {
   meta.archived = !flags.off
   writeWhole(metaFile, withMeta(text, meta), scratchOf(dir))
   if (meta.archived && readSession(dir).work?.proto === args[0]) patchSession(dir, { work: null })
+  if (meta.archived) endBuilding(dir, [args[0]])
   console.log(`${args[0]} ${meta.archived ? 'archived' : 'restored'}`)
 }
 
@@ -1631,25 +1731,17 @@ function useKit(dir, pdir, slug, { name, k, kd }, a) {
 // two sessions with the same brief don't land on the same faces; no family appears twice in a draw.
 function fonts() {
   const cat = readJson(join(SKILL, 'references', 'fonts.json'), null) || die('references/fonts.json is missing')
-  const avoid = new Set(String(flags.avoid || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean))
-  const fams = p => ['display', 'body', 'utility'].filter(r => p[r]).map(r => p[r].family)
-  let pool = cat.pairings.filter(p => p.script === (flags.hebrew ? 'hebrew' : 'latin') && !fams(p).some(f => avoid.has(f.toLowerCase())))
-  if (flags.draw) {
-    const n = Number(flags.draw) || 1, out = [], used = new Set()
-    pool = pool.map(p => [Math.random(), p]).sort((a, b) => a[0] - b[0]).map(x => x[1])
-    for (const p of pool) { if (out.length >= n) break; if (fams(p).some(f => used.has(f))) continue; fams(p).forEach(f => used.add(f)); out.push(p) }
-    pool = out
+  for (const p of cat.pairings.filter(p => p.script === (flags.hebrew ? 'hebrew' : 'latin'))) {
+    const roles = ['display', 'body', 'utility'].filter(r => p[r])
+    console.log(`${p.mood} (${p.script}): ${roles.map(r => p[r].family).join(' / ')}`)
+    console.log(`  font(${[...new Set(roles.map(r => p[r].spec))].map(s => `'${s}'`).join(', ')})`)
   }
-  for (const p of pool) {
-    const specs = [...new Set(['display', 'body', 'utility'].filter(r => p[r]).map(r => p[r].spec))]
-    console.log(`${p.mood} (${p.script}): ${fams(p).join(' / ')}`)
-    console.log(`  font(${specs.map(s => `'${s}'`).join(', ')})`)
-  }
-  if (flags.hebrew && !flags.draw) console.log(`\nEvery Google family with Hebrew: ${cat.hebrew.join(', ')}`)
+  if (flags.hebrew) console.log(`\nEvery Google family with Hebrew: ${cat.hebrew.join(', ')}`)
+  console.log(`\nNever for a title: ${(cat.neverTitle || []).map(n => n.family).join(', ')}`)
 }
 
 const commands = {
-  up, add, pick, work, ask, archive, shoot, compare, perf, handoff, snap, inbox, reply, gc: () => gc(false), ls,
+  up, add, plan, done, pick, work, ask, archive, shoot, compare, perf, handoff, snap, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
   rm: () => rm(),
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },

@@ -9,7 +9,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { startChrome, stopChrome } from './chrome.mjs'
+import { startChrome, stopChrome, waitReady } from './chrome.mjs'
 
 const [rawUrl, outDir, widthArg, specFile] = process.argv.slice(2)
 if (!rawUrl || !outDir || !specFile) { console.error('usage: snap.mjs <app-url> <out-dir> <width> <spec.json>'); process.exit(1) }
@@ -191,7 +191,7 @@ try {
     if (phone) url.searchParams.set('focus', '1')
     url.hash = '/' + v.route
     await send('Page.navigate', { url: url.href }, sessionId)
-    for (let i = 0; i < 100; i++) { const { result } = await send('Runtime.evaluate', { expression: 'document.documentElement.dataset.ready === "1"', returnByValue: true }, sessionId); if (result.value) break; await sleep(100) }
+    await waitReady(expression => send('Runtime.evaluate', { expression, returnByValue: true }, sessionId).then(r => r.result?.value))
     await sleep(1200)
     const { result, exceptionDetails } = await send('Runtime.evaluate', { expression: `(${extractor})()`, awaitPromise: true, returnByValue: true }, sessionId)
     if (exceptionDetails) throw new Error(`${v.route}: ${exceptionDetails.exception?.description || exceptionDetails.text}`)

@@ -3,7 +3,7 @@
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync, watch } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const dir = fileURLToPath(new URL('.', import.meta.url))
@@ -12,8 +12,25 @@ const file = join(dir, 'session.json')
 const slash = p => p.replaceAll('\\', '/')
 const stylesheet = slash(join(dir, 'shell', 'shell.css'))
 const read = () => JSON.parse(readFileSync(file, 'utf8'))
-// Read again right before writing (`proto` writes session.json too), and written whole.
-const write = patch => writeWhole(file, JSON.stringify({ ...read(), ...patch }, null, 2) + '\n')
+// Read again right before writing, and written whole, under the lock `proto` takes too (it writes
+// session.json as well; see locked() in scripts/proto.mjs). patch: the fields, or a function of the
+// session as it is now that returns them (nothing to write: null).
+const write = patch => locked(() => {
+  const now = read(), change = typeof patch === 'function' ? patch(now) : patch
+  if (change) writeWhole(file, JSON.stringify({ ...now, ...change }, null, 2) + '\n')
+})
+function locked(fn) {
+  const lock = join(dir, '.proto', 'session.lock')
+  mkdirSync(dirname(lock), { recursive: true })
+  let mine = false
+  for (let i = 0; i < 200 && !mine; i++) {
+    try { mkdirSync(lock); mine = true } catch {
+      try { if (Date.now() - statSync(lock).mtimeMs > 5000) rmSync(lock, { recursive: true, force: true }) } catch { /* just released */ }
+      if (!mine) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+    }
+  }
+  try { return fn() } finally { if (mine) rmSync(lock, { recursive: true, force: true }) }
+}
 
 // Newest change to any prototype file; the session's own start time if there are none.
 export function lastEdit(root = dir) {
@@ -297,10 +314,14 @@ export function prototypeServer(session) {
   let activity = Date.now()
   // With the working variant as the server left it, so the page knows a move it asked for when
   // session.json brings it.
+  // When each variant (its own file or a helper of its own, c-map.tsx for C) was last edited, for
+  // the page's Building marks, which count from there. Kept here, not in session.json: rewriting
+  // that on every edit can reach Vite as a deleted file and reload the page.
+  const edits = {}
   const status = () => {
     let s = {}
     try { s = read() } catch { /* being rewritten by hand; the rest still answers */ }
-    return { lastEdit: lastEdit(), keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, inbox: inboxStatus() }
+    return { lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, inbox: inboxStatus() }
   }
   const stop = reason => {
     // The tailnet port as session.json has it now: on a session's first run, `proto up` gives it one
@@ -321,7 +342,11 @@ export function prototypeServer(session) {
       server.watcher.on('all', (_, path) => {
         if (!slash(path).startsWith(src)) return
         activity = Date.now()
-        if (slash(path).startsWith(`${src}/protos/`)) server.ws.send({ type: 'custom', event: 'proto:edit', data: { path: slash(path).slice(slash(dir).length - 1) } })
+        if (!slash(path).startsWith(`${src}/protos/`)) return
+        server.ws.send({ type: 'custom', event: 'proto:edit', data: { path: slash(path).slice(slash(dir).length - 1) } })
+        const [slug, name = ''] = slash(path).slice(src.length + '/protos/'.length).split('/')
+        const letter = (name.match(/^([A-Z]{1,2})\.\w+$/) || name.match(/^([a-z]{1,2})-/) || [])[1]
+        if (letter) edits[`${slug}/${letter.toUpperCase()}`] = Date.now()
       })
       // Anything but /status changes something, so it must come from the page itself: a POST with a
       // JSON body (which a page on another site can only send after a CORS preflight, and none is

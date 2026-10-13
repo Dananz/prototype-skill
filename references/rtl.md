@@ -29,7 +29,7 @@ screenshot's pixel positions: RTL layout comes from the flow, not from coordinat
   `<bdi>` or `<span dir="ltr">` so punctuation and the words around it stay put. A plain number
   (`22.5`, `1,250`) needs no wrapper. Where the project writes ranges, units or dates its own
   way in its locale files (`8 עד 10 חזרות`), that wins over a symbol.
-- **Type.** The project's own font for that script (a new product: `proto fonts --draw <n> --hebrew`,
+- **Type.** The project's own font for that script (a new product: `proto fonts --hebrew`,
   craft.md section 5); confirm it has the glyphs, because a
   missing one falls back silently and changes every width. No letter-spacing or italics the app
   doesn't ship (Hebrew has no italics, spacing breaks Arabic joining), no `uppercase`. Arabic

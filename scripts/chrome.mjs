@@ -34,3 +34,14 @@ export function stopChrome(chrome) {
   chrome.kill('SIGKILL')
   chrome.stderr?.destroy()
 }
+
+// The page marks <html data-ready="1"> once the shell has drawn. Mid-navigation documentElement can be
+// null and a page error is only "not yet", so the check never throws. `evaluate` runs an expression in
+// the page and resolves to its value. False if the page wasn't ready within tries × every ms.
+export async function waitReady(evaluate, { tries = 100, every = 100 } = {}) {
+  for (let i = 0; i < tries; i++) {
+    if (await Promise.resolve().then(() => evaluate('document.documentElement?.dataset.ready === "1"')).catch(() => false)) return true
+    await new Promise(r => setTimeout(r, every))
+  }
+  return false
+}

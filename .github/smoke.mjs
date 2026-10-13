@@ -228,6 +228,16 @@ if (!/nothing matches \[data-shoot=missing\]/.test(stateOut)) fail('proto shoot 
 // sheet take the whole width (two are held to its height instead). --sheet goes last: before a
 // slug it would take the slug as its value.
 proto(['add', 'home', '--variants', 'C:Map first'])
+// The one-line plans show on the placeholders they name, and only there.
+mkdirSync(join(app, '.proto', 'briefs'), { recursive: true })
+writeFileSync(join(app, '.proto', 'briefs', 'home.json'), JSON.stringify({ facts: 'Fuel prices', directions: { C: { name: 'Map first', concept: 'The map is the page', display: "font('Young Serif')", body: 'Inter:wght@400..700', surface: '#0b1d2a', ink: '#f2efe6', accent: '#ff6a3d', signature: 'Pins as prices' } } }))
+if (!/plans shown: C/.test(proto(['plan', 'home']))) fail('proto plan home did not show C\'s plan')
+const planned = readFileSync(join(app, 'src', 'protos', 'home', 'C.tsx'), 'utf8')
+if (!planned.startsWith('// Placeholder while') || !planned.includes('"Map first"') || !planned.includes('#ff6a3d') || !planned.includes('"displayFamily":"Young Serif"') || !planned.includes('"display":"Young Serif"')) fail(`home/C.tsx is not its plan card: ${planned.slice(0, 300)}`)
+if (readFileSync(join(app, 'src', 'protos', 'home', 'B.tsx'), 'utf8').includes('one-line plan')) fail('proto plan wrote over B, which had no plan')
+// A title face on the never-for-titles list is refused.
+writeFileSync(join(app, '.proto', 'briefs', 'home.json'), JSON.stringify({ directions: { B: { name: 'Thin', display: "font('Italiana')", body: 'Inter' } } }))
+if (!/not a title face/.test(proto(['plan', 'home'], { ok: false }))) fail('proto plan took Italiana as a title face')
 const sheetOut = proto(['shoot', 'home', '--sheet'])
 const sheet = sheetOut.split(/\r?\n/)[0].trim()
 if (!sheet.endsWith('home-sheet.png') || !existsSync(sheet)) fail(`proto shoot --sheet should print home-sheet.png first, printed: ${sheetOut}`)
