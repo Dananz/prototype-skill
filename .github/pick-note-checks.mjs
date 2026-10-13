@@ -58,6 +58,8 @@ export async function pickNoteChecks({ proto, app, local, openPage, fail, keepSh
     const result = await response.json()
     const plain = JSON.parse(readFileSync(inboxFile(result.sent, 'new'), 'utf8'))
     assert(plain.done && plain.comments[0].done, 'plain pick no longer completes immediately')
+    proto(['pick', 'picknotes', '--off'])
+    proto(['archive', 'picknotes'])
   }
   console.log(`\nOK: ${before ? 'before screenshots' : 'desktop and phone pick notes persist, retry once, recover and finish'}`)
 }
