@@ -2,7 +2,8 @@ import type { Inbox } from '../shell'
 import type { ViewSize } from '../view/sizes'
 
 /** A box in CSS px. Display boxes are measured from the comment layer; a Target's rect from the variant root. */
-export type Box = { x: number; y: number; w: number; h: number }
+/** `via`: the element is hidden (in a closed menu, tab or popup) and this is the box of what opens it. */
+export type Box = { x: number; y: number; w: number; h: number; via?: boolean }
 
 /**
  * What a comment is on, or tags. `selector` finds it again from the variant's mount (it holds
@@ -19,9 +20,12 @@ export type Box = { x: number; y: number; w: number; h: number }
  */
 export type Use = { component: string; at: string; key?: string; props?: string }
 /** `within` is the data-shoot of the nearest element around it that has one, when it has none of its
- * own: with `shoot`, what tells this element from another that later stands at the same place. */
+ * own: with `shoot`, what tells this element from another that later stands at the same place.
+ * `route` is how to reach it when it is in something that opens (a menu, a popup, a tab's panel):
+ * the `data-opened-by` of each such part around it, outermost first, each the selector of the
+ * control that opens that part. */
 /** label stays in saved data for compatibility; the UI uses numbered references, not element names. */
-export type Target = { label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; point?: { x: number; y: number }; view?: ViewSize; uses?: Use[]; within?: string }
+export type Target = { label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; point?: { x: number; y: number }; view?: ViewSize; uses?: Use[]; within?: string; route?: string[] }
 
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
 export type Seg = string | { tag: number }

@@ -84,6 +84,7 @@ export function describe(mount: HTMLElement, el: HTMLElement): Target {
     })()),
     ...(at ? { src: at.dataset.protoSrc, ...(at.dataset.protoComponent ? { component: at.dataset.protoComponent } : {}) } : {}),
     ...(() => { const u = usesOf(el); return u.length ? { uses: u } : {} })(),
+    ...(() => { const r = routeOf(mount, el); return r.length ? { route: r } : {} })(),
     tag: el.tagName.toLowerCase(),
     text: text.slice(0, 80),
     rect: { x: Math.round((r.left - o.left) / z), y: Math.round((r.top - o.top) / z), w: Math.round(r.width / z), h: Math.round(r.height / z) },
@@ -113,6 +114,69 @@ export function usesOf(el: HTMLElement): Use[] {
     out.push({ component, at, ...(f.key != null ? { key: String(f.key) } : {}), ...(props ? { props } : {}) })
   }
   return out
+}
+
+/**
+ * How to reach `el` when it is in something that opens: going out from it, the `data-opened-by` of
+ * each part it is in (a menu, a popup, a tab's panel: the selector of the control that opens that
+ * part), outermost first.
+ */
+export function routeOf(mount: HTMLElement, el: HTMLElement): string[] {
+  const out: string[] = []
+  for (let p: HTMLElement | null = el; p && p !== mount && mount.contains(p); p = p.parentElement) {
+    const by = p.getAttribute('data-opened-by')
+    if (by) out.unshift(by)
+  }
+  return out
+}
+
+const q = (mount: HTMLElement, sel: string) => { try { return mount.querySelector<HTMLElement>(sel) } catch { return null } }
+const partOpenedBy = (mount: HTMLElement, by: string) => [...mount.querySelectorAll<HTMLElement>('[data-opened-by]')].find(e => e.getAttribute('data-opened-by') === by) ?? null
+
+/** What opens a hidden element: the innermost control on its route that is on the page now. */
+export function openerOf(mount: HTMLElement, t: Pick<Target, 'route'>): HTMLElement | null {
+  for (let i = (t.route?.length ?? 0) - 1; i >= 0; i--) { const o = q(mount, t.route![i]); if (o) return o }
+  return null
+}
+
+/** Set while reveal presses an opener: the comment layer lets those presses reach the design. */
+export const passing = { on: false }
+
+/** A press the design takes as the user's: pointer and mouse down and up, then a click. */
+function pressOn(el: HTMLElement) {
+  const w = el.ownerDocument.defaultView as (Window & typeof globalThis) | null
+  if (!w) return
+  const r = el.getBoundingClientRect(), at = { bubbles: true, cancelable: true, composed: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 }
+  passing.on = true
+  try {
+    el.dispatchEvent(new w.PointerEvent('pointerdown', { ...at, pointerType: 'mouse', isPrimary: true }))
+    el.dispatchEvent(new w.MouseEvent('mousedown', at))
+    el.dispatchEvent(new w.PointerEvent('pointerup', { ...at, pointerType: 'mouse', isPrimary: true }))
+    el.dispatchEvent(new w.MouseEvent('mouseup', at))
+    el.click()
+  } finally { passing.on = false }
+}
+
+const until = async (f: () => boolean, ms = 1500) => { for (const end = performance.now() + ms; performance.now() < end; await new Promise(r => setTimeout(r, 40))) if (f()) return true; return f() }
+
+/**
+ * Opens the way to a comment's element: each part on its route that is not open yet is opened by
+ * pressing its control, outermost first, waiting for it to show. A part already open is left as it
+ * is (pressing its control again would close it). Resolves to the element, or null.
+ */
+export async function reveal(mount: HTMLElement | null, t: Target): Promise<HTMLElement | null> {
+  if (!mount) return null
+  const have = find(mount, t)
+  if (have || !t.route?.length) return have
+  for (const by of t.route) {
+    if (partOpenedBy(mount, by)) continue
+    const opener = q(mount, by)
+    if (!opener) break
+    pressOn(opener)
+    if (!await until(() => !!partOpenedBy(mount, by))) break
+  }
+  await until(() => !!find(mount, t), 800)
+  return find(mount, t)
 }
 
 /** A spot pinned with a long press, at screen point (cx, cy), with the element under it. */

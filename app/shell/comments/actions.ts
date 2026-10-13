@@ -3,7 +3,7 @@
 // Send posts every draft as one batch. Whatever is being written when the composer is put away
 // any way but Cancel or Add is held, and comes back with the next comment.
 import type { CommentBatch } from '../shell'
-import { climb, describe, find } from './dom'
+import { climb, describe, find, reveal } from './dom'
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import { progress, type Store } from './store'
@@ -70,9 +70,11 @@ export function createActions(store: Store, host: Host) {
       if (!i) return
       // A comment on the design shows on the layout it was written on: its device view, or none.
       if (i.target || i.time) host.setView?.(i.target?.view ?? null)
-      if (!here(i)) { host.go(i.proto, i.variant, i.state); set({ active: id }); return }
+      // An element in a closed menu, tab or popup is shown first: what opens it is pressed.
+      const show = async () => { const el = i.target && await reveal(host.mount(), i.target); el?.scrollIntoView({ block: 'center', behavior: 'smooth' }) }
+      if (!here(i)) { host.go(i.proto, i.variant, i.state); set({ active: id }); window.setTimeout(() => void show(), 700); return }
       set({ active: id, mode: i.sent ? { kind: 'idle' } : i.time ? { kind: 'time', time: i.time, id } : i.target ? { kind: 'compose', target: i.target, id } : { kind: 'idle' } })
-      if (i.target) find(host.mount(), i.target)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      void show()
     },
     resume() { const h = get().held; if (h) set({ active: null, mode: h.time ? { kind: 'time', time: h.time } : { kind: 'compose', target: h.target! } }) },
     discardHeld() { set({ held: null }) },

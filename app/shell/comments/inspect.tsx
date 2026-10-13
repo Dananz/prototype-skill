@@ -2,7 +2,7 @@
 // the guard that keeps every press from reaching the design while commenting, and the live boxes
 // pins and outlines are drawn from.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { climb, describe, find, seen, spot, spotAt } from './dom'
+import { climb, describe, find, seen, spot, spotAt, openerOf, passing } from './dom'
 import { Icon } from './ui'
 import type { Box, Target } from './types'
 import { useCtx } from './ctx'
@@ -54,7 +54,13 @@ export function useBoxes(list: { id: string; t: Target }[]) {
     const tick = () => {
       const mount = host.mount()
       const next: Record<string, Box> = {}
-      if (mount) for (const x of list) { const el = find(mount, x.t), b = el && (x.t.point ? spotAt(x.t, el, mount, host.layer) : seen(el, mount, host.layer)); if (b) next[x.id] = b }
+      if (mount) for (const x of list) {
+        const el = find(mount, x.t), b = el && (x.t.point ? spotAt(x.t, el, mount, host.layer) : seen(el, mount, host.layer))
+        if (b) { next[x.id] = b; continue }
+        // Hidden in a closed menu, tab or popup: its pin goes on what opens it.
+        const o = !el && x.t.route ? openerOf(mount, x.t) : null, ob = o && seen(o, mount, host.layer)
+        if (ob) next[x.id] = { ...ob, via: true }
+      }
       const s = JSON.stringify(next)
       if (s !== last) { last = s; setBoxes(next) }
       raf = requestAnimationFrame(tick)
@@ -157,7 +163,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     }
     // Presses never reach the design's own handlers; the default is kept off only for a mouse,
     // so a finger can still scroll the page.
-    const press = (e: Event) => { if (!inDesign(e.target)) return; e.stopPropagation(); if (!(e instanceof PointerEvent) || e.pointerType === 'mouse') e.preventDefault() }
+    const press = (e: Event) => { if (passing.on || !inDesign(e.target)) return; e.stopPropagation(); if (!(e instanceof PointerEvent) || e.pointerType === 'mouse') e.preventDefault() }
     let start: { x: number; y: number } | null = null
     // A finger that stays put for HOLD_MS pins the comment where it is; moving lets it scroll.
     let holdTimer = 0
@@ -211,6 +217,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       else show(el, true)
     }
     const click = (e: MouseEvent) => {
+      if (passing.on) return
       const target = targetOf(e)
       if (!inDesign(target)) return
       e.preventDefault(); e.stopPropagation()

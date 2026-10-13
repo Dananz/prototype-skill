@@ -1260,7 +1260,9 @@ const where = e => {
   const name = e.shoot ? `[data-shoot=${e.shoot}]` : e.within ? `in [data-shoot=${e.within}]` : e.selector || ''
   const r = e.rect ? ` at ${e.rect.x},${e.rect.y} ${e.rect.w}x${e.rect.h}` : ''
   const code = e.src ? `  src/protos/${e.src}${e.component ? ` (${e.component})` : ''}` : ''
-  return [`<${e.tag || '?'}>`, e.text && `"${e.text.replace(/\s+/g, ' ').slice(0, 80)}"`, name].filter(Boolean).join(' ') + r + code
+  // In something that opens (a menu, a popup, a tab's panel): the controls that open the way to it.
+  const route = e.route?.length ? `  (opened by ${e.route.join(' > ')})` : ''
+  return [`<${e.tag || '?'}>`, e.text && `"${e.text.replace(/\s+/g, ' ').slice(0, 80)}"`, name].filter(Boolean).join(' ') + r + code + route
 }
 // A decision made on a variant in the page comes as a comment with an action and no element; the
 // line under it says what is already done and what is left for the agent. A pick or unpick is made
