@@ -344,11 +344,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function vRow(q: Proto, v: Variant, sel: boolean, big = false) {
     const pl = st.place, here = pl.view === 'variant' && pl.proto === q.id && pl.variant === v.id
     const w = workOf(), kids = kidsOf(q, v.id).length > 0
-    return `<div data-mv="${esc(q.id)}:${v.id}" class="group/vr relative"><button data-act="mv:${esc(q.id)}:${v.id}" aria-current="${sel}" class="${rowCls(big)} ${here ? 'bg-sky-500/15 font-medium text-sky-950 dark:text-sky-50' : sel ? SELC : ROWC}">
+    return `<div data-mv="${esc(q.id)}:${v.id}" class="group/vr relative"><button data-act="mv:${esc(q.id)}:${v.id}" aria-current="${sel}"${kids ? ' data-opens' : ''} class="${rowCls(big)} ${here ? 'bg-sky-500/15 font-medium text-sky-950 dark:text-sky-50' : sel ? SELC : ROWC}">
       <span class="w-3.5 shrink-0 text-center text-[11px] font-semibold ${sel ? '' : 'text-zinc-400'}">${v.id}</span><span dir="auto" class="min-w-0 flex-1 truncate">${esc(v.name)}</span><span class="flex shrink-0 items-center justify-end gap-1.5 ${big ? 'min-w-8' : 'min-w-6'} group-hover/vr:invisible group-has-[:focus-visible]/vr:invisible group-has-[[aria-expanded=true]]/vr:invisible [@media(pointer:coarse)]:me-6">${v.id === pickOf(q) ? `<span title="Picked" class="shrink-0">${ic('picked', `size-4 ${PICK}`)}</span>` : ''}${w?.p === q && w.v === v ? `<span title="Your requests change this one" class="shrink-0">${ic('pin', 'size-3 text-emerald-600 dark:text-emerald-400')}</span>` : ''}${openComments(q.id, v.id)}${editing(q.id, v.id) ? pulse('size-1.5') : ''}${kids ? ic('right', `size-3 shrink-0 ${sel ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400'}`) : ''}</span></button><button data-act="vm:${esc(q.id)}:${v.id}" aria-label="Options for ${esc(v.name)}" aria-haspopup="menu" aria-expanded="${st.open === 'vmenu' && st.vmenu?.proto === q.id && st.vmenu.variant === v.id}" title="Options: comment on this, pick, build, Try it, copy options" class="absolute ${big ? 'right-2 size-8' : 'right-1 size-6'} top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-zinc-500 opacity-0 hover:bg-zinc-900/10 hover:text-zinc-900 focus-visible:opacity-100 group-hover/vr:opacity-100 group-has-[:focus-visible]/vr:opacity-100 aria-expanded:bg-zinc-900/10 aria-expanded:opacity-100 dark:text-zinc-400 dark:hover:bg-white/15 dark:hover:text-white dark:aria-expanded:bg-white/15 [@media(pointer:coarse)]:opacity-100">${ic('dots', 'size-5')}</button></div>`
   }
   /** One prototype in a column; choosing it opens its variants. */
-  const pRow = (k: Proto, sel: boolean, big = false) => `<button data-act="mp:${esc(k.id)}" aria-current="${sel}" class="${rowCls(big)} ${sel ? SELC : k.archived ? 'text-zinc-400 hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]' : ROWC}">
+  const pRow = (k: Proto, sel: boolean, big = false) => `<button data-act="mp:${esc(k.id)}" aria-current="${sel}" data-opens class="${rowCls(big)} ${sel ? SELC : k.archived ? 'text-zinc-400 hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]' : ROWC}">
       <span dir="auto" class="min-w-0 flex-1 truncate ${k.archived ? 'line-through decoration-zinc-300' : ''}">${esc(k.title)}</span>${k.kind === 'phone' ? ic('phone', 'size-3 shrink-0 text-zinc-400') : ''}${pickChip(k)}${editingUnder(k) ? pulse('size-1.5') : ''}<span class="shrink-0 text-[10px] tabular-nums text-zinc-400">${k.variants.length}</span>${ic('right', 'size-3 shrink-0 text-zinc-400')}</button>`
   function colRows(c: Col, big = false) {
     const none = (t: string) => `<p class="px-2 py-1.5 text-[11px] text-zinc-400">${t}</p>`
@@ -872,8 +872,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // Scrolled lists in the chrome keep their place when it is redrawn (a status ping, an edit).
     const keepScroll = (host: HTMLElement, html: string) => {
       const was = new Map([...host.querySelectorAll<HTMLElement>('[data-k]')].map(el => [el.dataset.k!, [el.scrollTop, el.scrollLeft]]))
+      // The button with the keyboard's focus is drawn again: it keeps the focus.
+      const f = document.activeElement as HTMLElement | null, fAct = f && host.contains(f) ? f.dataset.act : undefined
+      const fAt = fAct ? [...host.querySelectorAll(`[data-act="${CSS.escape(fAct)}"]`)].indexOf(f!) : -1
       host.innerHTML = html
       for (const el of host.querySelectorAll<HTMLElement>('[data-k]')) { const at = was.get(el.dataset.k!); if (at) [el.scrollTop, el.scrollLeft] = at }
+      if (fAct) { const all = host.querySelectorAll<HTMLElement>(`[data-act="${CSS.escape(fAct)}"]`); (all[fAt] ?? all[0])?.focus({ preventScroll: true }) }
     }
     const p = cur()
     const view = st.place.view
@@ -970,7 +974,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           <p class="mt-2 text-[11px] text-zinc-400">${[q && q.id === pickOf(p) ? 'Picked' : '', q && same(session.work, { proto: p.id, variant: q.id }) ? 'Your requests change it' : '', kids.length ? `${kids.length} built from it` : '', line.length ? `${line.length + 1} levels deep` : ''].filter(Boolean).join(' · ')}</p>
           ${q ? `<button data-act="lobby:proto:${esc(p.id)}" class="mt-auto flex h-8 items-center justify-center gap-1.5 rounded-lg text-xs font-medium ring-1 ring-inset ring-black/10 hover:bg-zinc-900/[.04] dark:ring-white/15 dark:hover:bg-white/[.06]">${ic('grid', 'size-3.5')}All ${p.variants.length} variants</button>` : ''}`
       return `<div data-fitw="${cols.length * 200 + 224}" class="flex h-[26rem] max-h-[calc(100dvh-5rem)]">
-        <div data-mcols data-k="mcols" class="flex min-w-0 flex-1 overflow-x-auto overscroll-contain">${cols.map(c => `<div class="flex w-[12.5rem] shrink-0 flex-col border-r border-black/[.06] pt-1 dark:border-white/10">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1.5 pb-2">${colRows(c)}</div></div>`).join('')}</div>
+        <div data-mcols data-colnav data-k="mcols" class="flex min-w-0 flex-1 overflow-x-auto overscroll-contain">${cols.map(c => `<div class="flex w-[12.5rem] shrink-0 flex-col border-r border-black/[.06] pt-1 dark:border-white/10">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1.5 pb-2">${colRows(c)}</div></div>`).join('')}</div>
         <div class="flex w-56 shrink-0 flex-col bg-zinc-900/[.02] p-4 dark:bg-white/[.02]">${about}</div></div>`
     }
 
@@ -1407,7 +1411,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // its share from --split, the second the rest, and neither goes under 6rem.
     const two = pair.length > 1
     const split = `<div data-split role="separator" aria-orientation="vertical" aria-label="Resize columns" aria-valuemin="${SPLIT_LO * 100}" aria-valuemax="${SPLIT_HI * 100}" aria-valuenow="${Math.round(st.split * 100)}" tabindex="0" title="Drag to resize · double-click to reset" class="group/s relative z-10 -mx-[3px] w-1.5 shrink-0 cursor-col-resize touch-none outline-none"><span class="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-black/[.06] transition-colors group-hover/s:w-0.5 group-hover/s:bg-sky-500/50 group-focus-visible/s:w-0.5 group-focus-visible/s:bg-sky-500 [[data-splitting]_&]:w-0.5 [[data-splitting]_&]:bg-sky-500 dark:bg-white/[.07]"></span></div>`
-    const box = `<div class="my-1 flex max-h-[26rem] overflow-hidden rounded-xl ring-1 ring-black/[.08] dark:ring-white/10">${pair.map((c, k) => `${k ? split : ''}<div ${two && !k ? 'style="flex:0 1 calc(var(--split) * 100%)"' : ''} class="flex min-w-24 flex-col pt-0.5 ${two && !k ? 'bg-zinc-900/[.02] dark:bg-white/[.02]' : 'flex-1'}">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1 pb-1.5">${colRows(c)}</div></div>`).join('')}</div>`
+    const box = `<div data-colnav="side" class="my-1 flex max-h-[26rem] overflow-hidden rounded-xl ring-1 ring-black/[.08] dark:ring-white/10">${pair.map((c, k) => `${k ? split : ''}<div ${two && !k ? 'style="flex:0 1 calc(var(--split) * 100%)"' : ''} class="flex min-w-24 flex-col pt-0.5 ${two && !k ? 'bg-zinc-900/[.02] dark:bg-white/[.02]' : 'flex-1'}">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1 pb-1.5">${colRows(c)}</div></div>`).join('')}</div>`
 
     // The variant shown: its states (each opens it in that state) and its tools.
     const p = cur(), pv = st.place.view === 'variant' ? st.place : null
@@ -1579,6 +1583,69 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       return openVmenu(arg, arg2, r.right + 6, r.top)
     }
     act(name, arg, arg2, arg3)
+    // Opened from the keyboard, the switcher's columns take the focus, on the row lit last.
+    if (el.dataset.act === 'open:switch' && e.detail === 0 && st.open === 'switch') focusCol([...bar.querySelectorAll('[data-colnav] [data-vlist]')].at(-1))
+  })
+
+  // ---------- the columns, by keyboard ----------
+  // A focused row moves up and down its column, Home and End to its ends, and a letter to the
+  // next row starting with it. Left and right go to the next column's lit row; right on a row
+  // that opens a column opens it first. In the sidebar the pair of columns slides along the path.
+  // Enter chooses, as a click does. A row is a prototype's button, a variant's (not its ⋯), or the
+  // archived fold.
+  const ROW = '[data-vlist] > button, [data-vlist] > [data-mv] > [data-act^="mv:"]'
+  const rowsOf = (list: Element) => [...list.querySelectorAll<HTMLElement>(':scope > button, :scope > [data-mv] > [data-act^="mv:"]')]
+  function focusCol(list: Element | undefined) {
+    const rows = list ? rowsOf(list) : [], to = rows.find(b => b.getAttribute('aria-current') === 'true') ?? rows[0]
+    to?.focus()
+    to?.scrollIntoView({ block: 'nearest' })
+  }
+  // The column `d` from the focused one, after the page has drawn what it opens.
+  function stepCol(d: number) {
+    const list = document.activeElement?.closest('[data-vlist]'), nav = list?.closest<HTMLElement>('[data-colnav]')
+    if (!list || !nav) return
+    const lists = [...nav.querySelectorAll('[data-vlist]')], i = lists.indexOf(list)
+    if (lists[i + d]) return focusCol(lists[i + d])
+    if (nav.dataset.colnav !== 'side') return
+    const last = Math.max(0, columns().length - 2), at = Math.min(st.pairAt ?? last, last)
+    if (at + d < 0 || at + d > last) return
+    // The docked sidebar keeps its markup while hidden, so the focus goes back where it was.
+    const host = side.contains(nav) ? side : drawer
+    st.pairAt = at + d
+    render()
+    const now = [...host.querySelectorAll('[data-colnav] [data-vlist]')]
+    focusCol(d < 0 ? now[0] : now.at(-1))
+  }
+  root.addEventListener('keydown', e => {
+    const row = (e.target as Element).closest?.<HTMLElement>(ROW)
+    if (!row || e.metaKey || e.ctrlKey || e.altKey) return
+    const rows = rowsOf(row.closest('[data-vlist]')!), i = rows.indexOf(row)
+    const to = (b?: HTMLElement) => { e.preventDefault(); b?.focus(); b?.scrollIntoView({ block: 'nearest' }) }
+    if (e.key === 'ArrowDown') return to(rows[Math.min(i + 1, rows.length - 1)])
+    if (e.key === 'ArrowUp') return to(rows[Math.max(i - 1, 0)])
+    if (e.key === 'Home') return to(rows[0])
+    if (e.key === 'End') return to(rows.at(-1))
+    // The context menu key (or Shift F10) opens a variant's options, as its ⋯ button does.
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      const opts = row.parentElement!.querySelector<HTMLElement>(':scope > [data-act^="vm:"]')
+      if (opts) { e.preventDefault(); opts.click() }
+      return
+    }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); return stepCol(-1) }
+    if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      if (!row.hasAttribute('data-opens') || row.getAttribute('aria-current') === 'true') return stepCol(1)
+      // Choosing it may wait for the hash to change before the next column is drawn.
+      const hash = location.hash
+      row.click()
+      if (location.hash === hash) return stepCol(1)
+      return addEventListener('hashchange', () => stepCol(1), { once: true })
+    }
+    if (e.key.length === 1 && e.key.trim()) {
+      const k = e.key.toLowerCase(), order = [...rows.slice(i + 1), ...rows.slice(0, i + 1)]
+      const hit = order.find(b => b.textContent!.trim().toLowerCase().startsWith(k))
+      if (hit) to(hit)
+    }
   })
   // Right-click: every surface with something to do has a menu at the pointer (see "right-click
   // menus" below). Shift + right-click is never taken, so the browser's own menu (Inspect, Save
@@ -1631,13 +1698,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (comments.copy.escape()) return
       if (comments.escape()) return
       if (card && card.phase !== 'exit') return closeCard()
-      if (st.open) { st.open = null; return render() }
+      // A menu closed from inside gives the focus back to its button.
+      if (st.open) { const was = st.open, inside = !!t.closest?.('[data-pop]'); st.open = null; render(); if (inside) bar.querySelector<HTMLElement>(`[data-act="open:${was}"]`)?.focus(); return }
       if (st.drawer) { st.drawer = false; return render() }
       if (viewOn()) return patchView({ size: null, zoom: 0 })
       if (st.focus) return act('unfocus', '', '')
       if (st.place.view === 'variant' && st.place.tool) return go(untool(st.place))
     }
-    if (e.metaKey || e.ctrlKey || e.altKey || st.sheet || trySheet === 'open' || t.closest?.(INTERACTIVE)) return
+    if (e.metaKey || e.ctrlKey || e.altKey || st.sheet || trySheet === 'open' || t.closest?.(INTERACTIVE) || t.closest?.('[data-vlist]')) return
     // Esc on a variant goes up to its prototype's variants, unless the design used it first (a
     // design closing its own menu calls preventDefault). Its handlers may run after this one,
     // so the check waits a tick.
