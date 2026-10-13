@@ -18,8 +18,16 @@ export type Target = { label: string; selector: string; shoot?: string; src?: st
 
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
 export type Seg = string | { tag: number }
-/** `shot` is a picture of the design (the camera, marked up or not), or an image the user pasted or dropped (`pasted`). */
-export type Draft = { body: Seg[]; tags: Target[]; shot?: string; pasted?: boolean }
+/** A comment's picture: one of the design (the camera, marked up or not), or an image the user pasted or dropped (`pasted`). */
+export type Shot = { src: string; pasted?: boolean }
+/**
+ * `shots` are its pictures, at most MAX_SHOTS. `shot` and `pasted` are the one picture a draft saved
+ * before a comment could have several; `shotsOf` reads either.
+ */
+export type Draft = { body: Seg[]; tags: Target[]; shots?: Shot[]; shot?: string; pasted?: boolean }
+export const MAX_SHOTS = 6
+export const shotsOf = (d: Pick<Draft, 'shots' | 'shot' | 'pasted'>): Shot[] =>
+  d.shots ?? (d.shot ? [{ src: d.shot, ...(d.pasted ? { pasted: true } : {}) }] : [])
 /**
  * A moment of the design's motion, in ms of its take (the motion dock, motion/), or a range of it
  * from `at` to `to`; `take` is how long the take is.
