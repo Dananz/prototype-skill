@@ -64,8 +64,9 @@ const TAILNET_PORTS = [9500, 9599]
 const BASE = { vite: '^8.3.0', tailwindcss: '^4.3.0', '@tailwindcss/vite': '^4.3.0' }
 // The shell's own runtime, in every app whatever its stack: the phone's variant sheet is Base
 // UI's Drawer, which is React, and so is the comment layer (which takes its screenshots with
-// modern-screenshot).
-const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.9.0', 'modern-screenshot': '^4.7.0' }
+// modern-screenshot). The few icons the shell takes from Phosphor are its own SVG files, so they
+// work the same in a Vue app.
+const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.9.0', 'modern-screenshot': '^4.7.0', '@phosphor-icons/core': '^2.1.1' }
 // What a variant can reach for without an install (an install reloads the page): icons and
 // motion. Fonts come from Google Fonts at run time (src/fonts.ts, `proto fonts`). New sessions
 // only; `proto up` never adds them to an existing one, so a running session isn't reinstalled and

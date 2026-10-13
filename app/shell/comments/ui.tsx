@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { uiBox } from '../portals'
 import { SIZE_PATHS, sizeIcon, sizeName, type ViewSize } from '../view/sizes'
+import { ic } from '../ui'
 import type { Action, CState, Item, Seg, Target } from './types'
 
 const PATHS: Record<string, string> = {
@@ -25,7 +26,10 @@ const PATHS: Record<string, string> = {
   warn: 'M12 4l9.5 16h-19zM12 10v4.5M12 17.2v.1',
   frame: 'M4 9V6a2 2 0 0 1 2-2h3M15 4h3a2 2 0 0 1 2 2v3M20 15v3a2 2 0 0 1-2 2h-3M9 20H6a2 2 0 0 1-2-2v-3',
 }
+/** Phosphor's own files (see shell/ui.ts), for the ⋯ and the pick's check circle. */
+const PHOSPHOR = new Set(['dots', 'pick', 'picked'])
 export function Icon({ name, className = 'size-4' }: { name: string; className?: string }) {
+  if (PHOSPHOR.has(name)) return <span className="contents" dangerouslySetInnerHTML={{ __html: ic(name, className) }} />
   return <svg className={`${className} shrink-0`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PATHS[name]} /></svg>
 }
 
