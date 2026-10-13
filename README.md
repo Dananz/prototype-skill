@@ -31,7 +31,11 @@ Subagents and image generation are optional. Sandboxed agents need package insta
 access to the preview server, and write access to `<project>/.prototypes/` and `~/.prototypes/`.
 A remote container cannot reach a laptop's `localhost` directly.
 
-## Claude Code
+## Choose your agent
+
+<a name="claude-code"></a>
+<details>
+<summary><strong>Claude Code</strong></summary>
 
 Install from the plugin marketplace:
 
@@ -60,7 +64,11 @@ Update with `git -C ~/.claude/skills/prototype pull --ff-only`. On Windows, use
 `"$HOME\.claude\skills\prototype"` as the clone destination in PowerShell.
 </details>
 
-## Codex
+</details>
+
+<a name="codex"></a>
+<details>
+<summary><strong>Codex</strong></summary>
 
 Clone the complete repository into the [user skill directory](https://learn.chatgpt.com/docs/build-skills):
 
@@ -96,7 +104,11 @@ ln -s ~/.claude/skills/prototype ~/.agents/skills/prototype
 Use a clone or a symlink at that destination, not both.
 </details>
 
-## Other agents
+</details>
+
+<a name="other-agents"></a>
+<details>
+<summary><strong>Other agents</strong></summary>
 
 [OpenCode](https://opencode.ai/docs/skills/) also discovers the shared skill directory:
 
@@ -114,6 +126,8 @@ For another agent, install the complete repository in its documented skill direc
 or ask it to read `<checkout>/SKILL.md` and follow it. The agent needs local command execution,
 file editing and image viewing. Slash commands and automatic discovery depend on the host.
 Copy the whole repository, not just `SKILL.md`.
+
+</details>
 
 ## Comments and follow-ups
 
