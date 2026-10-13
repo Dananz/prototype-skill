@@ -11,7 +11,7 @@ import { Layer } from './layer'
 import { Selection } from './selection'
 import { PhoneSheet, Rail } from './rail'
 import { createStore, progress } from './store'
-import type { Place, State } from './types'
+import { inScope, type Place, type State } from './types'
 
 export type { DecidePopProps, Place, State, Subject }
 
@@ -41,18 +41,18 @@ export function createComments(host: Host, sessionId: string) {
     decideIn: (subject: Subject) => wrap(<Decide key={`${subject.proto}/${subject.variant}`} subject={subject} sheet />),
     setPlace: act.setPlace,
     setInbox(inbox: Inbox | undefined) { store.set({ inbox }) },
-    /** Comments waiting to be sent, and open (sent, not yet done) ones, per variant: for the bar and the tree. */
+    /** Comments waiting to be sent and all of them (those of the prototype on screen), and open (sent, not yet done) ones per variant: for the bar and the tree. */
     counts() {
       const s = store.get()
       const by = new Map<string, number>()
-      let drafts = 0
+      let drafts = 0, total = 0
       for (const i of s.items) {
-        if (!i.sent) drafts++
+        if (inScope(s.scope, i.proto)) { total++; if (!i.sent) drafts++ }
         if (progress(i, s.inbox).state === 'done') continue
         const k = `${i.proto}/${i.variant}`
         by.set(k, (by.get(k) ?? 0) + 1)
       }
-      return { drafts, total: s.items.length, by, picking: s.mode.kind === 'pick' || s.mode.kind === 'tag' || (s.mode.kind === 'time' && !!s.mode.tagging), held: !!s.held }
+      return { drafts, total, by, picking: s.mode.kind === 'pick' || s.mode.kind === 'tag' || (s.mode.kind === 'time' && !!s.mode.tagging), held: !!s.held && inScope(s.scope, s.held.proto) }
     },
     /** Picking what to comment on (or tag), or writing a comment on the design: the design is only looked at. */
     busy() {
@@ -71,7 +71,7 @@ export function createComments(host: Host, sessionId: string) {
     tap() {
       const s = store.get()
       if (s.mode.kind !== 'idle') return act.close()
-      if (s.items.length || s.held) act.openSheet(true)
+      if (act.inScope().length || (s.held && inScope(s.scope, s.held.proto))) act.openSheet(true)
       else act.toggle()
     },
   }

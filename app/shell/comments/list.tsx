@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useCtx } from './ctx'
 import { progress, useStore, type Said } from './store'
 import type { CState, Item } from './types'
-import { shotsOf } from './types'
+import { inScope, shotsOf } from './types'
 import { WholeBox } from './whole'
 import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, Reply, since, spanOf, SrcTag, ViewChip, Working, ImageChip, PictureStrip } from './ui'
 
@@ -14,9 +14,12 @@ export function useRows() {
   const s = useStore(store)
   // Nobody is listening and the agent that was is gone: what is sent is waiting for a session that ended.
   const gone = !s.inbox?.listening && s.inbox?.agent === 'gone'
-  const rows = s.items.map(item => { const p = progress(item, s.inbox); return { item, ...p, stopped: !!p.lost || (gone && p.state === 'sent'), here: act.here(item) } })
+  // The prototype the page is on: its comments only, across its variants (the lobbies, which have no list, see all).
+  const items = s.items.filter(i => inScope(s.scope, i.proto))
+  const rows = items.map(item => { const p = progress(item, s.inbox); return { item, ...p, stopped: !!p.lost || (gone && p.state === 'sent'), here: act.here(item) } })
   rows.sort((a, b) => b.item.at - a.item.at)
-  return { s, rows, drafts: s.items.filter(i => !i.sent).length, stalled: rows.filter(r => r.stopped && (r.state === 'sent' || r.state === 'seen')).length }
+  const held = s.held && inScope(s.scope, s.held.proto) ? s.held : null
+  return { s, rows, held, drafts: items.filter(i => !i.sent).length, stalled: rows.filter(r => r.stopped && (r.state === 'sent' || r.state === 'seen')).length }
 }
 type Row = ReturnType<typeof useRows>['rows'][number]
 
@@ -127,8 +130,8 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
 
 export function CommentList({ roomy, onOpen }: { roomy?: boolean; onOpen?: (id: string) => void }) {
   const { act } = useCtx()
-  const { s, rows } = useRows()
-  const held = s.held && s.mode.kind !== 'compose' && s.mode.kind !== 'tag' && s.mode.kind !== 'time' ? s.held : null
+  const { s, rows, held: kept } = useRows()
+  const held = kept && s.mode.kind !== 'compose' && s.mode.kind !== 'tag' && s.mode.kind !== 'time' ? kept : null
   const on = (id: string) => s.active === id || (s.mode.kind === 'compose' && s.mode.id === id)
   const open = (id: string) => { onOpen?.(id); act.open(id) }
   const by = (st: CState[]) => rows.filter(r => st.includes(r.state))

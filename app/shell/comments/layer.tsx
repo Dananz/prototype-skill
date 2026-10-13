@@ -63,7 +63,7 @@ function Pins({ items, boxes, active, onOpen }: { items: { item: Item; done: boo
 
 export function Layer() {
   const { host, act } = useCtx()
-  const { s, rows } = useRows()
+  const { s, rows, held } = useRows()
   const m = s.mode
   // Tagging an element from a comment on the motion, which is written in the motion dock.
   const tagging = m.kind === 'tag' || (m.kind === 'time' && !!m.tagging)
@@ -76,7 +76,7 @@ export function Layer() {
     onCancel: () => (tagging ? act.tagDone(null) : act.stop()),
     onGuard: act.guard,
   })
-  const verb = tagging ? 'Tag' : s.held ? 'Continue your comment' : 'Comment'
+  const verb = tagging ? 'Tag' : held ? 'Continue your comment' : 'Comment'
 
   // ⌥-click comments on one element without turning comment mode on, in a device view's frame too.
   useEffect(() => {
@@ -125,7 +125,7 @@ export function Layer() {
       {editing && (
         <Composer key={editing.id ?? '__new'} target={editing.target} n={editedItem?.n ?? nextN} place={boxes[editing.id ?? '__new'] ?? null}
           sheet={phone} tagging={m.kind === 'tag'} editing={!!editedItem} id={editedItem?.id}
-          initial={editedItem ?? (editing.kind === 'compose' && editing.quote ? { body: [`“${editing.quote}” `], tags: [] } : s.held?.target ? s.held : undefined)} />
+          initial={editedItem ?? (editing.kind === 'compose' && editing.quote ? { body: [`“${editing.quote}” `], tags: [] } : held?.target ? held : undefined)} />
       )}
       {opened && <ReadCard row={opened} box={boxes[opened.item.id]} />}
     </>

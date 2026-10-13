@@ -9,7 +9,7 @@ import type { Ctx, Host } from './ctx'
 import { progress, type Store } from './store'
 import type { Action, Draft, Item, Place, Target, Time } from './types'
 import { shotsOf } from './types'
-import { routeOf } from './types'
+import { inScope, routeOf } from './types'
 import { sameView } from '../view/sizes'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
@@ -23,7 +23,12 @@ export function createActions(store: Store, host: Host) {
     here,
     /** Comments on what is on screen. */
     onScreen: () => get().items.filter(here),
-    drafts: () => get().items.filter(i => !i.sent),
+    /** Comments of the prototype the page is on (all of them in the session lobby). */
+    inScope: () => get().items.filter(i => inScope(get().scope, i.proto)),
+    drafts: () => get().items.filter(i => !i.sent && inScope(get().scope, i.proto)),
+
+    /** The prototype the page is on, or null in the session lobby. */
+    setScope(scope: string | null) { if (get().scope !== scope) set({ scope }) },
 
     /** The page moved (or stopped being somewhere comments can go). */
     setPlace(place: Place | null) {
@@ -121,7 +126,7 @@ export function createActions(store: Store, host: Host) {
     resume() { opening++; const h = get().held; if (h) set({ active: null, mode: h.time ? { kind: 'time', time: h.time } : { kind: 'compose', target: h.target! } }) },
     discardHeld() { set({ held: null }) },
     /** Called as a new comment is written, so it survives being put away. */
-    hold(d: Draft, target?: Target, time?: Time) { set({ held: hasWords(d) ? { ...d, ...(time ? { time } : { target }) } : null }) },
+    hold(d: Draft, target?: Target, time?: Time) { set(s => ({ held: hasWords(d) ? { ...d, ...(time ? { time } : { target }), ...(s.place ? { proto: s.place.proto } : {}) } : null })) },
     /** Pressing the design while a comment is open: the comment stays where it is and the composer says so. */
     guard() { if (get().mode.kind === 'compose') set(s => ({ nudge: s.nudge + 1 })) },
 
@@ -156,9 +161,9 @@ export function createActions(store: Store, host: Host) {
       set(x => ({ items: x.items.filter(i => !gone.has(i.id)), ...(open ? { mode: { kind: 'idle' as const }, active: null } : {}) }))
     },
 
-    /** Every draft, as one batch. */
+    /** Every draft of the prototype on screen, as one batch. */
     async send() {
-      const drafts = get().items.filter(i => !i.sent)
+      const drafts = act.drafts()
       if (!drafts.length || get().sending) return
       const phone = get().place?.phone ?? false
       const batch: CommentBatch = {
@@ -183,7 +188,7 @@ export function createActions(store: Store, host: Host) {
         const at = new Map(drafts.map((d, k) => [d.id, k + 1]))
         set(s => ({ sending: false, items: s.items.map(i => at.has(i.id) ? { ...i, sent: { batch: batchId, i: at.get(i.id)! } } : i) }))
         // One added while this send was on its way is still a draft: in Send as I add, it follows at once.
-        if (get().live && get().items.some(i => !i.sent)) void act.send()
+        if (get().live && act.drafts().length) void act.send()
       } catch (e) {
         set({ sending: false, error: e instanceof Error ? e.message : 'Could not send' })
       }

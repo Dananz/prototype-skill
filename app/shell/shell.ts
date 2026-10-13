@@ -1817,6 +1817,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function syncComments() {
     const host = commentHost(), pl = st.place, p = cur()
     comments.copy.setStage(copyHost(), copy.routeOf(copyHost()))
+    comments.act.setScope(pl.view === 'session' ? null : pl.proto)
     comments.setPlace(host && pl.view === 'variant' && p ? { proto: pl.proto, variant: pl.variant, ...(pl.state ? { state: pl.state } : {}), phone: phoneMq.matches, title: p.title, ...(viewOn() ? { view: viewSize() } : {}) } : null)
     if (st.status?.inbox !== seenInbox) { seenInbox = st.status?.inbox; comments.setInbox(seenInbox) }
     zone.toggleAttribute('data-picking', !!host && comments.counts().picking)
