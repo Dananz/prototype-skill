@@ -27,15 +27,20 @@ CI runs quick checks only; report full browser verification separately. -->
 
 ## Screenshots
 
-<!-- Required for visual changes. Capture the actual UI in the same state and at
-the same viewport before and after. Upload images to GitHub and replace the cells
-with image Markdown, including descriptive alt text. Add rows for desktop/phone,
-light/dark themes, or RTL layouts when affected. Use "N/A: no visual changes" for
-nonvisual work. For a new screen, mark Before as "N/A: new screen". -->
+<!-- Required for visual changes. Publish actual before/after screenshots as part
+of opening or updating this PR, without waiting for another request. Use matching
+states and viewports. Upload images to GitHub, or commit them under docs/pr/<slug>/
+and embed absolute GitHub URLs pinned to the pushed commit (see CLAUDE.md).
+Each applicable Before/After cell must contain ![descriptive alt text](image-url).
+Text descriptions, local paths, and "screenshots taken locally; happy to attach
+them" do not count. Verify the published images before marking the PR ready.
+Add rows for desktop/phone, light/dark themes, or RTL layouts when affected.
+Use "N/A: no visual changes" for nonvisual work. For a new screen or state, mark
+Before as "N/A: new screen/state" and embed the actual image in After. -->
 
 | View / state | Before | After |
 | --- | --- | --- |
-| | | |
+| <!-- View / state --> | <!-- ![Before: state](published-image-url) --> | <!-- ![After: state](published-image-url) --> |
 
 <!-- Add a short recording or GIF below when motion or interaction matters.
 Include the browser, viewport dimensions, and reproduction steps. -->
@@ -49,5 +54,5 @@ remaining work with issue links. Remove this section if none apply. -->
 
 - [ ] I reviewed the diff and kept it focused on the stated problem.
 - [ ] I recorded relevant automated/manual checks and any validation gaps above.
-- [ ] I included screenshots or recordings for visual changes, or explained why they are not applicable.
+- [ ] I published and verified actual screenshots or recordings for visual changes, or this PR has no visual changes.
 - [ ] I updated affected documentation, or confirmed no update is needed.
