@@ -72,7 +72,7 @@ const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.
 // only; `proto up` never adds them to an existing one, so a running session isn't reinstalled and
 // restarted for packages it never asked for.
 const STACKS = {
-  react: { deps: {}, craft: { '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', stub: 'react.tsx', plan: 'react-plan.tsx' },
+  react: { deps: {}, craft: { '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', slot: 'slot.react.ts', stub: 'react.tsx', plan: 'react-plan.tsx' },
   vue: { deps: { vue: '^3.5.0' }, craft: { '@phosphor-icons/vue': '^2.2.1', 'motion-v': '^2.7.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue', plan: 'vue-plan.vue' },
 }
 
@@ -266,6 +266,7 @@ function scaffold(dir, project) {
   cpSync(join(APP, 'adapters', kit.hints), join(dir, 'src', 'hints.ts'))
   cpSync(join(APP, 'adapters', kit.copy), join(dir, 'src', 'copy.ts'))
   cpSync(join(APP, 'adapters', kit.motion), join(dir, 'src', 'motion.ts'))
+  if (kit.slot) cpSync(join(APP, 'adapters', kit.slot), join(dir, 'src', 'slot.ts'))
   writeJson(join(dir, 'package.json'), {
     name: `prototype-${basename(dir)}`, private: true, type: 'module',
     dependencies: { ...SHELL, ...kit.deps, ...kit.craft }, devDependencies: { ...BASE, ...kit.dev },
@@ -300,6 +301,7 @@ function appFiles(stack) {
   out.set(join('src', 'hints.ts'), join(APP, 'adapters', kit.hints))
   out.set(join('src', 'copy.ts'), join(APP, 'adapters', kit.copy))
   out.set(join('src', 'motion.ts'), join(APP, 'adapters', kit.motion))
+  if (kit.slot) out.set(join('src', 'slot.ts'), join(APP, 'adapters', kit.slot))
   return out
 }
 

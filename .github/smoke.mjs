@@ -26,6 +26,7 @@ import { pickNoteChecks } from './pick-note-checks.mjs'
 import { contextMenuChecks } from './context-menu-checks.mjs'
 import { splitChecks } from './split-checks.mjs'
 import { keyboardColumnsChecks } from './keyboard-columns-checks.mjs'
+import { slotChecks } from './slot-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -181,6 +182,7 @@ await pickNoteChecks({ proto, app, local, openPage, fail, keepShots })
 await contextMenuChecks({ proto, app, local, openPage, fail })
 await splitChecks({ proto, app, local, openPage, fail, keepShots })
 await keyboardColumnsChecks({ proto, app, local, openPage, fail, keepShots })
+await slotChecks({ proto, app, local, openPage, fail })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
 proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--variants', 'A:Price only,B:Fuel tabs'])

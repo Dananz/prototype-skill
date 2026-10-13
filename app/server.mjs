@@ -83,6 +83,25 @@ function metaOf(text) { return JSON.parse(text.replace(/^[\s\S]*?export default\
 const withMeta = (text, meta) => text.replace(/export default[\s\S]*$/, () => `export default ${JSON.stringify(meta, null, 2)}\n`)
 // A variant is its file, as the page finds it (registry.ts): <letter>.tsx, .jsx, .vue or .svelte.
 const hasVariant = (slug, id) => ['tsx', 'jsx', 'vue', 'svelte'].some(x => existsSync(join(dir, 'src', 'protos', slug, `${id}.${x}`)))
+// What stands in each slot: `<prototype>/<slot id>` is `<child>/<letter>` while that is the
+// `use` in the prototype's meta.ts. A child that is archived, or whose file is gone, plugs
+// nothing in, so the original shows.
+export function slotPointers() {
+  const out = {}
+  let slugs = []
+  try { slugs = readdirSync(join(dir, 'src', 'protos')) } catch { /* none yet */ }
+  for (const slug of slugs) {
+    let meta
+    try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { continue }
+    for (const [id, slot] of Object.entries(meta.slots || {})) {
+      const [from, letter] = String(slot?.use || '').split('/')
+      if (!from || !letter || !hasVariant(from, letter)) continue
+      try { if (metaOf(readFileSync(metaFile(from), 'utf8')).archived) continue } catch { continue }
+      out[`${slug}/${id}`] = `${from}/${letter}`
+    }
+  }
+  return out
+}
 // A pick made in the page is what `proto pick` does, done at once instead of when the agent next
 // looks: the variant is marked in its meta.ts and becomes the working variant, its history starting
 // with "Picked <letter>" (the page's strip knows those words). Taking the pick back unmarks it only
@@ -339,7 +358,7 @@ export function prototypeServer(session) {
   const status = () => {
     let s = {}
     try { s = read() } catch { /* being rewritten by hand; the rest still answers */ }
-    return { lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, inbox: inboxStatus() }
+    return { lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, slots: slotPointers(), inbox: inboxStatus() }
   }
   const stop = reason => {
     // The tailnet port as session.json has it now: on a session's first run, `proto up` gives it one
