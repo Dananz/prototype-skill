@@ -51,8 +51,8 @@ export type Inbox = {
   listening: boolean
   /** The last agent that ran proto commands here: still running, or gone (T3 Code restarted, the terminal closed). */
   agent?: 'alive' | 'gone' | null
-  batches: { id: string; at: string; state: 'sent' | 'seen' | 'lost' | 'done'; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null
-    comments: { n: number; route: string; action?: Action; done: boolean; withdrawn?: boolean; scoped?: boolean; reply: { text: string; at: string; by?: 'claude' | 'codex' } | null }[] }[]
+  batches: { id: string; at: string; state: 'sent' | 'seen' | 'lost' | 'done'; reply: { text: string; at: string; by?: 'claude' | 'codex' | 'agent' } | null
+    comments: { n: number; route: string; action?: Action; done: boolean; withdrawn?: boolean; scoped?: boolean; reply: { text: string; at: string; by?: 'claude' | 'codex' | 'agent' } | null }[] }[]
 }
 /** An element a comment is on or tags. Rect is in CSS px from the variant root's top left; src and
  *  component say where it is written (`today/parts.tsx:30`, `PriceCard`). */
@@ -816,7 +816,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // ---------- lobbies ----------
   function lifecycle() {
     const s = st.status
-    if (st.stopped) return 'Server stopped. Ask Claude to start it again.'
+    if (st.stopped) return 'Server stopped. Ask Agent to start it again.'
     if (!s) return ''
     const until = new Date(s.lastEdit + s.deleteDays * 864e5).toLocaleDateString([], { month: 'short', day: 'numeric' })
     return `Idle stop ${s.idleHours}h · ${s.keep ? 'Kept' : `Deletes ${until}`}`
@@ -975,13 +975,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const q = p && pv ? p.variants.find(x => x.id === pv.variant) : undefined
       const kids = p && q ? kidsOf(p, q.id) : []
       const about = !p ? `<div dir="auto" class="font-semibold">${esc(session.name)}</div><p class="mt-1 text-xs text-zinc-500">${active().length} prototypes · started ${clock(session.createdAt)}</p>`
-        : `<div class="text-[11px] text-zinc-500"><span dir="auto">${esc(p.title)}</span></div><div class="mt-0.5 flex items-center gap-1.5 font-semibold">${q ? `<b>${q.id}</b><span dir="auto" class="truncate">${esc(q.name)}</span>` : 'All variants'}</div>
-          ${q && p.about[q.id] ? `<p dir="auto" class="mt-2 text-xs leading-[18px] text-zinc-600 dark:text-zinc-400">${esc(p.about[q.id])}</p>` : !q && p.ask ? `<p dir="auto" class="mt-2 text-xs leading-[18px] text-zinc-600 dark:text-zinc-400">“${esc(p.ask)}”</p>` : ''}
-          <p class="mt-2 text-[11px] text-zinc-400">${[q && q.id === pickOf(p) ? 'Picked' : '', q && same(session.work, { proto: p.id, variant: q.id }) ? 'Your requests change it' : '', kids.length ? `${kids.length} built from it` : '', line.length ? `${line.length + 1} levels deep` : '', p.slot && parentOf(p) && p.from ? `Plugs into ${esc(parentOf(p)!.title)}${p.from.variant ? ` ${esc(p.from.variant)}` : ''}` : ''].filter(Boolean).join(' · ')}</p>
-          ${q ? `<button data-act="lobby:proto:${esc(p.id)}" class="mt-auto flex h-8 items-center justify-center gap-1.5 rounded-lg text-xs font-medium ring-1 ring-inset ring-black/10 hover:bg-zinc-900/[.04] dark:ring-white/15 dark:hover:bg-white/[.06]">${ic('grid', 'size-3.5')}All ${p.variants.length} variants</button>` : ''}`
+        : `<div class="shrink-0 text-[11px] text-zinc-500"><span dir="auto">${esc(p.title)}</span></div><div class="mt-0.5 flex shrink-0 items-center gap-1.5 font-semibold">${q ? `<b>${q.id}</b><span dir="auto" class="truncate">${esc(q.name)}</span>` : 'All variants'}</div>
+          ${q && p.about[q.id] ? `<p data-switch-description data-k="about:${esc(p.id)}:${q.id}" tabindex="0" aria-label="Description" dir="auto" class="mt-2 min-h-0 overflow-y-auto overscroll-contain text-xs leading-[18px] text-zinc-600 dark:text-zinc-400">${esc(p.about[q.id])}</p>` : !q && p.ask ? `<p data-switch-description data-k="about:${esc(p.id)}:" tabindex="0" aria-label="Description" dir="auto" class="mt-2 min-h-0 overflow-y-auto overscroll-contain text-xs leading-[18px] text-zinc-600 dark:text-zinc-400">“${esc(p.ask)}”</p>` : ''}
+          <p class="mt-2 shrink-0 text-[11px] text-zinc-400">${[q && q.id === pickOf(p) ? 'Picked' : '', q && same(session.work, { proto: p.id, variant: q.id }) ? 'Your requests change it' : '', kids.length ? `${kids.length} built from it` : '', line.length ? `${line.length + 1} levels deep` : '', p.slot && parentOf(p) && p.from ? `Plugs into ${esc(parentOf(p)!.title)}${p.from.variant ? ` ${esc(p.from.variant)}` : ''}` : ''].filter(Boolean).join(' · ')}</p>
+          ${q ? `<button data-act="lobby:proto:${esc(p.id)}" class="mt-auto flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg text-xs font-medium ring-1 ring-inset ring-black/10 hover:bg-zinc-900/[.04] dark:ring-white/15 dark:hover:bg-white/[.06]">${ic('grid', 'size-3.5')}All ${p.variants.length} variants</button>` : ''}`
       return `<div data-fitw="${cols.length * 200 + 224}" class="flex h-[26rem] max-h-[calc(100dvh-5rem)]">
         <div data-mcols data-colnav data-k="mcols" class="flex min-w-0 flex-1 overflow-x-auto overscroll-contain">${cols.map(c => `<div class="flex w-[12.5rem] shrink-0 flex-col border-r border-black/[.06] pt-1 dark:border-white/10">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1.5 pb-2">${colRows(c)}</div></div>`).join('')}</div>
-        <div class="flex w-56 shrink-0 flex-col bg-zinc-900/[.02] p-4 dark:bg-white/[.02]">${about}</div></div>`
+        <div class="flex min-h-0 w-56 shrink-0 flex-col bg-zinc-900/[.02] p-4 dark:bg-white/[.02]">${about}</div></div>`
     }
 
     // The phone's sheet: the same columns, one at a time. It opens on the last; back steps left,
@@ -1016,7 +1016,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const dockBtn = 'grid size-9 shrink-0 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white'
     const dockSep = '<span class="mx-1 h-5 w-px shrink-0 bg-white/15"></span>'
     overlay.innerHTML = framed || view !== 'variant' || !p ? '' : `
-      ${building(p.id, vid) ? `<div data-building-chip title="Claude is still building this one" class="pointer-events-none absolute left-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}Building</div>` : ''}
+      ${building(p.id, vid) ? `<div data-building-chip title="Agent is still building this one" class="pointer-events-none absolute left-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}Building</div>` : ''}
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
       ${!st.focus ? `<button data-act="focus" data-focus-btn title="Focus mode · F" class="absolute right-[calc(var(--hw,0px)+1rem)] top-3 z-10 hidden h-9 [@media(hover:hover)]:inline-flex items-center gap-1.5 rounded-full bg-zinc-900/80 px-3 text-xs font-medium text-white shadow-lg backdrop-blur transition-opacity duration-200 focus-visible:!opacity-100" style="opacity:${stageHover.on ? 1 : 0}">${ic('grow', 'size-3.5')}Focus</button>` : `
       ${st.open === 'fproto' ? `<div data-pop class="fixed bottom-[76px] left-1/2 z-20 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">${protoMenu}</div>` : ''}
@@ -1409,10 +1409,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const lineOf = (c: Col, i: number) => {
       const v = c.kind === 'variants' ? c.p.variants.find(x => x.id === c.sel) : undefined
       const k = c.kind === 'protos' ? c.list.find(x => x.id === c.sel) : undefined
-      return `<button data-act="line:${i}" title="Open this level" class="flex h-10 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">
+      return `<div class="relative flex min-w-0 items-center"><button data-act="line:${i}" title="Open this level" class="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 text-left hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">
         <span class="grid size-7 shrink-0 place-items-center rounded-md bg-zinc-900/[.05] text-[11px] font-semibold text-zinc-600 dark:bg-white/[.07] dark:text-zinc-300">${v ? v.id : ic('layers', 'size-3.5 text-zinc-400')}</span>
-        <span class="min-w-0 flex-1 leading-tight"><span dir="auto" class="block truncate text-[10px] text-zinc-500">${esc(colName(c))}</span><span class="flex min-w-0 items-center gap-1 font-medium">${v ? `<span dir="auto" class="truncate">${esc(v.name)}</span>${c.kind === 'variants' && v.id === pickOf(c.p) ? ic('check', `size-3 shrink-0 ${PICK}`) : ''}` : k ? `<span dir="auto" class="truncate">${esc(k.title)}</span>` : '<span class="font-normal text-zinc-400">Choose one</span>'}</span></span>
-        <span class="shrink-0 text-[10px] tabular-nums text-zinc-400">${colCount(c)}</span>${ic('chev', 'size-3 shrink-0 text-zinc-400')}</button>`
+        <span class="min-w-0 flex-1 leading-tight ${v ? 'pe-9' : ''}"><span dir="auto" class="block truncate text-[10px] text-zinc-500">${esc(colName(c))}</span><span class="flex min-w-0 items-center gap-1 font-medium">${v ? `<span dir="auto" class="truncate">${esc(v.name)}</span>${c.kind === 'variants' && v.id === pickOf(c.p) ? ic('check', `size-3 shrink-0 ${PICK}`) : ''}` : k ? `<span dir="auto" class="truncate">${esc(k.title)}</span>` : '<span class="font-normal text-zinc-400">Choose one</span>'}</span></span>
+        <span class="shrink-0 text-[10px] tabular-nums text-zinc-400">${colCount(c)}</span>${ic('chev', 'size-3 shrink-0 text-zinc-400')}</button>${v && c.kind === 'variants' ? `<button data-act="pv:${esc(c.p.id)}:${v.id}" aria-label="View ${v.id}: ${esc(v.name)}" title="View this variant" class="absolute right-10 top-1 grid size-8 place-items-center rounded-md text-zinc-500 hover:bg-zinc-900/[.04] hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[.06] dark:hover:text-white">${ic('eye', 'size-4')}</button>` : ''}</div>`
     }
     // Two columns meet at a separator that can be dragged (see "resizing the columns"); the first takes
     // its share from --split, the second the rest, and neither goes under 6rem.
@@ -1464,7 +1464,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const asks = asksOf(session.work!).slice().reverse()
     const mv = st.moved && refOk(st.moved)
     const picked = (t: string) => /^Picked [A-Z]{1,2}$/.test(t.trim())
-    const n = asks.filter(a => !picked(a.text)).length
+    // What a plug-in leaves on both variants (app/server.mjs plugLines): status lines like a pick, not requests.
+    const plugged = (t: string) => /^(Plugged in(to)?|Original back( in|, took out)) .+ [A-Z]{1,2}$/.test(t.trim())
+    const n = asks.filter(a => !picked(a.text) && !plugged(a.text)).length
     return `<div class="mx-2 mb-2 rounded-xl bg-zinc-900/[.04] p-2 text-[12px] dark:bg-white/[.05]">
         <button data-act="work:go" ${here ? 'aria-current="true"' : 'title="Go to it · W"'} class="flex w-full min-w-0 items-center gap-2.5 text-left">
           <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-emerald-500/15 text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">${w.v.id}</span>
@@ -1475,7 +1477,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${st.failed?.at === 'work' ? `<p role="alert" class="mt-2 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-[11px] text-rose-700 dark:text-rose-300">${esc(st.failed.text)}</p>` : ''}
         ${mv ? `<div class="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-500/[.08] px-2 py-1 text-[11px]"><span class="text-amber-600">${ic('from', 'size-3.5')}</span><span class="min-w-0 flex-1 truncate text-zinc-600 dark:text-zinc-300">Moved here from <b class="font-semibold">${mv.v.id}</b> · ${bd(mv.v.name)}${mv.p !== w.p ? ` <span class="text-zinc-400">in ${bd(mv.p.title)}</span>` : ''}</span><button data-act="work:undo" class="h-6 shrink-0 rounded-md px-1.5 font-medium text-zinc-900 hover:bg-zinc-900/[.06] dark:text-white dark:hover:bg-white/10">Undo</button></div>` : ''}
         ${asks.length ? `<button data-act="asks" aria-expanded="${st.asks}" class="mt-1.5 flex h-7 w-full items-center gap-1.5 rounded-md px-1 text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-white">${ic('clock', 'size-3.5')}${n} change${n === 1 ? '' : 's'} you asked for${ic('chev', `ml-auto size-3.5 transition-transform ${st.asks ? 'rotate-180' : ''}`)}</button>
-          ${st.asks ? `<ol class="max-h-48 space-y-1.5 overflow-y-auto overscroll-contain px-1 pb-1 pt-1">${asks.map(a => { const pk = picked(a.text), t = Date.parse(a.at); return `<li class="flex gap-2 text-[11px] leading-[15px]"><span class="mt-px grid size-3.5 shrink-0 place-items-center rounded-full ${pk ? 'bg-emerald-500 text-white' : 'bg-zinc-900/[.08] text-zinc-500 dark:bg-white/10 dark:text-zinc-400'}">${ic('check', 'size-2.5')}</span><span dir="auto" class="min-w-0 flex-1 ${pk ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-700 dark:text-zinc-300'}">${pk ? `You picked ${esc(a.text.trim().slice(7))}` : esc(a.text)}</span>${t ? `<span class="shrink-0 text-[10px] text-zinc-400" data-ago="${t}">${ago(t)}</span>` : ''}</li>` }).join('')}</ol>` : ''}` : ''}
+          ${st.asks ? `<ol class="max-h-48 space-y-1.5 overflow-y-auto overscroll-contain px-1 pb-1 pt-1">${asks.map(a => { const pk = picked(a.text), ok = pk || plugged(a.text), t = Date.parse(a.at); return `<li class="flex gap-2 text-[11px] leading-[15px]"><span class="mt-px grid size-3.5 shrink-0 place-items-center rounded-full ${ok ? 'bg-emerald-500 text-white' : 'bg-zinc-900/[.08] text-zinc-500 dark:bg-white/10 dark:text-zinc-400'}">${ic('check', 'size-2.5')}</span><span dir="auto" class="min-w-0 flex-1 ${ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-700 dark:text-zinc-300'}">${pk ? `You picked ${esc(a.text.trim().slice(7))}` : esc(a.text)}</span>${t ? `<span class="shrink-0 text-[10px] text-zinc-400" data-ago="${t}">${ago(t)}</span>` : ''}</li>` }).join('')}</ol>` : ''}` : ''}
       </div>`
   }
 

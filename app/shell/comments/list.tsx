@@ -36,7 +36,7 @@ function ClearAll({ ids, what }: { ids: string[]; what: string }) {
   useEffect(() => { if (!sure) return; const t = window.setTimeout(() => setSure(false), 4000); return () => clearTimeout(t) }, [sure])
   return (
     <button data-shoot={`clear-${what}`} onClick={() => { if (!sure) return setSure(true); setSure(false); act.removeAll(ids) }}
-      title={what === 'sent' ? 'Delete all of these, and take them back from Claude' : 'Delete all of these from the list'}
+      title={what === 'sent' ? 'Delete all of these, and take them back from Agent' : 'Delete all of these from the list'}
       className={`ms-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium ${sure ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' : 'text-zinc-400 hover:bg-zinc-900/5 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200'}`}>
       <Icon name="trash" className="size-3" />{sure ? `Clear ${ids.length}?` : 'Clear'}
     </button>
@@ -46,7 +46,7 @@ function ClearAll({ ids, what }: { ids: string[]; what: string }) {
 const Remove = ({ item, className = '' }: { item: Item; className?: string }) => {
   const { act } = useCtx()
   const sent = !!item.sent
-  return <button data-shoot="remove" onClick={e => { e.stopPropagation(); act.remove(item.id) }} aria-label="Delete this comment" title={sent ? 'Delete this comment (Claude is told to leave it)' : 'Delete this comment'} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10 ${className}`}><Icon name="trash" className="size-4" /></button>
+  return <button data-shoot="remove" onClick={e => { e.stopPropagation(); act.remove(item.id) }} aria-label="Delete this comment" title={sent ? 'Delete this comment (Agent is told to leave it)' : 'Delete this comment'} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10 ${className}`}><Icon name="trash" className="size-4" /></button>
 }
 const Where = ({ item, here }: { item: Item; here: boolean }) => here ? null : <span className="shrink-0 rounded bg-zinc-900/[.05] px-1 font-mono text-[10px] text-zinc-500 dark:bg-white/10">{item.variant}</span>
 /** What a row is about: the element a comment is on, or a decision with its icon (it is on no element). */
@@ -82,14 +82,14 @@ function Draft({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: b
 }
 
 /** Sent, and not done: what Claude has, and what it said so far ("building now…"). */
-function WithClaude({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: boolean; onOpen: () => void }) {
+function WithAgent({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: boolean; onOpen: () => void }) {
   const { item, reply } = r
   return (
     <div data-comment={item.id} data-shoot="comment-row" className={`flex w-full items-start gap-1 rounded-2xl transition ${active ? 'bg-proto-primary-soft ring-1 ring-proto-primary-ring' : 'bg-proto-primary-soft/60 hover:bg-proto-primary-soft'}`}>
       <button onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 p-3 pe-0 text-start">
         <span className="mt-1">{r.stopped ? <span data-shoot="comment-stopped" className="mt-0.5 block size-2 rounded-full border border-amber-500" /> : <Working />}</span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} />{r.stopped ? <span className="shrink-0 text-amber-600 dark:text-amber-300">{reply ? 'Stopped' : 'Not picked up'}</span> : <span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? 'Claude is on it' : 'Sent'}</span>}</span>
+          <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} />{r.stopped ? <span className="shrink-0 text-amber-600 dark:text-amber-300">{reply ? 'Stopped' : 'Not picked up'}</span> : <span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? 'Agent is on it' : 'Sent'}</span>}</span>
           <Body c={item} className={`mt-0.5 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
           <ViewChip v={item.target?.view} className="mt-1.5" />
           {shotsOf(item).some(p => p.pasted) && <PictureStrip className="mt-2">{shotsOf(item).filter(p => p.pasted).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</PictureStrip>}
@@ -155,9 +155,9 @@ export function CommentList({ roomy, onOpen }: { roomy?: boolean; onOpen?: (id: 
         </section>
       )}
       {wait.length > 0 && (
-        <section aria-label="With Claude">
-          <Head title="With Claude" n={wait.length} tone="text-proto-primary-soft-fg"><ClearAll what="sent" ids={wait.map(r => r.item.id)} /></Head>
-          <div className="space-y-2">{wait.map(r => <WithClaude key={r.item.id} r={r} roomy={!!roomy} active={on(r.item.id)} onOpen={() => open(r.item.id)} />)}</div>
+        <section aria-label="With Agent">
+          <Head title="With Agent" n={wait.length} tone="text-proto-primary-soft-fg"><ClearAll what="sent" ids={wait.map(r => r.item.id)} /></Head>
+          <div className="space-y-2">{wait.map(r => <WithAgent key={r.item.id} r={r} roomy={!!roomy} active={on(r.item.id)} onOpen={() => open(r.item.id)} />)}</div>
         </section>
       )}
       {done.length > 0 && (
@@ -176,13 +176,13 @@ export function SendButton({ className = '' }: { className?: string }) {
   const { s, drafts } = useRows()
   return (
     <button data-shoot="send" onClick={act.send} title={`${MOD} Enter`} disabled={!drafts || s.sending} className={`inline-flex h-12 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:bg-zinc-900/[.06] disabled:text-zinc-400 dark:disabled:bg-white/[.08] dark:disabled:text-zinc-500 ${drafts && !s.sending ? 'bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-proto-primary-ring' : ''} ${className}`}>
-      <Icon name="send" className="size-4" />{s.sending ? 'Sending…' : drafts ? `Send ${drafts} to Claude` : 'Nothing to send'}
+      <Icon name="send" className="size-4" />{s.sending ? 'Sending…' : drafts ? `Send ${drafts} to Agent` : 'Nothing to send'}
     </button>
   )
 }
 
 /** What to paste in the agent's thread when its session has ended: the page can't wake it, one message does. */
-const restartMessage = (n: number) => `Listen for my prototype comments again: run proto inbox --wait. ${n} comment${n === 1 ? ' is' : 's are'} waiting, and some were taken before the last session stopped and never answered. Handle them first.`
+const restartMessage = (n: number) => `Listen for my prototype comments again: run proto inbox. ${n} comment${n === 1 ? ' is' : 's are'} waiting, and some were taken before the last session stopped and never answered. Handle them first.`
 function copyText(text: string) {
   try { void navigator.clipboard.writeText(text); return } catch { /* not a secure page: the old way */ }
   const el = document.createElement('textarea')
@@ -209,7 +209,7 @@ export function SendBar({ className = '', onAdd }: { className?: string; onAdd?:
       {stalled > 0 && (
         <p data-shoot="stalled" className="flex items-start gap-2 px-1 text-xs leading-4 text-amber-700 dark:text-amber-300">
           <Icon name="warn" className="mt-0.5 size-3.5" />
-          <span>{copied ? `Paste it in the T3 thread. Claude picks them up when it listens.` : `Claude is not listening. ${stalled} comment${stalled === 1 ? '' : 's'} wait${stalled === 1 ? 's' : ''}. Copy the message, paste it in the T3 thread.`}</span>
+          <span>{copied ? `Paste it in your agent conversation. Agent picks them up when it listens.` : `Agent is not listening. ${stalled} comment${stalled === 1 ? '' : 's'} wait${stalled === 1 ? 's' : ''}. Copy the message, paste it in your agent conversation.`}</span>
         </p>
       )}
       <div className="flex gap-2">

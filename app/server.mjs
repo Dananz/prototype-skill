@@ -75,6 +75,10 @@ function work({ proto, variant, undo, ask }) {
   if (Object.keys(patch).length) write(patch)
   return !!patch.work
 }
+// One line of history on a variant, without moving the working variant: what a plug-in leaves.
+function note(key, text) {
+  write(now => ({ asks: { ...now.asks, [key]: [...(now.asks?.[key] || []), { at: new Date().toISOString(), text }] } }))
+}
 
 // meta.ts is `export default` and plain JSON, which is how `proto` reads and rewrites it too.
 function metaFile(slug) { return join(dir, 'src', 'protos', slug, 'meta.ts') }
@@ -105,22 +109,35 @@ export function slotPointers() {
 // A prototype made to stand in for part of another (`slot` in its meta.ts, `from` naming the
 // parent) plugs its pick in there at once: the pick is the slot's `use`. The variant called
 // Current (or As built) is the original, and so is no pick, so those clear it. Undoing a pick
-// clears it only while it is that variant.
+// clears it only while it is that variant. Says what it did, or null when nothing changed:
+// the parent and the letter that holds the slot, and the `use` it had and has now ('' for none).
 const isCurrent = name => /^(current|as built)$/i.test(String(name || '').trim())
 function plug(slug, meta, id, off) {
-  if (!meta.slot || typeof meta.from !== 'string') return
-  const parent = meta.from.split('/')[0]
+  if (!meta.slot || typeof meta.from !== 'string') return null
+  const [parent, from] = meta.from.split('/')
   let text, pm
-  try { text = readFileSync(metaFile(parent), 'utf8'); pm = metaOf(text) } catch { return }
+  try { text = readFileSync(metaFile(parent), 'utf8'); pm = metaOf(text) } catch { return null }
   const slot = pm.slots?.[meta.slot]
-  if (!slot) return
+  if (!slot) return null
   const use = `${slug}/${id}`
-  if (off && slot.use !== use) return
+  if (off && slot.use !== use) return null
   const next = off || isCurrent(meta.variants?.[id]) ? '' : use
-  if ((slot.use || '') === next) return
+  if ((slot.use || '') === next) return null
   const { use: _, ...rest } = slot
   pm.slots[meta.slot] = next ? { ...rest, use: next } : rest
   writeWhole(metaFile(parent), withMeta(text, pm))
+  return { parent, letter: String(slot.variant || from || ''), was: slot.use || '', now: next }
+}
+// What a plug-in says on the two variants it touches, in the words the page's strip shows: the
+// picked one (or the one unpicked) and the parent variant. The "Picked" line comes first.
+function plugLines(did, slug, id) {
+  const title = s => { try { return metaOf(readFileSync(metaFile(s), 'utf8')).title || s } catch { return s } }
+  const [was, wasId] = did.was.split('/')
+  const into = [title(did.parent), did.letter].filter(Boolean).join(' ')
+  return [
+    [`${slug}/${id}`, did.now ? `Plugged into ${into}` : `Original back in ${into}`],
+    ...(did.letter ? [[`${did.parent}/${did.letter}`, did.now ? `Plugged in ${title(slug)} ${id}` : `Original back, took out ${title(was)} ${wasId}`]] : []),
+  ]
 }
 // A pick made in the page is what `proto pick` does, done at once instead of when the agent next
 // looks: the variant is marked in its meta.ts and becomes the working variant, its history starting
@@ -133,13 +150,18 @@ function pick(route, off) {
   const text = readFileSync(metaFile(slug), 'utf8'), meta = metaOf(text)
   if (off && meta.picked !== id) return 'nothing'
   // Before the pick is marked: if the parent can't be written, nothing is marked and `proto pick` redoes both.
-  plug(slug, meta, id, off)
+  const did = plug(slug, meta, id, off)
   if (off) delete meta.picked
   else meta.picked = id
   writeWhole(metaFile(slug), withMeta(text, meta))
-  if (off) return 'done'
-  try { return work({ proto: slug, variant: id, ask: `Picked ${id}` }) ? 'moved' : 'done' }
-  catch (e) { throw Object.assign(e instanceof Error ? e : new Error(String(e)), { marked: true }) }
+  let moved = false
+  if (!off) {
+    try { moved = work({ proto: slug, variant: id, ask: `Picked ${id}` }) }
+    catch (e) { throw Object.assign(e instanceof Error ? e : new Error(String(e)), { marked: true }) }
+  }
+  // History is a trace, never a reason to fail a pick that is already made.
+  if (did) try { for (const [key, text] of plugLines(did, slug, id)) note(key, text) } catch { /* the pointer is what counts */ }
+  return moved ? 'moved' : 'done'
 }
 
 // ---------- the inbox: comments from the page, for the agent running the session ----------

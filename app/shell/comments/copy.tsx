@@ -599,7 +599,7 @@ function SendChoices({ n, sending, sent, reply, listening, onSend, className = '
         <button type="button" data-shoot="send-copy" disabled={!n || sending} onClick={onSend}
           className={`inline-flex h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition-colors disabled:cursor-default ${n && !sending ? PRIMARY : 'bg-zinc-900/[.06] text-zinc-400 dark:bg-white/10 dark:text-zinc-500'}`}>
           <Icon name="send" className="size-4" />
-          {sending ? 'Sending…' : waiting ? 'Sent to Claude' : n ? `Send ${n} choice${n === 1 ? '' : 's'} to Claude` : 'Nothing changed yet'}
+          {sending ? 'Sending…' : waiting ? 'Sent to Agent' : n ? `Send ${n} choice${n === 1 ? '' : 's'} to Agent` : 'Nothing changed yet'}
         </button>
       )}
       <Listening on={listening} className="shrink-0 justify-center whitespace-nowrap" />
