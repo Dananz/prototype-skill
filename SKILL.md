@@ -600,6 +600,12 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
 5. One reply call for the batch: `proto reply <batch> 1 "<what you changed>" 2 "…" … --done`
    (Codex adds `--as codex`, which puts its mark beside the reply instead of Claude's). A comment
    you can't act on is left out of that call and gets its own reply without `--done` saying why.
+   A comment whose answer is new variants or a new prototype ("more variants for this", a `more`
+   decision) is answered as soon as they are added, not when they are built: `proto add` them,
+   then `proto reply <batch>/<n> "<what is building, and where>" --until <slug>` (or
+   `<slug>/<letter>,…`). The page shows that reply under "Claude is on it", and `proto done`
+   closes the comment when the last of those variants is built. Without `--done` or `--until`, a
+   comment stays "on it" in the page for good; when comments arrive, `proto inbox` lists any still open.
 6. Listen again.
 
 Use workers only when comments in one batch each need real design work (a new variant, a section
@@ -628,7 +634,7 @@ the text.
 |---|---|---|
 | `pick` | marked, the working variant, and the comment done, unless its line says otherwise | do what the note asks, if anything; a reply is only a note. When the line says it wasn't marked or the working variant didn't move, run the `proto pick` it names |
 | `unpick` | the pick is off, and the comment done | nothing. When the line says nothing changed (that variant wasn't the pick), say so in a reply with `--done`; when it says it wasn't taken off, run the `proto pick … --off` it names |
-| `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you added |
+| `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you are adding and `--until <slug>/D,<slug>/E…` (step 5) |
 | `build` | nothing | `proto pick` it if it isn't the pick, then step 7; reply when it is in |
 | `try-it` | queued only; no content generated yet | check that the request is not withdrawn; add useful `useHints` to this variant only (section 4), preserve its working flow, verify it, then reply `--done`; if it already has useful hints, reuse them |
 | `copy-options` | queued only; no alternatives generated yet | check that the request is not withdrawn; add `useCopy` to the requested lines in this variant only (headline and primary text/CTA without a note), current words first, verify fit, then reply `--done`; reuse existing options |

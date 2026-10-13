@@ -8,7 +8,8 @@
 //             [--from-picks]   built from every variant the user picked in this session
 //             [--kit[=<name>]] [--current <screen>]   on the project's design kit: its theme, parts and
 //             packages, and with --current that screen's saved Current as A (with its references)
-//   proto done <slug>/<letter>[ …] | <slug>   that variant is built: the page drops its Building mark
+//   proto done <slug>/<letter>[ …] | <slug>   that variant is built: the page drops its Building mark, and a comment
+//                                   answered with --until on it is done once nothing it waits on is building
 //   proto shoot [route…] [--theme dark] [--focus] [--copy] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
 //             [--ref <png>]   instead, the variant's screen beside that screenshot of the real one
 //             [--as built]    with --ref: the png is the variant built in the codebase (<route>-vs-built.png)
@@ -29,8 +30,9 @@
 //   proto ask "…" [--to <slug>/<letter>]   a change the user asked for, kept with that variant
 //   proto ask --each "…" "…" …   several at once (a batch of comments)
 //   proto inbox [--wait] [--timeout <min>]   comments sent from the page; --wait blocks until some arrive
-//   proto reply <batch>[/<n>] "…" [--done] [--as codex]   answer a comment (or a whole batch) in the page
-//   proto reply <batch> 1 "…" 2 "…" … [--done]   answer many comments of a batch in one call
+//   proto reply <batch>[/<n>] "…" [--done | --until <slug>[/<letter>]] [--as codex]   answer a comment (or a whole batch) in the page;
+//                                   --until keeps it open until that work is built (proto done closes it)
+//   proto reply <batch> 1 "…" 2 "…" … [--done | --until <slug>]   answer many comments of a batch in one call
 //   proto kit [--kit=<name>]   the project's design kit: what it has, and whether the app moved on since
 //   proto kit save <slug> [--sources <file,…>] [--kit=<name>]   the session's theme.css and that prototype's
 //             parts, packages and screen, kept for the next session (--sources: the files they came from)
@@ -535,19 +537,43 @@ function done() {
   need(dir)
   if (!args.length) die('which variant? proto done <slug>/<letter> (or <slug> for all of its variants)')
   const ended = endBuilding(dir, args)
-  console.log(ended.length ? `built: ${ended.join(', ')}` : `nothing was building there (${args.join(', ')})`)
+  // One line: agents read this command's output through `tail -1`.
+  const closed = locked(dir, () => closeWaiting(dir))
+  console.log(`${ended.length ? `built: ${ended.join(', ')}` : `nothing was building there (${args.join(', ')})`}${closed.length ? ` · closed ${closed.join(', ')}` : ''}`)
 }
+
+// The Building marks among `building` that belong to each <slug>/<letter> (or every variant of a <slug>).
+const marksOf = (building = {}, refs) => Object.keys(building).filter(k => refs.some(ref => ref.includes('/') ? k === ref : k.startsWith(`${ref}/`)))
 
 // Ends the Building mark of each <slug>/<letter> (or every variant of a <slug>); returns the keys ended.
 function endBuilding(dir, refs) {
   let ended = []
   patchSession(dir, now => {
     const building = { ...now.building }
-    ended = Object.keys(building).filter(k => refs.some(ref => ref.includes('/') ? k === ref : k.startsWith(`${ref}/`)))
+    ended = marksOf(building, refs)
     for (const k of ended) delete building[k]
     return { building }
   })
   return ended
+}
+
+// A comment answered with `proto reply … --until <slug>` waits on that work, which the page shows
+// as "Claude is on it" with the reply. Once none of it is building, it is done. Without this, a
+// comment whose answer was a new prototype stayed "on it" after the prototype was built, since
+// nothing came back to close it. Returns the comments closed, as <batch>/<n>. Run under the lock.
+function closeWaiting(dir) {
+  const building = readSession(dir)?.building
+  const closed = []
+  for (const id of batchesIn(dir, 'taken')) {
+    const file = join(inboxDir(dir), 'taken', id, 'batch.json')
+    const b = readJson(file, null)
+    const ready = (b?.comments || []).filter(c => c.until?.length && !c.done && !marksOf(building, c.until).length)
+    if (!ready.length) continue
+    for (const c of ready) { c.done = true; closed.push(`${id}/${c.n}`) }
+    b.done = b.comments.every(c => c.done)
+    writeJson(file, b)
+  }
+  return closed
 }
 
 // meta.ts with its object replaced. Through a function: a replacement string would read `$&` or `$$`
@@ -1359,6 +1385,7 @@ async function inbox() {
     const got = take(dir)
     got.forEach(b => printBatch(dir, b))
     if (!got.length) console.log('no new comments')
+    stillOpen(dir, got.map(b => b.id))
     const w = readJson(waiterFile(dir), null)
     console.log(w && alive(w.pid) ? `listening (pid ${w.pid})` : 'not listening: run `proto inbox --wait` in the background')
     return
@@ -1388,7 +1415,7 @@ async function inbox() {
       // A reviewer often sends twice in a row: a moment's grace takes both in one wake.
       await sleep(1500)
       const got = take(dir)
-      if (got.length) { done(); got.forEach(b => printBatch(dir, b)); return }
+      if (got.length) { done(); got.forEach(b => printBatch(dir, b)); stillOpen(dir, got.map(b => b.id)); return }
     }
     if (!alive(readSession(dir)?.pid)) { done(); return console.log('the server stopped, so no comments can come. `proto up`, then listen again.') }
     await arrival()
@@ -1404,40 +1431,85 @@ function reply() {
   // Many at once: proto reply <batch> 1 "…" 2 "…" [--done], one write and one line for a whole batch.
   const pairs = !ref?.includes('/') && words.length >= 2 && words.length % 2 === 0 && words.every((w, i) => i % 2 || /^\d+$/.test(w))
   const text = pairs ? '' : words.join(' ').trim()
-  if (!ref || (!text && !flags.done && !pairs)) die('proto reply <batch>[/<n>] "…" [--done]   or   proto reply <batch> 1 "…" 2 "…" … [--done]')
+  if (!ref || (!text && !flags.done && !pairs)) die('proto reply <batch>[/<n>] "…" [--done | --until <slug>]   or   proto reply <batch> 1 "…" 2 "…" … [--done | --until <slug>]')
+  // --until: the comment's answer is work still building (a new prototype, new variants): it stays
+  // open, with this reply, and closes itself when `proto done` ends the last of those marks.
+  const until = flags.until && !flags.done ? String(flags.until).split(',').map(x => x.trim()).filter(Boolean) : null
+  if (flags.until === true || until?.length === 0) die('--until takes what the comment waits on: <slug> or <slug>/<letter>, several joined by commas')
+  for (const u of until || []) {
+    const [slug, letter] = u.split('/')
+    const meta = join(dir, 'src', 'protos', slug, 'meta.ts')
+    if (!existsSync(meta)) die(`--until: no prototype "${slug}" in this session; proto add it first, then reply`)
+    if (letter && !readFileSync(meta, 'utf8').includes(`"${letter}":`)) die(`--until: "${slug}" has no variant ${letter}`)
+  }
   const [prefix, n] = ref.split('/')
   const ids = batchesIn(dir, 'taken').filter(id => id.startsWith(prefix))
   if (ids.length !== 1) die(ids.length ? `"${prefix}" matches ${ids.length} batches; give more of the id` : `no taken batch "${prefix}" (run proto inbox first)`)
   const file = join(inboxDir(dir), 'taken', ids[0], 'batch.json')
-  const b = readJson(file, null)
   const at = new Date().toISOString()
   // Whose mark the page puts beside the reply.
   const by = flags.as === 'codex' ? 'codex' : 'claude'
-  if (pairs) {
+  // Every comment named is checked before the lock is taken: dying while holding it would leave it.
+  const all = readJson(file, null)?.comments || []
+  for (const k of pairs ? words.filter((w, i) => i % 2 === 0) : n ? [n] : []) if (!all.some(x => x.n === Number(k))) die(`batch ${ids[0]} has no comment ${k} (1-${all.length})`)
+  const comment = (b, k) => {
+    const c = b.comments.find(x => x.n === Number(k))
+    if (c.withdrawn) console.log(`(comment ${k} was withdrawn in the page: the user deleted it after sending)`)
+    return c
+  }
+  // Under the lock `proto done` closes comments in: a batch is read and written whole.
+  locked(dir, () => {
+    const b = readJson(file, null)
+    const building = until ? marksOf(readSession(dir)?.building, until).length : 0
     const answered = []
-    for (let i = 0; i < words.length; i += 2) {
-      const c = b.comments.find(x => x.n === Number(words[i])) || die(`batch ${ids[0]} has no comment ${words[i]} (1-${b.comments.length})`)
-      if (c.withdrawn) console.log(`(comment ${words[i]} was withdrawn in the page: the user deleted it after sending)`)
-      c.reply = { text: words[i + 1], at, by }
+    // What happens to each comment answered: done, waiting on --until (done at once when none of
+    // that is building), or left open.
+    const settle = c => {
       if (flags.done) c.done = true
-      answered.push(words[i])
+      else if (until) { c.until = until; if (!building) c.done = true }
+      answered.push(c)
+    }
+    if (pairs) {
+      for (let i = 0; i < words.length; i += 2) {
+        const c = comment(b, words[i])
+        c.reply = { text: words[i + 1], at, by }
+        settle(c)
+      }
+    } else if (n) {
+      const c = comment(b, n)
+      if (text) c.reply = { text, at, by }
+      settle(c)
+    } else {
+      if (text) b.reply = { text, at, by }
+      b.comments.forEach(settle)
     }
     b.done = b.comments.every(c => c.done)
     writeJson(file, b)
-    return console.log(`${ids[0]}: replied to ${answered.join(', ')}${flags.done ? ', done' : ''}${b.done ? ' (batch done)' : ''}`)
+    // One line, as `proto done`'s. A comment left open shows "Claude is on it" until something closes it, so say so.
+    const what = flags.done ? 'done'
+      : until ? (building ? `open until ${until.join(', ')} is built (${building} building)` : `done (nothing in ${until.join(', ')} is building)`)
+      : answered.some(c => !c.done) ? 'still open in the page: --done closes it, or --until <slug> once that is built' : ''
+    const head = pairs ? `replied to ${answered.map(c => c.n).join(', ')}` : text ? 'replied' : ''
+    console.log(`${ids[0]}${n ? `/${n}` : ''}: ${[head, what].filter(Boolean).join(', ')}${b.done ? ' (batch done)' : ''}`)
+  })
+}
+
+// Comments taken and not done, which the page still shows as "Claude is on it": printed when
+// comments arrive, the moment the agent is reading about comments, so one answered with "building
+// now" and never closed is not lost. The page lists the last 20 batches; so does this.
+function stillOpen(dir, skip) {
+  const building = readSession(dir)?.building
+  const clip = (s, k) => { const t = String(s ?? '').replace(/\s+/g, ' ').trim(); return t.length > k ? `${t.slice(0, k - 1)}…` : t }
+  const lines = []
+  for (const id of batchesIn(dir, 'taken').slice(-20)) {
+    if (skip.includes(id)) continue
+    for (const c of readJson(join(inboxDir(dir), 'taken', id, 'batch.json'), null)?.comments || []) {
+      if (c.done || c.withdrawn) continue
+      const left = c.until ? marksOf(building, c.until).length : 0
+      lines.push(`  ${id}/${c.n} "${clip(c.text, 50)}": ${c.until ? `closes itself when ${c.until.join(', ')} is built (${left} building)` : c.reply ? `replied "${clip(c.reply.text, 50)}", never closed` : 'not answered'}`)
+    }
   }
-  if (n) {
-    const c = b.comments.find(x => x.n === Number(n)) || die(`batch ${ids[0]} has no comment ${n} (1-${b.comments.length})`)
-    if (c.withdrawn) console.log(`(comment ${n} was withdrawn in the page: the user deleted it after sending)`)
-    if (text) c.reply = { text, at, by }
-    if (flags.done) c.done = true
-  } else {
-    if (text) b.reply = { text, at, by }
-    if (flags.done) b.comments.forEach(c => { c.done = true })
-  }
-  b.done = b.comments.every(c => c.done)
-  writeJson(file, b)
-  console.log(`${ids[0]}${n ? `/${n}` : ''}: ${text ? 'replied' : ''}${text && flags.done ? ', ' : ''}${flags.done ? 'done' : ''}${b.done ? ' (batch done)' : ''}`)
+  if (lines.length) console.log(`Still open from earlier (the page says "Claude is on it"); once each one's work is in: proto reply <batch>/<n> "…" --done\n${lines.join('\n')}\n`)
 }
 
 // How close one variant (or an element of it) is to a screenshot of the real thing (compare.mjs).
