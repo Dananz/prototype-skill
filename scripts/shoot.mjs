@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Screenshot places in a prototype session at desktop and phone size: the stage only (the
 // design, or a lobby's grid), without the page's sidebar, bars and floating controls.
-// Usage: shoot.mjs <app-url> <out-dir> <route...> [--theme=dark] [--focus=1] [--copy=1] [--click=<css>]... [--ref=<png> [--as=built]] [--phone=<slug,…>] [--sheet=<json>] [--size=<w>x<h>]
+// Usage: shoot.mjs <app-url> <out-dir> <route...> [--theme=dark] [--focus=1] [--copy=1] [--click=<css>]... [--ref=<png> [--as=built]] [--phone=<slug,…>] [--sheet=<json>] [--size=<w>x<h>] [--pin=<json>]
 // Routes are the page's hash routes: "/" (session lobby), "hero" (a prototype's lobby),
 // "hero/A" (one variant), "hero/A/open" (a state from its meta). Files are named
 // hero-A-desktop.png, hero-A-mobile-dark.png …
@@ -33,9 +33,15 @@
 // --size=<w>x<h> shoots at that one viewport instead (hero-A-834x1194.png), the way the page's
 // device view shows a tablet or a desktop: a web prototype's stage at that width, no phone frame.
 //
+// --pin=<json> (written by `proto shoot --pin`) lists pinned comments, each with the page size and
+// theme it was written in, its element and the controls that open the way to it. Each is shot as
+// the user saw it: that page size at 2x, the way opened, the element found, its box plus a margin
+// (pin-<batch>-<n>.png), a wider crop of the region around it (-context.png) and, when the comment
+// has pictures, the shot beside them at one height (-vs-ref.png).
+//
 // Drives Chrome over the DevTools protocol so the phone shot is a real 390px mobile
 // viewport, and waits for the page to say it is ready instead of sleeping.
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -81,8 +87,141 @@ const vs = flags.as === 'built' ? { label: 'Built', name: 'vs-built' } : { label
 // a second sheet instead.
 const SHEET = 2000, PAD = 24, GAP = 20, HEAD = 48, LABEL = 36, INNER = 8, MIN_COL = 280
 const sheets = flags.sheet ? JSON.parse(readFileSync(flags.sheet, 'utf8')) : null
+const pins = flags.pin ? JSON.parse(readFileSync(flags.pin, 'utf8')) : null
 const taken = new Map() // route → its single shots, desktop first, for the sheets
 const esc = s => String(s).replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`)
+// --pin's helpers in the page: the design's mount and what shows as the page's comments find them
+// (view/frame.ts designIn, comments/dom.ts shows, find, partOpenedBy), the element once found,
+// and its geometry in page px.
+const PIN_PAGE = `window.__pin = (() => {
+  const mount = () => [...document.querySelectorAll('[data-layers] > :not([inert]) [data-mount]')].find(m => !m.closest('[data-thumb], [data-stack-item], [data-play-box], [data-fit]')) ?? null
+  const shows = el => {
+    if (!el?.isConnected) return false
+    const r = el.getBoundingClientRect()
+    if (r.width < 1 || r.height < 1) return false
+    return el.checkVisibility ? el.checkVisibility({ opacityProperty: true, visibilityProperty: true }) : getComputedStyle(el).visibility !== 'hidden'
+  }
+  const q = (m, sel) => { try { return m.querySelector(sel) } catch { return null } }
+  const part = (m, by) => [...m.querySelectorAll('[data-opened-by]')].find(e => e.getAttribute('data-opened-by') === by && shows(e)) ?? null
+  const squash = s => String(s ?? '').replace(/\\s+/g, ' ').trim()
+  const zoom = m => parseFloat(m.closest('[data-phone]')?.style.zoom || '') || 1
+  const root = m => m.firstElementChild ?? m
+  const named = el => el.closest('[data-shoot]')?.getAttribute('data-shoot')
+  const centre = el => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } }
+  const said = el => { const t = squash(el.innerText).slice(0, 40); return '<' + el.tagName.toLowerCase() + '>' + (el.dataset.shoot ? ' [data-shoot=' + el.dataset.shoot + ']' : '') + (t ? ' "' + t + '"' : '') }
+  // The comment's box where it would be now: the variant root's corner plus the box, in page px.
+  const stored = (m, t) => { const o = root(m).getBoundingClientRect(), z = zoom(m); return { x: o.left + t.rect.x * z, y: o.top + t.rect.y * z, w: t.rect.w * z, h: t.rect.h * z } }
+  const nearest = (m, t, list) => {
+    if (!t.rect || list.length === 1) return list[0]
+    const s = stored(m, t)
+    const d = e => { const r = e.getBoundingClientRect(); return Math.abs(r.left - s.x) + Math.abs(r.top - s.y) + Math.abs(r.width - s.w) + Math.abs(r.height - s.h) + (shows(e) ? 0 : 1e6) }
+    return list.reduce((a, b) => d(b) < d(a) ? b : a)
+  }
+  let el = null
+  return {
+    // The design is drawn: its mount has something in it.
+    ready: () => !!mount()?.firstElementChild,
+    missed: () => [...document.querySelectorAll('[data-missed]')].map(e => e.textContent).join('; '),
+    // A step of the way: 'open' when its part shows already, 'missing' when its control isn't on the page, else the control's centre.
+    opener(by) {
+      const m = mount()
+      if (!m) return 'missing'
+      if (part(m, by)) return 'open'
+      const o = q(m, by)
+      if (!shows(o)) return 'missing'
+      o.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      const c = centre(o), hit = document.elementFromPoint(c.x, c.y)
+      return { ...c, covered: !(hit && (hit === o || o.contains(hit))) }
+    },
+    opened: by => { const m = mount(); return !!m && !!part(m, by) },
+    // The page's own other presses (comments/dom.ts pressOn): the click alone, or the down and up alone.
+    press(by, how) {
+      const m = mount(), o = m && q(m, by)
+      if (!o) return false
+      const r = o.getBoundingClientRect(), at = { bubbles: true, cancelable: true, composed: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 }
+      if (how === 'down') for (const [K, type] of [[PointerEvent, 'pointerdown'], [MouseEvent, 'mousedown'], [PointerEvent, 'pointerup'], [MouseEvent, 'mouseup']]) o.dispatchEvent(new K(type, { ...at, pointerType: 'mouse', isPrimary: true }))
+      else o.click()
+      return true
+    },
+    // By its selector (with the data-shoot it had, as the page's find), else its data-shoot, its words, or its place.
+    find(t) {
+      const m = mount()
+      el = null
+      if (!m) return { how: 'none', why: 'no design on the page' }
+      const name = t.shoot ?? t.within
+      const e = q(m, t.selector)
+      if (e && (!name || named(e) === name)) { el = e; return { how: 'selector', what: said(e) } }
+      if (t.shoot) {
+        const c = [...m.querySelectorAll('[data-shoot]')].filter(x => x.dataset.shoot === t.shoot)
+        if (c.length) { el = nearest(m, t, c); return { how: 'its [data-shoot=' + t.shoot + ']', what: said(el), of: c.length } }
+      }
+      const want = squash(t.text)
+      if (want && t.tag) {
+        const c = [...m.querySelectorAll(t.tag)].filter(x => squash(x.innerText).slice(0, 80) === want)
+        if (c.length) { el = nearest(m, t, c); return { how: 'its words', what: said(el), of: c.length } }
+      }
+      if (t.rect) {
+        const s = stored(m, t), hit = document.elementFromPoint(s.x + s.w / 2, s.y + s.h / 2)
+        if (hit && m.contains(hit)) { el = hit; return { how: 'its place', what: said(hit) } }
+      }
+      return { how: 'none', why: 'nothing matches its selector, data-shoot, words or place' }
+    },
+    shows: () => shows(el),
+    centre: () => centre(el),
+    // Where the pointer goes to make it show: on it, where it was, then on each element around it.
+    hovers(t) {
+      const m = mount(), out = []
+      if (el.getBoundingClientRect().width >= 1) out.push({ ...centre(el), what: 'the element' })
+      if (t.rect) { const s = stored(m, t); out.push({ x: s.x + s.w / 2, y: s.y + s.h / 2, what: 'where it was' }) }
+      for (let p = el.parentElement, i = 0; p && p !== m && i < 6; p = p.parentElement, i++) if (shows(p)) out.push({ ...centre(p), what: said(p) })
+      return out
+    },
+    // In the page's view: centred in what scrolls around it, when any of it is out of view.
+    reveal() {
+      const r = el.getBoundingClientRect()
+      if (r.top < 0 || r.left < 0 || r.bottom > innerHeight || r.right > innerWidth) el.scrollIntoView({ block: 'center', inline: 'center' })
+    },
+    // Until nothing that ends is moving for two frames running, at most ms.
+    async settle(ms) {
+      const frame = () => new Promise(r => requestAnimationFrame(r)), end = performance.now() + ms
+      let still = 0
+      while (performance.now() < end && still < 2) {
+        const moving = document.getAnimations().some(a => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity)
+        still = moving || ![...document.images].every(i => i.complete) ? 0 : still + 1
+        await frame()
+      }
+      return still >= 2
+    },
+    // Page px, whole px: the element's box; the shot (the box and the margin); the context (the
+    // nearest region around it, else three times its box, and the margin); both cut to the stage
+    // (widened to the element where it reaches past it) and the page. design: the element's box
+    // from the variant's top left in the design's px, as a comment's box is.
+    geometry(margin) {
+      const m = mount(), r = el.getBoundingClientRect(), z = zoom(m), o = root(m).getBoundingClientRect()
+      const st = document.querySelector('[data-layers]')?.getBoundingClientRect() ?? { left: 0, top: 0, right: innerWidth, bottom: innerHeight }
+      const L = Math.max(0, Math.min(st.left, r.left)), T = Math.max(0, Math.min(st.top, r.top))
+      const R = Math.min(innerWidth, Math.max(st.right, r.right)), B = Math.min(innerHeight, Math.max(st.bottom, r.bottom))
+      const cut = (x0, y0, x1, y1) => { const x = Math.floor(Math.max(L, x0)), y = Math.floor(Math.max(T, y0)); return { x, y, w: Math.ceil(Math.min(R, x1)) - x, h: Math.ceil(Math.min(B, y1)) - y } }
+      const shot = cut(r.left - margin, r.top - margin, r.right + margin, r.bottom + margin)
+      const clipped = r.left - margin < L || r.top - margin < T || r.right + margin > R || r.bottom + margin > B
+      // A region is an element around it that is a box of its own (a background, a border, a
+      // shadow, a role, or a data-shoot or data-opened-by), clearly bigger than the element and
+      // smaller than most of the stage.
+      const area = (st.right - st.left) * (st.bottom - st.top)
+      let region = null
+      for (let p = el.parentElement; p && p !== m; p = p.parentElement) {
+        const b = p.getBoundingClientRect()
+        if (b.width * b.height > area * 0.75) break
+        if (b.width < r.width * 1.5 && b.height < r.height * 1.5) continue
+        const cs = getComputedStyle(p)
+        if (p.dataset.shoot || p.hasAttribute('data-opened-by') || /^(dialog|menu|listbox|tabpanel|region|group|toolbar)$/.test(p.getAttribute('role') || '') || cs.backgroundColor !== 'rgba(0, 0, 0, 0)' || parseFloat(cs.borderTopWidth) > 0 || cs.boxShadow !== 'none') { region = p; break }
+      }
+      const g = region ? region.getBoundingClientRect() : { left: r.left - r.width, top: r.top - r.height, right: r.right + r.width, bottom: r.bottom + r.height }
+      const context = cut(g.left - margin, g.top - margin, g.right + margin, g.bottom + margin)
+      return { box: { x: r.left, y: r.top, w: r.width, h: r.height }, shot, clipped, context, region: region ? said(region) : null, zoom: z, design: { x: (r.left - o.left) / z, y: (r.top - o.top) / z, w: r.width / z, h: r.height / z } }
+    },
+  }
+})()`
 // The widest column n variants can have: every row count is tried, and each is held to what the
 // sheet's width and its height allow. ratio is a column's image height per px of its width,
 // fixed its label and gaps, most the narrowest shot's own width (never scaled up).
@@ -175,7 +314,8 @@ try {
   })()` }, sessionId)
   // Renders a page of local images to one PNG: a tab of its own, every image decoded first, the
   // whole page captured however tall it is. Every path in the page goes through pathToFileURL.
-  const compose = async (html, file, width, height) => {
+  // prepare: an expression run once the images are decoded and before the page is measured.
+  const compose = async (html, file, width, height, prepare = '') => {
     const page = join(dirname(file), `.${basename(file, '.png')}.html`)
     writeFileSync(page, html)
     const t = await send('Target.createTarget', { url: 'about:blank' })
@@ -185,6 +325,7 @@ try {
     const { result: size } = await send('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: `(async () => {
       while (document.readyState !== 'complete') await new Promise(r => setTimeout(r, 50))
       await Promise.all([...document.images].map(i => i.decode()))
+      ${prepare}
       return [document.body.scrollWidth, document.body.scrollHeight]
     })()` }, sid)
     const [w, h] = size.value
@@ -285,10 +426,162 @@ try {
       console.log(`${shots.length} frames in ${resolve(outDir)} (${basename(shots[0].file)} …): open one only for a detail`)
     }
   }
+  // --pin: each pinned comment as the user saw it. Its page size and theme (or the device view's
+  // size, in the framed page that view shows), at 2x; the way to it opened as the page's own pin
+  // does it (comments/dom.ts reveal: each closed part's control pressed, outermost first, here
+  // with the real pointer first); the element found by its selector, else by its data-shoot, its
+  // words or its place, saying which; hovered when it only shows on hover. Then its box plus a
+  // margin, a wider crop of the region it is in, and the comment's pictures beside the shot.
+  async function shootPins() {
+    const SCALE = 2
+    const said = []
+    const one = async (p, i) => {
+      const t0 = performance.now(), out = [], missed = []
+      const { targetId } = await send('Target.createTarget', { url: 'about:blank', newWindow: true })
+      const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+      const page = async expression => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)).result?.value
+      // The helpers go in with each call that needs them: a page the dev server reloads (as it does
+      // when it first optimizes a dependency) has lost them.
+      const pin = expression => page(`(window.__pin ?? (${PIN_PAGE}), ${expression})`)
+      const until = async (expression, ms) => { for (const end = performance.now() + ms; ; await sleep(40)) { if (await page(expression)) return true; if (performance.now() > end) return false } }
+      let moved = false
+      const move = async (x, y) => { moved = true; await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' }, sessionId) }
+      const click = async (x, y) => {
+        await move(x, y)
+        for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 }, sessionId)
+      }
+      const name = `pin-${p.batch}-${p.n}`
+      const t = p.target
+      try {
+        await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId)
+        const mobile = p.width < 640
+        await send('Emulation.setDeviceMetricsOverride', { width: p.width, height: p.height, deviceScaleFactor: SCALE, mobile }, sessionId)
+        if (mobile) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
+        const url = new URL(base)
+        url.searchParams.set('theme', p.theme === 'dark' ? 'dark' : 'light')
+        if (p.framed) url.searchParams.set('dv', '1')
+        url.hash = '/' + p.route
+        await send('Page.navigate', { url: url.href }, sessionId)
+        if (!await waitReady(inPage(sessionId))) missed.push('the page never said it was ready')
+        if (!await until(`(window.__pin ?? (${PIN_PAGE})).ready()`, 15000)) missed.push('the design never drew')
+        await settle(sessionId)
+        await page(`document.querySelector('[data-overlay]')?.style.setProperty('display', 'none')`)
+        const miss = await pin('__pin.missed()')
+        if (miss) missed.push(`its state: ${miss}`)
+        // The way to it. A part that opens on hover opens with the pointer on its control, so the
+        // pointer goes there first and a click only follows when that did not open it.
+        const steps = []
+        for (const by of t.route || []) {
+          // A control drawn a moment after the part before it opened is waited for, a little.
+          let o
+          for (const end = performance.now() + 1500; ; await sleep(50)) {
+            o = await pin(`__pin.opener(${JSON.stringify(by)})`)
+            if (o !== 'missing' || performance.now() > end) break
+          }
+          if (o === 'open') { steps.push(`${by} (open already)`); continue }
+          if (o === 'missing') { steps.push(`${by} (not on the page)`); missed.push(`${by}: nothing on the page matches it, so what it opens stays closed`); break }
+          const opened = `__pin.opened(${JSON.stringify(by)})`
+          let how = ''
+          if (!o.covered) {
+            await move(o.x, o.y)
+            if (await until(opened, 200)) how = 'hovered'
+            else { await click(o.x, o.y); if (await until(opened, 700)) how = 'clicked' }
+          }
+          for (const k of ['click', 'down']) if (!how) {
+            await pin(`__pin.press(${JSON.stringify(by)}, '${k}')`)
+            if (await until(opened, 700)) how = k === 'click' ? 'clicked in script' : 'pressed in script'
+          }
+          steps.push(`${by} (${how || 'did not open'})`)
+          if (!how) { missed.push(`${by}: pressed, but the part it opens never showed`); break }
+        }
+        // A part just opened can draw its insides a moment later.
+        let found
+        for (const end = performance.now() + 800; ; await sleep(50)) {
+          found = await pin(`__pin.find(${JSON.stringify(t)})`)
+          if (found.how !== 'none' || performance.now() > end) break
+        }
+        let hovered = ''
+        if (found.how !== 'none') {
+          await pin('__pin.reveal()')
+          if (!await pin('__pin.shows()')) {
+            for (const h of await pin(`__pin.hovers(${JSON.stringify(t)})`)) {
+              await move(h.x, h.y)
+              if (await until(`(window.__pin ?? (${PIN_PAGE})).shows()`, 300)) { hovered = h.what; break }
+            }
+            if (!hovered) missed.push('the element is on the page but does not show (no size, hidden or transparent), even with the pointer on it and on the elements around it')
+          }
+          // The pointer stays where a part or the element needed it, or on the element with --hover;
+          // else it leaves, so the shot has no hover the user did not see.
+          if (p.hover) { const c = await pin('__pin.centre()'); await move(c.x, c.y) }
+          else if (moved && !hovered && !steps.some(s => s.endsWith('(hovered)'))) await move(0, 0)
+        }
+        await pin('__pin.settle(1500)')
+        if (p.after) await sleep(p.after)
+        const head = `pin ${p.batch}/${p.n} · ${p.route} · ${p.framed ? `view ${p.view} ` : 'page '}${p.width}x${p.height} · ${p.theme}`
+        out.push(head)
+        if (p.text) out.push(`   "${p.text.split('\n')[0].slice(0, 100)}"`)
+        if (steps.length) out.push(`   opened by: ${steps.join(' > ')}`)
+        const capture = async (clip, file) => {
+          const { data } = await send('Page.captureScreenshot', { format: 'png', clip: { x: clip.x, y: clip.y, width: clip.w, height: clip.h, scale: 1 } }, sessionId)
+          writeFileSync(file, Buffer.from(data, 'base64'))
+          return file
+        }
+        if (found.how === 'none') {
+          missed.push(`its element: ${found.why}`)
+          const stage = await page(`(() => { const r = document.querySelector('[data-layers]')?.getBoundingClientRect() ?? { x: 0, y: 0, width: innerWidth, height: innerHeight }; return { x: Math.floor(r.x), y: Math.floor(r.y), w: Math.floor(r.width), h: Math.floor(r.height) } })()`)
+          out.push(`   element: not found; the stage instead: ${await capture(stage, resolve(outDir, `${name}-context.png`))}`)
+          process.exitCode = 1
+        } else {
+          const g = await pin(`__pin.geometry(${p.margin})`)
+          const r = v => Math.round(v), boxOf = b => `${r(b.x)},${r(b.y)} ${r(b.w)}x${r(b.h)}`
+          out.push(`   element: ${found.what} (${found.how === 'selector' ? 'by its selector' : `its selector no longer matches; found by ${found.how}${found.of > 1 ? `, the nearest of ${found.of}` : ''}`})`)
+          if (hovered) out.push(`   shown by: the pointer on ${hovered}`)
+          if (p.point) out.push(`   the spot: ${p.point.x},${p.point.y} in the design (pinned with a long press)`)
+          const before = t.rect, drift = before && (Math.abs(before.w - g.design.w) > 1 || Math.abs(before.h - g.design.h) > 1)
+          out.push(`   box: ${boxOf(g.box)} page px (in the design ${boxOf(g.design)}${before ? `; the comment had ${boxOf(before)}${drift ? ', a different size: the layout is not the one the user saw' : ''}` : ''})`)
+          out.push(`   scale: ${SCALE}x, ${SCALE} image px per page px${g.zoom !== 1 ? ` (the phone frame drawn at ${g.zoom.toFixed(2)}, so ${(SCALE * g.zoom).toFixed(2)} per design px)` : ''}`)
+          const shot = await capture(g.shot, resolve(outDir, `${name}.png`))
+          out.push(`   ${shot}  (${g.shot.w * SCALE}x${g.shot.h * SCALE}: the box and ${p.margin} px around it${g.clipped ? ', cut at the stage' : ''})`)
+          const context = await capture(g.context, resolve(outDir, `${name}-context.png`))
+          out.push(`   ${context}  (${g.context.w * SCALE}x${g.context.h * SCALE}: ${g.region ? `the region it is in, ${g.region}` : 'three times its box'}; the element at ${r((g.box.x - g.context.x) * SCALE)},${r((g.box.y - g.context.y) * SCALE)} in it)`)
+          // The comment's pictures beside the shot, all at one height (at most 900 px, and low enough
+          // that the sheet stays within 2000 px across).
+          const refs = (p.images || []).filter(im => existsSync(im.file))
+          if (refs.length) {
+            const fig = (label, src) => `<figure style="margin:0;flex:none"><figcaption style="height:${LABEL}px;display:flex;align-items:center;white-space:nowrap">${esc(label)}</figcaption><img data-fit src="${pathToFileURL(src).href}" style="display:block;height:600px;margin-top:${INNER}px;outline:1px solid #3f3f46"></figure>`
+            const html = `<!doctype html><meta charset="utf-8"><body style="margin:0;padding:${PAD}px;width:max-content;background:#18181b;color:#fafafa;font:500 22px/1.2 system-ui,sans-serif">
+              <div style="max-width:1100px;height:${HEAD}px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${esc(`${p.batch}/${p.n} · ${p.route}${p.text ? ` · ${p.text.split('\n')[0]}` : ''}`)}</div>
+              <div style="display:flex;gap:${GAP}px;align-items:flex-start">${fig('now', shot)}${refs.map((im, k) => fig(`reference ${k + 1}${im.name ? ` · ${im.name}` : ''}`, im.file)).join('')}</div></body>`
+            const fitAll = `{ const im = [...document.querySelectorAll('img[data-fit]')], ratio = im.reduce((s, i) => s + i.naturalWidth / i.naturalHeight, 0)
+              const H = Math.round(Math.max(120, Math.min(900, Math.max(...im.map(i => i.naturalHeight)), (${SHEET} - ${2 * PAD} - ${GAP} * (im.length - 1)) / ratio)))
+              for (const i of im) i.style.height = H + 'px' }`
+            const file = resolve(outDir, `${name}-vs-ref.png`)
+            await compose(html, file, SHEET, SHEET, fitAll)
+            out.push(`   ${file}  (now beside ${refs.length} reference${refs.length === 1 ? '' : 's'}, at one height)`)
+          }
+          if (p.take) out.push(`   on the motion at ${p.at} ms of its take: this shot is at rest; see that moment with proto shoot ${p.route} --at ${p.at}`)
+        }
+        if (missed.length) out.push(...missed.map(m => `   not replayed: ${m}`))
+        out[0] += `  (${((performance.now() - t0) / 1000).toFixed(1)} s)`
+      } catch (e) {
+        out.push(`pin ${p.batch}/${p.n}: ${e.message}`)
+        process.exitCode = 1
+      } finally {
+        await send('Target.closeTarget', { targetId }).catch(() => {})
+      }
+      said[i] = out.join('\n')
+    }
+    let next = 0
+    await Promise.all(Array.from({ length: Math.min(TABS, pins.length) }, async () => {
+      while (next < pins.length) { const i = next++; await one(pins[i], i) }
+    }))
+    console.log(said.join('\n\n'))
+  }
+  if (pins) await shootPins()
   // Every shot is a fresh tab, and most of its time is the page loading and settling, not Chrome
   // working, so a few run at once. They are listed, and their sheet columns kept, in the order the
   // loop used to take them (desktop before phone), whichever tab finishes first.
-  const jobs = (flags.ref || motion ? [] : SIZES).flatMap((size, order) =>
+  const jobs = (flags.ref || motion || pins ? [] : SIZES).flatMap((size, order) =>
     routes.filter(r => size.mobile || size.every || !phoneOnly(r)).map(route => ({ size, route, order })))
   const printed = []
   const shootOne = async ({ size, route, order }, i) => {

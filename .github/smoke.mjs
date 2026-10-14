@@ -20,6 +20,7 @@ import { commentUsesChecks } from './comment-uses-checks.mjs'
 import { commentRoutesChecks } from './comment-routes-checks.mjs'
 import { commentNavigationChecks } from './comment-navigation-checks.mjs'
 import { commentPicturesChecks } from './comment-pictures-checks.mjs'
+import { shootPinChecks } from './shoot-pin-checks.mjs'
 import { commentUntilChecks } from './comment-until-checks.mjs'
 import { hostLabelChecks } from './host-label-checks.mjs'
 import { listenerChecks } from './listener-checks.mjs'
@@ -180,6 +181,7 @@ await commentUsesChecks({ proto, app, openPage, fail })
 await commentRoutesChecks({ proto, app, openPage, fail })
 await commentNavigationChecks({ app, openPage, fail })
 await commentPicturesChecks({ proto, app, openPage, fail })
+await shootPinChecks({ proto, app, local, fail })
 await commentUntilChecks({ proto, app, fail })
 await listenerChecks({ proto, app, fail })
 await hostLabelChecks({ proto, app, local, openPage, fail })
