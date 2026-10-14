@@ -145,6 +145,29 @@ function plugLines(did, slug, id) {
 // while it is still on that variant. Says what it did: 'moved' (the working variant moved too),
 // 'done', or 'nothing' (an unpick of a variant that isn't the pick). A failure once meta.ts is
 // written is marked as such, so nobody is told to mark it again.
+// A pick in a prototype built from another variant (`from: "<parent>/<letter>"`) picks that variant
+// too, all the way up: choosing a part of B means choosing B. Only the structural parent (`from`),
+// never the `also` list; an archived parent, or one picked already, is left as it is. Undoing a pick
+// leaves the parents picked. Returns the routes it picked, as <slug>/<letter>.
+export function pickParents(slug) {
+  const picked = [], seen = new Set([slug])
+  let from
+  try { from = metaOf(readFileSync(metaFile(slug), 'utf8')).from } catch { return picked }
+  while (typeof from === 'string' && from.includes('/')) {
+    const [parent, letter] = from.split('/')
+    if (!letter || seen.has(parent)) break
+    seen.add(parent)
+    let text, pm
+    try { text = readFileSync(metaFile(parent), 'utf8'); pm = metaOf(text) } catch { break }
+    if (!pm.archived && pm.variants?.[letter] && !pm.picked) {
+      pm.picked = letter
+      writeWhole(metaFile(parent), withMeta(text, pm))
+      picked.push(`${parent}/${letter}`)
+    }
+    from = pm.from
+  }
+  return picked
+}
 function pick(route, off) {
   const [slug, id] = route.split('/')
   const text = readFileSync(metaFile(slug), 'utf8'), meta = metaOf(text)
@@ -154,6 +177,8 @@ function pick(route, off) {
   if (off) delete meta.picked
   else meta.picked = id
   writeWhole(metaFile(slug), withMeta(text, meta))
+  // the variants it was built from are chosen with it (never undone by an unpick)
+  if (!off) try { pickParents(slug) } catch { /* the pick itself is made; the parents can be picked by hand */ }
   let moved = false
   if (!off) {
     try { moved = work({ proto: slug, variant: id, ask: `Picked ${id}` }) }
@@ -217,10 +242,26 @@ const clip = (s, n) => typeof s === 'string' ? s.slice(0, n) : undefined
 const element = t => t && typeof t === 'object' ? {
   selector: clip(t.selector, 500), shoot: clip(t.shoot, 100), src: clip(t.src, 300), component: clip(t.component, 100),
   tag: clip(t.tag, 40), text: clip(t.text, 300), rect: box(t.rect), within: clip(t.within, 100),
+  ...(t.stage && Number.isInteger(t.stage.w) && Number.isInteger(t.stage.h) && t.stage.w > 0 && t.stage.h > 0 && t.stage.w <= 10000 && t.stage.h <= 10000 ? { stage: { w: t.stage.w, h: t.stage.h } } : {}),
   ...(t.whole === true ? { whole: true } : {}),
   ...(Array.isArray(t.route) && t.route.length ? { route: t.route.slice(0, 6).filter(r => typeof r === 'string').map(r => clip(r, 200)) } : {}),
   ...(Array.isArray(t.uses) && t.uses.length ? { uses: t.uses.slice(0, 4).filter(u => u && typeof u === 'object').map(u => ({ component: clip(u.component, 100), at: clip(u.at, 300), ...(u.key != null ? { key: clip(String(u.key), 100) } : {}), ...(typeof u.props === 'string' ? { props: clip(u.props, 240) } : {}) })) } : {}),
 } : undefined
+// The design's own localStorage as the page had it when the batch was sent, for `proto shoot --pin`:
+// string keys and values, none of the page's own (proto-), at most 64 KB in all. Anything else is
+// left out whole.
+const storageOf = st => {
+  if (!st || typeof st !== 'object' || Array.isArray(st)) return null
+  const out = {}
+  let size = 0
+  for (const [k, v] of Object.entries(st)) {
+    if (typeof v !== 'string' || !k || k.startsWith('proto-')) return null
+    size += k.length + v.length
+    if (size > 64 * 1024) return null
+    out[k] = v
+  }
+  return Object.keys(out).length ? out : null
+}
 // A comment on the design's motion (the page's motion dock) is on a moment of its take, `at`, or a
 // range of it, `at` to `to`, in ms, and says how long the take is: whole numbers of ms inside it.
 // Null when the comment has none; false when what it has isn't that.
@@ -272,6 +313,9 @@ function receive(data) {
     const time = timeOf(c)
     if (time === false) throw bad(i, `: a moment of the motion is at (and to, for a range) in ms inside the take, and take, its length in ms (up to ${MAX_TAKE})`)
     if (time && (!/^[^/]+\/[A-Z]{1,2}(\/|$)/.test(c.route) || c.action !== undefined || c.point !== undefined)) throw bad(i, ': a comment on the motion is on a variant (<slug>/<letter>), with no action and no point')
+    // A follow-up answers the reply to a comment sent before: which one, so `proto inbox` can say
+    // what was said before it. Only its address is kept; the thread itself is in the batches.
+    if (c.re !== undefined && (typeof c.re?.batch !== 'string' || !/^[\w-]{1,60}$/.test(c.re.batch) || !Number.isInteger(c.re.n) || c.re.n < 1 || c.action !== undefined)) throw bad(i, ': re is { batch, n }, the sent comment whose reply this answers, on a comment with no action')
     const view = viewOf(c)
     if (view === false) throw bad(i, ': view is { size: phone, tablet or desktop, w, h }, the layout\'s size in whole CSS px from 200 to 4000')
     if (view && (c.action !== undefined || time)) throw bad(i, ': a comment in a device view is on the design, with no action and no moment of the motion')
@@ -305,6 +349,7 @@ function receive(data) {
       point: c.point && { x: Math.round(+c.point.x || 0), y: Math.round(+c.point.y || 0) },
       ...time,
       ...(view ? { view } : {}),
+      ...(c.re ? { re: { batch: c.re.batch, n: c.re.n } } : {}),
       target: element(c.target),
       tags: (Array.isArray(c.tags) ? c.tags : []).map(element).filter(Boolean).slice(0, 20),
       images,
@@ -348,6 +393,7 @@ function receive(data) {
     id, at,
     viewport: data.viewport && { w: +data.viewport.w || 0, h: +data.viewport.h || 0, phone: !!data.viewport.phone },
     theme: data.theme === 'dark' ? 'dark' : 'light',
+    ...(() => { const st = storageOf(data.storage); return st ? { storage: st } : {} })(),
     comments: list,
     ...(list.every(c => c.done) ? { done: true } : {}),
   }

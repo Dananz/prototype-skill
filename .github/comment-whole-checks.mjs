@@ -25,7 +25,8 @@ export async function commentWholeChecks({ proto, app, openPage, fail }) {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'C', shiftKey: true, bubbles: true }))
       if (!await until(() => box() && document.activeElement === box())) return '⇧C did not put the cursor in the whole-variant box'
       if (!await until(outline)) return 'the box has the focus but the variant is not outlined'
-      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+      if (box().tagName !== 'TEXTAREA') return 'the whole-variant box does not support multiple lines'
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
       set.call(box(), 'Give the whole page more air')
       box().dispatchEvent(new Event('input', { bubbles: true }))
       if (!await until(() => document.querySelector('[data-shoot=whole-add]'))) return 'typing in the box offered no way to add it'
@@ -40,6 +41,24 @@ export async function commentWholeChecks({ proto, app, openPage, fail }) {
       return 'ok'
     })()`)
     if (typed !== 'ok') fail(`comment whole: ${typed}`)
+
+    await page.run(`document.querySelector('[data-shoot=whole-input]').focus()`)
+    await page.key('Enter')
+    await page.key('Enter', ['Shift'])
+    const lines = await page.run(`(async () => {
+      ${helpers}
+      if (box().value !== '\\n\\n' || saved().length !== 1) return 'Enter or Shift+Enter submitted instead of inserting a newline'
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+      set.call(box(), Array.from({ length: 12 }, (_, i) => 'Line ' + i).join('\\n'))
+      box().dispatchEvent(new Event('input', { bubbles: true }))
+      if (!await until(() => box().scrollHeight > box().clientHeight)) return 'a long comment does not scroll within its capped height'
+      if (box().clientHeight > 140) return 'a long comment expanded past its height cap'
+      return 'ok'
+    })()`)
+    if (lines !== 'ok') fail(`comment whole: ${lines}`)
+    await page.key('Enter', ['Meta'])
+    const added = await page.run(`(async () => { ${helpers}; return await until(() => saved().length === 2 && box().value === '' && saved()[1].body.join('').includes('Line 0\\nLine 1')) })()`)
+    if (!added) fail('comment whole: Cmd+Enter did not add the multiline comment intact')
 
     const row = await page.run(`(async () => {
       ${helpers}

@@ -36,10 +36,10 @@ export default function A() {
     await run(`await until(() => document.querySelector('[data-shoot=create]')); document.querySelector('[data-shoot=create]').click(); await until(() => document.querySelector('[data-shoot=created]')); ${menu}; if (document.querySelector('[data-bar] [data-act=copymode]')) throw new Error('copy content generated before request')`)
     assert((await matching('try-it')).length === 0 && (await matching('copy-options')).length === 0, 'opening initial UI queued generation')
     await page.screenshot(join(keepShots, 'first-prototype-initial.png'))
-    await run(`document.querySelector('[data-request-extra="try-it"]').click(); await until(() => document.querySelector('textarea')); [...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Cancel').click(); await until(() => document.querySelector('[data-request-extra]'))`)
+    await run(`document.querySelector('[data-request-extra="try-it"]').click(); await until(() => document.querySelector('textarea[aria-label^="Note for "]')); [...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Cancel').click(); await until(() => document.querySelector('[data-request-extra]'))`)
     assert((await matching('try-it')).length === 0, 'canceled draft queued generation')
     // A transport failure leaves the draft open and retryable without queuing work.
-    await run(`document.querySelector('[data-request-extra="try-it"]').click(); await until(() => document.querySelector('textarea')); const originalFetch = window.fetch; window.fetch = async (...args) => { if (args[0] === '/__proto/comments') { window.fetch = originalFetch; throw new TypeError('Test connection failure') } return originalFetch(...args) }; [...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Send').click(); await until(() => document.querySelector('[data-decide] [role=alert]')?.textContent.includes('Test connection failure')); await until(() => ![...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Send').disabled)`)
+    await run(`document.querySelector('[data-request-extra="try-it"]').click(); await until(() => document.querySelector('textarea[aria-label^="Note for "]')); const originalFetch = window.fetch; window.fetch = async (...args) => { if (args[0] === '/__proto/comments') { window.fetch = originalFetch; throw new TypeError('Test connection failure') } return originalFetch(...args) }; [...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Send').click(); await until(() => document.querySelector('[data-decide] [role=alert]')?.textContent.includes('Test connection failure')); await until(() => ![...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Send').disabled)`)
     assert((await matching('try-it')).length === 0, 'failed send queued generation')
     // Both clicks in one task: the synchronous guard must stop a double send before React commits.
     await run(`const b = [...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Send'); b.click(); b.click(); await until(() => document.querySelector('[data-decide] [role=status]'))`)
@@ -57,7 +57,7 @@ export default function A() {
     await run(`await until(() => document.documentElement?.dataset.ready === '1'); ${menu}; await until(() => document.querySelector('[data-request-extra="try-it"]')?.disabled)`)
 
     await run(`const row = [...document.querySelectorAll('[data-shoot=comment-row]')].find(r => r.textContent.includes('Needs explanation: A')); if (!row) throw new Error('requested extra absent from Comments'); row.querySelector('[data-shoot=remove]').click()`)
-    await run(`await until(() => !document.querySelector('[data-request-extra="try-it"]')?.disabled); document.querySelector('[data-request-extra="try-it"]').click(); await until(() => document.querySelector('textarea')); [...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Send').click(); await until(() => document.querySelector('[data-decide] [role=status]'))`)
+    await run(`await until(() => !document.querySelector('[data-request-extra="try-it"]')?.disabled); document.querySelector('[data-request-extra="try-it"]').click(); await until(() => document.querySelector('textarea[aria-label^="Note for "]')); [...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Send').click(); await until(() => document.querySelector('[data-decide] [role=status]'))`)
     requests = await matching('try-it')
     assert(requests.length === 1 && requests[0].id !== first, 'withdrawal did not allow a fresh request')
     const heard = proto(['inbox'])
@@ -67,7 +67,7 @@ export default function A() {
     const withHints = initial.replace("export default", "import { useHints } from '../../hints'\nexport default").replace('  return <main', "  useHints([{ kind: 'try', text: 'Create your first project', at: '[data-shoot=create]', done: created }])\n  return <main")
     writeFileSync(file, withHints)
     proto(['reply', `${requests[0].id}/1`, 'Try it is ready', '--done'])
-    await run(`${menu}; await until(() => document.querySelector('[data-request-extra="try-it"]')?.textContent.includes('Ready')); document.querySelector('[data-request-extra="copy-options"]').click(); await until(() => document.querySelector('textarea')); [...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Send').click(); await until(() => document.querySelector('[data-decide] [role=status]'))`)
+    await run(`${menu}; await until(() => document.querySelector('[data-request-extra="try-it"]')?.textContent.includes('Ready')); document.querySelector('[data-request-extra="copy-options"]').click(); await until(() => document.querySelector('textarea[aria-label^="Note for "]')); [...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Send').click(); await until(() => document.querySelector('[data-decide] [role=status]'))`)
     const copies = await matching('copy-options')
     assert(copies.length === 1, 'copy request missing')
     assert(proto(['inbox']).includes('action: copy-options (add useCopy for this variant only'), 'copy request CLI instructions missing')
@@ -113,7 +113,7 @@ export default function A() {
     const result = await phone.run(`(async () => { ${until} try {
       (await until(() => document.querySelector('[data-pill-handle]'))).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       const b = await until(() => document.querySelector('[data-request-extra="copy-options"]'));
-      b.click(); await until(() => document.querySelector('textarea'));
+      b.click(); await until(() => document.querySelector('textarea[aria-label^="Note for "]'));
       return 'ok'
     } catch(e) { return e.message } })()`)
     assert(result === 'ok', `phone: ${result}`)

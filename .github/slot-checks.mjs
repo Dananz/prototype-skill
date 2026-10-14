@@ -153,5 +153,7 @@ export default function B() { return <main><h1>Home B</h1><Slot proto="slothome"
     await decide('slotbtn/B', 'unpick')
     proto(['inbox']) // the page's picks arrive done; take them so later queue counts start clean
   } finally { page.close() }
+  // Unpicking the child deliberately keeps its parent's choice; reset this fixture explicitly.
+  proto(['pick', 'slothome', '--off'])
   console.log('\nOK: a variant plugs into its parent from a pick in the page and from proto pick, and handoff and inbox know it')
 }

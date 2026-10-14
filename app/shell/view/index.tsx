@@ -23,7 +23,7 @@ import { seeThrough } from '../comments/dom'
 import { dims, ORDER, SIZES, type Size } from './sizes'
 
 /** size null: the stage's own artboard (fill), as big as the stage, with no line over it. */
-export type View = { size: Size | null; land: boolean; zoom: number }
+export type View = { size: Size | null; land: boolean; zoom: number; /** Counts Fit chosen from the zoom control: each one centres the device again. */ home?: number }
 export type ViewProps = {
   /** The view on, or null. zoom: 0 is Fit, else a percentage. */
   view: View | null
@@ -179,7 +179,7 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
   const scale = view.zoom ? view.zoom / 100 : fit
   const zoomed = scale > fit + 0.001
   const setZoom = (z: number) => set({ zoom: z })
-  const { wrap, anchor } = usePlace(area, box, d, scale, zoomed, pad, `${view.size}-${view.land}`)
+  const { wrap, anchor } = usePlace(area, box, d, scale, zoomed, pad, `${view.size}-${view.land}`, view.home ?? 0)
   const pinch = usePinch(area, scale, fit, setZoom, anchor)
   const gestures = useGestures(area, scale, fit, setZoom, anchor)
   const keys = useRef(onKey)

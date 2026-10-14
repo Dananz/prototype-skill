@@ -65,8 +65,12 @@ export type CommentBatch = {
     /** On the motion (motion/): a moment of its take in ms, or a range to `to`, and the take's length. */
     at?: number; to?: number; take?: number
     /** Written in a device view (view/): about that layout. */
-    view?: ViewSize }[]
+    view?: ViewSize
+    /** A follow-up: the sent comment (its batch, and its number in it) whose reply this answers. */
+    re?: { batch: string; n: number } }[]
   viewport?: { w: number; h: number; phone?: boolean }
+  /** The design's own localStorage when it was sent (comments/dom.ts designStorage), for `proto shoot --pin`. */
+  storage?: Record<string, string>
   theme?: 'light' | 'dark'
 }
 /** How a send went: its batch, and for each decision in it whether the server made it, or why not
@@ -201,7 +205,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     drill: null as number | null,
     // The device view (view/): the page at another size in the stage. size null: none, the page as
     // this screen is; zoom 0: Fit, else a percentage.
-    view: { size: null as Size | null, land: false, zoom: 0 },
+    view: { size: null as Size | null, land: false, zoom: 0, home: 0 },
   }
 
   // ---------- data helpers ----------
@@ -477,7 +481,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const rangeAt = (v: number) => { const [lo, hi] = scaleRange(); return ((v - lo) / (hi - lo)) * 100 }
   const scaleLabel = () => (scaleNow() ? `${Math.round(scaleNow())}%` : 'Fit')
   function setScale(v: number) {
-    if (frameOn()) return patchView({ zoom: v })
+    // Fit chosen here also puts a device that was dragged away back in the middle.
+    if (frameOn()) return patchView(v ? { zoom: v } : { zoom: 0, home: st.view.home + 1 })
     st.scale = v; render(); fit()
   }
   const phoneSize = (proto: Proto) => `width:${proto.screen[0] + 20}px;height:${proto.screen[1] + 20}px`
@@ -1926,7 +1931,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   function paintView() {
     deviceView.paint({
-      view: frameOn() ? { size: viewOn() ? st.view.size! : null, land: st.view.land, zoom: st.view.zoom } : null,
+      view: frameOn() ? { size: viewOn() ? st.view.size! : null, land: st.view.land, zoom: st.view.zoom, home: st.view.home } : null,
       hash: hashOf(st.place),
       dark: st.dark,
       set: patchView,

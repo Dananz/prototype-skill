@@ -32,7 +32,8 @@ pill's menu). On a wide screen a web variant sits on an artboard as big as the s
 the stage's width (its breakpoints see the stage, not the window); the stage's own layout is
 selected. Choosing another shows the page at that size, zoomed to fit (a 1440 × 900 desktop on a
 phone, a phone on a desktop); the scale button zooms either from 10% to 300%, and the user can
-pinch, Space-drag, comment, try things, pick copy and scrub motion there. Nothing to build for it
+pinch, Space-drag or middle-button drag (from anywhere, at any zoom; the page stays where it is
+left, and Fit centres it again), comment, try things, pick copy and scrub motion there. Nothing to build for it
 beyond a web variant that lays out well at each width.
 
 ## Agent setup (Claude Code, Codex and other harnesses)
@@ -509,6 +510,7 @@ proto shoot <slug>/B --copy --click "[data-copy=headline]" --click "[data-copy-o
 proto shoot <slug>/B --at 350                   # a variant with useMotion, 350 ms into its motion
 proto shoot <slug>/B --frames 12 [--at 300-620] # 12 moments of its motion (or of that range) on one sheet
 proto shoot <slug>/B --size 834x1194            # one viewport instead of desktop and phone (a tablet here)
+proto shoot --pin <batch>/<n>                   # what a comment is on, as its writer saw it (Comments from the page)
 ```
 
 `--sheet` shoots every variant (a web one at 1440×900 and 390×844, a `--kind phone` one at
@@ -678,6 +680,14 @@ about the design as a whole (its density, tone, structure or flow), not one elem
 where the design lives, across the parts it names, rather than on one element; the reply says what
 changed overall.
 
+**The user can answer your reply** (Reply under it, in the Comments panel), and the comment becomes a
+thread there. The answer reaches you as a comment in a batch of its own, on the same element, spot or
+moment as the comment it follows, with the exchange so far printed before its words, oldest first:
+`2. plugin/A  (reply to 20261014T005910-51b2/2)` then
+`earlier: "<their comment>"  ->  Claude: "<your reply>"`. Read it as the next line of that exchange,
+not a fresh request, and answer it with `proto reply <batch>/<n> "…" --done` like any comment; the
+reply shows in the thread.
+
 **Handle a batch as one job, not one comment at a time.** The user is waiting from the moment
 they press Send until the last change is in, and the time goes into round trips and lookups, not
 into the edits. Measured on 12 small comments: one pass took 48 s; a worker per file took 86 s
@@ -698,6 +708,22 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
    If no useful extra applies, reply with that reason and `--done`, so it can be requested again.
 4. One shot of what changed (`proto shoot <route>`, or `--size` for the view the comments were
    written in), read once. Skip it when every change is invisible in a shot (hover, behaviour).
+   For a comment on a detail (a line's weight, an outline, spacing, something inside a menu or
+   shown on hover), check it with `proto shoot --pin <batch>/<n>` (`--pin <batch>` for every
+   comment of the batch) before replying: it shoots the element at the user's own page size and
+   theme (or the view's size) at 2x, opens the way to it (its `opened by` controls, hovering where
+   it only shows on hover), and writes `pin-<batch>-<n>.png` (its box plus `--margin`, 24 px),
+   `-context.png` (the region around it) and, when the comment has pictures, `-vs-ref.png` (the shot
+   beside them at one height). Read `pin-<batch>-<n>.png` for the detail (the sheet scales it to
+   the pictures' height) and the vs-ref sheet for the comparison. A detail can look right at the default shoot
+   size and wrong on the user's page. The command prints the element's box, how it found it (a
+   selector that no longer matches is said so) and what it could not replay. It restores the
+   design's saved settings and the user's stage size when the batch has them; a `stand-in:` line
+   (an indexed control the user had, like `band-dot-2`, replaced by the nearest one here), a
+   `NOTE:` (the element is gone; what it was in is shot) or a `WARNING:` (another shape than the
+   comment's box) means the shot is not what the user saw: read it with that in mind. `--state <id>` shoots
+   it in a state from meta.ts, `--hover` keeps the pointer on it, `--after <ms>` waits longer
+   before the shot.
 5. One reply call for the batch: `proto reply <batch> 1 "<what you changed>" 2 "…" … --done`
    (use `--as codex`, `--as claude` or `--as agent` to override the detected reply mark). A comment
    you can't act on is left out of that call and gets its own reply without `--done` saying why.

@@ -57,12 +57,21 @@ const cut = (a: Box, b: Box): Box | null => {
 }
 
 /**
- * `el`'s box (see `rel`) cut to the part of the design that is on screen: a design scrolls inside
- * its mount (a phone's screen), so an element taller than the screen, or half scrolled away,
- * is only drawn where it can be seen. Null when none of it is.
+ * Cut to the visible scroll viewports, not the mount's layout height. A desktop mount can
+ * overflow into its parent's scroller; its own one-screen box then scrolls out of view while
+ * the rest of the design is still visible. Phone mounts clip their own scrolling content.
  */
 export function seen(el: Element, mount: Element, host: Element): Box | null {
-  const b = cut(rel(el, host), rel(mount, host)), f = frameShown(mount, host)
+  let b: Box | null = cut(rel(el, host), { x: 0, y: 0, w: host.clientWidth, h: host.clientHeight })
+  for (let p = el.parentElement; b && p; p = p.parentElement) {
+    const cs = p.ownerDocument.defaultView!.getComputedStyle(p), r = rel(p, host)
+    const clipX = cs.overflowX !== 'visible', clipY = cs.overflowY !== 'visible'
+    if (clipX || clipY) b = cut(b, {
+      x: clipX ? r.x : b.x, y: clipY ? r.y : b.y,
+      w: clipX ? r.w : b.w, h: clipY ? r.h : b.h,
+    })
+  }
+  const f = frameShown(mount, host)
   return b && f ? cut(b, f) : b
 }
 
@@ -96,7 +105,31 @@ export function describe(mount: HTMLElement, el: HTMLElement): Target {
     tag: el.tagName.toLowerCase(),
     text: text.slice(0, 80),
     rect: { x: Math.round((r.left - o.left) / z), y: Math.round((r.top - o.top) / z), w: Math.round(r.width / z), h: Math.round(r.height / z) },
+    // The stage the design is mounted in, in page px: a design that fits its stage is drawn at the
+    // scale this sets, so `proto shoot --pin` sizes its window until its stage is this one.
+    ...(() => { const s = mount.getBoundingClientRect(); return s.width >= 1 && s.height >= 1 ? { stage: { w: Math.round(s.width), h: Math.round(s.height) } } : {} })(),
   }
+}
+
+/**
+ * The design's own saved settings (its localStorage, the page's own `proto-` keys left out), sent
+ * with a batch so `proto shoot --pin` can open the design as the user had it (a panel they resized,
+ * a range they chose). Nothing when it is more than 64 KB, or storage is blocked.
+ */
+export function designStorage(): Record<string, string> | undefined {
+  try {
+    const out: Record<string, string> = {}
+    let size = 0
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (!k || k.startsWith('proto-')) continue
+      const v = localStorage.getItem(k) ?? ''
+      size += k.length + v.length
+      if (size > 64 * 1024) return undefined
+      out[k] = v
+    }
+    return Object.keys(out).length ? out : undefined
+  } catch { return undefined }
 }
 
 /** The variant as a whole, as a target: its root element, with the variant's name in place of the root's text. */

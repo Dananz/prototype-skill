@@ -16,19 +16,23 @@ import { designKit } from './design-kit.mjs'
 import { speedChecks } from './speed-checks.mjs'
 import { commentParentChecks } from './comment-parent-checks.mjs'
 import { commentWholeChecks } from './comment-whole-checks.mjs'
+import { commentScrollChecks } from './comment-scroll-checks.mjs'
 import { commentUsesChecks } from './comment-uses-checks.mjs'
 import { commentRoutesChecks } from './comment-routes-checks.mjs'
 import { commentNavigationChecks } from './comment-navigation-checks.mjs'
 import { commentPicturesChecks } from './comment-pictures-checks.mjs'
+import { shootPinChecks } from './shoot-pin-checks.mjs'
 import { commentUntilChecks } from './comment-until-checks.mjs'
 import { hostLabelChecks } from './host-label-checks.mjs'
 import { listenerChecks } from './listener-checks.mjs'
 import { pickNoteChecks } from './pick-note-checks.mjs'
+import { commentReplyThreadChecks } from './comment-reply-thread-checks.mjs'
 import { contextMenuChecks } from './context-menu-checks.mjs'
 import { splitChecks } from './split-checks.mjs'
 import { keyboardColumnsChecks } from './keyboard-columns-checks.mjs'
 import { slotChecks } from './slot-checks.mjs'
 import { settingsChecks } from './settings-checks.mjs'
+import { middleDragChecks } from './middle-drag-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -145,13 +149,15 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
       await at('mouseReleased', x1, y1, { clickCount: 1 })
     }
     const hover = (x, y) => send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' }, sessionId)
+    // Any real mouse event: mouse('mousePressed', x, y, { button: 'middle', buttons: 4, clickCount: 1 }).
+    const mouse = (type, x, y, extra = {}) => send('Input.dispatchMouseEvent', { type, x, y, button: 'left', ...extra }, sessionId)
     const screenshot = async (file, clip) => {
       const { data } = await send('Page.captureScreenshot', { format: 'png', ...(clip ? { clip: { x: 0, y: 0, scale: 1, ...clip } } : {}) }, sessionId)
       mkdirSync(dirname(file), { recursive: true })
       writeFileSync(file, Buffer.from(data, 'base64'))
     }
     const appearance = value => send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value }] }, sessionId)
-    return { run, close, press, enter, key, touch, drag, hover, screenshot, appearance }
+    return { run, close, press, enter, key, touch, drag, hover, mouse, screenshot, appearance }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {
@@ -176,11 +182,14 @@ await settingsChecks({ proto, app, local, openPage, fail })
 
 await commentParentChecks({ proto, app, openPage, fail })
 await commentWholeChecks({ proto, app, openPage, fail })
+await commentScrollChecks({ proto, app, openPage, fail })
 await commentUsesChecks({ proto, app, openPage, fail })
 await commentRoutesChecks({ proto, app, openPage, fail })
 await commentNavigationChecks({ app, openPage, fail })
 await commentPicturesChecks({ proto, app, openPage, fail })
+await shootPinChecks({ proto, app, local, fail })
 await commentUntilChecks({ proto, app, fail })
+await commentReplyThreadChecks({ proto, app, local, openPage, fail })
 await listenerChecks({ proto, app, fail })
 await hostLabelChecks({ proto, app, local, openPage, fail })
 await pickNoteChecks({ proto, app, local, openPage, fail, keepShots })
@@ -188,6 +197,7 @@ await contextMenuChecks({ proto, app, local, openPage, fail })
 await splitChecks({ proto, app, local, openPage, fail, keepShots })
 await keyboardColumnsChecks({ proto, app, local, openPage, fail, keepShots })
 await slotChecks({ proto, app, local, openPage, fail })
+await middleDragChecks({ proto, app, local, openPage, fail })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
 proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--variants', 'A:Price only,B:Fuel tabs'])
