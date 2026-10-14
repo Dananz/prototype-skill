@@ -15,6 +15,8 @@ import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } fro
 import { BUILDING_CLASS, ERROR_CLASS, ownerOfPath, refOfPath } from './building'
 import { dock, edge, smooth, runDock, restoreEdgeLabels, installPointerTracking, fadeOut } from './motion'
 import { hints, fillField, type Hint } from './hints'
+import { tweaks, isChanged } from './tweaks'
+import { createTweakControls, createTweaksDrawer } from './tweaks-ui'
 import { copy } from './copy'
 import { createSheet, createMenuSheet, createTrySheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
@@ -788,6 +790,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     st.drill = null
     st.sheet = false
     trySheet = 'closed'
+    tweaksOpen = false
     closeCard(true)
     if (p.view !== 'variant') st.focus = false
     remember(`proto-place-${session.id}`, hashOf(p))
@@ -967,7 +970,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ${switcher}
       <div class="ml-auto flex shrink-0 items-center gap-1">
         ${stepper}${stepper && (view === 'variant' || viewOk() || commentHost() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${sizeTabs()}${commentBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${settingsBtn()}
+        ${sizeTabs()}${commentBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${settingsBtn()}
         ${phones || frameOn() ? `<div class="relative"><button data-act="open:scale" aria-expanded="${st.open === 'scale'}" aria-label="${frameOn() ? 'Zoom' : 'Phone scale'}" class="${IB} text-xs tabular-nums ${st.open === 'scale' ? 'bg-zinc-900/5 text-zinc-900 dark:bg-white/10 dark:text-white' : ''}">${ic(viewOn() ? sizeIcon(st.view.size!, st.view.land) : frameOn() ? sizeIcon(shownSize() ?? 'desktop') : 'phone')}<span data-scale-label>${scaleLabel()}</span></button>${pop(st.open === 'scale', scaleMenu, 'right-0 top-11 w-72')}</div>`
           // On the stage the design is at its own size: the button stays, so choosing a layout doesn't move the bar.
           : viewOk() ? `<button type="button" aria-disabled="true" aria-label="Zoom" title="The design is at its full size here. Choose a layout to zoom it" class="${IB} cursor-default text-xs tabular-nums opacity-40 hover:bg-transparent">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth)))}<span>100%</span></button>` : ''}
@@ -1096,7 +1099,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const vid = st.place.view === 'variant' ? st.place.variant : ''
     const at = vs.findIndex(v => v.id === vid)
     const tryN = pillOn() && phoneMq.matches ? tryCount(hintList()) : 0
-    const key = pillOn() ? JSON.stringify([p!.id, vid, vs.map(v => [v.id, v.name]), editing(p!.id, vid), st.sheet, pillComments(), copyCounts().on, trySheet]) : ''
+    const key = pillOn() ? JSON.stringify([p!.id, vid, vs.map(v => [v.id, v.name]), editing(p!.id, vid), st.sheet, pillComments(), copyCounts().on, trySheet, tweakList().length, tweaksOpen, tweakList().filter(isChanged).length]) : ''
     if (key !== pillKey) {
       pillKey = key
       if (!key) { pill.innerHTML = ''; closeCard(true) }
@@ -1122,10 +1125,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             <div data-ruler hidden class="pointer-events-none absolute bottom-full left-1/2 mb-2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-zinc-900/90 shadow-lg ring-1 ring-white/10 [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)] dark:bg-zinc-800/90"></div>
             ${menuBtn}${sep}
             <button data-act="variant:${prev.id}" aria-label="Previous variant: ${prev.id} ${esc(prev.name)}" class="${pillBtn}">${ic('left')}</button>
-            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? `${v.id} ${esc(v.name)}, ${at + 1} of ${vs.length}. ` : ''}Show all variants" class="flex h-10 w-40 min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 active:bg-white/10">
+            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? `${v.id} ${esc(v.name)}, ${at + 1} of ${vs.length}. ` : ''}Show all variants" class="flex h-10 ${tweakList().length ? 'w-28' : 'w-40'} min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 active:bg-white/10">
               ${name}
             </div>
             <button data-act="variant:${next.id}" aria-label="Next variant: ${next.id} ${esc(next.name)}" class="${pillBtn}">${ic('right')}</button>
+            ${tweakList().length ? `${sep}<button data-act="tweaks" data-shoot="tweaks" aria-label="Tweaks" aria-haspopup="dialog" aria-expanded="${tweaksOpen}" class="${pillBtn} relative ${tweaksOpen ? '!bg-sky-700 !text-white' : ''}">${ic('tweaks', 'size-5')}${tweakList().some(isChanged) ? `<span class="absolute right-0 top-0 grid min-w-3.5 rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : ''}</button>` : ''}
             ${commentHost() ? (c => `${sep}<button data-act="comment:tap" data-shoot="comment" aria-label="Comments" aria-pressed="${c.picking}" class="${pillBtn} relative ${c.picking ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.picking ? 'x' : 'comment', 'size-5')}${c.drafts && !c.picking ? `<span class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold text-proto-primary-fg ring-2 ring-zinc-900">${c.drafts}</span>` : ''}</button>`)(comments.counts()) : ''}
           </div>
         </div>`
@@ -1513,6 +1517,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const here = st.place.view === 'variant' ? st.place : null
     switch (name) {
       case 'settings': settingsOpen = true; st.open = null; st.menu = ''; st.drawer = false; render(); void refreshStatus(); return
+      case 'tweaks': {
+        if (!tweakList().length) return
+        if (phoneMq.matches) { tweaksOpen = !tweaksOpen; trySheet = 'closed'; if (tweaksOpen) comments.escape(); closeCard(true) }
+        else { selectPanelTab('tweaks'); hintsOpen = true; if (wideMq.matches) remember('proto-hints', '1') }
+        return render()
+      }
       case 'comment': if (arg === 'tap') { comments.copy.off(); return comments.tap() } return toggleComment()
       // The phone's Try it key: the sheet up, or down. Brought back from away, the spot goes out.
       case 'try': { const to = trySheet === 'open' ? 'closed' : 'open'; trySheet = to; setTry(null); return setTrySheet(to) }
@@ -1718,6 +1728,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // Cmd or Ctrl Enter sends what's ready to Claude, from anywhere but a field of the design's own.
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
     if (e.key === 'Escape') {
+      if (tweaksOpen) { e.preventDefault(); tweaksOpen = false; render(); return }
       if (tryEsc()) return
       if (trySheet === 'open') return setTrySheet('closed')
       if (comments.copy.escape()) return
@@ -1837,8 +1848,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // on the design (a spot, Fill in, copy mode) waits for the frame's.
   // Also once the frame has its design but before it has declared anything (its hints, copy lines
   // and motion come in effects, a moment after it mounts): the stage's copy has declared the same.
-  const countHost = () => { const t = toolHost(); return t && (hints.of(t).length || copy.of(t).length || motion.of(t)) ? t : hintHost() ?? t }
+  const countHost = () => { const t = toolHost(); return t && (hints.of(t).length || copy.of(t).length || motion.of(t) || tweaks.of(t).length) ? t : hintHost() ?? t }
   const hintList = () => framed || q.get('hints') === '0' ? [] : hints.of(countHost())
+  const tweakList = () => framed || q.get('hints') === '0' || !hintHost() ? [] : tweaks.of(toolHost())
+  let tweaksOpen = false, tweaksUp = false
+  const tweaksBtn = () => !tweakList().length || st.focus ? '' : `<button data-act="tweaks" data-shoot="tweaks" aria-label="Tweaks" aria-expanded="${hintsOpen && tab === 'tweaks'}" class="${IB} hidden sm:inline-flex">${ic('tweaks')}<span class="hidden xl:inline">Tweaks</span></button>`
   const valueOf = (h: Extract<Hint, { kind: 'value' }>) => { try { return String(typeof h.value === 'function' ? h.value() : h.value) } catch { return '' } }
   const flash = () => { clearTimeout(hintTimer); hintTimer = window.setTimeout(() => { hintSaid = ''; hintCopied = -1; paintHints() }, 1400) }
 
@@ -2128,7 +2142,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (proto && variant && !(st.place.view === 'variant' && st.place.proto === proto && st.place.variant === variant)) go({ view: 'variant', proto, variant })
     if (phoneMq.matches) comments.act.openSheet(true)
     else if (railOn()) {
-      tab = 'comments'
+      selectPanelTab('comments')
       if (!hintsOpen) { hintsOpen = true; remember('proto-hints', '1') }
       paintHints()
     }
@@ -2226,7 +2240,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     comments.commentOn(el)
     if (phoneMq.matches) comments.act.openSheet(true)
     else if (railOn()) {
-      tab = 'comments'
+      selectPanelTab('comments')
       if (!hintsOpen) { hintsOpen = true; remember('proto-hints', '1') }
       paintHints()
     }
@@ -2293,39 +2307,47 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div data-panel role="complementary" class="absolute inset-y-0 right-0 z-20 hidden flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div data-tabs class="flex h-11 shrink-0 items-center gap-0.5 border-b border-black/[.07] pl-1.5 pr-1 dark:border-white/10"></div>
       <div data-try class="min-h-0 flex-1 overflow-y-auto overscroll-contain" hidden></div>
+      <div data-tweak-body class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" hidden></div>
       <div data-cbody class="min-h-0 flex-1" hidden></div>
       <div data-caveats></div>
     </div>
-    <div data-try-sheet></div>`
+    <div data-try-sheet></div><div data-tweaks-sheet></div>`
   const handles = hintBox.querySelector<HTMLElement>('[data-handles]')!
   const panel = hintBox.querySelector<HTMLElement>('[data-panel]')!
   const tabsEl = hintBox.querySelector<HTMLElement>('[data-tabs]')!
   const tryEl = hintBox.querySelector<HTMLElement>('[data-try]')!
   const cbody = hintBox.querySelector<HTMLElement>('[data-cbody]')!
   const caveatEl = hintBox.querySelector<HTMLElement>('[data-caveats]')!
-  let tab: 'comments' | 'try' = 'comments'
+  let tab: 'comments' | 'try' | 'tweaks' = 'comments'
+  const tweakBody = hintBox.querySelector<HTMLElement>('[data-tweak-body]')!
+  const drawTweaks = createTweakControls(tweakBody)
+  const drawTweaksDrawer = createTweaksDrawer(hintBox.querySelector<HTMLElement>('[data-tweaks-sheet]')!)
+  let autoTweaksShown = false
+  function selectPanelTab(next: typeof tab) { tab = next; autoTweaksShown = true }
   comments.mountRail(cbody)
 
-  function paintHints() { syncComments(); motionDock.sync(); paintPanel(); syncSpot() }
+  function paintHints() { syncComments(); motionDock.sync(); paintPanel(); paintTweaks(); syncSpot() }
   // Starting to comment opens the Comments tab beside the design, where the new one lands. Only
   // where the panel docks: narrower, it would cover what you're about to click on.
   function toggleComment() {
     comments.copy.off()
     comments.act.toggle()
     if (!comments.counts().picking || !railOn() || !wideMq.matches) return
-    tab = 'comments'
+    selectPanelTab('comments')
     if (!hintsOpen) { hintsOpen = true; remember('proto-hints', '1') }
     paintHints()
   }
   function paintPanel() {
-    const list = hintList()
+    const list = hintList(), fields = tweakList()
+    if (fields.length && !autoTweaksShown && wideMq.matches) { tab = 'tweaks'; autoTweaksShown = true }
     paintTry(list)
-    const tabs: ('comments' | 'try')[] = [...(railOn() ? ['comments' as const] : []), ...(list.length && !phoneMq.matches ? ['try' as const] : [])]
+    const tabs: ('comments' | 'try' | 'tweaks')[] = [...(railOn() ? ['comments' as const] : []), ...(list.length && !phoneMq.matches ? ['try' as const] : []), ...(fields.length && !phoneMq.matches ? ['tweaks' as const] : [])]
+    const shownTab = tabs.includes(tab) ? tab : tabs[0]
+    const panelWidth = shownTab === 'tweaks' || tabs.length > 2 ? 320 : HINTS_W
     const docked = tabs.length > 0 && hintsOpen && wideMq.matches
-    zone.style.setProperty('--hw', docked ? `${HINTS_W}px` : '0px')
+    zone.style.setProperty('--hw', docked ? `${panelWidth}px` : '0px')
     if (docked !== hintsDocked) { hintsDocked = docked; requestAnimationFrame(fit) }
     if (!tabs.length) { panel.className = 'hidden'; handles.innerHTML = ''; tryEl.innerHTML = ''; caveatEl.innerHTML = ''; return }
-    if (!tabs.includes(tab)) tab = tabs[0]
     const count = tryCount(list)
     const c = comments.counts()
     if (!hintsOpen) {
@@ -2340,22 +2362,53 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     handles.innerHTML = ''
     const wide = wideMq.matches
     panel.className = `absolute inset-y-0 right-0 z-20 flex flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 ${wide ? 'border-l border-black/[.07] dark:border-white/10' : 'w-[min(18rem,88%)] shadow-2xl shadow-black/30'}`
-    panel.style.width = wide ? `${HINTS_W}px` : ''
+    panel.style.width = wide ? `${panelWidth}px` : ''
     // Never on two lines: docked, the panel is 264 px, which the two tabs and Fill in beside them
     // overran. Fill in is at the head of the values it types, To type.
-    const tabBtn = (t: 'comments' | 'try') => {
-      const on = tab === t, n = t === 'comments' ? c.total : count
-      return `<button data-hint="tab:${t}" aria-pressed="${on}" class="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-medium ${on ? 'bg-zinc-900/[.06] text-zinc-900 dark:bg-white/10 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}">${ic(t === 'comments' ? 'comment' : 'key', `size-3.5 ${t === 'try' ? 'text-amber-500' : on ? 'text-proto-primary-ring' : ''}`)}${t === 'comments' ? 'Comments' : 'Try it'}${n ? `<span class="tabular-nums text-zinc-400">${n}</span>` : ''}</button>`
+    const tabBtn = (t: 'comments' | 'try' | 'tweaks') => {
+      const on = shownTab === t, n = t === 'comments' ? c.total : t === 'tweaks' ? fields.filter(isChanged).length : count
+      return `<button data-hint="tab:${t}" aria-pressed="${on}" class="inline-flex h-8 shrink-0 items-center ${tabs.length > 2 ? 'gap-1 px-1.5 text-[11px]' : 'gap-1.5 px-2.5 text-xs'} whitespace-nowrap rounded-md font-medium ${on ? 'bg-zinc-900/[.06] text-zinc-900 dark:bg-white/10 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}">${ic(t === 'comments' ? 'comment' : t === 'tweaks' ? 'tweaks' : 'key', `size-3.5 ${t === 'try' ? 'text-amber-500' : on ? 'text-proto-primary-ring' : ''}`)}${t === 'comments' ? 'Comments' : t === 'tweaks' ? 'Tweaks' : 'Try it'}${n ? `<span class="tabular-nums text-zinc-400">${n}</span>` : ''}</button>`
     }
     tabsEl.innerHTML = `${tabs.map(tabBtn).join('')}<span class="ml-auto"></span>
       <button data-hint="close" class="${IB} h-7 min-w-7 shrink-0 px-1" aria-label="Close panel" title="Close">${ic(wide ? 'right' : 'x', 'size-3.5')}</button>`
-    cbody.hidden = tab !== 'comments'
-    tryEl.hidden = tab !== 'try'
-    if (tab !== 'try') { tryEl.innerHTML = ''; caveatEl.innerHTML = ''; return }
+    cbody.hidden = shownTab !== 'comments'
+    tryEl.hidden = shownTab !== 'try'
+    tweakBody.hidden = shownTab !== 'tweaks'
+    if (shownTab !== 'try') { tryEl.innerHTML = ''; caveatEl.innerHTML = ''; return }
     const t = tryBody(list, false)
     tryEl.innerHTML = t.list
     caveatEl.innerHTML = t.foot
   }
+  function paintTweaks() {
+    const host = toolHost(), fields = tweakList()
+    const props = {
+      fields,
+      onChange: (id: string, value: string | boolean) => { if (host && host === toolHost()) tweaks.change(host, id, value) },
+      onReset: (id?: string) => { if (host && host === toolHost()) tweaks.reset(host, id) },
+    }
+    drawTweaks(props)
+    const open = phoneMq.matches && tweaksOpen && fields.length > 0
+    if (open) tweaksUp = true
+    if (!phoneMq.matches || !fields.length) tweaksOpen = false
+    const bottom = pill.firstElementChild?.getBoundingClientRect().height ?? 0
+    drawTweaksDrawer({ ...props, open, bottom,
+      onClose: (reason, event, cancel) => {
+        if (reason === 'outside-press' && (event?.target as Element | null)?.closest?.('[data-act=tweaks]')) return cancel()
+        if (reason === 'escape-key') event?.preventDefault()
+        tweaksOpen = false; render()
+      },
+      onGone: () => { if (!tweaksOpen) { tweaksUp = false; raisePill() } },
+      returnFocus: () => pill.querySelector<HTMLElement>('[data-act=tweaks]'),
+    })
+    for (const edge of overlay.querySelectorAll<HTMLElement>('[data-edge]')) edge.style.visibility = open ? 'hidden' : ''
+    raisePill()
+  }
+  let tweakRenderQueued = false
+  if (!framed) tweaks.subscribe(() => {
+    if (tweakRenderQueued) return
+    tweakRenderQueued = true
+    queueMicrotask(() => { tweakRenderQueued = false; render() })
+  })
   const tryCount = (list: Hint[]) => list.filter(h => h.kind !== 'caveat').length
   const fillable = (list: Hint[]) => list.some(h => h.kind === 'value' && h.fill)
   const fillLabel = () => `${ic(hintSaid === 'Filled' ? 'check' : 'fill', 'size-3.5')}${hintSaid || 'Fill in'}`
@@ -2406,7 +2459,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const fillTry = () => {
     for (const k of ['list', 'foot'] as const) { const el = tryIn[k]; if (el && written.get(el) !== tryNow[k]) { el.innerHTML = tryNow[k]; written.set(el, tryNow[k]) } }
   }
-  const raisePill = () => { const box = pill.firstElementChild as HTMLElement | null; if (box) box.style.zIndex = tryUp ? '210' : '' }
+  const raisePill = () => { const box = pill.firstElementChild as HTMLElement | null; if (box) box.style.zIndex = tryUp || tweaksUp ? '210' : '' }
   function setTrySheet(to: typeof trySheet) {
     trySheet = to
     if (to === 'open') { tryUp = true; tryPressed = false }
@@ -2457,8 +2510,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (!b) return
     const [what, a, c] = b.dataset.hint!.split(':'), list = hintList(), h = list[Number(a)]
     try {
-      if (what === 'tab') tab = a as typeof tab
-      else if (what === 'open' || what === 'close') { if (what === 'open' && (a === 'comments' || a === 'try')) tab = a; hintsOpen = what === 'open'; if (!hintsOpen) setTry(null); if (wideMq.matches) remember('proto-hints', hintsOpen ? '1' : '0') }
+      if (what === 'tab') selectPanelTab(a as typeof tab)
+      else if (what === 'open' || what === 'close') { if (what === 'open' && (a === 'comments' || a === 'try' || a === 'tweaks')) selectPanelTab(a); hintsOpen = what === 'open'; if (!hintsOpen) setTry(null); if (wideMq.matches) remember('proto-hints', hintsOpen ? '1' : '0') }
       else if (what === 'copy' && h?.kind === 'value') { navigator.clipboard?.writeText(valueOf(h)); hintCopied = Number(a); flash() }
       else if (what === 'fill') {
         const host = toolHost()

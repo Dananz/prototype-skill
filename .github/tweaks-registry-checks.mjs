@@ -33,6 +33,7 @@ export async function tweaksRegistryChecks({ local, openPage, fail }) {
         }
         assert(!tweaks.change(null, 'color', '#654321') && calls.length === before, 'invalid change called a setter')
         assert(isChanged(latest[0]) && !isChanged({ ...latest[0], value: '#abcdef' }), 'changed count did not compare explicit defaults')
+        assert(!isChanged({ ...latest[0], value: '#ABCDEF' }), 'hex casing counted the default color as changed')
         tweaks.reset(host, 'state')
         assert(JSON.stringify(calls.slice(before)) === JSON.stringify([['state', 'Full']]), 'single-field reset changed another field')
         const untouched = []

@@ -10,7 +10,9 @@ export type Tweak = Base & (
   | { kind: 'toggle'; value: boolean; defaultValue: boolean; set: (value: boolean) => void }
 )
 
-export const isChanged = (tweak: Tweak) => tweak.value !== tweak.defaultValue
+export const isChanged = (tweak: Tweak) => tweak.kind === 'color'
+  ? tweak.value.toLowerCase() !== tweak.defaultValue.toLowerCase()
+  : tweak.value !== tweak.defaultValue
 
 // Setters change on render. Keep the latest ones without redrawing the inspector unless
 // the fields it shows changed, as with hints.

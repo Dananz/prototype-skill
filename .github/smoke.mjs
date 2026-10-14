@@ -32,6 +32,8 @@ import { splitChecks } from './split-checks.mjs'
 import { keyboardColumnsChecks } from './keyboard-columns-checks.mjs'
 import { slotChecks } from './slot-checks.mjs'
 import { settingsChecks } from './settings-checks.mjs'
+import { tweaksChecks } from './tweaks-checks.mjs'
+import { tweaksRegistryChecks } from './tweaks-registry-checks.mjs'
 import { middleDragChecks } from './middle-drag-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -179,6 +181,8 @@ const css = () => new Promise(ok => get(`${local}shell/shell.css?direct`, { agen
 }).on('error', e => fail(`could not read the stylesheet: ${e.message}`)))
 await css()
 await settingsChecks({ proto, app, local, openPage, fail })
+await tweaksRegistryChecks({ local, openPage, fail })
+await tweaksChecks({ proto, app, local, openPage, fail })
 
 await commentParentChecks({ proto, app, openPage, fail })
 await commentWholeChecks({ proto, app, openPage, fail })
