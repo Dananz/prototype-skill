@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { Dialog } from '@base-ui/react/dialog'
 import { uiBox } from './portals'
 import { ic, IB } from './ui'
+import { variantLabel } from './variants'
 import { captureRoute, compose, download, filePart, LOOKS, png, SIZES, type Look, type ShotSize, type Tone } from './share-capture'
 
 type Subject = { id: string; name: string; hash: string; tweaks?: Record<string, string | boolean> }
@@ -50,7 +51,8 @@ function Board(p: Props) {
   const variants = p.variants
   const options: ShotSize[] = [{ id: 'stage', label: 'As shown', ...p.size }, ...SIZES]
   const chosen = options.filter(s => sizes.includes(s.id))
-  const nameOf = (v: Subject) => names[v.id] ?? `${v.id} · ${v.name}`
+  const labelOf = (v: Subject) => variantLabel(p, v.id)
+  const nameOf = (v: Subject) => names[v.id] ?? `${labelOf(v)} · ${v.name}`
   const keyOf = (v: Subject, s: ShotSize) => `${v.id}|${s.id}`
   const captureKey = `${variants.map(v => v.hash).join()}|${chosen.map(s => `${s.id}:${s.w}x${s.h}`).join()}|${p.dark}|${retry}`
   useEffect(() => {
@@ -140,12 +142,12 @@ function Board(p: Props) {
             h('div', { role: 'group', 'aria-label': 'Screenshot sizes', className: 'flex flex-wrap gap-1.5' }, ...options.map(s => h('button', { key: s.id, type: 'button', 'data-share-size': s.id, 'aria-pressed': sizes.includes(s.id), onClick: () => setSizes(a => a.length === 1 && a.includes(s.id) ? a : flip(a, s.id)), className: `flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium ring-1 ring-inset ${sizes.includes(s.id) ? 'bg-proto-primary-soft text-proto-primary-soft-fg ring-proto-primary-ring/40' : 'text-zinc-600 ring-black/10 dark:text-zinc-300 dark:ring-white/15'}` },
               icon(`share-${s.id}`), s.label, s.id !== 'stage' ? h('span', { className: 'hidden tabular-nums opacity-60 sm:inline' }, s.w) : null)))),
           h('div', { className: 'min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4 sm:px-6' }, ...variants.map(v => h('section', { key: v.id, 'data-share-variant': v.id },
-            h('div', { className: 'mb-2 flex items-center gap-2' }, h('span', { className: 'grid size-8 shrink-0 place-items-center rounded-lg bg-zinc-900 text-xs font-semibold text-white dark:bg-white dark:text-zinc-900' }, v.id),
+            h('div', { className: 'mb-2 flex items-center gap-2' }, h('span', { className: 'grid size-8 shrink-0 place-items-center rounded-lg bg-zinc-900 text-xs font-semibold text-white dark:bg-white dark:text-zinc-900' }, labelOf(v)),
               h('label', { className: 'relative block min-w-0 max-w-sm flex-1' },
-                h('input', { 'aria-label': `Screenshot name for ${v.id}`, value: names[v.id] ?? '', placeholder: `${v.id} · ${v.name}`, dir: 'auto', onChange: (e: { target: { value: string } }) => setNames(a => ({ ...a, [v.id]: e.target.value })), className: 'h-10 w-full rounded-lg bg-zinc-900/[.04] ps-3 pe-9 text-[13px] text-zinc-900 outline-none ring-1 ring-inset ring-transparent placeholder:text-zinc-700 focus:bg-white focus:ring-proto-primary-ring dark:bg-white/[.06] dark:text-white dark:placeholder:text-zinc-300 dark:focus:bg-zinc-800' }),
+                h('input', { 'aria-label': `Screenshot name for ${labelOf(v)}`, value: names[v.id] ?? '', placeholder: `${labelOf(v)} · ${v.name}`, dir: 'auto', onChange: (e: { target: { value: string } }) => setNames(a => ({ ...a, [v.id]: e.target.value })), className: 'h-10 w-full rounded-lg bg-zinc-900/[.04] ps-3 pe-9 text-[13px] text-zinc-900 outline-none ring-1 ring-inset ring-transparent placeholder:text-zinc-700 focus:bg-white focus:ring-proto-primary-ring dark:bg-white/[.06] dark:text-white dark:placeholder:text-zinc-300 dark:focus:bg-zinc-800' }),
                 h('span', { className: 'pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-zinc-400' }, icon('share-pencil'))),
-              h('button', { type: 'button', 'aria-label': `${out.includes(v.id) ? 'Include' : 'Leave out'} variant ${v.id}`, 'aria-pressed': !out.includes(v.id), onClick: () => setOut(a => flip(a, v.id)), className: IB }, icon(out.includes(v.id) ? 'eyeoff' : 'eye'))),
-            h('div', { className: 'grid grid-cols-2 gap-3 sm:grid-cols-3' }, ...tiles.filter(t => t.v.id === v.id).map(t => h('button', { key: t.key, type: 'button', 'data-share-tile': t.key, disabled: out.includes(v.id), 'aria-pressed': selected(t), 'aria-label': `${v.id}, ${t.s.label}, ${LOOKS.find(l => l.id === t.look)!.label}`, onClick: () => setSkipped(a => flip(a, t.key)), className: `overflow-hidden rounded-xl border border-black/10 bg-white text-start dark:border-white/10 dark:bg-zinc-900 ${selected(t) ? '' : 'opacity-40 grayscale'}` },
+              h('button', { type: 'button', 'aria-label': `${out.includes(v.id) ? 'Include' : 'Leave out'} variant ${labelOf(v)}`, 'aria-pressed': !out.includes(v.id), onClick: () => setOut(a => flip(a, v.id)), className: IB }, icon(out.includes(v.id) ? 'eyeoff' : 'eye'))),
+            h('div', { className: 'grid grid-cols-2 gap-3 sm:grid-cols-3' }, ...tiles.filter(t => t.v.id === v.id).map(t => h('button', { key: t.key, type: 'button', 'data-share-tile': t.key, disabled: out.includes(v.id), 'aria-pressed': selected(t), 'aria-label': `${labelOf(v)}, ${t.s.label}, ${LOOKS.find(l => l.id === t.look)!.label}`, onClick: () => setSkipped(a => flip(a, t.key)), className: `overflow-hidden rounded-xl border border-black/10 bg-white text-start dark:border-white/10 dark:bg-zinc-900 ${selected(t) ? '' : 'opacity-40 grayscale'}` },
               h('span', { className: 'flex aspect-[4/3] items-center justify-center bg-zinc-200/70 p-2 dark:bg-zinc-800' }, t.canvas ? h(Preview, { canvas: t.canvas }) : h('span', { className: 'px-2 text-center text-xs text-zinc-500' }, errors[keyOf(v, t.s)] ?? 'Preparing screenshot…')),
               h('span', { className: 'flex min-h-10 items-center justify-between gap-2 px-2.5 text-[11px]' }, h('span', null, `${LOOKS.find(l => l.id === t.look)!.label} · ${t.s.label}`), selected(t) ? icon('picked') : null)))))))),
         h('footer', { className: 'shrink-0 space-y-2 border-t border-black/[.07] bg-white px-4 py-3 pb-[max(.75rem,env(safe-area-inset-bottom))] sm:px-6 dark:border-white/10 dark:bg-zinc-900' },

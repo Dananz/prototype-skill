@@ -13,7 +13,7 @@ import { ACTION, Icon, MOD, PRIMARY, Pulse } from './ui'
 import { BROWSER_HINT, MenuRows, type MenuRow } from './menu'
 
 /** The variant on screen, and whether it is the prototype's pick. */
-export type Subject = { proto: string; variant: string; name: string; picked: boolean; hints?: boolean; copy?: boolean }
+export type Subject = { proto: string; variant: string; label: string; name: string; picked: boolean; hints?: boolean; copy?: boolean }
 type Ask = 'pick' | 'more' | 'build' | 'try-it' | 'copy-options'
 
 const NOTE: Record<Ask, { title: (v: string) => string; hint: string; done: (v: string) => string }> = {
@@ -40,7 +40,7 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
   const [want, setWant] = useState<boolean | null>(null)
   useEffect(() => { if (want !== null && subject.picked === want) setWant(null) }, [subject.picked, want])
   const picked = want ?? subject.picked
-  const v = subject.variant
+  const v = subject.label
   const menu = useRef<HTMLDivElement>(null)
 
   const send = async (a: Action, words = '') => {
