@@ -421,6 +421,13 @@ columns, each with its line, beside Autoplay, All states and Compare:
   prototype, offers that many again. Leave it as `proto add` wrote it; a prototype without one
   offers 5.
 
+**Quick changes with Tweaks.** When the user asks for quick theme or state controls, expose the
+values the variant actually supports with `useTweaks` from `src/tweaks.ts`. Read
+`references/tweaks.md` first. The shell supplies the desktop inspector and mobile dock button
+and drawer; never put a second Tweaks toolbar inside the design. Keep the controls scoped to
+that variant and use its real state setters. No declaration means no Tweaks UI. Tweaks is for
+changing the design; Try it remains the place for explanations and outside events.
+
 **Only on request: say what to type and try.** After an explicit request in chat or
 `action: try-it` from the page, when getting through a variant takes something a reviewer can't
 guess (a login, a code, a search that returns results), or it has scenarios, outside events or

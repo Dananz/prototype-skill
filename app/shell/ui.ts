@@ -6,9 +6,10 @@ import checkCircleFill from '@phosphor-icons/core/assets/fill/check-circle-fill.
 import keyboard from '@phosphor-icons/core/assets/regular/keyboard.svg?raw'
 import settings from '@phosphor-icons/core/assets/regular/gear-six.svg?raw'
 import eye from '@phosphor-icons/core/assets/regular/eye.svg?raw'
+import tweaksIcon from '@phosphor-icons/core/assets/regular/sliders-horizontal.svg?raw'
 
 /** Icons that are Phosphor's own files, never drawn here: the ⋯ and the pick's check circle. */
-const PHOSPHOR: Record<string, string> = { dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye }
+const PHOSPHOR: Record<string, string> = { dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon }
 
 const PATHS: Record<string, string> = {
   ...SIZE_PATHS,
