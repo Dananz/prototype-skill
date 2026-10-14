@@ -11,7 +11,7 @@ const own = window as unknown as { __proto?: Shared }
 /** The registry `name`: the outer page's when this page is in its device view, else made here
  *  (and offered to a frame of this page). */
 export function shared<T>(name: string, make: () => T): T {
-  if (framed) {
+  if (framed && !new URLSearchParams(location.search).has('shot')) {
     try { const outer = (window.parent as unknown as { __proto?: Shared }).__proto?.[name]; if (outer && window.parent !== window) return outer as T } catch { /* not the page's frame */ }
   }
   const made = make()

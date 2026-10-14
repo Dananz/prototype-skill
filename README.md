@@ -151,6 +151,7 @@ saved until the next turn; send the agent "check the prototype comments" to pick
 - **Your product first:** variant A, "Current", matches today's screen using its real assets, tokens and sizes. Other variants start from it. Supports React and Vue, including Hebrew and Arabic layouts.
 - **Design kits:** matched screens, tokens and shared chrome are saved for later sessions. The agent checks whether the real product has changed before reusing them.
 - **Review tools:** side-by-side views, focus mode, desktop/tablet/phone layouts, state lists, autoplay and comparison. The agent checks screenshots on desktop and phone, then recommends a direction.
+- **Screenshot exports:** Share in a variant’s context menu opens a board for one or all variants. Edit captions, choose design-only, named or framed PNGs, and render phone/tablet/desktop layouts. Download selected shots one by one.
 - **Tweaks:** change a design’s declared colors, content states and switches immediately. A desktop inspector keeps controls beside the design; a button in the mobile dock opens a drawer. Reset one control or all of them.
 - **Comments, copy and motion:** pin comments and tag elements, try wording options, or scrub animations and comment on a moment or range. A Try it panel can explain inputs and scenarios.
 

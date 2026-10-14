@@ -28,6 +28,7 @@ import { tabIcon } from './favicon'
 import { setShellRoot } from './portals'
 import { createView } from './view/index'
 import { createSettings, type Appearance } from './settings'
+import { createShare } from './share'
 import { framed, frameClicks, frameMenus, offerTheme } from './view/frame'
 import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
 import { dims, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
@@ -154,7 +155,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // outside, so it keeps comments under names of its own, and writes nothing else: what it chooses
   // (its place, theme, sidebar, panel) lasts until it reloads. Its copy choices are the page's own
   // (the store is shared, see shared.ts), so configuring it again is nothing.
-  copy.configure(framed ? `${session.id}~view` : session.id)
+  copy.configure(framed && !new URLSearchParams(location.search).has('shot') ? `${session.id}~view` : session.id)
   const remember = (key: string, value: string) => { if (!framed) localStorage.setItem(key, value) }
   setShellRoot(root)
   const q = new URLSearchParams(location.search)
@@ -162,7 +163,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let appearance: Appearance = stored === 'light' || stored === 'dark' ? stored : 'system'
   let themeOverride = q.has('theme')
   const systemTheme = matchMedia('(prefers-color-scheme: dark)')
-  let settingsOpen = false
+  let settingsOpen = false, shareOpen = false
   let settingsOrigin: 'bar' | 'dock' = 'bar'
   const st = {
     place: { view: 'session' } as Place,
@@ -358,7 +359,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const pl = st.place, here = pl.view === 'variant' && pl.proto === q.id && pl.variant === v.id
     const w = workOf(), kids = kidsOf(q, v.id).length > 0
     return `<div data-mv="${esc(q.id)}:${v.id}" class="group/vr relative"><button data-act="mv:${esc(q.id)}:${v.id}" aria-current="${sel}"${kids ? ' data-opens' : ''} class="${rowCls(big)} ${here ? 'bg-sky-500/15 font-medium text-sky-950 dark:text-sky-50' : sel ? SELC : ROWC}">
-      <span class="w-3.5 shrink-0 text-center text-[11px] font-semibold ${sel ? '' : 'text-zinc-400'}">${v.id}</span><span dir="auto" class="min-w-0 flex-1 truncate">${esc(v.name)}</span><span class="flex shrink-0 items-center justify-end gap-1.5 ${big ? 'min-w-8' : 'min-w-6'} group-hover/vr:invisible group-has-[:focus-visible]/vr:invisible group-has-[[aria-expanded=true]]/vr:invisible [@media(pointer:coarse)]:me-6">${v.id === pickOf(q) ? `<span title="Picked" class="shrink-0">${ic('picked', `size-4 ${PICK}`)}</span>` : ''}${w?.p === q && w.v === v ? `<span title="Your requests change this one" class="shrink-0">${ic('pin', 'size-3 text-emerald-600 dark:text-emerald-400')}</span>` : ''}${openComments(q.id, v.id)}${editing(q.id, v.id) ? pulse('size-1.5') : ''}${kids ? ic('right', `size-3 shrink-0 ${sel ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400'}`) : ''}</span></button><button data-act="vm:${esc(q.id)}:${v.id}" aria-label="Options for ${esc(v.name)}" aria-haspopup="menu" aria-expanded="${st.open === 'vmenu' && st.vmenu?.proto === q.id && st.vmenu.variant === v.id}" title="Options: comment on this, pick, build, Try it, copy options" class="absolute ${big ? 'right-2 size-8' : 'right-1 size-6'} top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-zinc-500 opacity-0 hover:bg-zinc-900/10 hover:text-zinc-900 focus-visible:opacity-100 group-hover/vr:opacity-100 group-has-[:focus-visible]/vr:opacity-100 aria-expanded:bg-zinc-900/10 aria-expanded:opacity-100 dark:text-zinc-400 dark:hover:bg-white/15 dark:hover:text-white dark:aria-expanded:bg-white/15 [@media(pointer:coarse)]:opacity-100">${ic('dots', 'size-5')}</button></div>`
+      <span class="w-3.5 shrink-0 text-center text-[11px] font-semibold ${sel ? '' : 'text-zinc-400'}">${v.id}</span><span dir="auto" class="min-w-0 flex-1 truncate">${esc(v.name)}</span><span class="flex shrink-0 items-center justify-end gap-1.5 ${big ? 'min-w-8' : 'min-w-6'} group-hover/vr:invisible group-has-[:focus-visible]/vr:invisible group-has-[[aria-expanded=true]]/vr:invisible [@media(pointer:coarse)]:me-6">${v.id === pickOf(q) ? `<span title="Picked" class="shrink-0">${ic('picked', `size-4 ${PICK}`)}</span>` : ''}${w?.p === q && w.v === v ? `<span title="Your requests change this one" class="shrink-0">${ic('pin', 'size-3 text-emerald-600 dark:text-emerald-400')}</span>` : ''}${openComments(q.id, v.id)}${editing(q.id, v.id) ? pulse('size-1.5') : ''}${kids ? ic('right', `size-3 shrink-0 ${sel ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400'}`) : ''}</span></button><button data-act="vm:${esc(q.id)}:${v.id}" aria-label="Options for ${esc(v.name)}" aria-haspopup="menu" aria-expanded="${st.open === 'vmenu' && st.vmenu?.proto === q.id && st.vmenu.variant === v.id}" title="Options: comment on this, pick, build, Try it, copy options, share screenshots" class="absolute ${big ? 'right-2 size-8' : 'right-1 size-6'} top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-zinc-500 opacity-0 hover:bg-zinc-900/10 hover:text-zinc-900 focus-visible:opacity-100 group-hover/vr:opacity-100 group-has-[:focus-visible]/vr:opacity-100 aria-expanded:bg-zinc-900/10 aria-expanded:opacity-100 dark:text-zinc-400 dark:hover:bg-white/15 dark:hover:text-white dark:aria-expanded:bg-white/15 [@media(pointer:coarse)]:opacity-100">${ic('dots', 'size-5')}</button></div>`
   }
   /** One prototype in a column; choosing it opens its variants. */
   const pRow = (k: Proto, sel: boolean, big = false) => `<button data-act="mp:${esc(k.id)}" aria-current="${sel}" data-opens class="${rowCls(big)} ${sel ? SELC : k.archived ? 'text-zinc-400 hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]' : ROWC}">
@@ -493,7 +494,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     ? `<div data-thumb data-pthumb class="relative flex w-full items-center justify-center overflow-hidden bg-zinc-100 dark:bg-zinc-900 ${aspect}"><div inert class="pointer-events-none ${PHONE} [contain:layout_paint]" style="${phoneSize(proto)}"><div data-mount class="h-full overflow-hidden"></div></div></div>`
     : `<div data-thumb class="relative w-full overflow-hidden bg-white dark:bg-zinc-950 ${aspect}"><div inert class="pointer-events-none overflow-hidden [contain:layout_paint]" style="width:1200px;height:750px"><div data-mount class="h-full"></div></div></div>`
 
-  const frameOf = (proto: Proto) => proto.kind === 'phone'
+  const frameOf = (proto: Proto) => proto.kind === 'phone' && !q.has('shot')
     ? `<div data-phones class="flex min-h-full items-center justify-center p-6"><div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(proto)}"><div data-mount class="h-full overflow-y-auto"></div></div></div>`
     : '<div data-mount class="h-full"></div>'
 
@@ -1178,6 +1179,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const p = cur()!, c = copyCounts(), n = tryCount(hintList())
     const rows = [
       menuRow({ act: 'lobby:proto', shoot: 'all-variants', icon: 'grid', label: 'All variants', detail: String(visible(p).length), on: st.place.view === 'proto' }),
+      !framed ? menuRow({ act: 'share', shoot: 'share', icon: 'share', label: 'Share screenshots' }) : '',
       c.lines ? menuRow({ act: 'copymode', shoot: 'copy-mode', icon: 'text', label: 'Copy options', detail: plural(c.lines, 'line') }) : '',
       n ? menuRow({ act: 'try', shoot: 'try-it', icon: 'key', tint: 'text-amber-300', label: 'Try it', detail: `${n} to try` }) : '',
       hasMotion() ? menuRow({ act: 'motion', shoot: 'motion', icon: 'curves', label: st.motion ? 'Hide motion' : 'Motion', detail: st.motion ? '' : 'Timeline', on: st.motion }) : '',
@@ -1516,6 +1518,21 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const p = cur()
     const here = st.place.view === 'variant' ? st.place : null
     switch (name) {
+      case 'share': {
+        const p = arg ? byId(arg) : cur()
+        if (framed || !p) return
+        const selected = arg2 || (here?.proto === p.id ? here.variant : null)
+        shareOpen = true
+        st.open = null; st.menu = ''; closeCard(true); render()
+        const host = here?.proto === p.id ? toolHost() : null, r = host?.getBoundingClientRect()
+        const w = host?.clientWidth || Math.round(r?.width || p.screen[0] || 1440)
+        const h = host?.clientHeight || Math.round(r?.height || p.screen[1] || 900)
+        drawShare({ title: p.title, slug: p.id, current: selected, dark: st.dark, size: { w, h },
+          variants: p.variants.map(v => ({ id: v.id, name: v.name, ...(host && v.id === here?.variant ? { tweaks: Object.fromEntries(tweaks.of(host).map(t => [t.id, t.value])) } : {}), hash: hashOf({ view: 'variant', proto: p.id, variant: v.id, ...(here?.proto === p.id && here.state && stateOf(p, v.id, here.state) ? { state: here.state } : {}) }) })),
+          onClose: () => { shareOpen = false; drawShare(null) }, returnFocus: () => phoneMq.matches ? menuBtn() : [...root.querySelectorAll<HTMLElement>('[data-act]')].find(el => el.dataset.act === `vm:${p.id}:${selected}` && el.getClientRects().length > 0) ?? bar.querySelector<HTMLElement>('[data-shoot=switcher]'),
+        })
+        return
+      }
       case 'settings': settingsOpen = true; st.open = null; st.menu = ''; st.drawer = false; render(); void refreshStatus(); return
       case 'tweaks': {
         if (!tweakList().length) return
@@ -1723,7 +1740,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   listen(window, 'keydown', e => {
     const t = e.target as Element
-    if (settingsOpen) return
+    if (settingsOpen || shareOpen) return
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); return act('side', (wide() ? st.side : st.drawer) ? '0' : '1', '') }
     // Cmd or Ctrl Enter sends what's ready to Claude, from anywhere but a field of the design's own.
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
@@ -1959,7 +1976,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   /** Keys pressed in the page inside the view: C comments on it, F is focus mode and P the design's
    *  actions, as out here, and Esc stops. */
   function viewKey(e: KeyboardEvent) {
-    if (settingsOpen) return
+    if (settingsOpen || shareOpen) return
     const t = e.target as Element
     if (e.metaKey || e.ctrlKey || e.altKey || t.closest?.('input, textarea, select, [contenteditable]')) return
     if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
@@ -2079,6 +2096,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     return `<button data-act="open:decide" data-decide-btn aria-haspopup="menu" aria-expanded="${on}" aria-label="${say}" title="${say} · P" class="${IB} ${on ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}">${ic('check')}<span class="hidden px-1 text-xs sm:inline">Actions</span></button>`
   }
   const settingsBtn = (status = false) => `<button data-act="settings" aria-label="Settings" aria-haspopup="dialog" title="Settings" class="${IB}${status ? ' relative' : ''}">${ic('settings')}${status ? `<span class="absolute right-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span>` : ''}</button>`
+  const drawShare = createShare()
   const drawSettings = createSettings()
   function paintSettings() {
     drawSettings({
@@ -2220,6 +2238,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       for (const t of (['play', 'all', 'compare'] as Tool[]).filter(t => toolOk(q, v.id, t))) {
         rows.push({ id: `tool-${t}`, label: TOOLS[t].name, icon: TOOLS[t].icon, hint: t === 'compare' ? otherOf(q, v.id) : undefined, on: here && st.place.view === 'variant' && st.place.tool === t, run: () => act('tool', q.id, v.id, t) })
       }
+      rows.push({ id: 'share', label: 'Share screenshots', icon: 'share', run: () => act('share', q.id, v.id) })
       rows.push({ id: 'link', label: 'Copy link', icon: 'link', run: () => copyText(linkOf(hashOf({ view: 'variant', proto: q.id, variant: v.id }))) })
     }
     const el = m.el
@@ -2702,7 +2721,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // ?copy=1 (proto shoot --copy): copy mode opens once the design on the stage declares its lines.
   if (q.has('copy')) comments.copy.want()
   refreshStatus()
-  Promise.all([document.fonts.ready, Promise.race([(layer as Layer | null)?.ready, wait(5000)])]).then(() => requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1' })))
+  Promise.all([document.fonts.ready, q.has('shot') ? (layer as Layer | null)?.ready : Promise.race([(layer as Layer | null)?.ready, wait(5000)])]).then(() => requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1' })))
 
   // The working variant the page itself just moved to (a pick, Undo), until session.json brings it.
   let editTimer = 0, movedTimer = 0, expected: Ref | null = null
