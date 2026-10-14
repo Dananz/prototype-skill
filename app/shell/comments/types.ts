@@ -73,6 +73,13 @@ export type Item = Draft & {
   at: number
   /** Once sent: the batch, and its place in it (1-based, as `proto reply` counts). */
   sent?: { batch: string; i: number }
+  /**
+   * An answer to Claude's reply, a follow-up in a thread: `id` is the comment the thread started
+   * with, whose pin, element and place it shares (it has no pin of its own), and `batch`/`i` the
+   * sent comment whose reply it answers (the thread's last turn when it was written), which
+   * `proto inbox` walks back to print what was said before it.
+   */
+  re?: { id: string; batch: string; i: number }
 }
 
 export type CState = 'draft' | 'sent' | 'seen' | 'done'
@@ -92,6 +99,8 @@ export type Place = { proto: string; variant: string; state?: string; phone: boo
 export type State = {
   items: Item[]
   held: Held | null
+  /** Reply composers belong to the root thread, across row status and disclosure changes. */
+  replies: Record<string, { open: boolean; text: string; busy: boolean; error: string }>
   mode: Mode
   active: string | null
   /** Bumped to make a composer that can't take a click say so (it shakes). */

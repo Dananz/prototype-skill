@@ -20,7 +20,7 @@ export function createStore(sessionId: string) {
     } catch { return { items: [], held: null } }
   }
   const saved = read()
-  let state: State = { items: saved.items, held: saved.held, mode: { kind: 'idle' }, active: null, nudge: 0, pendingTag: null, place: null, scope: null, sheet: false, sending: false, wholeFocus: false, focusAsk: false, live: readLive(), error: '' }
+  let state: State = { items: saved.items, held: saved.held, replies: {}, mode: { kind: 'idle' }, active: null, nudge: 0, pendingTag: null, place: null, scope: null, sheet: false, sending: false, wholeFocus: false, focusAsk: false, live: readLive(), error: '' }
   const listeners = new Set<() => void>()
   let timer = 0
   const persist = () => {
@@ -52,6 +52,14 @@ export type Store = ReturnType<typeof createStore>
 export function useStore(store: Store): State {
   return useSyncExternalStore(store.subscribe, store.get)
 }
+
+/**
+ * A comment and the follow-ups answering Claude's replies to it, in the order they were written:
+ * the thread the list shows as one row, whose state is its last turn's.
+ */
+export const threadOf = (items: Item[], root: Item): Item[] => [root, ...items.filter(i => i.re?.id === root.id).sort((a, b) => a.at - b.at)]
+/** A thread's first comment: a follow-up whose comment is gone (deleted from another tab) stands on its own. */
+export const isRoot = (items: Item[], i: Item) => !i.re || !items.some(x => x.id === i.re!.id)
 
 /** What became of a sent comment, from the inbox the server keeps. */
 export type Said = { text: string; by: 'claude' | 'codex' | 'agent'; at?: string }

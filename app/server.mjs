@@ -313,6 +313,9 @@ function receive(data) {
     const time = timeOf(c)
     if (time === false) throw bad(i, `: a moment of the motion is at (and to, for a range) in ms inside the take, and take, its length in ms (up to ${MAX_TAKE})`)
     if (time && (!/^[^/]+\/[A-Z]{1,2}(\/|$)/.test(c.route) || c.action !== undefined || c.point !== undefined)) throw bad(i, ': a comment on the motion is on a variant (<slug>/<letter>), with no action and no point')
+    // A follow-up answers the reply to a comment sent before: which one, so `proto inbox` can say
+    // what was said before it. Only its address is kept; the thread itself is in the batches.
+    if (c.re !== undefined && (typeof c.re?.batch !== 'string' || !/^[\w-]{1,60}$/.test(c.re.batch) || !Number.isInteger(c.re.n) || c.re.n < 1 || c.action !== undefined)) throw bad(i, ': re is { batch, n }, the sent comment whose reply this answers, on a comment with no action')
     const view = viewOf(c)
     if (view === false) throw bad(i, ': view is { size: phone, tablet or desktop, w, h }, the layout\'s size in whole CSS px from 200 to 4000')
     if (view && (c.action !== undefined || time)) throw bad(i, ': a comment in a device view is on the design, with no action and no moment of the motion')
@@ -346,6 +349,7 @@ function receive(data) {
       point: c.point && { x: Math.round(+c.point.x || 0), y: Math.round(+c.point.y || 0) },
       ...time,
       ...(view ? { view } : {}),
+      ...(c.re ? { re: { batch: c.re.batch, n: c.re.n } } : {}),
       target: element(c.target),
       tags: (Array.isArray(c.tags) ? c.tags : []).map(element).filter(Boolean).slice(0, 20),
       images,

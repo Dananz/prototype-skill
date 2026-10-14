@@ -65,7 +65,9 @@ export type CommentBatch = {
     /** On the motion (motion/): a moment of its take in ms, or a range to `to`, and the take's length. */
     at?: number; to?: number; take?: number
     /** Written in a device view (view/): about that layout. */
-    view?: ViewSize }[]
+    view?: ViewSize
+    /** A follow-up: the sent comment (its batch, and its number in it) whose reply this answers. */
+    re?: { batch: string; n: number } }[]
   viewport?: { w: number; h: number; phone?: boolean }
   /** The design's own localStorage when it was sent (comments/dom.ts designStorage), for `proto shoot --pin`. */
   storage?: Record<string, string>

@@ -6,7 +6,7 @@ import type { CommentBatch } from '../shell'
 import { climb, describe, designStorage, find, reveal, openerOf, wholeTarget } from './dom'
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
-import { progress, type Store } from './store'
+import { progress, threadOf, type Store } from './store'
 import type { Action, Draft, Item, Place, Target, Time } from './types'
 import { shotsOf } from './types'
 import { inScope, routeOf } from './types'
@@ -189,12 +189,14 @@ export function createActions(store: Store, host: Host) {
      * What is open stays open unless it is one of these.
      */
     removeAll(ids: string[]) {
-      const gone = new Set(ids), s = get()
+      const s = get()
+      // A comment goes with its thread: the follow-ups answering Claude about it.
+      const gone = new Set([...ids, ...s.items.filter(i => i.re && ids.includes(i.re.id)).map(i => i.id)])
       if (!gone.size) return
       const m = s.mode
       const open = (s.active && gone.has(s.active)) || ((m.kind === 'compose' || m.kind === 'tag' || m.kind === 'time') && !!m.id && gone.has(m.id))
       for (const i of s.items) if (gone.has(i.id) && i.sent && progress(i, s.inbox).state !== 'done') void host.withdraw(i.sent.batch, i.sent.i)
-      set(x => ({ items: x.items.filter(i => !gone.has(i.id)), ...(open ? { mode: { kind: 'idle' as const }, active: null } : {}) }))
+      set(x => ({ items: x.items.filter(i => !gone.has(i.id)), replies: Object.fromEntries(Object.entries(x.replies).filter(([id]) => !gone.has(id))), ...(open ? { mode: { kind: 'idle' as const }, active: null } : {}) }))
     },
 
     /** Every draft of the prototype on screen, as one batch. */
@@ -254,6 +256,54 @@ export function createActions(store: Store, host: Host) {
       })
       const item: Item = { id: uid(), proto: p.proto, variant: p.variant, n: 0, body: [`“${quote}”${words ? ` · ${words}` : ''}`], tags: [], action: 'copy-options', target, at: Date.now(), sent: { batch: sent.id, i: 1 } }
       set(s => ({ items: s.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? s.items : [...s.items, item] }))
+    },
+    /**
+     * An answer to Claude's reply on a comment (`id`, the thread's first): sent at once as a batch of
+     * its own, as a decision is, so drafts still being written are left for their own send. It is on
+     * what the comment is on (its element, spot, moment, layout), so the agent reads it in place and
+     * Show on design still works, and it names the thread's last sent turn, whose reply it answers.
+     * It joins the thread as already sent, with the comment's pin number and no pin of its own.
+     * Throws with the server's reason; the words are the caller's to keep.
+     */
+    async followUp(id: string, text: string) {
+      const s = get(), root = s.items.find(i => i.id === id), words = text.trim()
+      if (!root || !words) return
+      const last = threadOf(s.items, root).filter(i => i.sent).at(-1)
+      if (!last?.sent) throw new Error('Send the comment first')
+      const re = { batch: last.sent.batch, n: last.sent.i }
+      const sent = await host.send({
+        theme: host.dark() ? 'dark' : 'light',
+        viewport: { w: innerWidth, h: innerHeight, phone: s.place?.phone ?? innerWidth < 640 },
+        comments: [{
+          // More variants is on the prototype, not a variant.
+          route: root.variant ? routeOf(root) : root.proto,
+          text: words,
+          ...(root.target?.point ? { point: root.target.point } : {}),
+          ...(root.target ? { target: root.target } : {}),
+          ...(root.target?.view ? { view: root.target.view } : {}),
+          ...(root.time ? { at: root.time.at, ...(root.time.to !== undefined ? { to: root.time.to } : {}), take: root.time.take } : {}),
+          re,
+        }],
+      })
+      const item: Item = {
+        id: uid(), proto: root.proto, variant: root.variant, ...(root.state ? { state: root.state } : {}), n: root.n, body: [words], tags: [],
+        ...(root.target ? { target: root.target } : {}), ...(root.time ? { time: root.time } : {}),
+        at: Date.now(), sent: { batch: sent.id, i: 1 }, re: { id: root.id, batch: re.batch, i: re.n },
+      }
+      let removed = false
+      set(x => {
+        // Deleting the root while the request was in flight must not resurrect its follow-up.
+        removed = !x.items.some(i => i.id === root.id)
+        return removed ? {} : { items: x.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? x.items : [...x.items, item] }
+      })
+      if (removed) {
+        try { await host.withdraw(sent.id, 1) }
+        catch (e) {
+          const error = `Could not withdraw deleted reply: ${e instanceof Error ? e.message : 'Could not send'}`
+          set({ error })
+          throw new Error(error)
+        }
+      }
     },
     clearError() { set({ error: '' }) },
     openSheet(open: boolean) { set({ sheet: open }) },
