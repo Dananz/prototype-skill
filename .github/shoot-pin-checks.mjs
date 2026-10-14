@@ -192,6 +192,14 @@ export default function Panel() {
   const tight = readPng(file(2))
   if (Math.abs(tight.w - (bw + 16) * 2) > 4) fail(`--margin 8 should make the shot (${bw}+16) px wide at 2x, it is ${tight.w}`)
   proto(['shoot', '--pin', `${batch}/4`], { ok: false })
+  // Scoped copy decisions have targets too; naming their number must not bypass the batch filter.
+  const decision = await fetch(`${local}__proto/comments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comments: [{ route: 'pinfx/A', text: 'Other words', action: 'copy-options', target: target({ selector: ':scope [data-shoot=pinfx-act]', shoot: 'pinfx-act' }) }] }) })
+  const decisionId = (await decision.json()).sent
+  if (!decisionId) fail('the scoped copy decision was not accepted by the server')
+  const refused = proto(['shoot', '--pin', `${decisionId}/1`], { ok: false })
+  if (!/decision/.test(refused)) fail(`a scoped decision should be refused as a decision: ${refused}`)
+  proto(['inbox'])
+  proto(['reply', decisionId, 'checked', '--done'])
   proto(['shoot', '--pin', `${batch}/99`], { ok: false })
   proto(['shoot', '--pin', `${batch}/1`, '--sheet'], { ok: false })
   proto(['shoot', '--pin', `${batch}/1`, '--state', 'nosuch'], { ok: false })

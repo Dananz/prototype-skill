@@ -952,7 +952,8 @@ async function shootPin(dir, s, out) {
     const c = b.comments.find(x => x.n === Number(nth))
     if (!c) die(`batch ${b.id} has no comment ${nth} (1-${b.comments.length})`)
     if (c.withdrawn) die(`${b.id}/${nth} was withdrawn in the page`)
-    if (!c.target) die(`${b.id}/${nth} is not on an element${c.action ? ` (it is a ${c.action} decision)` : ''}: nothing to shoot`)
+    if (c.action) die(`${b.id}/${nth} is a ${c.action} decision: nothing to shoot`)
+    if (!c.target) die(`${b.id}/${nth} is not on an element: nothing to shoot`)
     list = [c]
   } else {
     list = b.comments.filter(whole)
