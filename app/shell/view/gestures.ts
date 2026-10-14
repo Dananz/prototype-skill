@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 
 type Pt = { x: number; y: number }
-export type Anchor = { at(p: Pt | null): void; hold(on: boolean): void }
+export type Anchor = { at(p: Pt | null): void; hold(on: boolean): void; move(dx: number, dy: number): void }
 /** Two fingers in the frame, in this page's px: the point between them at the start, then how far
  *  apart they are against the start, and the point. */
 export type Pinch = { start(x: number, y: number): void; move(ratio: number, x: number, y: number): void; end(): void }
@@ -49,19 +49,30 @@ export function outOf(f: HTMLElement | null | undefined, x: number, y: number) {
   return [r.left + x * s, r.top + y * s] as const
 }
 
+/** One side: the device's start `v` px from the area's start, seen through an area `A` long: the
+ *  padding before it, the scroll, and the padding after it that makes that scroll possible. */
+const axis = (A: number, S: number, v: number, pad: number) => { const o = Math.max(pad, v), s = o - v; return { o, s, end: Math.max(pad, s + A - o - S) } }
+/** How much of the device a drag always leaves in the area, in this page's px. */
+const KEEP = 48
+
 /**
- * Places the device in the area. At Fit it is centred (or at the top, when taller than the area).
+ * Places the device in the area. At first it is centred (or at the top, when taller than the area).
  * Zooming keeps the spot of the page under the anchor (the fingers, the pointer, else the middle;
  * beside the device, its nearest edge) where it is, even if that takes part of the device past the
  * area's edge: the room it needs is padding around it, scrolled to. A centring done by layout
- * couldn't do that: the device would grow around the middle, away from the fingers. While a gesture
- * is held the device stays under the fingers, even at Fit; let go at Fit, it glides to the middle.
+ * couldn't do that: the device would grow around the middle, away from the fingers. Once a hand has
+ * moved it (a drag, a pinch, a trackpad zoom) it stays where it was left, at any zoom, Fit included:
+ * it never goes back to the middle on its own. Another size, or Fit chosen from the zoom control
+ * (`home` counts those), centres it again.
  */
-export function usePlace(area: RefObject<HTMLDivElement | null>, box: { w: number; h: number }, d: { w: number; h: number }, scale: number, zoomed: boolean, pad: number, key: string) {
+export function usePlace(area: RefObject<HTMLDivElement | null>, box: { w: number; h: number }, d: { w: number; h: number }, scale: number, zoomed: boolean, pad: number, key: string, home = 0) {
   const wrap = useRef<HTMLDivElement>(null)
   const anchor = useRef<Pt | null>(null)
   const [held, setHeld] = useState(false)
-  const prev = useRef<{ key: string; scale: number; ox: number; oy: number; sl: number; st: number; free: boolean } | null>(null)
+  const moved = useRef(false)
+  const prev = useRef<{ key: string; home: number; scale: number; ox: number; oy: number; sl: number; st: number } | null>(null)
+  const now = useRef({ box, d, scale, pad, key, home })
+  now.current = { box, d, scale, pad, key, home }
   // The scroll as it was before a change, not after the browser clamps it to a smaller device. A
   // scroll is kept as it was asked for, not as the browser rounded it: taken as the truth, the
   // rounding of each step of a pinch adds up, and the page slides out from under the fingers.
@@ -77,18 +88,28 @@ export function usePlace(area: RefObject<HTMLDivElement | null>, box: { w: numbe
     el.addEventListener('scroll', f, { passive: true })
     return () => el.removeEventListener('scroll', f)
   }, [])
-  useLayoutEffect(() => {
+  // The device's start (vx, vy) from the area's start, laid out as padding and scroll.
+  const lay = (vx: number, vy: number) => {
     const el = area.current, w = wrap.current
-    if (!el || !w || !box.w) return
+    if (!el || !w) return
+    const { box, d, scale, pad, key, home } = now.current
+    const x = axis(box.w, d.w * scale, vx, pad), y = axis(box.h, d.h * scale, vy, pad)
+    w.style.padding = `${y.o}px ${x.end}px ${y.end}px ${x.o}px`
+    el.scrollLeft = x.s
+    el.scrollTop = y.s
+    const kept = (asked: number, got: number) => (Math.abs(got - asked) < 1 ? asked : got)
+    prev.current = { key, home, scale, ox: x.o, oy: y.o, sl: kept(x.s, el.scrollLeft), st: kept(y.s, el.scrollTop) }
+  }
+  useLayoutEffect(() => {
+    if (!area.current || !wrap.current || !box.w) return
     const W = d.w * scale, H = d.h * scale
-    // One side: the device's start `v` px from the area's start, seen through an area `A` long:
-    // the padding before it, the scroll, and the padding after it that makes that scroll possible.
-    const axis = (A: number, S: number, v: number) => { const o = Math.max(pad, v), s = o - v; return { o, s, end: Math.max(pad, s + A - o - S) } }
     const mid = (A: number, S: number) => (S + 2 * pad <= A ? (A - S) / 2 : pad)
     const p = prev.current
-    const free = zoomed || held
+    const same = !!p && p.key === key && p.home === home
+    if (!same) moved.current = false
+    else if (held || anchor.current) moved.current = true
     let vx = mid(box.w, W), vy = mid(box.h, H)
-    if (p && p.key === key && free) {
+    if (p && same && (zoomed || held || moved.current)) {
       if (p.scale !== scale) {
         const a = anchor.current ?? { x: box.w / 2, y: box.h / 2 }
         const fx = (a.x + p.sl - p.ox) / p.scale, fy = (a.y + p.st - p.oy) / p.scale
@@ -97,20 +118,25 @@ export function usePlace(area: RefObject<HTMLDivElement | null>, box: { w: numbe
         vx = a.x + (cx - fx) * p.scale - cx * scale; vy = a.y + (cy - fy) * p.scale - cy * scale
       } else { vx = p.ox - p.sl; vy = p.oy - p.st }
     }
-    const x = axis(box.w, W, vx), y = axis(box.h, H, vy)
-    w.style.padding = `${y.o}px ${x.end}px ${y.end}px ${x.o}px`
-    el.scrollLeft = x.s
-    el.scrollTop = y.s
-    // Let go at Fit: from where the fingers left it to the middle, gliding.
-    const dev = w.firstElementChild as HTMLElement | null
-    if (p && p.key === key && p.free && !free && dev && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      const dx = (p.ox - p.sl) - (x.o - el.scrollLeft), dy = (p.oy - p.st) - (y.o - el.scrollTop)
-      if (Math.hypot(dx, dy) > 1) dev.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 280, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' })
-    }
-    const kept = (asked: number, got: number) => (Math.abs(got - asked) < 1 ? asked : got)
-    prev.current = { key, scale, ox: x.o, oy: y.o, sl: kept(x.s, el.scrollLeft), st: kept(y.s, el.scrollTop), free }
-  }, [scale, key, box.w, box.h, d.w, d.h, zoomed, held, pad])
-  return { wrap, anchor: useMemo<Anchor>(() => ({ at(p) { anchor.current = p }, hold(on) { setHeld(on) } }), []) }
+    lay(vx, vy)
+  }, [scale, key, home, box.w, box.h, d.w, d.h, zoomed, held, pad])
+  return {
+    wrap,
+    anchor: useMemo<Anchor>(() => ({
+      at(p) { anchor.current = p },
+      hold(on) { setHeld(on) },
+      // A drag: the device follows the hand by (dx, dy), at any zoom, and stays where it is let go.
+      // Some of it always stays in the area, so it can be taken hold of again.
+      move(dx, dy) {
+        const p = prev.current
+        if (!p) return
+        moved.current = true
+        const { box, d, scale } = now.current
+        const keep = (v: number, A: number, S: number) => Math.min(A - Math.min(KEEP, S), Math.max(Math.min(KEEP, S) - S, v))
+        lay(keep(p.ox - p.sl + dx, box.w, d.w * scale), keep(p.oy - p.st + dy, box.h, d.h * scale))
+      },
+    }), []),
+  }
 }
 
 /** Two fingers on the frame zoom the view around the point between them, from 10% up to 200%. */
@@ -168,7 +194,8 @@ export function pinchOn(d: Document, p: Pinch) {
 
 /**
  * The view zooms on its own, never the page: two fingers anywhere in the area, a trackpad's pinch
- * (ctrl + wheel, or Safari's gesture events), each around the point under them, from 10% to 200%. Held Space drags it.
+ * (ctrl + wheel, or Safari's gesture events), each around the point under them, from 10% to 200%. Held Space drags it, and so does the middle
+ * button, from anywhere.
  * Once zoomed in, it moves: a wheel or one finger on the device moves the view first, and only at
  * its edge scrolls the page inside; a mouse drags the space around the device. Returns what binds
  * the same to the frame's document, each time it loads.
@@ -231,8 +258,37 @@ export function useGestures(area: RefObject<HTMLDivElement | null>, scale: numbe
       e.preventDefault()
       drag = { x: e.clientX, y: e.clientY }; a.setPointerCapture(e.pointerId); a.style.cursor = 'grabbing'
     }
-    const pMove = (e: PointerEvent) => { if (!drag) return; a.scrollLeft -= e.clientX - drag.x; a.scrollTop -= e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY } }
+    const pMove = (e: PointerEvent) => { if (!drag) return; anchor.move(e.clientX - drag.x, e.clientY - drag.y); drag = { x: e.clientX, y: e.clientY } }
     const pUp = () => { drag = null; a.style.cursor = space ? 'grab' : '' }
+
+    // The middle button (the wheel pressed) drags the device from anywhere, over the design too, as in
+    // FL Studio: an open hand, the device following it 1:1 at any zoom, and staying where it is let
+    // go. Neither the design nor the browser (its autoscroll, a link opening in a new tab) sees that
+    // button meanwhile. Measured in this page's px, so the frame moving under it doesn't count.
+    let mid: Pt | null = null
+    const hand = (on: boolean) => {
+      for (const d of [document, frame()?.contentDocument].filter(Boolean) as Document[]) {
+        d.querySelector('style[data-view-hand]')?.remove()
+        if (on) { const s = d.createElement('style'); s.dataset.viewHand = ''; s.textContent = '*, *::before, *::after { cursor: grab !important; user-select: none !important; }'; (d.head ?? d.documentElement).append(s) }
+      }
+    }
+    const midStart = (x: number, y: number) => { mid = { x, y }; hand(true) }
+    const midMove = (x: number, y: number) => { if (!mid) return; anchor.move(x - mid.x, y - mid.y); mid = { x, y } }
+    const midEnd = () => { if (!mid) return; mid = null; hand(false) }
+    // Only the middle button's own events, and every event while it drags.
+    const isMid = (e: MouseEvent) => e.button === 1 || (!!mid && e.type !== 'pointermove')
+    const hush = (e: MouseEvent) => { if (isMid(e)) { e.preventDefault(); e.stopImmediatePropagation() } }
+    const mDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse' || e.button !== 1) return
+      hush(e); a.setPointerCapture(e.pointerId); midStart(e.clientX, e.clientY)
+    }
+    // Chord releases are pointermove until the last button is up; middle need not own pointerup.
+    const mMove = (e: PointerEvent) => {
+      if (!mid) return
+      if (!(e.buttons & 4)) { hush(e); midEnd(); return }
+      midMove(e.clientX, e.clientY)
+    }
+    const mUp = (e: PointerEvent) => { if (mid && (e.button === 1 || !(e.buttons & 4))) { hush(e); midEnd() } }
     const opts = { passive: false } as AddEventListenerOptions
     a.addEventListener('wheel', wheel, opts)
     a.addEventListener('gesturestart', gStart, opts)
@@ -244,6 +300,10 @@ export function useGestures(area: RefObject<HTMLDivElement | null>, scale: numbe
     a.addEventListener('pointerdown', pDown); a.addEventListener('pointermove', pMove)
     a.addEventListener('pointerup', pUp); a.addEventListener('pointercancel', pUp)
     addEventListener('keydown', kDown); addEventListener('keyup', kUp); addEventListener('blur', blur)
+    a.addEventListener('pointerdown', mDown, true); a.addEventListener('pointermove', mMove, true)
+    a.addEventListener('pointerup', mUp, true); a.addEventListener('pointercancel', midEnd, true)
+    for (const t of ['mousedown', 'mouseup', 'auxclick'] as const) a.addEventListener(t, hush, true)
+    addEventListener('blur', midEnd)
 
     // In the frame's document: its own two fingers are pinchOn's; here the trackpad's, and moving a
     // zoomed view with the wheel or one finger. One finger is measured in this page's px too, from
@@ -271,7 +331,23 @@ export function useGestures(area: RefObject<HTMLDivElement | null>, scale: numbe
         e.preventDefault()
         a.scrollBy(r.x ? dx : 0, r.y ? dy : 0)
       }
+      const pageOf = (e: MouseEvent) => outOf(d.defaultView?.frameElement as HTMLElement | null, e.clientX, e.clientY)
+      const fmDown = (e: PointerEvent) => {
+        if (e.pointerType !== 'mouse' || e.button !== 1) return
+        hush(e)
+        try { d.documentElement.setPointerCapture(e.pointerId) } catch { /* the pointer is gone already */ }
+        midStart(...pageOf(e))
+      }
+      const fmMove = (e: PointerEvent) => {
+        if (!mid) return
+        if (!(e.buttons & 4)) { hush(e); midEnd(); return }
+        midMove(...pageOf(e))
+      }
+      const fmUp = (e: PointerEvent) => { if (mid && (e.button === 1 || !(e.buttons & 4))) { hush(e); midEnd() } }
       const cap = { passive: false, capture: true } as AddEventListenerOptions
+      d.addEventListener('pointerdown', fmDown, cap); d.addEventListener('pointermove', fmMove, true)
+      d.addEventListener('pointerup', fmUp, cap); d.addEventListener('pointercancel', midEnd, true)
+      for (const t of ['mousedown', 'mouseup', 'auxclick'] as const) d.addEventListener(t, hush, cap)
       d.addEventListener('wheel', fWheel, cap)
       d.addEventListener('gesturestart', fgStart, cap)
       d.addEventListener('gesturechange', fgChange, cap)
@@ -280,6 +356,10 @@ export function useGestures(area: RefObject<HTMLDivElement | null>, scale: numbe
       d.addEventListener('touchmove', fTMove, cap)
       d.addEventListener('keydown', kDown, true); d.addEventListener('keyup', kUp, true)
       return () => {
+        midEnd()
+        d.removeEventListener('pointerdown', fmDown, true); d.removeEventListener('pointermove', fmMove, true)
+        d.removeEventListener('pointerup', fmUp, true); d.removeEventListener('pointercancel', midEnd, true)
+        for (const t of ['mousedown', 'mouseup', 'auxclick'] as const) d.removeEventListener(t, hush, true)
         d.removeEventListener('keydown', kDown, true); d.removeEventListener('keyup', kUp, true)
         d.removeEventListener('wheel', fWheel, true); d.removeEventListener('gesturestart', fgStart, true); d.removeEventListener('gesturechange', fgChange, true); d.removeEventListener('gestureend', gEnd, true)
         d.removeEventListener('touchstart', fTStart, true); d.removeEventListener('touchmove', fTMove, true)
@@ -288,6 +368,11 @@ export function useGestures(area: RefObject<HTMLDivElement | null>, scale: numbe
     return () => {
       clearTimeout(clear)
       pan(false)
+      midEnd()
+      a.removeEventListener('pointerdown', mDown, true); a.removeEventListener('pointermove', mMove, true)
+      a.removeEventListener('pointerup', mUp, true); a.removeEventListener('pointercancel', midEnd, true)
+      for (const t of ['mousedown', 'mouseup', 'auxclick'] as const) a.removeEventListener(t, hush, true)
+      removeEventListener('blur', midEnd)
       removeEventListener('keydown', kDown); removeEventListener('keyup', kUp); removeEventListener('blur', blur)
       binder.current = () => () => {}
       a.removeEventListener('wheel', wheel); a.removeEventListener('gesturestart', gStart); a.removeEventListener('gesturechange', gChange); a.removeEventListener('gestureend', gEnd)

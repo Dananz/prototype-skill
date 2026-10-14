@@ -29,6 +29,7 @@ import { splitChecks } from './split-checks.mjs'
 import { keyboardColumnsChecks } from './keyboard-columns-checks.mjs'
 import { slotChecks } from './slot-checks.mjs'
 import { settingsChecks } from './settings-checks.mjs'
+import { middleDragChecks } from './middle-drag-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -145,13 +146,15 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
       await at('mouseReleased', x1, y1, { clickCount: 1 })
     }
     const hover = (x, y) => send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' }, sessionId)
+    // Any real mouse event: mouse('mousePressed', x, y, { button: 'middle', buttons: 4, clickCount: 1 }).
+    const mouse = (type, x, y, extra = {}) => send('Input.dispatchMouseEvent', { type, x, y, button: 'left', ...extra }, sessionId)
     const screenshot = async (file, clip) => {
       const { data } = await send('Page.captureScreenshot', { format: 'png', ...(clip ? { clip: { x: 0, y: 0, scale: 1, ...clip } } : {}) }, sessionId)
       mkdirSync(dirname(file), { recursive: true })
       writeFileSync(file, Buffer.from(data, 'base64'))
     }
     const appearance = value => send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value }] }, sessionId)
-    return { run, close, press, enter, key, touch, drag, hover, screenshot, appearance }
+    return { run, close, press, enter, key, touch, drag, hover, mouse, screenshot, appearance }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {
@@ -188,6 +191,7 @@ await contextMenuChecks({ proto, app, local, openPage, fail })
 await splitChecks({ proto, app, local, openPage, fail, keepShots })
 await keyboardColumnsChecks({ proto, app, local, openPage, fail, keepShots })
 await slotChecks({ proto, app, local, openPage, fail })
+await middleDragChecks({ proto, app, local, openPage, fail })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
 proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--variants', 'A:Price only,B:Fuel tabs'])
