@@ -569,6 +569,9 @@ made in the page is already marked when you hear of it, as a comment with `actio
 Comments from the page), its note as the comment's words: don't run `proto pick` again, and do
 what the note asks, then `proto reply <id> --done`. A pick with a note stays pending until then;
 a plain pick is already done.
+A pick in a prototype built `--from` a variant also picks that variant, and its own `from` up the
+chain (choosing a part of B means choosing B); `also` parents are left alone, and undoing a pick
+leaves the parents picked.
 
 As soon as the user chooses in chat, run `proto pick <slug> <letter>` before anything else,
 without asking. If they don't

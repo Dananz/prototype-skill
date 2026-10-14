@@ -690,6 +690,30 @@ function notePlug(dir, did, slug, id) {
 
 // The user chose a variant ("go with A"): the page marks it and lists it first. The other
 // variants stay, and so does everything built from this prototype.
+// The CLI's twin of the page's pickParents (app/server.mjs): a pick also picks the variant the prototype
+// was built from (`from: "<parent>/<letter>"`), and so on up the chain; `also` parents, archived
+// parents and ones already picked are left alone. Returns the routes it picked.
+function pickParents(dir, slug) {
+  const picked = [], seen = new Set([slug])
+  let from
+  try { from = readMeta(dir, slug)?.from } catch { return picked }
+  while (typeof from === 'string' && from.includes('/')) {
+    const [parent, letter] = from.split('/')
+    if (!letter || seen.has(parent)) break
+    seen.add(parent)
+    const f = join(dir, 'src', 'protos', parent, 'meta.ts')
+    let text, pm
+    try { text = readFileSync(f, 'utf8'); pm = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, '')) } catch { break }
+    if (!pm.archived && pm.variants?.[letter] && !pm.picked) {
+      pm.picked = letter
+      writeWhole(f, withMeta(text, pm), scratchOf(dir))
+      picked.push(`${parent}/${letter}`)
+    }
+    from = pm.from
+  }
+  return picked
+}
+
 function pick() {
   const dir = sessionDir()
   need(dir)
@@ -706,11 +730,12 @@ function pick() {
   const letter = flags.off ? was : id
   const plugged = plug(dir, slug, meta, letter, !!flags.off)
   writeWhole(metaFile, withMeta(text, meta), scratchOf(dir))
+  const parents = flags.off ? [] : pickParents(dir, slug)
   // The pick is what gets worked on next; its history starts here.
   if (!flags.off) setWork(dir, { proto: slug, variant: id }, `Picked ${id}`)
   if (plugged) try { notePlug(dir, plugged, slug, letter) } catch { /* a trace in the history, never a failed pick */ }
   const back = flags.off || isCurrent(meta.variants?.[letter])
-  console.log((flags.off ? `${slug}: no pick` : `${slug}: picked ${id} · ${meta.variants[id]}`) + (plugged ? ` · ${back ? 'original back in' : 'plugged into'} ${plugged.where}` : ''))
+  console.log((flags.off ? `${slug}: no pick` : `${slug}: picked ${id} · ${meta.variants[id]}`) + (plugged ? ` · ${back ? 'original back in' : 'plugged into'} ${plugged.where}` : '') + (parents.length ? ` · also picked ${parents.join(', ')}` : ''))
 }
 
 // ---------- the working variant ----------
