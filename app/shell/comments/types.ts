@@ -26,7 +26,7 @@ export type Use = { component: string; at: string; key?: string; props?: string 
  * the `data-opened-by` of each such part around it, outermost first, each the selector of the
  * control that opens that part. */
 /** label stays in saved data for compatibility; the UI uses numbered references, not element names. */
-export type Target = { label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; point?: { x: number; y: number }; view?: ViewSize; uses?: Use[]; within?: string; route?: string[]; whole?: true }
+export type Target = { label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; stage?: { w: number; h: number }; point?: { x: number; y: number }; view?: ViewSize; uses?: Use[]; within?: string; route?: string[]; whole?: true }
 
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
 export type Seg = string | { tag: number }

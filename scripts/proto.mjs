@@ -986,6 +986,10 @@ async function shootPin(dir, s, out) {
       target: c.target, point: c.point, ...(c.take ? { take: c.take, at: c.at } : {}),
       images: (c.images || []).map(im => ({ file: join(folder, im.file), name: im.name })),
       margin, after, hover: !!flags.hover,
+      // The stage the design was in when the comment was made, and the design's saved settings
+      // (its localStorage) when the batch was sent: batches from before these were recorded have neither.
+      ...(c.target.stage ? { stage: c.target.stage } : {}),
+      ...(b.storage ? { storage: b.storage } : {}),
     }
   })
   mkdirSync(out, { recursive: true })
@@ -1770,7 +1774,7 @@ async function compare() {
   const dir = sessionDir()
   const s = need(dir)
   if (!await running(s)) die('the server is stopped. Run: proto up')
-  if (flags.pin !== undefined) return shootPin(dir, s, out)
+  if (flags.pin !== undefined) return shootPin(dir, s, resolve(flags.out || join(dir, '.proto', 'shots')))
   const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
   const route = args.filter(a => !clicked.has(a))[0]
   if (!route || !route.includes('/') || typeof flags.ref !== 'string') die('usage: proto compare <slug>/<letter>[/<state>] --ref <png> [--el <css>] [--size <w>x<h>] [--click <css>]')
@@ -1791,7 +1795,7 @@ async function perf() {
   const dir = sessionDir()
   const s = need(dir)
   if (!await running(s)) die('the server is stopped. Run: proto up')
-  if (flags.pin !== undefined) return shootPin(dir, s, out)
+  if (flags.pin !== undefined) return shootPin(dir, s, resolve(flags.out || join(dir, '.proto', 'shots')))
   const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
   const route = args.filter(a => !clicked.has(a))[0]
   if (!route || !route.includes('/')) die('usage: proto perf <slug>/<letter>[/<state>] [--drag <css>] [--click <css>] [--size <w>x<h>] [--dpr 2] [--hz <screen Hz>] [--seconds 3]')
