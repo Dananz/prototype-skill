@@ -1,4 +1,4 @@
-// Motion for the shell: the focus-mode dock, the edge arrows, the Focus button and the
+// Motion for the shell: the focus-mode dock, the edge arrows and the
 // crossfade between designs. All of it is driven from script, with eased values kept
 // outside the DOM, so re-rendering the chrome never restarts an animation.
 
@@ -89,21 +89,10 @@ export function restoreEdgeLabels() {
   }))
 }
 
-// ---------- Focus button: visible while the pointer is over the design ----------
-// Kept in script, not CSS :hover: a re-created button only gets :hover after the next
-// mouse move, so it would vanish and fade back in on every variant switch.
-export const stageHover = { on: false }
-
-function showFocusBtn(on: boolean) {
-  stageHover.on = on
-  const b = document.querySelector<HTMLElement>('[data-focus-btn]')
-  if (b) b.style.opacity = on ? '1' : '0'
-}
-
 export const canHover = () => matchMedia('(hover: hover)').matches
 
-/** The mouse at a point of the page: the dock grows near it, the edge arrows and the Focus button
- *  show over the stage. A device view's frame passes its own moves here too (view/index.tsx), since
+/** The mouse at a point of the page: the dock grows near it, the edge arrows show over
+ *  the stage. A device view's frame passes its own moves here too (view/index.tsx), since
  *  a pointer over a frame moves in that page, not this one. */
 export function trackPointer(e: { clientX: number; clientY: number }) {
   const d = document.querySelector<HTMLElement>('[data-dock]')
@@ -121,11 +110,6 @@ export function trackPointer(e: { clientX: number; clientY: number }) {
     edge.target[el.dataset.edge!] = inside(e, z) ? Math.min(1, Math.max(0, 1 - (dist - 24) / 160)) : 0
   }
   if (arrows.length) runEdges()
-  const b = document.querySelector<HTMLElement>('[data-focus-btn]')
-  if (b) {
-    const on = inside(e, b.closest('[data-zone]')!.getBoundingClientRect())
-    if (on !== stageHover.on) showFocusBtn(on)
-  }
 }
 
 export function installPointerTracking() {
@@ -135,7 +119,6 @@ export function installPointerTracking() {
     runDock()
     for (const k in edge.target) edge.target[k] = 0
     runEdges()
-    showFocusBtn(false)
   })
   document.addEventListener('pointerover', e => {
     const b = (e.target as Element).closest?.<HTMLElement>('[data-edge]')
