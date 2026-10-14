@@ -159,7 +159,7 @@ export function pickParents(slug) {
     seen.add(parent)
     let text, pm
     try { text = readFileSync(metaFile(parent), 'utf8'); pm = metaOf(text) } catch { break }
-    if (!pm.archived && pm.variants?.[letter] && pm.picked !== letter) {
+    if (!pm.archived && pm.variants?.[letter] && !pm.picked) {
       pm.picked = letter
       writeWhole(metaFile(parent), withMeta(text, pm))
       picked.push(`${parent}/${letter}`)

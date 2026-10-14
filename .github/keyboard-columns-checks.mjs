@@ -124,5 +124,6 @@ export async function keyboardColumnsChecks({ proto, app, local, openPage, fail,
   } finally { page.close() }
   // The rest of the run expects nothing picked.
   proto(['pick', 'keysdeep', 'B', '--off'])
+  proto(['pick', 'keys', '--off'])
   console.log('\nOK: the columns move by keyboard, in the dropdown and the sidebar')
 }

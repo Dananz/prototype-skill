@@ -700,7 +700,7 @@ function pickParents(dir, slug) {
     const f = join(dir, 'src', 'protos', parent, 'meta.ts')
     let text, pm
     try { text = readFileSync(f, 'utf8'); pm = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, '')) } catch { break }
-    if (!pm.archived && pm.variants?.[letter] && pm.picked !== letter) {
+    if (!pm.archived && pm.variants?.[letter] && !pm.picked) {
       pm.picked = letter
       writeWhole(f, withMeta(text, pm), scratchOf(dir))
       picked.push(`${parent}/${letter}`)
