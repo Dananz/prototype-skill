@@ -698,7 +698,8 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
    theme (or the view's size) at 2x, opens the way to it (its `opened by` controls, hovering where
    it only shows on hover), and writes `pin-<batch>-<n>.png` (its box plus `--margin`, 24 px),
    `-context.png` (the region around it) and, when the comment has pictures, `-vs-ref.png` (the shot
-   beside them at one height). Read the vs-ref sheet. A detail can look right at the default shoot
+   beside them at one height). Read `pin-<batch>-<n>.png` for the detail (the sheet scales it to
+   the pictures' height) and the vs-ref sheet for the comparison. A detail can look right at the default shoot
    size and wrong on the user's page. The command prints the element's box, how it found it (a
    selector that no longer matches is said so) and what it could not replay; `--state <id>` shoots
    it in a state from meta.ts, `--hover` keeps the pointer on it, `--after <ms>` waits longer
