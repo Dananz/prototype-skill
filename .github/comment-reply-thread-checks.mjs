@@ -98,6 +98,28 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
       return 'ok'
     })()`)
     if (closed !== 'ok') fail(`reply thread: ${closed}`)
+
+    // A second answer answers the last reply, and the inbox walks the whole exchange back, oldest first.
+    const again = await page.run(`(async () => {
+      ${helpers}
+      const row = rows()[0]
+      row.querySelector('[data-shoot=comment-answer]').click()
+      const box = await until(() => row.querySelector('[data-shoot=comment-answer-box] textarea'))
+      if (!box) return 'Reply opened no box the second time'
+      type(box, 'Good. Same for the footer?')
+      ;(await until(() => !row.querySelector('[data-shoot=comment-answer-send]').disabled && row.querySelector('[data-shoot=comment-answer-send]')))?.click()
+      const follow = await until(() => saved().filter(i => i.re && i.sent).length === 2 && saved().filter(i => i.re).sort((a, b) => a.at - b.at)[1])
+      if (!follow) return 'the second answer was not sent'
+      if (follow.re.batch !== ${JSON.stringify(id2)} || follow.re.i !== 1) return 'the second answer should answer the last reply, not ' + JSON.stringify(follow.re)
+      if (!await until(() => rows().length === 1 && rows()[0].querySelectorAll('[data-shoot=comment-turn]').length === 2)) return 'the thread should show two follow-ups in one row'
+      return 'sent ' + follow.sent.batch
+    })()`)
+    if (!/^sent \S+$/.test(again)) fail(`reply thread: ${again}`)
+    const third = await heard(/Same for the footer\?/)
+    const walked = [`1. threadfx/A  (reply to ${id2}/1)`, '   earlier: "Give the whole page more air"  ->  Claude: "Opened up the padding everywhere"',
+      '   earlier: "Better, but the button still feels cramped"  ->  Claude: "Gave the button 8 px more each side"', '   Good. Same for the footer?'].join('\n')
+    if (!third.includes(walked)) fail(`reply thread: the inbox should print the whole exchange before the second answer, oldest first:\n${third}`)
+    proto(['reply', `${again.slice(5)}/1`, 'Footer too', '--done', '--as', 'claude'])
   } finally { page.close() }
   proto(['archive', 'threadfx'])
   console.log('\nOK: a reply can be answered from the page, reaches the inbox with its thread, and the answer to it lands in the thread')
