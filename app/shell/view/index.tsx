@@ -173,7 +173,7 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
   const bind = (doc: Document) => {
     const a = pinchOn(doc, pinch), b = gestures(doc), k = (e: KeyboardEvent) => keys.current(e)
     // The mouse over the frame moves in its page: told here as a point of this page, so the stage's
-    // Focus button and edge arrows show as they do over the stage itself.
+    // edge arrows show as they do over the stage itself.
     const m = (e: PointerEvent) => { if (e.pointerType !== 'mouse') return; const [x, y] = outOf(doc.defaultView?.frameElement as HTMLElement | null, e.clientX, e.clientY); trackPointer({ clientX: x, clientY: y }) }
     const c = (e: MouseEvent) => frameClicks.forEach(f => f(e))
     // Heard after the design's own handlers (bubbling), so a design that made its own menu keeps it.

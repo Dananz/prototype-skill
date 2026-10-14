@@ -13,7 +13,7 @@ import { listen, quiet } from './quiet'
 import { agentName, type Agent } from './agent'
 import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } from './ui'
 import { BUILDING_CLASS, ERROR_CLASS, ownerOfPath, refOfPath } from './building'
-import { dock, edge, smooth, runDock, restoreEdgeLabels, stageHover, installPointerTracking, fadeOut } from './motion'
+import { dock, edge, smooth, runDock, restoreEdgeLabels, installPointerTracking, fadeOut } from './motion'
 import { hints, fillField, type Hint } from './hints'
 import { copy } from './copy'
 import { createSheet, createMenuSheet, createTrySheet } from './sheet'
@@ -382,7 +382,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // sit under the stage, each taking its height from it: the motion dock (--dock-h) just above the
   // pill, where it always is, and the copy picker's bar (--copy-h) over the dock while copy mode is
   // on. The copy picker's phone sheet covers both. A device view covers the stage, under the edge
-  // arrows and the Focus button, the spotlight and the comment layer.
+  // arrows, the spotlight and the comment layer.
   root.innerHTML = `<div class="flex h-dvh bg-white text-[13px] text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
     <aside data-side></aside>
     <div data-grip role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0" title="Drag to resize · double-click to reset" class="group relative z-40 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none outline-none">
@@ -964,11 +964,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <div class="relative shrink-0"><button data-act="open:session" aria-label="Session" aria-expanded="${st.open === 'session'}" title="${esc(session.name)}" class="${IB} ${st.open === 'session' ? ON : ''}"><span class="relative grid size-5 shrink-0 place-items-center rounded bg-zinc-900 text-[10px] font-bold text-white dark:bg-white dark:text-zinc-900">${initial}<span class="absolute -right-1 -top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-2', st.live && !st.stopped)}</span></span></button>${pop(st.open === 'session', sessionMenu, 'left-0 top-11 w-[22rem] max-w-[calc(100vw-1rem)]')}</div>
       ${switcher}
       <div class="ml-auto flex shrink-0 items-center gap-1">
-        ${stepper}${stepper && (viewOk() || commentHost() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
+        ${stepper}${stepper && (view === 'variant' || viewOk() || commentHost() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
         ${sizeTabs()}${commentBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${settingsBtn()}
         ${phones || frameOn() ? `<div class="relative"><button data-act="open:scale" aria-expanded="${st.open === 'scale'}" aria-label="${frameOn() ? 'Zoom' : 'Phone scale'}" class="${IB} text-xs tabular-nums ${st.open === 'scale' ? 'bg-zinc-900/5 text-zinc-900 dark:bg-white/10 dark:text-white' : ''}">${ic(viewOn() ? sizeIcon(st.view.size!, st.view.land) : frameOn() ? sizeIcon(shownSize() ?? 'desktop') : 'phone')}<span data-scale-label>${scaleLabel()}</span></button>${pop(st.open === 'scale', scaleMenu, 'right-0 top-11 w-72')}</div>`
           // On the stage the design is at its own size: the button stays, so choosing a layout doesn't move the bar.
           : viewOk() ? `<button type="button" aria-disabled="true" aria-label="Zoom" title="The design is at its full size here. Choose a layout to zoom it" class="${IB} cursor-default text-xs tabular-nums opacity-40 hover:bg-transparent">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth)))}<span>100%</span></button>` : ''}
+        ${view === 'variant' ? `<button data-act="focus" aria-label="Focus mode" title="Focus mode · F" class="${IB.replace('inline-flex', 'hidden [@media(hover:hover)]:inline-flex')} shrink-0">${ic('grow')}</button>` : ''}
       </div></div>`)
     menus = { protos: drill(), session: sessionBody }
 
@@ -1022,7 +1023,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     overlay.innerHTML = framed || view !== 'variant' || !p ? '' : `
       ${building(p.id, vid) ? `<div data-building-chip title="${esc(agentName(session.agent))} is still building this one" class="pointer-events-none absolute left-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}Building</div>` : ''}
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
-      ${!st.focus ? `<button data-act="focus" data-focus-btn title="Focus mode · F" class="absolute right-[calc(var(--hw,0px)+1rem)] top-3 z-10 hidden h-9 [@media(hover:hover)]:inline-flex items-center gap-1.5 rounded-full bg-zinc-900/80 px-3 text-xs font-medium text-white shadow-lg backdrop-blur transition-opacity duration-200 focus-visible:!opacity-100" style="opacity:${stageHover.on ? 1 : 0}">${ic('grow', 'size-3.5')}Focus</button>` : `
+      ${st.focus ? `
       ${st.open === 'fproto' ? `<div data-pop class="fixed bottom-[76px] left-1/2 z-20 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">${protoMenu}</div>` : ''}
       <div class="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex justify-center pb-[env(safe-area-inset-bottom)]" style="bottom:calc(var(--dock-h,0px) + var(--copy-h,0px))">
         <div data-dock data-locked="${st.open === 'fproto' ? 1 : 0}" class="pointer-events-auto relative overflow-hidden rounded-full shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur" style="width:72px;height:6px;margin-bottom:4px;background-color:rgb(24 24 27/.35)">
@@ -1037,7 +1038,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             <button data-act="settings" class="${dockBtn}" aria-label="Settings" aria-haspopup="dialog">${ic('settings')}</button>
           </div>
         </div>
-      </div>`}`
+      </div>` : ''}`
 
     if (st.focus) requestAnimationFrame(runDock)
     restoreEdgeLabels()
@@ -1153,11 +1154,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- the pill's menu ----------
   // The pill's menu holds the page's tools for the design on the stage: All variants, copy options,
-  // Try it, the motion dock, and the layout (a web prototype's device view) or the phone scale. Each
-  // row is there only when the design has it, with what it holds (lines with options, things to
-  // try). The card grows out of the button: it starts as the button, same place, size and round
-  // corners, opens into the card, and its rows fade in once there is room; choosing anything in it
-  // folds it back. Turning it around halfway plays the running animation back from where it is.
+  // Try it, the motion dock, Focus mode, and the layout (a web prototype's device view) or the
+  // phone scale. Each row is there only when the design has it, with what it holds (lines with
+  // options, things to try). The card grows out of the button: it starts as the button, same place,
+  // size and round corners, opens into the card, and its rows fade in once there is room; choosing
+  // anything in it folds it back. Turning it around halfway plays the running animation back from where it is.
   const DARK_SEG = (on: boolean) => `h-9 min-w-0 flex-1 rounded-full text-xs font-medium tabular-nums ${on ? 'bg-white text-zinc-900' : 'text-white/70 hover:bg-white/10'}`
   const CARD_CLS = 'absolute z-30 w-[17.5rem] max-w-[calc(100vw-1rem)] space-y-1 rounded-3xl bg-zinc-900/95 p-1.5 text-[14px] text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/95'
   const menuRow = (o: { act: string; shoot: string; icon: string; label: string; detail?: string; on?: boolean; tint?: string }) =>
@@ -1174,6 +1175,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       c.lines ? menuRow({ act: 'copymode', shoot: 'copy-mode', icon: 'text', label: 'Copy options', detail: plural(c.lines, 'line') }) : '',
       n ? menuRow({ act: 'try', shoot: 'try-it', icon: 'key', tint: 'text-amber-300', label: 'Try it', detail: `${n} to try` }) : '',
       hasMotion() ? menuRow({ act: 'motion', shoot: 'motion', icon: 'curves', label: st.motion ? 'Hide motion' : 'Motion', detail: st.motion ? '' : 'Timeline', on: st.motion }) : '',
+      st.place.view === 'variant' ? menuRow({ act: 'focus', shoot: 'focus', icon: 'grow', label: 'Focus mode' }) : '',
     ].join('')
     const layout = viewOk() ? menuSegs('Layout', ORDER.map(s => `<button data-act="size:${s}:card" data-shoot="size-${s}" aria-label="${SIZES[s].name}" aria-pressed="${shownSize() === s}" class="grid place-items-center ${DARK_SEG(shownSize() === s)}">${ic(sizeIcon(s, s === 'tablet' && st.view.land), 'size-[18px]')}</button>`).join(''),
       viewOn() && st.view.size === 'tablet' ? `<button data-act="turn" data-shoot="turn" aria-label="${st.view.land ? 'Turn upright' : 'Turn on its side'}" class="grid size-10 shrink-0 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white">${ic('rotate', 'size-5')}</button>` : '') : ''
