@@ -10,9 +10,9 @@ export type Anchor = { at(p: Pt | null): void; hold(on: boolean): void; move(dx:
  *  apart they are against the start, and the point. */
 export type Pinch = { start(x: number, y: number): void; move(ratio: number, x: number, y: number): void; end(): void }
 
-/** 10% to 200%, Fit somewhere between. */
+/** 10% to 300%, Fit somewhere between. */
 export const MIN = 10
-export const MAX = 200
+export const MAX = 300
 /** A zoom (percent) on its way to `z`, kept to MIN–MAX; near Fit (`lo`) it stops there, as 0. */
 const zoomAt = (z: number, lo: number) => { const v = Math.min(MAX, Math.max(MIN, z)); return Math.abs(v - lo) <= Math.max(0.5, lo * 0.02) ? 0 : v }
 
@@ -139,7 +139,7 @@ export function usePlace(area: RefObject<HTMLDivElement | null>, box: { w: numbe
   }
 }
 
-/** Two fingers on the frame zoom the view around the point between them, from 10% up to 200%. */
+/** Two fingers on the frame zoom the view around the point between them, from 10% up to 300%. */
 export function usePinch(area: RefObject<HTMLElement | null>, scale: number, fit: number, setZoom: (z: number) => void, anchor: Anchor): Pinch {
   const s0 = useRef(scale)
   const now = useRef({ scale, fit, setZoom })
@@ -194,7 +194,7 @@ export function pinchOn(d: Document, p: Pinch) {
 
 /**
  * The view zooms on its own, never the page: two fingers anywhere in the area, a trackpad's pinch
- * (ctrl + wheel, or Safari's gesture events), each around the point under them, from 10% to 200%. Held Space drags it, and so does the middle
+ * (ctrl + wheel, or Safari's gesture events), each around the point under them, from 10% to 300%. Held Space drags it, and so does the middle
  * button, from anywhere.
  * Once zoomed in, it moves: a wheel or one finger on the device moves the view first, and only at
  * its edge scrolls the page inside; a mouse drags the space around the device. Returns what binds

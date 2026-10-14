@@ -9,6 +9,7 @@ import { climb, describe, find } from './dom'
 import { listen } from '../quiet'
 import { Glide, HoldRing, HoverBox, useBoxes, usePick } from './inspect'
 import { Composer } from './composer'
+import { freeze, release, watch } from './hover'
 import { useRows } from './list'
 import { progress, type Said } from './store'
 import type { Box, Item, Target } from './types'
@@ -77,6 +78,21 @@ export function Layer() {
     onGuard: act.guard,
   })
   const verb = tagging ? 'Tag' : held ? 'Continue your comment' : 'Comment'
+
+  // Hover-only parts of the design (hover.ts): while picking, whatever a hover made appear stays up
+  // while the pointer is on it; from the moment a comment's pin goes down until it is closed, the
+  // design's hover is held as it was.
+  const writing = m.kind === 'compose'
+  useEffect(() => {
+    const mount = picking && s.place ? host.mount() : null
+    return mount ? watch(mount) : undefined
+  }, [host, picking, s.place])
+  useEffect(() => {
+    const mount = writing ? host.mount() : null
+    if (!mount) return
+    freeze(mount)
+    return release
+  }, [host, writing])
 
   // ⌥-click comments on one element without turning comment mode on, in a device view's frame too.
   useEffect(() => {

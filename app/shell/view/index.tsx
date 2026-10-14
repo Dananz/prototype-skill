@@ -3,7 +3,7 @@
 // shows the page's own place: the page moves it, and when the page in it moves (a link in the
 // design; it draws no bar, pill or sidebar of its own, only the design), the page follows. A quiet
 // line on top says the size and the zoom; under it the page in a frame, as wide as the area (never
-// above 100%), which two fingers or a pinch zoom, from 10% to 200%, and Space and a drag move.
+// above 100%), which two fingers or a pinch zoom, from 10% to 300%, and Space and a drag move.
 //
 // While a view is on, the page's own Comment button and C comment on the design in it: a layer
 // covers the frame, the comment layer's inspect looks through it (host.view().at), a drag on it
@@ -18,6 +18,8 @@ import { Icon } from '../comments/ui'
 import { designIn, frameClicks, frameMenus, frameSelections, frameUrl, openFrame, type Frame } from './frame'
 import { fitOf, outOf, pinchOn, room, useBox, useGestures, usePinch, usePlace } from './gestures'
 import { trackPointer } from '../motion'
+import { hoverMove } from '../comments/hover'
+import { seeThrough } from '../comments/dom'
 import { dims, ORDER, SIZES, type Size } from './sizes'
 
 /** size null: the stage's own artboard (fill), as big as the stage, with no line over it. */
@@ -105,6 +107,15 @@ function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>;
       const d = doc()
       drag = { x: e.clientX, y: e.clientY, moved: false, sc: d && scrollerAt(d, d.elementFromPoint(...local(e.clientX, e.clientY))), id: e.pointerId }
     }
+    // Hover-only parts of the design show through the layer: the pointer's moves over it are replayed
+    // in the frame (comments/hover.ts), and leaving the layer is leaving the design.
+    const hover = (e: PointerEvent) => {
+      const d = doc()
+      if (!d || e.pointerType !== 'mouse' || drag?.moved) return
+      const [x, y] = local(e.clientX, e.clientY)
+      hoverMove(d, d.elementFromPoint(x, y), x, y)
+    }
+    const leave = (e: PointerEvent) => { const d = doc(); if (d && e.pointerType === 'mouse') hoverMove(d, null, ...local(e.clientX, e.clientY)) }
     const move = (e: PointerEvent) => {
       const g = drag
       if (!g || e.pointerId !== g.id) return
@@ -137,6 +148,8 @@ function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>;
       if (!sc || sc.scrollTop === was) a?.scrollBy(e.deltaX, e.deltaY)
     }
     el.addEventListener('pointerdown', down)
+    el.addEventListener('pointermove', hover)
+    el.addEventListener('pointerleave', leave)
     addEventListener('pointermove', move)
     addEventListener('pointerup', up)
     addEventListener('pointercancel', up)
@@ -144,6 +157,7 @@ function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>;
     el.addEventListener('wheel', wheel, { passive: false })
     return () => {
       el.removeEventListener('pointerdown', down)
+      el.removeEventListener('pointermove', hover); el.removeEventListener('pointerleave', leave)
       removeEventListener('pointermove', move); removeEventListener('pointerup', up); removeEventListener('pointercancel', up)
       removeEventListener('click', click, true)
       el.removeEventListener('wheel', wheel)
@@ -257,7 +271,7 @@ export function createView(host: HTMLElement, wrap: (el: ReactElement) => ReactE
       const r = f.getBoundingClientRect()
       if (x < r.left || x > r.right || y < r.top || y > r.bottom) return null
       const s = r.width / (f.offsetWidth || 1), fx = (x - r.left) / s, fy = (y - r.top) / s
-      const el = d.elementFromPoint(fx, fy)
+      const el = seeThrough(d, fx, fy, d.elementFromPoint(fx, fy))
       return el ? { el, x: fx, y: fy } : null
     },
   }

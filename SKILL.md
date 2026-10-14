@@ -31,7 +31,7 @@ Beside Comment the bar has three sizes, phone, tablet and desktop (on a phone, t
 pill's menu). On a wide screen a web variant sits on an artboard as big as the stage, laid out for
 the stage's width (its breakpoints see the stage, not the window); the stage's own layout is
 selected. Choosing another shows the page at that size, zoomed to fit (a 1440 × 900 desktop on a
-phone, a phone on a desktop); the scale button zooms either from 10% to 200%, and the user can
+phone, a phone on a desktop); the scale button zooms either from 10% to 300%, and the user can
 pinch, Space-drag or middle-button drag (from anywhere, at any zoom; the page stays where it is
 left, and Fit centres it again), comment, try things, pick copy and scrub motion there. Nothing to build for it
 beyond a web variant that lays out well at each width.
@@ -612,7 +612,11 @@ The user can leave comments on the design in the page (the Comment button, or C)
 element (or, on a phone, hold a finger on a spot), write, tag other elements with `@`, attach a
 screenshot and mark it up (or paste an image with Ctrl/⌘ V, or drop one on the comment), then send
 every draft at once. Commenting never reaches the design, so a menu or popover open in it stays
-open and what is in it can be commented on. The side panel's Comments tab lists
+open and what is in it can be commented on. Hover-only parts work the same way, with no key: while
+commenting, whatever a hover made appear (a dot's readout, a panel that opens under the pointer) stays
+up while the pointer moves onto it, parts drawn with `pointer-events: none` can be picked, and the
+hover is held while that comment is written. Nothing to build for it: plain hover state in the
+variant is enough (a CSS-only `:hover` is the exception in a device view). The side panel's Comments tab lists
 them and shows what became of each. `@` opens the existing visual picker to tag another
 element. Do not author special comment-element names or a catalog of elements. The outline
 and numbered references identify selected targets; source locations are stamped automatically.
