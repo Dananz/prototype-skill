@@ -8,8 +8,11 @@ import settings from '@phosphor-icons/core/assets/regular/gear-six.svg?raw'
 import eye from '@phosphor-icons/core/assets/regular/eye.svg?raw'
 import tweaksIcon from '@phosphor-icons/core/assets/regular/sliders-horizontal.svg?raw'
 
+import share from '@phosphor-icons/core/assets/regular/export.svg?raw'
+import download from '@phosphor-icons/core/assets/regular/download-simple.svg?raw'
+import eyeoff from '@phosphor-icons/core/assets/regular/eye-slash.svg?raw'
 /** Icons that are Phosphor's own files, never drawn here: the ⋯ and the pick's check circle. */
-const PHOSPHOR: Record<string, string> = { dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon }
+const PHOSPHOR: Record<string, string> = { share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon }
 
 const PATHS: Record<string, string> = {
   ...SIZE_PATHS,

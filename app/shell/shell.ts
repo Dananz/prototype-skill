@@ -28,6 +28,7 @@ import { tabIcon } from './favicon'
 import { setShellRoot } from './portals'
 import { createView } from './view/index'
 import { createSettings, type Appearance } from './settings'
+import { createShare } from './share'
 import { framed, frameClicks, frameMenus, offerTheme } from './view/frame'
 import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
 import { dims, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
@@ -154,7 +155,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // outside, so it keeps comments under names of its own, and writes nothing else: what it chooses
   // (its place, theme, sidebar, panel) lasts until it reloads. Its copy choices are the page's own
   // (the store is shared, see shared.ts), so configuring it again is nothing.
-  copy.configure(framed ? `${session.id}~view` : session.id)
+  copy.configure(framed && !new URLSearchParams(location.search).has('shot') ? `${session.id}~view` : session.id)
   const remember = (key: string, value: string) => { if (!framed) localStorage.setItem(key, value) }
   setShellRoot(root)
   const q = new URLSearchParams(location.search)
@@ -162,7 +163,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let appearance: Appearance = stored === 'light' || stored === 'dark' ? stored : 'system'
   let themeOverride = q.has('theme')
   const systemTheme = matchMedia('(prefers-color-scheme: dark)')
-  let settingsOpen = false
+  let settingsOpen = false, shareOpen = false
   let settingsOrigin: 'bar' | 'dock' = 'bar'
   const st = {
     place: { view: 'session' } as Place,
@@ -493,7 +494,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     ? `<div data-thumb data-pthumb class="relative flex w-full items-center justify-center overflow-hidden bg-zinc-100 dark:bg-zinc-900 ${aspect}"><div inert class="pointer-events-none ${PHONE} [contain:layout_paint]" style="${phoneSize(proto)}"><div data-mount class="h-full overflow-hidden"></div></div></div>`
     : `<div data-thumb class="relative w-full overflow-hidden bg-white dark:bg-zinc-950 ${aspect}"><div inert class="pointer-events-none overflow-hidden [contain:layout_paint]" style="width:1200px;height:750px"><div data-mount class="h-full"></div></div></div>`
 
-  const frameOf = (proto: Proto) => proto.kind === 'phone'
+  const frameOf = (proto: Proto) => proto.kind === 'phone' && !q.has('shot')
     ? `<div data-phones class="flex min-h-full items-center justify-center p-6"><div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(proto)}"><div data-mount class="h-full overflow-y-auto"></div></div></div>`
     : '<div data-mount class="h-full"></div>'
 
@@ -970,7 +971,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ${switcher}
       <div class="ml-auto flex shrink-0 items-center gap-1">
         ${stepper}${stepper && (view === 'variant' || viewOk() || commentHost() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${sizeTabs()}${commentBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${settingsBtn()}
+        ${sizeTabs()}${commentBtn()}${shareBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${settingsBtn()}
         ${phones || frameOn() ? `<div class="relative"><button data-act="open:scale" aria-expanded="${st.open === 'scale'}" aria-label="${frameOn() ? 'Zoom' : 'Phone scale'}" class="${IB} text-xs tabular-nums ${st.open === 'scale' ? 'bg-zinc-900/5 text-zinc-900 dark:bg-white/10 dark:text-white' : ''}">${ic(viewOn() ? sizeIcon(st.view.size!, st.view.land) : frameOn() ? sizeIcon(shownSize() ?? 'desktop') : 'phone')}<span data-scale-label>${scaleLabel()}</span></button>${pop(st.open === 'scale', scaleMenu, 'right-0 top-11 w-72')}</div>`
           // On the stage the design is at its own size: the button stays, so choosing a layout doesn't move the bar.
           : viewOk() ? `<button type="button" aria-disabled="true" aria-label="Zoom" title="The design is at its full size here. Choose a layout to zoom it" class="${IB} cursor-default text-xs tabular-nums opacity-40 hover:bg-transparent">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth)))}<span>100%</span></button>` : ''}
@@ -1178,6 +1179,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const p = cur()!, c = copyCounts(), n = tryCount(hintList())
     const rows = [
       menuRow({ act: 'lobby:proto', shoot: 'all-variants', icon: 'grid', label: 'All variants', detail: String(visible(p).length), on: st.place.view === 'proto' }),
+      !framed ? menuRow({ act: 'share', shoot: 'share', icon: 'share', label: 'Share screenshots' }) : '',
       c.lines ? menuRow({ act: 'copymode', shoot: 'copy-mode', icon: 'text', label: 'Copy options', detail: plural(c.lines, 'line') }) : '',
       n ? menuRow({ act: 'try', shoot: 'try-it', icon: 'key', tint: 'text-amber-300', label: 'Try it', detail: `${n} to try` }) : '',
       hasMotion() ? menuRow({ act: 'motion', shoot: 'motion', icon: 'curves', label: st.motion ? 'Hide motion' : 'Motion', detail: st.motion ? '' : 'Timeline', on: st.motion }) : '',
@@ -1516,6 +1518,19 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const p = cur()
     const here = st.place.view === 'variant' ? st.place : null
     switch (name) {
+      case 'share': {
+        if (framed || !p) return
+        shareOpen = true
+        st.open = null; st.menu = ''; closeCard(true); render()
+        const host = toolHost(), r = host?.getBoundingClientRect()
+        const w = host?.clientWidth || Math.round(r?.width || p.screen[0] || 1440)
+        const h = host?.clientHeight || Math.round(r?.height || p.screen[1] || 900)
+        drawShare({ title: p.title, slug: p.id, current: here?.variant ?? null, dark: st.dark, size: { w, h },
+          variants: p.variants.map(v => ({ id: v.id, name: v.name, ...(v.id === here?.variant ? { tweaks: Object.fromEntries(tweaks.of(host).map(t => [t.id, t.value])) } : {}), hash: hashOf({ view: 'variant', proto: p.id, variant: v.id, ...(here?.state && stateOf(p, v.id, here.state) ? { state: here.state } : {}) }) })),
+          onClose: () => { shareOpen = false; drawShare(null) }, returnFocus: () => phoneMq.matches ? menuBtn() : root.querySelector<HTMLElement>('[data-act=share]'),
+        })
+        return
+      }
       case 'settings': settingsOpen = true; st.open = null; st.menu = ''; st.drawer = false; render(); void refreshStatus(); return
       case 'tweaks': {
         if (!tweakList().length) return
@@ -1723,7 +1738,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   listen(window, 'keydown', e => {
     const t = e.target as Element
-    if (settingsOpen) return
+    if (settingsOpen || shareOpen) return
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); return act('side', (wide() ? st.side : st.drawer) ? '0' : '1', '') }
     // Cmd or Ctrl Enter sends what's ready to Claude, from anywhere but a field of the design's own.
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
@@ -1959,7 +1974,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   /** Keys pressed in the page inside the view: C comments on it, F is focus mode and P the design's
    *  actions, as out here, and Esc stops. */
   function viewKey(e: KeyboardEvent) {
-    if (settingsOpen) return
+    if (settingsOpen || shareOpen) return
     const t = e.target as Element
     if (e.metaKey || e.ctrlKey || e.altKey || t.closest?.('input, textarea, select, [contenteditable]')) return
     if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
@@ -2079,6 +2094,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     return `<button data-act="open:decide" data-decide-btn aria-haspopup="menu" aria-expanded="${on}" aria-label="${say}" title="${say} · P" class="${IB} ${on ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}">${ic('check')}<span class="hidden px-1 text-xs sm:inline">Actions</span></button>`
   }
   const settingsBtn = (status = false) => `<button data-act="settings" aria-label="Settings" aria-haspopup="dialog" title="Settings" class="${IB}${status ? ' relative' : ''}">${ic('settings')}${status ? `<span class="absolute right-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span>` : ''}</button>`
+  const drawShare = createShare()
+  const shareBtn = () => !framed && !st.focus && cur() ? `<button data-act="share" data-shoot="share" aria-label="Share screenshots" aria-haspopup="dialog" class="${IB}">${ic('share')}</button>` : ''
   const drawSettings = createSettings()
   function paintSettings() {
     drawSettings({
@@ -2702,7 +2719,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // ?copy=1 (proto shoot --copy): copy mode opens once the design on the stage declares its lines.
   if (q.has('copy')) comments.copy.want()
   refreshStatus()
-  Promise.all([document.fonts.ready, Promise.race([(layer as Layer | null)?.ready, wait(5000)])]).then(() => requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1' })))
+  Promise.all([document.fonts.ready, q.has('shot') ? (layer as Layer | null)?.ready : Promise.race([(layer as Layer | null)?.ready, wait(5000)])]).then(() => requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1' })))
 
   // The working variant the page itself just moved to (a pick, Undo), until session.json brings it.
   let editTimer = 0, movedTimer = 0, expected: Ref | null = null
