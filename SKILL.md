@@ -18,9 +18,9 @@ variants (on a phone, a pill at the bottom you drag along, with a menu for the p
 Comment, and the columns as a sheet you drill into), edge arrows, a focus mode with a dock, light and dark, phone frames, "editing" dots, a
 strip naming the variant your requests change). You only write variant files.
 
-The bar's Share button (in the pill menu on a phone) opens the screenshot board for this
-variant or all variants. Edit each caption, select individual shots, and choose No name, With
-name or Canvas, at As shown, Phone, Tablet or Desktop sizes. The board previews the actual PNGs
+A variant's context menu (right-click its row or open its ⋯) offers Share screenshots for
+that variant or all variants. Share is also in the pill menu on a phone. Edit each caption,
+select individual shots, and choose No name, With name or Canvas, at As shown, Phone, Tablet or Desktop sizes. The board previews the actual PNGs
 and downloads them one by one with progress and Stop. On supported phones, Share files opens
 the system share sheet. Captions affect exports only.
 

@@ -17,10 +17,15 @@ export default function Shot(){ const words=useCopy([{id:'title',label:'Title',o
     fail(`share: ${why}`)
   }
   const click = s => page.run(`document.querySelector(${JSON.stringify(s)})?.click()`)
+  const openShare = (target, slug, id, right = false) => target.run(`(async()=>{
+    const button=document.querySelector('[data-act="vm:${slug}:${id}"]');if(!button)return false;
+    if(${right}){const row=button.parentElement;const r=row.getBoundingClientRect();row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:r.left+10,clientY:r.top+10}))}else button.click();
+    for(const end=Date.now()+5000;Date.now()<end;await new Promise(r=>setTimeout(r,50))){const share=document.querySelector('[data-shoot=ctx-share]');if(share){share.click();return true}}return false
+  })()`)
   try {
-    assert(await page.run('!!document.querySelector("[data-act=share]")'), 'no Share entry in the shell')
+    assert(await page.run('!document.querySelector("[data-bar] [data-act=share]")'), 'Share remains in the navbar')
     await page.run(`(async()=>{const {tweaks}=await import('/shell/tweaks.ts');tweaks.change(window.__protoDesign(),'accent','#dc2626');const {copy}=await import('/shell/copy.ts');copy.choose(window.__protoDesign(),'title',{text:'Alternate caption'})})()`)
-    await click('[data-act=share]')
+    assert(await openShare(page, 'share-check', 'A'), 'variant context menu has no Share entry')
     await until('document.querySelectorAll("[data-share-tile] canvas").length === 3', 'current variant previews did not render')
     await page.run(`window.__captionBefore=document.querySelectorAll('[data-share-tile] canvas')[1].toDataURL();const e=document.querySelector('[aria-label="Screenshot name for A"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Edited caption');e.dispatchEvent(new Event('input',{bubbles:true}))`)
     await until(`document.querySelectorAll('[data-share-tile] canvas')[1].toDataURL() !== window.__captionBefore`, 'caption edit did not change preview pixels')
@@ -55,7 +60,11 @@ export default function Shot(){ const words=useCopy([{id:'title',label:'Title',o
     await new Promise(r => setTimeout(r, 500))
     assert(await page.run('window.__shots.length') === atClose, 'closing continued downloading in the background')
     await until('!document.querySelector("[data-share-board]")', 'board did not close')
-    await until(`document.activeElement.dataset.act === 'share' && !document.querySelector('iframe[title="Screenshot capture"]')`, 'close did not restore focus and remove capture frames')
+    await until(`document.activeElement.dataset.act === 'vm:share-check:A' && !document.querySelector('iframe[title="Screenshot capture"]')`, 'close did not restore focus and remove capture frames')
+    assert(await openShare(page, 'share-check', 'B', true), 'right-click menu has no Share entry')
+    await until(`document.querySelector('[data-share-variant]')?.dataset.shareVariant === 'B' && document.querySelectorAll('[data-share-tile] canvas').length === 3`, 'context menu did not select the clicked variant')
+    assert(await page.run('location.hash') === route, 'sharing another variant changed the current view')
+    await click('[data-share-close]')
   } finally { page.close() }
   const phone = await openPage(`${local}?theme=light#/share-check/A`, { width: 390, height: 844, phone: true })
   try {
@@ -73,7 +82,7 @@ export default function Shot(){ const words=useCopy([{id:'title',label:'Title',o
   proto(['add', 'share-check', '--kind', 'phone'])
   const framed = await openPage(`${local}?theme=light#/share-check/A`)
   try {
-    await framed.run(`document.querySelector('[data-act=share]').click()`)
+    assert(await openShare(framed, 'share-check', 'A'), 'phone-kind variant context menu has no Share entry')
     for (const end = Date.now() + 20000; Date.now() < end && !await framed.run(`!!document.querySelector('[data-share-tile] canvas')`); await new Promise(r => setTimeout(r, 100))) {}
     assert(await framed.run(`(()=>{const c=document.querySelector('[data-share-tile] canvas');if(!c)return false;const p=c.getContext('2d').getImageData(20,100,1,1).data;return p[0]<50&&p[1]>150})()`), 'phone-kind export included the shell bezel or scaled the design')
     await framed.key('Escape')
@@ -85,14 +94,15 @@ export default function Slow(){return <main><img alt="Wait for image" src="data:
   writeFileSync(join(app, 'src/protos/share-slow/B.tsx'), `export default function Ready(){return <main style={{height:'100%',background:'#2563eb'}}>Ready</main>}`)
   const slow = await openPage(`${local}?theme=light#/share-slow`)
   try {
-    await slow.run(`document.querySelector('[data-act=share]').click()`)
+    assert(await openShare(slow, 'share-slow', 'A'), 'slow variant context menu has no Share entry')
+    await slow.run(`document.querySelector('[data-share-scope=all]').click()`)
     for (const end = Date.now() + 26000; Date.now() < end && !await slow.run(`document.querySelectorAll('[data-share-tile] canvas').length===3 && document.querySelector('[data-share-board]').textContent.includes('Capture took too long')`); await new Promise(r => setTimeout(r, 100))) {}
     assert(await slow.run(`document.querySelectorAll('[data-share-tile] canvas').length===3 && document.querySelector('[data-share-download]').disabled`), 'a stalled image blocked later captures or allowed a partial batch')
     await slow.run(`document.querySelector('[aria-label="Leave out variant A"]').click()`)
     await new Promise(r => setTimeout(r, 50))
     assert(await slow.run(`!document.querySelector('[data-share-download]').disabled`), 'leaving the failed variant out did not allow the remaining shots')
     await slow.key('Escape')
-    await slow.run(`document.querySelector('[data-act=share]').click()`)
+    assert(await openShare(slow, 'share-slow', 'A'), 'slow variant menu did not reopen')
     await new Promise(r => setTimeout(r, 150))
     await slow.key('Escape')
     await new Promise(r => setTimeout(r, 100))
