@@ -57,12 +57,21 @@ const cut = (a: Box, b: Box): Box | null => {
 }
 
 /**
- * `el`'s box (see `rel`) cut to the part of the design that is on screen: a design scrolls inside
- * its mount (a phone's screen), so an element taller than the screen, or half scrolled away,
- * is only drawn where it can be seen. Null when none of it is.
+ * Cut to the visible scroll viewports, not the mount's layout height. A desktop mount can
+ * overflow into its parent's scroller; its own one-screen box then scrolls out of view while
+ * the rest of the design is still visible. Phone mounts clip their own scrolling content.
  */
 export function seen(el: Element, mount: Element, host: Element): Box | null {
-  const b = cut(rel(el, host), rel(mount, host)), f = frameShown(mount, host)
+  let b: Box | null = cut(rel(el, host), { x: 0, y: 0, w: host.clientWidth, h: host.clientHeight })
+  for (let p = el.parentElement; b && p; p = p.parentElement) {
+    const cs = p.ownerDocument.defaultView!.getComputedStyle(p), r = rel(p, host)
+    const clipX = cs.overflowX !== 'visible', clipY = cs.overflowY !== 'visible'
+    if (clipX || clipY) b = cut(b, {
+      x: clipX ? r.x : b.x, y: clipY ? r.y : b.y,
+      w: clipX ? r.w : b.w, h: clipY ? r.h : b.h,
+    })
+  }
+  const f = frameShown(mount, host)
   return b && f ? cut(b, f) : b
 }
 

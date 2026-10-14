@@ -1,16 +1,22 @@
 // The box at the foot of the Comments panel (and the phone's list): a comment on the variant as a
-// whole, written where the others are listed. Focus outlines the variant edge to edge, Enter adds
+// whole, written where the others are listed. Focus outlines the variant edge to edge, ⌘Enter adds
 // the comment as a draft, and no composer opens in between.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useCtx } from './ctx'
 import { useStore } from './store'
-import { Icon } from './ui'
+import { Icon, MOD } from './ui'
 
 export function WholeBox({ className = '' }: { className?: string }) {
   const { store, act } = useCtx()
   const s = useStore(store)
   const [text, setText] = useState('')
-  const input = useRef<HTMLInputElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = input.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [text])
   // ⇧C, or a sidebar row's Comment on this: the shell has made the box visible, this puts the cursor in it.
   // A tick later, so the key that asked (⇧C) has finished and its letter cannot land in the box.
   // Not cancelled by the effect's own cleanup: clearing the ask re-runs it before the tick.
@@ -24,12 +30,16 @@ export function WholeBox({ className = '' }: { className?: string }) {
   return (
     <form data-shoot="whole-box" onSubmit={e => { e.preventDefault(); add() }} className={`flex items-center gap-1.5 rounded-xl bg-zinc-900/[.04] p-1 ring-1 ring-inset ring-transparent focus-within:ring-2 focus-within:ring-proto-primary-ring dark:bg-white/[.06] ${className}`}>
       <Icon name="frame" className="ms-2 size-4 text-zinc-400" />
-      <input ref={input} data-shoot="whole-input" type="text" value={text} onChange={e => setText(e.target.value)} dir="auto" autoComplete="off" enterKeyHint="send"
+      <textarea ref={input} data-shoot="whole-input" rows={1} value={text} onChange={e => setText(e.target.value)} dir="auto" autoComplete="off" enterKeyHint="enter"
         aria-label="Comment on the entire variant" placeholder="Comment on the entire variant" title="Comment on the whole variant · ⇧C"
         onFocus={() => act.wholeFocus(true)} onBlur={() => act.wholeFocus(false)}
-        onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); input.current?.blur() } }}
-        className="h-9 min-w-0 flex-1 truncate bg-transparent text-[13px] outline-none placeholder:text-zinc-400 [@media(pointer:coarse)]:text-base" />
-      {text.trim() && <button type="submit" data-shoot="whole-add" aria-label="Add the comment" title="Add the comment · Enter"
+        onKeyDown={e => {
+          if (e.nativeEvent.isComposing) return
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); add() }
+          else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); input.current?.blur() }
+        }}
+        className="min-h-9 max-h-[116px] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent py-2 text-[13px] leading-5 outline-none placeholder:text-zinc-400 [@media(pointer:coarse)]:text-base" />
+      {text.trim() && <button type="submit" data-shoot="whole-add" aria-label="Add the comment" title={`Add the comment · ${MOD} Enter`}
         className="grid size-9 shrink-0 place-items-center rounded-lg bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover"><Icon name="send" className="size-4" /></button>}
     </form>
   )

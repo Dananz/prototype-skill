@@ -139,7 +139,9 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     const onView = (t: Target): Target => { const v = host.view?.(); return v?.size ? { ...t, view: { size: v.size, w: v.w!, h: v.h! } } : t }
     const part = (t: EventTarget | null) => { const el = inDesign(t); return el && el !== host.mount() ? el : null }
     const parentOf = (el: HTMLElement) => { const m = host.mount(); return m ? climb(m, el) : null }
+    let touching = false
     const show = (el: HTMLElement | null, touch: boolean) => {
+      touching = touch
       cur.current = el
       raised.current = false
       const up = el && parentOf(el)
@@ -253,7 +255,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
         if (!el.isConnected) show(null, false)
         else {
           const box = m && seen(el, m, host.layer), key = JSON.stringify(box)
-          if (key !== last) { last = key; if (box) setHover(h => h && { ...h, box }) }
+          if (key !== last) { last = key; setHover(box ? { box, touch: touching, parent: !!parentOf(el) } : null) }
         }
       }
       raf = requestAnimationFrame(follow)
