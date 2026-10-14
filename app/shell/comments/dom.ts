@@ -96,7 +96,31 @@ export function describe(mount: HTMLElement, el: HTMLElement): Target {
     tag: el.tagName.toLowerCase(),
     text: text.slice(0, 80),
     rect: { x: Math.round((r.left - o.left) / z), y: Math.round((r.top - o.top) / z), w: Math.round(r.width / z), h: Math.round(r.height / z) },
+    // The stage the design is mounted in, in page px: a design that fits its stage is drawn at the
+    // scale this sets, so `proto shoot --pin` sizes its window until its stage is this one.
+    ...(() => { const s = mount.getBoundingClientRect(); return s.width >= 1 && s.height >= 1 ? { stage: { w: Math.round(s.width), h: Math.round(s.height) } } : {} })(),
   }
+}
+
+/**
+ * The design's own saved settings (its localStorage, the page's own `proto-` keys left out), sent
+ * with a batch so `proto shoot --pin` can open the design as the user had it (a panel they resized,
+ * a range they chose). Nothing when it is more than 64 KB, or storage is blocked.
+ */
+export function designStorage(): Record<string, string> | undefined {
+  try {
+    const out: Record<string, string> = {}
+    let size = 0
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (!k || k.startsWith('proto-')) continue
+      const v = localStorage.getItem(k) ?? ''
+      size += k.length + v.length
+      if (size > 64 * 1024) return undefined
+      out[k] = v
+    }
+    return Object.keys(out).length ? out : undefined
+  } catch { return undefined }
 }
 
 /** The variant as a whole, as a target: its root element, with the variant's name in place of the root's text. */

@@ -17,6 +17,10 @@
 //             [--frames <n>] [--at <ms>-<ms>]   n frames of the take on one sheet, with its curves
 //             [--size <w>x<h>]   instead of desktop and phone, that viewport (a layout from the page's device view)
 //   proto shoot [slug…] --sheet [--state <id>] [--theme dark]   every variant on one contact sheet per prototype
+//   proto shoot --pin <batch>[/<n>] [--margin <px>] [--state <id>] [--hover] [--after <ms>]
+//             what a comment from the page is on, as the user saw it: their page size and theme at 2x,
+//             the way to it opened, its box plus a margin (pin-<batch>-<n>.png), the region around it
+//             (-context.png) and the comment's pictures beside it (-vs-ref.png); no /<n>: every pinned one
 //   proto compare <slug>/<letter>[/<state>] --ref <png> [--el <css>] [--size <w>x<h>] [--click <css>]
 //             how far an element of the variant (default: the whole variant) is from a screenshot of
 //             the real one, as % of pixels off, per column and per third, with a difference image
@@ -85,7 +89,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy', 'kit', 'each', 'hebrew'])
+const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -866,6 +870,7 @@ async function shoot() {
   const s = need(dir)
   if (!await running(s)) die('the server is stopped. Run: proto up')
   const out = resolve(flags.out || join(dir, '.proto', 'shots'))
+  if (flags.pin !== undefined) return shootPin(dir, s, out)
   const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
   let routes = args.filter(a => !clicked.has(a)).length ? args.filter(a => !clicked.has(a)) : ['']
   const extra = ['theme', 'focus', 'copy'].filter(k => flags[k]).map(k => `--${k}=${flags[k] === true ? '1' : flags[k]}`)
@@ -922,6 +927,77 @@ async function shoot() {
   if (phones.size) extra.push(`--phone=${[...phones].join(',')}`)
   const r = run(process.execPath, [join(SKILL, 'scripts', 'shoot.mjs'), s.localUrl, out, ...routes.map(r => r || '/'), ...extra], { stdio: 'inherit' })
   if (spec) rmSync(spec, { force: true })
+  process.exit(r.status ?? 1)
+}
+
+// --pin <batch>[/<n>]: the comment (or every comment of the batch that is on an element) as its
+// writer saw it. The batch is read where it is (taken, or still new: reading it does not take it),
+// and shoot.mjs gets one entry per comment: its route (in --state's state when given), the page
+// size and theme it was written in (a device view's size, when it was written in one), its element
+// and the controls that open the way there, and its pictures.
+async function shootPin(dir, s, out) {
+  const ref = flags.pin === true ? '' : String(flags.pin)
+  const [prefix, nth, more] = ref.split('/')
+  if (!prefix || more !== undefined || (nth !== undefined && !/^\d+$/.test(nth))) die('--pin takes a batch, or one comment of it, as proto inbox prints them: proto shoot --pin <batch>/<n>')
+  for (const k of ['sheet', 'ref', 'as', 'at', 'frames', 'size', 'click', 'copy', 'focus']) if (flags[k] !== undefined) die(`--pin shoots what a comment is on: not with --${k}`)
+  if (args.length) die(`--pin finds its route in the comment: leave out ${args.join(' ')}`)
+  const found = ['taken', 'new'].flatMap(sub => batchesIn(dir, sub).filter(id => id.startsWith(prefix)).map(id => ({ id, sub })))
+  if (found.length !== 1) die(found.length ? `"${prefix}" matches ${found.length} batches; give more of the id` : `no batch "${prefix}" in the inbox (proto inbox prints their ids)`)
+  const folder = join(inboxDir(dir), found[0].sub, found[0].id)
+  const b = readJson(join(folder, 'batch.json'), null)
+  if (!b) die(`batch ${found[0].id}: its batch.json could not be read`)
+  const whole = n => n.target && !n.withdrawn && !n.action
+  let list
+  if (nth !== undefined) {
+    const c = b.comments.find(x => x.n === Number(nth))
+    if (!c) die(`batch ${b.id} has no comment ${nth} (1-${b.comments.length})`)
+    if (c.withdrawn) die(`${b.id}/${nth} was withdrawn in the page`)
+    if (c.action) die(`${b.id}/${nth} is a ${c.action} decision: nothing to shoot`)
+    if (!c.target) die(`${b.id}/${nth} is not on an element: nothing to shoot`)
+    list = [c]
+  } else {
+    list = b.comments.filter(whole)
+    const left = b.comments.filter(c => !c.withdrawn && !whole(c)).map(c => c.n)
+    if (left.length) console.error(`batch ${b.id}: ${left.join(', ')} ${left.length === 1 ? 'is' : 'are'} not on an element (decisions, or on the motion only), so not shot`)
+    if (!list.length) die(`batch ${b.id} has no comment on an element`)
+  }
+  const num = (k, d, lo, hi) => {
+    if (flags[k] === undefined) return d
+    const v = Number(flags[k])
+    if (!Number.isInteger(v) || v < lo || v > hi) die(`--${k} is a whole number from ${lo} to ${hi}`)
+    return v
+  }
+  const margin = num('margin', 24, 0, 400), after = num('after', 0, 0, 10000)
+  if (flags.state === true) die('--state takes a state id from the prototype\'s meta.ts: --state row-menu')
+  if (flags.theme !== undefined && !['dark', 'light'].includes(flags.theme)) die('--theme is dark or light')
+  const pins = list.map(c => {
+    let route = c.route
+    if (flags.state) {
+      const [slug, letter] = route.split('/')
+      let meta = null
+      try { meta = readMeta(dir, slug) } catch { /* not plain JSON */ }
+      const ids = (meta?.states || []).map(x => x.id)
+      if (!ids.includes(flags.state)) die(`${slug} has no state "${flags.state}"${ids.length ? ` (it has ${ids.join(', ')})` : ''}`)
+      route = `${slug}/${letter}/${flags.state}`
+    }
+    const page = c.view ? { width: c.view.w, height: c.view.h, framed: true, view: c.view.size } : { width: b.viewport?.w || 1440, height: b.viewport?.h || 900 }
+    if (!c.view && !b.viewport?.w) console.error(`batch ${b.id} has no page size; shooting at 1440x900`)
+    return {
+      batch: b.id, n: c.n, route, text: c.text, theme: flags.theme || b.theme || 'light', ...page,
+      target: c.target, point: c.point, ...(c.take ? { take: c.take, at: c.at } : {}),
+      images: (c.images || []).map(im => ({ file: join(folder, im.file), name: im.name })),
+      margin, after, hover: !!flags.hover,
+      // The stage the design was in when the comment was made, and the design's saved settings
+      // (its localStorage) when the batch was sent: batches from before these were recorded have neither.
+      ...(c.target.stage ? { stage: c.target.stage } : {}),
+      ...(b.storage ? { storage: b.storage } : {}),
+    }
+  })
+  mkdirSync(out, { recursive: true })
+  const spec = join(out, `.pin-${process.pid}.json`)
+  writeJson(spec, pins)
+  const r = run(process.execPath, [join(SKILL, 'scripts', 'shoot.mjs'), s.localUrl, out, ...pins.map(p => p.route), `--pin=${spec}`], { stdio: 'inherit' })
+  rmSync(spec, { force: true })
   process.exit(r.status ?? 1)
 }
 
@@ -1552,6 +1628,7 @@ function printBatch(dir, b) {
     for (const [i, t] of (c.tags || []).entries()) console.log(`   with @${i + 1}: ${where(t)}`)
     for (const img of c.images || []) console.log(`   image: ${join(inboxDir(dir), 'taken', b.id, img.file)}${img.name ? `  (${img.name})` : ''}`)
   }
+  if (live.some(c => c.target && !c.action)) console.log(`\nSee one as the user saw it (their page size, the way to it opened, beside their pictures): proto shoot --pin ${b.id}/<n>`)
   console.log(`\nReply to all at once: proto reply ${b.id} 1 "…" 2 "…" … --done   (or ${b.id}/<n> "…" for one, ${b.id} "…" for the batch)\n`)
 }
 
@@ -1698,6 +1775,7 @@ async function compare() {
   const dir = sessionDir()
   const s = need(dir)
   if (!await running(s)) die('the server is stopped. Run: proto up')
+  if (flags.pin !== undefined) return shootPin(dir, s, resolve(flags.out || join(dir, '.proto', 'shots')))
   const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
   const route = args.filter(a => !clicked.has(a))[0]
   if (!route || !route.includes('/') || typeof flags.ref !== 'string') die('usage: proto compare <slug>/<letter>[/<state>] --ref <png> [--el <css>] [--size <w>x<h>] [--click <css>]')
@@ -1718,6 +1796,7 @@ async function perf() {
   const dir = sessionDir()
   const s = need(dir)
   if (!await running(s)) die('the server is stopped. Run: proto up')
+  if (flags.pin !== undefined) return shootPin(dir, s, resolve(flags.out || join(dir, '.proto', 'shots')))
   const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
   const route = args.filter(a => !clicked.has(a))[0]
   if (!route || !route.includes('/')) die('usage: proto perf <slug>/<letter>[/<state>] [--drag <css>] [--click <css>] [--size <w>x<h>] [--dpr 2] [--hz <screen Hz>] [--seconds 3]')

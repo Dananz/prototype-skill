@@ -67,6 +67,8 @@ export type CommentBatch = {
     /** Written in a device view (view/): about that layout. */
     view?: ViewSize }[]
   viewport?: { w: number; h: number; phone?: boolean }
+  /** The design's own localStorage when it was sent (comments/dom.ts designStorage), for `proto shoot --pin`. */
+  storage?: Record<string, string>
   theme?: 'light' | 'dark'
 }
 /** How a send went: its batch, and for each decision in it whether the server made it, or why not

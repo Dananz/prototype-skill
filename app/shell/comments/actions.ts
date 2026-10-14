@@ -3,7 +3,7 @@
 // Send posts every draft as one batch. Whatever is being written when the composer is put away
 // any way but Cancel or Add is held, and comes back with the next comment.
 import type { CommentBatch } from '../shell'
-import { climb, describe, find, reveal, openerOf, wholeTarget } from './dom'
+import { climb, describe, designStorage, find, reveal, openerOf, wholeTarget } from './dom'
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import { progress, type Store } from './store'
@@ -29,6 +29,8 @@ export function createActions(store: Store, host: Host) {
     const batch: CommentBatch = {
       theme: host.dark() ? 'dark' : 'light',
       viewport: { w: innerWidth, h: innerHeight, phone },
+      // The design's saved settings, so a pinned comment can be shot with the design as it is here.
+      ...(() => { const s = todo.some(i => i.target) ? designStorage() : undefined; return s ? { storage: s } : {} })(),
       comments: todo.map(i => ({
         route: routeOf(i),
         text: plain(i),
