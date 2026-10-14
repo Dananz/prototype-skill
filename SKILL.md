@@ -701,7 +701,11 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
    beside them at one height). Read `pin-<batch>-<n>.png` for the detail (the sheet scales it to
    the pictures' height) and the vs-ref sheet for the comparison. A detail can look right at the default shoot
    size and wrong on the user's page. The command prints the element's box, how it found it (a
-   selector that no longer matches is said so) and what it could not replay; `--state <id>` shoots
+   selector that no longer matches is said so) and what it could not replay. It restores the
+   design's saved settings and the user's stage size when the batch has them; a `stand-in:` line
+   (an indexed control the user had, like `band-dot-2`, replaced by the nearest one here), a
+   `NOTE:` (the element is gone; what it was in is shot) or a `WARNING:` (another shape than the
+   comment's box) means the shot is not what the user saw: read it with that in mind. `--state <id>` shoots
    it in a state from meta.ts, `--hover` keeps the pointer on it, `--after <ms>` waits longer
    before the shot.
 5. One reply call for the batch: `proto reply <batch> 1 "<what you changed>" 2 "…" … --done`

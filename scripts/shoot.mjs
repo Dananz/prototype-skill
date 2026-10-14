@@ -102,7 +102,10 @@ const PIN_PAGE = `window.__pin = (() => {
     return el.checkVisibility ? el.checkVisibility({ opacityProperty: true, visibilityProperty: true }) : getComputedStyle(el).visibility !== 'hidden'
   }
   const q = (m, sel) => { try { return m.querySelector(sel) } catch { return null } }
-  const part = (m, by) => [...m.querySelectorAll('[data-opened-by]')].find(e => e.getAttribute('data-opened-by') === by && shows(e)) ?? null
+  // A part is open when it shows, or when it is a box of nothing whose insides show (a tab's panel
+  // that only holds what is positioned out of it).
+  const open = e => shows(e) || (e.isConnected && e.getBoundingClientRect().width < 1 && e.getBoundingClientRect().height < 1 && [...e.querySelectorAll('*')].slice(0, 200).some(shows))
+  const part = (m, by) => [...m.querySelectorAll('[data-opened-by]')].find(e => e.getAttribute('data-opened-by') === by && open(e)) ?? null
   const squash = s => String(s ?? '').replace(/\\s+/g, ' ').trim()
   const zoom = m => parseFloat(m.closest('[data-phone]')?.style.zoom || '') || 1
   const root = m => m.firstElementChild ?? m
@@ -117,11 +120,23 @@ const PIN_PAGE = `window.__pin = (() => {
     const d = e => { const r = e.getBoundingClientRect(); return Math.abs(r.left - s.x) + Math.abs(r.top - s.y) + Math.abs(r.width - s.w) + Math.abs(r.height - s.h) + (shows(e) ? 0 : 1e6) }
     return list.reduce((a, b) => d(b) < d(a) ? b : a)
   }
+  // Whether e has the shape (width to height) of the box the comment recorded, within a quarter: the
+  // design can be drawn at another scale than the user's (it fits its stage), never in another shape.
+  // One with no size yet (it shows on hover) cannot be told, so it passes.
+  const shaped = (m, t, e) => {
+    if (!t.rect || t.rect.w < 4 || t.rect.h < 4) return true
+    const r = e.getBoundingClientRect()
+    if (r.width < 1 && r.height < 1) return true
+    const a = (r.width + 2) / (r.height + 2), b = (t.rect.w + 2) / (t.rect.h + 2)
+    return Math.max(a, b) / Math.min(a, b) <= 1.25
+  }
   let el = null
   return {
     // The design is drawn: its mount has something in it.
     ready: () => !!mount()?.firstElementChild,
     missed: () => [...document.querySelectorAll('[data-missed]')].map(e => e.textContent).join('; '),
+    // The stage the design is mounted in, in page px (what a comment records as its stage).
+    stage: () => { const r = mount()?.getBoundingClientRect(); return r ? { w: Math.round(r.width), h: Math.round(r.height) } : null },
     // A step of the way: 'open' when its part shows already, 'missing' when its control isn't on the page, else the control's centre.
     opener(by) {
       const m = mount()
@@ -143,28 +158,73 @@ const PIN_PAGE = `window.__pin = (() => {
       else o.click()
       return true
     },
-    // By its selector (with the data-shoot it had, as the page's find), else its data-shoot, its words, or its place.
+    // Indexed controls of a family that are on the page, nearest index first: for a control the
+    // user had (band-dot-2, a band they added) and a fresh page does not (only band-dot-1).
+    kin(by) {
+      const m = mount(), k = /\\[data-shoot=(["']?)([\\w-]*?)-(\\d+)\\1\\]/.exec(by)
+      if (!m || !k) return []
+      const want = Number(k[3]), seen = new Set()
+      for (const e of m.querySelectorAll('[data-shoot]')) {
+        const x = new RegExp('^' + k[2].replace(/[.*+?^$()|[\\]\\\\]/g, '\\\\$&') + '-(\\\\d+)$').exec(e.dataset.shoot)
+        if (x && Number(x[1]) !== want && shows(e)) seen.add(Number(x[1]))
+      }
+      return [...seen].sort((a, b) => Math.abs(a - want) - Math.abs(b - want) || a - b)
+        .map(i => ({ by: by.replace(k[0], '[data-shoot=' + k[1] + k[2] + '-' + i + k[1] + ']'), was: k[2] + '-' + k[3], now: k[2] + '-' + i }))
+    },
+    // By its selector (with the data-shoot it had, as the page's find), else its data-shoot, its
+    // path or its source line inside the data-shoot it was in, its words, or its place. A match whose
+    // shape (width to height) is far from the box the comment recorded is held back while a later
+    // way finds one that has it: the page can hold another element where the user's was.
     find(t) {
       const m = mount()
       el = null
       if (!m) return { how: 'none', why: 'no design on the page' }
       const name = t.shoot ?? t.within
-      const e = q(m, t.selector)
-      if (e && (!name || named(e) === name)) { el = e; return { how: 'selector', what: said(e) } }
-      if (t.shoot) {
-        const c = [...m.querySelectorAll('[data-shoot]')].filter(x => x.dataset.shoot === t.shoot)
-        if (c.length) { el = nearest(m, t, c); return { how: 'its [data-shoot=' + t.shoot + ']', what: said(el), of: c.length } }
+      // The comment's path is from the mount; the part it was in (its data-shoot) can stand elsewhere
+      // now (another part opened before it), so its path is tried from that part down, longest tail
+      // first. up: that many steps of the path left off its end, for what the element was in.
+      const parts = String(t.selector).replace(/^:scope\\s*>\\s*/, '').split(/\\s*>\\s*/)
+      const inside = up => {
+        const path = parts.slice(0, parts.length - up), tag = up ? /^[a-z0-9-]+/i.exec(path.at(-1) || '')?.[0]?.toLowerCase() : t.tag, out = []
+        if (path.length < 2) return out
+        for (const w of [...m.querySelectorAll('[data-shoot]')].filter(x => x.dataset.shoot === t.within))
+          for (let k = path.length - 1; k >= 1; k--) {
+            const e = q(w, ':scope > ' + path.slice(-k).join(' > '))
+            if (e && e.tagName.toLowerCase() === tag && named(e) === t.within && !out.includes(e)) out.push(e)
+          }
+        return out
       }
-      const want = squash(t.text)
-      if (want && t.tag) {
-        const c = [...m.querySelectorAll(t.tag)].filter(x => squash(x.innerText).slice(0, 80) === want)
-        if (c.length) { el = nearest(m, t, c); return { how: 'its words', what: said(el), of: c.length } }
+      const ways = [
+        ['selector', () => { const e = q(m, t.selector); return e && (!name || named(e) === name) ? [e] : [] }],
+        [t.shoot && 'its [data-shoot=' + t.shoot + ']', () => [...m.querySelectorAll('[data-shoot]')].filter(x => x.dataset.shoot === t.shoot)],
+        [t.within && 'its path inside [data-shoot=' + t.within + ']', () => inside(0)],
+        [t.within && t.src && 'its source line (' + t.src + ') inside [data-shoot=' + t.within + ']', () =>
+          [...m.querySelectorAll('[data-shoot]')].filter(x => x.dataset.shoot === t.within).flatMap(w => [...w.querySelectorAll(t.tag || '*')])
+            .filter(e => e.closest('[data-proto-src]')?.getAttribute('data-proto-src') === t.src && named(e) === t.within)],
+        [squash(t.text) && t.tag && 'its words', () => [...m.querySelectorAll(t.tag)].filter(x => squash(x.innerText).slice(0, 80) === squash(t.text))],
+        // The element itself can be gone (taken out since, as a comment asked): what it was in, the
+        // nearest element around it on its path inside its data-shoot that is still there.
+        [t.within && 'what it was in', () => {
+          for (let up = 1; up < 6; up++) { const c = inside(up); if (c.length) return c }
+          return [...m.querySelectorAll('[data-shoot]')].filter(x => x.dataset.shoot === t.within)
+        }, true],
+        [t.rect && 'its place', () => { const s = stored(m, t), hit = document.elementFromPoint(s.x + s.w / 2, s.y + s.h / 2); return hit && m.contains(hit) ? [hit] : [] }],
+      ].filter(w => w[0])
+      let first = null
+      for (const [how, all, gone] of ways) {
+        const c = all()
+        if (!c.length) continue
+        // Of those with its shape (what it was in has a shape of its own), one with a size, when there
+        // is: a box of nothing passes any shape.
+        const fit = gone ? c : c.filter(e => shaped(m, t, e)), sized = fit.filter(e => { const r = e.getBoundingClientRect(); return r.width >= 1 || r.height >= 1 })
+        if (fit.length) {
+          el = nearest(m, t, sized.length ? sized : fit)
+          return { how, what: said(el), of: c.length, ...(gone ? { gone: true } : {}), ...(first ? { passed: { how: first.how, what: first.what } } : {}) }
+        }
+        if (!first) { const e = nearest(m, t, c); first = { how, e, gone, what: said(e), of: c.length } }
       }
-      if (t.rect) {
-        const s = stored(m, t), hit = document.elementFromPoint(s.x + s.w / 2, s.y + s.h / 2)
-        if (hit && m.contains(hit)) { el = hit; return { how: 'its place', what: said(hit) } }
-      }
-      return { how: 'none', why: 'nothing matches its selector, data-shoot, words or place' }
+      if (first) { el = first.e; return { how: first.how, what: first.what, of: first.of, misshapen: true, ...(first.gone ? { gone: true } : {}) } }
+      return { how: 'none', why: 'nothing matches its selector, data-shoot, path, words or place' }
     },
     shows: () => shows(el),
     centre: () => centre(el),
@@ -455,8 +515,15 @@ try {
       try {
         await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId)
         const mobile = p.width < 640
-        await send('Emulation.setDeviceMetricsOverride', { width: p.width, height: p.height, deviceScaleFactor: SCALE, mobile }, sessionId)
+        let size = { width: p.width, height: p.height }
+        await send('Emulation.setDeviceMetricsOverride', { ...size, deviceScaleFactor: SCALE, mobile }, sessionId)
         if (mobile) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
+        // The design's own saved settings as the user's page had them when the batch was sent (its
+        // localStorage, the page's own keys left out), in before any of its code reads them.
+        const kept = p.storage && typeof p.storage === 'object' ? Object.keys(p.storage) : []
+        // (The script only goes in on a page whose Page domain is on.)
+        if (kept.length) await send('Page.enable', {}, sessionId)
+        if (kept.length) await send('Page.addScriptToEvaluateOnNewDocument', { source: `try { const s = ${JSON.stringify(p.storage)}; for (const k of Object.keys(s)) localStorage.setItem(k, s[k]) } catch { /* storage blocked */ }` }, sessionId)
         const url = new URL(base)
         url.searchParams.set('theme', p.theme === 'dark' ? 'dark' : 'light')
         if (p.framed) url.searchParams.set('dv', '1')
@@ -466,43 +533,85 @@ try {
         if (!await until(`(window.__pin ?? (${PIN_PAGE})).ready()`, 15000)) missed.push('the design never drew')
         await settle(sessionId)
         await page(`document.querySelector('[data-overlay]')?.style.setProperty('display', 'none')`)
+        // The stage the user's design was in: the page's sidebar and bars can take another share of
+        // the window here than there, and a design that fits its stage is then drawn at another
+        // scale. The window is sized so the stage is theirs.
+        const notes = []
+        if (p.stage && !p.framed && !mobile) {
+          const now = await pin('__pin.stage()')
+          if (now && (Math.abs(now.w - p.stage.w) > 1 || Math.abs(now.h - p.stage.h) > 1)) {
+            const fit = v => Math.max(320, Math.min(4000, Math.round(v)))
+            size = { width: fit(p.width + p.stage.w - now.w), height: fit(p.height + p.stage.h - now.h) }
+            await send('Emulation.setDeviceMetricsOverride', { ...size, deviceScaleFactor: SCALE, mobile }, sessionId)
+            await sleep(100)
+            await settle(sessionId)
+            const then = await pin('__pin.stage()')
+            notes.push(`stage: ${now.w}x${now.h} at the batch's page size, the user's was ${p.stage.w}x${p.stage.h}; shot at ${size.width}x${size.height} so it is theirs${then && (Math.abs(then.w - p.stage.w) > 1 || Math.abs(then.h - p.stage.h) > 1) ? ` (it came to ${then.w}x${then.h})` : ''}`)
+          }
+        }
+        if (kept.length) notes.push(`its saved settings: ${kept.length} localStorage key${kept.length === 1 ? '' : 's'} of the design restored as the user had them`)
         const miss = await pin('__pin.missed()')
         if (miss) missed.push(`its state: ${miss}`)
         // The way to it. A part that opens on hover opens with the pointer on its control, so the
         // pointer goes there first and a click only follows when that did not open it.
-        const steps = []
-        for (const by of t.route || []) {
+        const steps = [], hoveredBy = []
+        for (let by of t.route || []) {
           // A control drawn a moment after the part before it opened is waited for, a little.
           let o
           for (const end = performance.now() + 1500; ; await sleep(50)) {
             o = await pin(`__pin.opener(${JSON.stringify(by)})`)
             if (o !== 'missing' || performance.now() > end) break
           }
-          if (o === 'open') { steps.push(`${by} (open already)`); continue }
-          if (o === 'missing') { steps.push(`${by} (not on the page)`); missed.push(`${by}: nothing on the page matches it, so what it opens stays closed`); break }
+          // An indexed control the user's page had and this one has not (band-dot-2: a band they
+          // added; the page starts with band 1): the nearest of its family that is here stands in.
+          let stand = ''
+          if (o === 'missing') {
+            for (const k of await pin(`__pin.kin(${JSON.stringify(by)})`) || []) {
+              const o2 = await pin(`__pin.opener(${JSON.stringify(k.by)})`)
+              if (o2 === 'missing') continue
+              stand = `${k.was} is not on the page; used ${k.now}`
+              notes.push(`stand-in: ${by} is not on this page (the user's page had it, from something they did there), so ${k.by} opened the way instead: what it opens may differ from what they saw`)
+              by = k.by; o = o2
+              break
+            }
+          }
+          const say = how => steps.push(`${by} (${stand ? `${stand}, ` : ''}${how})`)
+          if (o === 'open') { say('open already'); continue }
+          if (o === 'missing') { say('not on the page'); missed.push(`${by}: nothing on the page matches it, so what it opens stays closed`); break }
           const opened = `__pin.opened(${JSON.stringify(by)})`
           let how = ''
           if (!o.covered) {
             await move(o.x, o.y)
-            if (await until(opened, 200)) how = 'hovered'
+            if (await until(opened, 200)) { how = 'hovered'; hoveredBy.push(by) }
             else { await click(o.x, o.y); if (await until(opened, 700)) how = 'clicked' }
           }
           for (const k of ['click', 'down']) if (!how) {
             await pin(`__pin.press(${JSON.stringify(by)}, '${k}')`)
             if (await until(opened, 700)) how = k === 'click' ? 'clicked in script' : 'pressed in script'
           }
-          steps.push(`${by} (${how || 'did not open'})`)
+          say(how || 'did not open')
           if (!how) { missed.push(`${by}: pressed, but the part it opens never showed`); break }
+        }
+        // A part that opened on hover closes when the pointer leaves its control (or a scroll moves
+        // the control from under it): the pointer goes back onto the control while it is closed.
+        const keepOpen = async () => {
+          for (const by of hoveredBy) {
+            if (await pin(`__pin.opened(${JSON.stringify(by)})`)) continue
+            const o = await pin(`__pin.opener(${JSON.stringify(by)})`)
+            if (o && typeof o === 'object') { await move(o.x, o.y); await until(`(window.__pin ?? (${PIN_PAGE})).opened(${JSON.stringify(by)})`, 400) }
+          }
         }
         // A part just opened can draw its insides a moment later.
         let found
         for (const end = performance.now() + 800; ; await sleep(50)) {
           found = await pin(`__pin.find(${JSON.stringify(t)})`)
           if (found.how !== 'none' || performance.now() > end) break
+          await keepOpen()
         }
         let hovered = ''
         if (found.how !== 'none') {
           await pin('__pin.reveal()')
+          await keepOpen()
           if (!await pin('__pin.shows()')) {
             for (const h of await pin(`__pin.hovers(${JSON.stringify(t)})`)) {
               await move(h.x, h.y)
@@ -513,14 +622,17 @@ try {
           // The pointer stays where a part or the element needed it, or on the element with --hover;
           // else it leaves, so the shot has no hover the user did not see.
           if (p.hover) { const c = await pin('__pin.centre()'); await move(c.x, c.y) }
-          else if (moved && !hovered && !steps.some(s => s.endsWith('(hovered)'))) await move(0, 0)
+          else if (moved && !hovered && !hoveredBy.length) await move(0, 0)
         }
         await pin('__pin.settle(1500)')
         if (p.after) await sleep(p.after)
-        const head = `pin ${p.batch}/${p.n} · ${p.route} · ${p.framed ? `view ${p.view} ` : 'page '}${p.width}x${p.height} · ${p.theme}`
+        // Still open and still showing at the moment of the shot.
+        if (found.how !== 'none' && !hovered && hoveredBy.length && !await pin('__pin.shows()')) await keepOpen()
+        const head = `pin ${p.batch}/${p.n} · ${p.route} · ${p.framed ? `view ${p.view} ` : 'page '}${size.width}x${size.height} · ${p.theme}`
         out.push(head)
         if (p.text) out.push(`   "${p.text.split('\n')[0].slice(0, 100)}"`)
         if (steps.length) out.push(`   opened by: ${steps.join(' > ')}`)
+        out.push(...notes.map(n => `   ${n}`))
         const capture = async (clip, file) => {
           const { data } = await send('Page.captureScreenshot', { format: 'png', clip: { x: clip.x, y: clip.y, width: clip.w, height: clip.h, scale: 1 } }, sessionId)
           writeFileSync(file, Buffer.from(data, 'base64'))
@@ -535,10 +647,24 @@ try {
           const g = await pin(`__pin.geometry(${p.margin})`)
           const r = v => Math.round(v), boxOf = b => `${r(b.x)},${r(b.y)} ${r(b.w)}x${r(b.h)}`
           out.push(`   element: ${found.what} (${found.how === 'selector' ? 'by its selector' : `its selector no longer matches; found by ${found.how}${found.of > 1 ? `, the nearest of ${found.of}` : ''}`})`)
+          if (found.passed) out.push(`   passed over: ${found.passed.what}, found by ${found.passed.how}: not the shape of the comment's box`)
           if (hovered) out.push(`   shown by: the pointer on ${hovered}`)
           if (p.point) out.push(`   the spot: ${p.point.x},${p.point.y} in the design (pinned with a long press)`)
+          // Another size with the same shape is the same element drawn at another scale (a design
+          // that fits its stage, in a stage of another size); another shape is another element, or
+          // the page in another state than the user's.
           const before = t.rect, drift = before && (Math.abs(before.w - g.design.w) > 1 || Math.abs(before.h - g.design.h) > 1)
-          out.push(`   box: ${boxOf(g.box)} page px (in the design ${boxOf(g.design)}${before ? `; the comment had ${boxOf(before)}${drift ? ', a different size: the layout is not the one the user saw' : ''}` : ''})`)
+          let warn = ''
+          if (found.gone) out.push(`   NOTE: the element itself is not on the page any more (taken out since, as a comment can ask); this is what it was in`)
+          if (drift && found.gone) out.push(`   box: ${boxOf(g.box)} page px (in the design ${boxOf(g.design)}; the element the comment had was ${boxOf(before)})`)
+          else if (drift && before.w >= 1 && before.h >= 1) {
+            const k = Math.sqrt((g.design.w / before.w) * (g.design.h / before.h))
+            const a = (g.design.w + 2) / (g.design.h + 2), b = (before.w + 2) / (before.h + 2)
+            if (Math.max(a, b) / Math.min(a, b) > 1.25) found.misshapen = true
+            if (found.misshapen) warn = `WARNING: its shape is not the one the comment recorded (${r(before.w)}x${r(before.h)} then, ${r(g.design.w)}x${r(g.design.h)} now; nothing on the page has that shape). Either this is not the element the user meant, or the page is not in their state (a size they dragged, something they added or opened): read the shot before trusting it${kept.length ? "" : " (this batch was sent without the design's saved settings, so a size they dragged is not restored)"}`
+            out.push(`   box: ${boxOf(g.box)} page px (in the design ${boxOf(g.design)}; the comment had ${boxOf(before)}${found.misshapen ? ', another shape' : `, the same shape drawn at ${k.toFixed(2)}x the user's size: their stage was ${k < 1 ? 'larger' : 'smaller'} than this one, and the design scales to it`})`)
+          } else out.push(`   box: ${boxOf(g.box)} page px (in the design ${boxOf(g.design)}${before ? `; the comment had ${boxOf(before)}` : ''})`)
+          if (warn) out.push(`   ${warn}`)
           out.push(`   scale: ${SCALE}x, ${SCALE} image px per page px${g.zoom !== 1 ? ` (the phone frame drawn at ${g.zoom.toFixed(2)}, so ${(SCALE * g.zoom).toFixed(2)} per design px)` : ''}`)
           const shot = await capture(g.shot, resolve(outDir, `${name}.png`))
           out.push(`   ${shot}  (${g.shot.w * SCALE}x${g.shot.h * SCALE}: the box and ${p.margin} px around it${g.clipped ? ', cut at the stage' : ''})`)
