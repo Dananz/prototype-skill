@@ -31,7 +31,7 @@ Beside Comment the bar has three sizes, phone, tablet and desktop (on a phone, t
 pill's menu). On a wide screen a web variant sits on an artboard as big as the stage, laid out for
 the stage's width (its breakpoints see the stage, not the window); the stage's own layout is
 selected. Choosing another shows the page at that size, zoomed to fit (a 1440 × 900 desktop on a
-phone, a phone on a desktop); the scale button zooms either from 10% to 200%, and the user can
+phone, a phone on a desktop); the scale button zooms either from 10% to 300%, and the user can
 pinch, Space-drag, comment, try things, pick copy and scrub motion there. Nothing to build for it
 beyond a web variant that lays out well at each width.
 

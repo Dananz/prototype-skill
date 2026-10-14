@@ -10,9 +10,9 @@ export type Anchor = { at(p: Pt | null): void; hold(on: boolean): void }
  *  apart they are against the start, and the point. */
 export type Pinch = { start(x: number, y: number): void; move(ratio: number, x: number, y: number): void; end(): void }
 
-/** 10% to 200%, Fit somewhere between. */
+/** 10% to 300%, Fit somewhere between. */
 export const MIN = 10
-export const MAX = 200
+export const MAX = 300
 /** A zoom (percent) on its way to `z`, kept to MIN–MAX; near Fit (`lo`) it stops there, as 0. */
 const zoomAt = (z: number, lo: number) => { const v = Math.min(MAX, Math.max(MIN, z)); return Math.abs(v - lo) <= Math.max(0.5, lo * 0.02) ? 0 : v }
 
