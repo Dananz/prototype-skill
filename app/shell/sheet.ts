@@ -7,7 +7,7 @@ import { createRoot } from 'react-dom/client'
 import { Drawer } from '@base-ui/react/drawer'
 import { uiBox } from './portals'
 
-export type SheetRow = { id: string; name: string; on: boolean; picked: boolean; editing: boolean }
+export type SheetRow = { id: string; label: string; name: string; on: boolean; picked: boolean; editing: boolean }
 export type SheetProps = {
   open: boolean
   title: string
@@ -32,7 +32,7 @@ function Sheet(p: SheetProps) {
     key: r.id, type: 'button', 'aria-current': r.on, onClick: () => p.onPick(r.id),
     className: `${ROW} ${r.on ? 'bg-zinc-900/[.05] font-semibold text-zinc-900 dark:bg-white/[.08] dark:text-white' : 'text-zinc-700 active:bg-zinc-900/[.04] dark:text-zinc-300 dark:active:bg-white/5'}`,
   },
-    h('span', { className: `w-6 shrink-0 text-center text-xs font-semibold tabular-nums ${r.on ? '' : 'text-zinc-400'}` }, r.id),
+    h('span', { className: `w-6 shrink-0 text-center text-xs font-semibold tabular-nums ${r.on ? '' : 'text-zinc-400'}` }, r.label),
     h('span', { dir: 'auto', className: 'min-w-0 flex-1 truncate text-start' }, r.name),
     r.editing ? DOT : null,
     r.picked ? h('span', { className: 'shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-400' }, 'Picked') : null,
