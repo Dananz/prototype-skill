@@ -116,33 +116,35 @@ function Thread({ r }: { r: Row }) {
  */
 function Answer({ r }: { r: Row }) {
   const agent = useAgentName()
-  const { act } = useCtx()
-  const [open, setOpen] = useState(false)
-  const [text, setText] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const { act, store } = useCtx()
+  const empty = { open: false, text: '', busy: false, error: '' }
+  const { open, text, busy, error } = useStore(store).replies[r.item.id] ?? empty
+  const update = (patch: Partial<typeof empty>) => store.set(s => s.items.some(i => i.id === r.item.id)
+    ? { replies: { ...s.replies, [r.item.id]: { ...(s.replies[r.item.id] ?? empty), ...patch } } }
+    : {})
+  const cancel = () => update({ open: false, text: '', error: '' })
   const last = r.turns[r.turns.length - 1]
   if (!last.item.sent || (!last.reply && last.state !== 'done')) return null
-  if (!open) return <button data-shoot="comment-answer" onClick={() => setOpen(true)} title={`Answer ${agent}'s reply`} className="mt-1.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-800 dark:hover:bg-white/10 dark:hover:text-zinc-200"><Icon name="comment" className="size-3" />Reply</button>
+  if (!open) return <button data-shoot="comment-answer" onClick={() => update({ open: true })} title={`Answer ${agent}'s reply`} className="mt-1.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-800 dark:hover:bg-white/10 dark:hover:text-zinc-200"><Icon name="comment" className="size-3" />Reply</button>
   const send = async () => {
-    if (!text.trim() || busy) return
-    setBusy(true); setError('')
-    try { await act.followUp(r.item.id, text); setText(''); setOpen(false) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Could not send') }
-    finally { setBusy(false) }
+    if (!text.trim() || store.get().replies[r.item.id]?.busy) return
+    update({ busy: true, error: '' })
+    try { await act.followUp(r.item.id, text); update(empty) }
+    catch (e) { update({ error: e instanceof Error ? e.message : 'Could not send' }) }
+    finally { update({ busy: false }) }
   }
   return (
     <span data-shoot="comment-answer-box" className="mt-2 block rounded-xl border border-black/10 bg-white p-1.5 dark:border-white/15 dark:bg-zinc-900">
       <textarea autoFocus rows={2} value={text} aria-label={`Answer ${agent}`} placeholder={`Answer ${agent}…`} dir="auto"
-        onChange={e => setText(e.target.value)}
+        onChange={e => update({ text: e.target.value })}
         onKeyDown={e => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() }
-          else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(false) }
+          else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel() }
         }}
         className="block max-h-32 w-full resize-none bg-transparent px-1.5 py-1 text-[12.5px] leading-[18px] text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100" />
       {error && <span role="alert" className="block px-1.5 pb-1 text-[11px] text-rose-600 dark:text-rose-400">{error}</span>}
       <span className="flex items-center justify-end gap-1">
-        <button onClick={() => setOpen(false)} className="h-7 rounded-lg px-2 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Cancel</button>
+        <button onClick={cancel} className="h-7 rounded-lg px-2 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Cancel</button>
         <button data-shoot="comment-answer-send" onClick={() => void send()} disabled={!text.trim() || busy} title={`Send to ${agent} · ${MOD} Enter`} className={`inline-flex h-7 items-center gap-1 rounded-lg pl-2 pr-2.5 text-[11px] font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name="send" className="size-3" />{busy ? 'Sending…' : 'Send'}</button>
       </span>
     </span>

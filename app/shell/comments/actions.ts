@@ -194,7 +194,7 @@ export function createActions(store: Store, host: Host) {
       const m = s.mode
       const open = (s.active && gone.has(s.active)) || ((m.kind === 'compose' || m.kind === 'tag' || m.kind === 'time') && !!m.id && gone.has(m.id))
       for (const i of s.items) if (gone.has(i.id) && i.sent && progress(i, s.inbox).state !== 'done') void host.withdraw(i.sent.batch, i.sent.i)
-      set(x => ({ items: x.items.filter(i => !gone.has(i.id)), ...(open ? { mode: { kind: 'idle' as const }, active: null } : {}) }))
+      set(x => ({ items: x.items.filter(i => !gone.has(i.id)), replies: Object.fromEntries(Object.entries(x.replies).filter(([id]) => !gone.has(id))), ...(open ? { mode: { kind: 'idle' as const }, active: null } : {}) }))
     },
 
     /** Every draft of the prototype on screen, as one batch. */
@@ -288,7 +288,20 @@ export function createActions(store: Store, host: Host) {
         ...(root.target ? { target: root.target } : {}), ...(root.time ? { time: root.time } : {}),
         at: Date.now(), sent: { batch: sent.id, i: 1 }, re: { id: root.id, batch: re.batch, i: re.n },
       }
-      set(x => ({ items: x.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? x.items : [...x.items, item] }))
+      let removed = false
+      set(x => {
+        // Deleting the root while the request was in flight must not resurrect its follow-up.
+        removed = !x.items.some(i => i.id === root.id)
+        return removed ? {} : { items: x.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? x.items : [...x.items, item] }
+      })
+      if (removed) {
+        try { await host.withdraw(sent.id, 1) }
+        catch (e) {
+          const error = `Could not withdraw deleted reply: ${e instanceof Error ? e.message : 'Could not send'}`
+          set({ error })
+          throw new Error(error)
+        }
+      }
     },
     clearError() { set({ error: '' }) },
     openSheet(open: boolean) { set({ sheet: open }) },

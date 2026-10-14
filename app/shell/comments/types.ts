@@ -99,6 +99,8 @@ export type Place = { proto: string; variant: string; state?: string; phone: boo
 export type State = {
   items: Item[]
   held: Held | null
+  /** Reply composers belong to the root thread, across row status and disclosure changes. */
+  replies: Record<string, { open: boolean; text: string; busy: boolean; error: string }>
   mode: Mode
   active: string | null
   /** Bumped to make a composer that can't take a click say so (it shakes). */
