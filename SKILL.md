@@ -32,7 +32,8 @@ pill's menu). On a wide screen a web variant sits on an artboard as big as the s
 the stage's width (its breakpoints see the stage, not the window); the stage's own layout is
 selected. Choosing another shows the page at that size, zoomed to fit (a 1440 × 900 desktop on a
 phone, a phone on a desktop); the scale button zooms either from 10% to 200%, and the user can
-pinch, Space-drag, comment, try things, pick copy and scrub motion there. Nothing to build for it
+pinch, Space-drag or middle-button drag (from anywhere, at any zoom; the page stays where it is
+left, and Fit centres it again), comment, try things, pick copy and scrub motion there. Nothing to build for it
 beyond a web variant that lays out well at each width.
 
 ## Agent setup (Claude Code, Codex and other harnesses)
