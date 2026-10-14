@@ -18,7 +18,7 @@ import { Icon } from '../comments/ui'
 import { designIn, frameClicks, frameMenus, frameSelections, frameUrl, openFrame, type Frame } from './frame'
 import { fitOf, outOf, pinchOn, room, useBox, useGestures, usePinch, usePlace } from './gestures'
 import { trackPointer } from '../motion'
-import { forward } from '../comments/hover'
+import { hoverMove } from '../comments/hover'
 import { seeThrough } from '../comments/dom'
 import { dims, ORDER, SIZES, type Size } from './sizes'
 
@@ -113,9 +113,9 @@ function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>;
       const d = doc()
       if (!d || e.pointerType !== 'mouse' || drag?.moved) return
       const [x, y] = local(e.clientX, e.clientY)
-      forward(d, d.elementFromPoint(x, y), x, y)
+      hoverMove(d, d.elementFromPoint(x, y), x, y)
     }
-    const leave = (e: PointerEvent) => { const d = doc(); if (d && e.pointerType === 'mouse') forward(d, null, 0, 0) }
+    const leave = (e: PointerEvent) => { const d = doc(); if (d && e.pointerType === 'mouse') hoverMove(d, null, ...local(e.clientX, e.clientY)) }
     const move = (e: PointerEvent) => {
       const g = drag
       if (!g || e.pointerId !== g.id) return

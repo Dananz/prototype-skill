@@ -274,7 +274,8 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     designs?.style.setProperty('-webkit-user-select', 'none')
     designs?.style.setProperty('-webkit-touch-callout', 'none')
     const noMenu = (e: Event) => { if (!(e as MouseEvent).shiftKey && inDesign(e.target)) e.preventDefault() }
-    stage.addEventListener('pointermove', move)
+    // In the capture phase: the design's hover gate (hover.ts) sits on the mount, below the stage.
+    stage.addEventListener('pointermove', move, true)
     for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'contextmenu']) listen(document, t, press, true)
     listen(document, 'touchstart', touchStart, opts)
     listen(document, 'touchend', touchEnd, opts)
@@ -290,7 +291,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       letGo()
       for (const k of ['user-select', '-webkit-user-select', '-webkit-touch-callout']) designs?.style.removeProperty(k)
       cancelAnimationFrame(raf)
-      stage.removeEventListener('pointermove', move)
+      stage.removeEventListener('pointermove', move, true)
       for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'contextmenu']) document.removeEventListener(t, press, true)
       document.removeEventListener('touchstart', touchStart, opts)
       document.removeEventListener('touchend', touchEnd, opts)

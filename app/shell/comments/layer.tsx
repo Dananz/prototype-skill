@@ -9,7 +9,7 @@ import { climb, describe, find } from './dom'
 import { listen } from '../quiet'
 import { Glide, HoldRing, HoverBox, useBoxes, usePick } from './inspect'
 import { Composer } from './composer'
-import { freeze, release, track } from './hover'
+import { freeze, release, watch } from './hover'
 import { useRows } from './list'
 import { progress, type Said } from './store'
 import type { Box, Item, Target } from './types'
@@ -79,29 +79,20 @@ export function Layer() {
   })
   const verb = tagging ? 'Tag' : held ? 'Continue your comment' : 'Comment'
 
-  // Hover-only parts of the design (hover.ts): what the pointer is over is followed while comments are
-  // on, and the design's hover is held from the moment a comment's pin goes down until it is closed.
+  // Hover-only parts of the design (hover.ts): while picking, whatever a hover made appear stays up
+  // while the pointer is on it; from the moment a comment's pin goes down until it is closed, the
+  // design's hover is held as it was.
   const writing = m.kind === 'compose'
   useEffect(() => {
-    const mount = s.place ? host.mount() : null
-    return mount ? track(mount) : undefined
-  }, [host, s.place])
+    const mount = picking && s.place ? host.mount() : null
+    return mount ? watch(mount) : undefined
+  }, [host, picking, s.place])
   useEffect(() => {
     const mount = writing ? host.mount() : null
     if (!mount) return
     freeze(mount)
     return release
   }, [host, writing])
-  // Shift held while picking holds the hover too, so the pointer can move onto what the hover shows.
-  useEffect(() => {
-    if (!picking || !s.place) return
-    const down = (e: KeyboardEvent) => { const mount = e.key === 'Shift' && !e.repeat ? host.mount() : null; if (mount) freeze(mount) }
-    const up = (e: KeyboardEvent) => { if (e.key === 'Shift') release() }
-    addEventListener('keydown', down, true)
-    addEventListener('keyup', up, true)
-    addEventListener('blur', release)
-    return () => { removeEventListener('keydown', down, true); removeEventListener('keyup', up, true); removeEventListener('blur', release) }
-  }, [host, picking, s.place])
 
   // ⌥-click comments on one element without turning comment mode on, in a device view's frame too.
   useEffect(() => {

@@ -567,6 +567,9 @@ made in the page is already marked when you hear of it, as a comment with `actio
 Comments from the page), its note as the comment's words: don't run `proto pick` again, and do
 what the note asks, then `proto reply <id> --done`. A pick with a note stays pending until then;
 a plain pick is already done.
+A pick in a prototype built `--from` a variant also picks that variant, and its own `from` up the
+chain (choosing a part of B means choosing B); `also` parents are left alone, and undoing a pick
+leaves the parents picked.
 
 As soon as the user chooses in chat, run `proto pick <slug> <letter>` before anything else,
 without asking. If they don't
@@ -607,7 +610,11 @@ The user can leave comments on the design in the page (the Comment button, or C)
 element (or, on a phone, hold a finger on a spot), write, tag other elements with `@`, attach a
 screenshot and mark it up (or paste an image with Ctrl/⌘ V, or drop one on the comment), then send
 every draft at once. Commenting never reaches the design, so a menu or popover open in it stays
-open and what is in it can be commented on. The side panel's Comments tab lists
+open and what is in it can be commented on. Hover-only parts work the same way, with no key: while
+commenting, whatever a hover made appear (a dot's readout, a panel that opens under the pointer) stays
+up while the pointer moves onto it, parts drawn with `pointer-events: none` can be picked, and the
+hover is held while that comment is written. Nothing to build for it: plain hover state in the
+variant is enough (a CSS-only `:hover` is the exception in a device view). The side panel's Comments tab lists
 them and shows what became of each. `@` opens the existing visual picker to tag another
 element. Do not author special comment-element names or a catalog of elements. The outline
 and numbered references identify selected targets; source locations are stamped automatically.
