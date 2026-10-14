@@ -19,6 +19,7 @@ import { designIn, frameClicks, frameMenus, frameSelections, frameUrl, openFrame
 import { fitOf, outOf, pinchOn, room, useBox, useGestures, usePinch, usePlace } from './gestures'
 import { trackPointer } from '../motion'
 import { forward } from '../comments/hover'
+import { seeThrough } from '../comments/dom'
 import { dims, ORDER, SIZES, type Size } from './sizes'
 
 /** size null: the stage's own artboard (fill), as big as the stage, with no line over it. */
@@ -270,7 +271,7 @@ export function createView(host: HTMLElement, wrap: (el: ReactElement) => ReactE
       const r = f.getBoundingClientRect()
       if (x < r.left || x > r.right || y < r.top || y > r.bottom) return null
       const s = r.width / (f.offsetWidth || 1), fx = (x - r.left) / s, fy = (y - r.top) / s
-      const el = d.elementFromPoint(fx, fy)
+      const el = seeThrough(d, fx, fy, d.elementFromPoint(fx, fy))
       return el ? { el, x: fx, y: fy } : null
     },
   }

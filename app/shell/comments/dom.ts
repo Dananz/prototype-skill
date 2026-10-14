@@ -263,3 +263,45 @@ export function climb(mount: HTMLElement, el: HTMLElement): HTMLElement | null {
   }
   return null
 }
+
+// What a comment is on, under a point, including parts the pointer passes through. A design often
+// draws hover readouts, labels and badges with `pointer-events: none` so they never get in the way of
+// what is under them; the browser's own hit test then skips them and they could not be commented on.
+// Here every part of a design is briefly hit-testable (a stylesheet switched on and off, no DOM
+// change), and the topmost part over `plain` (what the plain hit test found) wins, unless it covers
+// all of `plain`: a full-size overlay layer (a canvas, an SVG over the whole plot) is not what the
+// pointer means.
+const seeSheets = new WeakMap<Document, CSSStyleSheet>()
+const seeSheet = (d: Document) => {
+  let s = seeSheets.get(d)
+  if (!s) {
+    const el = d.createElement('style')
+    el.setAttribute('data-proto-see', '')
+    el.textContent = '[data-mount] * { pointer-events: auto !important; }'
+    d.head.appendChild(el)
+    s = el.sheet!
+    s.disabled = true
+    seeSheets.set(d, s)
+  }
+  return s
+}
+export function seeThrough(d: Document, x: number, y: number, plain: Element | null): Element | null {
+  if (!plain) return plain
+  const sheet = seeSheet(d)
+  let all: Element[]
+  sheet.disabled = false
+  try { all = d.elementsFromPoint(x, y) } finally { sheet.disabled = true }
+  const p = plain.getBoundingClientRect()
+  // Everything listed above `plain` is something the pointer passes through. An SVG part stands for
+  // the HTML element around it, as everywhere in comments.
+  for (const el of all) {
+    if (el === plain) return plain
+    let h: Element | null = el
+    while (h && h.namespaceURI !== 'http://www.w3.org/1999/xhtml') h = h.parentElement
+    if (!h || h.contains(plain) || !h.closest('[data-mount]')) continue
+    const r = h.getBoundingClientRect()
+    if (r.left <= p.left && r.top <= p.top && r.right >= p.right && r.bottom >= p.bottom) continue
+    return h
+  }
+  return plain
+}

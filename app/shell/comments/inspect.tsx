@@ -2,7 +2,7 @@
 // the guard that keeps every press from reaching the design while commenting, and the live boxes
 // pins and outlines are drawn from.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { climb, describe, find, seen, spot, spotAt, openerOf, passing, shows, routeOf } from './dom'
+import { climb, describe, find, seen, spot, spotAt, openerOf, passing, shows, routeOf, seeThrough } from './dom'
 import { Icon } from './ui'
 import type { Box, Target } from './types'
 import { useCtx } from './ctx'
@@ -134,7 +134,13 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       const h = p && host.view?.()?.at(p.clientX, p.clientY)
       return { el: h?.el ?? null, x: h?.x ?? 0, y: h?.y ?? 0 }
     }
-    const targetOf = (e: Event) => viewAt(e)?.el ?? e.target
+    // A mouse on this page: what is under it, parts the pointer passes through included (dom.ts seeThrough).
+    const targetOf = (e: Event) => {
+      const v = viewAt(e)
+      if (v) return v.el
+      const m = e as MouseEvent
+      return typeof m.clientX === 'number' && !(e as TouchEvent).touches && inDesign(e.target) ? seeThrough(document, m.clientX, m.clientY, e.target as Element) : e.target
+    }
     // What is picked carries the layout it was picked on, in a device view.
     const onView = (t: Target): Target => { const v = host.view?.(); return v?.size ? { ...t, view: { size: v.size, w: v.w!, h: v.h! } } : t }
     const part = (t: EventTarget | null) => { const el = inDesign(t); return el && el !== host.mount() ? el : null }

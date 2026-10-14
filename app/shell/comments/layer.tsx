@@ -92,6 +92,16 @@ export function Layer() {
     freeze(mount)
     return release
   }, [host, writing])
+  // Shift held while picking holds the hover too, so the pointer can move onto what the hover shows.
+  useEffect(() => {
+    if (!picking || !s.place) return
+    const down = (e: KeyboardEvent) => { const mount = e.key === 'Shift' && !e.repeat ? host.mount() : null; if (mount) freeze(mount) }
+    const up = (e: KeyboardEvent) => { if (e.key === 'Shift') release() }
+    addEventListener('keydown', down, true)
+    addEventListener('keyup', up, true)
+    addEventListener('blur', release)
+    return () => { removeEventListener('keydown', down, true); removeEventListener('keyup', up, true); removeEventListener('blur', release) }
+  }, [host, picking, s.place])
 
   // ⌥-click comments on one element without turning comment mode on, in a device view's frame too.
   useEffect(() => {

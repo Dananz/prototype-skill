@@ -7,6 +7,8 @@
 //  - While a comment is written, `freeze` keeps the design's hover as it was when the pin went down:
 //    no pointer move / over / out / enter / leave reaches the design until `release`, which then tells
 //    it the pointer left, as it has by then (it is on the composer).
+//  - Holding Shift in comment mode freezes it too, before any pin: a readout that shows only while the
+//    pointer is on its dot stays up while the pointer moves onto the readout to pin it.
 // Only handlers see replayed events: a CSS :hover is the browser's own and doesn't follow them.
 
 const HOVER = ['pointermove', 'mousemove', 'pointerover', 'mouseover', 'pointerout', 'mouseout',
@@ -61,6 +63,7 @@ export function track(mount: HTMLElement) {
 
 /** Holds the design's hover where it is. */
 export function freeze(mount: HTMLElement) {
+  if (frozen?.mount === mount) return
   if (frozen) release()
   const win = mount.ownerDocument.defaultView
   if (!win) return
