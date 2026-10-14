@@ -139,7 +139,7 @@ export function usePlace(area: RefObject<HTMLDivElement | null>, box: { w: numbe
   }
 }
 
-/** Two fingers on the frame zoom the view around the point between them, from 10% up to 300%. */
+/** Two fingers on the frame zoom the view around the point between them, from 10% up to 200%. */
 export function usePinch(area: RefObject<HTMLElement | null>, scale: number, fit: number, setZoom: (z: number) => void, anchor: Anchor): Pinch {
   const s0 = useRef(scale)
   const now = useRef({ scale, fit, setZoom })
@@ -194,7 +194,7 @@ export function pinchOn(d: Document, p: Pinch) {
 
 /**
  * The view zooms on its own, never the page: two fingers anywhere in the area, a trackpad's pinch
- * (ctrl + wheel, or Safari's gesture events), each around the point under them, from 10% to 300%. Held Space drags it, and so does the middle
+ * (ctrl + wheel, or Safari's gesture events), each around the point under them, from 10% to 200%. Held Space drags it, and so does the middle
  * button, from anywhere.
  * Once zoomed in, it moves: a wheel or one finger on the device moves the view first, and only at
  * its edge scrolls the page inside; a mouse drags the space around the device. Returns what binds
@@ -282,8 +282,13 @@ export function useGestures(area: RefObject<HTMLDivElement | null>, scale: numbe
       if (e.pointerType !== 'mouse' || e.button !== 1) return
       hush(e); a.setPointerCapture(e.pointerId); midStart(e.clientX, e.clientY)
     }
-    const mMove = (e: PointerEvent) => { if (mid) midMove(e.clientX, e.clientY) }
-    const mUp = (e: PointerEvent) => { if (mid && e.button === 1) { hush(e); midEnd() } }
+    // Chord releases are pointermove until the last button is up; middle need not own pointerup.
+    const mMove = (e: PointerEvent) => {
+      if (!mid) return
+      if (!(e.buttons & 4)) { hush(e); midEnd(); return }
+      midMove(e.clientX, e.clientY)
+    }
+    const mUp = (e: PointerEvent) => { if (mid && (e.button === 1 || !(e.buttons & 4))) { hush(e); midEnd() } }
     const opts = { passive: false } as AddEventListenerOptions
     a.addEventListener('wheel', wheel, opts)
     a.addEventListener('gesturestart', gStart, opts)
@@ -333,8 +338,12 @@ export function useGestures(area: RefObject<HTMLDivElement | null>, scale: numbe
         try { d.documentElement.setPointerCapture(e.pointerId) } catch { /* the pointer is gone already */ }
         midStart(...pageOf(e))
       }
-      const fmMove = (e: PointerEvent) => { if (mid) midMove(...pageOf(e)) }
-      const fmUp = (e: PointerEvent) => { if (mid && e.button === 1) { hush(e); midEnd() } }
+      const fmMove = (e: PointerEvent) => {
+        if (!mid) return
+        if (!(e.buttons & 4)) { hush(e); midEnd(); return }
+        midMove(...pageOf(e))
+      }
+      const fmUp = (e: PointerEvent) => { if (mid && (e.button === 1 || !(e.buttons & 4))) { hush(e); midEnd() } }
       const cap = { passive: false, capture: true } as AddEventListenerOptions
       d.addEventListener('pointerdown', fmDown, cap); d.addEventListener('pointermove', fmMove, true)
       d.addEventListener('pointerup', fmUp, cap); d.addEventListener('pointercancel', midEnd, true)
