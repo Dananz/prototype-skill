@@ -1,13 +1,15 @@
 // The comments as a list, the rail's body and the phone sheet's, grouped by what needs you:
 // Ready to send (drafts, and the unfinished one), With Claude (sent, not done), and Done, which
 // folds to one line each and opens to show what Claude said. The bottom bar is Add and Send.
+// A comment and the follow-ups answering Claude about it are one row, a thread, in the section of
+// its last turn: an answer to a done comment brings it back to With Claude.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useAgentName, useCtx } from './ctx'
-import { progress, useStore, type Said } from './store'
+import { isRoot, progress, threadOf, useStore, type Said } from './store'
 import type { CState, Item } from './types'
 import { inScope, shotsOf } from './types'
 import { WholeBox } from './whole'
-import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, Reply, since, spanOf, SrcTag, ViewChip, Working, ImageChip, PictureStrip } from './ui'
+import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, PRIMARY, Reply, since, spanOf, SrcTag, ViewChip, Working, ImageChip, PictureStrip } from './ui'
 
 export function useRows() {
   const { store, act } = useCtx()
@@ -16,8 +18,13 @@ export function useRows() {
   const gone = !s.inbox?.listening && s.inbox?.agent === 'gone'
   // The prototype the page is on: its comments only, across its variants (the lobbies, which have no list, see all).
   const items = s.items.filter(i => inScope(s.scope, i.proto))
-  const rows = items.map(item => { const p = progress(item, s.inbox); return { item, ...p, stopped: !!p.lost || (gone && p.state === 'sent'), here: act.here(item) } })
-  rows.sort((a, b) => b.item.at - a.item.at)
+  // One row per thread: the comment's own reply (what a pin's card and the motion dock show), the
+  // state of its last turn, and its turns in order. A thread moves up when it is answered again.
+  const rows = items.filter(i => isRoot(s.items, i)).map(item => {
+    const turns = threadOf(s.items, item).map(t => ({ item: t, ...progress(t, s.inbox) })), last = turns[turns.length - 1]
+    return { item, reply: turns[0].reply, state: last.state, ...(last.lost ? { lost: true } : {}), turns, stopped: !!last.lost || (gone && last.state === 'sent'), here: act.here(item), latest: last.item.at }
+  })
+  rows.sort((a, b) => b.latest - a.latest)
   const held = s.held && inScope(s.scope, s.held.proto) ? s.held : null
   return { s, rows, held, drafts: items.filter(i => !i.sent).length, stalled: rows.filter(r => r.stopped && (r.state === 'sent' || r.state === 'seen')).length }
 }
@@ -83,16 +90,78 @@ function Draft({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: b
   )
 }
 
-/** Sent, and not done: what Claude has, and what it said so far ("building now…"). */
+/**
+ * The rest of a thread, under the comment and Claude's reply to it: each answer the user wrote back
+ * (on the end side, as theirs) and Claude's reply to that, then Reply, which answers the last reply.
+ */
+function Thread({ r }: { r: Row }) {
+  return (
+    <>
+      {r.turns.slice(1).map(t => (
+        <span key={t.item.id} data-shoot="comment-turn" data-turn={t.item.sent ? `${t.item.sent.batch}/${t.item.sent.i}` : undefined} className="mt-2 block space-y-1.5">
+          <span className="flex justify-end"><Body c={t.item} className="block max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-se-sm bg-proto-primary-soft px-2 py-1 text-[11px] leading-4 text-zinc-800 ring-1 ring-proto-primary-ring/40 dark:text-zinc-100" /></span>
+          {t.reply && <span data-shoot="comment-reply" className="block"><Reply text={t.reply.text} by={t.reply.by} small /></span>}
+        </span>
+      ))}
+      <Answer r={r} />
+    </>
+  )
+}
+
+/**
+ * Reply to Claude: a small action under its last reply, opening a compact box in the row. What is
+ * written goes at once as a follow-up (act.followUp), on what the comment is on; a send that fails
+ * keeps the words and says why. Offered once the last turn has a reply or is done: before that
+ * there is nothing to answer, and a second comment is the way to add to one still being worked on.
+ */
+function Answer({ r }: { r: Row }) {
+  const agent = useAgentName()
+  const { act } = useCtx()
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const last = r.turns[r.turns.length - 1]
+  if (!last.item.sent || (!last.reply && last.state !== 'done')) return null
+  if (!open) return <button data-shoot="comment-answer" onClick={() => setOpen(true)} title={`Answer ${agent}'s reply`} className="mt-1.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-800 dark:hover:bg-white/10 dark:hover:text-zinc-200"><Icon name="comment" className="size-3" />Reply</button>
+  const send = async () => {
+    if (!text.trim() || busy) return
+    setBusy(true); setError('')
+    try { await act.followUp(r.item.id, text); setText(''); setOpen(false) }
+    catch (e) { setError(e instanceof Error ? e.message : 'Could not send') }
+    finally { setBusy(false) }
+  }
+  return (
+    <span data-shoot="comment-answer-box" className="mt-2 block rounded-xl border border-black/10 bg-white p-1.5 dark:border-white/15 dark:bg-zinc-900">
+      <textarea autoFocus rows={2} value={text} aria-label={`Answer ${agent}`} placeholder={`Answer ${agent}…`} dir="auto"
+        onChange={e => setText(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() }
+          else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(false) }
+        }}
+        className="block max-h-32 w-full resize-none bg-transparent px-1.5 py-1 text-[12.5px] leading-[18px] text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100" />
+      {error && <span role="alert" className="block px-1.5 pb-1 text-[11px] text-rose-600 dark:text-rose-400">{error}</span>}
+      <span className="flex items-center justify-end gap-1">
+        <button onClick={() => setOpen(false)} className="h-7 rounded-lg px-2 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Cancel</button>
+        <button data-shoot="comment-answer-send" onClick={() => void send()} disabled={!text.trim() || busy} title={`Send to ${agent} · ${MOD} Enter`} className={`inline-flex h-7 items-center gap-1 rounded-lg pl-2 pr-2.5 text-[11px] font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name="send" className="size-3" />{busy ? 'Sending…' : 'Send'}</button>
+      </span>
+    </span>
+  )
+}
+
+/** Sent, and not done: what Claude has, and what it said so far ("building now…"), and the thread under it. */
 function WithAgent({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: boolean; onOpen: () => void }) {
   const agent = useAgentName()
   const { item, reply } = r
+  // Whether Claude said anything in the thread's last turn: a stopped one says so differently.
+  const said = !!r.turns[r.turns.length - 1].reply
   return (
-    <div data-comment={item.id} data-shoot="comment-row" className={`flex w-full items-start gap-1 rounded-2xl transition ${active ? 'bg-proto-primary-soft ring-1 ring-proto-primary-ring' : 'bg-proto-primary-soft/60 hover:bg-proto-primary-soft'}`}>
+    <div data-comment={item.id} data-shoot="comment-row" className={`rounded-2xl transition ${active ? 'bg-proto-primary-soft ring-1 ring-proto-primary-ring' : 'bg-proto-primary-soft/60 hover:bg-proto-primary-soft'}`}>
+      <div className="flex w-full items-start gap-1">
       <button onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 p-3 pe-0 text-start">
         <span className="mt-1">{r.stopped ? <span data-shoot="comment-stopped" className="mt-0.5 block size-2 rounded-full border border-amber-500" /> : <Working />}</span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} />{r.stopped ? <span className="shrink-0 text-amber-600 dark:text-amber-300">{reply ? 'Stopped' : 'Not picked up'}</span> : <span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? `${agent} is on it` : 'Sent'}</span>}</span>
+          <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} />{r.stopped ? <span className="shrink-0 text-amber-600 dark:text-amber-300">{said ? 'Stopped' : 'Not picked up'}</span> : <span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? `${agent} is on it` : 'Sent'}</span>}</span>
           <Body c={item} className={`mt-0.5 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
           <ViewChip v={item.target?.view} className="mt-1.5" />
           {shotsOf(item).some(p => p.pasted) && <PictureStrip className="mt-2">{shotsOf(item).filter(p => p.pasted).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</PictureStrip>}
@@ -100,11 +169,13 @@ function WithAgent({ r, active, roomy, onOpen }: { r: Row; active: boolean; room
         </span>
       </button>
       <Remove item={item} className="me-1 mt-1.5" />
+      </div>
+      <div className="-mt-1 pb-3 pe-3 ps-8 empty:hidden"><Thread r={r} /></div>
     </div>
   )
 }
 
-/** Done: one line, opening to Claude's reply, and a way to see it on the design. */
+/** Done: one line, opening to Claude's reply and the thread after it, and a way to see it on the design. */
 function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy: boolean; onShow: () => void }) {
   const [open, setOpen] = useState(false)
   const { item, reply } = r
@@ -125,6 +196,7 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
           <p className="flex items-center gap-2 text-xs text-zinc-400"><span className="min-w-0 truncate"><About item={item} /></span>{when &&<span className="shrink-0">· {when === 'now' ? 'just now' : `${when} ago`}</span>}<button onClick={onShow} className="ms-auto shrink-0 font-medium text-proto-primary-soft-fg hover:underline">{item.time ? `Show ${spanOf(item.time)}` : item.target ? 'Show on design' : `Go to ${item.variant || 'the prototype'}`}</button></p>
           <ViewChip v={item.target?.view} />
           {reply ? <Reply text={reply.text} by={reply.by} small /> : <p className="text-xs text-zinc-400">Marked done, no note.</p>}
+          <Thread r={r} />
         </div>
       )}
     </div>

@@ -671,6 +671,14 @@ about the design as a whole (its density, tone, structure or flow), not one elem
 where the design lives, across the parts it names, rather than on one element; the reply says what
 changed overall.
 
+**The user can answer your reply** (Reply under it, in the Comments panel), and the comment becomes a
+thread there. The answer reaches you as a comment in a batch of its own, on the same element, spot or
+moment as the comment it follows, with the exchange so far printed before its words, oldest first:
+`2. plugin/A  (reply to 20261014T005910-51b2/2)` then
+`earlier: "<their comment>"  ->  Claude: "<your reply>"`. Read it as the next line of that exchange,
+not a fresh request, and answer it with `proto reply <batch>/<n> "…" --done` like any comment; the
+reply shows in the thread.
+
 **Handle a batch as one job, not one comment at a time.** The user is waiting from the moment
 they press Send until the last change is in, and the time goes into round trips and lookups, not
 into the edits. Measured on 12 small comments: one pass took 48 s; a worker per file took 86 s

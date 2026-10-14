@@ -53,6 +53,14 @@ export function useStore(store: Store): State {
   return useSyncExternalStore(store.subscribe, store.get)
 }
 
+/**
+ * A comment and the follow-ups answering Claude's replies to it, in the order they were written:
+ * the thread the list shows as one row, whose state is its last turn's.
+ */
+export const threadOf = (items: Item[], root: Item): Item[] => [root, ...items.filter(i => i.re?.id === root.id).sort((a, b) => a.at - b.at)]
+/** A thread's first comment: a follow-up whose comment is gone (deleted from another tab) stands on its own. */
+export const isRoot = (items: Item[], i: Item) => !i.re || !items.some(x => x.id === i.re!.id)
+
 /** What became of a sent comment, from the inbox the server keeps. */
 export type Said = { text: string; by: 'claude' | 'codex' | 'agent'; at?: string }
 export function progress(item: Item, inbox?: Inbox): { state: CState; reply: Said | null; lost?: boolean } {

@@ -12,7 +12,7 @@ import { ContextPop, type ContextPopProps } from './menu'
 import { climb, describe } from './dom'
 import { Selection } from './selection'
 import { PhoneSheet, Rail } from './rail'
-import { createStore, progress } from './store'
+import { createStore, isRoot, progress, threadOf } from './store'
 import { inScope, type Place, type State } from './types'
 
 export type { ContextPopProps, DecidePopProps, Place, State, Subject }
@@ -69,8 +69,10 @@ export function createComments(host: Host, sessionId: string) {
       const by = new Map<string, number>()
       let drafts = 0, total = 0
       for (const i of s.items) {
+        // A thread counts once, as open while its last turn is: a follow-up is no comment of its own.
+        if (!isRoot(s.items, i)) continue
         if (inScope(s.scope, i.proto)) { total++; if (!i.sent) drafts++ }
-        if (progress(i, s.inbox).state === 'done') continue
+        if (progress(threadOf(s.items, i).at(-1)!, s.inbox).state === 'done') continue
         const k = `${i.proto}/${i.variant}`
         by.set(k, (by.get(k) ?? 0) + 1)
       }

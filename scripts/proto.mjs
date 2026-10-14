@@ -1529,6 +1529,26 @@ function standsIn(dir, c) {
   } catch { return '' }
 }
 
+// A follow-up is the user answering a reply in the page: `re` names the comment (batch, number)
+// whose reply it answers, which can be a follow-up too. The turns before it, oldest first, from
+// whichever folder holds each batch (one never taken can be answered too), so the agent reads the
+// new words as the next line of that exchange. A reply is the comment's own, else its batch's, as
+// the page shows it.
+const WHO = { claude: 'Claude', codex: 'Codex', agent: 'Agent' }
+const oneLine = (s, k) => { const t = String(s ?? '').replace(/\s+/g, ' ').trim(); return t.length > k ? `${t.slice(0, k - 1)}…` : t }
+function turnsBefore(dir, re) {
+  const turns = [], seen = new Set()
+  for (let r = re; r && !seen.has(`${r.batch}/${r.n}`) && turns.length < 20;) {
+    seen.add(`${r.batch}/${r.n}`)
+    const b = ['taken', 'new'].map(sub => readJson(join(inboxDir(dir), sub, r.batch, 'batch.json'), null)).find(Boolean)
+    const c = b?.comments?.find(x => x.n === r.n)
+    if (!c) { turns.unshift({ gone: `${r.batch}/${r.n}` }); break }
+    turns.unshift({ text: c.text, reply: c.reply ?? b.reply ?? null })
+    r = c.re
+  }
+  return turns
+}
+
 function printBatch(dir, b) {
   const vp = b.viewport ? ` · page ${b.viewport.w}x${b.viewport.h}${b.viewport.phone ? ' (phone)' : ''}` : ''
   // A comment the user deleted in the page after sending it is withdrawn: left out, only counted.
@@ -1536,7 +1556,8 @@ function printBatch(dir, b) {
   console.log(`batch ${b.id} · ${live.length} comment${live.length === 1 ? '' : 's'}${gone ? ` (${gone} withdrawn in the page)` : ''}${vp} · ${b.theme}`)
   if (b.orphaned) console.log('   taken earlier by a session that ended before it answered: handle these first')
   for (const c of live) {
-    console.log(`\n${c.n}. ${c.route}`)
+    console.log(`\n${c.n}. ${c.route}${c.re ? `  (reply to ${c.re.batch}/${c.re.n})` : ''}`)
+    if (c.re) for (const t of turnsBefore(dir, c.re)) console.log(t.gone ? `   earlier: ${t.gone} (no longer in the inbox)` : `   earlier: "${oneLine(t.text, 160)}"  ->  ${t.reply ? `${WHO[t.reply.by] ?? 'Claude'}: "${oneLine(t.reply.text, 160)}"` : 'no reply'}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
     if (c.action === 'more-variants') console.log(`   count: ${c.count} new variant${c.count === 1 ? '' : 's'}`)
     if (c.action) console.log(`   action: ${c.action} (${c.failed && FAILED[c.action] ? FAILED[c.action](c, c.failed) : c.action === 'pick' && c.note && !c.done ? 'marked in the page and now the working variant; handle the note, then reply --done' : ACTIONS[c.action] || ''}${standsIn(dir, c)})`)
