@@ -49,7 +49,7 @@ export function lastEdit(root = dir) {
   return newest
 }
 
-const DECIDED_IDLE = 30 * 60e3
+const DECIDED_IDLE = 90 * 60e3
 // True when the session has prototypes and each one is picked or archived.
 export function decided() {
   const metas = []
