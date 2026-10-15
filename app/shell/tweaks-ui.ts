@@ -72,12 +72,14 @@ function Field({ field, onChange, onReset }: { field: Tweak } & Pick<TweakContro
         value: field.value, onChange: (e: ChangeEvent<HTMLSelectElement>) => onChange(field.id, e.target.value),
         className: 'min-h-9 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-800',
       }, ...field.options.map(option => h('option', { key: option, value: option }, option)))
-  ) : h('input', {
-    type: 'checkbox', role: 'switch', 'data-tweak-input': field.id, 'aria-labelledby': labelId,
-    'aria-describedby': field.note ? noteId : undefined, checked: field.value,
-    onChange: (e: ChangeEvent<HTMLInputElement>) => onChange(field.id, e.target.checked),
-    className: 'size-4 shrink-0 cursor-pointer accent-sky-600',
-  })
+  ) : h('span', { className: 'relative flex shrink-0' },
+    h('input', {
+      type: 'checkbox', role: 'switch', 'data-tweak-input': field.id, 'aria-labelledby': labelId,
+      'aria-describedby': field.note ? noteId : undefined, checked: field.value,
+      onChange: (e: ChangeEvent<HTMLInputElement>) => onChange(field.id, e.target.checked),
+      className: 'peer h-6 w-10 cursor-pointer appearance-none rounded-full bg-zinc-300 transition-colors checked:bg-proto-primary dark:bg-zinc-700 dark:checked:bg-proto-primary motion-reduce:transition-none',
+    }),
+    h('span', { 'aria-hidden': true, className: 'pointer-events-none absolute left-1 top-1 size-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4 motion-reduce:transition-none' }))
 
   return h('section', { 'data-tweak': field.id, className: 'min-w-0' },
     h('div', { className: 'mb-2 flex min-h-7 items-center justify-between gap-2' },
