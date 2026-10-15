@@ -18,7 +18,7 @@ export async function contextMenuChecks({ proto, app, local, openPage, fail }) {
     // A right-click as the page hears it; false when something took it (preventDefault).
     const rc = (el, opts = {}) => { const r = el.getBoundingClientRect(); return el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, composed: true, button: 2, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, ...opts })) }
     const menu = () => document.querySelector('[data-context-menu]')
-    const labels = () => [...(menu()?.querySelectorAll('[role=menuitem]') ?? [])].map(x => x.textContent.trim())
+    const labels = () => [...(menu()?.querySelectorAll('[role=menuitem], [role=menuitemradio]') ?? [])].map(x => x.textContent.trim())
     const frame = () => document.querySelector('[data-view] iframe')?.contentDocument
     const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items ?? []
     const esc = () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -81,7 +81,7 @@ export async function contextMenuChecks({ proto, app, local, openPage, fail }) {
       if (!await until(menu)) return 'right-click on the design opened no menu'
       const got = labels()
       for (const want of ['Comment on this element', 'Comment on the whole variant']) if (!got.some(l => l.startsWith(want))) return 'the artboard menu has no ' + want + ': ' + got.join(', ')
-      if (!got.some(l => /^Pick A/.test(l))) return 'the artboard menu has no Pick for the variant: ' + got.join(', ')
+      if (!got.some(l => l === 'Pick' || l.startsWith('Picked')) || !menu().querySelector('textarea[aria-label="Note for Pick A"]')) return 'the artboard menu has no Pick for the variant: ' + got.join(', ')
       menu().querySelector('[data-shoot="ctx-comment-el"]').click()
       if (!await until(() => document.querySelector('[data-composer]'))) return 'Comment on this element opened no composer'
       return 'ok'

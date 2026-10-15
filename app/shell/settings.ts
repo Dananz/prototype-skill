@@ -3,10 +3,11 @@ import { createElement as h, useEffect, useId, useLayoutEffect, useRef, useState
 import { createRoot } from 'react-dom/client'
 import { Dialog } from '@base-ui/react/dialog'
 import { Drawer } from '@base-ui/react/drawer'
-import { ic, IB } from './ui'
+import { ago, ic, IB } from './ui'
 import { uiBox } from './portals'
 
 export type Appearance = 'system' | 'light' | 'dark'
+export type Category = 'appearance' | 'feedback' | 'browsing' | 'session' | 'shortcuts'
 type Props = {
   open: boolean
   appearance: Appearance
@@ -14,7 +15,11 @@ type Props = {
   sidebar: boolean
   review: boolean
   stack: boolean
-  session: { host: string; id: string; name: string; url: string; keep: boolean; server: 'live' | 'reconnecting' | 'stopped'; listening: boolean; error: string | null }
+  /** Opens on this category (the sidebar's session name asks for session, the bar's menu for shortcuts). */
+  category?: Category
+  session: { host: string; id: string; name: string; url: string; keep: boolean; server: 'live' | 'reconnecting' | 'stopped'; listening: boolean; error: string | null
+    /** What the session's popover used to say: where it lives, when it started, its last edit, and when it goes. */
+    path: string; started: string; lastEdit: number | null; idleHours: number | null; deletes: string | null }
   onKeep: (value: boolean) => Promise<void>
   onStop: () => Promise<void>
   onClose: () => void
@@ -46,12 +51,12 @@ const categories = [
   { id: 'session', label: 'Session', symbol: 'link', detail: 'Manage this prototype session.' },
   { id: 'shortcuts', label: 'Shortcuts', symbol: 'keyboard', detail: 'Use these while browsing, outside text fields.' },
 ] as const
-type Category = typeof categories[number]['id']
 const button = 'h-9 shrink-0 rounded-md border border-black/10 px-3 text-xs font-medium hover:bg-zinc-100 disabled:cursor-default disabled:opacity-50 dark:border-white/15 dark:hover:bg-zinc-800'
 
 function Settings(p: Props) {
   const titleId = useId()
   const [category, setCategory] = useState<Category>('appearance')
+  useEffect(() => { if (p.open && p.category) setCategory(p.category) }, [p.open, p.category])
   const [mobile, setMobile] = useState(() => matchMedia('(max-width:639px)').matches)
   const [pending, setPending] = useState<'keep' | 'stop' | null>(null)
   const [notice, setNotice] = useState('')
@@ -115,12 +120,13 @@ function Settings(p: Props) {
       h('div', { className: 'flex flex-wrap items-center justify-between gap-3 border-t border-black/[.06] pt-4 dark:border-white/10' }, h('p', { className: muted }, 'Restore sidebar and column widths.'), h('button', { type: 'button', 'data-setting-reset': '', onClick: p.onResetWidths, className: button }, 'Reset widths')))
     : category === 'session' ? h('div', { className: 'space-y-5' },
       h('div', null, h('p', { dir: 'auto', className: 'text-[13px] font-medium' }, p.session.name),
+        h('p', { 'data-setting-path': '', className: `mt-0.5 flex min-w-0 items-center gap-1.5 ${muted}` }, icon('folder'), h('span', { className: 'truncate' }, `${p.session.path} · started ${p.session.started}`)),
         h('div', { className: 'mt-2 flex items-center gap-2 rounded-lg border border-black/10 px-3 py-2 dark:border-white/10' },
           h('input', { 'aria-label': 'Session URL', readOnly: true, value: p.session.url, className: 'min-w-0 flex-1 bg-transparent text-xs text-zinc-500 dark:text-zinc-400' }),
           h('button', { type: 'button', 'data-setting-copy-url': '', disabled: copying, onClick: () => void copy(p.session.url, 'Session URL copied.'), className: 'h-8 shrink-0 rounded-md px-2 text-xs font-medium hover:bg-zinc-100 disabled:cursor-default disabled:opacity-50 dark:hover:bg-zinc-800' }, 'Copy URL'))),
-      toggle('keep', 'Keep forever', 'Keep this session instead of removing it automatically.', p.session.keep, on => void changeSession('keep', () => p.onKeep(on)), !!pending || p.session.server === 'stopped'),
+      toggle('keep', 'Keep forever', p.session.keep ? 'Kept: it is not removed automatically.' : p.session.idleHours ? `Stops after ${p.session.idleHours}h idle${p.session.deletes ? `. Deletes ${p.session.deletes} unless kept.` : '.'}` : 'Keep this session instead of removing it automatically.', p.session.keep, on => void changeSession('keep', () => p.onKeep(on)), !!pending || p.session.server === 'stopped'),
       h('div', { className: 'flex items-center justify-between gap-4 border-t border-black/[.06] pt-4 dark:border-white/10' },
-        h('div', null, h('p', { className: 'text-[13px] font-medium' }, 'Server'), h('p', { 'data-setting-server-status': '', className: muted }, p.session.server === 'live' ? 'Live' : p.session.server === 'stopped' ? 'Stopped. Run proto up to start it again.' : 'Reconnecting…')),
+        h('div', null, h('p', { className: 'text-[13px] font-medium' }, 'Server'), h('p', { 'data-setting-server-status': '', className: muted }, p.session.server === 'live' ? (p.session.lastEdit ? `Live · edited ${ago(p.session.lastEdit)}` : 'Live') : p.session.server === 'stopped' ? 'Stopped. Run proto up to start it again.' : 'Reconnecting…')),
         h('button', { type: 'button', 'data-setting-stop': '', disabled: !!pending || p.session.server === 'stopped', onClick: () => void changeSession('stop', p.onStop), className: `${button} text-rose-600 dark:text-rose-400` }, pending === 'stop' ? 'Stopping…' : p.session.server === 'stopped' ? 'Stopped' : 'Stop server')),
       h('div', { className: 'flex flex-wrap items-center justify-between gap-3 border-t border-black/[.06] pt-4 dark:border-white/10' },
         h('div', null, h('p', { className: 'text-[13px] font-medium' }, `${p.session.host} listener`), h('p', { 'data-setting-listener-status': '', className: muted }, p.session.listening ? 'Connected' : 'Not listening'), h('p', { className: muted }, 'Paste the restart message in your agent thread.')),

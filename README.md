@@ -155,7 +155,7 @@ saved until the next turn; send the agent "check the prototype comments" to pick
 - **Tweaks:** change a design’s declared colors, content states and switches immediately. A desktop inspector keeps controls beside the design; a button in the mobile dock opens a drawer. Reset one control or all of them.
 - **Comments, copy and motion:** pin comments and tag elements, try wording options, or scrub animations and comment on a moment or range. A Try it panel can explain inputs and scenarios.
 
-Actions → More like this and a prototype's More variants menu request more directions.
+Decide → More like this and a prototype's More variants menu request more directions.
 Needs explanation and Generate copy options request review content through the comments
 inbox; highlighting text offers copy options and comments for those words. On phones,
 these tools live in the variant sheet and pill menu. Right-click opens menus throughout

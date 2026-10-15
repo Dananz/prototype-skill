@@ -24,20 +24,23 @@ select individual shots, and choose No name, With name or Canvas, at As shown, P
 and downloads them one by one with progress and Stop. On supported phones, Share files opens
 the system share sheet. Captions affect exports only.
 
-The bar's Settings button opens browser preferences: System, Light or Dark appearance,
-instant comment sending (off by default, so drafts can be sent together), Grid or List
-overviews, and whether the sidebar and review panel stay open on wide screens. It also
-resets sidebar/column widths and lists keyboard shortcuts. Its Session category lets you
-copy the public URL, keep the session forever, stop its server, and copy a listener restart
-message to paste in the agent thread. On a phone, Settings is a swipeable bottom drawer.
+Settings (the bar's ⋯ menu, or the session name at the top of the sidebar) opens browser
+preferences: System, Light or Dark appearance, instant comment sending (off by default, so
+drafts can be sent together), Grid or List overviews, and whether the sidebar and review panel
+stay open on wide screens. It also resets sidebar/column widths and lists keyboard shortcuts.
+Its Session category is the session's one home: its folder and start time, the public URL to
+copy, whether it is live and when it was last edited, when it stops when idle and when it is
+deleted, keeping it forever, stopping its server, and a listener restart message to paste in
+the agent thread. The sidebar's mark carries the live dot (the bar's ⋯ does while the sidebar
+is hidden). On a phone, Settings is a swipeable bottom drawer.
 Preferences save automatically;
 use the page's layout, zoom and motion controls for the design currently on screen.
 
-Beside Comment the bar has three sizes, phone, tablet and desktop (on a phone, the Layout row of the
-pill's menu). On a wide screen a web variant sits on an artboard as big as the stage, laid out for
+The bar's layout button, before Comment, opens the three sizes, phone, tablet and desktop, with
+their dimensions, and the zoom under them (on a phone, the Layout row of the pill's menu). On a wide screen a web variant sits on an artboard as big as the stage, laid out for
 the stage's width (its breakpoints see the stage, not the window); the stage's own layout is
 selected. Choosing another shows the page at that size, zoomed to fit (a 1440 × 900 desktop on a
-phone, a phone on a desktop); the scale button zooms either from 10% to 300%, and the user can
+phone, a phone on a desktop); the zoom there goes either from 10% to 300%, and the user can
 pinch, Space-drag or middle-button drag (from anywhere, at any zoom; the page stays where it is
 left, and Fit centres it again), comment, try things, pick copy and scrub motion there. Nothing to build for it
 beyond a web variant that lays out well at each width.
@@ -321,7 +324,7 @@ Do not spend the initial pass naming or annotating elements for Comments. Commen
 visual targeting; source file/line attributes are automatic. There is no named-element catalog.
 Add `data-shoot` only for selectors needed by interaction/QA checks, and preserve accessibility.
 
-The page's **Actions → Needs explanation / Generate copy options** submits a request for the
+The page's **Decide → Needs explanation / Generate copy options** submits a request for the
 current variant with an optional note; no chat prompt is required. A request shows Requested until
 it is answered or deleted from Comments. Ready means the variant already exposes the capability;
 use the existing Try it panel or T button (the pill's menu on a phone). Highlighting words on the
@@ -333,7 +336,7 @@ that starts with the words quoted).
 Otherwise the scope sets it: 5 for a screen or a flow, 3 for a component or a section, 2 for a
 choice between two behaviors (follow the system setting or not, a sheet or a page). The first
 usable output changes the order of delivery, not this count. Build the remaining
-requested/default directions alongside it (above), without waiting for another prompt. More like this in Actions asks for additional directions later (two without
+requested/default directions alongside it (above), without waiting for another prompt. More like this in Decide asks for additional directions later (two without
 a count). If Try it or copy alternatives were explicitly requested at the outset, add them
 after the first usable prototype is in place.
 
@@ -611,8 +614,9 @@ user makes one (next section).
 ## When the user chooses
 
 The user chooses in chat ("go with A", "A it is", "build B", "let's move forward with C") or in
-the page, where each variant has Pick (the check button in the bar, or P; on a phone, the top of
-the variant sheet), or Pick with a note… when they want to say why or what to change in it. A pick
+the page, where each variant has Pick (the Decide button in the bar, or P, a card of Pick,
+More like this and Build it with its note beside them; on a phone, the top of the variant
+sheet), and the note says why or what to change in it. A pick
 made in the page is already marked when you hear of it, as a comment with `action: pick` (see
 Comments from the page), its note as the comment's words: don't run `proto pick` again, and do
 what the note asks, then `proto reply <id> --done`. A pick with a note stays pending until then;
@@ -866,8 +870,8 @@ When the user wants the prototypes in a doc or artifact to share: read `referenc
 On its own: a server stops after 6 hours with no edits and no open page (30 minutes once every
 prototype in the session is picked or archived), and every
 `proto up` deletes sessions untouched for 14 days unless kept and drops leftover tailnet
-rules (`proto gc` does the same on demand). The user can also Keep or Stop from the session
-menu in the page.
+rules (`proto gc` does the same on demand). The user can also Keep or Stop from Settings › Session
+in the page.
 
 The project's design kits (`.prototypes/_kits/`) outlive every session. When the user wants one
 gone (a redesign shipped and it no longer looks like the app), delete its folder; the next
