@@ -24,7 +24,7 @@ import { commentPicturesChecks } from './comment-pictures-checks.mjs'
 import { shootPinChecks } from './shoot-pin-checks.mjs'
 import { commentUntilChecks } from './comment-until-checks.mjs'
 import { hostLabelChecks } from './host-label-checks.mjs'
-import { listenerChecks } from './listener-checks.mjs'
+import { listenerChecks, continuousListenerChecks, continuousRuntimeChecks } from './listener-checks.mjs'
 import { intakeChecks } from './intake-checks.mjs'
 import { pickNoteChecks } from './pick-note-checks.mjs'
 import { commentReplyThreadChecks } from './comment-reply-thread-checks.mjs'
@@ -177,7 +177,7 @@ async function inPage(url, expression) {
 const out = proto(['up', '--name', 'Smoke'])
 const local = (out.match(/^local (\S+)/m) || out.match(/^url (\S+)/m) || [])[1]
 if (!local || !await answers(`${local}__proto/status`)) fail(`the server does not answer at ${local}`)
-const { pid } = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
+let { pid } = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
 
 // The stylesheet as served, read once before any prototype folder exists. Each read opens
 // its own connection: the spawnSync calls block this script for many seconds, long enough for
@@ -206,6 +206,9 @@ await shootPinChecks({ proto, app, local, fail })
 await commentUntilChecks({ proto, app, fail })
 await commentReplyThreadChecks({ proto, app, local, openPage, fail })
 await listenerChecks({ proto, app, fail })
+await continuousListenerChecks({ fail })
+await continuousRuntimeChecks({ proto, app, local, fail })
+pid = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8')).pid
 await intakeChecks({ proto, app, local, fail })
 await hostLabelChecks({ proto, app, local, openPage, fail })
 await pickNoteChecks({ proto, app, local, openPage, fail, keepShots })

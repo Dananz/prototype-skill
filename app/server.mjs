@@ -1,5 +1,6 @@
 // The dev-server side of a prototype session: status for the shell, the Keep and Stop
 // buttons, and stopping by itself after hours with no edits and nobody looking.
+import { commentListener, listenerStatus } from './listener.mjs'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync, watch } from 'node:fs'
@@ -244,7 +245,7 @@ export function inboxStatus() {
       comments: b.comments.map(c => ({ n: c.n, route: c.route, action: c.action, done: !!c.done, ...(c.withdrawn ? { withdrawn: true } : {}), ...(c.action && c.target ? { scoped: true } : {}), reply: c.reply ?? null })),
     }
   }).filter(Boolean).sort((a, b) => a.at < b.at ? 1 : -1)
-  return { intake: intakeView(), new: list('new').length, listening: !!waiter && alive(waiter.pid), agent: agent?.pid ? (alive(agent.pid) ? 'alive' : 'gone') : null, batches: batches.filter((b, i) => i < 20 || b.comments.some(c => ['try-it', 'copy-options'].includes(c.action) && !c.done && !c.withdrawn)) }
+  return { intake: intakeView(), new: list('new').length, listening: listenerStatus(dir).listening || !!waiter && alive(waiter.pid), agent: agent?.pid ? (alive(agent.pid) ? 'alive' : 'gone') : null, batches: batches.filter((b, i) => i < 20 || b.comments.some(c => ['try-it', 'copy-options'].includes(c.action) && !c.done && !c.withdrawn)) }
 }
 
 const box = r => r && typeof r === 'object' ? { x: Math.round(+r.x || 0), y: Math.round(+r.y || 0), w: Math.round(+r.w || 0), h: Math.round(+r.h || 0) } : undefined
@@ -613,6 +614,8 @@ export function prototypeServer(session) {
       // reply written or a listener starting reaches every open page at once.
       mkdirSync(inbox, { recursive: true })
       mkdirSync(intakeDir, { recursive: true })
+      const listener = commentListener(dir)
+      server.httpServer?.once('close', () => listener.close())
       let pending
       const changed = () => { clearTimeout(pending); pending = setTimeout(() => server.ws.send({ type: 'custom', event: 'proto:inbox', data: inboxStatus() }), 100) }
       // A process that dies makes no file event: look again every few seconds for who is alive.
