@@ -12,6 +12,7 @@
 import { listen, quiet } from './quiet'
 import { agentName, type Agent } from './agent'
 import { variantLabel } from './variants'
+import { VirtualList, virtualHTML, scrollParent, VIRTUAL_THRESHOLD } from './virtual'
 import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } from './ui'
 import { BUILDING_CLASS, ERROR_CLASS, ownerOfPath, refOfPath } from './building'
 import { dock, edge, smooth, runDock, restoreEdgeLabels, installPointerTracking, fadeOut } from './motion'
@@ -49,7 +50,7 @@ type Mount = (el: HTMLElement, component: any) => () => void
 // (all), playing through them (play), or next to another variant (compare).
 type Tool = 'play' | 'all' | 'compare'
 type Place = { view: 'session' } | { view: 'proto'; proto: string } | { view: 'variant'; proto: string; variant: string; state?: string; tool?: Tool }
-type Layer = { el: HTMLElement; refs: unknown[]; ready: Promise<unknown>; dispose: () => void; player?: { toggle: () => void; jump: (i: number) => void }; remount?: () => Promise<unknown> }
+type Layer = { el: HTMLElement; refs: unknown[]; ready: Promise<unknown>; dispose: () => void; player?: { toggle: () => void; jump: (i: number) => void }; remount?: () => Promise<unknown>; refresh?: () => void }
 // Comments sent from the page to the agent running the session (`proto inbox`), and what came back.
 export type Inbox = {
   new: number
@@ -372,11 +373,47 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <span dir="auto" class="min-w-0 flex-1 truncate ${k.archived ? 'line-through decoration-zinc-300' : ''}">${esc(k.title)}</span>${k.kind === 'phone' ? ic('phone', 'size-3 shrink-0 text-zinc-400') : ''}${pickChip(k)}${editingUnder(k) ? pulse('size-1.5') : ''}<span class="shrink-0 text-[10px] tabular-nums text-zinc-400">${k.variants.length}</span>${ic('right', 'size-3 shrink-0 text-zinc-400')}</button>`
   function colRows(c: Col, big = false) {
     const none = (t: string) => `<p class="px-2 py-1.5 text-[11px] text-zinc-400">${t}</p>`
+    if (c.kind === 'variants' && c.p.variants.length > VIRTUAL_THRESHOLD) return `<div data-virtual-list="${esc(c.p.id)}" data-virtual-big="${big}" data-virtual-selected="${esc(c.sel)}"></div>`
     if (c.kind === 'variants') return c.p.variants.map(v => vRow(c.p, v, c.sel === v.id, big)).join('') || none('No variants yet')
     const rows = c.list.map(k => pRow(k, c.sel === k.id, big)).join('') || none('None yet')
     // Archived prototypes fold under the first column.
     const gone = c.from ? [] : archived().filter(k => !c.list.includes(k))
     return rows + (gone.length ? `<button data-act="archived" aria-expanded="${st.archived}" class="${rowCls(big)} text-[11px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">${ic(st.archived ? 'chev' : 'right', 'size-3')}Archived<span class="ml-auto tabular-nums">${gone.length}</span></button>${st.archived ? gone.map(k => pRow(k, false, big)).join('') : ''}` : '')
+  }
+  // Chrome can redraw without throwing away recently visited rows. Each surface owns its
+  // window; the small pool also bounds memory when navigating between prototypes.
+  const navWindows = new Map<string, VirtualList<Variant>>()
+  const navLists = new WeakMap<Element, VirtualList<Variant>>()
+  function detachNav(host: HTMLElement) {
+    for (const window of navWindows.values()) if (window.element && host.contains(window.element)) window.disconnect()
+  }
+  function bindNav(host: HTMLElement, scope: string) {
+    const bound: VirtualList<Variant>[] = []
+    for (const marker of host.querySelectorAll<HTMLElement>('[data-virtual-list]')) {
+      const p = byId(marker.dataset.virtualList!), list = marker.closest<HTMLElement>('[data-vlist]')
+      if (!p || !list) continue
+      const big = marker.dataset.virtualBig === 'true', key = `${scope}:${p.id}:${big}`
+      let window = navWindows.get(key)
+      const options = {
+        items: p.variants, key: (v: Variant) => v.id,
+        render: (v: Variant, _i: number, previous?: HTMLElement) => virtualHTML(vRow(p, v, marker.dataset.virtualSelected === v.id, big), previous),
+        estimate: () => big ? 44 : 30, gap: 1, overscan: 3, cacheSize: 64,
+      }
+      if (window) { window.disconnect(); window.update(options) }
+      else window = new VirtualList(options)
+      navWindows.delete(key); navWindows.set(key, window)
+      window.connect(marker, scrollParent(marker))
+      navLists.set(list, window); bound.push(window)
+    }
+    for (const [key, window] of navWindows) {
+      if (navWindows.size <= 8) break
+      if (!window.element) { window.destroy(); navWindows.delete(key) }
+    }
+    return bound
+  }
+  const menuReady = (host: HTMLElement) => {
+    const bound = bindNav(host, 'menu').map(window => ({ window, element: window.element }))
+    return () => { for (const { window, element } of bound) if (window.element === element) window.disconnect() }
   }
   /** A column's head: a prototype's opens its overview, the first column's the session's. */
   const colHead = (c: Col) => {
@@ -504,6 +541,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     ? `<div data-phones class="flex min-h-full items-center justify-center p-6"><div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(proto)}"><div data-mount class="h-full overflow-y-auto"></div></div></div>`
     : '<div data-mount class="h-full"></div>'
 
+  const previewWindows = new Map<string, VirtualList<Variant>>()
   function buildLayer(p: Place): Layer {
     // The outer box doesn't scroll and is the containing block for the design's own
     // position:fixed (drawers, sheets, toasts), so they stay on the stage, pinned, instead
@@ -513,6 +551,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // Each host runs its design while it is mounted; lobbies mount a host only while it is on or
     // near the screen, so a long grid or the full-size list costs what is visible, not all of it.
     const live = new Map<HTMLElement, () => void>()
+    const generations = new WeakMap<HTMLElement, object>()
     let gone = false
     const pending: Promise<unknown>[] = []
     // A state that can't be reached says so where it would have been, instead of quietly
@@ -525,11 +564,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const start = (host: HTMLElement, v: Variant, s?: State): Promise<unknown> => {
       if (live.has(host)) return Promise.resolve()
       live.set(host, () => {})
+      const generation = {}; generations.set(host, generation)
       // Copy choices are kept per variant, so every place it is mounted reads the same words.
       copy.bind(host, routeOfFile(v.file))
       host.dataset.route = routeOfFile(v.file)
       markBuilding(host)
-      const here = () => !gone && live.has(host)
+      const here = () => !gone && live.has(host) && generations.get(host) === generation
       return load(v).then(
         c => {
           if (!here()) return
@@ -558,6 +598,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       }, { root: el.firstElementChild, rootMargin: '600px 0px' })
       hosts.forEach(h => io!.observe(h))
     }
+    let window: VirtualList<Variant> | undefined, windowHost: HTMLElement | null = null
     let player: Layer['player']
     let remount: Layer['remount']
     let quit = () => {}
@@ -583,7 +624,32 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       }
     } else {
       el.innerHTML = `<div class="h-full overflow-auto">${p.view === 'proto' ? protoLobby(byId(p.proto)!) : sessionLobby()}</div>`
-      if (p.view === 'proto') mountAll(lobbyOrder(byId(p.proto)!).map(v => ({ v })), true)
+      if (p.view === 'proto') {
+        const proto = byId(p.proto)!
+        windowHost = el.querySelector<HTMLElement>('[data-virtual-preview]')
+        if (windowHost) {
+          const host = windowHost, stacked = st.stack, key = `${proto.id}:${stacked}`
+          window = previewWindows.get(key)
+          // Disconnect with the previous layer's lifecycle callbacks before changing ownership.
+          window?.disconnect()
+          const options = {
+            items: lobbyOrder(proto), key: (v: Variant) => v.id,
+            render: (v: Variant, _index: number, previous?: HTMLElement) => virtualHTML(stacked ? stackCard(proto, v) : gridCard(proto, v), previous),
+            columns: (width: number) => stacked ? (proto.kind === 'phone' ? Math.max(1, Math.floor((width + 40) / ((proto.screen[0] + 20) * phoneZoom(proto.screen[0] + 20, proto.screen[1] + 20, el) + 40))) : 1) : Math.max(1, getComputedStyle(host).gridTemplateColumns.split(' ').length),
+            columnWidth: stacked && proto.kind === 'phone' ? () => (proto.screen[0] + 20) * phoneZoom(proto.screen[0] + 20, proto.screen[1] + 20, el) : undefined,
+            estimate: (_v: Variant, width: number) => stacked ? (proto.kind === 'phone' ? 44 + (proto.screen[1] + 20) * phoneZoom(proto.screen[0] + 20, proto.screen[1] + 20, el) : layers.clientHeight + 44) : width * (innerWidth < 640 && proto.kind === 'web' ? 1.4 : .625) + 32,
+            gap: stacked ? 32 : 20, columnGap: stacked && proto.kind === 'phone' ? 40 : undefined, overscan: 1, cacheSize: stacked ? 8 : 40,
+            onAttach: (cell: HTMLElement, v: Variant) => { for (const mount of cell.querySelectorAll<HTMLElement>('[data-mount]')) void start(mount, v) },
+            onDetach: (cell: HTMLElement) => cell.querySelectorAll<HTMLElement>('[data-mount]').forEach(stop),
+            onChange: () => { if (el.isConnected) fit() },
+          }
+          if (window) window.update(options)
+          else window = new VirtualList(options)
+          previewWindows.delete(key); previewWindows.set(key, window)
+          window.connect(host, el.firstElementChild as HTMLElement)
+          for (const [id, cached] of previewWindows) { if (previewWindows.size <= 4) break; if (!cached.element) { cached.destroy(); previewWindows.delete(id) } }
+        } else mountAll(lobbyOrder(proto).map(v => ({ v })), true)
+      }
       else mountAll(lobbyRoots().flatMap(q => lobbyOrder(q).slice(0, 1)).map(v => ({ v })), true)
     }
 
@@ -647,7 +713,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
 
     const ready = Promise.all(pending)
-    return { el, refs: refsFor(p), ready, player, remount, dispose: () => { gone = true; quit(); io?.disconnect(); [...live.keys()].forEach(stop) } }
+    return { el, refs: refsFor(p), ready, player, remount, refresh: () => window?.refresh(), dispose: () => { gone = true; quit(); io?.disconnect(); if (window?.element === windowHost) window?.disconnect(); [...live.keys()].forEach(stop) } }
   }
 
   // ---------- the tools' views ----------
@@ -715,6 +781,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     layer = next
     lobbyKey = st.place.view === 'variant' ? '' : hashOf(st.place) + (st.stack ? ':stack' : '')
     layers.prepend(next.el)
+    next.refresh?.()
     fit()
     const at = lobbyKey ? lobbyScroll.get(lobbyKey) ?? 0 : 0
     const sc = at ? scrollerOf(next) : null
@@ -724,7 +791,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       let moved = false
       const mine = () => { moved = true }
       for (const t of ['wheel', 'touchstart', 'pointerdown', 'keydown']) sc.addEventListener(t, mine, { once: true, passive: true })
-      const put = () => { if (!moved && layer === next) sc.scrollTop = at }
+      const put = () => { if (!moved && layer === next) { sc.scrollTop = at; next.refresh?.() } }
       put()
       requestAnimationFrame(put)
       Promise.race([next.ready, wait(1500)]).then(put)
@@ -764,13 +831,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
     if (layer) fitBox(layer.el)
   }
+  function phoneZoom(w: number, h: number, room: HTMLElement) {
+    const auto = [100, 75, 50].find(s => h * s / 100 <= room.clientHeight - 48 && w * s / 100 <= room.clientWidth - 24) ?? 40
+    return (st.scale || auto) / 100
+  }
   function fitBox(box: HTMLElement) {
     box.style.setProperty('--stage-h', `${box.clientHeight}px`)
     for (const phone of box.querySelectorAll<HTMLElement>('[data-phone]')) {
       const room = phone.closest<HTMLElement>('[data-fit]') ?? box
       const w = parseFloat(phone.style.width), h = parseFloat(phone.style.height)
-      const auto = [100, 75, 50].find(s => h * s / 100 <= room.clientHeight - 48 && w * s / 100 <= room.clientWidth - 24) ?? 40
-      phone.style.zoom = String((st.scale || auto) / 100)
+      phone.style.zoom = String(phoneZoom(w, h, room))
     }
   }
   // The stage changes size with the window, and when the motion dock under it grows or shrinks.
@@ -865,27 +935,32 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
 
   function protoLobby(p: Proto) {
-    const grid = protoGrid(p)
     const tab = (on: boolean, act: string, icon: string, label: string) => `<button data-act="${act}" aria-pressed="${on}" title="${label}" class="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs ${on ? TAB_ON : TAB_OFF}">${ic(icon, 'size-3.5')}<span class="hidden sm:inline">${label}</span></button>`
     const layoutToggle = `<div class="flex gap-0.5 rounded-lg bg-zinc-900/[.04] p-0.5 dark:bg-white/[.06]">${tab(!st.stack, 'stack:0', 'grid', 'Grid')}${tab(st.stack, 'stack:1', 'rows', 'Full size')}</div>`
     return `<div class="flex flex-wrap items-end justify-between gap-2 px-4 pt-5 sm:px-6"><div class="min-w-0">${sources(p).length ? `<div class="mb-2 flex flex-wrap gap-1.5">${fromChips(p)}</div>` : ''}<h2 class="flex items-center gap-2 text-xl font-semibold tracking-tight">${bd(p.title)}${pickOf(p) ? `<span class="inline-flex h-6 items-center gap-1 rounded-full bg-emerald-500/10 px-2 text-xs font-semibold tracking-normal ${PICK}">${ic('check', 'size-3.5')}Picked ${esc(variantLabel(p, pickOf(p)))}</span>` : ''}</h2><p class="text-xs text-zinc-500">${p.ask ? `<bdi>“${esc(p.ask)}”</bdi> · ` : ''}${p.variants.length} variant${p.variants.length === 1 ? '' : 's'} · ${clock(p.created)}</p>${wholeKids(p).length ? `<div class="mt-2 flex flex-wrap gap-1.5">${wholeKids(p).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}<span dir="auto" class="truncate">${esc(k.title)}</span></button>`).join('')}</div>` : ''}</div>${p.variants.length ? layoutToggle : '<p class="text-xs text-zinc-400">No variants yet</p>'}</div>
-      ${st.stack ? stack(p) : grid}`
+      ${st.stack ? stack(p) : protoGrid(p)}`
   }
 
-  function protoGrid(p: Proto) {
-    // Once a variant is picked, the others fade back until hovered.
+  function gridCard(p: Proto, v: Variant) {
     const k = pickOf(p)
-    return `<div class="${GRID} p-4 sm:p-6">${lobbyOrder(p).map(v => `<div class="min-w-0 ${k && v.id !== k ? 'opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" class="group block w-full min-w-0 text-left">
+    return `<div class="min-w-0 ${k && v.id !== k ? 'opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" class="group block w-full min-w-0 text-left">
         <div class="overflow-hidden rounded-lg transition ${v.id === k ? 'ring-2 ring-emerald-500' : 'ring-1 ring-black/10 group-hover:ring-2 group-hover:ring-zinc-900 dark:ring-white/10 dark:group-hover:ring-white'}">${thumb(p, 'aspect-[16/10]')}</div>
-        <div class="mt-2 flex items-center gap-2"><span class="font-semibold">${variantLabel(p, v.id)}</span><span class="truncate text-zinc-500">${esc(v.name)}</span>${v.id === k ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}Picked</span>` : ''}${editing(p.id, v.id) ? `<span class="ml-auto inline-flex items-center gap-1.5 text-xs text-emerald-600">${pulse('size-1.5')}${building(p.id, v.id) ? 'building' : 'editing'}</span>` : ''}</div></button>${kidChips(p, v.id)}</div>`).join('')}</div>`
+        <div class="mt-2 flex items-center gap-2"><span class="font-semibold">${variantLabel(p, v.id)}</span><span class="truncate text-zinc-500">${esc(v.name)}</span>${v.id === k ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}Picked</span>` : ''}${editing(p.id, v.id) ? `<span class="ml-auto inline-flex items-center gap-1.5 text-xs text-emerald-600">${pulse('size-1.5')}${building(p.id, v.id) ? 'building' : 'editing'}</span>` : ''}</div></button>${kidChips(p, v.id)}</div>`
+  }
+  function protoGrid(p: Proto) {
+    return `<div ${p.variants.length > VIRTUAL_THRESHOLD ? 'data-virtual-preview' : ''} class="${GRID} p-4 sm:p-6">${p.variants.length > VIRTUAL_THRESHOLD ? '' : lobbyOrder(p).map(v => gridCard(p, v)).join('')}</div>`
   }
 
   // Every variant at full size, one after another, live. Each frame is at least as tall as the
   // stage (a grid, so a root with h-full fills it) and contains its own position:fixed.
-  function stack(p: Proto) {
+  function stackCard(p: Proto, v: Variant) {
     const head = (v: Variant) => `<div class="mb-3 flex h-8 min-w-0 items-center gap-2 ${p.kind === 'phone' ? 'justify-center' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" title="Open ${variantLabel(p, v.id)}" class="flex min-w-0 cursor-pointer items-center gap-2 rounded-md hover:underline hover:decoration-zinc-400 hover:underline-offset-4"><span class="font-semibold">${variantLabel(p!, v.id)}</span><span dir="auto" class="truncate text-zinc-500">${esc(v.name)}</span></button>${v.id === pickOf(p) ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}Picked</span>` : ''}${editing(p.id, v.id) ? pulse('size-1.5') : ''}${builtFrom(p, v.id).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}${bd(k.title)}</button>`).join('')}</div>`
-    if (p.kind === 'phone') return `<div class="flex flex-wrap justify-center gap-x-10 gap-y-8 p-4 sm:p-6">${lobbyOrder(p).map(v => `<section data-stack-item class="min-w-0">${head(v)}<div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(p)}"><div data-mount class="h-full overflow-y-auto"></div></div></section>`).join('')}</div>`
-    return `<div class="space-y-8 py-4 sm:py-6">${lobbyOrder(p).map(v => `<section data-stack-item><div class="px-4 sm:px-6">${head(v)}</div><div class="grid min-h-[var(--stage-h)] border-y border-black/[.07] bg-white [contain:layout_paint] dark:border-white/10 dark:bg-zinc-950"><div data-mount class="min-w-0"></div></div></section>`).join('')}</div>`
+    return p.kind === 'phone' ? `<section data-stack-item class="min-w-0">${head(v)}<div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(p)}"><div data-mount class="h-full overflow-y-auto"></div></div></section>` : `<section data-stack-item><div class="px-4 sm:px-6">${head(v)}</div><div class="grid min-h-[var(--stage-h)] border-y border-black/[.07] bg-white [contain:layout_paint] dark:border-white/10 dark:bg-zinc-950"><div data-mount class="min-w-0"></div></div></section>`
+  }
+  function stack(p: Proto) {
+    const large = p.variants.length > VIRTUAL_THRESHOLD
+    const cls = p.kind === 'phone' ? 'flex flex-wrap justify-center gap-x-10 gap-y-8 p-4 sm:p-6' : 'space-y-8 py-4 sm:py-6'
+    return `<div ${large ? 'data-virtual-preview' : ''} class="${cls}">${large ? '' : lobbyOrder(p).map(v => stackCard(p, v)).join('')}</div>`
   }
 
   // ---------- chrome ----------
@@ -896,10 +971,28 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const was = new Map([...host.querySelectorAll<HTMLElement>('[data-k]')].map(el => [el.dataset.k!, [el.scrollTop, el.scrollLeft]]))
       // The button with the keyboard's focus is drawn again: it keeps the focus.
       const f = document.activeElement as HTMLElement | null, fAct = f && host.contains(f) ? f.dataset.act : undefined
+      const fList = fAct ? f?.closest<HTMLElement>('[data-vlist]')?.dataset.k : undefined
+      const fVariant = fAct ? f?.closest<HTMLElement>('[data-mv]')?.dataset.mv?.split(':').at(-1) : undefined
       const fAt = fAct ? [...host.querySelectorAll(`[data-act="${CSS.escape(fAct)}"]`)].indexOf(f!) : -1
+      detachNav(host)
       host.innerHTML = html
+      const windows = bindNav(host, host === side ? 'side' : host === drawer ? 'drawer' : 'bar')
       for (const el of host.querySelectorAll<HTMLElement>('[data-k]')) { const at = was.get(el.dataset.k!); if (at) [el.scrollTop, el.scrollLeft] = at }
-      if (fAct) { const all = host.querySelectorAll<HTMLElement>(`[data-act="${CSS.escape(fAct)}"]`); (all[fAt] ?? all[0])?.focus({ preventScroll: true }) }
+      windows.forEach(window => window.refresh())
+      if (fAct) {
+        const selector = `[data-act="${CSS.escape(fAct)}"]`, all = host.querySelectorAll<HTMLElement>(selector)
+        const to = all[fAt] ?? all[0]
+        if (to) to.focus({ preventScroll: true })
+        else if (fList && fVariant) {
+          const list = host.querySelector<HTMLElement>(`[data-vlist][data-k="${CSS.escape(fList)}"]`)
+          const window = list && navLists.get(list)
+          const index = window?.items.findIndex(v => v.id === fVariant) ?? -1
+          if (index >= 0) window?.focus(index, selector)
+          const at = was.get(fList)
+          if (list && at) [list.scrollTop, list.scrollLeft] = at
+          window?.refresh()
+        }
+      }
     }
     const p = cur()
     const view = st.place.view
@@ -1011,7 +1104,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         <div class="flex items-end gap-2 px-3 pb-2"><div class="min-w-0 flex-1"><div dir="auto" class="truncate text-xl font-semibold leading-tight">${esc(colName(c))}</div><div class="mt-0.5 text-xs text-zinc-500">${colCount(c)} ${c.kind === 'variants' ? 'variants' : 'prototypes'}</div></div>
           ${c.kind === 'variants' ? `<button data-act="lobby:proto:${esc(c.p.id)}" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium ring-1 ring-inset ring-black/10 dark:ring-white/15">${ic('grid', 'size-3.5')}All</button>` : c.from ? '' : '<button data-act="lobby:session" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium ring-1 ring-inset ring-black/10 dark:ring-white/15">Overview</button>'}</div>
         ${chips.length > 1 ? `<div data-mcols class="flex gap-1.5 overflow-x-auto px-3 pb-3 [scrollbar-width:none]">${chips.map(({ x, j }) => `<button data-act="drill:${j}" class="h-8 shrink-0 rounded-full px-3 text-xs ${j === i ? 'bg-sky-500/15 font-semibold text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.05] text-zinc-600 dark:bg-white/[.07] dark:text-zinc-300'}"><span dir="auto">${esc(colName(x))}</span> <b>${esc(x.sel)}</b></button>`).join('')}</div>` : ''}
-        <div class="space-y-px px-2">${colRows(c, true)}</div></div>`
+        <div data-vlist data-k="${esc(colKey(c))}" class="space-y-px px-2">${colRows(c, true)}</div></div>`
     }
     side.className = st.side && !framed ? 'hidden shrink-0 flex-col border-r border-black/[.07] lg:flex dark:border-white/10' : 'hidden'
     side.style.width = `${st.sideW}px`
@@ -1061,6 +1154,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (recenter) requestAnimationFrame(() => {
       recenter = false
       for (const list of root.querySelectorAll<HTMLElement>('[data-vlist]')) {
+        const window = navLists.get(list)
+        if (window) { const selected = list.querySelector<HTMLElement>('[data-virtual-selected]')?.dataset.virtualSelected; const index = window.items.findIndex(v => v.id === selected); if (index >= 0) window.scrollToIndex(index, 'center'); continue }
         const on = list.querySelector<HTMLElement>('[aria-current="true"]')
         if (on) list.scrollTop = on.offsetTop - list.clientHeight / 2 + on.clientHeight / 2
       }
@@ -1148,6 +1243,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     paintMenu({
       open: !!st.menu,
       title: st.menu === 'session' ? session.name : 'Find a design',
+      onContentReady: menuReady,
       html: st.menu ? menus[st.menu] : '',
       onClose: () => { st.menu = ''; render() },
     })
@@ -1650,9 +1746,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // that opens a column opens it first. In the sidebar the pair of columns slides along the path.
   // Enter chooses, as a click does. A row is a prototype's button, a variant's (not its ⋯), or the
   // archived fold.
-  const ROW = '[data-vlist] > button, [data-vlist] > [data-mv] > [data-act^="mv:"]'
-  const rowsOf = (list: Element) => [...list.querySelectorAll<HTMLElement>(':scope > button, :scope > [data-mv] > [data-act^="mv:"]')]
+  const ROW = '[data-vlist] > button, [data-vlist] [data-mv] > [data-act^="mv:"]'
+  const rowsOf = (list: Element) => [...list.querySelectorAll<HTMLElement>(':scope > button, [data-mv] > [data-act^="mv:"]')]
   function focusCol(list: Element | undefined) {
+    const window = list && navLists.get(list)
+    if (window) { const selected = list!.querySelector<HTMLElement>('[data-virtual-selected]')?.dataset.virtualSelected; window.focus(Math.max(0, window.items.findIndex(v => v.id === selected)), '[data-act^="mv:"]'); return }
     const rows = list ? rowsOf(list) : [], to = rows.find(b => b.getAttribute('aria-current') === 'true') ?? rows[0]
     to?.focus()
     to?.scrollIntoView({ block: 'nearest' })
@@ -1676,7 +1774,20 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   root.addEventListener('keydown', e => {
     const row = (e.target as Element).closest?.<HTMLElement>(ROW)
     if (!row || e.metaKey || e.ctrlKey || e.altKey) return
-    const rows = rowsOf(row.closest('[data-vlist]')!), i = rows.indexOf(row)
+    const list = row.closest('[data-vlist]')!, window = navLists.get(list)
+    const rows = rowsOf(list), i = window ? Number(row.closest<HTMLElement>('[data-virtual-index]')!.dataset.virtualIndex) : rows.indexOf(row)
+    const toIndex = (index: number) => { e.preventDefault(); window!.focus(Math.max(0, Math.min(window!.items.length - 1, index)), '[data-act^="mv:"]') }
+    if (window) {
+      if (e.key === 'ArrowDown') return toIndex(i + 1)
+      if (e.key === 'ArrowUp') return toIndex(i - 1)
+      if (e.key === 'Home') return toIndex(0)
+      if (e.key === 'End') return toIndex(window.items.length - 1)
+      if (e.key.length === 1 && e.key.trim()) {
+        const p = byId(list.querySelector<HTMLElement>('[data-virtual-list]')!.dataset.virtualList!)!
+        for (let offset = 1; offset <= window.items.length; offset++) { const index = (i + offset) % window.items.length, v = window.items[index]; if (`${variantLabel(p, v.id)} ${v.name}`.toLowerCase().startsWith(e.key.toLowerCase())) return toIndex(index) }
+        return
+      }
+    }
     const to = (b?: HTMLElement) => { e.preventDefault(); b?.focus(); b?.scrollIntoView({ block: 'nearest' }) }
     if (e.key === 'ArrowDown') return to(rows[Math.min(i + 1, rows.length - 1)])
     if (e.key === 'ArrowUp') return to(rows[Math.max(i - 1, 0)])

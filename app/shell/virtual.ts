@@ -8,7 +8,9 @@ export type VirtualOptions<T> = {
   render: (item: T, index: number, previous?: HTMLElement) => HTMLElement
   estimate: (item: T, width: number) => number
   columns?: (width: number) => number
+  columnWidth?: (width: number) => number
   gap?: number
+  columnGap?: number
   overscan?: number
   cacheSize?: number
   onAttach?: (element: HTMLElement, item: T, index: number) => void
@@ -46,6 +48,7 @@ export class VirtualList<T> {
   private offsets: number[] = [0]
   private columns = 1
   private width = 0
+  private left = 0
   private revision = 0
   private raf = 0
   private painting = false
@@ -67,7 +70,7 @@ export class VirtualList<T> {
 
   constructor(private options: VirtualOptions<T>) {
     this.content.dataset.virtualContent = ''
-    Object.assign(this.content.style, { position: 'relative', gridColumn: '1 / -1', minWidth: '0', overflowAnchor: 'none' })
+    Object.assign(this.content.style, { position: 'relative', gridColumn: '1 / -1', minWidth: '0', width: '100%', overflowAnchor: 'none' })
   }
 
   get items() { return this.options.items }
@@ -134,10 +137,11 @@ export class VirtualList<T> {
   }
 
   private layout() {
-    const { items, key, estimate, gap = 0 } = this.options
+    const { items, key, estimate, gap = 0, columnGap = gap } = this.options
     const width = this.content.clientWidth || this.host?.clientWidth || 1
     this.columns = Math.max(1, Math.floor(this.options.columns?.(width) ?? 1))
-    this.width = (width - gap * (this.columns - 1)) / this.columns
+    this.width = this.options.columnWidth ? Math.min(width, this.options.columnWidth(width)) : (width - columnGap * (this.columns - 1)) / this.columns
+    this.left = this.options.columnWidth ? Math.max(0, (width - this.width * this.columns - columnGap * (this.columns - 1)) / 2) : 0
     this.offsets = [0]
     for (let i = 0; i < items.length; i += this.columns) {
       let height = 1
@@ -158,8 +162,12 @@ export class VirtualList<T> {
     if (!this.host || !this.scroll || this.painting) return
     this.painting = true
     try {
+      const atEnd = this.content.offsetHeight > 0 && this.scroll.scrollTop > 0 && this.scroll.scrollHeight - this.scroll.scrollTop - this.scroll.clientHeight < 2
       this.layout()
-      const { items, key, gap = 0, overscan = 2 } = this.options
+      // Measurements can grow the last rows after a jump. Keep an intentional end jump
+      // at the end while those live previews settle.
+      if (atEnd) this.scroll.scrollTop = this.scroll.scrollHeight
+      const { items, key, gap = 0, columnGap = gap, overscan = 2 } = this.options
       const top = this.scroll.scrollTop - this.contentTop(), bottom = top + this.scroll.clientHeight
       let first = 0, last = this.offsets.length - 1
       while (first < last) { const mid = (first + last) >> 1; if (this.offsets[mid + 1] < top) first = mid + 1; else last = mid }
@@ -189,8 +197,10 @@ export class VirtualList<T> {
         }
         this.cache.delete(id); this.cache.set(id, record)
         const element = record.element
+        const row = Math.floor(index / this.columns), count = Math.min(this.columns, items.length - row * this.columns)
+        const left = this.left + (this.options.columnWidth ? (this.columns - count) * (this.width + columnGap) / 2 : 0)
         element.dataset.virtualIndex = String(index); element.dataset.virtualKey = id
-        Object.assign(element.style, { position: 'absolute', top: `${this.offsets[Math.floor(index / this.columns)]}px`, left: `${(index % this.columns) * (this.width + gap)}px`, width: `${this.width}px`, margin: '0' })
+        Object.assign(element.style, { position: 'absolute', top: `${this.offsets[row]}px`, left: `${left + (index % this.columns) * (this.width + columnGap)}px`, width: `${this.width}px`, margin: '0' })
         if (!record.attached) {
           // Insert in logical order so Tab and assistive technology follow the visual order.
           const after = [...this.content.children].find(e => Number((e as HTMLElement).dataset.virtualIndex) > index)

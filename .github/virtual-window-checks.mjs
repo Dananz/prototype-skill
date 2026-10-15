@@ -17,6 +17,11 @@ export async function virtualWindowChecks({local, openPage, fail}) {
   if(list.entries().length>24)return 'cache grew beyond its cap'
   list.update({...opts,items:items.map(x=>x.id==='499'?{...x,name:'Renamed row'}:x)})
   if(!host.textContent.includes('Renamed row'))return 'cache did not invalidate after an edit'
+  list.update({...opts,columns:()=>3,columnWidth:()=>60,columnGap:20})
+  list.focus(499)
+  const left=host.querySelector('[data-virtual-index="498"]').getBoundingClientRect().left
+  const right=host.querySelector('[data-virtual-index="499"]').getBoundingClientRect().right
+  if(Math.abs((left+right)/2-host.getBoundingClientRect().left-150)>1)return 'incomplete fixed-width row was not centered'
   list.destroy();host.remove();return 'ok'
  })()`)
     if (result !== 'ok') fail(`virtual window: ${result}`)

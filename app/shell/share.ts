@@ -3,6 +3,8 @@ import { createElement as h, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createRoot } from 'react-dom/client'
 import { Dialog } from '@base-ui/react/dialog'
 import { uiBox } from './portals'
+import { VIRTUAL_THRESHOLD } from './virtual'
+import { CachedList } from './virtual-react'
 import { ic, IB } from './ui'
 import { variantLabel } from './variants'
 import { captureRoute, compose, download, filePart, LOOKS, png, SIZES, type Look, type ShotSize, type Tone } from './share-capture'
@@ -33,6 +35,8 @@ function Preview({ canvas }: { canvas: HTMLCanvasElement }) {
 }
 
 function Board(p: Props) {
+  const large = p.variants.length > VIRTUAL_THRESHOLD
+  const [visible, setVisible] = useState<string[]>(() => [p.current ?? p.variants[0]?.id].filter((id): id is string => !!id))
   const [style, setStyle] = useState<Style>('both')
   const looks = STYLES.find(s => s.id === style)!.looks
   const [sizes, setSizes] = useState(['stage'])
@@ -43,6 +47,7 @@ function Board(p: Props) {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [retry, setRetry] = useState(0)
   const [progress, setProgress] = useState<number | null>(null), [notice, setNotice] = useState('')
+  const exportController = useRef<AbortController | null>(null), previewController = useRef<AbortController | null>(null)
   const stop = useRef(false), busy = useRef(false), live = useRef(true)
   const cache = useRef<Record<string, HTMLCanvasElement>>({})
   const composed = useRef(new Map<string, { raw: HTMLCanvasElement; style: string; canvas: HTMLCanvasElement }>())
@@ -55,20 +60,37 @@ function Board(p: Props) {
   const nameOf = (v: Subject) => names[v.id] ?? `${labelOf(v)} · ${v.name}`
   const keyOf = (v: Subject, s: ShotSize) => `${v.id}|${s.id}`
   const captureKey = `${variants.map(v => v.hash).join()}|${chosen.map(s => `${s.id}:${s.w}x${s.h}`).join()}|${p.dark}|${retry}`
+  const visibleKey = large ? visible.join('|') : ''
+  const prunePreviewCache = (active: Set<string>) => {
+    const keys = Object.keys(cache.current), limit = Math.max(8, active.size)
+    let count = keys.length
+    for (const key of keys) if (count > limit && !active.has(key)) { delete cache.current[key]; count-- }
+    return new Set(Object.values(cache.current))
+  }
   useEffect(() => {
-    const controller = new AbortController()
-    setRaws({}); setErrors({})
+    const controller = new AbortController(); previewController.current = controller
+    const subjects = large ? variants.filter(v => visible.includes(v.id)) : variants
+    const allowed = new Set(subjects.flatMap(v => chosen.map(s => keyOf(v, s))))
+    const captureKeys = new Set(subjects.flatMap(v => chosen.map(s => `${v.hash}|${s.w}x${s.h}|${p.dark}|${retry}`)))
+    if (large) {
+      // Drop every owning reference, including React state, when a preview leaves the window.
+      const retained = prunePreviewCache(captureKeys)
+      setRaws(previous => Object.fromEntries(Object.entries(previous).filter(([, canvas]) => retained.has(canvas))))
+      setErrors(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => allowed.has(key))))
+    } else { setRaws({}); setErrors({}) }
+    if (large && progress !== null) return () => controller.abort()
     void (async () => {
       // Make the context-menu target ready before preparing the other preview rows.
-      const order = [...variants].sort((a, b) => Number(b.id === p.current) - Number(a.id === p.current))
+      const order = [...subjects].sort((a, b) => Number(b.id === p.current) - Number(a.id === p.current))
       for (const v of order) for (const s of chosen) {
         if (controller.signal.aborted) return
         const k = keyOf(v, s), ck = `${v.hash}|${s.w}x${s.h}|${p.dark}|${retry}`
         try {
           const raw = cache.current[ck] ?? await captureRoute(v.hash, s, p.dark, controller.signal, v.tweaks)
           if (controller.signal.aborted) return
-          cache.current[ck] = raw
-          setRaws(a => ({ ...a, [k]: raw }))
+          delete cache.current[ck]; cache.current[ck] = raw
+          const retained = large ? prunePreviewCache(captureKeys) : new Set(Object.values(cache.current))
+          setRaws(a => ({ ...(large ? Object.fromEntries(Object.entries(a).filter(([, canvas]) => retained.has(canvas))) : a), [k]: raw }))
         } catch (e) {
           if (controller.signal.aborted) return
           setErrors(a => ({ ...a, [k]: e instanceof Error ? e.message : String(e) }))
@@ -76,53 +98,100 @@ function Board(p: Props) {
       }
     })()
     return () => controller.abort()
-  }, [captureKey])
-  useEffect(() => { live.current = true; return () => { live.current = false; stop.current = true } }, [])
-  const tiles = useMemo(() => variants.flatMap(v => chosen.flatMap(s => looks.map(look => {
+  }, [captureKey, visibleKey, large ? progress !== null : false])
+  useEffect(() => { live.current = true; return () => { live.current = false; stop.current = true; exportController.current?.abort(); previewController.current?.abort(); cache.current = {}; composed.current.clear() } }, [])
+  const tiles = useMemo(() => {
+    if (large) {
+      const keys = new Set(variants.flatMap(v => chosen.flatMap(s => raws[keyOf(v, s)] ? looks.map(look => `${keyOf(v, s)}|${look}`) : [])))
+      for (const key of composed.current.keys()) if (!keys.has(key)) composed.current.delete(key)
+    }
+    return variants.flatMap(v => chosen.flatMap(s => looks.map(look => {
     const raw = raws[keyOf(v, s)], key = `${keyOf(v, s)}|${look}`
     const style = JSON.stringify([nameOf(v), p.title, p.dark, tone])
     const previous = composed.current.get(key)
     const canvas = raw ? previous?.raw === raw && previous.style === style ? previous.canvas : compose(raw, look, { name: nameOf(v), title: p.title, dark: p.dark, tone }) : null
     if (raw && canvas) composed.current.set(key, { raw, style, canvas })
     return { v, s, look, key, canvas }
-  }))), [captureKey, raws, looks, tone, names])
+  })))
+  }, [captureKey, raws, looks, tone, names])
   const selected = (t: typeof tiles[number]) => !out.includes(t.v.id) && !skipped.includes(t.key)
-  const jobs = tiles.filter(selected), ready = jobs.length > 0 && jobs.every(t => t.canvas)
+  const jobs = tiles.filter(selected), prepared = jobs.length > 0 && jobs.every(t => t.canvas)
+  const ready = jobs.length > 0 && (large || prepared)
   const filename = (t: typeof tiles[number]) => `${filePart(p.slug)}-${filePart(t.v.id)}-${filePart(nameOf(t.v))}-${t.s.id}-${t.look}.png`
+  // Configuration changes invalidate prepared files; scrolling between preview windows does not.
+  useEffect(() => { setFiles([]); setNotice('') }, [captureKey, style, tone, names, out, skipped])
   // Prepare before the press: Web Share needs a fresh user gesture, including on Safari.
   useEffect(() => {
     let alive = true, timer = 0
-    setFiles([]); setNotice('')
-    if (ready && navigator.canShare && matchMedia('(max-width:639px)').matches) {
+    if (!large) { setFiles([]); setNotice('') }
+    if (prepared && navigator.canShare && matchMedia('(max-width:639px)').matches) {
       timer = window.setTimeout(() => {
         void Promise.all(jobs.map(async t => new File([await png(t.canvas!)], filename(t), { type: 'image/png' }))).then(next => { if (alive) setFiles(next) }).catch(() => {})
       }, 200)
     }
     return () => { alive = false; clearTimeout(timer) }
-  }, [tiles, out, skipped])
-  const close = () => { stop.current = true; p.onClose() }
-  const save = async () => {
+  }, [large ? captureKey : tiles, large ? style : '', large ? tone : '', large ? names : null, large ? prepared : false, out, skipped])
+  const cancel = () => { stop.current = true; exportController.current?.abort(); if (large) previewController.current?.abort() }
+  const close = () => { cancel(); p.onClose() }
+  // Only one raw capture and one composition are needed for an offscreen export. Never add
+  // export-only canvases to preview state or to the persistent preview cache.
+  const fileFor = async (t: typeof tiles[number], signal: AbortSignal, last: { key: string; raw: HTMLCanvasElement | null }) => {
+    signal.throwIfAborted()
+    const key = `${t.v.hash}|${t.s.w}x${t.s.h}|${p.dark}|${retry}`
+    const raw = t.canvas ? null : (last.key === key ? last.raw : null) ?? cache.current[key]
+      ?? await captureRoute(t.v.hash, t.s, p.dark, signal, t.v.tweaks)
+    if (raw) { last.key = key; last.raw = raw }
+    signal.throwIfAborted()
+    const canvas = t.canvas ?? compose(raw!, t.look, { name: nameOf(t.v), title: p.title, dark: p.dark, tone })
+    const blob = await png(canvas)
+    signal.throwIfAborted()
+    return new File([blob], filename(t), { type: 'image/png' })
+  }
+  const save = async (prepareShare = false) => {
     if (!ready || busy.current) return
     busy.current = true; stop.current = false; setProgress(0); setNotice('')
+    if (large) previewController.current?.abort()
+    const controller = new AbortController(); exportController.current = controller
+    const preparedFiles: File[] = [], last = { key: '', raw: null as HTMLCanvasElement | null }
     let done = 0
+    const failures: string[] = []
     try {
       for (const t of jobs) {
         if (stop.current) break
-        const blob = await png(t.canvas!)
-        if (stop.current) break
-        download(blob, filename(t)); done++
+        try {
+          const file = await fileFor(t, controller.signal, last)
+          if (stop.current) break
+          if (prepareShare) preparedFiles.push(file)
+          else download(file, filename(t))
+          done++
+        } catch (error) {
+          if (controller.signal.aborted || prepareShare) throw error
+          failures.push(`${nameOf(t.v)} (${t.s.label}, ${t.look})`)
+        }
         if (live.current) setProgress(done)
-        await new Promise(r => setTimeout(r, 350))
+        if (!prepareShare) await new Promise(r => setTimeout(r, 350))
       }
-      if (live.current) setNotice(stop.current ? `Stopped after ${done} of ${jobs.length} PNGs.` : `${done} PNG${done === 1 ? '' : 's'} sent to downloads.`)
-    } catch (e) { if (live.current) setNotice(`Download failed: ${e instanceof Error ? e.message : String(e)}`) }
-    finally { busy.current = false; if (live.current) setProgress(null) }
+      if (live.current) {
+        if (prepareShare && !stop.current) setFiles(preparedFiles)
+        setNotice(stop.current ? `Stopped after ${done} of ${jobs.length} PNGs.` : prepareShare ? `${done} PNG${done === 1 ? '' : 's'} ready to share.` : `${done} PNG${done === 1 ? '' : 's'} sent to downloads.${failures.length ? ` ${failures.length} failed: ${failures.join('; ')}.` : ''}`)
+      }
+    } catch (e) { if (live.current) setNotice(stop.current ? `Stopped after ${done} of ${jobs.length} PNGs.` : `Download failed: ${e instanceof Error ? e.message : String(e)}`) }
+    finally { busy.current = false; exportController.current = null; if (live.current) setProgress(null) }
   }
   const shareFiles = () => {
     if (busy.current || !files.length) return
     busy.current = true; setProgress(0)
     void navigator.share({ files, title: p.title }).catch(e => { if (live.current && e.name !== 'AbortError') setNotice(`Could not share: ${e.message}. Use Download PNGs.`) }).finally(() => { busy.current = false; if (live.current) setProgress(null) })
   }
+  const section = (v: Subject) => h('section', { key: v.id, 'data-share-variant': v.id },
+            h('div', { className: 'mb-2 flex items-center gap-2' }, h('span', { className: 'grid size-8 shrink-0 place-items-center rounded-lg bg-zinc-900 text-xs font-semibold text-white dark:bg-white dark:text-zinc-900' }, labelOf(v)),
+              h('label', { className: 'relative block min-w-0 max-w-sm flex-1' },
+                h('input', { 'aria-label': `Screenshot name for ${labelOf(v)}`, value: names[v.id] ?? '', placeholder: `${labelOf(v)} · ${v.name}`, dir: 'auto', onChange: (e: { target: { value: string } }) => setNames(a => ({ ...a, [v.id]: e.target.value })), className: 'h-10 w-full rounded-lg bg-zinc-900/[.04] ps-3 pe-9 text-[13px] text-zinc-900 outline-none ring-1 ring-inset ring-transparent placeholder:text-zinc-700 focus:bg-white focus:ring-proto-primary-ring dark:bg-white/[.06] dark:text-white dark:placeholder:text-zinc-300 dark:focus:bg-zinc-800' }),
+                h('span', { className: 'pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-zinc-400' }, icon('share-pencil'))),
+              h('button', { type: 'button', 'aria-label': `${out.includes(v.id) ? 'Include' : 'Leave out'} variant ${labelOf(v)}`, 'aria-pressed': !out.includes(v.id), onClick: () => setOut(a => flip(a, v.id)), className: IB }, icon(out.includes(v.id) ? 'eyeoff' : 'eye'))),
+            h('div', { className: 'grid grid-cols-2 gap-3 sm:grid-cols-3' }, ...tiles.filter(t => t.v.id === v.id).map(t => h('button', { key: t.key, type: 'button', 'data-share-tile': t.key, disabled: out.includes(v.id), 'aria-pressed': selected(t), 'aria-label': `${labelOf(v)}, ${t.s.label}, ${LOOKS.find(l => l.id === t.look)!.label}`, onClick: () => setSkipped(a => flip(a, t.key)), className: `overflow-hidden rounded-xl border border-black/10 bg-white text-start dark:border-white/10 dark:bg-zinc-900 ${selected(t) ? '' : 'opacity-40 grayscale'}` },
+              h('span', { className: 'flex aspect-[4/3] items-center justify-center bg-zinc-200/70 p-2 dark:bg-zinc-800' }, t.canvas ? h(Preview, { canvas: t.canvas }) : h('span', { className: 'px-2 text-center text-xs text-zinc-500' }, errors[keyOf(v, t.s)] ?? 'Preparing screenshot…')),
+              h('span', { className: 'flex min-h-10 items-center justify-between gap-2 px-2.5 text-[11px]' }, h('span', null, `${LOOKS.find(l => l.id === t.look)!.label} · ${t.s.label}`), selected(t) ? icon('picked') : null)))))
   return h(Dialog.Root, { open: true, onOpenChange: (open: boolean) => { if (!open) close() } },
     h(Dialog.Portal, { container: uiBox() },
       h(Dialog.Backdrop, { className: 'fixed inset-0 z-[300] bg-black/30 dark:bg-black/60' }),
@@ -141,20 +210,20 @@ function Board(p: Props) {
               ...(['soft', 'dark', 'brand'] as Tone[]).map(t => h('button', { key: t, type: 'button', 'data-share-tone': t, 'aria-pressed': tone === t, onClick: () => setTone(t), className: `h-8 min-w-0 flex-1 truncate rounded-[10px] px-2 text-xs font-medium ${tone === t ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'}` }, t === 'brand' ? 'Indigo' : t === 'soft' ? 'Soft' : 'Dark'))) : null,
             h('div', { role: 'group', 'aria-label': 'Screenshot sizes', className: 'flex flex-wrap gap-1.5' }, ...options.map(s => h('button', { key: s.id, type: 'button', 'data-share-size': s.id, 'aria-pressed': sizes.includes(s.id), onClick: () => setSizes(a => a.length === 1 && a.includes(s.id) ? a : flip(a, s.id)), className: `flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium ring-1 ring-inset ${sizes.includes(s.id) ? 'bg-proto-primary-soft text-proto-primary-soft-fg ring-proto-primary-ring/40' : 'text-zinc-600 ring-black/10 dark:text-zinc-300 dark:ring-white/15'}` },
               icon(`share-${s.id}`), s.label, s.id !== 'stage' ? h('span', { className: 'hidden tabular-nums opacity-60 sm:inline' }, s.w) : null)))),
-          h('div', { className: 'min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4 sm:px-6' }, ...variants.map(v => h('section', { key: v.id, 'data-share-variant': v.id },
-            h('div', { className: 'mb-2 flex items-center gap-2' }, h('span', { className: 'grid size-8 shrink-0 place-items-center rounded-lg bg-zinc-900 text-xs font-semibold text-white dark:bg-white dark:text-zinc-900' }, labelOf(v)),
-              h('label', { className: 'relative block min-w-0 max-w-sm flex-1' },
-                h('input', { 'aria-label': `Screenshot name for ${labelOf(v)}`, value: names[v.id] ?? '', placeholder: `${labelOf(v)} · ${v.name}`, dir: 'auto', onChange: (e: { target: { value: string } }) => setNames(a => ({ ...a, [v.id]: e.target.value })), className: 'h-10 w-full rounded-lg bg-zinc-900/[.04] ps-3 pe-9 text-[13px] text-zinc-900 outline-none ring-1 ring-inset ring-transparent placeholder:text-zinc-700 focus:bg-white focus:ring-proto-primary-ring dark:bg-white/[.06] dark:text-white dark:placeholder:text-zinc-300 dark:focus:bg-zinc-800' }),
-                h('span', { className: 'pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-zinc-400' }, icon('share-pencil'))),
-              h('button', { type: 'button', 'aria-label': `${out.includes(v.id) ? 'Include' : 'Leave out'} variant ${labelOf(v)}`, 'aria-pressed': !out.includes(v.id), onClick: () => setOut(a => flip(a, v.id)), className: IB }, icon(out.includes(v.id) ? 'eyeoff' : 'eye'))),
-            h('div', { className: 'grid grid-cols-2 gap-3 sm:grid-cols-3' }, ...tiles.filter(t => t.v.id === v.id).map(t => h('button', { key: t.key, type: 'button', 'data-share-tile': t.key, disabled: out.includes(v.id), 'aria-pressed': selected(t), 'aria-label': `${labelOf(v)}, ${t.s.label}, ${LOOKS.find(l => l.id === t.look)!.label}`, onClick: () => setSkipped(a => flip(a, t.key)), className: `overflow-hidden rounded-xl border border-black/10 bg-white text-start dark:border-white/10 dark:bg-zinc-900 ${selected(t) ? '' : 'opacity-40 grayscale'}` },
-              h('span', { className: 'flex aspect-[4/3] items-center justify-center bg-zinc-200/70 p-2 dark:bg-zinc-800' }, t.canvas ? h(Preview, { canvas: t.canvas }) : h('span', { className: 'px-2 text-center text-xs text-zinc-500' }, errors[keyOf(v, t.s)] ?? 'Preparing screenshot…')),
-              h('span', { className: 'flex min-h-10 items-center justify-between gap-2 px-2.5 text-[11px]' }, h('span', null, `${LOOKS.find(l => l.id === t.look)!.label} · ${t.s.label}`), selected(t) ? icon('picked') : null)))))))),
+          h('div', { 'data-share-scroll': '', className: 'min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4 sm:px-6' },
+            large ? h(CachedList<Subject>, {
+              items: variants, itemKey: v => v.id, render: section, cacheSize: 6, overscan: 1, gap: 24,
+              version: `${chosen.length}|${looks.length}`,
+              estimate: (_v, width) => { const columns = matchMedia('(min-width:640px)').matches ? 3 : 2; const count = chosen.length * looks.length; return 48 + Math.ceil(count / columns) * (((width - (columns - 1) * 12) / columns) * .75 + 42) + Math.max(0, Math.ceil(count / columns) - 1) * 12 },
+              initialIndex: Math.max(0, variants.findIndex(v => v.id === p.current)),
+              onVisible: subjects => { const next = subjects.map(v => v.id); setVisible(was => was.length === next.length && was.every((id, i) => id === next[i]) ? was : next) },
+            }) : variants.map(section))),
         h('footer', { className: 'shrink-0 space-y-2 border-t border-black/[.07] bg-white px-4 py-3 pb-[max(.75rem,env(safe-area-inset-bottom))] sm:px-6 dark:border-white/10 dark:bg-zinc-900' },
           h('div', { className: 'flex flex-wrap items-center justify-between gap-2' },
             h('p', { className: small, role: 'status' }, progress !== null ? `${progress} of ${jobs.length} PNGs` : notice || `${jobs.length} PNG${jobs.length === 1 ? '' : 's'} · saved one by one`),
             h('div', { className: 'flex gap-2' }, Object.keys(errors).length ? h('button', { type: 'button', disabled: progress !== null, className: button, onClick: () => { cache.current = {}; setRetry(n => n + 1) } }, 'Retry captures') : null,
-              progress !== null ? h('button', { type: 'button', className: button, onClick: () => { stop.current = true } }, 'Stop') : null,
+              progress !== null ? h('button', { type: 'button', className: button, onClick: cancel }, 'Stop') : null,
+              large && !files.length && navigator.canShare && matchMedia('(max-width:639px)').matches ? h('button', { type: 'button', disabled: !ready || progress !== null, className: button, onClick: () => void save(true) }, icon('share'), 'Prepare share') : null,
               files.length && navigator.canShare?.({ files }) ? h('button', { type: 'button', disabled: progress !== null, className: button, onClick: shareFiles }, icon('share'), 'Share files') : null,
               h('button', { type: 'button', 'data-share-download': '', disabled: !ready || progress !== null, onClick: () => void save(), className: 'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-proto-primary px-4 text-sm font-medium text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-40' }, icon('download'), `Download ${jobs.length} PNG${jobs.length === 1 ? '' : 's'}`))),
           progress !== null ? h('progress', { value: progress, max: jobs.length, 'aria-label': 'Download progress', className: 'block h-1 w-full accent-proto-primary' }) : null))))
