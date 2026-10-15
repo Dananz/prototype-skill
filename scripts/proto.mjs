@@ -62,6 +62,7 @@ import { createServer } from 'node:net'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { assignmentNeeded, isCurrent } from '../app/assignment.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 const APP = join(SKILL, 'app')
@@ -93,7 +94,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'off', 'done', 'wait', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -377,7 +378,7 @@ async function update(dir) {
   if (!changed.length && !deps) return
   if (deps) writeJson(pkgFile, pkg)
   console.log(`updated the app: ${changed.length} file${changed.length === 1 ? '' : 's'}${deps ? ', packages' : ''}`)
-  if (deps || changed.some(f => ['vite.config.mjs', 'server.mjs', 'source.mjs'].includes(f))) await stop(dir, 'updated')
+  if (deps || changed.some(f => ['vite.config.mjs', 'server.mjs', 'source.mjs', 'assignment.mjs'].includes(f))) await stop(dir, 'updated')
   if (deps) install(dir)
 }
 
@@ -487,6 +488,8 @@ function add() {
       }
     }
     set.from = refs[0]
+    if (flags['from-picks'] || (refs.length > 1 && flags.slot === undefined)) set.referenceOnly = true
+    else if (flags['reference-only'] !== true) drop.push('referenceOnly')
     if (refs.length > 1) set.also = refs.slice(1)
     else drop.push('also')
     if (flags['from-picks']) console.log(`from ${refs.join(', ')}`)
@@ -494,6 +497,12 @@ function add() {
   // A prototype made to stand in for one element of a variant: that variant must already hold the
   // element in a <Slot>, so the page has something to plug the pick into.
   let slotIn = null
+  if (flags['reference-only']) {
+    if (flags.slot !== undefined) die('--reference-only and --slot cannot be used together')
+    if (current().slot) die('this prototype already fills a slot; keep its connection with --slot')
+    if (!set.from && !current().from) die('--reference-only needs a parent (--from)')
+    set.referenceOnly = true
+  }
   if (flags.slot !== undefined) {
     if (!kit.slot) die('--slot needs the React stack for now')
     if (flags.slot === true || !/^[a-z][a-z0-9-]*$/.test(flags.slot)) die('--slot takes the slot\'s id, like cta')
@@ -502,6 +511,7 @@ function add() {
     const file = ['tsx', 'jsx'].map(x => join(dir, 'src', 'protos', parent, `${letter}.${x}`)).find(f => existsSync(f))
     if (!file || !new RegExp(`<Slot\\s+proto="${parent}"\\s+id="${flags.slot}"`).test(readFileSync(file, 'utf8'))) die(`${parent}/${letter} has no <Slot proto="${parent}" id="${flags.slot}" …>: wrap the element in it first (SKILL.md, "Plug a variant into what it was made from")`)
     set.slot = flags.slot
+    drop.push('referenceOnly')
     slotIn = { parent, letter, id: flags.slot }
   }
   const list = String(flags.variants || '').split(',').map(x => x.trim()).filter(Boolean)
@@ -553,6 +563,7 @@ function add() {
   }
   console.log(`${pdir}: ${Object.keys(meta.variants).map(id => `${id}.${kit.ext}`).join(' ') || 'no variants'}`)
   if (s.url) console.log(`${s.url}#/${slug}`)
+  if (kit.slot && typeof meta.from === 'string' && meta.from.includes('/') && !meta.slot && !meta.referenceOnly) console.log(`assignment needed: if these variants replace part of ${meta.from}, wrap that element in <Slot> and connect ${slug} with --from ${meta.from} --slot <id> before presenting them. Use --reference-only only for a separate design that uses the parent as a reference.`)
 }
 
 // A placeholder for a variant, from one of app/stubs/: its name kept on one line, which the
@@ -641,7 +652,7 @@ function closeWaiting(dir) {
   for (const id of batchesIn(dir, 'taken')) {
     const file = join(inboxDir(dir), 'taken', id, 'batch.json')
     const b = readJson(file, null)
-    const ready = (b?.comments || []).filter(c => c.until?.length && !c.done && !marksOf(building, c.until).length)
+    const ready = (b?.comments || []).filter(c => c.until?.length && !c.done && !marksOf(building, c.until).length && !pendingAssignment(dir, c))
     if (!ready.length) continue
     for (const c of ready) { c.done = true; closed.push(`${id}/${c.n}`) }
     b.done = b.comments.every(c => c.done)
@@ -658,7 +669,6 @@ const withMeta = (text, meta) => text.replace(/export default[\s\S]*$/, () => `e
 // into the prototype it was made from; the variant called Current, or no pick, is the original.
 // Says what it did ({ where, parent, letter, was, now }: `was` and `now` are the slot's `use`
 // before and after, '' for none), or null when nothing changed.
-const isCurrent = name => /^(current|as built)$/i.test(String(name || '').trim())
 function plug(dir, slug, meta, id, off) {
   if (!meta.slot || typeof meta.from !== 'string' || !id) return null
   const [parent, from] = meta.from.split('/')
@@ -742,6 +752,10 @@ function pick() {
   if (plugged) try { notePlug(dir, plugged, slug, letter) } catch { /* a trace in the history, never a failed pick */ }
   const back = flags.off || isCurrent(meta.variants?.[letter])
   console.log((flags.off ? `${slug}: no pick` : `${slug}: picked ${id} · ${meta.variants[id]}`) + (plugged ? ` · ${back ? 'original back in' : 'plugged into'} ${plugged.where}` : '') + (parents.length ? ` · also picked ${parents.join(', ')}` : ''))
+  if (!flags.off) {
+    const pending = assignmentNeeded(dir, slug, id)
+    if (pending) console.log(pending)
+  }
 }
 
 // ---------- the working variant ----------
@@ -1529,7 +1543,7 @@ function orphans(dir) {
     const file = join(inboxDir(dir), 'taken', id, 'batch.json')
     const b = readJson(file, null)
     if (!b?.takenBy?.pid || b.done || alive(b.takenBy.pid)) continue
-    const open = b.comments.filter(c => !c.done && !c.withdrawn && !c.reply && !c.until)
+    const open = b.comments.filter(c => !c.done && !c.withdrawn && ((!c.reply && !c.until) || c.assignment))
     if (!open.length) continue
     const now = agentPid()
     locked(dir, () => {
@@ -1675,6 +1689,25 @@ function printIntake(dir, b, c) {
   console.log(`   action: ${c.action} (${ACTIONS.intake})`)
 }
 
+function pendingAssignment(dir, c) {
+  if (c.action !== 'pick' || !c.assignment || c.done || c.withdrawn) return ''
+  const [slug, id] = c.route.split('/')
+  if (readMeta(dir, slug)?.picked !== id) return ''
+  return assignmentNeeded(dir, slug, id)
+}
+
+function actionText(dir, c) {
+  const suffix = standsIn(dir, c)
+  if (c.failed && FAILED[c.action]) return FAILED[c.action](c, c.failed) + suffix
+  if (c.action === 'pick' && c.assignment && !c.done) {
+    const [slug, id] = c.route.split('/')
+    if (readMeta(dir, slug)?.picked !== id) return 'the selection has changed; do not apply this earlier pick. Handle any note, then reply --done'
+    return `marked in the page and now the working variant; ${pendingAssignment(dir, c) || 'assignment is resolved; handle any note, then reply --done'}`
+  }
+  if (c.action === 'pick' && c.note && !c.done) return 'marked in the page and now the working variant; handle the note, then reply --done' + suffix
+  return (ACTIONS[c.action] || '') + suffix
+}
+
 function printBatch(dir, b) {
   const vp = b.viewport ? ` · page ${b.viewport.w}x${b.viewport.h}${b.viewport.phone ? ' (phone)' : ''}` : ''
   // A comment the user deleted in the page after sending it is withdrawn: left out, only counted.
@@ -1687,7 +1720,7 @@ function printBatch(dir, b) {
     if (c.re) for (const t of turnsBefore(dir, c.re)) console.log(t.gone ? `   earlier: ${t.gone} (no longer in the inbox)` : `   earlier: "${oneLine(t.text, 160)}"  ->  ${t.reply ? `${WHO[t.reply.by] ?? 'Claude'}: "${oneLine(t.reply.text, 160)}"` : 'no reply'}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
     if (c.action === 'more-variants') console.log(`   count: ${c.count} new variant${c.count === 1 ? '' : 's'}`)
-    if (c.action) console.log(`   action: ${c.action} (${c.failed && FAILED[c.action] ? FAILED[c.action](c, c.failed) : c.action === 'pick' && c.note && !c.done ? 'marked in the page and now the working variant; handle the note, then reply --done' : ACTIONS[c.action] || ''}${standsIn(dir, c)})`)
+    if (c.action) console.log(`   action: ${c.action} (${actionText(dir, c)})`)
     // A comment pinned with a long press is on a spot; its element is only where that spot is.
     if (c.point) console.log(`   at: ${c.point.x},${c.point.y} (a spot, pinned with a long press)`)
     // On the motion (the page's motion dock): a moment or a range of its take, and how to see it.
@@ -1847,6 +1880,11 @@ function reply() {
   // Every comment named is checked before the lock is taken: dying while holding it would leave it.
   const all = readJson(file, null)?.comments || []
   for (const k of pairs ? words.filter((w, i) => i % 2 === 0) : n ? [n] : []) if (!all.some(x => x.n === Number(k))) die(`batch ${ids[0]} has no comment ${k} (1-${all.length})`)
+  const targets = pairs ? all.filter(c => words.filter((w, i) => i % 2 === 0).includes(String(c.n))) : n ? all.filter(c => c.n === Number(n)) : all
+  if (flags.done) for (const c of targets) {
+    const pending = pendingAssignment(dir, c)
+    if (pending) die(`cannot mark ${ids[0]}/${c.n} done: ${pending}`)
+  }
   const comment = (b, k) => {
     const c = b.comments.find(x => x.n === Number(k))
     if (c.withdrawn) console.log(`(comment ${k} was withdrawn in the page: the user deleted it after sending)`)
@@ -1861,7 +1899,7 @@ function reply() {
     // that is building), or left open.
     const settle = c => {
       if (flags.done) c.done = true
-      else if (until) { c.until = until; if (!building) c.done = true }
+      else if (until) { c.until = until; if (!building && !pendingAssignment(dir, c)) c.done = true }
       answered.push(c)
     }
     if (pairs) {
@@ -1882,7 +1920,7 @@ function reply() {
     writeJson(file, b)
     // One line, as `proto done`'s. A comment left open shows "Claude is on it" until something closes it, so say so.
     const what = flags.done ? 'done'
-      : until ? (building ? `open until ${until.join(', ')} is built (${building} building)` : `done (nothing in ${until.join(', ')} is building)`)
+      : until ? (building ? `open until ${until.join(', ')} is built (${building} building)` : answered.some(c => !c.done) ? 'still open: assignment pending' : `done (nothing in ${until.join(', ')} is building)`)
       : answered.some(c => !c.done) ? 'still open in the page: --done closes it, or --until <slug> once that is built' : ''
     const head = pairs ? `replied to ${answered.map(c => c.n).join(', ')}` : text ? 'replied' : ''
     console.log(`${ids[0]}${n ? `/${n}` : ''}: ${[head, what].filter(Boolean).join(', ')}${b.done ? ' (batch done)' : ''}`)
@@ -1901,7 +1939,7 @@ function stillOpen(dir, skip) {
     for (const c of readJson(join(inboxDir(dir), 'taken', id, 'batch.json'), null)?.comments || []) {
       if (c.done || c.withdrawn) continue
       const left = c.until ? marksOf(building, c.until).length : 0
-      lines.push(`  ${id}/${c.n} "${clip(c.text, 50)}": ${c.until ? `closes itself when ${c.until.join(', ')} is built (${left} building)` : c.reply ? `replied "${clip(c.reply.text, 50)}", never closed` : 'not answered'}`)
+      lines.push(`  ${id}/${c.n} "${clip(c.text, 50)}": ${c.assignment ? actionText(dir, c) : c.until ? `closes itself when ${c.until.join(', ')} is built (${left} building)` : c.reply ? `replied "${clip(c.reply.text, 50)}", never closed` : 'not answered'}`)
     }
   }
   if (lines.length) console.log(`Still open from earlier (the page says "Agent is on it"); once each one's work is in: proto reply <batch>/<n> "…" --done\n${lines.join('\n')}\n`)

@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync, watch } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { assignmentNeeded, isCurrent } from './assignment.mjs'
 
 const dir = fileURLToPath(new URL('.', import.meta.url))
 const file = join(dir, 'session.json')
@@ -111,7 +112,6 @@ export function slotPointers() {
 // Current (or As built) is the original, and so is no pick, so those clear it. Undoing a pick
 // clears it only while it is that variant. Says what it did, or null when nothing changed:
 // the parent and the letter that holds the slot, and the `use` it had and has now ('' for none).
-const isCurrent = name => /^(current|as built)$/i.test(String(name || '').trim())
 function plug(slug, meta, id, off) {
   if (!meta.slot || typeof meta.from !== 'string') return null
   const [parent, from] = meta.from.split('/')
@@ -390,7 +390,8 @@ function receive(data) {
       const did = pick(c.route, c.action === 'unpick')
       if (did === 'nothing') Object.assign(c, { nothing: true, failed: `${letter} isn't the pick of ${slug}, so there was nothing to take back` })
       else {
-        if (c.action === 'pick' && c.note) c.marked = true
+        if (c.action === 'pick') c.assignment = assignmentNeeded(dir, slug, letter)
+        if (c.action === 'pick' && (c.note || c.assignment)) c.marked = true
         else c.done = true
         moved = did === 'moved' || moved
       }
