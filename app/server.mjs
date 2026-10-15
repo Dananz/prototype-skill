@@ -223,6 +223,16 @@ const readJson = (f, fallback) => { try { return JSON.parse(readFileSync(f, 'utf
 const readdirSyncSafe = path => { try { return readdirSync(path).filter(f => !f.startsWith('.')) } catch { return [] } }
 const list = sub => { try { return readdirSync(join(inbox, sub)).filter(f => !f.startsWith('.')) } catch { return [] } }
 
+// ---------- the intake: questions the agent asks before building, answered in the page ----------
+// `proto intake set` writes .proto/intake/current.json; the page shows it as its own screen until it
+// is answered. The answers come back as a batch in the inbox (one comment, action: intake), so the
+// agent hears of them the way it hears of comments.
+const intakeDir = join(dir, '.proto', 'intake')
+const intakeFile = join(intakeDir, 'current.json')
+const intakeNow = () => readJson(intakeFile, null)
+/** What a page may be told about the intake: the questions, and whether they wait for answers. */
+const intakeView = () => { const d = intakeNow(); return d && Array.isArray(d.questions) ? d : null }
+
 /** Where the inbox stands, for the page: what waits, whether an agent is listening, the batches' states. */
 export function inboxStatus() {
   const waiter = readJson(join(inbox, 'waiter.json'), null)
@@ -234,7 +244,7 @@ export function inboxStatus() {
       comments: b.comments.map(c => ({ n: c.n, route: c.route, action: c.action, done: !!c.done, ...(c.withdrawn ? { withdrawn: true } : {}), ...(c.action && c.target ? { scoped: true } : {}), reply: c.reply ?? null })),
     }
   }).filter(Boolean).sort((a, b) => a.at < b.at ? 1 : -1)
-  return { new: list('new').length, listening: !!waiter && alive(waiter.pid), agent: agent?.pid ? (alive(agent.pid) ? 'alive' : 'gone') : null, batches: batches.filter((b, i) => i < 20 || b.comments.some(c => ['try-it', 'copy-options'].includes(c.action) && !c.done && !c.withdrawn)) }
+  return { intake: intakeView(), new: list('new').length, listening: !!waiter && alive(waiter.pid), agent: agent?.pid ? (alive(agent.pid) ? 'alive' : 'gone') : null, batches: batches.filter((b, i) => i < 20 || b.comments.some(c => ['try-it', 'copy-options'].includes(c.action) && !c.done && !c.withdrawn)) }
 }
 
 const box = r => r && typeof r === 'object' ? { x: Math.round(+r.x || 0), y: Math.round(+r.y || 0), w: Math.round(+r.w || 0), h: Math.round(+r.h || 0) } : undefined
@@ -407,6 +417,62 @@ function receive(data) {
   return { batch, moved }
 }
 
+const INTAKE_FILE_MAX = 20 * 1024 * 1024
+/**
+ * The answers to the open intake, as one batch for the agent: a comment with action intake, whose
+ * `intake` holds the answers and where each file was saved. The questions are marked answered, so
+ * the page puts its own screen away.
+ */
+function receiveIntake(data) {
+  const cur = intakeNow()
+  if (!cur || cur.status !== 'open') throw Object.assign(new Error('there is no open intake to answer'), { status: 409 })
+  if (data.id !== cur.id) throw Object.assign(new Error('these answers are for another intake'), { status: 409 })
+  const known = new Map(cur.questions.map(q => [q.id, q]))
+  const answers = {}
+  for (const [qid, v] of Object.entries(data.answers && typeof data.answers === 'object' ? data.answers : {})) {
+    const q = known.get(qid)
+    if (!q || !Array.isArray(v)) continue
+    const vals = v.filter(x => typeof x === 'string').map(x => x.slice(0, q.kind === 'text' ? 2000 : 300)).slice(0, 40)
+    if (vals.length) answers[qid] = vals
+  }
+  const at = new Date().toISOString()
+  let id
+  do id = `${at.replace(/[-:]/g, '').replace(/\..*/, '')}-${randomBytes(2).toString('hex')}`
+  while (['new', 'taken', '.incoming'].some(sub => existsSync(join(inbox, sub, id))))
+  const files = [], saved = []
+  for (const f of Array.isArray(data.files) ? data.files.slice(0, 60) : []) {
+    const m = String(f?.dataUrl ?? '').match(/^data:([\w.+-]+\/[\w.+-]+);base64,(.+)$/)
+    const qid = typeof f?.question === 'string' ? f.question : ''
+    if (!m || !known.has(qid.split(':')[0])) continue
+    const bytes = Buffer.from(m[2], 'base64')
+    if (bytes.length > INTAKE_FILE_MAX) continue
+    const base = clip(String(f.name || 'file').replace(/[^\w.\- ]+/g, '_'), 80) || 'file'
+    const file = `${files.length + 1}-${base}`
+    files.push([file, bytes])
+    saved.push({ file, name: clip(f.name, 100) || base, type: m[1], question: qid.split(':')[0], for: qid.includes(':') ? qid.split(':')[1] : '' })
+  }
+  const answered = Object.keys(answers).length + new Set(saved.map(f => f.question)).size
+  const batch = {
+    id, at,
+    viewport: data.viewport && { w: +data.viewport.w || 0, h: +data.viewport.h || 0, phone: !!data.viewport.phone },
+    theme: data.theme === 'dark' ? 'dark' : 'light',
+    comments: [{
+      n: 1, route: 'intake', action: 'intake',
+      text: `Answered the questions (${Object.keys(answers).length} of ${cur.questions.length}${saved.length ? `, ${saved.length} file${saved.length > 1 ? 's' : ''}` : ''}).`,
+      intake: { id: cur.id, ask: cur.ask ?? '', questions: cur.questions.map(q => ({ id: q.id, title: q.title, kind: q.kind, options: (q.options ?? []).map(o => ({ id: o.id, label: o.label })) })), answers, decided: (Array.isArray(data.decided) ? data.decided : []).filter(x => known.has(x)), files: saved },
+      images: [],
+    }],
+  }
+  const folder = join(inbox, '.incoming', id)
+  mkdirSync(folder, { recursive: true })
+  for (const [file, bytes] of files) writeFileSync(join(folder, file), bytes)
+  writeFileSync(join(folder, 'batch.json'), JSON.stringify(batch, null, 2) + '\n')
+  mkdirSync(join(inbox, 'new'), { recursive: true })
+  moveDir(folder, join(inbox, 'new', id))
+  writeWhole(intakeFile, JSON.stringify({ ...cur, status: 'answered', answeredAt: at, batch: id, answered }, null, 2) + '\n')
+  return batch
+}
+
 /**
  * A sent comment the user deleted in the page: taken back. It is marked withdrawn (and done, so
  * its batch can finish without it) where it waits. A batch still in new/ that has nothing left is
@@ -523,6 +589,11 @@ export function prototypeServer(session) {
               activity = Date.now()
               try { got = receive(data) } catch (e) { return fail(e.status || 500, e.message) }
             }
+            let heard
+            if (route === '/intake') {
+              activity = Date.now()
+              try { heard = receiveIntake(data) } catch (e) { return fail(e.status || 500, e.message) }
+            }
             let took
             if (route === '/withdraw') {
               try { took = withdraw(data) } catch (e) { return fail(e.status || 500, e.message) }
@@ -530,7 +601,7 @@ export function prototypeServer(session) {
             // A send answers with its batch, whether a pick in it moved the working variant, and how
             // each decision in it went: done, or failed and why.
             const results = got && got.batch.comments.filter(c => c.action).map(c => ({ n: c.n, action: c.action, done: !!c.done, ...(c.failed ? { failed: c.failed } : {}), ...(c.marked ? { marked: true } : {}), ...(c.nothing ? { nothing: true } : {}) }))
-            const body = JSON.stringify(got ? { ...status(), sent: got.batch.id, moved: got.moved, results } : took ? { ...status(), withdrawn: took } : status())
+            const body = JSON.stringify(got ? { ...status(), sent: got.batch.id, moved: got.moved, results } : heard ? { ...status(), sent: heard.id } : took ? { ...status(), withdrawn: took } : status())
             res.setHeader('content-type', 'application/json')
             res.end(body)
             if (route === '/stop') setTimeout(() => stop('stopped from the page'), 100)
@@ -540,12 +611,14 @@ export function prototypeServer(session) {
       // .proto/ is outside Vite's watcher, so the inbox is watched here: a batch taken, a
       // reply written or a listener starting reaches every open page at once.
       mkdirSync(inbox, { recursive: true })
+      mkdirSync(intakeDir, { recursive: true })
       let pending
       const changed = () => { clearTimeout(pending); pending = setTimeout(() => server.ws.send({ type: 'custom', event: 'proto:inbox', data: inboxStatus() }), 100) }
       // A process that dies makes no file event: look again every few seconds for who is alive.
       let seen = ''
       setInterval(() => { const s = inboxStatus(), k = JSON.stringify([s.listening, s.agent, s.batches.map(b => b.state)]); if (seen && k !== seen) changed(); seen = k }, 5e3).unref()
       // A watched folder that is removed (the session deleted) raises an error event on Windows; it must not stop the server.
+      try { watch(intakeDir, changed).on('error', () => {}) } catch { /* the page's status ping still catches up */ }
       try { watch(inbox, { recursive: true }, changed).on('error', () => {}) } catch { /* no recursive watch here: the page's status ping still catches up */ }
       // A visible page pings every minute, so "idle" means no edits and nobody looking. Once
       // every prototype is picked or archived, nothing is left to decide: stop much sooner.

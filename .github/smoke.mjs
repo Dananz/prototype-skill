@@ -25,6 +25,7 @@ import { shootPinChecks } from './shoot-pin-checks.mjs'
 import { commentUntilChecks } from './comment-until-checks.mjs'
 import { hostLabelChecks } from './host-label-checks.mjs'
 import { listenerChecks } from './listener-checks.mjs'
+import { intakeChecks } from './intake-checks.mjs'
 import { pickNoteChecks } from './pick-note-checks.mjs'
 import { commentReplyThreadChecks } from './comment-reply-thread-checks.mjs'
 import { contextMenuChecks } from './context-menu-checks.mjs'
@@ -195,6 +196,7 @@ await shootPinChecks({ proto, app, local, fail })
 await commentUntilChecks({ proto, app, fail })
 await commentReplyThreadChecks({ proto, app, local, openPage, fail })
 await listenerChecks({ proto, app, fail })
+await intakeChecks({ proto, app, local, fail })
 await hostLabelChecks({ proto, app, local, openPage, fail })
 await pickNoteChecks({ proto, app, local, openPage, fail, keepShots })
 await contextMenuChecks({ proto, app, local, openPage, fail })

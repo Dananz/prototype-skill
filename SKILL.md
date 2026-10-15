@@ -91,6 +91,34 @@ Expo projects, Vue for Vue or Nuxt, React for anything else), it runs a Vite dev
 publishes it on the tailnet with `tailscale serve` when available, so that link opens on
 the user's phone too. Without Tailscale, use the printed local URL.
 
+## 1b. A new thing from scratch: ask first
+
+When the request builds something that doesn't exist yet and says little about it ("a website for my
+mom, she's a dentist", "an app for tracking my runs"), or you lack the context that would change
+what you design, ask before you plan. The answers are the difference between five directions near
+the mark and five guesses.
+
+Ask when there is **no Current, no kit and no brand source**, and the request leaves open who it is
+for, what its main job is, how it should feel, or what assets exist. Don't ask when the request
+already says those (a long brief, a repo or site to follow), when the user said to just build, or on
+a follow-up in a session that already has answers. A redesign of something that ships is answered by
+its screenshots (step 2), not by questions.
+
+```
+proto intake set <questions.json>      # then start `proto inbox --wait` in the background and stop
+```
+
+The page shows the questions as a screen of their own over the whole app, on one page, with a small
+demonstration on each visual choice, and the answers come back as an `intake` batch in `proto inbox`.
+**Don't build, plan or write a variant before they arrive.** Say in one line that the questions are in
+the page. Read `references/intake.md` first: what to ask (three to six questions, each one a decision
+you would otherwise guess), how to write the demonstrations, and how to use the answers.
+
+When the batch arrives: its printed answers are the brief's facts (a question the user left to you
+is yours to decide, and you say what you picked). Files they dropped are saved next to the batch:
+copy logos and photos into the app's `src/assets/`, and treat them as real assets (step 2.2). Reply
+`proto reply <batch>/1 "…" --done` with what you will build from, then go on to step 3.
+
 ## 2. Ground it in the real product: Current first
 
 When the request changes something that already exists (a screen, a tab, a component), variant
@@ -773,6 +801,7 @@ the text.
 | `more-variants` | nothing | on the prototype (the route is `<slug>`, no letter), with a `count` the user chose: that many new variants, continuing the letters (`proto add <slug> --variants "<next letters>:…"`), each a new direction, different from the existing ones and from each other; their note, if any, is the direction. Reply with what you are adding and `--until <slug>/<first letter>,…` (step 5) |
 | `build` | nothing | `proto pick` it if it isn't the pick, then step 7; reply when it is in |
 | `try-it` | queued only; no content generated yet | check that the request is not withdrawn; add useful `useHints` to this variant only (section 4), preserve its working flow, verify it, then reply `--done`; if it already has useful hints, reuse them |
+| `intake` | the answers are saved and the questions are marked answered; nothing is built | read the printed answers and the files beside them, decide what was left to you, reply `--done` with the brief you will build from, then plan the directions (step 3) |
 | `copy-options` | queued only; no alternatives generated yet | check that the request is not withdrawn; add `useCopy` to the requested lines in this variant only (headline and primary text/CTA without a note), current words first, verify fit, then reply `--done`; reuse existing options. One with an element and quoted words (highlighted in the page) is for those words only: one `useCopy` line on that element, not the headline and primary text |
 | `copy` | nothing (one comment per line changed since the last send, on that line's element; the text says option k of n, their own words, or back to today's words) | put the chosen words first in that line's `useCopy` options and keep the rest; then one `proto reply <batch> "…" --done` for the batch, in one line. The page drops its own choice once the words are first |
 
