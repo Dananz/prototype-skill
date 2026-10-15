@@ -27,6 +27,7 @@ for (const entry of ['page', 'CLI']) test(`${entry} parent picks preserve decisi
     if (entry === 'page') {
       const server = join(app, 'server.mjs')
       copyFileSync(join(skill, 'app/server.mjs'), server)
+      copyFileSync(join(skill, 'app/listener.mjs'), join(app, 'listener.mjs'))
       pick = (await import(pathToFileURL(server).href)).pickParents
     } else {
       pick = slug => {
