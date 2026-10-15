@@ -9,14 +9,16 @@ export async function splitChecks({ proto, app, local, openPage, fail, keepShots
   proto(['add', 'split', '--title', 'FINQKEEPER logo', '--variants', 'A:Stacked lenses,B:Isometric platters,C:Growth tails,D:Tilted coins'])
   for (const v of ['A', 'B', 'C', 'D']) writeFileSync(join(app, `src/protos/split/${v}.tsx`), `export default function ${v}() { return <main className="p-8"><h1>${v}</h1></main> }`)
   const wait = ms => new Promise(r => setTimeout(r, ms))
-  const until = async (f, why) => { for (const end = Date.now() + 5000; Date.now() < end; await wait(50)) { const v = await f(); if (v) return v } fail(`column separator: ${why}`) }
+  const until = async (f, why) => { for (const end = Date.now() + 5000; Date.now() < end; await wait(50)) { const v = await f(); if (v) return v } fail(`column separator: ${typeof why === 'function' ? await why() : why}`) }
   // Open the page with the sidebar's two columns showing, in the sidebar or (host = drawer) the tablet's drawer.
   const open = async (theme, host = 'side', size = {}) => {
     const page = await openPage(`${local}?theme=${theme}#/split/B`, size)
     const lists = `document.querySelectorAll('[data-${host}] [data-vlist]')`
     const widths = async () => JSON.parse(await page.run(`JSON.stringify([...${lists}].map(e => Math.round(e.getBoundingClientRect().width)))`))
     if (host === 'drawer') await page.run(`document.querySelector('[data-act="side:1"]').click()`)
-    await until(async () => (await widths()).length === 2, 'the sidebar did not show two columns')
+    // What the page showed instead, so a failure says why.
+    const showed = async () => `the ${host === 'side' ? 'sidebar' : host} did not show two columns (${JSON.stringify(await page.run(`(() => ({ hash: location.hash, ready: document.documentElement?.dataset.ready, host: !!document.querySelector('[data-${host}]'), lists: [...${lists}].map(e => e.dataset.k), size: [innerWidth, innerHeight] }))()`).catch(e => String(e)))})`
+    await until(async () => (await widths()).length === 2, showed)
     // Where the columns meet: the first column's right edge, a little down the list.
     const seam = async () => JSON.parse(await page.run(`(() => { const r = ${lists}[0].getBoundingClientRect(); return JSON.stringify([r.right, r.top + 120]) })()`))
     return { page, widths, seam }
