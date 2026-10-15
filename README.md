@@ -10,7 +10,7 @@
 **Several live, clickable versions of any UI, built while you watch.**
 
 [![Agents](https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20OpenCode-skill-4f46e5)](#requirements)
-[![License](https://img.shields.io/github/license/DananzMolt/prototype-skill?color=4f46e5)](LICENSE)
+[![License](https://img.shields.io/github/license/Dananz/prototype-skill?color=4f46e5)](LICENSE)
 [![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-1a1a1a)](#requirements)
 
 [Claude Code](#claude-code) &middot; [Codex](#codex) &middot; [Other agents](#other-agents) &middot; [Features](#features)
@@ -40,7 +40,7 @@ A remote container cannot reach a laptop's `localhost` directly.
 Install from the plugin marketplace:
 
 ```text
-/plugin marketplace add DananzMolt/prototype-skill
+/plugin marketplace add Dananz/prototype-skill
 /plugin install prototype@prototype-skill
 ```
 
@@ -57,7 +57,7 @@ Turn on auto-update under `/plugin` → Marketplaces → `prototype-skill`.
 <summary>Install without the plugin system</summary>
 
 ```sh
-git clone https://github.com/DananzMolt/prototype-skill ~/.claude/skills/prototype
+git clone https://github.com/Dananz/prototype-skill ~/.claude/skills/prototype
 ```
 
 Update with `git -C ~/.claude/skills/prototype pull --ff-only`. On Windows, use
@@ -73,7 +73,7 @@ Update with `git -C ~/.claude/skills/prototype pull --ff-only`. On Windows, use
 Clone the complete repository into the [user skill directory](https://learn.chatgpt.com/docs/build-skills):
 
 ```sh
-git clone https://github.com/DananzMolt/prototype-skill ~/.agents/skills/prototype
+git clone https://github.com/Dananz/prototype-skill ~/.agents/skills/prototype
 ```
 
 Then invoke the skill, or select it in the skill picker:
@@ -91,7 +91,7 @@ does not appear. For a project-only install, use `<project>/.agents/skills/proto
 In PowerShell:
 
 ```powershell
-git clone https://github.com/DananzMolt/prototype-skill "$HOME\.agents\skills\prototype"
+git clone https://github.com/Dananz/prototype-skill "$HOME\.agents\skills\prototype"
 ```
 
 On macOS or Linux, reuse an existing Claude checkout with a symlink:
@@ -113,7 +113,7 @@ Use a clone or a symlink at that destination, not both.
 [OpenCode](https://opencode.ai/docs/skills/) also discovers the shared skill directory:
 
 ```sh
-git clone https://github.com/DananzMolt/prototype-skill ~/.agents/skills/prototype
+git clone https://github.com/Dananz/prototype-skill ~/.agents/skills/prototype
 ```
 
 Ask it to use the skill:

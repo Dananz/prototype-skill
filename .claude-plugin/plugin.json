@@ -4,10 +4,10 @@
   "description": "Several live, clickable versions of any UI, built into one hot-reloading app per agent conversation with a link you can open on your phone.",
   "author": {
     "name": "Tomer Danan",
-    "url": "https://github.com/DananzMolt"
+    "url": "https://github.com/Dananz"
   },
-  "homepage": "https://github.com/DananzMolt/prototype-skill",
-  "repository": "https://github.com/DananzMolt/prototype-skill",
+  "homepage": "https://github.com/Dananz/prototype-skill",
+  "repository": "https://github.com/Dananz/prototype-skill",
   "license": "MIT",
   "keywords": ["prototype", "ui", "design", "variants", "vite", "hmr"]
 }
