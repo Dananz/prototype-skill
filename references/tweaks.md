@@ -34,11 +34,26 @@ export default function Variant() {
 A color is a six-digit hex string. It may provide `presets: [{ name: 'Forest',
 value: '#047857' }]`; otherwise the shell offers five starting colors and a custom picker.
 A select has string `options`; short sets are segmented, longer sets use a dropdown. A
-toggle has a boolean value. Any control may include a short `note`.
+toggle has a boolean value and renders as an on/off switch. Any control may include a short
+`note`.
 
 Useful cases: content state, light/dark design appearance, compact/comfortable density,
 editor/viewer access, long copy, or a feature being enabled. Implement the meaningful
 behavior first, then expose its values. Essential flows still work without opening Tweaks.
+
+Choose controls that answer a review question within the current design. Different layouts
+or interaction approaches belong in separate variants. Do not add a control just because
+its type is available, or add theme controls when appearance is not being evaluated.
+
+| Prototype | Useful controls, when those behaviors are implemented |
+| --- | --- |
+| Project list | Full / Empty / Loading / Error, long names, editor / viewer |
+| Checkout | Valid / invalid form, discount applied, payment failure |
+| Static composition study | Often none |
+
+Before finishing, exercise each control and its reset on desktop and mobile. Confirm it
+changes the actual preview, each reset restores its declared default, and the mobile dock
+opens the controls in a drawer.
 
 In Vue, use refs and a function so declarations update reactively:
 
