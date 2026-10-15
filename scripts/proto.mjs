@@ -488,7 +488,7 @@ function add() {
       }
     }
     set.from = refs[0]
-    if (flags['from-picks'] || (refs.length > 1 && flags.slot === undefined)) set.referenceOnly = true
+    if ((flags['from-picks'] || refs.length > 1) && flags.slot === undefined && !current().slot) set.referenceOnly = true
     else if (flags['reference-only'] !== true) drop.push('referenceOnly')
     if (refs.length > 1) set.also = refs.slice(1)
     else drop.push('also')
@@ -623,8 +623,8 @@ function done() {
   if (!args.length) die('which variant? proto done <slug>/<letter> (or <slug> for all of its variants)')
   const ended = endBuilding(dir, args)
   // One line: agents read this command's output through `tail -1`.
-  const closed = locked(dir, () => closeWaiting(dir))
-  console.log(`${ended.length ? `built: ${ended.join(', ')}` : `nothing was building there (${args.join(', ')})`}${closed.length ? ` · closed ${closed.join(', ')}` : ''}`)
+  const { closed, pending } = locked(dir, () => closeWaiting(dir))
+  console.log(`${ended.length ? `built: ${ended.join(', ')}` : `nothing was building there (${args.join(', ')})`}${closed.length ? ` · closed ${closed.join(', ')}` : ''}${pending.length ? ` · assignment pending for ${pending.join(', ')} (run proto inbox)` : ''}`)
 }
 
 // The Building marks among `building` that belong to each <slug>/<letter> (or every variant of a <slug>).
@@ -645,20 +645,23 @@ function endBuilding(dir, refs) {
 // A comment answered with `proto reply … --until <slug>` waits on that work, which the page shows
 // as "Claude is on it" with the reply. Once none of it is building, it is done. Without this, a
 // comment whose answer was a new prototype stayed "on it" after the prototype was built, since
-// nothing came back to close it. Returns the comments closed, as <batch>/<n>. Run under the lock.
+// nothing came back to close it. Returns closed and pending assignment refs. Run under the lock.
 function closeWaiting(dir) {
   const building = readSession(dir)?.building
-  const closed = []
+  const closed = [], pending = []
   for (const id of batchesIn(dir, 'taken')) {
     const file = join(inboxDir(dir), 'taken', id, 'batch.json')
     const b = readJson(file, null)
-    const ready = (b?.comments || []).filter(c => c.until?.length && !c.done && !marksOf(building, c.until).length && !pendingAssignment(dir, c))
+    const ready = (b?.comments || []).filter(c => c.until?.length && !c.done && !marksOf(building, c.until).length)
     if (!ready.length) continue
-    for (const c of ready) { c.done = true; closed.push(`${id}/${c.n}`) }
+    for (const c of ready) {
+      if (pendingAssignment(dir, c)) pending.push(`${id}/${c.n}`)
+      else { c.done = true; closed.push(`${id}/${c.n}`) }
+    }
     b.done = b.comments.every(c => c.done)
     writeJson(file, b)
   }
-  return closed
+  return { closed, pending }
 }
 
 // meta.ts with its object replaced. Through a function: a replacement string would read `$&` or `$$`
@@ -1702,7 +1705,7 @@ function actionText(dir, c) {
   if (c.action === 'pick' && c.assignment && !c.done) {
     const [slug, id] = c.route.split('/')
     if (readMeta(dir, slug)?.picked !== id) return 'the selection has changed; do not apply this earlier pick. Handle any note, then reply --done'
-    return `marked in the page and now the working variant; ${pendingAssignment(dir, c) || 'assignment is resolved; handle any note, then reply --done'}`
+    return `marked in the page; ${pendingAssignment(dir, c) || 'assignment is resolved or superseded by another choice; handle any note, then reply --done'}`
   }
   if (c.action === 'pick' && c.note && !c.done) return 'marked in the page and now the working variant; handle the note, then reply --done' + suffix
   return (ACTIONS[c.action] || '') + suffix
@@ -1920,7 +1923,7 @@ function reply() {
     writeJson(file, b)
     // One line, as `proto done`'s. A comment left open shows "Claude is on it" until something closes it, so say so.
     const what = flags.done ? 'done'
-      : until ? (building ? `open until ${until.join(', ')} is built (${building} building)` : answered.some(c => !c.done) ? 'still open: assignment pending' : `done (nothing in ${until.join(', ')} is building)`)
+      : until ? (building ? `open until ${until.join(', ')} is built (${building} building)${answered.some(c => pendingAssignment(dir, c)) ? '; assignment pending' : ''}` : answered.some(c => !c.done) ? 'still open: assignment pending' : `done (nothing in ${until.join(', ')} is building)`)
       : answered.some(c => !c.done) ? 'still open in the page: --done closes it, or --until <slug> once that is built' : ''
     const head = pairs ? `replied to ${answered.map(c => c.n).join(', ')}` : text ? 'replied' : ''
     console.log(`${ids[0]}${n ? `/${n}` : ''}: ${[head, what].filter(Boolean).join(', ')}${b.done ? ' (batch done)' : ''}`)

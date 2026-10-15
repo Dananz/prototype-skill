@@ -10,7 +10,7 @@ export function assignmentNeeded(dir, slug, id) {
   if (meta.referenceOnly || (!meta.slot && meta.also?.length) || typeof meta.from !== 'string' || !/^[a-z0-9][a-z0-9-]*\/[A-Z]{1,2}$/.test(meta.from)) return ''
   if (isCurrent(meta.variants?.[id])) return ''
   const refs = [meta.from, ...(meta.also || [])].join(',')
-  const repair = reason => `assignment pending in ${meta.from}: ${reason}. Use the user's request and this prototype's ask to determine whether it replaces a component or is a separate study. For a component replacement, connect the intended element with <Slot> and proto add ${slug} --from ${refs} --slot <id>, preserve the variant's props and behavior, then run proto pick ${slug} ${id} and verify it in ${meta.from}. For an intentionally separate design, record proto add ${slug} --reference-only instead. Handle any note, then reply --done`
+  const repair = reason => `assignment pending in ${meta.from}: ${reason}. Use the user's request and this prototype's ask to determine the intended component. Connect it with <Slot> and proto add ${slug} --from ${refs} --slot <id>, preserve the variant's props and behavior, then run proto pick ${slug} ${id} and verify it in ${meta.from}.${!meta.slot ? ` For an intentionally separate design, record proto add ${slug} --reference-only instead.` : ''} Handle any note, then reply --done`
   const session = JSON.parse(readFileSync(join(dir, 'session.json'), 'utf8'))
   if (session.stack && session.stack !== 'react') return ''
   if (!meta.slot) return repair('no slot was connected when these variants were created')
@@ -25,5 +25,7 @@ export function assignmentNeeded(dir, slug, id) {
     catch (e) { if (e.code !== 'ENOENT') return repair(`the parent source cannot be read (${e.code})`) }
   }
   if (!/^[a-z][a-z0-9-]*$/.test(meta.slot) || !new RegExp(`<Slot\\s+proto="${parent}"\\s+id="${meta.slot}"`).test(source)) return repair(`the parent no longer renders its ${meta.slot} slot`)
+  if (slot.use && slot.use.split('/')[0] !== slug) return `assignment pending in ${meta.from}: ${meta.slot} currently uses ${slot.use}. Read the inbox and history to identify the latest user choice; do not overwrite a newer pick. If this choice was superseded, run proto pick ${slug} --off, otherwise run proto pick ${slug} ${id} and verify it in ${meta.from}. Handle any note, then reply --done`
+  if (slot.use !== `${slug}/${id}`) return repair(`the ${meta.slot} slot is not using the chosen variant yet`)
   return ''
 }
