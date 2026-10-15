@@ -32,6 +32,8 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
   const pending = (a: Ask) => state.inbox?.batches.some(b => b.comments.some(c => c.route === `${subject.proto}/${subject.variant}` && c.action === a && !c.scoped && !c.done && !c.withdrawn))
   const sending = useRef(false)
   const [ask, setAsk] = useState<Ask | null>(null)
+  // The card's choice (the menu on a wide page): picked, it starts with nothing chosen.
+  const [choice, setChoice] = useState<'pick' | 'more' | 'build' | null>(subject.picked ? null : 'pick')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -65,12 +67,14 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
     const t = window.setTimeout(() => { setSaid(null); onDone?.() }, 1800)
     return () => clearTimeout(t)
   }, [said]) // eslint-disable-line react-hooks/exhaustive-deps
-  // As a menu, the first choice takes the focus, so P then Enter picks; the arrows move between them.
-  useLayoutEffect(() => { if (!sheet && !ask && !said) menu.current?.querySelector<HTMLElement>('[role=menuitem]')?.focus({ preventScroll: true }) }, [sheet, ask, said])
+  // As a card, the note takes the focus (a pick is chosen already), so P then ⌘↩ picks; the arrows move between the rows.
+  useLayoutEffect(() => { if (!sheet && !ask && !said) menu.current?.querySelector<HTMLElement>('textarea:not([disabled]), [role=menuitem]')?.focus({ preventScroll: true }) }, [sheet, ask, said])
   const arrows = (e: KeyboardEvent) => {
+    if ((e.key === 'Enter' && (e.metaKey || e.ctrlKey)) && choice && !(e.target as HTMLElement).closest('[data-shoot=vm-comment]')) { e.preventDefault(); void send(choice, note); return }
+    if ((e.target as HTMLElement).tagName === 'TEXTAREA') return
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
     e.preventDefault()
-    const items = [...menu.current!.querySelectorAll<HTMLElement>('[role=menuitem]:not([disabled])')], i = items.indexOf(document.activeElement as HTMLElement)
+    const items = [...menu.current!.querySelectorAll<HTMLElement>('[role=menuitem]:not([disabled]), [role=menuitemradio]:not([disabled])')], i = items.indexOf(document.activeElement as HTMLElement)
     items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
   }
   // In the note, Esc goes back to the choices instead of closing everything, and ⌘↩ sends.
@@ -106,19 +110,17 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
     </div>
   )
 
-  const extras = <div className="mt-2 border-t border-black/[.06] pt-2 dark:border-white/10">
-    <p className="px-2 pb-1 text-[11px] text-zinc-500">Ask {agent} for</p>
+  const extras = <div className="mt-2 border-t border-black/[.06] pt-1.5 dark:border-white/10">
     {(['try-it', 'copy-options'] as const).map(a => {
       const ready = a === 'try-it' ? subject.hints : subject.copy
       const waiting = pending(a)
-      // Ready, a row is the thing itself; before, it says what asking for it does.
+      // Ready, a row is the thing itself; before, it asks for it.
       const label = ready ? (a === 'try-it' ? 'Try it' : 'Copy options') : a === 'try-it' ? 'Needs explanation' : 'Generate copy options'
-      const about = a === 'try-it' ? 'what to try' : 'headline, text'
       return <button key={a} role={sheet ? undefined : 'menuitem'} data-request-extra={a} disabled={busy || waiting || ready}
         onClick={() => { setNote(''); setError(''); setAsk(a) }}
         className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-start text-[13px] hover:bg-zinc-900/[.04] disabled:text-zinc-400 dark:hover:bg-white/[.06]">
         <Icon name={ready && a === 'try-it' ? 'key' : ACTION[a].icon} className="size-4" /><span className="flex-1">{label}</span>
-        <span className="text-xs text-zinc-500">{ready ? 'Ready' : waiting ? 'Requested' : about}</span>
+        {(ready || waiting) && <span className="text-xs text-zinc-500">{ready ? 'Ready' : 'Requested'}</span>}
       </button>
     })}
     {(['try-it', 'copy-options'] as const).some(pending) && <p className="px-2 pb-1 text-xs text-zinc-500">Requests wait in Comments. Delete one there to cancel it.</p>}
@@ -148,6 +150,14 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
     )
   }
   const row = 'flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-start text-[13px] outline-none hover:bg-zinc-900/[.04] focus-visible:bg-zinc-900/[.06] disabled:opacity-50 dark:hover:bg-white/[.06] dark:focus-visible:bg-white/10'
+  const tile = 'flex flex-col items-center gap-1.5 rounded-xl px-1 py-3 text-xs font-medium outline-none ring-1 ring-inset focus-visible:ring-2 disabled:opacity-50'
+  const tileOff = 'text-zinc-600 ring-black/10 hover:bg-zinc-900/[.03] dark:text-zinc-300 dark:ring-white/10 dark:hover:bg-white/5'
+  const tileOn = 'bg-proto-primary-soft text-proto-primary-soft-fg ring-proto-primary-ring'
+  const choices = [
+    { id: 'more' as const, icon: 'more', label: 'More like this' },
+    { id: 'build' as const, icon: 'code', label: 'Build it' },
+  ]
+  const sendLabel = busy ? 'Sending…' : choice === 'pick' ? `Pick ${v}` : choice === 'more' ? 'Ask for more' : `Build ${v}`
   return (
     <div ref={menu} role="menu" aria-label={`${v} · ${subject.name}`} onKeyDown={arrows} className="p-1.5">
       <div className="flex min-w-0 items-center gap-1.5 px-2 pb-1 pt-1 text-[11px] text-zinc-500"><b className="font-semibold text-zinc-700 dark:text-zinc-200">{v}</b><span dir="auto" className="truncate">{subject.name}</span></div>
@@ -155,13 +165,24 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
       {onComment && <button role="menuitem" data-shoot="vm-comment" onClick={() => { onComment(); onDone?.() }} className={`${row} text-zinc-700 dark:text-zinc-200`}>
         <Icon name="frame" className="size-4" /><span className="flex-1">{commentLabel}</span><kbd className="shrink-0 font-sans text-xs text-zinc-400">⇧C</kbd>
       </button>}
-      <button role="menuitem" onClick={() => send(picked ? 'unpick' : 'pick')} disabled={busy} title={pickTitle} className={`${row} ${picked ? 'font-medium text-emerald-700 dark:text-emerald-400' : 'text-zinc-700 dark:text-zinc-200'}`}>
-        <Icon name={picked ? 'picked' : 'pick'} className="size-4" /><span className="min-w-0 flex-1 truncate">{pickLabel}</span>{picked && <span className="shrink-0 text-xs font-normal text-zinc-400">Undo</span>}
-      </button>
-      {!picked && <button role="menuitem" data-pick-note onClick={() => { setNote(''); setError(''); setAsk('pick') }} disabled={busy} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="check" className="size-4 opacity-0" /><span className="flex-1">Pick with a note…</span></button>}
-      <button role="menuitem" onClick={() => setAsk('more')} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="more" className="size-4" /><span className="flex-1">More like this…</span></button>
-      <button role="menuitem" onClick={() => setAsk('build')} className={`${row} text-zinc-700 dark:text-zinc-200`}><Icon name="code" className="size-4" /><span className="flex-1">Build it…</span></button>
-      {rows && rows.length > 0 && <div className="mt-1 border-t border-black/[.06] pt-1 dark:border-white/10"><MenuRows rows={rows} onAsk={() => {}} onDone={() => onDone?.()} /></div>}
+      <div className="px-0.5 pt-1">
+        <div className="grid grid-cols-3 gap-1.5">
+          {picked
+            ? <button role="menuitem" onClick={() => send('unpick')} disabled={busy} aria-pressed title={pickTitle} className={`${tile} bg-emerald-500/10 text-emerald-700 ring-emerald-500/30 dark:text-emerald-300`}><Icon name="picked" className="size-5" />Picked<span className="-mt-1 text-[10px] font-normal opacity-70">Undo</span></button>
+            : <button role="menuitemradio" data-pick-note aria-checked={choice === 'pick'} onClick={() => setChoice('pick')} disabled={busy} title={pickTitle} className={`${tile} ${choice === 'pick' ? tileOn : tileOff}`}><Icon name="pick" className="size-5" />Pick</button>}
+          {choices.map(c => <button key={c.id} role="menuitemradio" aria-checked={choice === c.id} onClick={() => setChoice(c.id)} disabled={busy} className={`${tile} ${choice === c.id ? tileOn : tileOff}`}><Icon name={c.icon} className="size-5" />{c.label}</button>)}
+        </div>
+        <div className="mt-2 rounded-lg ring-1 ring-inset ring-black/10 focus-within:ring-2 focus-within:ring-proto-primary-ring dark:ring-white/15">
+          <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={600} dir="auto" disabled={!choice || busy}
+            aria-label={choice ? `Note for ${NOTE[choice].title(v)}` : 'Note'} placeholder={choice ? NOTE[choice].hint : 'Choose what to do first'}
+            className="block w-full resize-none rounded-t-lg bg-transparent px-2.5 pb-1 pt-2.5 text-[13px] leading-5 outline-none placeholder:text-zinc-400 disabled:opacity-50 [@media(pointer:coarse)]:text-base" />
+          <div className="flex items-center justify-between gap-2 py-1.5 pe-1.5 ps-2.5">
+            <span className="flex items-center gap-1 text-[11px] text-zinc-500">{[MOD, 'Enter'].map(k => <kbd key={k} className="rounded border border-black/15 bg-zinc-900/[.04] px-1.5 py-px font-sans text-[10px] font-medium leading-4 text-zinc-600 dark:border-white/15 dark:bg-white/[.07] dark:text-zinc-300">{k}</kbd>)}sends</span>
+            <button data-send onClick={() => choice && send(choice, note)} disabled={!choice || busy} className={`inline-flex h-8 shrink-0 items-center rounded-md px-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}>{sendLabel}</button>
+          </div>
+        </div>
+      </div>
+      {rows && rows.length > 0 && <div className="mt-1 border-t border-black/[.06] pt-1 dark:border-white/10">{<MenuRows rows={rows} onAsk={() => {}} onDone={() => onDone?.()} />}</div>}
       {extras}
       {oops}
       <div className="mx-2 mt-1.5 border-t border-black/[.06] pb-1 pt-2 dark:border-white/10">{status}</div>
@@ -185,12 +206,12 @@ export function DecidePop({ open, anchor, subject, onClose, at: pointer, onComme
   if (!open || !subject || (!at && !pointer)) return null
   // A row's menu opens where it was asked for (its ⋯, or the pointer), kept inside the window; the bar's under its button.
   const place = pointer
-    ? { top: Math.max(8, Math.min(pointer.y, innerHeight - 420)), left: Math.max(8, Math.min(pointer.x, innerWidth - 296)) }
+    ? { top: Math.max(8, Math.min(pointer.y, innerHeight - 420)), left: Math.max(8, Math.min(pointer.x, innerWidth - 328)) }
     : { top: at!.bottom + 6, right: Math.max(8, innerWidth - at!.right) }
   // The shell closes it on Esc and on a click outside. A click inside goes no further: a choice
   // redraws the menu under it, and the shell would take a click on a removed button for one outside.
   return (
-    <div data-pop data-context-menu={pointer ? '' : undefined} onClick={e => e.stopPropagation()} onContextMenu={e => { if (pointer && !e.shiftKey) e.preventDefault() }} className="fixed z-40 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={place}>
+    <div data-pop data-context-menu={pointer ? '' : undefined} onClick={e => e.stopPropagation()} onContextMenu={e => { if (pointer && !e.shiftKey) e.preventDefault() }} className="fixed z-40 w-80 overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={place}>
       <Decide key={`${subject.proto}/${subject.variant}`} subject={subject} onDone={onClose} onComment={onComment} rows={rows} lead={lead} commentLabel={commentLabel} />
       {hint && <p className="border-t border-black/[.06] px-3.5 py-2 text-xs text-zinc-400 dark:border-white/10">{BROWSER_HINT}</p>}
     </div>

@@ -12,7 +12,9 @@ export async function settingsChecks({ proto, app, local, openPage, fail }) {
   }
   const click = selector => page.run(`document.querySelector(${JSON.stringify(selector)})?.click()`)
   const open = async () => {
-    await click('[data-act=settings]')
+    // Settings sits in the bar's ⋯ menu.
+    await click('[data-bar] [data-act="open:more"]:not([aria-expanded="true"])')
+    await click('[data-pop] [data-act=settings]')
     await until('!!document.querySelector("[data-settings-dialog]")', 'Settings did not open')
   }
   try {
@@ -106,9 +108,9 @@ export async function settingsChecks({ proto, app, local, openPage, fail }) {
     await page.key('Escape')
     await until('!document.querySelector("[data-settings-dialog]")', 'Escape did not close Settings')
     assert(await page.run('location.hash') === hash, 'Escape navigated away from the current place')
-    assert(await page.run('document.activeElement?.dataset.act === "settings"'), 'closing did not restore focus to Settings')
+    assert(await page.run('document.activeElement?.dataset.act === "open:more"'), 'closing did not restore focus to the menu that opened Settings')
     await page.run('location.reload()')
-    await until('!!document.querySelector("[data-act=settings]")', 'reload did not finish')
+    await until('!!document.querySelector("[data-bar] [data-act=\\"open:more\\"]")', 'reload did not finish')
     await open()
     assert(await page.run('localStorage.getItem("proto-theme") === "system"'), 'startup replaced system appearance with a fixed theme')
     await click('[data-settings-category=feedback]')
@@ -130,7 +132,7 @@ export async function settingsChecks({ proto, app, local, openPage, fail }) {
   proto(['done', 'settingsfx'])
   const focus = await openPage(`${local}#/settingsfx/A`)
   try {
-    await focus.run(`document.querySelector('[data-act=focus]').click()`)
+    await focus.run(`document.querySelector('[data-bar] [data-act="open:more"]').click(); document.querySelector('[data-act=focus]').click()`)
     await wait(300)
     await focus.run(`document.querySelector('[data-overlay] [data-act=settings]').click()`)
     await wait(200)
@@ -138,12 +140,12 @@ export async function settingsChecks({ proto, app, local, openPage, fail }) {
     await wait(200)
     assert(await focus.run(`document.activeElement?.closest('[data-overlay]') !== null && document.activeElement?.dataset.act === 'settings'`), 'focus did not return to the focus dock')
     assert(await focus.run(`getComputedStyle(document.querySelector('[data-zone]')).position === 'fixed'`), 'closing Settings left focus mode')
-    await focus.run(`document.querySelector('[data-act=unfocus]').click(); document.querySelector('[data-act="size:phone"]').click()`)
+    await focus.run(`document.querySelector('[data-act=unfocus]').click(); document.querySelector('[data-bar] [data-act="open:device"]').click(); document.querySelector('[data-act="size:phone"]').click()`)
     for (const end = Date.now() + 5000; Date.now() < end; await wait(50)) {
       if (await focus.run(`!!document.querySelector('[data-view] iframe')?.contentWindow?.__protoTheme`)) break
     }
     await focus.appearance('light')
-    await focus.run(`document.querySelector('[data-act=settings]').click()`)
+    await focus.run(`document.querySelector('[data-bar] [data-act="open:more"]:not([aria-expanded="true"])')?.click(); document.querySelector('[data-pop] [data-act=settings]').click()`)
     await wait(200)
     await focus.run(`document.querySelector('[data-settings-category=appearance]').click()` )
     await wait(50)
@@ -153,7 +155,7 @@ export async function settingsChecks({ proto, app, local, openPage, fail }) {
     await focus.appearance('dark')
     await wait(300)
     assert(await focus.run(`(() => { const w = document.querySelector('[data-view] iframe')?.contentWindow; return document.documentElement.classList.contains('dark') && w?.document.documentElement.classList.contains('dark') && w.__settingsInput === w.document.querySelector('input') && w.__settingsInput.value === 'Keep these words' })()`), 'system appearance lost the device-view input state')
-    await focus.run(`document.querySelector('[data-act=settings]').click()`)
+    await focus.run(`document.querySelector('[data-bar] [data-act="open:more"]:not([aria-expanded="true"])')?.click(); document.querySelector('[data-pop] [data-act=settings]').click()`)
     await wait(200)
     await focus.run(`document.querySelector('[data-settings-category=appearance]').click()` )
     await wait(50)

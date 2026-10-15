@@ -41,6 +41,7 @@ import { virtualVariantsChecks } from './virtual-variants-checks.mjs'
 import { virtualWindowChecks } from './virtual-window-checks.mjs'
 import { virtualReactChecks } from './virtual-react-checks.mjs'
 import { variantLabelsChecks } from './variant-labels-checks.mjs'
+import { headerChecks } from './header-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -214,6 +215,7 @@ await keyboardColumnsChecks({ proto, app, local, openPage, fail, keepShots })
 await slotChecks({ proto, app, local, openPage, fail })
 await middleDragChecks({ proto, app, local, openPage, fail })
 await variantLabelsChecks({ proto, app, local, openPage, fail })
+await headerChecks({ proto, app, local, openPage, fail })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
 proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--variants', 'A:Price only,B:Fuel tabs'])
@@ -763,6 +765,8 @@ export default function Q() {
 const near = (a, b, by) => typeof a === 'number' && Math.abs(a - b) <= by
 // The design's own document (in the view's frame on a wide page, else the page) and a box of an
 // element of it in the page's px, for checks that read or press the design itself.
+// The bar keeps Focus, Share and Settings behind its ⋯ menu.
+const OPEN_MORE = `document.querySelector('[data-bar] [data-act="open:more"][aria-expanded="false"]')?.click()`
 const HELPERS = `window.__D = () => window.__protoDesign?.()?.ownerDocument ?? document; window.__R = el => { const r = el.getBoundingClientRect(), f = el.ownerDocument === document ? null : el.ownerDocument.defaultView.frameElement; if (!f) return r; const o = f.getBoundingClientRect(), s = o.width / (f.offsetWidth || 1); return { x: o.left + r.x * s, y: o.top + r.y * s, width: r.width * s, height: r.height * s } }`
 const motionPage = await openPage(`${local}?theme=light#/move/A`)
 try {
@@ -850,7 +854,7 @@ try {
   if (tagMenu !== 'ok') fail(`the @ menu in the dock's composer: ${tagMenu}`)
   // Focus mode: the dock hides and lets the design go (it plays live); it comes back as it was.
   await run(`document.querySelector('[data-motion=curves]').click()`)
-  await run(`document.querySelector('[data-act=focus]').click()`)
+  await run(`${OPEN_MORE}; document.querySelector('[data-act=focus]').click()`)
   await until(`window.__protoMotion.state().live && getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h').trim() === '0px' && document.querySelector('[data-motion-dock]').hidden`, 'focus mode should hide the dock and let the design go', 5000)
   await run(`document.querySelector('[data-act=unfocus]').click()`)
   await until(`parseFloat(getComputedStyle(document.querySelector('[data-zone]')).getPropertyValue('--dock-h')) > 40 && document.querySelector('[data-motion=curves]')?.getAttribute('aria-pressed') === 'true'`, 'after focus mode the dock should come back as it was (curves on)', 5000)
@@ -928,7 +932,7 @@ try {
   await design('move/P', '[data-shoot=box]')
   for (let i = 0; i < 4; i++) {
     await run('window.__protoMotion.take()')
-    await run(`document.querySelector('[data-act=focus]').click()`)
+    await run(`${OPEN_MORE}; document.querySelector('[data-act=focus]').click()`)
     await until(`window.__protoMotion.state().live`, 'focus mode should let move/P go', 5000)
     await run(`document.querySelector('[data-act=unfocus]').click()`)
     await until(`!document.querySelector('[data-act=unfocus]') && !document.querySelector('[data-motion-dock]').hidden`, 'the dock should come back after focus mode', 5000)
@@ -1294,6 +1298,7 @@ try {
   // Focus mode keeps the copy bar (copy mode was turned on) and hides the dock, letting the design go.
   const focused = await deskBoth.run(`(async () => {
     ${until}
+    document.querySelector('[data-bar] [data-act="open:more"][aria-expanded="false"]')?.click()
     document.querySelector('[data-act=focus]').click()
     if (!await until(() => document.querySelector('[data-motion-dock]').hidden && window.__protoMotion.state().live)) return 'the dock should hide and let the design go'
     const bar = document.querySelector('[data-copy-bar]').getBoundingClientRect()
@@ -1447,14 +1452,17 @@ try {
   const r = await viewDesk.run(`(async () => {
     ${until}
     ${frameOf}
-    const tabs = await until(() => document.querySelector('[data-bar] [data-size-tabs]'), 8000)
-    if (!tabs) return 'the bar has no sizes'
+    const device = await until(() => document.querySelector('[data-bar] [data-act="open:device"]'), 8000)
+    if (!device) return 'the bar has no layout and zoom menu'
+    device.click()
+    const tabs = document.querySelector('[data-size-tabs]')
+    if (!tabs) return 'the layout menu has no sizes'
     // At rest the design is on the stage's own artboard, laid out for the stage's width: that layout is selected.
     const own = (w => w < 640 ? 'phone' : w < 1024 ? 'tablet' : 'desktop')(document.querySelector('[data-layers]').clientWidth)
     const sizes = [...tabs.querySelectorAll('[role=radio]')].map(b => b.dataset.act + '=' + b.getAttribute('aria-checked'))
     if (sizes.join() !== ['phone', 'tablet', 'desktop'].map(x => 'size:' + x + '=' + (x === own)).join()) return 'the bar should have phone, tablet and desktop, ' + own + ' (the stage\\'s) selected: ' + sizes.join()
     if (tabs.querySelector('[data-act="size:desktop"]').title !== 'Desktop · 1440 × 900') return 'the desktop size says ' + tabs.querySelector('[data-act="size:desktop"]').title
-    if (tabs.nextElementSibling?.dataset.act !== 'comment:toggle') return 'the sizes should come just before Comment'
+    if (device.parentElement.nextElementSibling?.dataset.act !== 'comment:toggle') return 'the layout menu should come just before Comment'
     tabs.querySelector('[data-act="size:phone"]').click()
     if (!await until(() => inFrame(), 15000)) return 'no page in a view'
     const url = new URL(frame().src)
@@ -1513,6 +1521,7 @@ try {
     if (!await until(() => pins() === 1)) return 'the comment should have its pin over the phone, has ' + pins()
     // Another size than the phone and the stage's own (which is the artboard, with no line for a chip).
     const own = (w => w < 640 ? 'phone' : w < 1024 ? 'tablet' : 'desktop')(document.querySelector('[data-layers]').clientWidth)
+    document.querySelector('[data-bar] [data-act="open:device"][aria-expanded="false"]')?.click()
     document.querySelector('[data-size-tabs] [data-act="size:' + (own === 'tablet' ? 'desktop' : 'tablet') + '"]').click()
     const chip = await until(() => document.querySelector('[data-view-other=phone]'))
     if (!chip || pins()) return 'on another size the pin should go and a chip lead back to the phone (' + pins() + ' pins)'
@@ -1585,7 +1594,7 @@ try {
   // It ends on the phone, which a desktop's stage never is (the tablet can be its own artboard).
   for (const step of ['size:phone', 'v:B', 'size:tablet', 'v:C', 'size:desktop', 'size:phone', 'v:A', 'size:tablet', 'v:B', 'size:phone', 'v:A', 'size:tablet', 'size:phone']) {
     const [k, a] = step.split(':')
-    const r = await viewFast.run(k === 'v' ? `(location.hash = '#/home/${a}', 'ok')` : `(() => { const b = document.querySelector('[data-size-tabs] [data-act="size:${a}"]'); if (!b) return 'no ${a} in the bar'; b.click(); return 'ok' })()`, 8000)
+    const r = await viewFast.run(k === 'v' ? `(location.hash = '#/home/${a}', 'ok')` : `(() => { document.querySelector('[data-bar] [data-act="open:device"][aria-expanded="false"]')?.click(); const b = document.querySelector('[data-size-tabs] [data-act="size:${a}"]'); if (!b) return 'no ${a} in the bar'; b.click(); return 'ok' })()`, 8000)
     if (r !== 'ok') fail(`switching fast with a view open, ${step}: ${r}`)
     await new Promise(r => setTimeout(r, 120))
   }

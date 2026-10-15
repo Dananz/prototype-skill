@@ -6,6 +6,9 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+// The layouts live in the bar's device menu: open it, then choose.
+const OPEN_DEV = `document.querySelector('[data-bar] [data-act="open:device"][aria-expanded="false"]')?.click()`
+
 export async function middleDragChecks({ proto, app, local, openPage, fail, keepShots = '', before = false }) {
   const assert = (ok, why) => { if (!ok) fail(`middle-button drag: ${why}`) }
   proto(['add', 'mdrag', '--title', 'Middle drag', '--variants', 'A:Board'])
@@ -87,17 +90,17 @@ export default function A() {
     assert(g1.fx + g1.fw >= g1.ax + 47 && g1.fy + g1.fh >= g1.ay + 47, `dragged far away the device left the area: its end is at ${Math.round(g1.fx + g1.fw - g1.ax)}, ${Math.round(g1.fy + g1.fh - g1.ay)}`)
 
     // 4. Fit from the zoom control puts it back in the middle.
-    await page.run(`document.querySelector('[data-act="open:scale"]')?.click()`)
+    await page.run(`document.querySelector('[data-act="open:device"]')?.click()`)
     await until(`!!document.querySelector('[data-act="scale:0"]')`, 'the zoom control has no Fit', 3000)
     await page.run(`document.querySelector('[data-act="scale:0"]').click()`)
     await wait(300)
     g1 = await page.run(geo)
     assert(near(g1.fx + g1.fw / 2, g1.ax + g1.aw / 2, 2), `Fit from the zoom control left the device ${Math.round(g1.fx + g1.fw / 2 - g1.ax - g1.aw / 2)} px off the middle`)
-    await page.run(`document.querySelector('[data-act="open:scale"][aria-expanded="true"]')?.click()`)
+    await page.run(`document.querySelector('[data-act="open:device"][aria-expanded="true"]')?.click()`)
 
     // 5. A phone in the view: dragged from beside it, it follows too; a trackpad zoom in and back to
     //    Fit keeps it where it was; nothing glides.
-    await page.run(`document.querySelector('[data-size-tabs] [data-act="size:phone"]').click()`)
+    await page.run(`${OPEN_DEV}; document.querySelector('[data-size-tabs] [data-act="size:phone"]').click()`)
     await until(`/^390 × 844/.test(document.querySelector('[data-view-line]')?.textContent ?? '')`, 'no phone in the view')
     await until(ready, 'the design never showed on the phone')
     await wait(400)
@@ -111,9 +114,9 @@ export default function A() {
     // Exercise both documents through CDP, including movement while only left remains down.
     const chordFailures = []
     for (const surface of ['iframe', 'stage']) {
-      await page.run(`document.querySelector('[data-act="open:scale"]').click()`)
+      await page.run(`document.querySelector('[data-act="open:device"]').click()`)
       await until(`!!document.querySelector('[data-act="scale:0"]')`, 'no Fit before the chord', 3000)
-      await page.run(`document.querySelector('[data-act="scale:0"]').click(); document.querySelector('[data-act="open:scale"][aria-expanded="true"]')?.click()`)
+      await page.run(`document.querySelector('[data-act="scale:0"]').click(); document.querySelector('[data-act="open:device"][aria-expanded="true"]')?.click()`)
       await wait(300)
       const start = await page.run(geo)
       const x = surface === 'iframe' ? start.fx + start.fw / 2 : start.fx + start.fw + 60
@@ -160,7 +163,7 @@ export default function A() {
     await page.mouse('mouseWheel', c[0], c[1], { button: 'none', deltaX: 0, deltaY: -60, modifiers: 2 })
     await until(`document.querySelector('[data-view] iframe').getBoundingClientRect().width > ${g1.fw + 20}`, 'the trackpad zoom did not enlarge the phone', 3000)
     await page.mouse('mouseWheel', c[0], c[1], { button: 'none', deltaX: 0, deltaY: 60, modifiers: 2 })
-    await until(`Math.abs(document.querySelector('[data-view] iframe').getBoundingClientRect().width - ${g1.fw}) < 1.5 && document.querySelector('[data-act="open:scale"]')?.textContent.includes('Fit')`, 'the trackpad zoom did not return to Fit', 3000)
+    await until(`Math.abs(document.querySelector('[data-view] iframe').getBoundingClientRect().width - ${g1.fw}) < 1.5 && document.querySelector('[data-act="open:device"]')?.textContent.includes('Fit')`, 'the trackpad zoom did not return to Fit', 3000)
     await wait(900)
     const g3 = await page.run(geo), g4 = (await wait(400), await page.run(geo))
     assert(g3.fx === g4.fx && g3.fy === g4.fy && !await animating(), 'after a trackpad zoom the phone kept moving: it should stay where the zoom left it')

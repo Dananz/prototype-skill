@@ -67,7 +67,9 @@ export async function commentWholeChecks({ proto, app, openPage, fail }) {
       b.click()
       const item = await until(() => document.querySelector('[data-shoot=vm-comment]'))
       if (!item) return 'the row menu has no Comment on this'
-      if (![...document.querySelectorAll('[role=menu] [role=menuitem]')].some(i => /Pick B/.test(i.textContent))) return 'the row menu has no Pick for its own variant'
+      const items = [...document.querySelectorAll('[role=menu] [role=menuitem], [role=menu] [role=menuitemradio], [role=menu] [data-send]')].map(i => i.textContent.trim())
+      if (!items.some(t => t === 'Pick' || t.startsWith('Picked') || t.startsWith('Pick '))) return 'the row menu has no Pick for its own variant: ' + JSON.stringify(items)
+      if (!document.querySelector('[role=menu] textarea[aria-label="Note for Pick B"]')) return 'the row menu card does not take a pick for B'
       document.querySelector('[data-shoot=vm-comment]').click()
       if (!await until(() => location.hash === '#/wholefx/B')) return 'Comment on this did not go to the variant'
       if (!await until(() => box() && document.activeElement === box())) return 'Comment on this did not put the cursor in the box'

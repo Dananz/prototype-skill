@@ -171,6 +171,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const systemTheme = matchMedia('(prefers-color-scheme: dark)')
   let settingsOpen = false, shareOpen = false
   let settingsOrigin: 'bar' | 'dock' = 'bar'
+  let settingsCategory: 'session' | 'shortcuts' | undefined
+  // Where the focus goes back to: the control that opened Settings (or, for a menu row, the menu's button).
+  let settingsReturn = '[data-act=settings]'
   const st = {
     place: { view: 'session' } as Place,
     focus: false,
@@ -195,7 +198,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     motion: false,
     stack: q.has('stack') ? q.get('stack') !== '0' : localStorage.getItem('proto-lobby') === 'stack',
     dark: q.get('theme') ? q.get('theme') === 'dark' : appearance === 'system' ? systemTheme.matches : appearance === 'dark',
-    copied: false,
     live: true,
     stopped: false,
     lastEdit: 0,
@@ -1013,18 +1015,38 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const scaleMenu = `<div class="space-y-1.5 p-2"><div class="flex gap-0.5 rounded-lg bg-zinc-900/[.04] p-0.5 dark:bg-white/[.06]">${SCALES.map(s => `<button data-act="scale:${s}" data-scale-seg="${s}" aria-pressed="${sc === s}" class="${segCls(sc === s)}">${s ? s + '%' : 'Fit'}</button>`).join('')}</div>
       <div class="flex items-center">${scaleStep(-5, 'minus', 'Smaller')}<input data-scale-range type="range" min="${scLo}" max="${scHi}" step="1" value="${sc || 50}" aria-label="${frameOn() ? 'Zoom' : 'Phone scale'}" class="${RANGE} ${sc ? '' : 'opacity-40'}" style="--p:${rangeAt(sc || 50)}%">${scaleStep(5, 'plus', 'Bigger')}</div></div>`
 
-    const row = (lead: string, body: string, end = '') => `<div class="flex min-h-10 items-center gap-3 rounded-lg px-2.5 py-2 text-[13px] text-zinc-700 dark:text-zinc-300">${lead}<div class="min-w-0 flex-1">${body}</div>${end}</div>`
+    // The layout the design is shown at and its zoom, in one menu: the three sizes with their
+    // dimensions, then the scale. The button says which layout and zoom are on.
+    const deviceBtn = () => {
+      if (!(viewOk() || phones || frameOn())) return ''
+      const on = st.open === 'device', fits = phones || frameOn()
+      const icon = viewOn() ? sizeIcon(st.view.size!, st.view.land) : frameOn() ? sizeIcon(shownSize() ?? 'desktop') : viewOk() ? sizeIcon(shownSize() ?? nativeOf(innerWidth)) : 'phone'
+      const label = fits ? scaleLabel() : '100%'
+      const sizes = viewOk() ? `<div role="radiogroup" aria-label="Layout" data-size-tabs class="p-1.5"><div class="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-zinc-400">Layout</div>${ORDER.map(s => {
+        const sel = shownSize() === s, land = s === 'tablet' && st.view.land, d = dims(s, land)
+        return `<button type="button" role="radio" aria-checked="${sel}" data-act="size:${s}" data-shoot="size-${s}" aria-label="${SIZES[s].name}" title="${sel && viewOn() ? `Leave the ${SIZES[s].name.toLowerCase()} view · Esc` : `${SIZES[s].name} · ${d.w} × ${d.h}`}" class="flex h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left hover:bg-zinc-900/[.04] dark:hover:bg-white/5 ${sel ? 'font-medium text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'}">${ic(sizeIcon(s, land), 'size-4 text-zinc-500 dark:text-zinc-400')}<span class="flex-1">${SIZES[s].name}</span><span class="text-xs tabular-nums text-zinc-400">${d.w} × ${d.h}</span>${sel ? ic('check', 'size-4') : '<span class="size-4"></span>'}</button>`
+      }).join('')}</div>` : ''
+      const zoom = fits ? `${sizes ? SEP : ''}<div class="px-3.5 pt-2.5 text-[11px] font-medium text-zinc-400">${frameOn() ? 'Zoom' : 'Phone scale'}</div>${scaleMenu}`
+        // On the stage the design is at its own size: the button stays, so choosing a layout doesn't move the bar.
+        : `${SEP}<p class="px-3.5 py-3 text-xs text-zinc-500">The design is at its full size here. Choose a layout to zoom it.</p>`
+      return `<div class="relative shrink-0"><button data-act="open:device" data-shoot="device" aria-haspopup="menu" aria-expanded="${on}" aria-label="Layout and zoom" title="${fits ? `${frameOn() ? 'Layout and zoom' : 'Phone scale'}` : 'Layout'}" class="${IB} text-xs tabular-nums ${on ? ON : ''}">${ic(icon)}<span data-scale-label${fits ? '' : ' class="opacity-60"'}>${label}</span>${ic('chev', 'size-3 opacity-60')}</button>${pop(on, `${sizes}${zoom}`, 'right-0 top-11 w-72')}</div>`
+    }
 
-    const keep = !!st.status?.keep
-    const sessionHead = `<div class="px-4 pb-2.5 pt-4"><div dir="auto" class="text-[15px] font-semibold">${esc(session.name)}</div><div class="mt-0.5 truncate text-xs text-zinc-500">${esc(session.path)} · started ${clock(session.createdAt)}</div></div>`
-    const sessionBody = `<div class="space-y-0.5 px-1.5 pb-1.5">
-        ${row(`<span class="grid size-4 place-items-center">${pulse('size-2', st.live && !st.stopped)}</span>`, st.stopped ? 'Stopped' : st.live ? `Live <span class="ml-1 text-xs text-zinc-400">${st.lastEdit ? `edited <span data-ago="${st.lastEdit}">${ago(st.lastEdit)}</span>` : 'waiting for edits'}</span>` : 'Reconnecting…')}
-        ${row(ic('link', 'size-4 text-zinc-400'), `<span class="block truncate">${esc((session.url || location.origin).replace(/^https?:\/\//, ''))}</span>`, `<button data-act="copy" class="h-7 shrink-0 rounded-md px-2 text-xs text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">${st.copied ? 'Copied' : 'Copy'}</button>`)}
-        ${lifecycle() ? row(ic('clock', 'size-4 self-start mt-0.5 text-zinc-400'), esc(lifecycle()).replace(' · ', '<span class="block text-xs leading-5 text-zinc-400">') + '</span>') : ''}
-      </div>${SEP}
-      <div class="p-1.5"><button data-act="settings" aria-haspopup="dialog" class="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-zinc-700 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/5">${ic('settings')}Settings<span class="ml-auto text-zinc-400">${ic('right', 'size-3.5')}</span></button></div>${SEP}
-      <div class="flex gap-2 p-3"><button data-act="keep" ${st.stopped ? 'disabled' : ''} class="h-9 flex-1 rounded-lg border border-black/10 text-xs font-medium hover:bg-zinc-900/[.03] disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5">${keep ? 'Don’t keep' : 'Keep forever'}</button><button data-act="stop" ${st.stopped ? 'disabled' : ''} class="h-9 flex-1 rounded-lg text-xs text-zinc-500 hover:bg-zinc-900/5 disabled:opacity-40 dark:hover:bg-white/10">Stop server</button></div>${st.failed?.at === 'session' ? `<p role="alert" class="-mt-1 mx-3 mb-3 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-xs text-rose-700 dark:text-rose-300">${esc(st.failed.text)}</p>` : ''}`
-    const sessionMenu = sessionHead + sessionBody
+    // Everything that is not the work of the moment: Focus, Share, the shortcuts, Settings.
+    const moreBtn = () => {
+      const on = st.open === 'more'
+      const row = (act: string, shoot: string, icon: string, label: string, kbd = '', cls = '') => `<button data-act="${act}" data-shoot="${shoot}" class="${cls || 'flex'} h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-zinc-700 hover:bg-zinc-900/[.04] dark:text-zinc-300 dark:hover:bg-white/5">${ic(icon, 'size-4 text-zinc-500 dark:text-zinc-400')}<span class="flex-1">${label}</span>${kbd ? `<kbd class="font-sans text-xs text-zinc-400">${kbd}</kbd>` : ''}</button>`
+      const rows = [
+        view === 'variant' ? row('focus', 'focus', 'grow', 'Focus mode', 'F', 'hidden [@media(hover:hover)]:flex') : '',
+        !framed && p ? row('share', 'share', 'share', 'Share screenshots…') : '',
+        row('settings:shortcuts', 'shortcuts', 'keyboard', 'Keyboard shortcuts'),
+        `<div class="mx-1 my-1 border-t border-black/[.06] dark:border-white/10"></div>`,
+        row('settings', 'settings', 'settings', 'Settings'),
+      ].join('')
+      // With the sidebar out of the way, the live dot (its mark carries it otherwise) rides here.
+      const dot = wide() && st.side ? '' : `<span class="absolute right-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span>`
+      return `<div class="relative shrink-0"><button data-act="open:more" data-shoot="more" aria-haspopup="menu" aria-expanded="${on}" aria-label="More" title="More" class="${IB} relative ${on ? ON : ''}">${ic('dots')}${dot}</button>${pop(on, `<div class="p-1.5">${rows}</div>`, 'right-0 top-11 w-60')}</div>`
+    }
 
     const protoRow = ({ p: q, depth }: { p: Proto; depth: number }) => { const on = q.id === p?.id && view !== 'session'; return `<button data-act="proto:${esc(q.id)}" aria-current="${on}" class="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left ${on ? 'bg-zinc-900/[.05] dark:bg-white/[.08]' : 'hover:bg-zinc-900/[.03] dark:hover:bg-white/5'}" style="padding-left:${10 + nestIndent(depth)}px">
         <span class="mt-[7px] flex size-1.5 shrink-0">${editing(q.id) ? pulse('size-1.5') : ''}</span>
@@ -1071,17 +1093,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${pop(st.open === 'switch', miller(), 'left-0 top-11')}</div>`
     const stepper = v && vs.length > 1 ? `<button data-act="step:-1" aria-label="Previous variant" title="Previous variant · ←" class="${IB} shrink-0">${ic('left')}</button><span class="w-9 shrink-0 text-center text-xs tabular-nums text-zinc-500">${at + 1}<span class="text-zinc-400 dark:text-zinc-600">/${vs.length}</span></span><button data-act="step:1" aria-label="Next variant" title="Next variant · →" class="${IB} shrink-0">${ic('right')}</button>` : ''
     keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="Show sidebar · ⌘\\" aria-label="Show sidebar">${ic('sidebar')}</button>
-      <div class="relative shrink-0"><button data-act="open:session" aria-label="Session" aria-expanded="${st.open === 'session'}" title="${esc(session.name)}" class="${IB} ${st.open === 'session' ? ON : ''}"><span class="relative grid size-5 shrink-0 place-items-center rounded bg-zinc-900 text-[10px] font-bold text-white dark:bg-white dark:text-zinc-900">${initial}<span class="absolute -right-1 -top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-2', st.live && !st.stopped)}</span></span></button>${pop(st.open === 'session', sessionMenu, 'left-0 top-11 w-[22rem] max-w-[calc(100vw-1rem)]')}</div>
       ${switcher}
       <div class="ml-auto flex shrink-0 items-center gap-1">
         ${stepper}${stepper && (view === 'variant' || viewOk() || commentHost() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${sizeTabs()}${commentBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${settingsBtn()}
-        ${phones || frameOn() ? `<div class="relative"><button data-act="open:scale" aria-expanded="${st.open === 'scale'}" aria-label="${frameOn() ? 'Zoom' : 'Phone scale'}" class="${IB} text-xs tabular-nums ${st.open === 'scale' ? 'bg-zinc-900/5 text-zinc-900 dark:bg-white/10 dark:text-white' : ''}">${ic(viewOn() ? sizeIcon(st.view.size!, st.view.land) : frameOn() ? sizeIcon(shownSize() ?? 'desktop') : 'phone')}<span data-scale-label>${scaleLabel()}</span></button>${pop(st.open === 'scale', scaleMenu, 'right-0 top-11 w-72')}</div>`
-          // On the stage the design is at its own size: the button stays, so choosing a layout doesn't move the bar.
-          : viewOk() ? `<button type="button" aria-disabled="true" aria-label="Zoom" title="The design is at its full size here. Choose a layout to zoom it" class="${IB} cursor-default text-xs tabular-nums opacity-40 hover:bg-transparent">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth)))}<span>100%</span></button>` : ''}
-        ${view === 'variant' ? `<button data-act="focus" aria-label="Focus mode" title="Focus mode · F" class="${IB.replace('inline-flex', 'hidden [@media(hover:hover)]:inline-flex')} shrink-0">${ic('grow')}</button>` : ''}
+        ${deviceBtn()}${commentBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${moreBtn()}
       </div></div>`)
-    menus = { protos: drill(), session: sessionBody }
+    menus = { protos: drill(), session: '' }
 
     // The switcher's dropdown: one column per level, scrolled to the last, and what is shown
     // described beside them.
@@ -1562,7 +1579,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
     const initial = esc((session.name.trim()[0] || 'P').toUpperCase())
     return `<div class="flex h-12 shrink-0 items-center gap-2 pl-3 pr-1.5">
-        <button data-act="lobby:session" title="Overview of the session" class="flex min-w-0 items-center gap-2"><span class="grid size-5 shrink-0 place-items-center rounded bg-zinc-900 text-[10px] font-bold text-white dark:bg-white dark:text-zinc-900">${initial}</span><span dir="auto" class="truncate font-semibold">${esc(session.name)}</span></button>
+        <button data-act="settings:session" data-shoot="session-name" aria-haspopup="dialog" title="Session settings" class="-ml-1 flex min-w-0 items-center gap-2 rounded-lg px-1 py-1 hover:bg-zinc-900/5 dark:hover:bg-white/10"><span class="relative grid size-5 shrink-0 place-items-center rounded bg-zinc-900 text-[10px] font-bold text-white dark:bg-white dark:text-zinc-900">${initial}<span class="absolute -right-1 -top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-2', st.live && !st.stopped)}</span></span><span dir="auto" class="truncate font-semibold">${esc(session.name)}</span></button>
         <button data-act="${inDrawer ? 'drawer:0' : 'side:0'}" class="${IB} ml-auto shrink-0" title="${inDrawer ? 'Close' : 'Hide sidebar · ⌘\\'}" aria-label="${inDrawer ? 'Close' : 'Hide sidebar'}">${ic(inDrawer ? 'x' : 'sidebar')}</button>
       </div>
       ${workStrip()}
@@ -1640,7 +1657,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         })
         return
       }
-      case 'settings': settingsOpen = true; st.open = null; st.menu = ''; st.drawer = false; render(); void refreshStatus(); return
+      case 'settings': settingsCategory = arg === 'session' || arg === 'shortcuts' ? arg : undefined; settingsOpen = true; st.open = null; st.menu = ''; st.drawer = false; render(); void refreshStatus(); return
       case 'tweaks': {
         if (!tweakList().length) return
         if (phoneMq.matches) { tweaksOpen = !tweaksOpen; trySheet = 'closed'; if (tweaksOpen) comments.escape(); closeCard(true) }
@@ -1686,7 +1703,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'asks': st.asks = !st.asks; return render()
       case 'variant': return go(keepIn(p!, arg))
       case 'step': return step(Number(arg))
-      case 'open': st.open = st.open === arg ? null : arg; st.copied = false; st.failed = null; recenter = true; if (arg === 'session' || arg === 'decide') refreshStatus(); return render()
+      case 'open': st.open = st.open === arg ? null : arg; st.failed = null; recenter = true; if (arg === 'session' || arg === 'decide') refreshStatus(); return render()
       case 'archived': st.archived = !st.archived; return render()
       case 'work': {
         const w = workOf()
@@ -1712,13 +1729,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       }
       case 'scale': return setScale(Number(arg))
       // The device view: a size, the tablet turned (its zoom is the scale control's, above).
-      case 'size': return pickSize(arg as Size)
+      case 'size': if (st.open === 'device') st.open = null; return pickSize(arg as Size)
       case 'turn': return patchView({ land: !st.view.land, zoom: 0 })
       case 'scalestep': { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || 50) + Number(arg)) / 5) * 5))) }
       case 'theme': return setTheme(arg === 'dark')
       case 'focus': if (st.place.view !== 'variant') return; st.focus = true; st.open = null; dock.hold = performance.now() + 1600; edge.hover = {}; render(); return fit()
       case 'unfocus': st.focus = false; st.open = null; edge.hover = {}; render(); return fit()
-      case 'copy': navigator.clipboard?.writeText(session.url || location.href); st.copied = true; return render()
       case 'keep': return post('keep', { keep: !st.status?.keep }, 'session')
       case 'stop': return post('stop', {}, 'session').then(got => { if (got) { st.stopped = true; render() } })
     }
@@ -1734,7 +1750,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       return
     }
     const [name, arg = '', arg2 = '', arg3 = ''] = el.dataset.act!.split(':')
-    if (name === 'settings') settingsOrigin = el.closest('[data-overlay]') ? 'dock' : 'bar'
+    if (name === 'settings') { settingsOrigin = el.closest('[data-overlay]') ? 'dock' : 'bar'; settingsReturn = el.closest('[data-pop]') ? '[data-bar] [data-act="open:more"]' : `[data-act="${el.dataset.act}"]` }
     // A row's own options (its ⋯): the same menu as right-click, beside the button.
     if (name === 'vm') {
       const r = el.getBoundingClientRect()
@@ -1869,6 +1885,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (e.key === 'Escape') {
       if (tweaksOpen) { e.preventDefault(); tweaksOpen = false; render(); return }
       if (tryEsc()) return
+      if (peek) { peek = false; paintHints(); return }
       if (trySheet === 'open') return setTrySheet('closed')
       if (comments.copy.escape()) return
       if (comments.escape()) return
@@ -1977,7 +1994,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const HINTS_W = 264
   const wideMq = matchMedia('(min-width: 1024px)')
   let hintsOpen = wideMq.matches && localStorage.getItem('proto-hints') !== '0'
-  let hintSaid = '', hintCopied = -1, hintTimer = 0, hintsDocked = false
+  let hintSaid = '', hintCopied = -1, hintTimer = 0, hintsW = 0
+  // Closed on a wide page the panel is a hairline on the edge; hovering or pressing it peeks the panel over the design.
+  let peek = false, peekTimer = 0
+  const EDGE_W = 12
   const hintHost = () => st.place.view === 'variant' && !st.place.tool ? layer?.el.querySelector<HTMLElement>('[data-mount]') ?? null : null
   // The design the tools work on: the one in the device view while it is on (it reports here, see
   // shared.ts), else the one on the stage. The page inside a view has none: the page outside runs them.
@@ -2110,10 +2130,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else if (e.key === 'Escape' && !e.defaultPrevented && viewOn()) patchView({ size: null, zoom: 0 })
   }
   /** The bar's three sizes: icons, the name and size on hover. */
-  const sizeTabs = () => !viewOk() ? '' : `<div role="radiogroup" aria-label="Layout" data-size-tabs class="me-1 flex shrink-0 gap-0.5 rounded-xl bg-zinc-900/[.05] p-0.5 dark:bg-white/[.07]">${ORDER.map(s => {
-    const on = shownSize() === s, land = s === 'tablet' && st.view.land, d = dims(s, land)
-    return `<button type="button" role="radio" aria-checked="${on}" data-act="size:${s}" data-shoot="size-${s}" aria-label="${SIZES[s].name}" title="${on && viewOn() ? `Leave the ${SIZES[s].name.toLowerCase()} view · Esc` : `${SIZES[s].name} · ${d.w} × ${d.h}`}" class="grid h-8 w-9 flex-none place-items-center rounded-[10px] transition-colors ${on ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-black/[.04] dark:bg-zinc-700 dark:text-white dark:ring-0' : 'text-zinc-600 hover:text-zinc-900 active:bg-zinc-900/5 dark:text-zinc-400 dark:hover:text-white'}">${ic(sizeIcon(s, land))}</button>`
-  }).join('')}</div>`
   const commentsKeyOf = () => { const c = comments.counts(); return JSON.stringify([c.drafts, c.total, c.picking, c.held, [...c.by]]) }
   let commentsKey = commentsKeyOf()
   const pillComments = () => commentHost() ? commentsKeyOf() : ''
@@ -2126,8 +2142,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const commentBtn = () => {
     if (!commentHost()) return ''
     const on = comments.counts().picking
-    // At rest an icon; while you are picking what to comment on, it says so, and how to stop.
-    return `<button data-act="comment:toggle" data-shoot="comment" aria-pressed="${on}" aria-label="Comment" title="${on ? 'Stop commenting · Esc' : `Comment on the design · C (${mac ? '⌥' : 'Alt'}-click comments on one thing)`}" class="hidden h-9 min-w-9 items-center justify-center gap-1.5 rounded-lg text-xs font-medium sm:inline-flex ${on ? 'bg-proto-primary px-2.5 text-proto-primary-fg hover:bg-proto-primary-hover' : 'text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'}">${ic('comment')}${on ? 'Click to comment<kbd class="rounded bg-white/20 px-1 font-sans text-[11px]">Esc</kbd>' : ''}</button>`
+    // At rest an icon; while you are picking what to comment on it fills in (no words), and
+    // hovering it shows the way out.
+    return `<button data-act="comment:toggle" data-shoot="comment" aria-pressed="${on}" aria-label="Comment" title="${on ? 'Stop commenting · Esc' : `Comment on the design · C (${mac ? '⌥' : 'Alt'}-click comments on one thing)`}" class="group/c relative hidden h-9 min-w-9 items-center justify-center rounded-lg sm:inline-flex ${on ? 'bg-proto-primary px-2 text-proto-primary-fg shadow-sm shadow-proto-primary/30 ring-4 ring-proto-primary/20 hover:bg-proto-primary-hover' : 'text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'}">${ic('comment', `size-4 transition-opacity ${on ? 'group-hover/c:opacity-0' : ''}`)}${on ? `<span class="absolute grid place-items-center opacity-0 transition-opacity group-hover/c:opacity-100">${ic('x')}</span>` : ''}</button>`
   }
   // The agent's questions are a screen of their own over the whole shell until they are answered.
   const intake = createIntake(root.querySelector<HTMLElement>('[data-intake]')!, {
@@ -2220,29 +2237,32 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (!d) return ''
     const on = st.open === 'decide'
     const say = d.picked ? `Picked ${d.label} · design actions, Try it and copy options` : 'Design actions: pick, more like this, Try it and copy options'
-    return `<button data-act="open:decide" data-decide-btn aria-haspopup="menu" aria-expanded="${on}" aria-label="${say}" title="${say} · P" class="${IB} ${on ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}">${ic('check')}<span class="hidden px-1 text-xs sm:inline">Actions</span></button>`
+    return `<button data-act="open:decide" data-decide-btn aria-haspopup="menu" aria-expanded="${on}" aria-label="${say}" title="${say} · P" class="${IB} gap-2 ${on ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}"><span class="size-2 shrink-0 rounded-full ${d.picked ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600'}"></span><span class="hidden text-xs sm:inline">${d.picked ? 'Picked' : 'Decide'}</span>${ic('chev', 'size-3 opacity-60')}</button>`
   }
   const settingsBtn = (status = false) => `<button data-act="settings" aria-label="Settings" aria-haspopup="dialog" title="Settings" class="${IB}${status ? ' relative' : ''}">${ic('settings')}${status ? `<span class="absolute right-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span>` : ''}</button>`
   const drawShare = createShare()
   const drawSettings = createSettings()
   function paintSettings() {
     drawSettings({
-      open: settingsOpen, appearance, live: comments.store.get().live, sidebar: st.side,
+      open: settingsOpen, category: settingsCategory, appearance, live: comments.store.get().live, sidebar: st.side,
       review: localStorage.getItem('proto-hints') !== '0', stack: st.stack,
       session: { host: agentName(session.agent), id: session.id, name: session.name, url: session.url || location.origin + '/', keep: !!st.status?.keep,
         server: st.stopped ? 'stopped' : st.live ? 'live' : 'reconnecting',
         listening: !!st.status?.inbox?.listening,
-        error: st.failed?.at === 'session' ? st.failed.text : null },
+        error: st.failed?.at === 'session' ? st.failed.text : null,
+        path: session.path, started: clock(session.createdAt), lastEdit: st.lastEdit || null,
+        idleHours: st.status?.idleHours ?? null,
+        deletes: st.status && !st.status.keep ? new Date(st.status.lastEdit + st.status.deleteDays * 864e5).toLocaleDateString([], { month: 'short', day: 'numeric' }) : null },
       onKeep: async keep => { await post('keep', { keep }, 'session') },
       onStop: async () => { await act('stop', '', '') },
-      onClose: () => { settingsOpen = false; render() },
+      onClose: () => { settingsOpen = false; settingsCategory = undefined; render() },
       onAppearance: setAppearance,
       onLive: on => { comments.act.setLive(on); paintSettings() },
       onSidebar: on => { st.side = on; remember('proto-side', on ? '1' : '0'); render() },
       onReview: on => { remember('proto-hints', on ? '1' : '0'); hintsOpen = wideMq.matches && on; if (!on) setTry(null); render() },
       onLayout: on => { act('stack', on ? '1' : '0', ''); paintSettings() },
       onResetWidths: () => { setSideW(SIDE_W); setSplit(SPLIT_W); render() },
-      returnFocus: () => [...(settingsOrigin === 'dock' ? overlay : bar).querySelectorAll<HTMLElement>('[data-act=settings]')].find(el => el.getClientRects().length > 0) ?? null,
+      returnFocus: () => [...(settingsOrigin === 'dock' ? overlay : root).querySelectorAll<HTMLElement>(settingsReturn)].find(el => el.getClientRects().length > 0) ?? bar.querySelector<HTMLElement>('[data-act="open:more"]'),
     })
   }
   const drawDecide = comments.mountDecide(root.querySelector<HTMLElement>('[data-decide]')!)
@@ -2491,12 +2511,22 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const shownTab = tabs.includes(tab) ? tab : tabs[0]
     const panelWidth = shownTab === 'tweaks' || tabs.length > 2 ? 320 : HINTS_W
     const docked = tabs.length > 0 && hintsOpen && wideMq.matches
-    zone.style.setProperty('--hw', docked ? `${panelWidth}px` : '0px')
-    if (docked !== hintsDocked) { hintsDocked = docked; requestAnimationFrame(fit) }
-    if (!tabs.length) { panel.className = 'hidden'; handles.innerHTML = ''; tryEl.innerHTML = ''; caveatEl.innerHTML = ''; return }
+    const edge = tabs.length > 0 && !hintsOpen && wideMq.matches
+    const w = docked ? panelWidth : edge ? EDGE_W : 0
+    zone.style.setProperty('--hw', `${w}px`)
+    if (w !== hintsW) { hintsW = w; requestAnimationFrame(fit) }
+    if (!tabs.length) { peek = false; panel.className = 'hidden'; handles.innerHTML = ''; tryEl.innerHTML = ''; caveatEl.innerHTML = ''; return }
+    const peeking = edge && peek
+    if (!edge) peek = false
     const count = tryCount(list)
     const c = comments.counts()
-    if (!hintsOpen) {
+    if (edge && !peeking) {
+      panel.className = 'hidden'
+      handles.innerHTML = `<button data-hint="peek" data-panel-edge data-shoot="panel-edge" aria-label="Show the side panel" aria-expanded="false" title="${tabs.includes('comments') ? 'Comments' : 'Try it'} · C" class="group absolute inset-y-0 right-0 z-20 grid w-3 place-items-center border-l border-black/[.07] hover:bg-proto-primary-soft dark:border-white/10"><span class="h-10 w-1 rounded-full bg-zinc-400/60 group-hover:bg-proto-primary dark:bg-zinc-500/60"></span>${c.total ? `<span class="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 text-[9px] font-semibold tabular-nums text-zinc-500">${c.total > 99 ? '99+' : c.total}</span>` : ''}</button>`
+      tryEl.innerHTML = ''
+      return
+    }
+    if (!hintsOpen && !peeking) {
       panel.className = 'hidden'
       handles.innerHTML = `<div class="absolute bottom-[calc(var(--pill-h,0px)+var(--dock-h,0px)+var(--copy-h,0px)+1rem)] right-0 z-20 flex flex-col items-end gap-2">
         ${tabs.includes('comments') ? `<button data-hint="open:comments" title="Comments on this design · C" class="${HANDLE}">${ic('comment', 'size-3.5 text-proto-primary-ring')}Comments${c.total ? `<span class="tabular-nums text-zinc-400">${c.total}</span>` : ''}</button>` : ''}
@@ -2507,7 +2537,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
     handles.innerHTML = ''
     const wide = wideMq.matches
-    panel.className = `absolute inset-y-0 right-0 z-20 flex flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 ${wide ? 'border-l border-black/[.07] dark:border-white/10' : 'w-[min(18rem,88%)] shadow-2xl shadow-black/30'}`
+    panel.className = `absolute inset-y-0 right-0 z-20 flex flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 ${peeking ? 'border-l border-black/10 shadow-2xl shadow-black/20 dark:border-white/10' : wide ? 'border-l border-black/[.07] dark:border-white/10' : 'w-[min(18rem,88%)] shadow-2xl shadow-black/30'}`
     panel.style.width = wide ? `${panelWidth}px` : ''
     // Never on two lines: docked, the panel is 264 px, which the two tabs and Fill in beside them
     // overran. Fill in is at the head of the values it types, To type.
@@ -2516,7 +2546,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       return `<button data-hint="tab:${t}" aria-pressed="${on}" class="inline-flex h-8 shrink-0 items-center ${tabs.length > 2 ? 'gap-1 px-1.5 text-[11px]' : 'gap-1.5 px-2.5 text-xs'} whitespace-nowrap rounded-md font-medium ${on ? 'bg-zinc-900/[.06] text-zinc-900 dark:bg-white/10 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}">${ic(t === 'comments' ? 'comment' : t === 'tweaks' ? 'tweaks' : 'key', `size-3.5 ${t === 'try' ? 'text-amber-500' : on ? 'text-proto-primary-ring' : ''}`)}${t === 'comments' ? 'Comments' : t === 'tweaks' ? 'Tweaks' : 'Try it'}${n ? `<span class="tabular-nums text-zinc-400">${n}</span>` : ''}</button>`
     }
     tabsEl.innerHTML = `${tabs.map(tabBtn).join('')}<span class="ml-auto"></span>
-      <button data-hint="close" class="${IB} h-7 min-w-7 shrink-0 px-1" aria-label="Close panel" title="Close">${ic(wide ? 'right' : 'x', 'size-3.5')}</button>`
+      ${peeking ? `<button data-hint="pin" data-shoot="panel-pin" class="${IB} h-7 min-w-7 shrink-0 px-1" aria-label="Keep the panel open" title="Keep open">${ic('pin', 'size-3.5')}</button>` : `<button data-hint="close" class="${IB} h-7 min-w-7 shrink-0 px-1" aria-label="Close panel" title="Close">${ic(wide ? 'right' : 'x', 'size-3.5')}</button>`}`
     cbody.hidden = shownTab !== 'comments'
     tryEl.hidden = shownTab !== 'try'
     tweakBody.hidden = shownTab !== 'tweaks'
@@ -2657,6 +2687,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const [what, a, c] = b.dataset.hint!.split(':'), list = hintList(), h = list[Number(a)]
     try {
       if (what === 'tab') selectPanelTab(a as typeof tab)
+      else if (what === 'peek') { clearTimeout(peekTimer); peek = !peek }
+      else if (what === 'pin') { peek = false; hintsOpen = true; remember('proto-hints', '1') }
       else if (what === 'open' || what === 'close') { if (what === 'open' && (a === 'comments' || a === 'try' || a === 'tweaks')) selectPanelTab(a); hintsOpen = what === 'open'; if (!hintsOpen) setTry(null); if (wideMq.matches) remember('proto-hints', hintsOpen ? '1' : '0') }
       else if (what === 'copy' && h?.kind === 'value') { navigator.clipboard?.writeText(valueOf(h)); hintCopied = Number(a); flash() }
       else if (what === 'fill') {
@@ -2709,6 +2741,22 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (trySheet === 'away' && !tryOn) { const to = tryPressed ? 'closed' : 'open'; queueMicrotask(() => { if (trySheet === 'away') setTrySheet(to) }) }
   }
   function tryEsc() { if (!tryOn) return false; setTry(null); return true }
+  const peekAway = () => {
+    clearTimeout(peekTimer)
+    peekTimer = window.setTimeout(() => {
+      if (!peek || panel.matches(':hover') || panel.contains(document.activeElement) || hintBox.querySelector('[data-panel-edge]:hover')) return
+      peek = false; paintHints()
+    }, 280)
+  }
+  hintBox.addEventListener('pointerover', e => {
+    if (e.pointerType !== 'mouse') return
+    const t = e.target as Element
+    if (t.closest('[data-panel-edge]')) { clearTimeout(peekTimer); if (!peek) { peek = true; paintHints() } }
+    else if (peek && t.closest('[data-panel]')) clearTimeout(peekTimer)
+  })
+  hintBox.addEventListener('pointerout', e => {
+    if (peek && e.pointerType === 'mouse' && (e.target as Element).closest('[data-panel-edge], [data-panel]')) peekAway()
+  })
   hintBox.addEventListener('pointerover', e => {
     const r = e.pointerType === 'mouse' && (e.target as Element).closest<HTMLElement>('[data-try-row]')
     if (!r) return
