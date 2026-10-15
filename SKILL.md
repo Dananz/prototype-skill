@@ -357,12 +357,14 @@ invented feature is never mistaken for one that ships.
 ## 4. Add the prototype, then build each variant
 
 ```
-proto add <slug> --title "Hero sections" --ask "<the user's request, in their words>" --variants "A:Current,B:Split media,C:Big price" [--kind phone] [--screen 402x874] [--from <slug>/<letter>[,<slug>/<letter>…] | --from-picks] [--slot <id>]
+proto add <slug> --title "Hero sections" --ask "<the user's request, in their words>" --variants "A:Current,B:Split media,C:Big price" [--kind phone] [--screen 402x874] [--from <slug>/<letter>[,<slug>/<letter>…] | --from-picks] [--slot <id> | --reference-only]
 ```
 
-`--from` is for a prototype built from part of an existing variant ("take the hero from
-home B further", then "now just that hero's CTA"): `proto add hero --from home/B …`, then
-`proto add cta --from hero/C …`. The page puts it in a column after that variant, the switcher's
+`--from` records where a prototype came from; it does not connect a replacement. For a prototype
+built from part of an existing variant ("take the hero from home B further", then "now just that
+hero's CTA"), create its slot first and pass `--slot` as described below. Use `--reference-only`
+only when the new prototype is intentionally a separate design and should not replace anything
+in the parent. The page puts it in a column after that variant, the switcher's
 second line shows the chain it came from, and the parent's overview links to it. `--from home`
 (no letter) nests it under the prototype as a whole.
 
@@ -372,7 +374,9 @@ design keeps first: `proto add mix --from layout/E,style/B …`. It nests under 
 page names the others after a plus wherever it says where a prototype came from, and each of
 their overviews links to it too. `--from-picks` uses every variant the user picked in this
 session (oldest prototype first, archived ones left out) and prints the list; it stops if
-nothing is picked yet. Say in `--ask` what the new design takes from each.
+nothing is picked yet. Compositions from several parents or `--from-picks` are reference-only
+by default, so choosing one does not insert the combined screen into its first parent. Say in
+`--ask` what the new design takes from each.
 
 **Plug a variant into what it was made from.** When the user points at one element of a variant
 and wants variants of it ("five more of this button"), the pick should replace that element
@@ -392,8 +396,12 @@ plugs a variant into `home/B` at once; picking Current, or taking the pick back,
 original. `home/B.tsx` is not edited, and a pick leaves nothing for you to do: the plug-in is
 logged in both variants' history, too. One written use is
 one slot (inside a loop it swaps every item); other variants and other uses of a shared component
-are untouched. Without `--slot` a prototype picks as before. `proto handoff home/B` builds the
-plugged-in design.
+are untouched. A component pick without `--slot` stays pending until connected or explicitly
+recorded as reference-only. `proto handoff home/B` builds the
+plugged-in design. Do this setup before presenting the variants. Do not wait for a pick or for
+the user to ask you to assign it. Check the registered slot, the parent's original rendering and
+the drop-ins' props before presenting the options; verify the replacement in its parent after
+the user makes their actual choice.
 
 This writes `src/protos/<slug>/meta.ts` and a "Building…" placeholder per variant, prints a
 direct link to the prototype (`…/#/<slug>`), and the page jumps there by itself. Then replace each placeholder file whole, one at a time,
@@ -620,7 +628,10 @@ sheet), and the note says why or what to change in it. A pick
 made in the page is already marked when you hear of it, as a comment with `action: pick` (see
 Comments from the page), its note as the comment's words: don't run `proto pick` again, and do
 what the note asks, then `proto reply <id> --done`. A pick with a note stays pending until then;
-a plain pick is already done.
+a plain pick is already done unless its line says `assignment pending`. In that case, finish the
+missing slot connection, run `proto pick` for the chosen variant, verify it in its parent, then
+reply `--done`. The user's pick already authorizes this work; do not ask them to create or assign
+it again. If it is intentionally only a reference, record `--reference-only` and acknowledge that.
 A pick in a prototype built `--from` a variant also picks that variant, and its own `from` up the
 chain (choosing a part of B means choosing B); `also` parents are left alone, and undoing a pick
 leaves the parents picked.
@@ -844,7 +855,7 @@ the text.
 
 | `action:` | Already done | You |
 |---|---|---|
-| `pick` | marked and the working variant (and plugged into its parent, when the prototype has a slot), unless its line says otherwise; with a note, the comment stays pending | handle or acknowledge the note, then `proto reply <id> --done`; plain picks are already done. When the line says it wasn't marked or the working variant didn't move, run the `proto pick` it names |
+| `pick` | marked and the working variant; a note or `assignment pending` keeps the comment open | finish any assignment repair the line names and verify the choice in its parent, handle the note, then `proto reply <id> --done`. For an intentionally separate design, record `--reference-only`. When the line says it wasn't marked or the working variant didn't move, run the `proto pick` it names |
 | `unpick` | the pick is off, and the comment done | nothing. When the line says nothing changed (that variant wasn't the pick), say so in a reply with `--done`; when it says it wasn't taken off, run the `proto pick … --off` it names |
 | `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you are adding and `--until <slug>/D,<slug>/E…` (step 5) |
 | `more-variants` | nothing | on the prototype (the route is `<slug>`, no letter), with a `count` the user chose: that many new variants, continuing the letters (`proto add <slug> --variants "<next letters>:…"`), each a new direction, different from the existing ones and from each other; their note, if any, is the direction. Reply with what you are adding and `--until <slug>/<first letter>,…` (step 5) |
@@ -870,7 +881,7 @@ When the user wants the prototypes in a doc or artifact to share: read `referenc
 | More takes on an existing prototype ("two more heroes") | `proto add <same slug> --variants "D:…,E:…"` |
 | Something new ("now the pricing page") | `proto add <new slug> …` |
 | Variations of one variant ("B but with a map") | new letters in the same prototype, named after B |
-| A part of one variant, explored on its own ("B's hero, but better") | `proto add <new slug> --from <slug>/B …` |
+| A part of one variant, explored as a separate study ("explore B's hero on its own") | `proto add <new slug> --from <slug>/B --reference-only …` |
 | Variants of one element that should replace it where it is ("more of this button") | lift it into a `<Slot>`, then `proto add <new slug> --from <slug>/<letter> --slot <id> …` |
 | Parts of several variants together ("E's layout with B's style") | `proto add <new slug> --from <slug>/E,<slug>/B …`, the one whose layout it keeps first |
 | One design from everything they picked ("a final design from all my picks") | `proto add <new slug> --from-picks …` |

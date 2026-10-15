@@ -221,7 +221,7 @@ await variantLabelsChecks({ proto, app, local, openPage, fail })
 await headerChecks({ proto, app, local, openPage, fail })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
-proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--variants', 'A:Price only,B:Fuel tabs'])
+proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--reference-only', '--variants', 'A:Price only,B:Fuel tabs'])
 proto(['add', 'home', '--from', 'hero/A'], { ok: false })
 proto(['add', 'cta', '--from', 'home/Z', '--variants', 'A:x'], { ok: false })
 const meta = readFileSync(join(app, 'src', 'protos', 'hero', 'meta.ts'), 'utf8')
