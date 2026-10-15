@@ -37,6 +37,7 @@
 //             request, or too little context): the page shows them as their own screen, and the answers
 //             arrive in `proto inbox` as an intake batch. See references/intake.md for the file's shape.
 //   proto intake [status] | clear   what is open and whether it was answered, or take the questions away
+//   proto inbox --listen <config.json> | --unlisten   one persistent wakeup subscription (url, id, threadId)
 //   proto inbox [--wait] [--timeout <min>]   comments sent from the page; --wait blocks until some arrive
 //   proto reply <batch>[/<n>] "…" [--done | --until <slug>[/<letter>]] [--as claude|codex|agent]   answer a comment (or a whole batch) in the page;
 //                                   --until keeps it open until that work is built (proto done closes it)
@@ -56,6 +57,7 @@
 // Optional PROTO_AGENT_PID (or CLAUDE_PID) identifies the long-lived agent for comment recovery.
 
 import { spawn, spawnSync } from 'node:child_process'
+import { listenerFile, listenerStatus, saveListener } from '../app/listener.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -93,7 +95,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover'])
+const SWITCHES = new Set(['from-picks', 'off', 'done', 'wait', 'unlisten', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -377,7 +379,7 @@ async function update(dir) {
   if (!changed.length && !deps) return
   if (deps) writeJson(pkgFile, pkg)
   console.log(`updated the app: ${changed.length} file${changed.length === 1 ? '' : 's'}${deps ? ', packages' : ''}`)
-  if (deps || changed.some(f => ['vite.config.mjs', 'server.mjs', 'source.mjs'].includes(f))) await stop(dir, 'updated')
+  if (deps || changed.some(f => ['vite.config.mjs', 'server.mjs', 'source.mjs', 'listener.mjs'].includes(f))) await stop(dir, 'updated')
   if (deps) install(dir)
 }
 
@@ -1772,6 +1774,28 @@ function intake() {
 async function inbox() {
   const dir = sessionDir()
   const s = need(dir)
+  if (flags.listen && (flags.wait || flags.unlisten)) die('--listen cannot be combined with --wait or --unlisten')
+  if (flags.unlisten) {
+    locked(dir, () => rmSync(listenerFile(dir), { force: true }))
+    return console.log('persistent listener removed; disable its host webhook task too')
+  }
+  if (flags.listen) {
+    const config = readJson(resolve(String(flags.listen)), null)
+    let url
+    try { url = new URL(config?.url) } catch { die('--listen needs a JSON file with { url, id, threadId }') }
+    if (!(url.protocol === 'https:' || url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) || url.username || url.password) die('listener URL must use HTTPS (HTTP is allowed only on loopback)')
+    if (typeof config.id !== 'string' || !config.id.trim() || typeof config.threadId !== 'string' || !config.threadId.trim()) die('listener config needs its host task id and owning threadId')
+    const refusal = locked(dir, () => {
+      const was = readJson(listenerFile(dir), null), waiter = readJson(waiterFile(dir), null)
+      if (was && (was.id !== config.id || was.url !== config.url || was.threadId !== config.threadId)) return 'one persistent listener is already registered; reuse it, or --unlisten before switching owners'
+      if (waiter && alive(waiter.pid)) return 'a background waiter is already listening; cancel that harness job before switching to a persistent listener'
+      saveListener(dir, { url: config.url, id: config.id, threadId: config.threadId, session: sessionId() })
+    })
+    if (refusal) die(refusal)
+    return console.log(`persistent listener registered (${config.id}); reused across comments and server restarts`)
+  }
+  const persistent = listenerStatus(dir)
+  if (flags.wait && persistent.configured) return console.log(`persistent listener already registered (${persistent.id}); no background waiter needed${persistent.error ? `; retrying: ${persistent.error}` : ''}`)
   if (!flags.wait) {
     const lost = orphans(dir)
     const got = [...lost, ...take(dir)]
@@ -1779,16 +1803,20 @@ async function inbox() {
     if (!got.length) console.log('no new comments')
     stillOpen(dir, got.map(b => b.id))
     const w = readJson(waiterFile(dir), null)
-    console.log(w && alive(w.pid) ? `listening (pid ${w.pid})` : 'not listening: run `proto inbox` on active turns; use `proto inbox --wait` only with a supported background wakeup')
+    console.log(persistent.configured ? `persistent listener (${persistent.id})${persistent.error ? `; retrying: ${persistent.error}` : '; listening'}` : w && alive(w.pid) ? `listening (pid ${w.pid})` : 'not listening: run `proto inbox` on active turns; use `proto inbox --wait` only with a supported background wakeup')
     return
   }
-  const w = readJson(waiterFile(dir), null)
-  if (w && alive(w.pid) && w.pid !== process.pid) return console.log(`already listening (pid ${w.pid}); nothing to do`)
   // Comments a session that ended took and never answered come first, as an arrival does.
   const lost = orphans(dir)
   if (lost.length) { lost.forEach(b => printBatch(dir, b)); stillOpen(dir, lost.map(b => b.id)); return }
   const minutes = Number(flags.timeout) || 115
-  writeJson(waiterFile(dir), { pid: process.pid, at: new Date().toISOString(), until: new Date(Date.now() + minutes * 60e3).toISOString() })
+  const existing = locked(dir, () => {
+    const w = readJson(waiterFile(dir), null)
+    if (readJson(listenerFile(dir), null)) return 'persistent listener already registered; no background waiter needed'
+    if (w && alive(w.pid) && w.pid !== process.pid) return `already listening (pid ${w.pid}); nothing to do`
+    writeJson(waiterFile(dir), { pid: process.pid, at: new Date().toISOString(), until: new Date(Date.now() + minutes * 60e3).toISOString() })
+  })
+  if (existing) return console.log(existing)
   const done = () => { const now = readJson(waiterFile(dir), null); if (now?.pid === process.pid) rmSync(waiterFile(dir), { force: true }) }
   for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, () => { done(); process.exit(0) })
   console.log(`listening for comments on ${s.url || s.localUrl || 'the page'}`)

@@ -78,8 +78,8 @@ critic pass yourself. Never invent tool names, unavailable model IDs or backgrou
 For image generation, use the available tool's supported execution and file-export mechanism;
 background work is optional. Save its outputs in the app's `src/assets/` before final QA.
 If the harness cannot inspect images, report that visual QA is blocked rather than claiming
-that screenshots match. Start a comment listener only if background completion reaches this
-conversation; otherwise use `proto inbox` at the start and end of active turns (details below).
+that screenshots match. Start a comment listener using a persistent event subscription or background completion
+that reaches this conversation; otherwise use `proto inbox` at the start and end of active turns (details below).
 
 ## 1. Start the session app, then send the link
 
@@ -114,7 +114,7 @@ a follow-up in a session that already has answers. A redesign of something that 
 its screenshots (step 2), not by questions.
 
 ```
-proto intake set <questions.json>      # then start `proto inbox --wait` in the background and stop
+proto intake set <questions.json>      # then connect the session's single comment listener and stop
 ```
 
 The page shows the questions as a screen of their own over the whole app, on one page, with a small
@@ -677,13 +677,45 @@ needs it; Comments does not use it as a display name. Existing comments keep the
 about it only when you read the inbox. **At the start and end of every active prototype turn,
 run `proto inbox`** and handle pending requests before finishing.
 
-When the harness supports background jobs whose completion wakes this conversation, also
-start `proto inbox --wait` in that mechanism at the end of the turn. Use a timeout supported
-by the harness (`--timeout <minutes>`, default 115). It exits when a batch arrives; process
-that batch and rearm it. If one is already listening it says so and exits; leave it.
-Do not block the foreground turn waiting for future comments. Without a background wakeup,
-comments persist until the next turn: tell the user to send a chat message to have them read.
-Do not promise automatic reactions while the agent is idle.
+**Keep one listener for the entire session, including while handling comments.** Prefer a
+persistent event subscription when the harness supports one. Never add a listener agent,
+helper conversation, recurring polling task, or a second subscription for the same app.
+
+**T3 Code:** use its `schedule_task` webhook to wake this conversation on each comment send.
+This is one persistent subscription, with no waiting agent and no inactivity timeout:
+
+1. Run `list_scheduled_tasks` first and reuse the enabled webhook for this project/session
+   and owning thread. Keep its task ID across compaction. Never create one per turn or batch.
+2. If none exists, create one with `schedule: {type: "webhook"}` and
+   `bindToCurrentThread: true`. Its prompt must name the absolute skill CLI path, original
+   project and session, and say to read `proto inbox` and handle the pending comments there.
+   `{{body.batchId}}` is only a wakeup hint. The durable inbox is the source of truth;
+   retries or several sends can wake the same thread again with nothing new to claim.
+3. Save `{ "url": "<returned webhookUrl>", "id": "<scheduledTaskId>",
+   "threadId": "<owning thread ID>" }` to a private temporary JSON file **outside the
+   served project**, then run `proto inbox --listen "<config.json>"` with the original
+   project/session flags. Delete the temporary file. The URL is a credential: never put it
+   in prototype source, a reply, a PR, or the page. The registered copy is private.
+   If no `webhookUrl` is returned, remote access is unavailable: disable that task and
+   report the prerequisite. Do not claim a persistent listener was connected.
+4. Leave that same subscription enabled after comments, final replies, compaction and
+   server updates. `proto up` restores delivery after a server restart. Failed delivery
+   retries automatically; check `proto inbox` for errors. Do not also run `--wait`.
+   If switching from an existing background wait, cancel that harness job once first.
+5. Stop only when the user asks: `proto inbox --unlisten`, then disable the same host task.
+   Do not silently move another conversation's subscription here. To change its owner,
+   explicitly remove and disable the old subscription before registering the replacement.
+
+**Other harnesses with background completion wakeups:** start `proto inbox --wait` in
+that mechanism with a supported timeout (`--timeout <minutes>`, default 115). This transport
+exits to deliver its batch. On **every** completion, including a timeout, immediately rearm
+one wait **before** processing the batch or ending the turn. Reuse a live wait; never launch
+several. Preserve its job ID across compaction. An unrelated task finishing is no reason to
+cancel it. This keeps listening while the current batch is handled.
+
+Do not block the foreground turn waiting for future comments. Without either event
+subscriptions or background wakeups, comments persist until the next turn: tell the user
+to send a chat message to have them read. Do not promise automatic reactions while idle.
 
 **When a session ends** (T3 Code restarted, the terminal closed) after taking comments and before
 answering them, the page shows them as "Not picked up" and offers the user a restart message to
@@ -786,14 +818,14 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
    closes the comment when the last of those variants is built, keeping the reply: write it to
    read right both times ("In «Super set, more ways», under this case: …", not "Building now…"). Without `--done` or `--until`, a
    comment stays "on it" in the page for good; when comments arrive, `proto inbox` lists any still open.
-6. Listen again.
+6. Keep the same persistent listener active. With a background wait, rearm it before handling this batch.
 
 Use workers only when comments in one batch each need real design work (a new variant, a section
 rewritten) in separate files: then one subagent per file, on Opus at medium effort, all started together.
 
 **Send each comment as you add it.** A switch under the Send button (kept per browser) sends each
 comment the moment it is added, so batches of one arrive while the user writes the next. Handle
-each the same way, then listen again at once; comments that piled up meanwhile arrive together and
+each the same way, keeping the same listener active; comments that piled up meanwhile arrive together and
 are one job. Measured with 12 comments added 15 s apart: everything was in 16 s after the last one,
 against 54 s after Send for the same 12 sent at once, because only the last one is left to do. A
 comment withdrawn in the page after it was handled is answered by undoing it, if the user asks.
@@ -855,7 +887,7 @@ When the user wants the prototypes in a doc or artifact to share: read `referenc
 | A comment in a view (`view: tablet 834x1194` in a batch) | the shoot its line names, change that layout's breakpoints, reply naming the size (Comments from the page) |
 | To drop a direction or prototype | `proto archive <slug>` (still reachable under Archived) |
 | The prototypes in a doc to share | Snapshots with an available document tool, or `proto shoot` images (section above) |
-| Comments sent from the page (a `proto inbox --wait` exited) | the batch as one job: one `proto ask --to <slug>/<letter> --each` per variant in it, edits, one shot, one `proto reply <batch> 1 "…" 2 "…" --done`, listen again |
+| Comments sent from the page (a webhook wakeup or completed `proto inbox --wait`) | the batch as one job: one `proto ask --to <slug>/<letter> --each` per variant in it, edits, one shot, one `proto reply <batch> 1 "…" 2 "…" --done`, keep the same listener active |
 | Prototypes for a different project | `proto up --project <dir>`: a separate app for that project |
 
 ## Lifecycle
