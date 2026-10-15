@@ -2,10 +2,12 @@
 // It is Base UI's Drawer (swipe down to close, focus kept inside, the iOS 26 viewport handled),
 // written with createElement so it runs in Vue sessions too, which have no JSX transform. The
 // phone's menus and its Try it are sheets of the same kind.
-import { createElement as h, useCallback, useRef, type ReactNode } from 'react'
+import { createElement as h, useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Drawer } from '@base-ui/react/drawer'
 import { uiBox } from './portals'
+import { VIRTUAL_THRESHOLD } from './virtual'
+import { CachedList } from './virtual-react'
 
 export type SheetRow = { id: string; label: string; name: string; on: boolean; picked: boolean; editing: boolean }
 export type SheetProps = {
@@ -51,7 +53,11 @@ function Sheet(p: SheetProps) {
               h(Drawer.Title, { dir: 'auto', className: 'min-w-0 truncate text-[15px] font-semibold' }, p.title),
               h(Drawer.Close, { 'aria-label': 'Close', className: 'grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
             p.decide ? h('div', { className: 'mb-2 border-b border-black/[.06] pb-3 pt-1 dark:border-white/10' }, p.decide) : null,
-            h('div', { className: 'space-y-0.5' }, p.rows.map(row)),
+            p.rows.length > VIRTUAL_THRESHOLD ? h(CachedList<SheetRow>, {
+              items: p.rows, itemKey: r => r.id, render: row, estimate: () => 44,
+              gap: 2, cacheSize: 32, focusSelector: 'button',
+              initialIndex: Math.max(0, p.rows.findIndex(r => r.on)),
+            }) : h('div', { className: 'space-y-0.5' }, p.rows.map(row)),
             h('div', { className: 'mt-1.5 border-t border-black/[.06] pt-1.5 dark:border-white/10' },
               h('button', { type: 'button', onClick: p.onLobby, 'aria-current': p.lobby, className: `${ROW} ${p.lobby ? 'font-medium text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'}` },
                 h('span', { className: 'flex w-6 shrink-0 justify-center text-zinc-500 dark:text-zinc-400' }, GRID),
@@ -59,12 +65,16 @@ function Sheet(p: SheetProps) {
                 h('span', { className: 'shrink-0 text-xs tabular-nums text-zinc-400' }, String(p.rows.length)))))))))
 }
 
-export type MenuSheetProps = { open: boolean; title: string; html: string; onClose: () => void }
+export type MenuSheetProps = { open: boolean; title: string; html: string; onClose: () => void; onContentReady?: (root: HTMLElement) => void | (() => void) }
 
 // The phone's menus (the prototypes, the session) in the same sheet. Their content is the
 // shell's own menu HTML, and the sheet renders inside the shell's root, so its buttons reach
 // the shell's click handling like any other.
 function MenuSheet(p: MenuSheetProps & { container: HTMLElement }) {
+  const [content, setContent] = useState<HTMLDivElement | null>(null)
+  useLayoutEffect(() => {
+    if (p.open && content) return p.onContentReady?.(content)
+  }, [p.open, p.html, p.onContentReady, content])
   return h(Drawer.Root, { open: p.open, onOpenChange: (open: boolean) => { if (!open) p.onClose() } },
     h(Drawer.Portal, { container: p.container },
       h(Drawer.Backdrop, { className: '[--backdrop-opacity:0.3] [--bleed:3rem] dark:[--backdrop-opacity:0.6] fixed inset-0 z-[200] min-h-dvh bg-black opacity-[calc(var(--backdrop-opacity)*(1-var(--drawer-swipe-progress)))] transition-opacity duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:duration-0 data-ending-style:opacity-0 data-starting-style:opacity-0 data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] supports-[-webkit-touch-callout:none]:absolute' }),
@@ -75,7 +85,7 @@ function MenuSheet(p: MenuSheetProps & { container: HTMLElement }) {
             h('div', { className: 'flex items-center justify-between pb-1 pl-5 pr-2' },
               h(Drawer.Title, { dir: 'auto', className: 'min-w-0 truncate text-[15px] font-semibold' }, p.title),
               h(Drawer.Close, { 'aria-label': 'Close', className: 'grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
-            h('div', { dangerouslySetInnerHTML: { __html: p.html } }))))))
+            h('div', { ref: setContent, dangerouslySetInnerHTML: { __html: p.html } }))))))
 }
 
 export type TrySheetProps = {

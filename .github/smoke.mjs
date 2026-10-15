@@ -36,6 +36,9 @@ import { shareChecks } from './share-checks.mjs'
 import { tweaksChecks } from './tweaks-checks.mjs'
 import { tweaksRegistryChecks } from './tweaks-registry-checks.mjs'
 import { middleDragChecks } from './middle-drag-checks.mjs'
+import { virtualVariantsChecks } from './virtual-variants-checks.mjs'
+import { virtualWindowChecks } from './virtual-window-checks.mjs'
+import { virtualReactChecks } from './virtual-react-checks.mjs'
 import { variantLabelsChecks } from './variant-labels-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -182,6 +185,9 @@ const css = () => new Promise(ok => get(`${local}shell/shell.css?direct`, { agen
   r.setEncoding('utf8').on('data', c => { text += c }).on('end', () => r.statusCode === 200 ? ok(text) : fail(`the stylesheet answered ${r.statusCode}: ${text.slice(0, 400)}`))
 }).on('error', e => fail(`could not read the stylesheet: ${e.message}`)))
 await css()
+await virtualWindowChecks({ local, openPage, fail })
+await virtualReactChecks({ proto, app, local, openPage, fail })
+await virtualVariantsChecks({ proto, app, local, openPage, fail })
 await shareChecks({ proto, app, local, openPage, fail })
 await settingsChecks({ proto, app, local, openPage, fail })
 await tweaksRegistryChecks({ local, openPage, fail })
