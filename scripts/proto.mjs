@@ -33,6 +33,10 @@
 //   proto work <slug>/<letter> [--ask "…"] [--off]   the variant being worked on: pinned in the page
 //   proto ask "…" [--to <slug>/<letter>]   a change the user asked for, kept with that variant
 //   proto ask --each "…" "…" …   several at once (a batch of comments)
+//   proto intake set <questions.json|->   ask the user questions in the page before building (a from-scratch
+//             request, or too little context): the page shows them as their own screen, and the answers
+//             arrive in `proto inbox` as an intake batch. See references/intake.md for the file's shape.
+//   proto intake [status] | clear   what is open and whether it was answered, or take the questions away
 //   proto inbox [--wait] [--timeout <min>]   comments sent from the page; --wait blocks until some arrive
 //   proto reply <batch>[/<n>] "…" [--done | --until <slug>[/<letter>]] [--as claude|codex|agent]   answer a comment (or a whole batch) in the page;
 //                                   --until keeps it open until that work is built (proto done closes it)
@@ -1569,6 +1573,7 @@ const ACTIONS = {
   'try-it': 'add useHints for this variant only: useful demo values, steps and scenarios; preserve the working design; reply --done after checking it',
   'copy-options': 'add useCopy for this variant only: headline and primary text by default, or the requested lines; keep current words first, add 2 to 4 alternatives; reply --done after checking fit. On an element with quoted words (highlighted in the page): options for those words only, as one useCopy line on that element (data-copy)',
   copy: 'make this the line\'s text in the variant: put it first in that line\'s useCopy options',
+  intake: 'the answers to your questions: plan the directions from them (a question left to you is yours to decide; say what you picked), then reply --done',
 }
 const FAILED = {
   // Marked: meta.ts has the pick and only the working variant didn't move; proto pick does both and
@@ -1652,6 +1657,24 @@ function turnsBefore(dir, re) {
   return turns
 }
 
+// The answers to the questions the agent asked: each question with what was answered, and where the
+// files are. A question left unanswered is the agent's to decide.
+function printIntake(dir, b, c) {
+  const it = c.intake
+  console.log(`\n${c.n}. intake: the answers to your questions${it.ask ? `  ("${oneLine(it.ask, 120)}")` : ''}`)
+  for (const q of it.questions) {
+    const a = it.answers[q.id] || []
+    const label = id => q.options.find(o => o.id === id)?.label ?? id.replace(/^\+/, '')
+    const own = a.filter(x => x.startsWith('+')).map(x => `${x.slice(1)} (their own words)`)
+    const known = a.filter(x => !x.startsWith('+') && x !== '*')
+    const text = q.kind === 'text' ? a.join(' ') : [...known.map(label), ...own].join(', ')
+    const files = it.files.filter(f => f.question === q.id)
+    const state = it.decided.includes(q.id) || a[0] === '*' ? "left to you (\"Let Claude decide\")" : text || (files.length ? '' : 'not answered, so yours to decide')
+    console.log(`   ${q.title}\n     -> ${[state, ...files.map(f => `${f.for ? `${label(f.for)}: ` : ''}${join(inboxDir(dir), 'taken', b.id, f.file)}  (${f.name})`)].filter(Boolean).join('\n     -> ')}`)
+  }
+  console.log(`   action: ${c.action} (${ACTIONS.intake})`)
+}
+
 function printBatch(dir, b) {
   const vp = b.viewport ? ` · page ${b.viewport.w}x${b.viewport.h}${b.viewport.phone ? ' (phone)' : ''}` : ''
   // A comment the user deleted in the page after sending it is withdrawn: left out, only counted.
@@ -1659,6 +1682,7 @@ function printBatch(dir, b) {
   console.log(`batch ${b.id} · ${live.length} comment${live.length === 1 ? '' : 's'}${gone ? ` (${gone} withdrawn in the page)` : ''}${vp} · ${b.theme}`)
   if (b.orphaned) console.log('   taken earlier by a session that ended before it answered: handle these first')
   for (const c of live) {
+    if (c.action === 'intake' && c.intake) { printIntake(dir, b, c); continue }
     console.log(`\n${c.n}. ${c.route}${c.re ? `  (reply to ${c.re.batch}/${c.re.n})` : ''}`)
     if (c.re) for (const t of turnsBefore(dir, c.re)) console.log(t.gone ? `   earlier: ${t.gone} (no longer in the inbox)` : `   earlier: "${oneLine(t.text, 160)}"  ->  ${t.reply ? `${WHO[t.reply.by] ?? 'Claude'}: "${oneLine(t.reply.text, 160)}"` : 'no reply'}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
@@ -1678,6 +1702,71 @@ function printBatch(dir, b) {
   }
   if (live.some(c => c.target && !c.action)) console.log(`\nSee one as the user saw it (their page size, the way to it opened, beside their pictures): proto shoot --pin ${b.id}/<n>`)
   console.log(`\nReply to all at once: proto reply ${b.id} 1 "…" 2 "…" … --done   (or ${b.id}/<n> "…" for one, ${b.id} "…" for the batch)\n`)
+}
+
+// proto intake set <file|->  |  proto intake [status]  |  proto intake clear
+const KINDS = new Set(['one', 'many', 'text'])
+function intakeShape(raw) {
+  let d
+  try { d = JSON.parse(raw) } catch (e) { die(`the questions are not JSON: ${e.message}`) }
+  if (!d || typeof d !== 'object' || Array.isArray(d)) die('the questions file is one JSON object: { ask, title?, questions: [...] }')
+  if (!Array.isArray(d.questions) || !d.questions.length) die('questions is a list of at least one question')
+  if (d.questions.length > 12) die('ask at most 12 questions: the ones whose answers would change what you build')
+  const seen = new Set()
+  const str = (v, n) => typeof v === 'string' ? v.trim().slice(0, n) : ''
+  const questions = d.questions.map((q, i) => {
+    const at = `question ${i + 1}`
+    const id = str(q.id, 40)
+    if (!/^[a-z][\w-]*$/.test(id)) die(`${at}: id is a short lowercase word (job, feel, who)`)
+    if (seen.has(id)) die(`${at}: id "${id}" is used twice`)
+    seen.add(id)
+    if (!str(q.title, 160)) die(`${at} (${id}): title is the question, in the user's words`)
+    if (!KINDS.has(q.kind)) die(`${at} (${id}): kind is one (pick one), many (pick several) or text (free text)`)
+    const out = { id, title: str(q.title, 160), why: str(q.why, 240), kind: q.kind }
+    if (q.kind === 'text') return { ...out, placeholder: str(q.placeholder, 160) }
+    if (!Array.isArray(q.options) || q.options.length < 2 || q.options.length > 8) die(`${at} (${id}): options is 2 to 8 choices`)
+    const oseen = new Set()
+    out.options = q.options.map((o, j) => {
+      const oid = str(o?.id, 40), label = str(o?.label, 80)
+      if (!/^[a-z][\w-]*$/.test(oid) || !label) die(`${at} (${id}) option ${j + 1}: needs an id (short lowercase word) and a label`)
+      if (oseen.has(oid)) die(`${at} (${id}): option id "${oid}" is used twice`)
+      oseen.add(oid)
+      const demo = o.demo && typeof o.demo === 'object' ? o.demo : null
+      if (demo && !(typeof demo.html === 'string' || typeof demo.image === 'string')) die(`${at} (${id}) option "${oid}": demo is { html } (inline styles or SVG, drawn 160 by 120) or { image } (a path under src/assets/)`)
+      if (demo?.image && !/^src\/assets\/[\w./-]+\.(png|jpe?g|webp|svg|gif)$/i.test(demo.image)) die(`${at} (${id}) option "${oid}": demo.image is a file under src/assets/`)
+      return { id: oid, label, ...(str(o.sub, 120) ? { sub: str(o.sub, 120) } : {}), ...(demo ? { demo: demo.html ? { html: String(demo.html).slice(0, 8000) } : { image: demo.image } } : {}), ...(o.files === false ? { files: false } : {}) }
+    })
+    if (q.files) out.files = true
+    return out
+  })
+  return { ask: str(d.ask, 500), title: str(d.title, 120), questions }
+}
+function intake() {
+  const dir = sessionDir()
+  need(dir)
+  const file = join(dir, '.proto', 'intake', 'current.json')
+  const sub = args[0] || 'status'
+  if (sub === 'set') {
+    const src = args[1]
+    if (!src) die('proto intake set <questions.json>   (or - to read it from the standard input)')
+    let raw
+    try { raw = src === '-' ? readFileSync(0, 'utf8') : readFileSync(resolve(src), 'utf8') } catch (e) { die(`cannot read ${src}: ${e.message}`) }
+    const shaped = intakeShape(raw)
+    const cur = readJson(file, null)
+    if (cur?.status === 'open' && !flags.replace) die('questions are already open in the page (the user has not answered yet). Wait for the answers (proto inbox --wait), or replace them with --replace.')
+    const id = `${new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '')}-${randomBytes(2).toString('hex')}`
+    mkdirSync(dirname(file), { recursive: true })
+    writeJson(file, { id, status: 'open', createdAt: new Date().toISOString(), ...shaped })
+    const s = need(dir)
+    console.log(`asked ${shaped.questions.length} question${shaped.questions.length === 1 ? '' : 's'} in the page: ${s.url || s.localUrl || ''}`)
+    console.log('the user answers there; proto inbox --wait hears when they do. Do not build before the answers arrive.')
+    return
+  }
+  if (sub === 'clear') { rmSync(file, { force: true }); return console.log('questions taken away') }
+  if (sub !== 'status') die(`proto intake ${sub}? It is set <file>, status or clear`)
+  const cur = readJson(file, null)
+  if (!cur) return console.log('no questions asked in this session')
+  console.log(cur.status === 'open' ? `open: ${cur.questions.length} questions waiting for the user's answers` : `answered ${cur.answeredAt} (batch ${cur.batch}): run proto inbox to read it`)
 }
 
 async function inbox() {
@@ -2150,7 +2239,7 @@ function fonts() {
 }
 
 const commands = {
-  up, add, plan, done, pick, work, ask, archive, shoot, compare, perf, handoff, snap, inbox, reply, gc: () => gc(false), ls,
+  up, add, plan, done, pick, work, ask, archive, shoot, compare, perf, handoff, snap, intake, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
   rm: () => rm(),
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },

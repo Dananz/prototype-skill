@@ -29,6 +29,8 @@ import type { Action } from './comments/types'
 import { tabIcon } from './favicon'
 import { setShellRoot } from './portals'
 import { createView } from './view/index'
+import { createIntake } from './intake/index'
+import type { Intake } from './intake/types'
 import { createSettings, type Appearance } from './settings'
 import { createShare } from './share'
 import { framed, frameClicks, frameMenus, offerTheme } from './view/frame'
@@ -53,6 +55,8 @@ type Place = { view: 'session' } | { view: 'proto'; proto: string } | { view: 'v
 type Layer = { el: HTMLElement; refs: unknown[]; ready: Promise<unknown>; dispose: () => void; player?: { toggle: () => void; jump: (i: number) => void }; remount?: () => Promise<unknown>; refresh?: () => void }
 // Comments sent from the page to the agent running the session (`proto inbox`), and what came back.
 export type Inbox = {
+  /** Questions the agent asked before building (proto intake set), while they wait or were just answered. */
+  intake?: Intake | null
   new: number
   listening: boolean
   /** The last agent that ran proto commands here: still running, or gone (T3 Code restarted, the terminal closed). */
@@ -459,6 +463,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div data-decide></div>
     <div data-vmenu></div>
     <div data-ctx></div>
+    <div data-intake hidden class="fixed inset-0 z-[60]"></div>
   </div>`
   const side = root.querySelector<HTMLElement>('[data-side]')!
   const grip = root.querySelector<HTMLElement>('[data-grip]')!
@@ -2124,6 +2129,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // At rest an icon; while you are picking what to comment on, it says so, and how to stop.
     return `<button data-act="comment:toggle" data-shoot="comment" aria-pressed="${on}" aria-label="Comment" title="${on ? 'Stop commenting · Esc' : `Comment on the design · C (${mac ? '⌥' : 'Alt'}-click comments on one thing)`}" class="hidden h-9 min-w-9 items-center justify-center gap-1.5 rounded-lg text-xs font-medium sm:inline-flex ${on ? 'bg-proto-primary px-2.5 text-proto-primary-fg hover:bg-proto-primary-hover' : 'text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'}">${ic('comment')}${on ? 'Click to comment<kbd class="rounded bg-white/20 px-1 font-sans text-[11px]">Esc</kbd>' : ''}</button>`
   }
+  // The agent's questions are a screen of their own over the whole shell until they are answered.
+  const intake = createIntake(root.querySelector<HTMLElement>('[data-intake]')!, {
+    name: () => session.name,
+    send: async body => !!(await post('intake', body)),
+  })
   let seenInbox: Inbox | undefined
   /** Tells the comment layer where the page is and what the server says; repaints the chrome that shows counts. */
   function syncComments() {
@@ -2131,7 +2141,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     comments.copy.setStage(copyHost(), copy.routeOf(copyHost()))
     comments.act.setScope(pl.view === 'session' ? null : pl.proto)
     comments.setPlace(host && pl.view === 'variant' && p ? { proto: pl.proto, variant: pl.variant, ...(pl.state ? { state: pl.state } : {}), phone: phoneMq.matches, title: p.title, ...(viewOn() ? { view: viewSize() } : {}) } : null)
-    if (st.status?.inbox !== seenInbox) { seenInbox = st.status?.inbox; comments.setInbox(seenInbox) }
+    if (st.status?.inbox !== seenInbox) { seenInbox = st.status?.inbox; comments.setInbox(seenInbox); intake.set(seenInbox?.intake, protos.length > 0) }
     zone.toggleAttribute('data-picking', !!host && comments.counts().picking)
   }
   comments.mountSheet(root.querySelector<HTMLElement>('[data-comments-sheet]')!)
@@ -2848,6 +2858,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     setProtos(next: Proto[]) {
       const before = new Map(protos.map(p => [p.id, new Set(p.variants.map(v => v.id))]))
       protos = next
+      intake.set(st.status?.inbox?.intake, protos.length > 0)
       if (framed) {
         // The page in a view follows nothing itself: the page outside does, and it goes along. A place
         // it was waiting for (see hashchange) is one it knows now.
