@@ -21,7 +21,7 @@ export async function virtualWindowChecks({local, openPage, fail}) {
   list.focus(499)
   const left=host.querySelector('[data-virtual-index="498"]').getBoundingClientRect().left
   const right=host.querySelector('[data-virtual-index="499"]').getBoundingClientRect().right
-  if(Math.abs((left+right)/2-host.getBoundingClientRect().left-150)>1)return 'incomplete fixed-width row was not centered'
+  if(Math.abs((left+right)/2-host.getBoundingClientRect().left-host.clientLeft-host.clientWidth/2)>1)return 'incomplete fixed-width row was not centered'
   list.destroy();host.remove();return 'ok'
  })()`)
     if (result !== 'ok') fail(`virtual window: ${result}`)
