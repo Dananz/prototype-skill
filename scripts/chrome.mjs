@@ -1,8 +1,8 @@
 // Finds a Chromium browser for the headless screenshots: Chrome first, then Chromium, then
 // Edge (on every Windows machine). Set CHROME to a browser's executable to choose one.
 import { spawn, spawnSync } from 'node:child_process'
-import { closeSync, existsSync, lstatSync, openSync, readSync, readdirSync, realpathSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { closeSync, existsSync, lstatSync, openSync, readSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, unlinkSync } from 'node:fs'
+import { hostname, tmpdir } from 'node:os'
 import { join, relative, resolve, isAbsolute } from 'node:path'
 
 export function findChrome() {
@@ -75,15 +75,21 @@ export function removeProfile(dir, { budget = 5000 } = {}) {
   }
 }
 
-// A script killed outright (a tool's timeout, Task Manager) runs no handler and leaves its profile, and
-// one-off scripts and Chrome itself leave theirs, so each start deletes, from the temp folder's top level,
-// what is more than a day old and shaped like Chrome's: a folder with a profile's files (DevToolsActivePort,
-// Crashpad, or Local State beside Default), whatever its name; the folders Chrome and Playwright name
-// scoped_dir*, chrome_chrome_Unpacker* and playwright_chromiumdev_profile-*; and the <GUID>.tmp files that are
-// Chrome's component downloads (they start with "Cr24", a CRX package). Anything newer, any link (rmSync
-// leaves a junction's target alone, but a link at the top is never entered), the claude folder and
-// everything else stay. It spends about 2 s at most, so a backlog goes over several starts, and skips what
-// it can't delete yet.
+// A script killed outright (a tool's timeout, Task Manager) runs no handler and leaves its profile, so each
+// start deletes, from the temp folder's top level, the skill's own profiles that are more than a day old.
+// On Windows, where locked files are what leak profiles, one-off scripts and Chrome itself leave theirs too,
+// so there it also deletes what is more than a day old and shaped like Chrome's: a folder with a profile's
+// files (DevToolsActivePort, Crashpad, or Local State beside Default), whatever its name; the folders Chrome
+// and Playwright name scoped_dir*, chrome_chrome_Unpacker* and playwright_chromiumdev_profile-*; and the
+// <GUID>.tmp files that are Chrome's component downloads (they start with "Cr24", a CRX package). Elsewhere
+// open files delete fine, so nothing leaks there, and the sweep stays on the skill's own names.
+// A folder's age says little about whether a browser still runs in it (its time changes only when an entry
+// right inside it comes or goes), so a profile a browser has open is never touched: see inUse. And on Windows a
+// folder is renamed before it is deleted, which Windows refuses while a program holds a file in it, so a
+// folder goes whole or stays whole, never half-deleted.
+// Anything newer, any link (a link at the top is never entered), the claude folder and everything else stay.
+// It spends about 2 s at most, so a backlog goes over several starts, and skips what it can't delete yet.
+const OWN = /^(proto-(shoot|compare|perf|snap|smoke)|panel-verify)-/
 const NAMED = /^(scoped_dir|chrome_chrome_Unpacker|playwright_chromiumdev_profile-)/
 const GUID_TMP = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.tmp$/i
 const profileShaped = dir => existsSync(join(dir, 'DevToolsActivePort')) || existsSync(join(dir, 'Crashpad')) || (existsSync(join(dir, 'Local State')) && existsSync(join(dir, 'Default')))
@@ -91,8 +97,21 @@ const isCrx = file => {
   const head = Buffer.alloc(4), fd = openSync(file, 'r')
   try { return readSync(fd, head, 0, 4, 0) === 4 && head.toString('latin1') === 'Cr24' } finally { closeSync(fd) }
 }
-export function sweepProfiles({ budget = 2000, age = 86_400_000 } = {}) {
-  const t0 = Date.now(), root = tmpdir()
+// Whether a browser has this profile open, by the mark Chrome itself checks before it shares a profile. On
+// Windows a running Chrome holds <profile>/lockfile open, so deleting it fails (a free one goes now, as its
+// folder is about to). Elsewhere SingletonLock is a link to "<host>-<pid>": in use while that process runs,
+// and taken as in use when it names another machine or can't be read.
+export function inUse(dir, platform = process.platform) {
+  if (platform === 'win32') {
+    try { unlinkSync(join(dir, 'lockfile')); return false } catch (e) { return e.code !== 'ENOENT' }
+  }
+  let target
+  try { target = readlinkSync(join(dir, 'SingletonLock')) } catch (e) { return e.code !== 'ENOENT' }
+  const at = target.lastIndexOf('-'), pid = Number(target.slice(at + 1))
+  return at < 1 || target.slice(0, at) !== hostname() || !Number.isInteger(pid) || alive(pid)
+}
+export function sweepProfiles({ budget = 2000, age = 86_400_000, root = tmpdir(), platform = process.platform } = {}) {
+  const t0 = Date.now(), win = platform === 'win32'
   let names
   try { names = readdirSync(root) } catch { return }
   for (const name of names) {
@@ -102,7 +121,13 @@ export function sweepProfiles({ budget = 2000, age = 86_400_000 } = {}) {
     try {
       const s = lstatSync(path)
       if (s.isSymbolicLink() || Date.now() - s.mtimeMs <= age) continue
-      if (s.isDirectory() ? NAMED.test(name) || profileShaped(path) : s.isFile() && GUID_TMP.test(name) && isCrx(path)) rmSync(path, { recursive: true, force: true })
+      if (s.isDirectory()) {
+        if (!(OWN.test(name) || win && (NAMED.test(name) || profileShaped(path))) || inUse(path, platform)) continue
+        if (!win) { rmSync(path, { recursive: true, force: true }); continue }
+        const gone = `${path}.sweep-${process.pid}` // keeps its name's start, so a later sweep finishes it
+        renameSync(path, gone)
+        rmSync(gone, { recursive: true, force: true })
+      } else if (win && s.isFile() && GUID_TMP.test(name) && isCrx(path)) rmSync(path, { force: true })
     } catch { /* in use, or gone */ }
   }
 }
