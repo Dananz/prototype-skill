@@ -1,9 +1,9 @@
 // Finds a Chromium browser for the headless screenshots: Chrome first, then Chromium, then
 // Edge (on every Windows machine). Set CHROME to a browser's executable to choose one.
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { closeSync, existsSync, lstatSync, openSync, readSync, readdirSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative, resolve, isAbsolute } from 'node:path'
 
 export function findChrome() {
   if (process.env.CHROME) return process.env.CHROME
@@ -39,8 +39,12 @@ export function startChrome(args) {
   track(chrome)
   return chrome
 }
+// Also stops a Chrome this file did not start (a script's own copy of the launch code), and deletes the
+// --user-data-dir it was spawned with, as long as that profile is in the temp folder.
 export function stopChrome(chrome) {
-  if (!live.delete(chrome)) return
+  if (chrome.stopped) return
+  chrome.stopped = true
+  live.delete(chrome)
   if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(chrome.pid), '/T', '/F'])
   else try { process.kill(-chrome.pid, 'SIGKILL') } catch { /* already gone */ }
   chrome.kill('SIGKILL')
@@ -49,7 +53,13 @@ export function stopChrome(chrome) {
   // returns. (Elsewhere open files delete fine, and the killed child stays a zombie until the event loop
   // reaps it, so waiting would only stall.)
   if (process.platform === 'win32') for (const t0 = Date.now(); alive(chrome.pid) && Date.now() - t0 < 3000;) sleep(25)
-  if (chrome.profile) removeProfile(chrome.profile)
+  const profile = chrome.profile ?? chrome.spawnargs?.find(a => a.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length)
+  if (profile && inTemp(profile)) removeProfile(profile)
+}
+// Only a folder inside the temp folder is a throwaway profile; a real one elsewhere is never deleted.
+// Both sides are resolved, so a short (8.3) and a long spelling of the same folder agree.
+const inTemp = dir => {
+  try { const r = relative(realpathSync.native(tmpdir()), realpathSync.native(resolve(dir))); return !!r && !r.startsWith('..') && !isAbsolute(r) } catch { return false }
 }
 
 // Deletes a profile, retrying while Chrome's helpers still hold files. rmSync's own maxRetries is no help
@@ -65,19 +75,35 @@ export function removeProfile(dir, { budget = 5000 } = {}) {
   }
 }
 
-// A script killed outright (a tool's timeout, Task Manager) runs no handler and leaves its profile, so
-// each start deletes the profiles older than a day. It spends about 2 s at most, so a backlog goes over
-// several starts, and skips a profile it can't delete yet.
-const STALE = /^(proto-(shoot|compare|perf|snap|smoke)|panel-verify)-/
+// A script killed outright (a tool's timeout, Task Manager) runs no handler and leaves its profile, and
+// one-off scripts and Chrome itself leave theirs, so each start deletes, from the temp folder's top level,
+// what is more than a day old and shaped like Chrome's: a folder with a profile's files (DevToolsActivePort,
+// Crashpad, or Local State beside Default), whatever its name; the folders Chrome and Playwright name
+// scoped_dir*, chrome_chrome_Unpacker* and playwright_chromiumdev_profile-*; and the <GUID>.tmp files that are
+// Chrome's component downloads (they start with "Cr24", a CRX package). Anything newer, any link (rmSync
+// leaves a junction's target alone, but a link at the top is never entered), the claude folder and
+// everything else stay. It spends about 2 s at most, so a backlog goes over several starts, and skips what
+// it can't delete yet.
+const NAMED = /^(scoped_dir|chrome_chrome_Unpacker|playwright_chromiumdev_profile-)/
+const GUID_TMP = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.tmp$/i
+const profileShaped = dir => existsSync(join(dir, 'DevToolsActivePort')) || existsSync(join(dir, 'Crashpad')) || (existsSync(join(dir, 'Local State')) && existsSync(join(dir, 'Default')))
+const isCrx = file => {
+  const head = Buffer.alloc(4), fd = openSync(file, 'r')
+  try { return readSync(fd, head, 0, 4, 0) === 4 && head.toString('latin1') === 'Cr24' } finally { closeSync(fd) }
+}
 export function sweepProfiles({ budget = 2000, age = 86_400_000 } = {}) {
   const t0 = Date.now(), root = tmpdir()
   let names
   try { names = readdirSync(root) } catch { return }
   for (const name of names) {
     if (Date.now() - t0 > budget) return
-    if (!STALE.test(name)) continue
-    const dir = join(root, name)
-    try { if (Date.now() - statSync(dir).mtimeMs > age) rmSync(dir, { recursive: true, force: true }) } catch { /* in use, or gone */ }
+    if (name.toLowerCase() === 'claude') continue
+    const path = join(root, name)
+    try {
+      const s = lstatSync(path)
+      if (s.isSymbolicLink() || Date.now() - s.mtimeMs <= age) continue
+      if (s.isDirectory() ? NAMED.test(name) || profileShaped(path) : s.isFile() && GUID_TMP.test(name) && isCrx(path)) rmSync(path, { recursive: true, force: true })
+    } catch { /* in use, or gone */ }
   }
 }
 
