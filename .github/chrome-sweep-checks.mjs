@@ -13,6 +13,7 @@ import { inUse, startChrome, stopChrome, sweepProfiles } from '../scripts/chrome
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 const old = new Date(Date.now() - 3 * 86_400_000)
+const GUID = n => `${String(n).repeat(8)}-1234-1234-1234-123456789abc.tmp`
 function fakeTemp(fn) {
   const root = mkdtempSync(join(tmpdir(), 'proto sweep checks '))
   const dir = (name, files = [], age = old) => {
@@ -27,6 +28,31 @@ function fakeTemp(fn) {
 }
 const gone = (paths, root) => paths.filter(p => existsSync(p)).map(p => `${p} stayed; temp holds ${readdirSync(root).join(', ')}`)
 const kept = paths => paths.filter(p => !existsSync(p)).map(p => `${p} was deleted`)
+
+test('Windows opt-in: Chrome-shaped leftovers older than a day go; fresh, foreign, half-shaped and linked ones stay', () => fakeTemp(({ root, dir, file }) => {
+  const stale = [
+    dir('proto-shoot-abc', ['DevToolsActivePort']),
+    dir('somebody-elses-profile', ['Local State', 'Default/']),
+    dir('crashed', ['Crashpad/']),
+    dir('scoped_dir1234_5678'),
+    dir('chrome_chrome_Unpacker_BeginUnzipping1'),
+    dir('playwright_chromiumdev_profile-xyz'),
+    dir('proto-snap-free', ['lockfile', 'Default/']), // a lockfile no browser holds
+    file(GUID(1), 'Cr24 a CRX package'),
+  ]
+  const stay = [
+    dir('proto-shoot-fresh', ['DevToolsActivePort'], new Date()),
+    dir('a-project', ['notes.txt']),
+    dir('half', ['Local State']),
+    dir('claude', ['DevToolsActivePort']),
+    file(GUID(2), 'MZ not a CRX'),
+    file(GUID(3), 'Cr24 but fresh', new Date()),
+    file('44444444-1234-1234-1234-123456789abcXtmp', 'Cr24 malformed suffix'),
+  ]
+  sweepProfiles({ root, platform: 'win32', broad: true, budget: 10_000 })
+  assert.deepEqual([...gone(stale, root), ...kept(stay)], [])
+  assert.deepEqual(readdirSync(root).filter(n => n.includes('.sweep-')), [], 'a renamed folder was left behind')
+}))
 
 test('only the skill\'s own stale profiles go, never other programs\' Chrome leftovers', () => fakeTemp(({ root, dir, file }) => {
   const stale = [dir('proto-compare-abc', ['Default/']), dir('panel-verify-1', ['Local State'])]
@@ -112,3 +138,10 @@ test('stopChrome preserves a profile outside temp', () => {
     assert.ok(existsSync(marker), 'the persistent profile was deleted')
   } finally { rmSync(profile, { recursive: true, force: true }) }
 })
+
+test('Windows default leaves other programs profiles and downloads alone', () => fakeTemp(({ root, dir, file }) => {
+  const own = dir('proto-shoot-stale')
+  const stay = [dir('other-profile', ['DevToolsActivePort']), dir('scoped_dir1234'), file(GUID(5), 'Cr24 package')]
+  sweepProfiles({ root, platform: 'win32', broad: false, budget: 10_000 })
+  assert.deepEqual([...gone([own], root), ...kept(stay)], [])
+}))

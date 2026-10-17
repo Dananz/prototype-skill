@@ -31,6 +31,12 @@ Subagents and image generation are optional. Sandboxed agents need package insta
 access to the preview server, and write access to `<project>/.prototypes/` and `~/.prototypes/`.
 A remote container cannot reach a laptop's `localhost` directly.
 
+Chrome profiles created by Prototype are removed when the browser stops. Each start also
+sweeps the skill's own profiles older than 24 hours, skipping active browsers and links.
+On Windows, `PROTO_CHROME_SWEEP_ALL=1` opts into deleting other programs' stale Chrome
+profiles, Chrome/Playwright temp folders, and CRX downloads from the temp directory.
+Leave it unset to keep cleanup limited to Prototype's own files.
+
 ## Choose your agent
 
 <a name="claude-code"></a>
