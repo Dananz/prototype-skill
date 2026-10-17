@@ -29,7 +29,7 @@ function fakeTemp(fn) {
 const gone = (paths, root) => paths.filter(p => existsSync(p)).map(p => `${p} stayed; temp holds ${readdirSync(root).join(', ')}`)
 const kept = paths => paths.filter(p => !existsSync(p)).map(p => `${p} was deleted`)
 
-test('Windows: Chrome-shaped leftovers older than a day go; fresh, foreign, half-shaped and linked ones stay', () => fakeTemp(({ root, dir, file }) => {
+test('Windows opt-in: Chrome-shaped leftovers older than a day go; fresh, foreign, half-shaped and linked ones stay', () => fakeTemp(({ root, dir, file }) => {
   const stale = [
     dir('proto-shoot-abc', ['DevToolsActivePort']),
     dir('somebody-elses-profile', ['Local State', 'Default/']),
@@ -47,19 +47,20 @@ test('Windows: Chrome-shaped leftovers older than a day go; fresh, foreign, half
     dir('claude', ['DevToolsActivePort']),
     file(GUID(2), 'MZ not a CRX'),
     file(GUID(3), 'Cr24 but fresh', new Date()),
+    file('44444444-1234-1234-1234-123456789abcXtmp', 'Cr24 malformed suffix'),
   ]
-  sweepProfiles({ root, platform: 'win32', budget: 10_000 })
+  sweepProfiles({ root, platform: 'win32', broad: true, budget: 10_000 })
   assert.deepEqual([...gone(stale, root), ...kept(stay)], [])
   assert.deepEqual(readdirSync(root).filter(n => n.includes('.sweep-')), [], 'a renamed folder was left behind')
 }))
 
-test('elsewhere: only the skill\'s own stale profiles go, never other programs\' Chrome leftovers', () => fakeTemp(({ root, dir, file }) => {
+test('only the skill\'s own stale profiles go, never other programs\' Chrome leftovers', () => fakeTemp(({ root, dir, file }) => {
   const stale = [dir('proto-compare-abc', ['Default/']), dir('panel-verify-1', ['Local State'])]
   const stay = [
     dir('somebody-elses-profile', ['Local State', 'Default/', 'DevToolsActivePort']),
     dir('scoped_dir1234_5678'),
     dir('playwright_chromiumdev_profile-xyz'),
-    file(GUID(1), 'Cr24 a CRX package'),
+    file('11111111-1234-1234-1234-123456789abc.tmp', 'Cr24 a CRX package'),
   ]
   sweepProfiles({ root, platform: 'linux', budget: 10_000 })
   assert.deepEqual([...gone(stale, root), ...kept(stay)], [])
@@ -72,7 +73,7 @@ test('a link at the top of temp is never entered, and its target stays', t => fa
     const link = join(root, 'proto-shoot-link')
     try { symlinkSync(outside, link, 'junction') } catch { return t.skip('no rights to make a link here') }
     utimesSync(link, old, old)
-    sweepProfiles({ root, platform: 'win32', budget: 10_000 })
+    sweepProfiles({ root, budget: 10_000 })
     assert.ok(existsSync(join(outside, 'DevToolsActivePort')), 'the link\'s target lost its files')
     assert.ok(readdirSync(root).includes('proto-shoot-link'), 'the link itself was removed')
   } finally { try { rmdirSync(join(root, 'proto-shoot-link')) } catch { /* never made */ } rmSync(outside, { recursive: true, force: true }) }
@@ -94,14 +95,15 @@ test('a profile a running Chrome has open is never touched, however old it looks
   const profile = join(root, 'proto-shoot-live')
   mkdirSync(profile)
   const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run'])
-  chrome.profile = undefined // the check deletes it itself, after looking
   try {
     // A Chrome that can't start here (a CI box without a usable sandbox) says nothing about the sweep.
     const started = await new Promise(ok => {
       let out = ''
-      chrome.stderr.on('data', d => { out += d; if (/DevTools listening/.test(out)) ok(true) })
-      chrome.on('exit', () => ok(`Chrome exited: ${out.trim().split('\n').pop()}`))
-      setTimeout(() => ok(`Chrome did not start in 20 s: ${out.trim().split('\n').pop()}`), 20_000)
+      let timer
+      const finish = value => { clearTimeout(timer); ok(value) }
+      chrome.stderr.on('data', d => { out += d; if (/DevTools listening/.test(out)) finish(true) })
+      chrome.on('exit', () => finish(`Chrome exited: ${out.trim().split('\n').pop()}`))
+      timer = setTimeout(() => finish(`Chrome did not start in 20 s: ${out.trim().split('\n').pop()}`), 20_000)
     })
     if (started !== true) return t.skip(started)
     // Files a running Chrome keeps for as long as it runs; any of them going means the sweep reached in.
@@ -119,6 +121,27 @@ test('a profile a running Chrome has open is never touched, however old it looks
     assert.equal(chrome.exitCode, null, 'Chrome stopped')
   } finally {
     stopChrome(chrome)
+    assert.equal(existsSync(profile), false, 'stopChrome left its temporary profile behind')
     for (let i = 0; i < 50 && existsSync(root); i++) { try { rmSync(root, { recursive: true, force: true }) } catch { await new Promise(r => setTimeout(r, 100)) } }
   }
 })
+
+// Even a caller with its own launch code must never lose a persistent profile outside temp.
+test('stopChrome preserves a profile outside temp', () => {
+  const profile = mkdtempSync(join(skill, '.chrome-profile-check-'))
+  const marker = join(profile, 'keep.txt')
+  writeFileSync(marker, 'persistent')
+  const chrome = { pid: 2147483646, kill() {}, spawnargs: [`--user-data-dir=${profile}`] }
+  try {
+    stopChrome(chrome)
+    stopChrome(chrome)
+    assert.ok(existsSync(marker), 'the persistent profile was deleted')
+  } finally { rmSync(profile, { recursive: true, force: true }) }
+})
+
+test('Windows default leaves other programs profiles and downloads alone', () => fakeTemp(({ root, dir, file }) => {
+  const own = dir('proto-shoot-stale')
+  const stay = [dir('other-profile', ['DevToolsActivePort']), dir('scoped_dir1234'), file(GUID(5), 'Cr24 package')]
+  sweepProfiles({ root, platform: 'win32', broad: false, budget: 10_000 })
+  assert.deepEqual([...gone([own], root), ...kept(stay)], [])
+}))

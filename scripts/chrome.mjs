@@ -77,8 +77,8 @@ export function removeProfile(dir, { budget = 5000 } = {}) {
 
 // A script killed outright (a tool's timeout, Task Manager) runs no handler and leaves its profile, so each
 // start deletes, from the temp folder's top level, the skill's own profiles that are more than a day old.
-// On Windows, where locked files are what leak profiles, one-off scripts and Chrome itself leave theirs too,
-// so there it also deletes what is more than a day old and shaped like Chrome's: a folder with a profile's
+// With PROTO_CHROME_SWEEP_ALL=1, Windows also sweeps other programs' Chrome leftovers. This is opt-in:
+// another program may retain a profile for later reuse even without an active browser. It deletes what is more than a day old and shaped like Chrome's: a folder with a profile's
 // files (DevToolsActivePort, Crashpad, or Local State beside Default), whatever its name; the folders Chrome
 // and Playwright name scoped_dir*, chrome_chrome_Unpacker* and playwright_chromiumdev_profile-*; and the
 // <GUID>.tmp files that are Chrome's component downloads (they start with "Cr24", a CRX package). Elsewhere
@@ -91,7 +91,7 @@ export function removeProfile(dir, { budget = 5000 } = {}) {
 // It spends about 2 s at most, so a backlog goes over several starts, and skips what it can't delete yet.
 const OWN = /^(proto-(shoot|compare|perf|snap|smoke)|panel-verify)-/
 const NAMED = /^(scoped_dir|chrome_chrome_Unpacker|playwright_chromiumdev_profile-)/
-const GUID_TMP = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.tmp$/i
+const GUID_TMP = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/i
 const profileShaped = dir => existsSync(join(dir, 'DevToolsActivePort')) || existsSync(join(dir, 'Crashpad')) || (existsSync(join(dir, 'Local State')) && existsSync(join(dir, 'Default')))
 const isCrx = file => {
   const head = Buffer.alloc(4), fd = openSync(file, 'r')
@@ -110,8 +110,8 @@ export function inUse(dir, platform = process.platform) {
   const at = target.lastIndexOf('-'), pid = Number(target.slice(at + 1))
   return at < 1 || target.slice(0, at) !== hostname() || !Number.isInteger(pid) || alive(pid)
 }
-export function sweepProfiles({ budget = 2000, age = 86_400_000, root = tmpdir(), platform = process.platform } = {}) {
-  const t0 = Date.now(), win = platform === 'win32'
+export function sweepProfiles({ budget = 2000, age = 86_400_000, root = tmpdir(), platform = process.platform, broad = process.env.PROTO_CHROME_SWEEP_ALL === '1' } = {}) {
+  const t0 = Date.now(), win = platform === 'win32', all = win && broad
   let names
   try { names = readdirSync(root) } catch { return }
   for (const name of names) {
@@ -122,12 +122,12 @@ export function sweepProfiles({ budget = 2000, age = 86_400_000, root = tmpdir()
       const s = lstatSync(path)
       if (s.isSymbolicLink() || Date.now() - s.mtimeMs <= age) continue
       if (s.isDirectory()) {
-        if (!(OWN.test(name) || win && (NAMED.test(name) || profileShaped(path))) || inUse(path, platform)) continue
+        if (!(OWN.test(name) || all && (NAMED.test(name) || profileShaped(path))) || inUse(path, platform)) continue
         if (!win) { rmSync(path, { recursive: true, force: true }); continue }
         const gone = `${path}.sweep-${process.pid}` // keeps its name's start, so a later sweep finishes it
         renameSync(path, gone)
         rmSync(gone, { recursive: true, force: true })
-      } else if (win && s.isFile() && GUID_TMP.test(name) && isCrx(path)) rmSync(path, { force: true })
+      } else if (all && s.isFile() && GUID_TMP.test(name) && isCrx(path)) rmSync(path, { force: true })
     } catch { /* in use, or gone */ }
   }
 }
