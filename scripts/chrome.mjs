@@ -1,9 +1,9 @@
 // Finds a Chromium browser for the headless screenshots: Chrome first, then Chromium, then
 // Edge (on every Windows machine). Set CHROME to a browser's executable to choose one.
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, rmSync, unlinkSync } from 'node:fs'
+import { hostname, tmpdir } from 'node:os'
+import { join, relative, resolve, isAbsolute } from 'node:path'
 
 export function findChrome() {
   if (process.env.CHROME) return process.env.CHROME
@@ -39,8 +39,12 @@ export function startChrome(args) {
   track(chrome)
   return chrome
 }
+// Also stops a Chrome this file did not start (a script's own copy of the launch code), and deletes the
+// --user-data-dir it was spawned with, as long as that profile is in the temp folder.
 export function stopChrome(chrome) {
-  if (!live.delete(chrome)) return
+  if (chrome.stopped) return
+  chrome.stopped = true
+  live.delete(chrome)
   if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(chrome.pid), '/T', '/F'])
   else try { process.kill(-chrome.pid, 'SIGKILL') } catch { /* already gone */ }
   chrome.kill('SIGKILL')
@@ -49,7 +53,13 @@ export function stopChrome(chrome) {
   // returns. (Elsewhere open files delete fine, and the killed child stays a zombie until the event loop
   // reaps it, so waiting would only stall.)
   if (process.platform === 'win32') for (const t0 = Date.now(); alive(chrome.pid) && Date.now() - t0 < 3000;) sleep(25)
-  if (chrome.profile) removeProfile(chrome.profile)
+  const profile = chrome.profile ?? chrome.spawnargs?.find(a => a.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length)
+  if (profile && inTemp(profile)) removeProfile(profile)
+}
+// Only a folder inside the temp folder is a throwaway profile; a real one elsewhere is never deleted.
+// Both sides are resolved, so a short (8.3) and a long spelling of the same folder agree.
+const inTemp = dir => {
+  try { const r = relative(realpathSync.native(tmpdir()), realpathSync.native(resolve(dir))); return !!r && !r.startsWith('..') && !isAbsolute(r) } catch { return false }
 }
 
 // Deletes a profile, retrying while Chrome's helpers still hold files. rmSync's own maxRetries is no help
@@ -69,15 +79,31 @@ export function removeProfile(dir, { budget = 5000 } = {}) {
 // each start deletes the profiles older than a day. It spends about 2 s at most, so a backlog goes over
 // several starts, and skips a profile it can't delete yet.
 const STALE = /^(proto-(shoot|compare|perf|snap|smoke)|panel-verify)-/
-export function sweepProfiles({ budget = 2000, age = 86_400_000 } = {}) {
-  const t0 = Date.now(), root = tmpdir()
+// Whether a browser has this profile open, by the mark Chrome itself checks before it shares a profile. On
+// Windows a running Chrome holds <profile>/lockfile open, so deleting it fails (a free one goes now, as its
+// folder is about to). Elsewhere SingletonLock is a link to "<host>-<pid>": in use while that process runs,
+// and taken as in use when it names another machine or can't be read.
+export function inUse(dir, platform = process.platform) {
+  if (platform === 'win32') {
+    try { unlinkSync(join(dir, 'lockfile')); return false } catch (e) { return e.code !== 'ENOENT' }
+  }
+  let target
+  try { target = readlinkSync(join(dir, 'SingletonLock')) } catch (e) { return e.code !== 'ENOENT' }
+  const at = target.lastIndexOf('-'), pid = Number(target.slice(at + 1))
+  return at < 1 || target.slice(0, at) !== hostname() || !Number.isInteger(pid) || alive(pid)
+}
+export function sweepProfiles({ budget = 2000, age = 86_400_000, root = tmpdir(), platform = process.platform } = {}) {
+  const t0 = Date.now()
   let names
   try { names = readdirSync(root) } catch { return }
   for (const name of names) {
     if (Date.now() - t0 > budget) return
     if (!STALE.test(name)) continue
     const dir = join(root, name)
-    try { if (Date.now() - statSync(dir).mtimeMs > age) rmSync(dir, { recursive: true, force: true }) } catch { /* in use, or gone */ }
+    try {
+      const s = lstatSync(dir)
+      if (s.isDirectory() && !s.isSymbolicLink() && Date.now() - s.mtimeMs > age && !inUse(dir, platform)) rmSync(dir, { recursive: true, force: true })
+    } catch { /* in use, or gone */ }
   }
 }
 
