@@ -40,7 +40,7 @@ The bar's layout button, before Comment, opens the three sizes, phone, tablet an
 their dimensions, and the zoom under them (on a phone, the Layout row of the pill's menu). On a wide screen a web variant sits on an artboard as big as the stage, laid out for
 the stage's width (its breakpoints see the stage, not the window); the stage's own layout is
 selected. Choosing another shows the page at that size, zoomed to fit (a 1440 × 900 desktop on a
-phone, a phone on a desktop); the zoom there goes either from 10% to 300%, and the user can
+phone, a phone on a desktop); the zoom there goes either from 10% to 400%, and the user can
 pinch, Space-drag or middle-button drag (from anywhere, at any zoom; the page stays where it is
 left, and Fit centres it again), comment, try things, pick copy and scrub motion there. Nothing to build for it
 beyond a web variant that lays out well at each width.

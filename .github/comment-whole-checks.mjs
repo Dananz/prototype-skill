@@ -21,7 +21,11 @@ export async function commentWholeChecks({ proto, app, openPage, fail }) {
   try {
     const typed = await page.run(`(async () => {
       ${helpers}
-      if (!await until(() => document.querySelector('[data-mount]'))) return 'the variant never mounted'
+      // The outer mount exists before the device frame has loaded its design.
+      if (!await until(() => {
+        const frame = document.querySelector('[data-view] iframe')
+        return (frame ? frame.contentDocument : document)?.querySelector('[data-mount] [data-shoot=only]')
+      })) return 'the variant never mounted'
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'C', shiftKey: true, bubbles: true }))
       if (!await until(() => box() && document.activeElement === box())) return '⇧C did not put the cursor in the whole-variant box'
       if (!await until(outline)) return 'the box has the focus but the variant is not outlined'
