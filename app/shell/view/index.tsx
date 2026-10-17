@@ -3,7 +3,7 @@
 // shows the page's own place: the page moves it, and when the page in it moves (a link in the
 // design; it draws no bar, pill or sidebar of its own, only the design), the page follows. A quiet
 // line on top says the size and the zoom; under it the page in a frame, as wide as the area (never
-// above 100%), which two fingers or a pinch zoom, from 10% to 300%, and Space and a drag move.
+// above 100%), which two fingers or a pinch zoom, from 10% to 400%, and Space and a drag move.
 //
 // While a view is on, the page's own Comment button and C comment on the design in it: a layer
 // covers the frame, the comment layer's inspect looks through it (host.view().at), a drag on it
