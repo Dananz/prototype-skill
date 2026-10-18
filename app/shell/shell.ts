@@ -33,7 +33,7 @@ import { createIntake } from './intake/index'
 import type { Intake } from './intake/types'
 import { createSettings, type Appearance } from './settings'
 import { createShare } from './share'
-import { framed, frameClicks, frameMenus, offerTheme } from './view/frame'
+import { framed, frameClicks, frameMenus, offerTheme, openFrame, frameUrl, type Frame } from './view/frame'
 import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
 import { dims, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
 
@@ -549,6 +549,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     : '<div data-mount class="h-full"></div>'
 
   const previewWindows = new Map<string, VirtualList<Variant>>()
+  const cardFrames = new Set<Frame>()
   function buildLayer(p: Place): Layer {
     // The outer box doesn't scroll and is the containing block for the design's own
     // position:fixed (drawers, sheets, toasts), so they stay on the stage, pinned, instead
@@ -577,6 +578,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       host.dataset.route = routeOfFile(v.file)
       markBuilding(host)
       const here = () => !gone && live.has(host) && generations.get(host) === generation
+      // Each card gets its own viewport: its media queries see the chosen layout, not the phone.
+      if (p.view === 'proto' && cardView() && host.closest('[data-thumb]')) {
+        const frame = openFrame(host, frameUrl(hashOf({ view: 'variant', proto: p.proto, variant: v.id }), st.dark), { route: () => {}, bind: () => () => {}, bound: () => {} })
+        frame.el.className = 'block h-full w-full border-0'
+        cardFrames.add(frame)
+        live.set(host, () => { cardFrames.delete(frame); frame.close() })
+        return Promise.resolve()
+      }
       return load(v).then(
         c => {
           if (!here()) return
@@ -644,7 +653,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             render: (v: Variant, _index: number, previous?: HTMLElement) => virtualHTML(stacked ? stackCard(proto, v) : gridCard(proto, v), previous),
             columns: (width: number) => stacked ? (proto.kind === 'phone' ? Math.max(1, Math.floor((width + 40) / ((proto.screen[0] + 20) * phoneZoom(proto.screen[0] + 20, proto.screen[1] + 20, el) + 40))) : 1) : Math.max(1, getComputedStyle(host).gridTemplateColumns.split(' ').length),
             columnWidth: stacked && proto.kind === 'phone' ? () => (proto.screen[0] + 20) * phoneZoom(proto.screen[0] + 20, proto.screen[1] + 20, el) : undefined,
-            estimate: (_v: Variant, width: number) => stacked ? (proto.kind === 'phone' ? 44 + (proto.screen[1] + 20) * phoneZoom(proto.screen[0] + 20, proto.screen[1] + 20, el) : layers.clientHeight + 44) : width * (innerWidth < 640 && proto.kind === 'web' ? 1.4 : .625) + 32,
+            estimate: (_v: Variant, width: number) => cardView() ? width * viewSize().h / viewSize().w + (stacked ? 44 : 32) : stacked ? (proto.kind === 'phone' ? 44 + (proto.screen[1] + 20) * phoneZoom(proto.screen[0] + 20, proto.screen[1] + 20, el) : layers.clientHeight + 44) : width * (innerWidth < 640 && proto.kind === 'web' ? 1.4 : .625) + 32,
             gap: stacked ? 32 : 20, columnGap: stacked && proto.kind === 'phone' ? 40 : undefined, overscan: 1, cacheSize: stacked ? 8 : 40,
             onAttach: (cell: HTMLElement, v: Variant) => { for (const mount of cell.querySelectorAll<HTMLElement>('[data-mount]')) void start(mount, v) },
             onDetach: (cell: HTMLElement) => cell.querySelectorAll<HTMLElement>('[data-mount]').forEach(stop),
@@ -814,10 +823,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // At Fit a phone card stays 16:10 with the phone as it would sit in a 1200px-wide frame. At a
     // set scale the card grows to the phone at that size, kept within the card's width.
     const scale = st.place.view === 'session' ? 0 : st.scale
-    // A web design's card shows it at the width the page is seen at: desktop on a wide screen, the
-    // phone layout on a phone (its breakpoints follow the window, so a 1200px canvas there drew the
-    // phone layout stretched).
-    const narrow = innerWidth < 640, w = narrow ? Math.max(320, Math.round(innerWidth)) : 1200, h = narrow ? Math.round(w * 1.4) : 750
+    // A web card follows the window, unless the phone lobby gives each card its own layout.
+    const narrow = innerWidth < 640, size = cardView() ? viewSize() : null
+    const w = size?.w ?? (narrow ? Math.max(320, Math.round(innerWidth)) : 1200), h = size?.h ?? (narrow ? Math.round(w * 1.4) : 750)
     const thumbs = [...layers.querySelectorAll<HTMLElement>('[data-thumb]')]
     // Every size written first, then every width read once, so the page lays out once, not per card.
     for (const t of thumbs) {
@@ -825,7 +833,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (!t.hasAttribute('data-pthumb')) {
         inner.style.width = `${w}px`
         inner.style.height = `${h}px`
-        t.style.aspectRatio = narrow ? `${w} / ${h}` : ''
+        t.style.aspectRatio = narrow || size ? `${w} / ${h}` : ''
       } else {
         t.style.aspectRatio = scale ? 'auto' : ''
         t.style.paddingBlock = scale ? '20px' : ''
@@ -964,6 +972,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // stage (a grid, so a root with h-full fills it) and contains its own position:fixed.
   function stackCard(p: Proto, v: Variant) {
     const head = (v: Variant) => `<div class="mb-3 flex h-8 min-w-0 items-center gap-2 ${p.kind === 'phone' ? 'justify-center' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" title="Open ${variantLabel(p, v.id)}" class="flex min-w-0 cursor-pointer items-center gap-2 rounded-md hover:underline hover:decoration-zinc-400 hover:underline-offset-4"><span class="font-semibold">${variantLabel(p!, v.id)}</span><span dir="auto" class="truncate text-zinc-500">${esc(v.name)}</span></button>${v.id === pickOf(p) ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}Picked</span>` : ''}${editing(p.id, v.id) ? pulse('size-1.5') : ''}${builtFrom(p, v.id).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}${bd(k.title)}</button>`).join('')}</div>`
+    if (cardView()) return `<section data-stack-item class="min-w-0 px-4">${head(v)}${thumb(p, 'aspect-[16/10]')}</section>`
     return p.kind === 'phone' ? `<section data-stack-item class="min-w-0">${head(v)}<div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(p)}"><div data-mount class="h-full overflow-y-auto"></div></div></section>` : `<section data-stack-item><div class="px-4 sm:px-6">${head(v)}</div><div class="grid min-h-[var(--stage-h)] border-y border-black/[.07] bg-white [contain:layout_paint] dark:border-white/10 dark:bg-zinc-950"><div data-mount class="min-w-0"></div></div></section>`
   }
   function stack(p: Proto) {
@@ -2086,8 +2095,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   /** A layout other than the stage's own is chosen. */
   const viewOn = () => !!st.view.size && viewOk()
+  // On a phone the lobby stays a list; only its variant cards take the chosen layout.
+  const cardView = () => st.place.view === 'proto' && phoneMq.matches && viewOn()
   /** The design is shown in the view's frame: a chosen layout, or the stage's own artboard. */
-  const frameOn = () => viewOn() || fillOk()
+  const frameOn = () => (viewOn() && !cardView()) || fillOk()
   const shownSize = (): Size | null => viewOn() ? st.view.size! : native()
   const viewSize = (): ViewSize => { const s = st.view.size!, d = dims(s, st.view.land); return { size: s, w: d.w, h: d.h } }
   const deviceView = createView(zone.querySelector<HTMLElement>('[data-view]')!, comments.wrap)
@@ -2101,9 +2112,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   /** Changes the view; what the chrome shows (its size, turned or not) redraws it, a zoom only the view. */
   function patchView(p: Partial<typeof st.view>) {
-    const was = st.view
+    const was = st.view, cards = cardView()
     st.view = { ...was, ...p }
-    if (st.view.size !== was.size || st.view.land !== was.land) { render(); fit() }
+    if (st.view.size !== was.size || st.view.land !== was.land) { if (cards || cardView()) show(false); render(); fit() }
     else { paintView(); syncScale() }
   }
   function paintView() {
@@ -2195,7 +2206,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     commentsKey = k
     render()
   })
-  phoneMq.addEventListener('change', () => paintHints())
+  phoneMq.addEventListener('change', () => {
+    if (st.place.view === 'proto' && st.view.size && cur()?.kind !== 'phone') { show(false); render() }
+    else paintHints()
+  })
 
   // ---------- copy options: a T button wherever the design on the stage declares them ----------
   // Only a design that declares copy options (useCopy) has one: beside Comment in the bar, in the
@@ -2799,6 +2813,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function setTheme(dark: boolean) { setAppearance(dark ? 'dark' : 'light') }
   function applyTheme(dark: boolean) {
     st.dark = dark
+    cardFrames.forEach(frame => frame.theme(dark))
     document.documentElement.classList.toggle('dark', dark)
     document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
     render()
