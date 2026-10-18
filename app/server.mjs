@@ -625,9 +625,15 @@ export function prototypeServer(session) {
       try { watch(intakeDir, changed).on('error', () => {}) } catch { /* the page's status ping still catches up */ }
       try { watch(inbox, { recursive: true }, changed).on('error', () => {}) } catch { /* no recursive watch here: the page's status ping still catches up */ }
       // A visible page pings every minute, so "idle" means no edits and nobody looking. Once
-      // every prototype is picked or archived, nothing is left to decide: stop much sooner.
+      // every prototype is picked or archived, nothing is left to decide: stop much sooner, unless
+      // the session is kept (Settings > Session), which keeps its normal idle hours.
       const idle = (read().idleHours ?? 6) * 3600e3
-      setInterval(() => { if (Date.now() - activity > (decided() ? Math.min(idle, DECIDED_IDLE) : idle)) stop(decided() ? 'idle, all decided' : 'idle') }, 60e3).unref()
+      setInterval(() => {
+        let kept = false
+        try { kept = !!read().keep } catch { /* unreadable session.json: treat as not kept */ }
+        const early = !kept && decided()
+        if (Date.now() - activity > (early ? Math.min(idle, DECIDED_IDLE) : idle)) stop(early ? 'idle, all decided' : 'idle')
+      }, 60e3).unref()
     },
     // Tailwind rescans only when a file it has already read changes, and Vite gives it nothing
     // for a new one, so a new prototype folder's classes stayed missing until a restart. A new

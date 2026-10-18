@@ -900,7 +900,7 @@ When the user wants the prototypes in a doc or artifact to share: read `referenc
 | The user wants their links | `proto ls` |
 
 On its own: a server stops after 6 hours with no edits and no open page (90 minutes once every
-prototype in the session is picked or archived), and every
+prototype in the session is picked or archived, unless the session is kept), and every
 `proto up` deletes sessions untouched for 14 days unless kept and drops leftover tailnet
 rules (`proto gc` does the same on demand). The user can also Keep or Stop from Settings › Session
 in the page.
