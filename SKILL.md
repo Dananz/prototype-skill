@@ -214,6 +214,10 @@ the app), do the steps below and save one at the end.
    chrome with no numbers in the source (a native tab bar, Liquid Glass) is measured off the
    reference at its scale. When the source and the screenshot disagree, the screenshot wins:
    it is what the user sees. Every variant imports these parts, so the chrome can't drift.
+   For an iPhone status bar, use the bundled `src/phone-status/ios.svg` as a `currentColor`
+   mask (usage and Apple source in `src/phone-status/README.md`). It supplies 9:41 and
+   Apple's cellular, Wi-Fi and full-battery artwork. Keep it in the design's shared parts;
+   the shell already draws the Dynamic Island. Never substitute text glyphs for these icons.
 5. **The device.** A phone prototype's screen is the reference's size in points:
    `--screen 402x874` for an iPhone 17 shot (1206×2622 px at 3x). Without it the frame is
    393×852.
