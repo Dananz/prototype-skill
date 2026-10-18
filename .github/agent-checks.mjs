@@ -145,6 +145,42 @@ test('session host follows detected agents and survives ordinary terminal comman
   assert.equal(readFileSync(file, 'utf8'), before)
 }))
 
+test('Codex listener status requires a real wakeup and leaves pending comments untouched', () => fixture(({ call, session }) => {
+  const dir = session('thread'), inbox = join(dir, '.proto/inbox')
+  const incoming = join(inbox, 'new/pending/batch.json')
+  mkdirSync(dirname(incoming), { recursive: true })
+  writeFileSync(incoming, JSON.stringify({ id: 'pending', comments: [{ n: 1, text: 'Still waiting' }] }))
+  const r = call(['inbox', '--status'], { CODEX_THREAD_ID: 'thread' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(r.stdout, /not listening/)
+  assert.match(r.stdout, /T3 Code.*Codex/)
+  assert.match(r.stdout, /schedule_task/)
+  assert.match(r.stdout, /exec_command.*does not.*wake/)
+  assert.equal(JSON.parse(readFileSync(incoming, 'utf8')).id, 'pending')
+  assert.doesNotMatch(r.stdout, /Still waiting/)
+}))
+
+test('listener status reuses registered subscriptions without exposing credentials or taking batches', () => fixture(({ call, session }) => {
+  const dir = session('thread'), inbox = join(dir, '.proto/inbox')
+  mkdirSync(inbox, { recursive: true })
+  writeFileSync(join(inbox, 'listener.json'), JSON.stringify({ id: 'existing-task', threadId: 'owner', url: 'https://example.test/private-wakeup-token' }))
+  const env = { CODEX_THREAD_ID: 'thread' }
+  const ready = call(['inbox', '--status'], env)
+  assert.equal(ready.status, 0, ready.stderr)
+  assert.match(ready.stdout, /persistent listener \(existing-task\); listening/)
+  assert.doesNotMatch(ready.stdout, /private-wakeup-token|schedule_task/)
+  writeFileSync(join(inbox, 'listener-status.json'), JSON.stringify({ id: 'existing-task', error: 'notification returned HTTP 503' }))
+  const failed = call(['inbox', '--status'], env)
+  assert.match(failed.stdout, /retrying: notification returned HTTP 503/)
+  assert.doesNotMatch(failed.stdout, /; listening|schedule_task/)
+  for (const flag of ['--wait', '--unlisten', '--listen']) {
+    const conflict = call(['inbox', '--status', flag], env)
+    assert.equal(conflict.status, 1, `--status must refuse ${flag}`)
+    assert.match(conflict.stderr, /--status/)
+  }
+  assert.equal(JSON.parse(readFileSync(join(inbox, 'listener.json'), 'utf8')).id, 'existing-task')
+}))
+
 test('skill installed through a symlink in a path with spaces can locate its resources', () => fixture(({ project, call }) => {
   const installed = join(project, 'installed skills', 'prototype')
   mkdirSync(dirname(installed), { recursive: true })

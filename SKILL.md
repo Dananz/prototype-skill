@@ -78,8 +78,8 @@ critic pass yourself. Never invent tool names, unavailable model IDs or backgrou
 For image generation, use the available tool's supported execution and file-export mechanism;
 background work is optional. Save its outputs in the app's `src/assets/` before final QA.
 If the harness cannot inspect images, report that visual QA is blocked rather than claiming
-that screenshots match. Start a comment listener using a persistent event subscription or background completion
-that reaches this conversation; otherwise use `proto inbox` at the start and end of active turns (details below).
+that screenshots match. Connect the session's comment listener immediately after `proto up`,
+before building or ending the first turn. Follow the startup step below for every provider.
 
 ## 1. Start the session app, then send the link
 
@@ -93,6 +93,27 @@ It creates the app on the first call in a session, restarts it if it stopped, an
 `url …`. Send that URL to the user right away in one short message ("Live link: … it fills
 in as I build"). Then continue. On later requests in the same session run `proto up` again
 (same app, same link) and don't resend the link unless the user lost it.
+
+**Connect comments now, including in Codex.** `proto up` prints the listener's status.
+**Read `references/listener.md` now**, before building or ending this turn. The listener
+setup lives in that short file so a truncated read of this skill cannot hide it.
+If startup says `not listening`, complete that setup in this same turn.
+In T3 Code, both Codex and Claude use the same `schedule_task` webhook, bound to this
+conversation. Discover the host tools before deciding wakeups are unavailable; a short
+initial tool list is not proof that T3's scheduler is missing. Use the host's documented
+tool discovery or MCP transport when necessary.
+
+Run `proto inbox --status` after registration. It checks the listener without taking
+comments. Reuse an existing subscription and preserve its task ID and owning thread across
+compaction. Do not finish with a promise to listen, an unconnected `--wait`, or a recurring
+polling task. If the host has no supported wakeup mechanism or registration fails, state
+the specific blocker and read `proto inbox` at the start and end of active turns.
+
+**Codex shell sessions are not a listener connection.** A process/session ID returned by
+`exec_command` or `write_stdin` only means the command is running. It does not establish
+delivery into an idle conversation. Use the T3 webhook when available. Use `--wait` only
+when the host explicitly supports completion wakeups into this same conversation, then
+rearm it on every completion as described under Comments.
 
 What `proto up` does: the app lives in `<project>/.prototypes/<session>/` (git-ignored, the
 project's own files are untouched), its stack follows the project (React for React, Next or
@@ -692,41 +713,9 @@ run `proto inbox`** and handle pending requests before finishing.
 persistent event subscription when the harness supports one. Never add a listener agent,
 helper conversation, recurring polling task, or a second subscription for the same app.
 
-**T3 Code:** use its `schedule_task` webhook to wake this conversation on each comment send.
-This is one persistent subscription, with no waiting agent and no inactivity timeout:
-
-1. Run `list_scheduled_tasks` first and reuse the enabled webhook for this project/session
-   and owning thread. Keep its task ID across compaction. Never create one per turn or batch.
-2. If none exists, create one with `schedule: {type: "webhook"}` and
-   `bindToCurrentThread: true`. Its prompt must name the absolute skill CLI path, original
-   project and session, and say to read `proto inbox` and handle the pending comments there.
-   `{{body.batchId}}` is only a wakeup hint. The durable inbox is the source of truth;
-   retries or several sends can wake the same thread again with nothing new to claim.
-3. Save `{ "url": "<returned webhookUrl>", "id": "<scheduledTaskId>",
-   "threadId": "<owning thread ID>" }` to a private temporary JSON file **outside the
-   served project**, then run `proto inbox --listen "<config.json>"` with the original
-   project/session flags. Delete the temporary file. The URL is a credential: never put it
-   in prototype source, a reply, a PR, or the page. The registered copy is private.
-   If no `webhookUrl` is returned, remote access is unavailable: disable that task and
-   report the prerequisite. Do not claim a persistent listener was connected.
-4. Leave that same subscription enabled after comments, final replies, compaction and
-   server updates. `proto up` restores delivery after a server restart. Failed delivery
-   retries automatically; check `proto inbox` for errors. Do not also run `--wait`.
-   If switching from an existing background wait, cancel that harness job once first.
-5. Stop only when the user asks: `proto inbox --unlisten`, then disable the same host task.
-   Do not silently move another conversation's subscription here. To change its owner,
-   explicitly remove and disable the old subscription before registering the replacement.
-
-**Other harnesses with background completion wakeups:** start `proto inbox --wait` in
-that mechanism with a supported timeout (`--timeout <minutes>`, default 115). This transport
-exits to deliver its batch. On **every** completion, including a timeout, immediately rearm
-one wait **before** processing the batch or ending the turn. Reuse a live wait; never launch
-several. Preserve its job ID across compaction. An unrelated task finishing is no reason to
-cancel it. This keeps listening while the current batch is handled.
-
-Do not block the foreground turn waiting for future comments. Without either event
-subscriptions or background wakeups, comments persist until the next turn: tell the user
-to send a chat message to have them read. Do not promise automatic reactions while idle.
+Follow **`references/listener.md`** for the persistent T3 webhook (Codex and Claude),
+supported background completion wakeups on other hosts, and recovery when neither exists.
+Read it at startup, before finishing a turn with page comments enabled.
 
 **When a session ends** (T3 Code restarted, the terminal closed) after taking comments and before
 answering them, the page shows them as "Not picked up" and offers the user a restart message to
