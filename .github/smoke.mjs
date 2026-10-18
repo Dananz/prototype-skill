@@ -42,6 +42,7 @@ import { virtualWindowChecks } from './virtual-window-checks.mjs'
 import { virtualReactChecks } from './virtual-react-checks.mjs'
 import { variantLabelsChecks } from './variant-labels-checks.mjs'
 import { headerChecks } from './header-checks.mjs'
+import { phoneFrameChecks } from './phone-frame-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -219,6 +220,7 @@ await slotChecks({ proto, app, local, openPage, fail })
 await middleDragChecks({ proto, app, local, openPage, fail })
 await variantLabelsChecks({ proto, app, local, openPage, fail })
 await headerChecks({ proto, app, local, openPage, fail })
+await phoneFrameChecks({ proto, app, local, openPage, fail })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
 proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--reference-only', '--variants', 'A:Price only,B:Fuel tabs'])
