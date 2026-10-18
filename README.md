@@ -147,8 +147,9 @@ Keep talking in the same conversation and everything lands in the same app:
 | "go with A" | A marked as the pick |
 | "build it" | the real feature in your codebase |
 
-You can also send comments and requests from the prototype itself. **Automatic responses
-while the agent is idle require background wakeups from the host.** Otherwise comments stay
+You can also send comments and requests from the prototype itself. **In T3 Code, Codex and
+Claude connect one persistent webhook listener so page comments wake the same conversation.**
+The skill tells the agent to connect this when starting the app. Other hosts need background wakeups. Otherwise comments stay
 saved until the next turn; send the agent "check the prototype comments" to pick them up.
 
 ## Features
@@ -217,8 +218,12 @@ overrides those labels; `reply --as` changes only that reply. Unrecognized hosts
 **Agent**, and ordinary terminal commands keep the last detected host. `PROTO_AGENT_PID`
 can identify a long-lived agent process for interrupted-comment recovery; never use a short-lived command's PID.
 
-The agent reads `proto inbox` on active turns. A host with background completion wakeups
-can also use `proto inbox --wait` to react to comments while idle.
+`proto up` reports whether comments are connected. In T3 Code, the agent registers one
+`schedule_task` webhook with `proto inbox --listen <private-config.json>` and keeps it across
+turns and server restarts. `proto inbox --status` checks the registration without taking comments.
+Codex shell sessions alone do not wake an idle conversation. Other hosts with explicit
+background completion wakeups can use `proto inbox --wait`, rearming after each completion.
+Without a wakeup mechanism, the agent reads `proto inbox` on active turns.
 </details>
 
 ## Contributing

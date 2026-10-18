@@ -38,6 +38,7 @@
 //             arrive in `proto inbox` as an intake batch. See references/intake.md for the file's shape.
 //   proto intake [status] | clear   what is open and whether it was answered, or take the questions away
 //   proto inbox --listen <config.json> | --unlisten   one persistent wakeup subscription (url, id, threadId)
+//   proto inbox --status   check the listener without taking pending comments
 //   proto inbox [--wait] [--timeout <min>]   comments sent from the page; --wait blocks until some arrive
 //   proto reply <batch>[/<n>] "…" [--done | --until <slug>[/<letter>]] [--as claude|codex|agent]   answer a comment (or a whole batch) in the page;
 //                                   --until keeps it open until that work is built (proto done closes it)
@@ -96,7 +97,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'off', 'done', 'wait', 'unlisten', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -436,6 +437,7 @@ async function up() {
   console.log(`dir ${dir}`)
   console.log(`stack ${s.stack}`)
   for (const name of kitNames()) console.log(kitLine(name, project))
+  printListener(dir)
 }
 
 function add() {
@@ -1807,9 +1809,22 @@ function intake() {
   console.log(cur.status === 'open' ? `open: ${cur.questions.length} questions waiting for the user's answers` : `answered ${cur.answeredAt} (batch ${cur.batch}): run proto inbox to read it`)
 }
 
+function printListener(dir) {
+  const persistent = listenerStatus(dir)
+  if (persistent.configured) return console.log(`persistent listener (${persistent.id})${persistent.error ? `; retrying: ${persistent.error}` : '; listening'}`)
+  const waiter = readJson(waiterFile(dir), null)
+  if (waiter && alive(waiter.pid)) return console.log(`listening (pid ${waiter.pid}); keep its host background wakeup active`)
+  console.log('not listening: page comments cannot wake this conversation yet')
+  console.log('T3 Code (Codex or Claude): reuse list_scheduled_tasks or create schedule_task with schedule: {type: "webhook"}, bindToCurrentThread: true; register its private config with proto inbox --listen <config.json>. Read references/listener.md in the skill directory and connect before ending the turn.')
+  if (detectedAgent() === 'codex') console.log('Codex: a running exec_command session does not by itself wake an idle conversation. Use the host webhook or an explicitly supported background completion wakeup.')
+  console.log('Only if this host offers no wakeup mechanism, read proto inbox on active turns and tell the user automatic replies are unavailable.')
+}
+
 async function inbox() {
   const dir = sessionDir()
   const s = need(dir)
+  if (flags.status && (flags.listen || flags.wait || flags.unlisten)) die('--status cannot be combined with --listen, --wait or --unlisten')
+  if (flags.status) return printListener(dir)
   if (flags.listen && (flags.wait || flags.unlisten)) die('--listen cannot be combined with --wait or --unlisten')
   if (flags.unlisten) {
     locked(dir, () => rmSync(listenerFile(dir), { force: true }))
@@ -1838,8 +1853,7 @@ async function inbox() {
     got.forEach(b => printBatch(dir, b))
     if (!got.length) console.log('no new comments')
     stillOpen(dir, got.map(b => b.id))
-    const w = readJson(waiterFile(dir), null)
-    console.log(persistent.configured ? `persistent listener (${persistent.id})${persistent.error ? `; retrying: ${persistent.error}` : '; listening'}` : w && alive(w.pid) ? `listening (pid ${w.pid})` : 'not listening: run `proto inbox` on active turns; use `proto inbox --wait` only with a supported background wakeup')
+    printListener(dir)
     return
   }
   // Comments a session that ended took and never answered come first, as an arrival does.

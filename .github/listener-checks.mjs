@@ -156,6 +156,8 @@ export async function continuousRuntimeChecks({ proto, app, local, fail }) {
   }
   const ids = []
   try {
+    const disconnected = proto(['up'], { stdout: true })
+    if (!disconnected.includes('not listening') || !disconnected.includes('schedule_task')) fail('startup must tell Codex to connect the host wakeup before ending the turn')
     writeFileSync(config, JSON.stringify({ url: `http://127.0.0.1:${receiver.address().port}/wake-private-token`, id: 'runtime-subscription', threadId: 'runtime-thread' }))
     // A live legacy waiter prevents a second listener from being registered.
     const waiter = join(app, '.proto', 'inbox', 'waiter.json')
@@ -163,6 +165,8 @@ export async function continuousRuntimeChecks({ proto, app, local, fail }) {
     proto(['inbox', '--listen', config], { ok: false }); rmSync(waiter)
     if (existsSync(join(app, '.proto', 'session.lock'))) fail('refusing a live waiter must release its lock')
     proto(['inbox', '--listen', config])
+    const connected = proto(['up'], { stdout: true })
+    if (!connected.includes('persistent listener (runtime-subscription); listening') || connected.includes('schedule_task')) fail('startup must reuse the connected listener instead of proposing another subscription')
     for (const path of ['.proto/inbox/listener.json', '.proto/inbox/listener.json?raw', `@fs${registration.replaceAll('\\', '/')}`]) {
       const response = await fetch(local + path), text = await response.text()
       if (response.status !== 403 || text.includes('wake-private-token')) fail(`private callback is readable at ${path}`)
