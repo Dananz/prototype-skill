@@ -105,7 +105,9 @@ export function trackPointer(e: { clientX: number; clientY: number }) {
   }
   const arrows = document.querySelectorAll<HTMLElement>('[data-edge]')
   for (const el of arrows) {
-    const z = el.closest('[data-zone]')!.getBoundingClientRect()
+    const zone = el.closest<HTMLElement>('[data-zone]')!, r = zone.getBoundingClientRect()
+    // The stage stops at the side panel (--hw): the next arrow wakes near that edge, not the window's.
+    const z = new DOMRect(r.left, r.top, r.width - (parseFloat(getComputedStyle(zone).getPropertyValue('--hw')) || 0), r.height)
     const dist = el.dataset.edge!.endsWith('prev') ? e.clientX - z.left : z.right - e.clientX
     edge.target[el.dataset.edge!] = inside(e, z) ? Math.min(1, Math.max(0, 1 - (dist - 24) / 160)) : 0
   }
