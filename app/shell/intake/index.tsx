@@ -89,7 +89,7 @@ function Card({ intake, name, submitted, send, close }: Props) {
   }
 
   return (
-    <div className="flex h-full flex-col bg-zinc-100 text-[13px] text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="flex h-full flex-col bg-zinc-100 text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-8">
         <div className="mx-auto flex max-w-3xl flex-col rounded-[28px] border border-black/5 bg-white shadow-[0_1px_0_rgb(0_0_0/.03),0_24px_60px_-32px_rgb(0_0_0/.25)] dark:border-white/10 dark:bg-zinc-900 dark:shadow-none">
           <header className="px-5 pb-5 pt-6 sm:px-9 sm:pt-8">
