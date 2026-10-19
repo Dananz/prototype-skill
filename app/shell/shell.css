@@ -16,6 +16,14 @@ body { margin: 0; }
 body { font-family: "Google Sans Variable", ui-sans-serif, system-ui, sans-serif; }
 [data-mount] { font-family: var(--default-font-family, ui-sans-serif, system-ui, sans-serif); }
 
+/* User text (a Hebrew title in the English page, an English one in the Hebrew page) runs in its own
+   direction (dir="auto") but lines up with the page around it, not with its own start. Fields the
+   user types in keep their own side; so does everything in a design. */
+/* Chrome has no text-align: match-parent, so the page's side is named. Zero specificity: a
+   text-center or text-end on the element still wins, and centered blocks are left alone. */
+:where(html[dir="ltr"] [dir="auto"]:not(input, textarea, [data-mount] *, .text-center, .text-center *)) { text-align: left; }
+:where(html[dir="rtl"] [dir="auto"]:not(input, textarea, [data-mount] *, .text-center, .text-center *)) { text-align: right; }
+
 /* Keep the switcher's description scrollbar visible on systems with overlay scrollbars. */
 [data-switch-description]::-webkit-scrollbar { width: 6px; }
 [data-switch-description]::-webkit-scrollbar-thumb { background: rgb(128 128 128 / .5); border-radius: 3px; }
