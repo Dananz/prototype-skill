@@ -10,6 +10,7 @@
 // choices stay: they are the page's (shell/copy.ts), kept by their words across reloads.
 import { Component, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
 import { Drawer } from '@base-ui/react/drawer'
+import { t, tn } from '../i18n'
 import { copy, type Choice, type CopyLine } from '../copy'
 import { useAgentName, useCtx, type Host } from './ctx'
 import { describe, frameOf, scaleOf } from './dom'
@@ -140,7 +141,7 @@ export function createCopyActions(cs: CopyStore, host: Host, comments: Store, st
         copy.sent(s.route, id, Object.fromEntries(list.map(c => [c.line.id, c.text])))
         set({ sending: false, was: null })
       } catch (e) {
-        set({ sending: false, error: e instanceof Error ? e.message : 'Could not send' })
+        set({ sending: false, error: e instanceof Error ? e.message : t('Could not send') })
       }
     },
     counts() { const s = get(); return { on: s.on, lines: lines().length, changed: act.changed().length } },
@@ -291,7 +292,7 @@ function OptionList({ line, el, touch, onDone }: { line: CopyLine; el: HTMLEleme
 
   return (
     <div onKeyDown={onKey} onPointerLeave={() => setHover(null)}>
-      <div role="listbox" aria-label={`${line.label} options`} className="space-y-px">
+      <div role="listbox" aria-label={t('{label} options', { label: line.label })} className="space-y-px">
         {line.options.map((o, i) => (
           <button key={i} ref={b => { rows.current[i] = b }} type="button" role="option" aria-selected={i === cur}
             data-copy-option={i} tabIndex={i === active ? 0 : -1} dir={dir}
@@ -299,7 +300,7 @@ function OptionList({ line, el, touch, onDone }: { line: CopyLine; el: HTMLEleme
             className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 text-start text-zinc-900 outline-none active:bg-zinc-900/[.06] dark:text-zinc-100 dark:active:bg-white/10 ${size} ${!touch && i === shown ? LIT : ''}`}>
             <span className="grid size-4 shrink-0 place-items-center text-proto-primary-soft-fg">{i === cur && <Icon name="check" className="size-4" />}</span>
             <span lang={lang} className="min-w-0 flex-1 leading-5">{o}</span>
-            {i === 0 && <span dir="ltr" className="shrink-0 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">Now</span>}
+            {i === 0 && <span dir="ltr" className="shrink-0 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">{t('Now')}</span>}
           </button>
         ))}
       </div>
@@ -310,11 +311,11 @@ function OptionList({ line, el, touch, onDone }: { line: CopyLine; el: HTMLEleme
           {mine && draft.trim() === mine ? <Icon name="check" className="size-4 text-proto-primary-soft-fg" /> : <Icon name="pen" className="size-3.5 text-zinc-400" />}
         </span>
         <input ref={input} data-copy-own="" value={draft} dir={draft ? 'auto' : dir} lang={lang}
-          placeholder={'Write my own…‎'} aria-label={`Write my own ${line.label.toLowerCase()}`}
+          placeholder={t('Write my own…')} aria-label={t('Write my own {label}', { label: line.label.toLowerCase() })}
           onChange={e => setDraft(e.target.value)} onFocus={() => setActive(n)} onClick={() => go(n)}
           className={`h-9 min-w-0 flex-1 bg-transparent text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500 ${touch ? 'text-base' : 'text-[14px]'}`} />
         {draft.trim() && draft.trim() !== mine && (
-          <button type="button" aria-label="Use this line" title="Use this line · Enter" onClick={() => takeOwn(false)}
+          <button type="button" aria-label={t('Use this line')} title={`${t('Use this line')} · Enter`} onClick={() => takeOwn(false)}
             className={`${IB} text-proto-primary-soft-fg! hover:bg-proto-primary-soft!`}><Icon name="check" className="size-4" /></button>
         )}
       </div>
@@ -466,7 +467,10 @@ function CopyLayer() {
         return (
           <div key={m.key}>
             <button ref={b => { if (b) btns.current.set(m.key, b); else btns.current.delete(m.key) }} type="button" data-copy-mark={m.key}
-              aria-haspopup="listbox" aria-expanded={isOpen} aria-label={`${line.label}: ${line.options.length} options${ch ? ', changed' : ''}`}
+              aria-haspopup="listbox" aria-expanded={isOpen}
+              aria-label={ch
+                ? tn(line.options.length, '{label}: {n} option, changed', '{label}: {n} options, changed', { label: line.label })
+                : tn(line.options.length, '{label}: {n} option', '{label}: {n} options', { label: line.label })}
               onClick={() => (isOpen ? copyAct.close() : copyAct.show(m.id))}
               onKeyDown={e => { if (e.key === 'ArrowDown') { e.preventDefault(); copyAct.show(m.id) } }}
               style={{ left: m.box.x, top: m.box.y, width: m.box.w, height: m.box.h, borderRadius: m.box.r }}
@@ -516,14 +520,14 @@ function Popover({ line, mark, el }: { line: CopyLine; mark: Mark | null; el: HT
   })
   if (!mark) return null
   return (
-    <div ref={pop} data-copy-list role="dialog" aria-label={`${line.label} options`}
+    <div ref={pop} data-copy-list role="dialog" aria-label={t('{label} options', { label: line.label })}
       // Unplaced for its first frame: see-through, not hidden, so its first option can take the focus.
       style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, ...(pos ? {} : { opacity: 0, pointerEvents: 'none' }) }}
       className={`pointer-events-auto absolute z-20 w-[328px] max-w-[calc(100%-1rem)] rounded-xl bg-white p-1 text-zinc-900 shadow-[0_16px_40px_-12px_rgb(0_0_0/.28)] ring-1 ring-black/[.08] transition-[opacity,translate] duration-150 ease-out starting:opacity-0 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10 ${pos?.above ? 'starting:translate-y-1' : 'starting:-translate-y-1'}`}>
       <div className="flex h-9 items-center gap-1.5 ps-2.5 text-xs">
         <span className="font-medium text-zinc-900 dark:text-zinc-100">{line.label}</span>
-        <span className="text-zinc-400 dark:text-zinc-500">{line.options.length} options</span>
-        <button type="button" aria-label="Close" title="Close · Esc" onClick={() => copyAct.escape()} className={`${IB} ms-auto`}><Icon name="x" className="size-3.5" /></button>
+        <span className="text-zinc-400 dark:text-zinc-500">{tn(line.options.length, '{n} option', '{n} options')}</span>
+        <button type="button" aria-label={t('Close')} title={`${t('Close')} · Esc`} onClick={() => copyAct.escape()} className={`${IB} ms-auto`}><Icon name="x" className="size-3.5" /></button>
       </div>
       <OptionList key={line.id} line={line} el={el} touch={false} onDone={refocus => { copyAct.close(); if (refocus) document.querySelector<HTMLElement>(`[data-copy-mark="${CSS.escape(line.id)}"]`)?.focus({ preventScroll: true }) }} />
     </div>
@@ -569,8 +573,8 @@ export function CopySheet({ container }: { container: HTMLElement }) {
             <Drawer.Content className="px-2">
               <div className="flex items-center gap-1.5 pb-1 ps-2.5">
                 <Drawer.Title className="text-[15px] font-semibold">{line.label}</Drawer.Title>
-                <span className="text-xs text-zinc-400 dark:text-zinc-500">{line.options.length} options</span>
-                <Drawer.Close aria-label="Close" className="ms-auto grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10"><Icon name="x" /></Drawer.Close>
+                <span className="text-xs text-zinc-400 dark:text-zinc-500">{tn(line.options.length, '{n} option', '{n} options')}</span>
+                <Drawer.Close aria-label={t('Close')} className="ms-auto grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10"><Icon name="x" /></Drawer.Close>
               </div>
               <OptionList key={line.id} line={line} el={el} touch onDone={() => copyAct.close()} />
             </Drawer.Content>
@@ -600,7 +604,7 @@ function SendChoices({ n, sending, sent, reply, listening, onSend, className = '
         <button type="button" data-shoot="send-copy" disabled={!n || sending} onClick={onSend}
           className={`inline-flex h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition-colors disabled:cursor-default ${n && !sending ? PRIMARY : 'bg-zinc-900/[.06] text-zinc-400 dark:bg-white/10 dark:text-zinc-500'}`}>
           <Icon name="send" className="size-4" />
-          {sending ? 'Sending…' : waiting ? `Sent to ${agent}` : n ? `Send ${n} choice${n === 1 ? '' : 's'} to ${agent}` : 'Nothing changed yet'}
+          {sending ? t('Sending…') : waiting ? t('Sent to {agent}', { agent }) : n ? tn(n, 'Send {n} choice to {agent}', 'Send {n} choices to {agent}', { agent }) : t('Nothing changed yet')}
         </button>
       )}
       <Listening on={listening} className="shrink-0 justify-center whitespace-nowrap" />
@@ -624,11 +628,11 @@ export function CopyBar() {
   const undoable = s.was && pending.length ? label(s.was.id) : null
 
   const undo = undoable && (
-    <button type="button" data-shoot="undo-copy" onClick={copyAct.undo} aria-label={`Undo the ${undoable.toLowerCase()} change`} title={`Undo the ${undoable.toLowerCase()} change`}
+    <button type="button" data-shoot="undo-copy" onClick={copyAct.undo} aria-label={t('Undo the {label} change', { label: undoable.toLowerCase() })} title={t('Undo the {label} change', { label: undoable.toLowerCase() })}
       className={narrow
         ? '-ms-3.5 grid size-11 shrink-0 place-items-center rounded-full text-zinc-600 active:bg-zinc-900/[.06] dark:text-zinc-300 dark:active:bg-white/10'
         : `${IB} shrink-0 text-xs font-medium`}>
-      <Icon name="undo" className="size-4" />{!narrow && 'Undo'}
+      <Icon name="undo" className="size-4" />{!narrow && t('Undo')}
     </button>
   )
   const send = (cls: string) => <SendChoices n={pending.length} sending={s.sending} sent={!!sent} reply={reply} listening={listening} onSend={copyAct.send} className={cls} />
@@ -643,7 +647,7 @@ export function CopyBar() {
           {quiet ? (
             <div className={`mx-auto flex max-w-[760px] items-center gap-3 ${narrow ? 'h-11 px-4' : 'h-12 px-5'}`}>
               <p className={`min-w-0 flex-1 text-[13px] text-zinc-600 dark:text-zinc-300 ${narrow ? 'line-clamp-2 leading-4' : 'truncate'}`}>
-                {narrow ? 'Tap a marked line for options' : 'Click a marked line to try its options in place'}
+                {narrow ? t('Tap a marked line for options') : t('Click a marked line to try its options in place')}
               </p>
               <Listening on={listening} className="shrink-0" />
             </div>
@@ -660,7 +664,9 @@ export function CopyBar() {
               {oops}
               <div className="flex items-center gap-4">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{shown.length} of {lines.length} line{lines.length === 1 ? '' : 's'} {pending.length ? 'changed' : 'sent'}</p>
+                  <p className="truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{pending.length
+                    ? tn(lines.length, '{shown} of {n} line changed', '{shown} of {n} lines changed', { shown: shown.length })
+                    : tn(lines.length, '{shown} of {n} line sent', '{shown} of {n} lines sent', { shown: shown.length })}</p>
                   <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{shown.join(', ')}</p>
                 </div>
                 {undo}

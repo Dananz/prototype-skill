@@ -15,6 +15,7 @@ import { progress, type Said } from './store'
 import type { Box, Item, Target } from './types'
 import { Icon, PinDot, Reply, STATE, Body } from './ui'
 import { sameView } from '../view/sizes'
+import { t } from '../i18n'
 
 function Pins({ items, boxes, active, onOpen, compare }: { compare?: boolean; items: { item: Item; done: boolean }[]; boxes: Record<string, Box>; active: string | null; onOpen: (id: string) => void }) {
   // Comments hidden in something closed share their opener: one pin there, with how many.
@@ -29,8 +30,8 @@ function Pins({ items, boxes, active, onOpen, compare }: { compare?: boolean; it
     const b = boxes[g.ids[0]]
     return (
       <button key={`via-${k}`} data-shoot="comment-via" onClick={() => onOpen(g.ids[0])}
-        aria-label={g.ids.length > 1 ? `${g.ids.length} comments inside: open` : `Comment ${g.n}, inside: open`}
-        title={g.ids.length > 1 ? `${g.ids.length} comments are in what this opens. Click to open it.` : 'This comment is in what this opens. Click to open it.'}
+        aria-label={g.ids.length > 1 ? t('{n} comments inside: open', { n: g.ids.length }) : t('Comment {n}, inside: open', { n: g.n })}
+        title={g.ids.length > 1 ? t('{n} comments are in what this opens. Click to open it.', { n: g.ids.length }) : t('This comment is in what this opens. Click to open it.')}
         className="pointer-events-auto absolute z-20 rounded-full shadow-md ring-2 ring-white ring-offset-0 transition hover:scale-110 dark:ring-zinc-950"
         style={{ left: b.x + b.w - 10, top: b.y - 10 }}>
         <span className="relative block">
@@ -54,7 +55,7 @@ function Pins({ items, boxes, active, onOpen, compare }: { compare?: boolean; it
           : whole
             ? <div className={`pointer-events-none absolute z-10 ring-2 ring-inset ${ring}`} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} />
             : <div className={`pointer-events-none absolute z-10 rounded-md ring-2 ${ring}`} style={{ left: b.x - 3, top: b.y - 3, width: b.w + 6, height: b.h + 6 }} />)}
-        {!done && <button data-comment={c.id} onClick={() => onOpen(c.id)} aria-label={whole ? `Comment ${c.n}, on the whole variant` : `Comment ${c.n}`} className="pointer-events-auto absolute z-20 rounded-full shadow-md ring-2 ring-white transition hover:scale-110 dark:ring-zinc-950" style={pt ? { left: b.x - 10, top: b.y - 10 } : whole ? { left: b.x + 8, top: b.y + 8 } : { left: b.x + b.w - 10, top: b.y - 10 }}>
+        {!done && <button data-comment={c.id} onClick={() => onOpen(c.id)} aria-label={whole ? t('Comment {n}, on the whole variant', { n: c.n }) : t('Comment {n}', { n: c.n })} className="pointer-events-auto absolute z-20 rounded-full shadow-md ring-2 ring-white transition hover:scale-110 dark:ring-zinc-950" style={pt ? { left: b.x - 10, top: b.y - 10 } : whole ? { left: b.x + 8, top: b.y + 8 } : { left: b.x + b.w - 10, top: b.y - 10 }}>
           <PinDot n={c.n} label={compare ? c.variant : undefined} whole={whole} />
         </button>}
       </div>
@@ -77,7 +78,7 @@ export function Layer() {
     onCancel: () => (tagging ? act.tagDone(null) : act.stop()),
     onGuard: act.guard,
   })
-  const verb = tagging ? 'Tag' : held ? 'Continue your comment' : 'Comment'
+  const verb = tagging ? t('Tag') : held ? t('Continue your comment') : t('Comment')
 
   // Hover-only parts of the design (hover.ts): while picking, whatever a hover made appear stays up
   // while the pointer is on it; from the moment a comment's pin goes down until it is closed, the
@@ -134,7 +135,7 @@ export function Layer() {
       {onNew && onSpot && <div className="pointer-events-none absolute z-10 size-8 rounded-full ring-2 ring-proto-primary-ring" style={{ left: onNew.x - 16, top: onNew.y - 16 }} />}
       {wholeT && boxes['__whole'] && (
         <div data-whole-outline className="pointer-events-none absolute z-10 border-2 border-proto-primary-ring bg-proto-primary/[.05]" style={{ left: boxes['__whole'].x, top: boxes['__whole'].y, width: boxes['__whole'].w, height: boxes['__whole'].h }}>
-          <span className="absolute start-14 top-0 inline-flex h-6 items-center gap-1.5 rounded-b-md bg-proto-primary px-2 text-[11px] font-semibold text-proto-primary-fg"><Icon name="frame" className="size-3" />Whole variant</span>
+          <span className="absolute start-14 top-0 inline-flex h-6 items-center gap-1.5 rounded-b-md bg-proto-primary px-2 text-[11px] font-semibold text-proto-primary-fg"><Icon name="frame" className="size-3" />{t('Whole variant')}</span>
         </div>
       )}
       <Pins items={here.map(r => ({ item: r.item, done: r.state === 'done' }))} boxes={boxes} active={s.active} onOpen={act.open} compare={s.place.compare} />
@@ -166,9 +167,9 @@ function Climb({ box, up, down }: { box: Box; up: boolean; down: boolean }) {
   const btn = 'inline-flex h-5 items-center gap-1 px-1.5 hover:bg-white/15'
   return (
     <div data-inspect-ui className={`pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-stretch whitespace-nowrap bg-proto-primary text-[11px] font-semibold text-proto-primary-fg shadow ${inside ? 'top-0 rounded-b' : 'bottom-full rounded-t'}`}>
-      {up && <button onClick={act.parent} title="Comment on the element around it" className={`${btn} ${inside ? 'rounded-es' : 'rounded-ss'} ${down ? '' : inside ? 'rounded-ee' : 'rounded-se'}`}><Icon name="up" className="size-3" />Parent</button>}
+      {up && <button onClick={act.parent} title={t('Comment on the element around it')} className={`${btn} ${inside ? 'rounded-es' : 'rounded-ss'} ${down ? '' : inside ? 'rounded-ee' : 'rounded-se'}`}><Icon name="up" className="size-3" />{t('Parent')}</button>}
       {up && down && <span className="my-1 w-px bg-white/30" />}
-      {down && <button onClick={act.down} aria-label="Back to the element inside" title="Back to the element inside" className={`${btn} ${inside ? 'rounded-ee' : 'rounded-se'} ${up ? '' : inside ? 'rounded-es' : 'rounded-ss'}`}><Icon name="child" className="size-3" /></button>}
+      {down && <button onClick={act.down} aria-label={t('Back to the element inside')} title={t('Back to the element inside')} className={`${btn} ${inside ? 'rounded-ee' : 'rounded-se'} ${up ? '' : inside ? 'rounded-es' : 'rounded-ss'}`}><Icon name="child" className="size-3" /></button>}
     </div>
   )
 }
@@ -207,8 +208,8 @@ function ReadCard({ row, box }: { row: { item: Item; state: ReturnType<typeof pr
     <div ref={el} className="pointer-events-auto absolute z-30 w-[min(15rem,calc(100%-1rem))] rounded-xl border border-black/10 bg-white p-2 text-[11px] leading-4 shadow-xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900" style={{ left: at?.left ?? box.x, top: at?.top ?? box.y + box.h + 10, visibility: at ? 'visible' : 'hidden' }}>
       <div className="flex items-center gap-1.5 text-[10px]">
         <PinDot n={item.n} done={state === 'done'} size="sm" whole={item.target?.whole} />
-        <span dir="auto" className="min-w-0 flex-1 truncate font-medium text-zinc-500">{item.target?.whole ? 'Whole variant' : 'Comment'}</span>
-        <span className={`shrink-0 ${STATE[state].cls}`}>{state === 'seen' ? `${agent} is on it` : STATE[state].label}</span>
+        <span dir="auto" className="min-w-0 flex-1 truncate font-medium text-zinc-500">{item.target?.whole ? t('Whole variant') : t('Comment')}</span>
+        <span className={`shrink-0 ${STATE[state].cls}`}>{state === 'seen' ? t('{agent} is on it', { agent }) : STATE[state].label}</span>
       </div>
       <Body c={item} className="mt-1 block text-zinc-800 dark:text-zinc-200" />
       {reply && <span className="mt-1.5 block"><Reply text={reply.text} by={reply.by} small /></span>}

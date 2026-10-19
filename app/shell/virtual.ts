@@ -200,7 +200,7 @@ export class VirtualList<T> {
         const row = Math.floor(index / this.columns), count = Math.min(this.columns, items.length - row * this.columns)
         const left = this.left + (this.options.columnWidth ? (this.columns - count) * (this.width + columnGap) / 2 : 0)
         element.dataset.virtualIndex = String(index); element.dataset.virtualKey = id
-        Object.assign(element.style, { position: 'absolute', top: `${this.offsets[row]}px`, left: `${left + (index % this.columns) * (this.width + columnGap)}px`, width: `${this.width}px`, margin: '0' })
+        Object.assign(element.style, { position: 'absolute', top: `${this.offsets[row]}px`, insetInlineStart: `${left + (index % this.columns) * (this.width + columnGap)}px`, width: `${this.width}px`, margin: '0' })
         if (!record.attached) {
           // Insert in logical order so Tab and assistive technology follow the visual order.
           const after = [...this.content.children].find(e => Number((e as HTMLElement).dataset.virtualIndex) > index)

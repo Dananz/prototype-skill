@@ -2,19 +2,20 @@
 import { domToCanvas } from 'modern-screenshot'
 import { designIn, frameUrl } from './view/frame'
 import { ORDER, SIZES as VIEW_SIZES } from './view/sizes'
+import { t } from './i18n'
 
 export type Look = 'bare' | 'named' | 'canvas'
 export type Tone = 'soft' | 'dark' | 'brand'
 export type ShotSize = { id: string; label: string; w: number; h: number }
 export const LOOKS: { id: Look; label: string }[] = [
-  { id: 'bare', label: 'No name' }, { id: 'named', label: 'With name' }, { id: 'canvas', label: 'Canvas' },
+  { id: 'bare', label: t('No name') }, { id: 'named', label: t('With name') }, { id: 'canvas', label: t('Canvas') },
 ]
 export const SIZES: ShotSize[] = ORDER.map(id => ({ id, label: VIEW_SIZES[id].name, w: VIEW_SIZES[id].w, h: VIEW_SIZES[id].h }))
 const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 async function renderRoute(hash: string, size: ShotSize, dark: boolean, signal: AbortSignal, values: Record<string, string | boolean> = {}) {
   const frame = document.createElement('iframe')
-  frame.title = 'Screenshot capture'
+  frame.title = t('Screenshot capture')
   frame.setAttribute('aria-hidden', 'true'); frame.tabIndex = -1
   frame.style.cssText = `position:fixed;left:-20000px;top:0;width:${size.w}px;height:${size.h}px;border:0;pointer-events:none`
   const url = new URL(frameUrl(hash, dark)); url.searchParams.set('shot', '1')
@@ -29,7 +30,7 @@ async function renderRoute(hash: string, size: ShotSize, dark: boolean, signal: 
       signal.throwIfAborted()
       const d = frame.contentDocument
       if (d?.documentElement.dataset.ready === '1') mount = designIn(d)
-      if (performance.now() > end) throw new Error('The variant did not finish loading. Close Share and try again.')
+      if (performance.now() > end) throw new Error(t('The variant did not finish loading. Close Share and try again.'))
       if (!mount) await wait(60)
     }
     const d = mount.ownerDocument
@@ -59,7 +60,7 @@ export async function captureRoute(hash: string, size: ShotSize, dark: boolean, 
   const controller = new AbortController()
   const cancel = () => controller.abort(signal.reason)
   signal.addEventListener('abort', cancel, { once: true })
-  const timer = setTimeout(() => controller.abort(new Error('Capture took too long. Retry or leave this shot out.')), 20000)
+  const timer = setTimeout(() => controller.abort(new Error(t('Capture took too long. Retry or leave this shot out.'))), 20000)
   let rejectAbort: () => void = () => {}
   const aborted = new Promise<never>((_, reject) => {
     rejectAbort = () => reject(controller.signal.reason)
@@ -112,7 +113,7 @@ export function compose(raw: HTMLCanvasElement, look: Look, o: { name: string; t
 
 export const filePart = (s: string) => s.normalize('NFKC').trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'variant'
 export function png(canvas: HTMLCanvasElement) {
-  return new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not create the PNG.')), 'image/png'))
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error(t('Could not create the PNG.'))), 'image/png'))
 }
 export function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob), a = document.createElement('a')

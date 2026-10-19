@@ -78,7 +78,7 @@ export function setEdgeLabel(btn: HTMLElement, open: boolean, changed = false) {
   const w = open ? text.offsetWidth : 0
   label.style.width = w + 'px'
   label.style.opacity = open ? '1' : '0'
-  label.style[btn.dataset.edge!.endsWith('prev') ? 'marginLeft' : 'marginRight'] = open ? '8px' : '0px'
+  label.style[btn.dataset.edge!.endsWith('prev') ? 'marginInlineStart' : 'marginInlineEnd'] = open ? '8px' : '0px'
   if (changed) text.animate([{ opacity: 0, transform: 'translateY(3px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'ease-out' })
   edge.w[btn.dataset.edge!] = w
 }

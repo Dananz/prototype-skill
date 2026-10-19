@@ -10,15 +10,17 @@ import { useCtx } from '../comments/ctx'
 import { Composer } from '../comments/composer'
 import { useRows } from '../comments/list'
 import type { Item, Time } from '../comments/types'
-import { Body, Icon, PinDot, PRIMARY, Reply, STATE, spanOf } from '../comments/ui'
+import { Body, Icon, PinDot, PRIMARY, Reply, STATE } from '../comments/ui'
 import { uiBox } from '../portals'
 import type { Player, PlayState } from './player'
 import type { Track as Curve } from './curves'
+import { t, tn } from '../i18n'
 
 const EASE = 'ease-[cubic-bezier(0.32,0.72,0,1)]'
 const SPAN = 300 // a new range's length, ms
 const GAP = 40 // the shortest range, ms
 const fmt = (ms: number) => `${(ms / 1000).toFixed(2)} s`
+const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `${(t.at / 1000).toFixed(2)} s` : `${(t.at / 1000).toFixed(2)}–${(t.to / 1000).toFixed(2)} s`
 const fmtSpan = (a: number, b?: number) => spanOf({ at: Math.min(a, b ?? a), to: b === undefined ? undefined : Math.max(a, b) })
 
 /* Icons the page's set lacks, in its stroke (24 grid, 1.75, round). */
@@ -310,11 +312,11 @@ function Curves({ ctl, w, top, base }: { ctl: Ctl; w: number; top: number; base:
  *  a name brings its curve out, again puts it back. */
 function Legend({ ctl, short = false, className = '' }: { ctl: Ctl; short?: boolean; className?: string }) {
   return (
-    <div role="group" aria-label="Curves" data-legend className={`flex flex-wrap items-center gap-x-0.5 ${className}`}>
+    <div role="group" aria-label={t('Curves')} data-legend className={`flex flex-wrap items-center gap-x-0.5 ${className}`}>
       {ctl.p.tracks.map(tr => {
         const on = ctl.emph === tr.id, dim = !!ctl.emph && !on
         return (
-          <Tip key={tr.id} label={<>{on ? 'Show every curve' : `Bring out ${tr.name}`}<span className="ms-1.5 text-white/55">{tr.props} · {fmtSpan(tr.start, tr.end)}</span></>}>
+          <Tip key={tr.id} label={<>{on ? t('Show every curve') : t('Bring out {name}', { name: tr.name })}<span className="ms-1.5 text-white/55">{tr.props} · {fmtSpan(tr.start, tr.end)}</span></>}>
             <button data-motion={`curve-${tr.id}`} aria-pressed={on} onClick={() => ctl.setEmph(on ? null : tr.id)}
               className={`inline-flex h-7 max-w-full cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 text-[11px] outline-none transition-colors hover:bg-zinc-900/5 focus-visible:ring-2 focus-visible:ring-proto-primary-ring dark:hover:bg-white/10 [@media(pointer:coarse)]:h-9 ${on ? 'font-medium text-zinc-900 dark:text-white' : dim ? 'text-zinc-400 dark:text-zinc-500' : 'text-zinc-500 dark:text-zinc-400'}`}>
               <span className="h-0.5 w-3 shrink-0 rounded-full transition-opacity" style={{ background: tr.color, opacity: dim ? 0.35 : 1 }} /><span dir="auto" className="truncate">{tr.name}</span>{!short && tr.props.toLowerCase() !== tr.name.toLowerCase() && <span className="truncate text-zinc-400 dark:text-zinc-500">{tr.props}</span>}
@@ -340,9 +342,9 @@ function Timeline({ ctl, graph = 0, track = true, className = '' }: { ctl: Ctl; 
   const room = base - top
   const shown = Math.max(0, Math.min(1, (room - 24) / 60))
   return (
-    <div ref={ref} {...scrub}
+    <div ref={ref} {...scrub} dir="ltr"
       role={track ? 'slider' : undefined} tabIndex={track ? 0 : -1} aria-hidden={track ? undefined : true} data-motion={track ? 'track' : undefined}
-      aria-label="Playhead" aria-valuemin={0} aria-valuemax={Math.round(ctl.D)} aria-valuenow={Math.round(ctl.p.t)} aria-valuetext={fmt(ctl.p.t)}
+      aria-label={t('Playhead')} aria-valuemin={0} aria-valuemax={Math.round(ctl.D)} aria-valuenow={Math.round(ctl.p.t)} aria-valuetext={fmt(ctl.p.t)}
       onKeyDown={e => { if (e.key === ' ' || e.key === 'k') { e.preventDefault(); ctl.toggle() } else stepKeys(e, ctl.p.t, ctl.D, ctl.seek) }}
       className={`relative touch-none select-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-proto-primary-ring/60 ${ctl.mode === 'range' ? 'cursor-crosshair' : 'cursor-ew-resize'} ${className}`}
       style={{ height: graph + (track ? BAND : 0) }}>
@@ -387,7 +389,7 @@ function Track({ ctl, w, lift }: { ctl: Ctl; w: number; lift: boolean }) {
         return (
           <Tip key={c.id} label={<><b className="me-1 font-semibold tabular-nums">{spanOf(tm)}</b>{STATE[state].label}</>}>
             <button data-point data-motion={`point-${c.n}`} data-state={state} onClick={() => ctl.openPoint(c.id)} aria-pressed={on}
-              aria-label={`Comment ${c.n}, ${tm.to !== undefined ? 'on' : 'at'} ${spanOf(tm)}, ${STATE[state].label.toLowerCase()}`}
+              aria-label={tm.to !== undefined ? t('Comment {n}, on {time}, {state}', { n: c.n, time: spanOf(tm), state: STATE[state].label.toLowerCase() }) : t('Comment {n}, at {time}, {state}', { n: c.n, time: spanOf(tm), state: STATE[state].label.toLowerCase() })}
               className={`group absolute grid cursor-pointer place-items-center rounded-md outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-proto-primary-ring ${dy ? 'z-[3] h-5' : 'top-0 z-[2] h-11'} ${sel && !on ? 'opacity-35 hover:opacity-100' : ''}`}
               style={{ left: (x0 + x1) / 2 - hit / 2, width: hit, top: dy ? 22 + dy - 10 : undefined }}>
               {tm.to !== undefined
@@ -404,7 +406,7 @@ function Track({ ctl, w, lift }: { ctl: Ctl; w: number; lift: boolean }) {
       {/* While a take records, the track fills as the time passes; the first one has no length yet. */}
       {taking && <span className="absolute top-1/2 h-1 -translate-y-1/2 animate-pulse rounded-full bg-zinc-900/25 dark:bg-white/30" style={{ left: INSET, width: ctl.p.duration ? Math.max(0, X(ctl.p.t) - INSET) : '30%' }} />}
       {sel && ([0, 1] as const).map(i => (
-        <div key={i} data-handle={i} role="slider" tabIndex={0} aria-label={i ? 'Range end' : 'Range start'}
+        <div key={i} data-handle={i} role="slider" tabIndex={0} aria-label={i ? t('Range end') : t('Range start')}
           aria-valuemin={0} aria-valuemax={Math.round(ctl.D)} aria-valuenow={Math.round(sel[i])} aria-valuetext={fmt(sel[i])}
           onKeyDown={e => stepKeys(e, sel[i], ctl.D, t => ctl.moveEdge(i, ctl.snap(t)))}
           className="group absolute top-0 z-[4] grid h-11 w-7 -translate-x-1/2 cursor-ew-resize place-items-center outline-none" style={{ left: X(sel[i]) }}>
@@ -419,7 +421,7 @@ function Track({ ctl, w, lift }: { ctl: Ctl; w: number; lift: boolean }) {
 const IBTN = 'inline-grid size-9 shrink-0 place-items-center rounded-lg text-zinc-600 outline-none transition-colors hover:bg-zinc-900/5 hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-proto-primary-ring disabled:pointer-events-none disabled:opacity-40 aria-pressed:bg-zinc-900/[.07] aria-pressed:text-zinc-900 data-popup-open:bg-zinc-900/[.07] data-popup-open:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white dark:aria-pressed:bg-white/[.12] dark:aria-pressed:text-white dark:data-popup-open:bg-white/[.12] dark:data-popup-open:text-white'
 
 function PlayButton({ ctl }: { ctl: Ctl }) {
-  const label = ctl.p.status === 'taking' ? 'Recording the motion' : ctl.p.playing ? 'Pause' : ctl.mode === 'range' && ctl.sel ? 'Play the range' : ctl.p.status === 'empty' ? 'Run it again' : 'Play'
+  const label = ctl.p.status === 'taking' ? t('Recording the motion') : ctl.p.playing ? t('Pause') : ctl.mode === 'range' && ctl.sel ? t('Play the range') : ctl.p.status === 'empty' ? t('Run it again') : t('Play')
   return (
     <Tip label={label} kbd={ctl.p.status === 'ready' ? 'Space' : undefined}>
       <button data-motion="play" onClick={ctl.toggle} aria-label={label} disabled={ctl.p.status === 'taking'} className={`${IBTN} text-zinc-800 dark:text-zinc-100`}>
@@ -431,19 +433,19 @@ function PlayButton({ ctl }: { ctl: Ctl }) {
 
 /** The time, small: the playhead's moment, or the range's span in range mode. */
 function Readout({ ctl, className = '' }: { ctl: Ctl; className?: string }) {
-  const text = ctl.p.status === 'taking' ? 'Recording…' : ctl.mode === 'range' && ctl.sel ? fmtSpan(ctl.sel[0], ctl.sel[1]) : fmt(ctl.p.t)
+  const text = ctl.p.status === 'taking' ? t('Recording…') : ctl.mode === 'range' && ctl.sel ? fmtSpan(ctl.sel[0], ctl.sel[1]) : fmt(ctl.p.t)
   return <span aria-live="off" className={`truncate text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500 ${className}`}>{text}</span>
 }
 
 /** A moment or a range, as two small icons. */
 function ModeToggle({ ctl }: { ctl: Ctl }) {
   return (
-    <div role="radiogroup" aria-label="Comment on" className="flex shrink-0 rounded-lg bg-zinc-900/[.05] p-0.5 dark:bg-white/[.07]">
+    <div role="radiogroup" aria-label={t('Comment on')} className="flex shrink-0 rounded-lg bg-zinc-900/[.05] p-0.5 dark:bg-white/[.07]">
       {(['at', 'range'] as const).map(m => {
         const on = ctl.mode === m
         return (
-          <Tip key={m} label={m === 'at' ? 'A moment' : 'A range: drag on the track'}>
-            <button role="radio" aria-checked={on} aria-label={m === 'at' ? 'A moment' : 'A range'} data-motion={m === 'at' ? 'mode-moment' : 'mode-range'} onClick={() => ctl.setMode(m)} disabled={ctl.p.status !== 'ready'}
+          <Tip key={m} label={m === 'at' ? t('A moment') : t('A range: drag on the track')}>
+            <button role="radio" aria-checked={on} aria-label={m === 'at' ? t('A moment') : t('A range')} data-motion={m === 'at' ? 'mode-moment' : 'mode-range'} onClick={() => ctl.setMode(m)} disabled={ctl.p.status !== 'ready'}
               className={`grid size-8 place-items-center rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-proto-primary-ring disabled:opacity-40 ${on ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-black/5 dark:bg-zinc-600 dark:text-white dark:ring-white/10' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'}`}>
               <Glyph name={m === 'at' ? 'moment' : 'range'} />
             </button>
@@ -456,8 +458,8 @@ function ModeToggle({ ctl }: { ctl: Ctl }) {
 
 function CurvesButton({ ctl }: { ctl: Ctl }) {
   return (
-    <Tip label={ctl.curves ? 'Hide the curves' : 'Show the curves'}>
-      <button data-motion="curves" aria-pressed={ctl.curves} aria-label="Curves" onClick={() => ctl.setCurves(!ctl.curves)} disabled={ctl.p.status !== 'ready'} className={IBTN}>
+    <Tip label={ctl.curves ? t('Hide the curves') : t('Show the curves')}>
+      <button data-motion="curves" aria-pressed={ctl.curves} aria-label={t('Curves')} onClick={() => ctl.setCurves(!ctl.curves)} disabled={ctl.p.status !== 'ready'} className={IBTN}>
         <Glyph name="curves" />
       </button>
     </Tip>
@@ -467,10 +469,10 @@ function CurvesButton({ ctl }: { ctl: Ctl }) {
 /** The one primary: comment on the playhead's moment, or on the range. */
 function ComposeButton({ ctl }: { ctl: Ctl }) {
   const on = !!ctl.composing
-  const label = ctl.mode === 'range' && ctl.sel ? `Comment on ${fmtSpan(ctl.sel[0], ctl.sel[1])}` : `Comment at ${fmt(ctl.p.t)}`
+  const label = ctl.mode === 'range' && ctl.sel ? t('Comment on {time}', { time: fmtSpan(ctl.sel[0], ctl.sel[1]) }) : t('Comment at {time}', { time: fmt(ctl.p.t) })
   return (
-    <Tip label={on ? 'Close the comment' : label} kbd={on ? 'Esc' : undefined}>
-      <button data-motion="compose" aria-label={on ? 'Close the comment' : label} aria-expanded={on} onClick={ctl.compose} disabled={ctl.p.status !== 'ready'}
+    <Tip label={on ? t('Close the comment') : label} kbd={on ? 'Esc' : undefined}>
+      <button data-motion="compose" aria-label={on ? t('Close the comment') : label} aria-expanded={on} onClick={ctl.compose} disabled={ctl.p.status !== 'ready'}
         className={`inline-grid size-9 shrink-0 place-items-center rounded-lg shadow-sm shadow-proto-primary/25 disabled:opacity-40 [@media(pointer:coarse)]:size-11 [@media(pointer:coarse)]:rounded-xl ${PRIMARY}`}>
         <Icon name={on ? 'x' : 'comment'} className="size-[18px]" />
       </button>
@@ -486,17 +488,17 @@ function More({ ctl }: { ctl: Ctl }) {
   const moments = ctl.p.status === 'ready' ? ctl.player.moments() : []
   return (
     <Menu.Root modal={false} open={ctl.menu} onOpenChange={o => ctl.setMenu(o)}>
-      <Tip label="More">
-        <Menu.Trigger data-motion="more" aria-label="More" className={IBTN}><Glyph name="more" /></Menu.Trigger>
+      <Tip label={t('More')}>
+        <Menu.Trigger data-motion="more" aria-label={t('More')} className={IBTN}><Glyph name="more" /></Menu.Trigger>
       </Tip>
       <Menu.Portal container={uiBox()}>
         <Menu.Positioner side="top" align="end" sideOffset={8} collisionPadding={8} className="z-50 outline-none">
           <Menu.Popup className={POP} finalFocus={type => type === 'keyboard'}>
             <div className="flex h-9 items-center gap-2.5 ps-2 pe-0.5 [@media(pointer:coarse)]:h-11">
-              <Glyph name="speed" className="size-4 text-zinc-400" /><span className="flex-1">Speed</span>
+              <Glyph name="speed" className="size-4 text-zinc-400" /><span className="flex-1">{t('Speed')}</span>
               <Menu.RadioGroup value={ctl.p.speed} onValueChange={v => ctl.setSpeed(v as number)} className="flex rounded-lg bg-zinc-900/[.05] p-0.5 dark:bg-white/[.07]">
                 {[0.25, 0.5, 1].map(v => (
-                  <Menu.RadioItem key={v} value={v} closeOnClick={false} data-motion={`speed-${v}`} aria-label={`${v}× speed`}
+                  <Menu.RadioItem key={v} value={v} closeOnClick={false} data-motion={`speed-${v}`} aria-label={t('{v}× speed', { v })}
                     className="grid h-7 min-w-9 cursor-default place-items-center rounded-md px-1.5 text-xs tabular-nums text-zinc-500 outline-none data-checked:bg-white data-checked:font-medium data-checked:text-zinc-900 data-checked:shadow-sm data-highlighted:text-zinc-900 dark:text-zinc-400 dark:data-checked:bg-zinc-600 dark:data-checked:text-white dark:data-highlighted:text-white [@media(pointer:coarse)]:h-9">
                     {v}×
                   </Menu.RadioItem>
@@ -504,13 +506,13 @@ function More({ ctl }: { ctl: Ctl }) {
               </Menu.RadioGroup>
             </div>
             <Menu.CheckboxItem checked={ctl.p.loop} onCheckedChange={v => ctl.setLoop(v)} closeOnClick={false} data-motion="loop" className={ROW}>
-              <Glyph name="loop" className="size-4 text-zinc-400" /><span className="flex-1">Loop</span>
+              <Glyph name="loop" className="size-4 text-zinc-400" /><span className="flex-1">{t('Loop')}</span>
               <Menu.CheckboxItemIndicator className="text-proto-primary-soft-fg"><Icon name="check" className="size-4" /></Menu.CheckboxItemIndicator>
             </Menu.CheckboxItem>
             <Menu.Separator className="mx-2 my-1 h-px bg-black/[.06] dark:bg-white/10" />
             <Menu.SubmenuRoot>
               <Menu.SubmenuTrigger data-motion="go" disabled={!moments.length} className={ROW}>
-                <Glyph name="goto" className="size-4 text-zinc-400" /><span className="flex-1">Go to</span><Icon name="right" className="size-3.5 text-zinc-400" />
+                <Glyph name="goto" className="size-4 text-zinc-400" /><span className="flex-1">{t('Go to')}</span><Icon name="right" className="size-3.5 text-zinc-400" />
               </Menu.SubmenuTrigger>
               <Menu.Portal container={uiBox()}>
                 <Menu.Positioner side="inline-end" align="start" sideOffset={6} alignOffset={-6} collisionPadding={8} className="z-50 outline-none">
@@ -525,7 +527,7 @@ function More({ ctl }: { ctl: Ctl }) {
               </Menu.Portal>
             </Menu.SubmenuRoot>
             <Menu.Item data-motion="replay" onClick={ctl.replay} className={ROW}>
-              <Glyph name="replay" className="size-4 text-zinc-400" /><span className="flex-1">Replay</span><span className="text-xs text-zinc-400">from 0</span>
+              <Glyph name="replay" className="size-4 text-zinc-400" /><span className="flex-1">{t('Replay')}</span><span className="text-xs text-zinc-400">{t('from 0')}</span>
             </Menu.Item>
           </Menu.Popup>
         </Menu.Positioner>
@@ -560,14 +562,14 @@ function Thread({ ctl, compact = false }: { ctl: Ctl; compact?: boolean }) {
       <div className="min-w-0 flex-1 py-1.5">
         <div className="flex items-center gap-2 text-[11px] tabular-nums">
           <span className="inline-flex items-center gap-1 font-semibold text-proto-primary-soft-fg"><Glyph name={span ? 'range' : 'moment'} className="size-3.5" />{spanOf(tm)}</span>
-          {span && ctl.p.span && ctl.p.playing && <span className="text-zinc-400">Looping</span>}
+          {span && ctl.p.span && ctl.p.playing && <span className="text-zinc-400">{t('Looping')}</span>}
           <span className={STATE[state].cls}>{STATE[state].label}</span>
         </div>
         <Body c={c} className="mt-1 block text-[13px] leading-5 text-zinc-900 dark:text-zinc-100" />
         {r.reply && <div ref={reply} className={compact ? 'mt-1.5' : 'mt-2'}><Reply text={r.reply.text} by={r.reply.by} small={compact} /></div>}
       </div>
-      <Tip label="Close" kbd="Esc">
-        <button data-motion="close" onClick={ctl.close} aria-label="Close the comment" className={`${IBTN} size-8 text-zinc-400`}><Icon name="x" /></button>
+      <Tip label={t('Close')} kbd="Esc">
+        <button data-motion="close" onClick={ctl.close} aria-label={t('Close the comment')} className={`${IBTN} size-8 text-zinc-400`}><Icon name="x" /></button>
       </Tip>
     </div>
   )
@@ -591,17 +593,17 @@ function Note({ ctl, narrow = false }: { ctl: Ctl; narrow?: boolean }) {
       <b className="font-medium text-zinc-700 dark:text-zinc-200">{head}</b> {body}
     </p>
   )
-  if (status === 'empty' && error) return say('error', `useMotion’s ${error}.`, 'Nothing was recorded. Play runs it again.')
-  if (status === 'empty') return say('empty', 'This take caught no motion.', 'Only CSS transitions, CSS animations and element.animate() can be recorded; motion run from script (requestAnimationFrame, react-spring, GSAP) can’t. Play runs it again.')
+  if (status === 'empty' && error) return say('error', t('useMotion’s {error}.', { error }), t('Nothing was recorded. Play runs it again.'))
+  if (status === 'empty') return say('empty', t('This take caught no motion.'), t('Only CSS transitions, CSS animations and element.animate() can be recorded; motion run from script (requestAnimationFrame, react-spring, GSAP) can’t. Play runs it again.'))
   if (status === 'ready' && late !== null) {
     // A missed step: put away with its x, and one line on a phone.
     return (
       <div data-motion="late" className="flex items-start gap-1 pt-1.5 text-xs leading-[18px] text-zinc-500 dark:text-zinc-400">
         {narrow
-          ? <p className="min-w-0 flex-1 truncate px-1 pt-1.5"><b className="font-medium text-zinc-700 dark:text-zinc-200">Missed a step at {fmt(late)}.</b> Use a delay.</p>
-          : <p className="min-w-0 flex-1 px-1 pt-1"><b className="font-medium text-zinc-700 dark:text-zinc-200">Something started at {fmt(late)}, after this take ended.</b> A take ends after 0.5 s with nothing moving, so that step runs live over it. To record it, put the wait before it in a delay (transition-delay, animation-delay or element.animate’s delay).</p>}
-        <Tip label="Dismiss">
-          <button data-motion="late-close" onClick={() => ctl.player.dismissLate()} aria-label="Dismiss" className={IBTN}><Icon name="x" className="size-4" /></button>
+          ? <p className="min-w-0 flex-1 truncate px-1 pt-1.5"><b className="font-medium text-zinc-700 dark:text-zinc-200">{t('Missed a step at {time}.', { time: fmt(late) })}</b> {t('Use a delay.')}</p>
+          : <p className="min-w-0 flex-1 px-1 pt-1"><b className="font-medium text-zinc-700 dark:text-zinc-200">{t('Something started at {time}, after this take ended.', { time: fmt(late) })}</b> {t('A take ends after 0.5 s with nothing moving, so that step runs live over it. To record it, put the wait before it in a delay (transition-delay, animation-delay or element.animate’s delay).')}</p>}
+        <Tip label={t('Dismiss')}>
+          <button data-motion="late-close" onClick={() => ctl.player.dismissLate()} aria-label={t('Dismiss')} className={IBTN}><Icon name="x" className="size-4" /></button>
         </Tip>
       </div>
     )

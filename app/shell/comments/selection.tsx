@@ -12,6 +12,7 @@ import { frameSelections } from '../view/frame'
 import { useStore } from './store'
 import type { Box, Target } from './types'
 import { Icon } from './ui'
+import { t } from '../i18n'
 
 type Sel = { text: string; target: Target; line?: string }
 
@@ -122,9 +123,9 @@ export function Selection() {
     setNote(null)
     try {
       await act.askCopy(target, q, words)
-      setSaid('Asked for copy options')
+      setSaid(t('Asked for copy options'))
     } catch (e) {
-      setSaid(e instanceof Error ? e.message : 'Could not send')
+      setSaid(e instanceof Error ? e.message : t('Could not send'))
     }
     window.setTimeout(() => { unhighlight(); forget() }, 1600)
   }
@@ -133,7 +134,7 @@ export function Selection() {
     <>
       {/* The highlight goes when the note field takes the focus: drawn here until the toolbar does. */}
       {note !== null && !said && <div aria-hidden className="pointer-events-none absolute z-20 rounded-sm bg-proto-primary/25" style={{ left: box.x, top: box.y, width: box.w, height: box.h }} />}
-    <div ref={frame} data-inspect-ui data-shoot="selection-menu" role="toolbar" aria-label="Highlighted text"
+    <div ref={frame} data-inspect-ui data-shoot="selection-menu" role="toolbar" aria-label={t('Highlighted text')}
       onMouseDown={e => { if ((e.target as HTMLElement).tagName !== 'INPUT') e.preventDefault() }}
       className="pointer-events-auto absolute z-30 flex items-center gap-0.5 rounded-xl bg-zinc-900 p-1 shadow-lg shadow-black/20 ring-1 ring-white/10 dark:bg-zinc-800 dark:ring-white/15"
       style={{ left: at?.left ?? box.x, top: at?.top ?? box.y, visibility: at ? 'visible' : 'hidden' }}>
@@ -141,16 +142,16 @@ export function Selection() {
         <span role="status" data-shoot="selection-said" className="flex h-8 items-center gap-1.5 px-2 text-xs font-medium text-zinc-100"><Icon name="check" className="size-3.5 text-emerald-400" />{said}</span>
       ) : note !== null ? (
         <>
-          <Tip label="Back · Esc"><button type="button" onClick={() => setNote(null)} aria-label="Back" className={btn}><Icon name="left" /></button></Tip>
-          <input autoFocus value={note} onChange={e => setNote(e.target.value)} maxLength={80} placeholder="Tone or length? (optional)" aria-label="Tone or length (optional)" dir="auto"
+          <Tip label={t('Back · Esc')}><button type="button" onClick={() => setNote(null)} aria-label={t('Back')} className={btn}><Icon name="left" /></button></Tip>
+          <input autoFocus value={note} onChange={e => setNote(e.target.value)} maxLength={80} placeholder={t('Tone or length? (optional)')} aria-label={t('Tone or length (optional)')} dir="auto"
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void send() } if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setNote(null) } }}
             className="h-8 w-44 rounded-lg bg-white/10 px-2 text-[13px] text-zinc-50 outline-none placeholder:text-zinc-400 focus:bg-white/15 [@media(pointer:coarse)]:text-base" />
-          <Tip label="Generate copy options · Enter"><button type="button" data-shoot="selection-send" onClick={() => void send()} aria-label="Generate copy options" className={`${btn} bg-proto-primary hover:bg-proto-primary-hover`}><Icon name="send" className="size-3.5" /></button></Tip>
+          <Tip label={t('Generate copy options · Enter')}><button type="button" data-shoot="selection-send" onClick={() => void send()} aria-label={t('Generate copy options')} className={`${btn} bg-proto-primary hover:bg-proto-primary-hover`}><Icon name="send" className="size-3.5" /></button></Tip>
         </>
       ) : (
         <>
-          <Tip label="Generate copy options"><button type="button" data-shoot="selection-copy" onClick={copyOptions} aria-label="Generate copy options" className={btn}><Icon name="text" /></button></Tip>
-          <Tip label="Comment on this text"><button type="button" data-shoot="selection-comment" onClick={comment} aria-label="Comment on this text" className={btn}><Icon name="comment" /></button></Tip>
+          <Tip label={t('Generate copy options')}><button type="button" data-shoot="selection-copy" onClick={copyOptions} aria-label={t('Generate copy options')} className={btn}><Icon name="text" /></button></Tip>
+          <Tip label={t('Comment on this text')}><button type="button" data-shoot="selection-comment" onClick={comment} aria-label={t('Comment on this text')} className={btn}><Icon name="comment" /></button></Tip>
         </>
       )}
     </div>

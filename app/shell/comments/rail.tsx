@@ -2,6 +2,7 @@
 // like the variant sheet).
 import { Drawer } from '@base-ui/react/drawer'
 import { uiBox } from '../portals'
+import { t } from '../i18n'
 import { useCtx } from './ctx'
 import { CommentList, SendBar, useRows } from './list'
 import { Icon } from './ui'
@@ -14,7 +15,7 @@ export function Rail() {
       <div className="shrink-0 border-t border-black/[.07] p-2 dark:border-white/10">
         {s.place
           ? <SendBar />
-          : <p className="px-1 py-1 text-center text-xs text-zinc-400">Open a variant to comment on it.</p>}
+          : <p className="px-1 py-1 text-center text-xs text-zinc-400">{t('Open a variant to comment on it.')}</p>}
       </div>
     </div>
   )
@@ -35,8 +36,8 @@ export function PhoneSheet() {
             <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700" />
             <Drawer.Content className="flex min-h-0 flex-1 flex-col px-3">
               <div className="flex items-center gap-2 pb-1 ps-1 pt-1">
-                <Drawer.Title className="text-[17px] font-semibold">Comments</Drawer.Title>
-                <Drawer.Close aria-label="Close" className="ms-auto grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10"><Icon name="x" /></Drawer.Close>
+                <Drawer.Title className="text-[17px] font-semibold">{t('Comments')}</Drawer.Title>
+                <Drawer.Close aria-label={t('Close')} className="ms-auto grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10"><Icon name="x" /></Drawer.Close>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1"><CommentList roomy onOpen={() => act.openSheet(false)} /></div>
               <SendBar className="-mx-3 mt-2 shrink-0 border-t border-black/[.06] px-3 pt-3 dark:border-white/10" onAdd={() => { act.openSheet(false); act.toggle() }} />

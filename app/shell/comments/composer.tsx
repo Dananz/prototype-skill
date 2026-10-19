@@ -11,7 +11,10 @@ import { find } from './dom'
 import { capture, ShotEditor } from './shot'
 import type { Box, Draft, Seg, Shot, Target, Time } from './types'
 import { MAX_SHOTS, shotsOf } from './types'
-import { IB, Icon, MOD, PinDot, PRIMARY, spanOf, SrcTag, srcOf, ImageChip, PictureStrip, ViewChip } from './ui'
+import { IB, Icon, MOD, PinDot, PRIMARY, SrcTag, srcOf, ImageChip, PictureStrip, ViewChip } from './ui'
+import { t } from '../i18n'
+
+const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `${(t.at / 1000).toFixed(2)} s` : `${(t.at / 1000).toFixed(2)}–${(t.to / 1000).toFixed(2)} s`
 
 function readEditor(el: HTMLElement): Seg[] {
   const out: Seg[] = []
@@ -23,16 +26,16 @@ function readEditor(el: HTMLElement): Seg[] {
   })
   return out.filter(s => s !== '')
 }
-const chipNode = (t: Target | undefined, i: number) => {
+const chipNode = (target: Target | undefined, i: number) => {
   const s = document.createElement('span')
   s.contentEditable = 'false'
   s.dataset.tag = String(i)
-  const src = srcOf(t)
+  const src = srcOf(target)
   if (src) s.title = src.full
   s.className = 'mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg'
-  s.textContent = t?.commentRef ? `Comment ${t.commentRef.n}` : `@${t?.variantRef?.label ?? (t?.source ? `${t.source.variant}·${i + 1}` : i + 1)}`
-  if (t?.commentRef) s.title = t.commentRef.quote
-  if (t?.variantRef) s.title = `${t.variantRef.label} · ${t.variantRef.name}`
+  s.textContent = target?.commentRef ? t('Comment {n}', { n: target.commentRef.n }) : `@${target?.variantRef?.label ?? (target?.source ? `${target.source.variant}·${i + 1}` : i + 1)}`
+  if (target?.commentRef) s.title = target.commentRef.quote
+  if (target?.variantRef) s.title = `${target.variantRef.label} · ${target.variantRef.name}`
   return s
 }
 const endRange = (el: HTMLElement) => { const x = document.createRange(); x.selectNodeContents(el); x.collapse(false); return x }
@@ -166,13 +169,13 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   }
   const shoot = async () => {
     if (shotsRef.current.length >= MAX_SHOTS) return
-    setCapturing('Capturing…')
+    setCapturing(t('Capturing…'))
     // A design in a device view's frame may not draw from this window; then there is no picture.
     try { const url = await capture(host.mount(), target ?? WHOLE, host.dark()); if (url) setMarking({ src: url, at: -1 }) } catch { /* nothing to mark up */ } finally { setCapturing(null) }
   }
   const attach = async (file: File) => {
     if (shotsRef.current.length >= MAX_SHOTS) return
-    setCapturing('Adding…')
+    setCapturing(t('Adding…'))
     try { const url = await imageUrl(file); if (url) setShots(s => s.length < MAX_SHOTS ? [...s, { src: url, pasted: true }] : s) } finally { setCapturing(null); refocus() }
   }
 
@@ -203,10 +206,10 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); act.close() }
   }
   const refocus = () => requestAnimationFrame(() => ed.current?.focus())
-  const menu = mention && (<div data-tag-menu role="listbox" aria-label="Variants" style={docked ? { position: 'fixed', zIndex: 250, left: Math.max(8, Math.min(ed.current?.getBoundingClientRect().left ?? 8, innerWidth - Math.min(312, innerWidth - 16) - 8)), bottom: innerHeight - (ed.current?.getBoundingClientRect().top ?? innerHeight) + 8, width: Math.min(312, innerWidth - 16), maxHeight: Math.max(80, (ed.current?.getBoundingClientRect().top ?? innerHeight) - 24), overflowY: 'auto' } : undefined} className="pointer-events-auto my-2 overflow-hidden text-zinc-900 dark:text-zinc-100 rounded-xl border border-black/10 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-950">
-            <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-zinc-400">Mention a variant</div>
-            <div className="max-h-36 overflow-y-auto">{variants.map((t, i) => <button key={`${t.variantRef?.proto}/${t.variantRef?.variant}/${t.variantRef?.label}`} type="button" role="option" aria-selected={i === Math.min(mention.index, variants.length - 1)} onMouseDown={e => e.preventDefault()} onClick={() => insert(t)} className={`flex min-h-9 w-full items-center gap-2 px-3 py-2 text-start text-xs ${i === Math.min(mention.index, variants.length - 1) ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}><span className="font-semibold">@{t.variantRef?.label}</span><span className="min-w-0 flex-1 truncate">{t.variantRef?.name}</span></button>)}{!variants.length && <p className="px-3 py-2 text-xs text-zinc-400">No matching variants</p>}</div>
-            <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => { setMention(null); act.tagPick() }} className="flex min-h-9 w-full items-center gap-2 border-t border-black/[.06] px-3 py-2 text-start text-xs text-zinc-500 hover:bg-zinc-900/5 dark:border-white/10 dark:hover:bg-white/5"><Icon name="target" className="size-3.5"/>Pick an element instead</button>
+  const menu = mention && (<div data-tag-menu role="listbox" aria-label={t('Variants')} style={docked ? { position: 'fixed', zIndex: 250, left: Math.max(8, Math.min(ed.current?.getBoundingClientRect().left ?? 8, innerWidth - Math.min(312, innerWidth - 16) - 8)), bottom: innerHeight - (ed.current?.getBoundingClientRect().top ?? innerHeight) + 8, width: Math.min(312, innerWidth - 16), maxHeight: Math.max(80, (ed.current?.getBoundingClientRect().top ?? innerHeight) - 24), overflowY: 'auto' } : undefined} className="pointer-events-auto my-2 overflow-hidden text-zinc-900 dark:text-zinc-100 rounded-xl border border-black/10 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-950">
+            <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-zinc-400">{t('Mention a variant')}</div>
+            <div className="max-h-36 overflow-y-auto">{variants.map((t, i) => <button key={`${t.variantRef?.proto}/${t.variantRef?.variant}/${t.variantRef?.label}`} type="button" role="option" aria-selected={i === Math.min(mention.index, variants.length - 1)} onMouseDown={e => e.preventDefault()} onClick={() => insert(t)} className={`flex min-h-9 w-full items-center gap-2 px-3 py-2 text-start text-xs ${i === Math.min(mention.index, variants.length - 1) ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}><span className="font-semibold">@{t.variantRef?.label}</span><span className="min-w-0 flex-1 truncate">{t.variantRef?.name}</span></button>)}{!variants.length && <p className="px-3 py-2 text-xs text-zinc-400">{t('No matching variants')}</p>}</div>
+            <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => { setMention(null); act.tagPick() }} className="flex min-h-9 w-full items-center gap-2 border-t border-black/[.06] px-3 py-2 text-start text-xs text-zinc-500 hover:bg-zinc-900/5 dark:border-white/10 dark:hover:bg-white/5"><Icon name="target" className="size-3.5"/>{t('Pick an element instead')}</button>
           </div>)
   return (
     <>
@@ -218,12 +221,12 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
         <div className="flex items-center gap-2 px-3 pt-2.5">
           <PinDot n={n} size="sm" whole={target?.whole} />
           {time
-            ? <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[11px] font-semibold tabular-nums text-proto-primary-soft-fg"><svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={time.to === undefined ? TIME_PATH.at : TIME_PATH.range} /></svg>{time.to === undefined ? `At ${spanOf(time)}` : spanOf(time)}</span>
+            ? <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[11px] font-semibold tabular-nums text-proto-primary-soft-fg"><svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={time.to === undefined ? TIME_PATH.at : TIME_PATH.range} /></svg>{time.to === undefined ? t('At {time}', { time: spanOf(time) }) : spanOf(time)}</span>
             // In a view the size takes the file's place: the list shows the file under the words.
-            : <><ViewChip v={target?.view} /><span dir="auto" className="min-w-0 flex-1 truncate text-xs font-medium">{`${target?.whole ? 'Whole variant' : 'Comment'}${target?.source ? ` on ${target.source.variant}` : ''}`}</span>{!target?.view && <SrcTag t={target} />}</>}
+            : <><ViewChip v={target?.view} /><span dir="auto" className="min-w-0 flex-1 truncate text-xs font-medium">{target?.whole ? (target.source ? t('Whole variant on {variant}', { variant: target.source.variant }) : t('Whole variant')) : (target?.source ? t('Comment on {variant}', { variant: target.source.variant }) : t('Comment'))}</span>{!target?.view && <SrcTag t={target} />}</>}
         </div>
         <div className="relative px-3 pt-1.5">
-          <div ref={ed} contentEditable suppressContentEditableWarning role="textbox" aria-label="Comment" aria-multiline="true" dir="auto"
+          <div ref={ed} contentEditable suppressContentEditableWarning role="textbox" aria-label={t('Comment')} aria-multiline="true" dir="auto"
             onInput={() => {
               saveRange(); setEmpty(!ed.current!.innerText.trim()); emit()
               const s = getSelection(), node = s?.anchorNode
@@ -236,7 +239,13 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             onPaste={e => { const f = imageIn(e.clipboardData); if (!f) return; e.preventDefault(); void attach(f) }}
             className="max-h-40 min-h-[52px] overflow-y-auto whitespace-pre-wrap break-words py-1 leading-5 outline-none [@media(pointer:coarse)]:min-h-[60px] [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6" />
           {docked && menu ? createPortal(menu, uiBox()) : menu}
-          {empty && <span className="pointer-events-none absolute start-3 top-2.5 text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">{time ? `What should change ${time.to === undefined ? 'at this moment' : 'over this range'}? @ mentions a variant or element` : 'What should change? @ mentions a variant or element'}</span>}
+          {empty && <span className="pointer-events-none absolute start-3 top-2.5 text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">
+            {time
+              ? time.to === undefined
+                ? t('What should change at this moment? @ mentions a variant or element')
+                : t('What should change over this range? @ mentions a variant or element')
+              : t('What should change? @ mentions a variant or element')}
+          </span>}
 
         </div>
         {(capturing || shots.length > 0) && (
@@ -244,19 +253,19 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             {shots.map((p, k) => p.pasted
               ? <ImageChip key={k} src={p.src} onOpen={() => setMarking({ src: p.src, at: k })} onRemove={() => setShots(s => s.filter((_, j) => j !== k))} />
               : <span key={k} className="relative">
-                  <button onClick={() => setMarking({ src: p.src, at: k })} title="Edit the screenshot" className="group relative block h-12 w-20 overflow-hidden rounded-lg ring-1 ring-black/10 dark:ring-white/15"><img src={p.src} alt="Screenshot" className="size-full object-cover" /><span className="absolute inset-0 grid place-items-center bg-black/40 text-[11px] font-medium text-white opacity-0 transition group-hover:opacity-100">Edit</span></button>
-                  <button onClick={() => setShots(s => s.filter((_, j) => j !== k))} aria-label="Remove the screenshot" title="Remove the screenshot" className="absolute -end-1.5 -top-1.5 grid size-5 place-items-center rounded-full bg-zinc-900 text-[11px] leading-none text-white shadow ring-2 ring-white dark:bg-zinc-100 dark:text-zinc-900 dark:ring-zinc-900">×</button>
+                  <button onClick={() => setMarking({ src: p.src, at: k })} title={t('Edit the screenshot')} className="group relative block h-12 w-20 overflow-hidden rounded-lg ring-1 ring-black/10 dark:ring-white/15"><img src={p.src} alt={t('Screenshot')} className="size-full object-cover" /><span className="absolute inset-0 grid place-items-center bg-black/40 text-[11px] font-medium text-white opacity-0 transition group-hover:opacity-100">{t('Edit')}</span></button>
+                  <button onClick={() => setShots(s => s.filter((_, j) => j !== k))} aria-label={t('Remove the screenshot')} title={t('Remove the screenshot')} className="absolute -end-1.5 -top-1.5 grid size-5 place-items-center rounded-full bg-zinc-900 text-[11px] leading-none text-white shadow ring-2 ring-white dark:bg-zinc-100 dark:text-zinc-900 dark:ring-zinc-900">×</button>
                 </span>)}
             {capturing && <span className="grid h-12 w-20 place-items-center rounded-lg bg-zinc-900/[.04] text-[11px] text-zinc-400 dark:bg-white/[.06]">{capturing}</span>}
           </PictureStrip>
         )}
         <div className="flex items-center gap-1 px-2 pb-2 pt-1">
-          <button onClick={() => { setMention(null); saveRange(); act.tagPick() }} title="Tag another element on the design" aria-label="Tag another element" className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="target" /></button>
-          <button onClick={shoot} disabled={full} title={full ? `${MAX_SHOTS} pictures is the most one comment takes; remove one to add another` : `Add a screenshot of this part of the design, then draw on it (or paste an image: ${MOD} V, or drop one here; each adds a picture)`} aria-label="Attach a screenshot" className={`${IB} h-8 min-w-8 px-1.5 disabled:opacity-40`}><Icon name="camera" /></button>
-          {editing && <button onClick={() => id && act.remove(id)} title="Delete" aria-label="Delete comment" className={`${IB} h-8 min-w-8 px-1.5 hover:text-rose-600`}><Icon name="trash" /></button>}
+          <button onClick={() => { setMention(null); saveRange(); act.tagPick() }} title={t('Tag another element on the design')} aria-label={t('Tag another element')} className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="target" /></button>
+          <button onClick={shoot} disabled={full} title={full ? t('{n} pictures is the most one comment takes; remove one to add another', { n: MAX_SHOTS }) : t('Add a screenshot of this part of the design, then draw on it (or paste an image: {mod} V, or drop one here; each adds a picture)', { mod: MOD })} aria-label={t('Attach a screenshot')} className={`${IB} h-8 min-w-8 px-1.5 disabled:opacity-40`}><Icon name="camera" /></button>
+          {editing && <button onClick={() => id && act.remove(id)} title={t('Delete')} aria-label={t('Delete comment')} className={`${IB} h-8 min-w-8 px-1.5 hover:text-rose-600`}><Icon name="trash" /></button>}
           <span className="ms-auto" />
-          <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Cancel</button>
-          <button onClick={submit} disabled={empty && !tags.length} title={`Add, to send with the rest · ${MOD} Enter adds and sends to ${agent}`} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={editing ? 'check' : 'plus'} className="size-3.5" />{editing ? 'Save' : 'Add'}</button>
+          <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>
+          <button onClick={submit} disabled={empty && !tags.length} title={t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={editing ? 'check' : 'plus'} className="size-3.5" />{editing ? t('Save') : t('Add')}</button>
         </div>
       </div>
       {marking && <ShotEditor src={marking.src} onCancel={() => { setMarking(null); refocus() }} onDone={url => {

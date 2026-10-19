@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from './icons'
 import type { Answers, Attach, Files, IntakeOption, IntakeQuestion } from './types'
+import { t, tn } from '../i18n'
 
 /** What a question's controls read and write. */
 export type Api = {
@@ -46,7 +47,7 @@ export function DecideButton({ q, st }: { q: IntakeQuestion; st: Api }) {
   return (
     <button type="button" aria-pressed={on} onClick={() => st.decide(q)}
       className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[13px] font-medium transition-colors hover:underline hover:underline-offset-4 ${on ? 'text-proto-primary-soft-fg' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>
-      <Icon name={on ? 'sparkleFill' : 'sparkle'} size={14} />{on ? 'Claude will decide' : 'Let Claude decide'}
+      <Icon name={on ? 'sparkleFill' : 'sparkle'} size={14} />{on ? t('Claude will decide') : t('Let Claude decide')}
     </button>
   )
 }
@@ -59,16 +60,16 @@ function OwnChips({ q, st }: { q: IntakeQuestion; st: Api }) {
   const submit = () => { st.add(q, v); setV(''); if (q.kind === 'one') setOpen(false) }
   return (
     <>
-      {mine.map(id => <button key={id} type="button" aria-pressed onClick={() => st.toggle(q, id)} className={chip(true)} title="Remove">{id.slice(1)}<Icon name="x" size={12} /></button>)}
+      {mine.map(id => <button key={id} type="button" aria-pressed onClick={() => st.toggle(q, id)} className={chip(true)} title={t('Remove')}>{id.slice(1)}<Icon name="x" size={12} /></button>)}
       {open ? (
         <form onSubmit={e => { e.preventDefault(); submit() }} className="flex h-9 items-center rounded-full border border-proto-primary bg-white ps-3.5 pe-1 dark:bg-zinc-900">
-          <input autoFocus value={v} onChange={e => setV(e.target.value)} onBlur={() => !v && setOpen(false)} maxLength={80} placeholder={q.kind === 'one' ? 'Your own answer' : 'Type one, press Enter'}
+          <input autoFocus value={v} onChange={e => setV(e.target.value)} onBlur={() => !v && setOpen(false)} maxLength={80} placeholder={q.kind === 'one' ? t('Your own answer') : t('Type one, press Enter')}
             className="w-44 bg-transparent text-[13px] text-zinc-900 placeholder:text-zinc-400 focus-visible:outline-none dark:text-zinc-100" />
-          <button type="submit" disabled={!v.trim()} aria-label="Add" className="grid size-7 place-items-center rounded-full bg-proto-primary text-white disabled:opacity-30"><Icon name="check" size={13} /></button>
+          <button type="submit" disabled={!v.trim()} aria-label={t('Add')} className="grid size-7 place-items-center rounded-full bg-proto-primary text-white disabled:opacity-30"><Icon name="check" size={13} /></button>
         </form>
       ) : (
         <button type="button" onClick={() => setOpen(true)} className="flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-black/20 px-3.5 text-[13px] text-zinc-500 hover:border-black/40 hover:text-zinc-800 dark:border-white/25 dark:hover:border-white/50 dark:hover:text-zinc-200">
-          <Icon name="plus" size={13} />{mine.length || q.kind === 'one' ? 'Something else' : 'Add your own'}
+          <Icon name="plus" size={13} />{mine.length || q.kind === 'one' ? t('Something else') : t('Add your own')}
         </button>
       )}
     </>
@@ -89,16 +90,16 @@ function OwnCard({ q, st }: { q: IntakeQuestion; st: Api }) {
       <div className={`relative grid aspect-[4/3] w-full place-items-center overflow-hidden rounded-lg border ${on ? 'border-transparent bg-proto-primary-soft' : 'border-dashed border-black/20 bg-zinc-50 dark:border-white/20 dark:bg-zinc-800/50'}`}>
         {editing ? (
           <>
-            <textarea autoFocus value={v} onChange={e => setV(e.target.value)} maxLength={120} placeholder="Your own answer" onBlur={() => !v.trim() && setEditing(false)}
+            <textarea autoFocus value={v} onChange={e => setV(e.target.value)} maxLength={120} placeholder={t('Your own answer')} onBlur={() => !v.trim() && setEditing(false)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } if (e.key === 'Escape') { e.stopPropagation(); setEditing(false) } }}
               className="size-full resize-none bg-transparent p-2.5 text-[13px] leading-snug text-zinc-900 placeholder:text-zinc-400 focus-visible:outline-none dark:text-zinc-100" />
-            <button type="button" disabled={!v.trim()} aria-label="Use this answer" onMouseDown={e => e.preventDefault()} onClick={e => { e.stopPropagation(); submit() }}
+            <button type="button" disabled={!v.trim()} aria-label={t('Use this answer')} onMouseDown={e => e.preventDefault()} onClick={e => { e.stopPropagation(); submit() }}
               className="absolute bottom-1.5 end-1.5 grid size-6 place-items-center rounded-full bg-proto-primary text-white disabled:opacity-30"><Icon name="check" size={12} /></button>
           </>
         ) : on ? <span className="line-clamp-4 px-3 text-center text-[13px] font-medium leading-snug text-proto-primary-soft-fg">{mine!.slice(1)}</span>
           : <Icon name="plus" size={20} className="text-zinc-400 transition-colors group-hover:text-zinc-600" />}
       </div>
-      <div className="px-1 pb-0.5 pt-1.5 text-xs font-medium leading-snug">Something else</div>
+      <div className="px-1 pb-0.5 pt-1.5 text-xs font-medium leading-snug">{t('Something else')}</div>
       {on && checkDot}
     </div>
   )
@@ -145,30 +146,30 @@ function Target({ q, o, st, peek }: { q: IntakeQuestion; o: IntakeOption; st: Ap
       onDrop={canTake ? e => { e.preventDefault(); setOver(false); take([...e.dataTransfer.files]) } : undefined}
       className={`relative cursor-pointer rounded-2xl border p-3 transition-[border-color,box-shadow,background-color] ${over ? 'border-proto-primary bg-proto-primary-soft shadow-[0_0_0_3px_var(--proto-primary-soft)]' : on ? 'border-proto-primary bg-white shadow-[0_0_0_3px_var(--proto-primary-soft)] dark:bg-zinc-900' : 'border-black/10 bg-white dark:border-white/10 dark:bg-zinc-900'}`}>
       <div className="flex items-center gap-3">
-        <button type="button" aria-pressed={on} aria-label={`Tick ${o.label}`} onClick={() => st.toggle(q, o.id)}
+        <button type="button" aria-pressed={on} aria-label={t('Tick {label}', { label: o.label })} onClick={() => st.toggle(q, o.id)}
           className={`grid size-9 shrink-0 place-items-center rounded-xl transition-colors ${on ? 'bg-proto-primary text-white' : 'bg-black/5 text-zinc-500 hover:bg-black/10 dark:bg-white/10'}`}>
           {on ? <Icon name="check" size={18} /> : <Icon name="plus" size={18} />}
         </button>
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-medium">{o.label}</div>
           <div className="truncate text-xs text-zinc-500">
-            {over ? 'Drop to add' : files.length ? `${files.length} file${files.length > 1 ? 's' : ''}` : on ? (canTake ? 'Ticked, no file yet' : 'Ticked') : canTake ? 'Drop a file here' : 'Tap to tick'}
+            {over ? t('Drop to add') : files.length ? tn(files.length, '{n} file', '{n} files') : on ? (canTake ? t('Ticked, no file yet') : t('Ticked')) : canTake ? t('Drop a file here') : t('Tap to tick')}
           </div>
         </div>
         {canTake && (
           <>
-            <button type="button" aria-label={`Add a file for ${o.label}`} onClick={() => pick.current?.click()} className="grid size-8 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-black/5 dark:hover:bg-white/10"><Icon name="upload" size={16} /></button>
+            <button type="button" aria-label={t('Add a file for {label}', { label: o.label })} onClick={() => pick.current?.click()} className="grid size-8 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-black/5 dark:hover:bg-white/10"><Icon name="upload" size={16} /></button>
             <input ref={pick} type="file" multiple hidden onChange={e => { take([...(e.target.files ?? [])]); e.target.value = '' }} />
           </>
         )}
       </div>
       {files.length > 0 && (
-        <ul className="mt-3 flex gap-2 overflow-x-auto px-0.5 pb-1 pt-1.5 [scrollbar-width:thin]" aria-label={`${o.label} files`}>
+        <ul className="mt-3 flex gap-2 overflow-x-auto px-0.5 pb-1 pt-1.5 [scrollbar-width:thin]" aria-label={t('{label} files', { label: o.label })}>
           {files.map(f => (
             <li key={f.id} tabIndex={f.thumb ? 0 : undefined} className="relative shrink-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-proto-primary-ring"
               onMouseEnter={e => f.thumb && peek.show(f, e.currentTarget)} onMouseLeave={peek.hide} onFocus={e => f.thumb && peek.show(f, e.currentTarget)} onBlur={peek.hide}>
               <Tile f={f} size={52} />
-              <button type="button" aria-label={`Remove ${f.name}`} onClick={() => st.removeFile(key, f.id)}
+              <button type="button" aria-label={t('Remove {name}', { name: f.name })} onClick={() => st.removeFile(key, f.id)}
                 className="absolute -end-1.5 -top-1.5 grid size-5 place-items-center rounded-full bg-zinc-900 text-white ring-2 ring-white dark:bg-white dark:text-zinc-900 dark:ring-zinc-950"><Icon name="x" size={10} /></button>
             </li>
           ))}
@@ -211,10 +212,10 @@ function Targets({ q, st }: { q: IntakeQuestion; st: Api }) {
         className={`mt-2.5 flex cursor-pointer items-center gap-3 rounded-2xl border-2 px-4 py-3 transition-[border-color,box-shadow,background-color] ${over ? 'border-dashed border-proto-primary bg-proto-primary-soft' : on ? 'border-solid border-proto-primary bg-white shadow-[0_0_0_3px_var(--proto-primary-soft)] dark:bg-zinc-900' : 'border-dashed border-black/15 hover:border-black/30 dark:border-white/15 dark:hover:border-white/30'}`}>
         <span className={`grid size-9 shrink-0 place-items-center rounded-xl transition-colors ${on ? 'bg-proto-primary text-white' : 'bg-black/5 text-zinc-500 dark:bg-white/10'}`}>{on ? <Icon name="check" size={18} /> : <Icon name="plus" size={18} />}</span>
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-medium">Anything else</div>
-          <div className="truncate text-xs text-zinc-500">{on ? `${other.length} file${other.length > 1 ? 's' : ''}. Drop or paste more.` : 'A site they like, a menu, a sketch. Drop or paste it here.'}</div>
+          <div className="text-[13px] font-medium">{t('Anything else')}</div>
+          <div className="truncate text-xs text-zinc-500">{on ? tn(other.length, '{n} file. Drop or paste more.', '{n} files. Drop or paste more.') : t('A site they like, a menu, a sketch. Drop or paste it here.')}</div>
         </div>
-        <ul className="flex -space-x-2" aria-label="Other files">
+        <ul className="flex -space-x-2" aria-label={t('Other files')}>
           {other.slice(0, 4).map(f => (
             <li key={f.id} tabIndex={f.thumb ? 0 : undefined} onClick={e => e.stopPropagation()}
               onMouseEnter={e => f.thumb && peek.show(f, e.currentTarget)} onMouseLeave={peek.hide} onFocus={e => f.thumb && peek.show(f, e.currentTarget)} onBlur={peek.hide}

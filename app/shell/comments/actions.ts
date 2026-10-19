@@ -11,6 +11,7 @@ import type { Action, Draft, Item, Place, Target, Time, Source } from './types'
 import { shotsOf } from './types'
 import { inScope, routeOf } from './types'
 import { sameView } from '../view/sizes'
+import { t } from '../i18n'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 const hasWords = (d: Draft) => d.body.some(s => typeof s !== 'string' || s.trim()) || d.tags.length > 0 || shotsOf(d).length > 0
@@ -52,7 +53,7 @@ export function createActions(store: Store, host: Host) {
       // One added while this send was on its way is still a draft: in Send as I add, it follows at once.
       if (get().live && drafts(scope).length) void sendIn(scope)
     } catch (e) {
-      set({ sending: false, error: e instanceof Error ? e.message : 'Could not send' })
+      set({ sending: false, error: e instanceof Error ? e.message : t('Could not send') })
     }
   }
   const act = {
@@ -333,7 +334,7 @@ export function createActions(store: Store, host: Host) {
       if (removed) {
         try { await host.withdraw(sent.id, 1) }
         catch (e) {
-          const error = `Could not withdraw deleted reply: ${e instanceof Error ? e.message : 'Could not send'}`
+          const error = `Could not withdraw deleted reply: ${e instanceof Error ? e.message : t('Could not send')}`
           set({ error })
           throw new Error(error)
         }

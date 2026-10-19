@@ -7,6 +7,7 @@ import { Icon } from './ui'
 import type { Box, Target } from './types'
 import { useCtx } from './ctx'
 import { listen } from '../quiet'
+import { t } from '../i18n'
 
 export const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 export const GLIDE_MS = 110
@@ -353,7 +354,7 @@ export function HoverBox({ hover, verb, onConfirm, onUp }: { hover: Inspect; ver
     <Glide item={hover} pad={3} className={`rounded-md border-2 border-proto-primary-ring ${hover?.touch ? 'bg-proto-primary/[.10]' : 'bg-proto-primary/[.06]'}`}>
       {h => h.touch
         ? <div data-inspect-ui style={spot(h.box, 36, h.parent ? 190 : 150)} className={`absolute flex h-9 items-center whitespace-nowrap rounded-lg bg-proto-primary text-xs font-medium text-proto-primary-fg shadow-lg ${hover ? 'pointer-events-auto' : ''}`}>
-            {h.parent && <><button aria-label="Select the parent" onClick={onUp} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); onUp() }} className="grid size-9 place-items-center rounded-s-lg active:bg-white/15"><Icon name="up" className="size-4" /></button><span className="h-4 w-px bg-white/30" /></>}
+            {h.parent && <><button aria-label={t('Select the parent')} onClick={onUp} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); onUp() }} className="grid size-9 place-items-center rounded-s-lg active:bg-white/15"><Icon name="up" className="size-4" /></button><span className="h-4 w-px bg-white/30" /></>}
             <button onClick={onConfirm} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); onConfirm() }} className={`inline-flex h-9 items-center gap-1.5 ps-2.5 pe-3 active:bg-white/15 ${h.parent ? 'rounded-e-lg' : 'rounded-lg'}`}><Icon name="comment" className="size-3.5" />{verb}</button>
           </div>
         : null}

@@ -6,6 +6,7 @@ import { Drawer } from '@base-ui/react/drawer'
 import { isChanged, type Tweak } from './tweaks'
 import { ic, IB } from './ui'
 import { uiBox } from './portals'
+import { t, tn } from './i18n'
 
 export type TweakControlsProps = {
   fields: Tweak[]
@@ -22,11 +23,11 @@ export type TweaksDrawerProps = TweakControlsProps & {
 }
 
 const accents = [
-  { name: 'Indigo', value: '#4f46e5' },
-  { name: 'Ocean', value: '#0369a1' },
-  { name: 'Forest', value: '#047857' },
-  { name: 'Rose', value: '#be123c' },
-  { name: 'Amber', value: '#b45309' },
+  { name: t('Indigo'), value: '#4f46e5' },
+  { name: t('Ocean'), value: '#0369a1' },
+  { name: t('Forest'), value: '#047857' },
+  { name: t('Rose'), value: '#be123c' },
+  { name: t('Amber'), value: '#b45309' },
 ]
 const icon = (name: string, size = 'size-4') => h('span', { className: 'inline-flex shrink-0', dangerouslySetInnerHTML: { __html: ic(name, size) } })
 const note = 'text-[11px] leading-5 text-zinc-500 dark:text-zinc-400'
@@ -47,18 +48,18 @@ function Field({ field, onChange, onReset }: { field: Tweak } & Pick<TweakContro
       h('div', { role: 'group', 'aria-labelledby': labelId, className: 'flex flex-wrap items-center gap-2' },
         ...presets.map(preset => h('button', {
           key: preset.value, type: 'button', 'data-tweak-option': preset.value,
-          'aria-label': `${preset.name} ${field.label}`, 'aria-pressed': field.value.toLowerCase() === preset.value.toLowerCase(), title: preset.name,
+          'aria-label': t('{preset} {name}', { preset: preset.name, name: field.label }), 'aria-pressed': field.value.toLowerCase() === preset.value.toLowerCase(), title: preset.name,
           onClick: () => onChange(field.id, preset.value),
           className: 'grid size-9 shrink-0 place-items-center rounded-full border-2 border-transparent aria-pressed:border-zinc-400',
           style: { backgroundColor: preset.value, color: foreground(preset.value) },
         }, field.value.toLowerCase() === preset.value.toLowerCase() ? icon('check') : null)),
         h('input', {
           type: 'color', 'data-tweak-input': field.id, value: field.value,
-          'aria-label': `Custom ${field.label}`, title: `Custom ${field.label}`,
+          'aria-label': t('Custom {name}', { name: field.label }), title: t('Custom {name}', { name: field.label }),
           onChange: (e: ChangeEvent<HTMLInputElement>) => onChange(field.id, e.target.value),
           className: 'size-9 shrink-0 cursor-pointer appearance-none overflow-hidden rounded-full border border-zinc-300 bg-transparent p-1 dark:border-zinc-600 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-full [&::-webkit-color-swatch]:border-0 [&::-moz-color-swatch]:rounded-full [&::-moz-color-swatch]:border-0',
         })),
-      h('p', { className: `mt-2 ${note}` }, `${presets.find(preset => preset.value.toLowerCase() === field.value.toLowerCase())?.name ?? 'Custom'} · ${field.value.toUpperCase()}`))
+      h('p', { className: `mt-2 ${note}` }, `${presets.find(preset => preset.value.toLowerCase() === field.value.toLowerCase())?.name ?? t('Custom')} · ${field.value.toUpperCase()}`))
   })() : field.kind === 'select' ? (
     field.options.length <= 4 && field.options.join('').length <= 56
       ? h('div', { role: 'group', 'aria-labelledby': labelId, className: 'flex rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800' },
@@ -84,10 +85,10 @@ function Field({ field, onChange, onReset }: { field: Tweak } & Pick<TweakContro
   return h('section', { 'data-tweak': field.id, className: 'min-w-0' },
     h('div', { className: 'mb-2 flex min-h-7 items-center justify-between gap-2' },
       h('h3', { id: labelId, dir: 'auto', className: 'min-w-0 break-words text-xs font-medium' }, field.label,
-        changed ? h('span', { 'aria-label': 'Changed', title: 'Changed', className: 'ms-1.5 inline-block size-1.5 rounded-full bg-sky-500' }) : null),
+        changed ? h('span', { 'aria-label': t('Changed'), title: t('Changed'), className: 'ms-1.5 inline-block size-1.5 rounded-full bg-sky-500' }) : null),
       h('div', { className: 'flex shrink-0 items-center gap-2' },
         field.kind === 'toggle' ? control : null,
-        changed ? h('button', { type: 'button', 'data-tweak-reset': field.id, 'aria-label': `Reset ${field.label}`, title: `Reset ${field.label}`, onClick: () => onReset(field.id), className: 'grid size-7 place-items-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800' }, icon('replay', 'size-3')) : null)),
+        changed ? h('button', { type: 'button', 'data-tweak-reset': field.id, 'aria-label': t('Reset {name}', { name: field.label }), title: t('Reset {name}', { name: field.label }), onClick: () => onReset(field.id), className: 'grid size-7 place-items-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800' }, icon('replay', 'size-3')) : null)),
     field.kind !== 'toggle' ? control : null,
     field.note ? h('p', { id: noteId, dir: 'auto', className: `mt-1 ${note}` }, field.note) : null)
 }
@@ -96,7 +97,7 @@ function Controls(p: TweakControlsProps) {
   const changed = p.fields.filter(isChanged).length
   return h('div', { 'data-tweaks-controls': '', className: 'space-y-5' },
     ...p.fields.map(field => h(Field, { key: field.id, field, onChange: p.onChange, onReset: p.onReset })),
-    h('button', { type: 'button', 'data-tweak-reset': 'all', onClick: () => p.onReset(), disabled: !changed, className: `${button} w-full border border-zinc-200 dark:border-zinc-700` }, icon('replay', 'size-3.5'), 'Reset all tweaks'))
+    h('button', { type: 'button', 'data-tweak-reset': 'all', onClick: () => p.onReset(), disabled: !changed, className: `${button} w-full border border-zinc-200 dark:border-zinc-700` }, icon('replay', 'size-3.5'), t('Reset all tweaks')))
 }
 
 function TweaksDrawer(p: TweaksDrawerProps) {
@@ -122,11 +123,11 @@ function TweaksDrawer(p: TweaksDrawerProps) {
           h('div', { 'aria-hidden': true, className: 'flex h-5 shrink-0 touch-none items-center justify-center' }, h('div', { className: 'h-1 w-8 rounded-full bg-zinc-300 dark:bg-zinc-600' })),
           h('header', { className: 'flex shrink-0 items-center justify-between gap-2 border-b border-zinc-100 px-4 pb-3 pt-1 dark:border-zinc-800' },
             h('div', { className: 'min-w-0' },
-              h(Drawer.Title, { className: 'flex items-center gap-2 text-sm font-semibold' }, icon('tweaks'), 'Tweaks'),
-              h(Drawer.Description, { className: `mt-1 ${note}` }, changed ? `${changed} changed` : 'Change this preview')),
+              h(Drawer.Title, { className: 'flex items-center gap-2 text-sm font-semibold' }, icon('tweaks'), t('Tweaks')),
+              h(Drawer.Description, { className: `mt-1 ${note}` }, changed ? tn(changed, '{n} change', '{n} changes') : t('Change this preview'))),
             h('div', { className: 'flex shrink-0 items-center gap-1' },
-              h(Drawer.Close, { 'data-tweaks-close': '', className: `${button} text-sky-700 dark:text-sky-300` }, 'View preview'),
-              h(Drawer.Close, { 'aria-label': 'Close tweaks', className: IB }, icon('x')))),
+              h(Drawer.Close, { 'data-tweaks-close': '', className: `${button} text-sky-700 dark:text-sky-300` }, t('View preview')),
+              h(Drawer.Close, { 'aria-label': t('Close tweaks'), className: IB }, icon('x')))),
           h(Drawer.Content, { className: 'min-h-0 overflow-y-auto overscroll-contain p-4' }, h(Controls, p))))))
 }
 

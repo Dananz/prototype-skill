@@ -4,6 +4,7 @@
 // A comment and the follow-ups answering Claude about it are one row, a thread, in the section of
 // its last turn: an answer to a done comment brings it back to With Claude.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { t, tn } from '../i18n'
 import { useAgentName, useCtx } from './ctx'
 import { isRoot, progress, threadOf, useStore, type Said } from './store'
 import type { CState, Item } from './types'
@@ -41,12 +42,12 @@ function ClearAll({ ids, what }: { ids: string[]; what: string }) {
   const agent = useAgentName()
   const { act } = useCtx()
   const [sure, setSure] = useState(false)
-  useEffect(() => { if (!sure) return; const t = window.setTimeout(() => setSure(false), 4000); return () => clearTimeout(t) }, [sure])
+  useEffect(() => { if (!sure) return; const tId = window.setTimeout(() => setSure(false), 4000); return () => clearTimeout(tId) }, [sure])
   return (
     <button data-shoot={`clear-${what}`} onClick={() => { if (!sure) return setSure(true); setSure(false); act.removeAll(ids) }}
-      title={what === 'sent' ? `Delete all of these, and take them back from ${agent}` : 'Delete all of these from the list'}
+      title={what === 'sent' ? t('Delete all of these, and take them back from {agent}', { agent }) : t('Delete all of these from the list')}
       className={`ms-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium ${sure ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' : 'text-zinc-400 hover:bg-zinc-900/5 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200'}`}>
-      <Icon name="trash" className="size-3" />{sure ? `Clear ${ids.length}?` : 'Clear'}
+      <Icon name="trash" className="size-3" />{sure ? t('Clear {n}?', { n: ids.length }) : t('Clear')}
     </button>
   )
 }
@@ -55,7 +56,7 @@ const Remove = ({ item, className = '' }: { item: Item; className?: string }) =>
   const agent = useAgentName()
   const { act } = useCtx()
   const sent = !!item.sent
-  return <button data-shoot="remove" onClick={e => { e.stopPropagation(); act.remove(item.id) }} aria-label="Delete this comment" title={sent ? `Delete this comment (${agent} is told to leave it)` : 'Delete this comment'} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10 ${className}`}><Icon name="trash" className="size-4" /></button>
+  return <button data-shoot="remove" onClick={e => { e.stopPropagation(); act.remove(item.id) }} aria-label={t('Delete this comment')} title={sent ? t('Delete this comment ({agent} is told to leave it)', { agent }) : t('Delete this comment')} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10 ${className}`}><Icon name="trash" className="size-4" /></button>
 }
 const Where = ({ item, here }: { item: Item; here: boolean }) => { const { store } = useCtx(); return here && !store.get().place?.compare ? null : <span className="shrink-0 rounded bg-zinc-900/[.05] px-1 font-mono text-[10px] text-zinc-500 dark:bg-white/10">{item.variant}</span> }
 /** What a row is about: the element a comment is on, or a decision with its icon (it is on no element). */
@@ -67,7 +68,7 @@ const Extras = ({ item }: { item: Item }) => (item.tags.length > 0 || shotsOf(it
   <span className="mt-2 block min-w-0 text-[11px] text-zinc-400">
     {!!shotsOf(item).length && <PictureStrip>{shotsOf(item).map((p, k) => p.pasted ? <ImageChip key={k} src={p.src} size="sm" /> : <img key={k} src={p.src} alt="" className="h-9 w-14 rounded-md object-cover ring-1 ring-black/10" />)}</PictureStrip>}
     <span className="flex min-w-0 flex-wrap items-center gap-2">
-      {item.tags.length > 0 && <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-proto-primary-soft px-1.5 text-proto-primary-soft-fg"><Icon name="at" className="size-3" />{item.tags.length} tagged</span>}
+      {item.tags.length > 0 && <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-proto-primary-soft px-1.5 text-proto-primary-soft-fg"><Icon name="at" className="size-3" />{t('{n} tagged', { n: item.tags.length })}</span>}
       <SrcTag t={item.target} className="min-w-0" />
     </span>
   </span>
@@ -83,7 +84,7 @@ function Draft({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: b
         <PinDot n={item.n} whole={item.target?.whole} />
         <button onClick={onOpen} className="min-w-0 flex-1 truncate text-start text-xs font-medium text-zinc-500 dark:text-zinc-400"><span dir="auto">{aboutOf(item)}</span></button>
         <Where item={item} here={r.here} />
-        <button onClick={() => act.remove(item.id)} aria-label="Remove this comment" className="-me-1 grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10"><Icon name="trash" className="size-4" /></button>
+        <button onClick={() => act.remove(item.id)} aria-label={t('Remove this comment')} className="-me-1 grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10"><Icon name="trash" className="size-4" /></button>
       </div>
       <button onClick={onOpen} className="mt-1 block w-full text-start"><Body c={item} className={`block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} /><ViewChip v={item.target?.view} className="mt-1.5" /><Extras item={item} /></button>
     </div>
@@ -125,17 +126,17 @@ function Answer({ r }: { r: Row }) {
   const cancel = () => update({ open: false, text: '', error: '' })
   const last = r.turns[r.turns.length - 1]
   if (!last.item.sent || (!last.reply && last.state !== 'done')) return null
-  if (!open) return <button data-shoot="comment-answer" onClick={() => update({ open: true })} title={`Answer ${agent}'s reply`} className="mt-1.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-800 dark:hover:bg-white/10 dark:hover:text-zinc-200"><Icon name="comment" className="size-3" />Reply</button>
+  if (!open) return <button data-shoot="comment-answer" onClick={() => update({ open: true })} title={t('Answer {agent}\'s reply', { agent })} className="mt-1.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-800 dark:hover:bg-white/10 dark:hover:text-zinc-200"><Icon name="comment" className="size-3" />{t('Reply')}</button>
   const send = async () => {
     if (!text.trim() || store.get().replies[r.item.id]?.busy) return
     update({ busy: true, error: '' })
     try { await act.followUp(r.item.id, text); update(empty) }
-    catch (e) { update({ error: e instanceof Error ? e.message : 'Could not send' }) }
+    catch (e) { update({ error: e instanceof Error ? e.message : t('Could not send') }) }
     finally { update({ busy: false }) }
   }
   return (
     <span data-shoot="comment-answer-box" className="mt-2 block rounded-xl border border-black/10 bg-white p-1.5 dark:border-white/15 dark:bg-zinc-900">
-      <textarea autoFocus rows={2} value={text} aria-label={`Answer ${agent}`} placeholder={`Answer ${agent}…`} dir="auto"
+      <textarea autoFocus rows={2} value={text} aria-label={t('Answer {agent}', { agent })} placeholder={t('Answer {agent}…', { agent })} dir="auto"
         onChange={e => update({ text: e.target.value })}
         onKeyDown={e => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() }
@@ -144,8 +145,8 @@ function Answer({ r }: { r: Row }) {
         className="block max-h-32 w-full resize-none bg-transparent px-1.5 py-1 text-[12.5px] leading-[18px] text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100" />
       {error && <span role="alert" className="block px-1.5 pb-1 text-[11px] text-rose-600 dark:text-rose-400">{error}</span>}
       <span className="flex items-center justify-end gap-1">
-        <button onClick={cancel} className="h-7 rounded-lg px-2 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Cancel</button>
-        <button data-shoot="comment-answer-send" onClick={() => void send()} disabled={!text.trim() || busy} title={`Send to ${agent} · ${MOD} Enter`} className={`inline-flex h-7 items-center gap-1 rounded-lg ps-2 pe-2.5 text-[11px] font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name="send" className="size-3" />{busy ? 'Sending…' : 'Send'}</button>
+        <button onClick={cancel} className="h-7 rounded-lg px-2 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>
+        <button data-shoot="comment-answer-send" onClick={() => void send()} disabled={!text.trim() || busy} title={`${t('Send to {agent}', { agent })} · ${MOD} Enter`} className={`inline-flex h-7 items-center gap-1 rounded-lg ps-2 pe-2.5 text-[11px] font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name="send" className="size-3" />{busy ? t('Sending…') : t('Send')}</button>
       </span>
     </span>
   )
@@ -163,7 +164,7 @@ function WithAgent({ r, active, roomy, onOpen }: { r: Row; active: boolean; room
       <button onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 p-3 pe-0 text-start">
         <span className="mt-1">{r.stopped ? <span data-shoot="comment-stopped" className="mt-0.5 block size-2 rounded-full border border-amber-500" /> : <Working />}</span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} />{r.stopped ? <span className="shrink-0 text-amber-600 dark:text-amber-300">{said ? 'Stopped' : 'Not picked up'}</span> : <span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? `${agent} is on it` : 'Sent'}</span>}</span>
+          <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} />{r.stopped ? <span className="shrink-0 text-amber-600 dark:text-amber-300">{said ? t('Stopped') : t('Not picked up')}</span> : <span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? t('{agent} is on it', { agent }) : t('Sent')}</span>}</span>
           <Body c={item} className={`mt-0.5 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
           <ViewChip v={item.target?.view} className="mt-1.5" />
           {shotsOf(item).some(p => p.pasted) && <PictureStrip className="mt-2">{shotsOf(item).filter(p => p.pasted).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</PictureStrip>}
@@ -195,9 +196,9 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
       </div>
       {open && (
         <div className="space-y-2 pb-2 pe-1 ps-8">
-          <p className="flex items-center gap-2 text-xs text-zinc-400"><span className="min-w-0 truncate"><About item={item} /></span>{when &&<span className="shrink-0">· {when === 'now' ? 'just now' : `${when} ago`}</span>}<button onClick={onShow} className="ms-auto shrink-0 font-medium text-proto-primary-soft-fg hover:underline">{item.time ? `Show ${spanOf(item.time)}` : item.target ? 'Show on design' : `Go to ${item.variant || 'the prototype'}`}</button></p>
+          <p className="flex items-center gap-2 text-xs text-zinc-400"><span className="min-w-0 truncate"><About item={item} /></span>{when && <span className="shrink-0">· {when}</span>}<button onClick={onShow} className="ms-auto shrink-0 font-medium text-proto-primary-soft-fg hover:underline">{item.time ? t('Show {span}', { span: spanOf(item.time) }) : item.target ? t('Show on design') : t('Go to {target}', { target: item.variant || t('the prototype') })}</button></p>
           <ViewChip v={item.target?.view} />
-          {reply ? <Reply text={reply.text} by={reply.by} small /> : <p className="text-xs text-zinc-400">Marked done, no note.</p>}
+          {reply ? <Reply text={reply.text} by={reply.by} small /> : <p className="text-xs text-zinc-400">{t('Marked done, no note.')}</p>}
           <Thread r={r} />
         </div>
       )}
@@ -214,18 +215,18 @@ export function CommentList({ roomy, onOpen }: { roomy?: boolean; onOpen?: (id: 
   const open = (id: string) => { onOpen?.(id); act.open(id) }
   const by = (st: CState[]) => rows.filter(r => st.includes(r.state))
   const drafts = by(['draft']), wait = by(['sent', 'seen']), done = by(['done'])
-  if (!rows.length && !held) return <p className="px-3 py-6 text-center text-xs text-zinc-400">Nothing yet. Press C, then click anything in the design.</p>
+  if (!rows.length && !held) return <p className="px-3 py-6 text-center text-xs text-zinc-400">{t('Nothing yet. Press C, then click anything in the design.')}</p>
   return (
     <div>
       {(drafts.length > 0 || held) && (
-        <section aria-label="Ready to send">
-          <Head title="Ready to send" n={drafts.length + (held ? 1 : 0)} />
+        <section aria-label={t('Ready to send')}>
+          <Head title={t('Ready to send')} n={drafts.length + (held ? 1 : 0)} />
           <div className="space-y-2">
             {held && (
               <div className="rounded-2xl border border-dashed border-proto-primary-ring/60 bg-proto-primary-soft/50 p-3">
-                <div className="flex items-center gap-2 text-xs"><span className="size-1.5 rounded-full bg-proto-primary" /><span className="font-medium text-proto-primary-soft-fg">Unfinished comment</span><span dir="auto" className="min-w-0 flex-1 truncate text-end text-zinc-500">{held.time ? spanOf(held.time) : held.target?.label}</span></div>
+                <div className="flex items-center gap-2 text-xs"><span className="size-1.5 rounded-full bg-proto-primary" /><span className="font-medium text-proto-primary-soft-fg">{t('Unfinished comment')}</span><span dir="auto" className="min-w-0 flex-1 truncate text-end text-zinc-500">{held.time ? spanOf(held.time) : held.target?.label}</span></div>
                 <Body c={held} className={`mt-1 line-clamp-2 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
-                <div className="mt-2 flex gap-1.5"><button onClick={() => { onOpen?.(''); act.resume() }} className="h-8 rounded-full bg-proto-primary px-3 text-xs font-semibold text-proto-primary-fg hover:bg-proto-primary-hover">Continue</button><button onClick={act.discardHeld} className="h-8 rounded-full px-3 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Discard</button></div>
+                <div className="mt-2 flex gap-1.5"><button onClick={() => { onOpen?.(''); act.resume() }} className="h-8 rounded-full bg-proto-primary px-3 text-xs font-semibold text-proto-primary-fg hover:bg-proto-primary-hover">{t('Continue')}</button><button onClick={act.discardHeld} className="h-8 rounded-full px-3 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Discard')}</button></div>
               </div>
             )}
             {drafts.map(r => <Draft key={r.item.id} r={r} roomy={!!roomy} active={on(r.item.id)} onOpen={() => open(r.item.id)} />)}
@@ -233,14 +234,14 @@ export function CommentList({ roomy, onOpen }: { roomy?: boolean; onOpen?: (id: 
         </section>
       )}
       {wait.length > 0 && (
-        <section aria-label={`With ${agent}`}>
-          <Head title={`With ${agent}`} n={wait.length} tone="text-proto-primary-soft-fg"><ClearAll what="sent" ids={wait.map(r => r.item.id)} /></Head>
+        <section aria-label={t('With {agent}', { agent })}>
+          <Head title={t('With {agent}', { agent })} n={wait.length} tone="text-proto-primary-soft-fg"><ClearAll what="sent" ids={wait.map(r => r.item.id)} /></Head>
           <div className="space-y-2">{wait.map(r => <WithAgent key={r.item.id} r={r} roomy={!!roomy} active={on(r.item.id)} onOpen={() => open(r.item.id)} />)}</div>
         </section>
       )}
       {done.length > 0 && (
-        <section aria-label="Done">
-          <Head title="Done" n={done.length} tone="text-emerald-700 dark:text-emerald-400"><ClearAll what="done" ids={done.map(r => r.item.id)} /></Head>
+        <section aria-label={t('Done')}>
+          <Head title={t('Done')} n={done.length} tone="text-emerald-700 dark:text-emerald-400"><ClearAll what="done" ids={done.map(r => r.item.id)} /></Head>
           <div className="divide-y divide-black/[.05] dark:divide-white/[.07]">{done.map(r => <DoneRow key={r.item.id} r={r} roomy={!!roomy} active={on(r.item.id)} onShow={() => open(r.item.id)} />)}</div>
         </section>
       )}
@@ -255,7 +256,7 @@ export function SendButton({ className = '' }: { className?: string }) {
   const { s, drafts } = useRows()
   return (
     <button data-shoot="send" onClick={act.send} title={`${MOD} Enter`} disabled={!drafts || s.sending} className={`inline-flex h-12 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:bg-zinc-900/[.06] disabled:text-zinc-400 dark:disabled:bg-white/[.08] dark:disabled:text-zinc-500 ${drafts && !s.sending ? 'bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-proto-primary-ring' : ''} ${className}`}>
-      <Icon name="send" className="size-4" />{s.sending ? 'Sending…' : drafts ? `Send ${drafts} to ${agent}` : 'Nothing to send'}
+      <Icon name="send" className="size-4" />{s.sending ? t('Sending…') : drafts ? tn(drafts, 'Send {n} to {agent}', 'Send {n} to {agent}', { agent }) : t('Nothing to send')}
     </button>
   )
 }
@@ -285,17 +286,17 @@ export function SendBar({ className = '', onAdd }: { className?: string; onAdd?:
   return (
     <div className={`space-y-2 ${className}`}>
       {s.place && <WholeBox />}
-      {s.error && <p role="alert" className="flex items-start gap-2 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300"><span className="min-w-0 flex-1">{s.error}</span><button onClick={act.clearError} aria-label="Dismiss" className="shrink-0 opacity-70 hover:opacity-100"><Icon name="x" className="size-3.5" /></button></p>}
+      {s.error && <p role="alert" className="flex items-start gap-2 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300"><span className="min-w-0 flex-1">{s.error}</span><button onClick={act.clearError} aria-label={t('Dismiss')} className="shrink-0 opacity-70 hover:opacity-100"><Icon name="x" className="size-3.5" /></button></p>}
       {stalled > 0 && (
         <p data-shoot="stalled" className="flex items-start gap-2 px-1 text-xs leading-4 text-amber-700 dark:text-amber-300">
           <Icon name="warn" className="mt-0.5 size-3.5" />
-          <span>{copied ? `Paste it in your agent conversation. ${agent} picks them up when it listens.` : `${agent} is not listening. ${stalled} comment${stalled === 1 ? '' : 's'} wait${stalled === 1 ? 's' : ''}. Copy the message, paste it in your agent conversation.`}</span>
+          <span>{copied ? t('Paste it in your agent conversation. {agent} picks them up when it listens.', { agent }) : tn(stalled, '{agent} is not listening. {n} comment waits. Copy the message, paste it in your agent conversation.', '{agent} is not listening. {n} comments wait. Copy the message, paste it in your agent conversation.', { agent })}</span>
         </p>
       )}
       <div className="flex gap-2">
-        <button data-shoot="add" onClick={onAdd ?? act.toggle} aria-label="Add a comment" title="Comment on the design · C" className="grid size-12 shrink-0 place-items-center rounded-full ring-1 ring-inset ring-black/10 hover:bg-zinc-900/5 dark:ring-white/15 dark:hover:bg-white/10"><Icon name="plus" className="size-5" /></button>
+        <button data-shoot="add" onClick={onAdd ?? act.toggle} aria-label={t('Add a comment')} title={`${t('Comment on the design')} · C`} className="grid size-12 shrink-0 place-items-center rounded-full ring-1 ring-inset ring-black/10 hover:bg-zinc-900/5 dark:ring-white/15 dark:hover:bg-white/10"><Icon name="plus" className="size-5" /></button>
         {restart
-          ? <button data-shoot="restart" onClick={copy} className="inline-flex h-12 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-amber-400 px-3 text-[12.5px] font-semibold text-amber-950 hover:bg-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"><Icon name={copied ? 'check' : 'more'} className="size-4" />{copied ? 'Copied' : 'Copy restart message'}</button>
+          ? <button data-shoot="restart" onClick={copy} className="inline-flex h-12 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-amber-400 px-3 text-[12.5px] font-semibold text-amber-950 hover:bg-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"><Icon name={copied ? 'check' : 'more'} className="size-4" />{copied ? t('Copied') : t('Copy restart message')}</button>
           : <SendButton className="flex-1" />}
       </div>
       <Listening on={!!store.get().inbox?.listening} stalled={stalled > 0} className="justify-center" />
