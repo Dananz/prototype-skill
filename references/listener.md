@@ -18,15 +18,17 @@ or MCP transport if the initial tool catalog is incomplete.
    and owning thread. Never create one per turn or batch.
 2. If none exists, create one with `schedule: {type: "webhook"}` and
    `bindToCurrentThread: true`. T3 posts its prompt into the thread on every page send,
-   so keep it to this one line, with the absolute paths and session filled in:
+   so keep it to this one line, with the project and session filled in:
 
    ```text
-   Prototype comments arrived (hint {{body.batchId}}). Run `node <skill-dir>/scripts/proto.mjs inbox --project <project> --session <session>` and handle them per the prototype skill.
+   Prototype comments arrived. Handle them with the prototype skill: `proto inbox --project <project> --session <session>`
    ```
 
-   Don't repeat this file's rules in the prompt (one listener, the inbox is the source of
-   truth, preserve edits); the skill already carries them. `{{body.batchId}}` is only a
-   wakeup hint: retries or several sends can wake the thread with nothing new to claim.
+   Naming the skill loads it in a thread that doesn't have it yet; in the owning thread it
+   is already loaded. Don't repeat this file's rules in the prompt, and leave out
+   `{{body.batchId}}`: the inbox is the source of truth, and T3 appends an untrusted-data
+   notice to every placeholder. Retries or several sends can wake the thread with nothing
+   new to claim.
 3. Save `{ "url": "<returned webhookUrl>", "id": "<scheduledTaskId>",
    "threadId": "<owning thread ID>" }` to a private temporary JSON file outside the served
    project. Run `proto inbox --listen "<config.json>"` with the original project/session
