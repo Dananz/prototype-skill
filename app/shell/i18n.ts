@@ -34,6 +34,10 @@ const dict = DICTS[lang]
 document.documentElement.lang = lang
 document.documentElement.dir = rtl ? 'rtl' : 'ltr'
 
+// session.json changes with every `proto add`; read here only once, it must not reload the page
+// each time (the shell's setSession hands a new language to followSession).
+if (import.meta.hot) import.meta.hot.accept('../session.json', () => {})
+
 /** Keeps this browser's choice and reloads into it (every string is read again). */
 export function setLangChoice(next: LangChoice) {
   try { if (next === 'auto') localStorage.removeItem('proto-lang'); else localStorage.setItem('proto-lang', next) } catch { /* private mode: this load only */ }
