@@ -79,12 +79,12 @@ function Field({ field, onChange, onReset }: { field: Tweak } & Pick<TweakContro
       onChange: (e: ChangeEvent<HTMLInputElement>) => onChange(field.id, e.target.checked),
       className: 'peer h-6 w-10 cursor-pointer appearance-none rounded-full bg-zinc-300 transition-colors checked:bg-proto-primary dark:bg-zinc-700 dark:checked:bg-proto-primary motion-reduce:transition-none',
     }),
-    h('span', { 'aria-hidden': true, className: 'pointer-events-none absolute left-1 top-1 size-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4 motion-reduce:transition-none' }))
+    h('span', { 'aria-hidden': true, className: 'pointer-events-none absolute start-1 top-1 size-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4 rtl:peer-checked:-translate-x-4 motion-reduce:transition-none' }))
 
   return h('section', { 'data-tweak': field.id, className: 'min-w-0' },
     h('div', { className: 'mb-2 flex min-h-7 items-center justify-between gap-2' },
       h('h3', { id: labelId, dir: 'auto', className: 'min-w-0 break-words text-xs font-medium' }, field.label,
-        changed ? h('span', { 'aria-label': 'Changed', title: 'Changed', className: 'ml-1.5 inline-block size-1.5 rounded-full bg-sky-500' }) : null),
+        changed ? h('span', { 'aria-label': 'Changed', title: 'Changed', className: 'ms-1.5 inline-block size-1.5 rounded-full bg-sky-500' }) : null),
       h('div', { className: 'flex shrink-0 items-center gap-2' },
         field.kind === 'toggle' ? control : null,
         changed ? h('button', { type: 'button', 'data-tweak-reset': field.id, 'aria-label': `Reset ${field.label}`, title: `Reset ${field.label}`, onClick: () => onReset(field.id), className: 'grid size-7 place-items-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800' }, icon('replay', 'size-3')) : null)),

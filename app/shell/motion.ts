@@ -3,6 +3,7 @@
 // outside the DOM, so re-rendering the chrome never restarts an animation.
 
 import { listen } from './quiet'
+import { rtl } from './i18n'
 
 export const smooth = (x: number) => x * x * (3 - 2 * x)
 const ease = (from: number, to: number, dt: number) => from + (to - from) * (1 - Math.exp(-dt / 90))
@@ -56,7 +57,7 @@ function paintEdges() {
     if (Math.abs(goal - t) > 0.002) moving = true
     const e = smooth(t), dir = k.endsWith('prev') ? -1 : 1
     el.style.opacity = String(e)
-    el.style.transform = `translateX(${dir * (1 - e) * 14}px) scale(${0.85 + 0.15 * e})`
+    el.style.transform = `translateX(${(rtl ? -dir : dir) * (1 - e) * 14}px) scale(${0.85 + 0.15 * e})`
     el.style.pointerEvents = e > 0.3 ? 'auto' : 'none'
   }
   return moving
@@ -107,8 +108,10 @@ export function trackPointer(e: { clientX: number; clientY: number }) {
   for (const el of arrows) {
     const zone = el.closest<HTMLElement>('[data-zone]')!, r = zone.getBoundingClientRect()
     // The stage stops at the side panel (--hw): the next arrow wakes near that edge, not the window's.
-    const z = new DOMRect(r.left, r.top, r.width - (parseFloat(getComputedStyle(zone).getPropertyValue('--hw')) || 0), r.height)
-    const dist = el.dataset.edge!.endsWith('prev') ? e.clientX - z.left : z.right - e.clientX
+    const hw = parseFloat(getComputedStyle(zone).getPropertyValue('--hw')) || 0
+    const z = new DOMRect(rtl ? r.left + hw : r.left, r.top, r.width - hw, r.height)
+    const prev = el.dataset.edge!.endsWith('prev')
+    const dist = prev !== rtl ? e.clientX - z.left : z.right - e.clientX
     edge.target[el.dataset.edge!] = inside(e, z) ? Math.min(1, Math.max(0, 1 - (dist - 24) / 160)) : 0
   }
   if (arrows.length) runEdges()

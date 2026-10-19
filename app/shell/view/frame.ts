@@ -49,7 +49,7 @@ export type Frame = {
 export function openFrame(host: HTMLElement, url: string, on: { route: (hash: string) => void; bind: (d: Document) => () => void; bound: () => void }): Frame {
   const el = document.createElement('iframe')
   el.title = 'This page at another size'
-  el.className = 'absolute left-0 top-0 block origin-top-left border-0 bg-white dark:bg-zinc-950'
+  el.className = 'absolute start-0 top-0 block origin-top-left border-0 bg-white dark:bg-zinc-950'
   host.append(el)
   let d: Document | null = null, unbind = () => {}, closed = false
   const page = () => { try { const n = el.contentDocument; return n && n.URL !== 'about:blank' ? n : null } catch { return null } }

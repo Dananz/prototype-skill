@@ -35,7 +35,7 @@ function Pins({ items, boxes, active, onOpen, compare }: { compare?: boolean; it
         style={{ left: b.x + b.w - 10, top: b.y - 10 }}>
         <span className="relative block">
           <PinDot n={g.n} />
-          <span className="absolute -bottom-1 -right-1 grid min-w-3.5 place-items-center rounded-full bg-zinc-900 px-0.5 text-[9px] font-bold leading-[14px] text-white ring-1 ring-white dark:bg-white dark:text-zinc-900">{g.ids.length > 1 ? g.ids.length : '↓'}</span>
+          <span className="absolute -bottom-1 -end-1 grid min-w-3.5 place-items-center rounded-full bg-zinc-900 px-0.5 text-[9px] font-bold leading-[14px] text-white ring-1 ring-white dark:bg-white dark:text-zinc-900">{g.ids.length > 1 ? g.ids.length : '↓'}</span>
         </span>
       </button>
     )
@@ -166,9 +166,9 @@ function Climb({ box, up, down }: { box: Box; up: boolean; down: boolean }) {
   const btn = 'inline-flex h-5 items-center gap-1 px-1.5 hover:bg-white/15'
   return (
     <div data-inspect-ui className={`pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-stretch whitespace-nowrap bg-proto-primary text-[11px] font-semibold text-proto-primary-fg shadow ${inside ? 'top-0 rounded-b' : 'bottom-full rounded-t'}`}>
-      {up && <button onClick={act.parent} title="Comment on the element around it" className={`${btn} ${inside ? 'rounded-bl' : 'rounded-tl'} ${down ? '' : inside ? 'rounded-br' : 'rounded-tr'}`}><Icon name="up" className="size-3" />Parent</button>}
+      {up && <button onClick={act.parent} title="Comment on the element around it" className={`${btn} ${inside ? 'rounded-es' : 'rounded-ss'} ${down ? '' : inside ? 'rounded-ee' : 'rounded-se'}`}><Icon name="up" className="size-3" />Parent</button>}
       {up && down && <span className="my-1 w-px bg-white/30" />}
-      {down && <button onClick={act.down} aria-label="Back to the element inside" title="Back to the element inside" className={`${btn} ${inside ? 'rounded-br' : 'rounded-tr'} ${up ? '' : inside ? 'rounded-bl' : 'rounded-tl'}`}><Icon name="child" className="size-3" /></button>}
+      {down && <button onClick={act.down} aria-label="Back to the element inside" title="Back to the element inside" className={`${btn} ${inside ? 'rounded-ee' : 'rounded-se'} ${up ? '' : inside ? 'rounded-es' : 'rounded-ss'}`}><Icon name="child" className="size-3" /></button>}
     </div>
   )
 }

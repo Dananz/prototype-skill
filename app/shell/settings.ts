@@ -5,6 +5,7 @@ import { Dialog } from '@base-ui/react/dialog'
 import { Drawer } from '@base-ui/react/drawer'
 import { ago, ic, IB } from './ui'
 import { uiBox } from './portals'
+import { LANG_NAMES, LANGS, langChoice, sessionLang, setLangChoice, t } from './i18n'
 
 export type Appearance = 'system' | 'light' | 'dark'
 export type Category = 'appearance' | 'feedback' | 'browsing' | 'session' | 'shortcuts'
@@ -39,7 +40,7 @@ const toggle = (key: string, title: string, detail: string, on: boolean, change:
     h('span', { className: 'min-w-0 flex-1' }, h('span', { className: 'block text-[13px] font-medium' }, title), h('span', { className: `mt-0.5 block ${muted}` }, detail)),
     h('span', { className: 'relative flex shrink-0' },
       h('input', { type: 'checkbox', role: 'switch', checked: on, disabled, onChange: (e: ChangeEvent<HTMLInputElement>) => change(e.target.checked), className: 'peer disabled:cursor-default disabled:opacity-50 h-6 w-10 cursor-pointer appearance-none rounded-full bg-zinc-300 transition-colors checked:bg-proto-primary dark:bg-zinc-700 dark:checked:bg-proto-primary motion-reduce:transition-none' }),
-      h('span', { 'aria-hidden': true, className: 'pointer-events-none absolute left-1 top-1 size-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4 motion-reduce:transition-none' })))
+      h('span', { 'aria-hidden': true, className: 'pointer-events-none absolute start-1 top-1 size-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4 rtl:peer-checked:-translate-x-4 motion-reduce:transition-none' })))
 const choices = (label: string, children: ReactNode[]) => h('div', { role: 'group', 'aria-label': label, className: 'flex shrink-0 gap-0.5 rounded-lg bg-zinc-900/[.05] p-1 dark:bg-white/[.06]' }, ...children)
 const choice = (key: string, value: string, label: string, selected: boolean, run: () => void, symbol: string) =>
   h('button', { key: value, type: 'button', [`data-setting-${key}`]: value, 'aria-pressed': selected, onClick: run, className: `inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs ${selected ? 'bg-white font-medium text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'}` }, icon(symbol), label)
@@ -112,7 +113,13 @@ function Settings(p: Props) {
   ]
   const pane = category === 'appearance' ? h('div', { className: 'pb-6' },
     choices('Appearance', (['system', 'light', 'dark'] as const).map(value => choice('theme', value, value === 'system' ? 'System' : value === 'light' ? 'Light' : 'Dark', p.appearance === value, () => p.onAppearance(value), value === 'light' ? 'sun' : value === 'dark' ? 'moon' : 'desktop'))),
-    h('p', { className: `mt-3 ${muted}` }, p.appearance === 'system' ? 'Follow the appearance of your device.' : `Use ${p.appearance} appearance for this workspace.`))
+    h('p', { className: `mt-3 ${muted}` }, p.appearance === 'system' ? 'Follow the appearance of your device.' : `Use ${p.appearance} appearance for this workspace.`),
+    h('div', { 'data-setting-language': '', className: 'mt-6 space-y-3 border-t border-black/[.06] pt-5 dark:border-white/10' },
+      h('div', null, h('p', { className: 'text-[13px] font-medium' }, t('Language')), h('p', { className: muted }, t('The words around your designs. The designs keep their own.'))),
+      choices(t('Language'), (['auto', ...LANGS] as const).map(value => h('button', { key: value, type: 'button', 'data-setting-lang': value, lang: value === 'auto' ? undefined : value, 'aria-pressed': langChoice === value, onClick: () => setLangChoice(value),
+        className: `inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs ${langChoice === value ? 'bg-white font-medium text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'}` },
+        value === 'auto' ? icon('translate') : null, value === 'auto' ? t('Conversation') : LANG_NAMES[value]))),
+      h('p', { className: muted }, langChoice === 'auto' ? t('Follows the language you talk to the agent in, now {name}.', { name: LANG_NAMES[sessionLang()] }) : t('Always {name} in this browser.', { name: LANG_NAMES[langChoice] }))))
     : category === 'feedback' ? h('div', { className: 'pb-6' }, toggle('live', 'Send each comment as you add it', 'Send new comments immediately. Turn off to collect drafts and send them together.', p.live, p.onLive))
     : category === 'browsing' ? h('div', { className: 'space-y-5' },
       h('div', { className: 'space-y-3' }, h('div', null, h('p', { className: 'text-[13px] font-medium' }, 'Overview layout'), h('p', { className: muted }, 'How variants appear in overviews.')), choices('Overview layout', [choice('layout', 'grid', 'Grid', !p.stack, () => p.onLayout(false), 'grid'), choice('layout', 'stack', 'List', p.stack, () => p.onLayout(true), 'rows')])),
@@ -152,9 +159,9 @@ function Settings(p: Props) {
           mobile ? h('div', { 'data-settings-handle': '', 'aria-hidden': true, className: 'mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-700' }) : null,
           h('header', { className: 'flex shrink-0 items-start justify-between gap-3 border-b border-black/[.07] px-5 pb-4 pt-5 sm:px-6 dark:border-white/10' },
             h('div', null, h(Surface.Title, { className: 'text-lg font-semibold tracking-tight' }, 'Settings'), h(Surface.Description, { className: `mt-1 ${muted}` }, 'Make this workspace feel like yours.')),
-            h(Surface.Close, { 'data-settings-close': '', 'aria-label': 'Close settings', className: `${IB} -mr-2 -mt-1` }, icon('x'))),
+            h(Surface.Close, { 'data-settings-close': '', 'aria-label': 'Close settings', className: `${IB} -me-2 -mt-1` }, icon('x'))),
           h('div', { className: 'flex min-h-0 flex-1 flex-col sm:flex-row' },
-            h('nav', { 'aria-label': 'Settings categories', className: 'flex shrink-0 gap-0.5 overflow-x-auto border-b border-black/[.07] p-2 sm:w-40 sm:flex-col sm:gap-1 sm:border-b-0 sm:border-r sm:p-3 dark:border-white/10' },
+            h('nav', { 'aria-label': 'Settings categories', className: 'flex shrink-0 gap-0.5 overflow-x-auto border-b border-black/[.07] p-2 sm:w-40 sm:flex-col sm:gap-1 sm:border-b-0 sm:border-e sm:p-3 dark:border-white/10' },
               ...categories.map(item => h('button', { key: item.id, type: 'button', 'data-settings-category': item.id, 'aria-current': item.id === category ? 'page' : undefined, onClick: () => choose(item.id), className: `flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg px-2 text-xs font-medium sm:justify-start sm:px-3 ${item.id === category ? 'bg-proto-primary/[.08] text-proto-primary dark:bg-proto-primary/20 dark:text-indigo-300' : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-white'}` }, h('span', { className: 'hidden sm:inline-flex' }, icon(item.symbol)), item.label))),
             h(Content, { key: category, 'aria-labelledby': titleId, className: 'min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-5 sm:min-h-52 sm:px-6 sm:pt-6' },
               h('h2', { id: titleId, className: 'text-[13px] font-semibold' }, selected.label), h('p', { className: `mb-5 mt-1 ${muted}` }, selected.detail), pane)),

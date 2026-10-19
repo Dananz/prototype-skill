@@ -34,6 +34,7 @@ import { createView } from './view/index'
 import { createIntake } from './intake/index'
 import type { Intake } from './intake/types'
 import { createSettings, type Appearance } from './settings'
+import { followSession, rtl, t, tn } from './i18n'
 import { createShare } from './share'
 import { framed, frameClicks, frameMenus, offerTheme, openFrame, frameUrl, type Frame } from './view/frame'
 import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
@@ -48,7 +49,11 @@ export type Proto = { id: string; title: string; ask: string; kind: 'web' | 'pho
 export type Ref = { proto: string; variant: string }
 /** work: the variant being changed now; before: the ones worked on before it (newest first);
  *  asks: what the user asked for on each variant ("pricing/C"), oldest first. */
-export type Session = { agent?: Agent; id: string; name: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
+// Along the line: +1 is forward. In a right-to-left page forward is leftward, so pointer moves,
+// arrow keys and slides that go along the line are mirrored by X.
+const X = rtl ? -1 : 1
+const FWD = rtl ? 'ArrowLeft' : 'ArrowRight', BACK = rtl ? 'ArrowRight' : 'ArrowLeft'
+export type Session = { agent?: Agent; id: string; name: string; lang?: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
 type Mount = (el: HTMLElement, component: any) => () => void
 // A variant can be shown in one of its states, or through a tool: all its states at once
 // (all), playing through them (play), or next to another variant (compare).
@@ -368,13 +373,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const colCount = (c: Col) => c.kind === 'variants' ? c.p.variants.length : c.list.length
   const ROWC = 'text-zinc-700 hover:bg-zinc-900/[.04] dark:text-zinc-300 dark:hover:bg-white/[.06]'
   const SELC = 'bg-zinc-900/[.06] font-medium text-zinc-900 dark:bg-white/[.09] dark:text-white'
-  const rowCls = (big: boolean) => `flex w-full min-w-0 items-center text-left ${big ? 'h-11 gap-2.5 rounded-lg px-2.5 text-[15px]' : 'h-[30px] gap-1.5 rounded-md px-1.5'}`
+  const rowCls = (big: boolean) => `flex w-full min-w-0 items-center text-start ${big ? 'h-11 gap-2.5 rounded-lg px-2.5 text-[15px]' : 'h-[30px] gap-1.5 rounded-md px-1.5'}`
   /** One variant in a column: the one shown is blue, the others on the way here are gray. */
   function vRow(q: Proto, v: Variant, sel: boolean, big = false) {
     const pl = st.place, here = pl.view === 'variant' && pl.proto === q.id && pl.variant === v.id
     const w = workOf(), kids = kidsOf(q, v.id).length > 0
     return `<div data-mv="${esc(q.id)}:${v.id}" class="group/vr relative"><button data-act="mv:${esc(q.id)}:${v.id}" aria-current="${sel}"${kids ? ' data-opens' : ''} class="${rowCls(big)} ${here ? 'bg-sky-500/15 font-medium text-sky-950 dark:text-sky-50' : sel ? SELC : ROWC}">
-      <span class="min-w-3.5 shrink-0 text-center text-[11px] font-semibold tabular-nums ${sel ? '' : 'text-zinc-400'}">${variantLabel(q, v.id)}</span><span dir="auto" class="min-w-0 flex-1 truncate">${esc(v.name)}</span><span class="flex shrink-0 items-center justify-end gap-1.5 empty:hidden ${big ? 'group-hover/vr:min-w-8 group-has-[:focus-visible]/vr:min-w-8 group-has-[[aria-expanded=true]]/vr:min-w-8 [@media(pointer:coarse)]:min-w-8' : 'group-hover/vr:min-w-6 group-has-[:focus-visible]/vr:min-w-6 group-has-[[aria-expanded=true]]/vr:min-w-6 [@media(pointer:coarse)]:min-w-6'} group-hover/vr:empty:flex group-hover/vr:invisible group-has-[:focus-visible]/vr:empty:flex group-has-[:focus-visible]/vr:invisible group-has-[[aria-expanded=true]]/vr:empty:flex group-has-[[aria-expanded=true]]/vr:invisible [@media(pointer:coarse)]:empty:flex [@media(pointer:coarse)]:me-6">${v.id === pickOf(q) ? `<span title="Picked" class="shrink-0">${ic('picked', `size-4 ${PICK}`)}</span>` : ''}${w?.p === q && w.v === v ? `<span title="Your requests change this one" class="shrink-0">${ic('pin', 'size-3 text-emerald-600 dark:text-emerald-400')}</span>` : ''}${openComments(q.id, v.id)}${editing(q.id, v.id) ? pulse('size-1.5') : ''}${kids ? ic('right', `size-3 shrink-0 ${sel ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400'}`) : ''}</span></button><button data-act="vm:${esc(q.id)}:${v.id}" aria-label="Options for ${esc(v.name)}" aria-haspopup="menu" aria-expanded="${st.open === 'vmenu' && st.vmenu?.proto === q.id && st.vmenu.variant === v.id}" title="Options: comment on this, pick, build, Try it, copy options, share screenshots" class="absolute ${big ? 'right-2 size-8' : 'right-1 size-6'} top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-zinc-500 opacity-0 hover:bg-zinc-900/10 hover:text-zinc-900 focus-visible:opacity-100 group-hover/vr:opacity-100 group-has-[:focus-visible]/vr:opacity-100 aria-expanded:bg-zinc-900/10 aria-expanded:opacity-100 dark:text-zinc-400 dark:hover:bg-white/15 dark:hover:text-white dark:aria-expanded:bg-white/15 [@media(pointer:coarse)]:opacity-100">${ic('dots', 'size-5')}</button></div>`
+      <span class="min-w-3.5 shrink-0 text-center text-[11px] font-semibold tabular-nums ${sel ? '' : 'text-zinc-400'}">${variantLabel(q, v.id)}</span><span dir="auto" class="min-w-0 flex-1 truncate">${esc(v.name)}</span><span class="flex shrink-0 items-center justify-end gap-1.5 empty:hidden ${big ? 'group-hover/vr:min-w-8 group-has-[:focus-visible]/vr:min-w-8 group-has-[[aria-expanded=true]]/vr:min-w-8 [@media(pointer:coarse)]:min-w-8' : 'group-hover/vr:min-w-6 group-has-[:focus-visible]/vr:min-w-6 group-has-[[aria-expanded=true]]/vr:min-w-6 [@media(pointer:coarse)]:min-w-6'} group-hover/vr:empty:flex group-hover/vr:invisible group-has-[:focus-visible]/vr:empty:flex group-has-[:focus-visible]/vr:invisible group-has-[[aria-expanded=true]]/vr:empty:flex group-has-[[aria-expanded=true]]/vr:invisible [@media(pointer:coarse)]:empty:flex [@media(pointer:coarse)]:me-6">${v.id === pickOf(q) ? `<span title="Picked" class="shrink-0">${ic('picked', `size-4 ${PICK}`)}</span>` : ''}${w?.p === q && w.v === v ? `<span title="Your requests change this one" class="shrink-0">${ic('pin', 'size-3 text-emerald-600 dark:text-emerald-400')}</span>` : ''}${openComments(q.id, v.id)}${editing(q.id, v.id) ? pulse('size-1.5') : ''}${kids ? ic('right', `size-3 shrink-0 ${sel ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400'}`) : ''}</span></button><button data-act="vm:${esc(q.id)}:${v.id}" aria-label="Options for ${esc(v.name)}" aria-haspopup="menu" aria-expanded="${st.open === 'vmenu' && st.vmenu?.proto === q.id && st.vmenu.variant === v.id}" title="Options: comment on this, pick, build, Try it, copy options, share screenshots" class="absolute ${big ? 'end-2 size-8' : 'end-1 size-6'} top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-zinc-500 opacity-0 hover:bg-zinc-900/10 hover:text-zinc-900 focus-visible:opacity-100 group-hover/vr:opacity-100 group-has-[:focus-visible]/vr:opacity-100 aria-expanded:bg-zinc-900/10 aria-expanded:opacity-100 dark:text-zinc-400 dark:hover:bg-white/15 dark:hover:text-white dark:aria-expanded:bg-white/15 [@media(pointer:coarse)]:opacity-100">${ic('dots', 'size-5')}</button></div>`
   }
   /** One prototype in a column; choosing it opens its variants. */
   const pRow = (k: Proto, sel: boolean, big = false) => `<button data-act="mp:${esc(k.id)}" aria-current="${sel}" data-opens class="${rowCls(big)} ${sel ? SELC : k.archived ? 'text-zinc-400 hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]' : ROWC}">
@@ -386,7 +391,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const rows = c.list.map(k => pRow(k, c.sel === k.id, big)).join('') || none('None yet')
     // Archived prototypes fold under the first column.
     const gone = c.from ? [] : archived().filter(k => !c.list.includes(k))
-    return rows + (gone.length ? `<button data-act="archived" aria-expanded="${st.archived}" class="${rowCls(big)} text-[11px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">${ic(st.archived ? 'chev' : 'right', 'size-3')}Archived<span class="ml-auto tabular-nums">${gone.length}</span></button>${st.archived ? gone.map(k => pRow(k, false, big)).join('') : ''}` : '')
+    return rows + (gone.length ? `<button data-act="archived" aria-expanded="${st.archived}" class="${rowCls(big)} text-[11px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">${ic(st.archived ? 'chev' : 'right', 'size-3')}Archived<span class="ms-auto tabular-nums">${gone.length}</span></button>${st.archived ? gone.map(k => pRow(k, false, big)).join('') : ''}` : '')
   }
   // Chrome can redraw without throwing away recently visited rows. Each surface owns its
   // window; the small pool also bounds memory when navigating between prototypes.
@@ -427,8 +432,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const colHead = (c: Col) => {
     const act = c.kind === 'variants' ? `lobby:proto:${esc(c.p.id)}` : c.from ? '' : 'lobby:session'
     const title = c.kind === 'variants' ? `All ${c.p.variants.length} variants of ${esc(c.p.title)}` : c.from ? '' : 'Overview of the session'
-    const inner = `<span dir="auto" class="truncate">${esc(colName(c))}</span>${act ? ic('grid', 'size-3 shrink-0 opacity-0 group-hover/h:opacity-100') : ''}<span class="ml-auto shrink-0 tabular-nums">${colCount(c)}</span>`
-    const cls = 'group/h flex h-7 w-full min-w-0 shrink-0 items-center gap-1 px-2.5 text-left text-[10px] font-medium text-zinc-400'
+    const inner = `<span dir="auto" class="truncate">${esc(colName(c))}</span>${act ? ic('grid', 'size-3 shrink-0 opacity-0 group-hover/h:opacity-100') : ''}<span class="ms-auto shrink-0 tabular-nums">${colCount(c)}</span>`
+    const cls = 'group/h flex h-7 w-full min-w-0 shrink-0 items-center gap-1 px-2.5 text-start text-[10px] font-medium text-zinc-400'
     return act ? `<button data-act="${act}" title="${title}" class="${cls} hover:text-zinc-900 dark:hover:text-white">${inner}</button>` : `<div class="${cls}">${inner}</div>`
   }
 
@@ -447,13 +452,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div class="flex min-w-0 flex-1 flex-col">
       <header data-bar class="relative z-30 ${framed ? 'hidden' : 'flex'} h-12 shrink-0 items-center gap-1 border-b border-black/[.07] px-2 dark:border-white/10"></header>
       <div data-zone>
-        <div data-layers class="absolute inset-0 overflow-hidden" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-view hidden class="absolute inset-0 z-[5]" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-motion-dock class="absolute left-0 z-[18]" style="right:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
-        <div data-copy-bar class="absolute left-0 z-[14]" style="right:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px))"></div>
-        <div data-copy-sheet class="pointer-events-none absolute inset-0 z-[19] overflow-hidden" style="right:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
+        <div data-layers class="absolute inset-0 overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-view hidden class="absolute inset-0 z-[5]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-motion-dock class="absolute start-0 z-[18]" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
+        <div data-copy-bar class="absolute start-0 z-[14]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px))"></div>
+        <div data-copy-sheet class="pointer-events-none absolute inset-0 z-[19] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-overlay></div>
         <div data-pill></div>
         <div data-scale-card></div>
@@ -550,12 +555,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const phoneSize = (proto: Proto) => `width:${proto.screen[0] + 20}px;height:${proto.screen[1] + 20}px`
   // A phone's card holds the phone itself, so the phone scale can size it (see fit).
   const thumb = (proto: Proto, aspect: string) => proto.kind === 'phone'
-    ? `<div data-thumb data-pthumb class="relative flex w-full items-center justify-center overflow-hidden bg-zinc-100 dark:bg-zinc-900 ${aspect}"><div inert class="pointer-events-none ${PHONE} [contain:layout_paint]" style="${phoneSize(proto)}"><div data-phone-screen class="h-full overflow-hidden"><div data-mount class="h-full overflow-hidden"></div></div></div></div>`
-    : `<div data-thumb class="relative w-full overflow-hidden bg-white dark:bg-zinc-950 ${aspect}"><div inert class="pointer-events-none overflow-hidden [contain:layout_paint]" style="width:1200px;height:750px"><div data-mount class="h-full"></div></div></div>`
+    ? `<div data-thumb data-pthumb class="relative flex w-full items-center justify-center overflow-hidden bg-zinc-100 dark:bg-zinc-900 ${aspect}"><div inert class="pointer-events-none ${PHONE} [contain:layout_paint]" style="${phoneSize(proto)}"><div data-phone-screen class="h-full overflow-hidden"><div data-mount dir="ltr" class="h-full overflow-hidden"></div></div></div></div>`
+    : `<div data-thumb class="relative w-full overflow-hidden bg-white dark:bg-zinc-950 ${aspect}"><div inert class="pointer-events-none overflow-hidden [contain:layout_paint]" style="width:1200px;height:750px"><div data-mount dir="ltr" class="h-full"></div></div></div>`
 
   const frameOf = (proto: Proto) => proto.kind === 'phone' && !q.has('shot')
-    ? `<div data-phones class="flex min-h-full items-center justify-center p-6"><div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(proto)}"><div data-phone-screen class="h-full overflow-hidden"><div data-mount class="h-full overflow-y-auto"></div></div></div></div>`
-    : '<div data-mount class="h-full"></div>'
+    ? `<div data-phones class="flex min-h-full items-center justify-center p-6"><div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(proto)}"><div data-phone-screen class="h-full overflow-hidden"><div data-mount dir="ltr" class="h-full overflow-y-auto"></div></div></div></div>`
+    : '<div data-mount dir="ltr" class="h-full"></div>'
 
   const previewWindows = new Map<string, VirtualList<Variant>>()
   const cardFrames = new Set<Frame>()
@@ -576,7 +581,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const missed = (host: HTMLElement, s: State, sel: string) => {
       console.warn(`[prototype] can't open "${s.name}": nothing matches ${sel}`)
       const box = host.closest<HTMLElement>('[data-chipbox]') ?? el
-      box.insertAdjacentHTML('beforeend', `<div data-missed class="pointer-events-none absolute left-3 top-3 z-20 max-w-[calc(100%-1.5rem)] rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow ring-1 ring-amber-500/30 dark:bg-amber-950 dark:text-amber-100">Couldn’t open <b>${bd(s.name)}</b>: nothing matches <code>${esc(sel)}</code></div>`)
+      box.insertAdjacentHTML('beforeend', `<div data-missed class="pointer-events-none absolute start-3 top-3 z-20 max-w-[calc(100%-1.5rem)] rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow ring-1 ring-amber-500/30 dark:bg-amber-950 dark:text-amber-100">Couldn’t open <b>${bd(s.name)}</b>: nothing matches <code>${esc(sel)}</code></div>`)
     }
     const start = (host: HTMLElement, v: Variant, s?: State): Promise<unknown> => {
       if (live.has(host)) return Promise.resolve()
@@ -750,11 +755,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function allStates(proto: Proto, v: Variant) {
     const card = (s?: State) => {
       const note = s?.about?.[v.id]
-      return `<div data-chipbox class="relative min-w-0"><button data-act="pvs:${esc(proto.id)}:${v.id}:${esc(s?.id ?? '')}" class="group block w-full min-w-0 text-left">
+      return `<div data-chipbox class="relative min-w-0"><button data-act="pvs:${esc(proto.id)}:${v.id}:${esc(s?.id ?? '')}" class="group block w-full min-w-0 text-start">
         <div class="overflow-hidden rounded-lg ring-1 ring-black/10 transition group-hover:ring-2 group-hover:ring-zinc-900 dark:ring-white/10 dark:group-hover:ring-white">${thumb(proto, 'aspect-[16/10]')}</div>
         <div class="mt-2 flex items-start gap-2">${s ? dot(proto, v.id, s) : dot(proto, v.id)}<div class="min-w-0"><div dir="auto" class="font-semibold">${esc(s?.name ?? 'At rest')}</div>${note && s ? `<p dir="auto" class="mt-0.5 text-xs ${noteCls(proto, v.id, s)}">${esc(note)}</p>` : ''}</div></div></button></div>`
     }
-    return `<div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-5 sm:px-6"><h2 class="text-xl font-semibold tracking-tight">Every state of ${variantLabel(proto, v.id)} <span class="font-normal text-zinc-500">· ${bd(v.name)}</span></h2><p class="text-xs text-zinc-500">Click one to try it live</p><span class="ml-auto">${closeTool(proto, v, 'all', 'Close all states')}</span></div>
+    return `<div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-5 sm:px-6"><h2 class="text-xl font-semibold tracking-tight">Every state of ${variantLabel(proto, v.id)} <span class="font-normal text-zinc-500">· ${bd(v.name)}</span></h2><p class="text-xs text-zinc-500">Click one to try it live</p><span class="ms-auto">${closeTool(proto, v, 'all', 'Close all states')}</span></div>
       <div class="${GRID} p-4 sm:p-6">${[undefined, ...statesOf(proto, v.id)].map(card).join('')}</div>`
   }
 
@@ -766,7 +771,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const others = proto.variants.filter(x => x.id !== v.id)
     const diffs = statesOf(proto, v.id).filter(x => changed(proto, v.id, x) || changed(proto, o.id, x))
     const pane = (x: Variant) => `<div class="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div class="flex h-9 shrink-0 items-center gap-2 border-b border-black/[.07] px-3 text-xs dark:border-white/10"><b>${variantLabel(proto, x.id)}</b><span dir="auto" class="truncate text-zinc-500">${esc(x.name)}</span><span class="ml-auto flex shrink-0 items-center gap-1">${x.id === v.id ? '' : `<button data-act="pvs:${esc(proto.id)}:${x.id}:${esc(s?.id ?? '')}" class="shrink-0 rounded-md px-1.5 py-1 text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white">Open ${variantLabel(proto, x.id)}</button>`}<button data-act="compare-comment:${x.id}" aria-label="Comment on variant ${variantLabel(proto, x.id)}" title="Comment on this variant" class="grid size-8 shrink-0 place-items-center rounded-md text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">${ic('comment', 'size-3.5')}</button></span></div>
+        <div class="flex h-9 shrink-0 items-center gap-2 border-b border-black/[.07] px-3 text-xs dark:border-white/10"><b>${variantLabel(proto, x.id)}</b><span dir="auto" class="truncate text-zinc-500">${esc(x.name)}</span><span class="ms-auto flex shrink-0 items-center gap-1">${x.id === v.id ? '' : `<button data-act="pvs:${esc(proto.id)}:${x.id}:${esc(s?.id ?? '')}" class="shrink-0 rounded-md px-1.5 py-1 text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white">Open ${variantLabel(proto, x.id)}</button>`}<button data-act="compare-comment:${x.id}" aria-label="Comment on variant ${variantLabel(proto, x.id)}" title="Comment on this variant" class="grid size-8 shrink-0 place-items-center rounded-md text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">${ic('comment', 'size-3.5')}</button></span></div>
         <div data-fit data-chipbox ${x.id !== ref ? 'data-compare' : ''} class="relative min-h-0 flex-1 [contain:layout_paint]"><div class="absolute inset-0 overflow-auto">${frameOf(proto)}</div></div></div>`
     return `<div data-comment-compare data-comment-current="${esc(proto.id)}/${v.id}" class="flex h-full flex-col">
       <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-amber-500/30 bg-amber-50 px-3 py-2 text-xs dark:bg-amber-500/10">
@@ -783,7 +788,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     return `<div class="flex h-full flex-col">
       <div data-play-box class="relative min-h-0 flex-1">
         <div data-fit data-chipbox class="absolute inset-0 overflow-auto [contain:layout_paint]">${frameOf(proto)}</div>
-        <div data-cursor hidden class="pointer-events-none absolute left-0 top-0 z-30 transition-transform duration-700 ease-in-out" style="transform:translate(60%,70%)"><span data-ripple class="absolute -left-4 -top-4 size-8 rounded-full bg-sky-400/50 opacity-0"></span><svg width="22" height="22" viewBox="0 0 24 24" class="drop-shadow-md"><path d="M4 2l16 9-7 2-3 7z" fill="#18181b" stroke="white" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
+        <div data-cursor hidden class="pointer-events-none absolute start-0 top-0 z-30 transition-transform duration-700 ease-in-out" style="transform:translate(60%,70%)"><span data-ripple class="absolute -start-4 -top-4 size-8 rounded-full bg-sky-400/50 opacity-0"></span><svg width="22" height="22" viewBox="0 0 24 24" class="drop-shadow-md"><path d="M4 2l16 9-7 2-3 7z" fill="#18181b" stroke="white" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
       </div>
       <div class="flex shrink-0 items-center gap-3 border-t border-black/[.07] bg-white px-3 py-2 dark:border-white/10 dark:bg-zinc-950">
         <button data-act="play:toggle" data-play-btn class="flex h-10 shrink-0 items-center justify-center gap-2 rounded-full bg-zinc-900 px-3.5 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900"></button>
@@ -943,7 +948,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // Where it came from, a chip each: what it nests under, then the others it combines after a
   // plus ("B" alone when it is another variant of the same prototype).
   const fromChips = (p: Proto) => sources(p).map((s, i) => `<button data-act="${s.v && s.p.variants.some(x => x.id === s.v) ? `pv:${esc(s.p.id)}:${esc(s.v)}` : `lobby:proto:${esc(s.p.id)}`}" class="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${NEST}">${ic(i ? 'plus' : 'from', 'size-3.5')}<span class="truncate">${i ? srcName(p, s, ' · ') : `Built from ${bd(s.p.title)}${s.v ? ` · ${esc(variantLabel(s.p, s.v))}` : ''}`}</span></button>`).join('')
-  const kidChips = (p: Proto, v: string) => builtFrom(p, v).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="mt-1.5 flex h-8 w-full items-center gap-1.5 rounded-lg px-2 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}<span dir="auto" class="truncate">${esc(k.title)}</span><span class="ml-auto tabular-nums opacity-70">${k.variants.length}</span></button>`).join('')
+  const kidChips = (p: Proto, v: string) => builtFrom(p, v).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="mt-1.5 flex h-8 w-full items-center gap-1.5 rounded-lg px-2 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}<span dir="auto" class="truncate">${esc(k.title)}</span><span class="ms-auto tabular-nums opacity-70">${k.variants.length}</span></button>`).join('')
 
   // A card's rows say which variant each came from; one that combines others names them after a
   // plus. That part only takes the room the title leaves (flex-1 starts from nothing), so a title
@@ -954,11 +959,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const all = active().length
     const nested = all - list.length
     return `<div class="p-4 sm:p-6"><div class="mb-5 flex flex-wrap items-end justify-between gap-2"><div><h2 dir="auto" class="text-xl font-semibold tracking-tight">${esc(session.name)}</h2><p class="text-xs text-zinc-500">${all} prototype${all === 1 ? '' : 's'}${nested ? `, ${nested} built from others` : ''} · started ${clock(session.createdAt)}</p></div><p data-lifecycle class="text-xs text-zinc-400">${esc(lifecycle())}</p></div>
-      <div class="${GRID}">${list.map(p => `<div class="min-w-0 rounded-xl p-2 ring-1 ring-black/[.07] has-[[data-card]:hover]:bg-zinc-50 has-[[data-card]:hover]:ring-black/20 dark:ring-white/10 dark:has-[[data-card]:hover]:bg-white/5"><button data-card data-act="lobby:proto:${esc(p.id)}" class="block w-full min-w-0 text-left">
+      <div class="${GRID}">${list.map(p => `<div class="min-w-0 rounded-xl p-2 ring-1 ring-black/[.07] has-[[data-card]:hover]:bg-zinc-50 has-[[data-card]:hover]:ring-black/20 dark:ring-white/10 dark:has-[[data-card]:hover]:bg-white/5"><button data-card data-act="lobby:proto:${esc(p.id)}" class="block w-full min-w-0 text-start">
         ${p.variants.length ? `<div class="overflow-hidden rounded-md ring-1 ring-black/5 dark:ring-white/10">${thumb(p, 'aspect-[16/10]')}</div>` : '<div class="aspect-[16/10] rounded-md bg-zinc-900/[.03] dark:bg-white/[.04]"></div>'}
-        <div class="mt-3 flex items-center gap-2 px-1"><span dir="auto" class="truncate font-semibold">${esc(p.title)}</span>${editing(p.id) ? pulse('size-1.5') : ''}<span class="ml-auto shrink-0 text-xs text-zinc-400">${p.variants.length} variant${p.variants.length === 1 ? '' : 's'} · ${pickOf(p) ? `<span class="inline-flex items-center gap-0.5 align-top font-medium ${PICK}">${ic('check', 'size-3')}Picked ${esc(variantLabel(p, pickOf(p)))}</span>` : clock(p.created)}</span></div>
+        <div class="mt-3 flex items-center gap-2 px-1"><span dir="auto" class="truncate font-semibold">${esc(p.title)}</span>${editing(p.id) ? pulse('size-1.5') : ''}<span class="ms-auto shrink-0 text-xs text-zinc-400">${p.variants.length} variant${p.variants.length === 1 ? '' : 's'} · ${pickOf(p) ? `<span class="inline-flex items-center gap-0.5 align-top font-medium ${PICK}">${ic('check', 'size-3')}Picked ${esc(variantLabel(p, pickOf(p)))}</span>` : clock(p.created)}</span></div>
         <div dir="auto" class="truncate px-1 pb-1 text-xs text-zinc-500">${p.ask ? `“${esc(p.ask)}”` : ''}</div></button>
-        ${family(p).map(({ p: k, depth }) => `<button data-act="lobby:proto:${esc(k.id)}" class="flex h-8 w-full min-w-0 items-center gap-1.5 rounded-lg pr-1 text-left text-xs text-zinc-600 hover:bg-zinc-900/[.04] dark:text-zinc-400 dark:hover:bg-white/[.06]" style="padding-left:${4 + nestIndent(depth) - nestIndent(1)}px">${ic('branch', 'size-3.5 text-sky-500')}<span dir="auto" class="truncate">${esc(k.title)}</span>${pickChip(k)}${editingUnder(k) ? pulse('size-1.5') : ''}${k.from!.variant ? `<span class="shrink-0 text-zinc-400">from ${esc(k.from!.variant)}</span>` : ''}${alsoOf(k).length ? (t => `<span title="${t.replace(/<\/?bdi>/g, '')}" class="min-w-8 flex-1 truncate text-zinc-400">${t}</span>`)(alsoOf(k).map(s => `+ ${srcName(k, s)}`).join(' ')) : ''}<span class="ml-auto shrink-0 tabular-nums text-zinc-400">${k.variants.length}</span></button>`).join('')}</div>`).join('')}</div></div>`
+        ${family(p).map(({ p: k, depth }) => `<button data-act="lobby:proto:${esc(k.id)}" class="flex h-8 w-full min-w-0 items-center gap-1.5 rounded-lg pe-1 text-start text-xs text-zinc-600 hover:bg-zinc-900/[.04] dark:text-zinc-400 dark:hover:bg-white/[.06]" style="padding-inline-start:${4 + nestIndent(depth) - nestIndent(1)}px">${ic('branch', 'size-3.5 text-sky-500')}<span dir="auto" class="truncate">${esc(k.title)}</span>${pickChip(k)}${editingUnder(k) ? pulse('size-1.5') : ''}${k.from!.variant ? `<span class="shrink-0 text-zinc-400">from ${esc(k.from!.variant)}</span>` : ''}${alsoOf(k).length ? (t => `<span title="${t.replace(/<\/?bdi>/g, '')}" class="min-w-8 flex-1 truncate text-zinc-400">${t}</span>`)(alsoOf(k).map(s => `+ ${srcName(k, s)}`).join(' ')) : ''}<span class="ms-auto shrink-0 tabular-nums text-zinc-400">${k.variants.length}</span></button>`).join('')}</div>`).join('')}</div></div>`
   }
 
   function protoLobby(p: Proto) {
@@ -970,9 +975,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   function gridCard(p: Proto, v: Variant) {
     const k = pickOf(p)
-    return `<div class="min-w-0 ${k && v.id !== k ? 'opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" class="group block w-full min-w-0 text-left">
+    return `<div class="min-w-0 ${k && v.id !== k ? 'opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" class="group block w-full min-w-0 text-start">
         <div class="overflow-hidden rounded-lg transition ${v.id === k ? 'ring-2 ring-emerald-500' : 'ring-1 ring-black/10 group-hover:ring-2 group-hover:ring-zinc-900 dark:ring-white/10 dark:group-hover:ring-white'}">${thumb(p, 'aspect-[16/10]')}</div>
-        <div class="mt-2 flex items-center gap-2"><span class="font-semibold">${variantLabel(p, v.id)}</span><span class="truncate text-zinc-500">${esc(v.name)}</span>${v.id === k ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}Picked</span>` : ''}${editing(p.id, v.id) ? `<span class="ml-auto inline-flex items-center gap-1.5 text-xs text-emerald-600">${pulse('size-1.5')}${building(p.id, v.id) ? 'building' : 'editing'}</span>` : ''}</div></button>${kidChips(p, v.id)}</div>`
+        <div class="mt-2 flex items-center gap-2"><span class="font-semibold">${variantLabel(p, v.id)}</span><span class="truncate text-zinc-500">${esc(v.name)}</span>${v.id === k ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}Picked</span>` : ''}${editing(p.id, v.id) ? `<span class="ms-auto inline-flex items-center gap-1.5 text-xs text-emerald-600">${pulse('size-1.5')}${building(p.id, v.id) ? 'building' : 'editing'}</span>` : ''}</div></button>${kidChips(p, v.id)}</div>`
   }
   function protoGrid(p: Proto) {
     return `<div ${p.variants.length > VIRTUAL_THRESHOLD ? 'data-virtual-preview' : ''} class="${GRID} p-4 sm:p-6">${p.variants.length > VIRTUAL_THRESHOLD ? '' : lobbyOrder(p).map(v => gridCard(p, v)).join('')}</div>`
@@ -983,7 +988,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function stackCard(p: Proto, v: Variant) {
     const head = (v: Variant) => `<div class="mb-3 flex h-8 min-w-0 items-center gap-2 ${p.kind === 'phone' ? 'justify-center' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" title="Open ${variantLabel(p, v.id)}" class="flex min-w-0 cursor-pointer items-center gap-2 rounded-md hover:underline hover:decoration-zinc-400 hover:underline-offset-4"><span class="font-semibold">${variantLabel(p!, v.id)}</span><span dir="auto" class="truncate text-zinc-500">${esc(v.name)}</span></button>${v.id === pickOf(p) ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}Picked</span>` : ''}${editing(p.id, v.id) ? pulse('size-1.5') : ''}${builtFrom(p, v.id).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}${bd(k.title)}</button>`).join('')}</div>`
     if (cardView()) return `<section data-stack-item class="min-w-0 px-4">${head(v)}${thumb(p, 'aspect-[16/10]')}</section>`
-    return p.kind === 'phone' ? `<section data-stack-item class="min-w-0">${head(v)}<div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(p)}"><div data-phone-screen class="h-full overflow-hidden"><div data-mount class="h-full overflow-y-auto"></div></div></div></section>` : `<section data-stack-item><div class="px-4 sm:px-6">${head(v)}</div><div class="grid min-h-[var(--stage-h)] border-y border-black/[.07] bg-white [contain:layout_paint] dark:border-white/10 dark:bg-zinc-950"><div data-mount class="min-w-0"></div></div></section>`
+    return p.kind === 'phone' ? `<section data-stack-item class="min-w-0">${head(v)}<div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(p)}"><div data-phone-screen class="h-full overflow-hidden"><div data-mount dir="ltr" class="h-full overflow-y-auto"></div></div></div></section>` : `<section data-stack-item><div class="px-4 sm:px-6">${head(v)}</div><div class="grid min-h-[var(--stage-h)] border-y border-black/[.07] bg-white [contain:layout_paint] dark:border-white/10 dark:bg-zinc-950"><div data-mount dir="ltr" class="min-w-0"></div></div></section>`
   }
   function stack(p: Proto) {
     const large = p.variants.length > VIRTUAL_THRESHOLD
@@ -1045,18 +1050,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const label = fits ? scaleLabel() : '100%'
       const sizes = viewOk() ? `<div role="radiogroup" aria-label="Layout" data-size-tabs class="p-1.5"><div class="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-zinc-400">Layout</div>${ORDER.map(s => {
         const sel = shownSize() === s, land = s === 'tablet' && st.view.land, d = dims(s, land)
-        return `<button type="button" role="radio" aria-checked="${sel}" data-act="size:${s}" data-shoot="size-${s}" aria-label="${SIZES[s].name}" title="${sel && viewOn() ? `Leave the ${SIZES[s].name.toLowerCase()} view · Esc` : `${SIZES[s].name} · ${d.w} × ${d.h}`}" class="flex h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left hover:bg-zinc-900/[.04] dark:hover:bg-white/5 ${sel ? 'font-medium text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'}">${ic(sizeIcon(s, land), 'size-4 text-zinc-500 dark:text-zinc-400')}<span class="flex-1">${SIZES[s].name}</span><span class="text-xs tabular-nums text-zinc-400">${d.w} × ${d.h}</span>${sel ? ic('check', 'size-4') : '<span class="size-4"></span>'}</button>`
+        return `<button type="button" role="radio" aria-checked="${sel}" data-act="size:${s}" data-shoot="size-${s}" aria-label="${SIZES[s].name}" title="${sel && viewOn() ? `Leave the ${SIZES[s].name.toLowerCase()} view · Esc` : `${SIZES[s].name} · ${d.w} × ${d.h}`}" class="flex h-10 w-full items-center gap-3 rounded-lg px-2.5 text-start hover:bg-zinc-900/[.04] dark:hover:bg-white/5 ${sel ? 'font-medium text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'}">${ic(sizeIcon(s, land), 'size-4 text-zinc-500 dark:text-zinc-400')}<span class="flex-1">${SIZES[s].name}</span><span class="text-xs tabular-nums text-zinc-400">${d.w} × ${d.h}</span>${sel ? ic('check', 'size-4') : '<span class="size-4"></span>'}</button>`
       }).join('')}</div>` : ''
       const zoom = fits ? `${sizes ? SEP : ''}<div class="px-3.5 pt-2.5 text-[11px] font-medium text-zinc-400">${frameOn() ? 'Zoom' : 'Phone scale'}</div>${scaleMenu}`
         // On the stage the design is at its own size: the button stays, so choosing a layout doesn't move the bar.
         : `${SEP}<p class="px-3.5 py-3 text-xs text-zinc-500">The design is at its full size here. Choose a layout to zoom it.</p>`
-      return `<div class="relative shrink-0"><button data-act="open:device" data-shoot="device" aria-haspopup="menu" aria-expanded="${on}" aria-label="Layout and zoom" title="${fits ? `${frameOn() ? 'Layout and zoom' : 'Phone scale'}` : 'Layout'}" class="${IB} text-xs tabular-nums ${on ? ON : ''}">${ic(icon)}<span data-scale-label${fits ? '' : ' class="opacity-60"'}>${label}</span>${ic('chev', 'size-3 opacity-60')}</button>${pop(on, `${sizes}${zoom}`, 'right-0 top-11 w-72')}</div>`
+      return `<div class="relative shrink-0"><button data-act="open:device" data-shoot="device" aria-haspopup="menu" aria-expanded="${on}" aria-label="Layout and zoom" title="${fits ? `${frameOn() ? 'Layout and zoom' : 'Phone scale'}` : 'Layout'}" class="${IB} text-xs tabular-nums ${on ? ON : ''}">${ic(icon)}<span data-scale-label${fits ? '' : ' class="opacity-60"'}>${label}</span>${ic('chev', 'size-3 opacity-60')}</button>${pop(on, `${sizes}${zoom}`, 'end-0 top-11 w-72')}</div>`
     }
 
     // Everything that is not the work of the moment: Focus, Share, the shortcuts, Settings.
     const moreBtn = () => {
       const on = st.open === 'more'
-      const row = (act: string, shoot: string, icon: string, label: string, kbd = '', cls = '') => `<button data-act="${act}" data-shoot="${shoot}" class="${cls || 'flex'} h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-zinc-700 hover:bg-zinc-900/[.04] dark:text-zinc-300 dark:hover:bg-white/5">${ic(icon, 'size-4 text-zinc-500 dark:text-zinc-400')}<span class="flex-1">${label}</span>${kbd ? `<kbd class="font-sans text-xs text-zinc-400">${kbd}</kbd>` : ''}</button>`
+      const row = (act: string, shoot: string, icon: string, label: string, kbd = '', cls = '') => `<button data-act="${act}" data-shoot="${shoot}" class="${cls || 'flex'} h-10 w-full items-center gap-3 rounded-lg px-3 text-start text-zinc-700 hover:bg-zinc-900/[.04] dark:text-zinc-300 dark:hover:bg-white/5">${ic(icon, 'size-4 text-zinc-500 dark:text-zinc-400')}<span class="flex-1">${label}</span>${kbd ? `<kbd class="font-sans text-xs text-zinc-400">${kbd}</kbd>` : ''}</button>`
       const rows = [
         view === 'variant' ? row('focus', 'focus', 'grow', 'Focus mode', 'F', 'hidden [@media(hover:hover)]:flex') : '',
         !framed && p ? row('share', 'share', 'share', 'Share screenshots…') : '',
@@ -1065,16 +1070,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         row('settings', 'settings', 'settings', 'Settings'),
       ].join('')
       // With the sidebar out of the way, the live dot (its mark carries it otherwise) rides here.
-      const dot = wide() && st.side ? '' : `<span class="absolute right-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span>`
-      return `<div class="relative shrink-0"><button data-act="open:more" data-shoot="more" aria-haspopup="menu" aria-expanded="${on}" aria-label="More" title="More" class="${IB} relative ${on ? ON : ''}">${ic('dots')}${dot}</button>${pop(on, `<div class="p-1.5">${rows}</div>`, 'right-0 top-11 w-60')}</div>`
+      const dot = wide() && st.side ? '' : `<span class="absolute end-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span>`
+      return `<div class="relative shrink-0"><button data-act="open:more" data-shoot="more" aria-haspopup="menu" aria-expanded="${on}" aria-label="More" title="More" class="${IB} relative ${on ? ON : ''}">${ic('dots')}${dot}</button>${pop(on, `<div class="p-1.5">${rows}</div>`, 'end-0 top-11 w-60')}</div>`
     }
 
-    const protoRow = ({ p: q, depth }: { p: Proto; depth: number }) => { const on = q.id === p?.id && view !== 'session'; return `<button data-act="proto:${esc(q.id)}" aria-current="${on}" class="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left ${on ? 'bg-zinc-900/[.05] dark:bg-white/[.08]' : 'hover:bg-zinc-900/[.03] dark:hover:bg-white/5'}" style="padding-left:${10 + nestIndent(depth)}px">
+    const protoRow = ({ p: q, depth }: { p: Proto; depth: number }) => { const on = q.id === p?.id && view !== 'session'; return `<button data-act="proto:${esc(q.id)}" aria-current="${on}" class="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-start ${on ? 'bg-zinc-900/[.05] dark:bg-white/[.08]' : 'hover:bg-zinc-900/[.03] dark:hover:bg-white/5'}" style="padding-inline-start:${10 + nestIndent(depth)}px">
         <span class="mt-[7px] flex size-1.5 shrink-0">${editing(q.id) ? pulse('size-1.5') : ''}</span>
         <span class="min-w-0 flex-1"><span class="flex items-center gap-1.5 ${on ? 'font-semibold text-zinc-900 dark:text-white' : 'font-medium text-zinc-800 dark:text-zinc-200'}">${depth ? ic('branch', 'size-3.5 shrink-0 text-sky-500') : ''}${bd(q.title)}${q.kind === 'phone' ? ic('phone', 'size-3.5 text-zinc-400') : ''}</span>${q.ask ? `<span dir="auto" class="block truncate text-xs leading-5 text-zinc-500">“${esc(q.ask)}”</span>` : ''}</span>
-        <span class="shrink-0 pt-px text-right text-[11px] leading-5 tabular-nums text-zinc-400">${q.variants.length} variant${q.variants.length === 1 ? '' : 's'}<br>${editing(q.id) ? '<span class="text-emerald-600">editing now</span>' : pickOf(q) ? `<span class="${PICK}">picked ${esc(variantLabel(q, pickOf(q)))}</span>` : clock(q.created)}</span></button>` }
+        <span class="shrink-0 pt-px text-end text-[11px] leading-5 tabular-nums text-zinc-400">${q.variants.length} variant${q.variants.length === 1 ? '' : 's'}<br>${editing(q.id) ? '<span class="text-emerald-600">editing now</span>' : pickOf(q) ? `<span class="${PICK}">picked ${esc(variantLabel(q, pickOf(q)))}</span>` : clock(q.created)}</span></button>` }
     const protoList = `<div class="max-h-[min(26rem,60vh)] space-y-px overflow-y-auto p-1">${treeOrder().map(protoRow).join('') || '<p class="px-3 py-4 text-xs text-zinc-400">None yet</p>'}</div>
-      ${archived().length ? `${SEP}<div class="p-1.5"><button data-act="archived" class="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-xs text-zinc-400 hover:bg-zinc-900/[.03] hover:text-zinc-600 dark:hover:bg-white/5 dark:hover:text-zinc-200">${ic(st.archived ? 'chev' : 'right', 'size-3')}Archived<span class="ml-auto tabular-nums">${archived().length}</span></button>${st.archived ? archived().map(q => `<button data-act="proto:${esc(q.id)}" class="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-zinc-400 hover:bg-zinc-900/[.03] dark:hover:bg-white/5"><span class="size-1.5"></span><span dir="auto" class="line-through decoration-zinc-300">${esc(q.title)}</span><span class="ml-auto text-[11px] tabular-nums">${q.variants.length} variants</span></button>`).join('') : ''}</div>` : ''}`
+      ${archived().length ? `${SEP}<div class="p-1.5"><button data-act="archived" class="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-xs text-zinc-400 hover:bg-zinc-900/[.03] hover:text-zinc-600 dark:hover:bg-white/5 dark:hover:text-zinc-200">${ic(st.archived ? 'chev' : 'right', 'size-3')}Archived<span class="ms-auto tabular-nums">${archived().length}</span></button>${st.archived ? archived().map(q => `<button data-act="proto:${esc(q.id)}" class="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-start text-zinc-400 hover:bg-zinc-900/[.03] dark:hover:bg-white/5"><span class="size-1.5"></span><span dir="auto" class="line-through decoration-zinc-300">${esc(q.title)}</span><span class="ms-auto text-[11px] tabular-nums">${q.variants.length} variants</span></button>`).join('') : ''}</div>` : ''}`
     const protoMenu = `<div class="px-3.5 pb-0.5 pt-3 text-[11px] font-medium text-zinc-400">Prototypes in this session</div>${protoList}`
 
     const v = vs.find(v => v.id === vid)
@@ -1095,7 +1100,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ? (a => ({ act: a.p.variants.some(x => x.id === a.v) ? `pv:${esc(a.p.id)}:${esc(a.v)}` : `lobby:proto:${esc(a.p.id)}`, label: a.p.title }))(line.at(-1)!)
       : { act: 'lobby:session', label: session.name }
     const phoneBar = `<div class="grid min-w-0 flex-1 grid-cols-[1fr_auto_1fr] items-center gap-1 sm:hidden">
-        <div class="flex min-w-0">${up ? `<button data-act="${up.act}" class="flex h-9 min-w-0 items-center gap-0.5 rounded-lg pr-2 text-zinc-600 active:bg-zinc-900/5 dark:text-zinc-400 dark:active:bg-white/10">${ic('left', 'size-5')}<span dir="auto" class="truncate">${esc(up.label)}</span></button>` : ''}</div>
+        <div class="flex min-w-0">${up ? `<button data-act="${up.act}" class="flex h-9 min-w-0 items-center gap-0.5 rounded-lg pe-2 text-zinc-600 active:bg-zinc-900/5 dark:text-zinc-400 dark:active:bg-white/10">${ic('left', 'size-5')}<span dir="auto" class="truncate">${esc(up.label)}</span></button>` : ''}</div>
         <button data-act="menu:protos" aria-haspopup="dialog" class="flex h-10 min-w-0 max-w-[13rem] items-center gap-1 rounded-lg px-2 active:bg-zinc-900/5 dark:active:bg-white/10"><span class="min-w-0 leading-tight"><span dir="auto" class="block truncate font-semibold">${esc(view === 'session' ? session.name : p!.title)}</span>${where ? `<span dir="auto" class="block truncate text-[11px] font-medium text-sky-700 dark:text-sky-300">${whereHtml}</span>` : v ? `<span dir="auto" class="block truncate text-[11px] text-zinc-500">${variantLabel(p!, v.id)} · ${esc(v.name)}</span>` : ''}</span>${ic('chev', 'size-3.5 shrink-0 text-zinc-400')}</button>
         <div class="flex justify-end">${settingsBtn(true)}</div>
       </div>`
@@ -1106,16 +1111,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         // Then the others it combines, each after a plus.
         + alsoOf(p!).map(s => `${ic('plus', 'size-3 shrink-0 text-zinc-400')}<span class="min-w-0 max-w-[12rem] shrink truncate">${srcName(p!, s)}</span>`).join('')
     const switcher = `<div class="relative flex min-w-0">
-        <button data-act="open:switch" data-shoot="switcher" aria-haspopup="dialog" aria-expanded="${st.open === 'switch'}" title="Every prototype and variant" class="flex h-10 min-w-0 items-center gap-2 rounded-lg px-2.5 text-left hover:bg-zinc-900/5 dark:hover:bg-white/10 ${st.open === 'switch' ? ON : ''}">
+        <button data-act="open:switch" data-shoot="switcher" aria-haspopup="dialog" aria-expanded="${st.open === 'switch'}" title="Every prototype and variant" class="flex h-10 min-w-0 items-center gap-2 rounded-lg px-2.5 text-start hover:bg-zinc-900/5 dark:hover:bg-white/10 ${st.open === 'switch' ? ON : ''}">
           <span class="min-w-0 leading-tight">
             <span class="flex min-w-0 items-center gap-1.5 font-semibold">${view === 'session' ? `<span dir="auto" class="truncate">${esc(session.name)}</span>` : `<span dir="auto" class="truncate">${esc(p!.title)}</span><span class="shrink-0 font-normal text-zinc-400">·</span>${v ? `<b class="shrink-0">${variantLabel(p!, v.id)}</b><span dir="auto" class="min-w-0 truncate">${esc(v.name)}</span>` : '<span class="shrink-0 font-normal text-zinc-500">All variants</span>'}`}${p && pickOf(p) && v?.id === pickOf(p) ? ic('check', `size-3.5 shrink-0 ${PICK}`) : ''}</span>
             <span class="flex min-w-0 items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">${sub}${where ? `<span class="shrink-0 text-zinc-300 dark:text-zinc-600">·</span><span dir="auto" class="min-w-0 truncate font-medium text-sky-700 dark:text-sky-300">${whereHtml}</span>` : ''}</span>
           </span>${ic('chev', `size-3.5 shrink-0 text-zinc-400 transition-transform ${st.open === 'switch' ? 'rotate-180' : ''}`)}</button>
-        ${pop(st.open === 'switch', miller(), 'left-0 top-11')}</div>`
+        ${pop(st.open === 'switch', miller(), 'start-0 top-11')}</div>`
     const stepper = v && vs.length > 1 ? `<button data-act="step:-1" aria-label="Previous variant" title="Previous variant · ←" class="${IB} shrink-0">${ic('left')}</button><span class="w-9 shrink-0 text-center text-xs tabular-nums text-zinc-500">${at + 1}<span class="text-zinc-400 dark:text-zinc-600">/${vs.length}</span></span><button data-act="step:1" aria-label="Next variant" title="Next variant · →" class="${IB} shrink-0">${ic('right')}</button>` : ''
     keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="Show sidebar · ⌘\\" aria-label="Show sidebar">${ic('sidebar')}</button>
       ${switcher}
-      <div class="ml-auto flex shrink-0 items-center gap-1">
+      <div class="ms-auto flex shrink-0 items-center gap-1">
         ${stepper}${stepper && (view === 'variant' || viewOk() || commentHost() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
         ${deviceBtn()}${commentBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${moreBtn()}
       </div></div>`)
@@ -1133,7 +1138,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           <p class="mt-2 shrink-0 text-[11px] text-zinc-400">${[q && q.id === pickOf(p) ? 'Picked' : '', q && same(session.work, { proto: p.id, variant: q.id }) ? 'Your requests change it' : '', kids.length ? `${kids.length} built from it` : '', line.length ? `${line.length + 1} levels deep` : '', p.slot && parentOf(p) && p.from ? `Plugs into ${esc(parentOf(p)!.title)}${p.from.variant ? ` ${esc(variantLabel(parentOf(p)!, p.from.variant))}` : ''}` : ''].filter(Boolean).join(' · ')}</p>
           ${q ? `<button data-act="lobby:proto:${esc(p.id)}" class="mt-auto flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg text-xs font-medium ring-1 ring-inset ring-black/10 hover:bg-zinc-900/[.04] dark:ring-white/15 dark:hover:bg-white/[.06]">${ic('grid', 'size-3.5')}All ${p.variants.length} variants</button>` : ''}`
       return `<div data-fitw="${cols.length * 200 + 224}" class="flex h-[26rem] max-h-[calc(100dvh-5rem)]">
-        <div data-mcols data-colnav data-k="mcols" class="flex min-w-0 flex-1 overflow-x-auto overscroll-contain">${cols.map(c => `<div class="flex w-[12.5rem] shrink-0 flex-col border-r border-black/[.06] pt-1 dark:border-white/10">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1.5 pb-2">${colRows(c)}</div></div>`).join('')}</div>
+        <div data-mcols data-colnav data-k="mcols" class="flex min-w-0 flex-1 overflow-x-auto overscroll-contain">${cols.map(c => `<div class="flex w-[12.5rem] shrink-0 flex-col border-e border-black/[.06] pt-1 dark:border-white/10">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1.5 pb-2">${colRows(c)}</div></div>`).join('')}</div>
         <div class="flex min-h-0 w-56 shrink-0 flex-col bg-zinc-900/[.02] p-4 dark:bg-white/[.02]">${about}</div></div>`
     }
 
@@ -1143,18 +1148,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const cols = columns(), i = Math.min(st.drill ?? cols.length - 1, cols.length - 1), c = cols[i], back = i > 0 ? cols[i - 1] : null
       const chips = cols.map((x, j) => ({ x, j })).filter(({ x }) => x.kind === 'variants' && x.sel)
       return `<div class="pb-3">
-        <div class="flex h-10 items-center px-1">${back ? `<button data-act="drill:${i - 1}" class="flex h-10 min-w-0 items-center gap-0.5 rounded-lg pr-2 text-zinc-600 active:bg-zinc-900/5 dark:text-zinc-400 dark:active:bg-white/10">${ic('left', 'size-5')}<span dir="auto" class="truncate">${esc(colName(back))}${back.kind === 'variants' && back.sel ? ` <b>${esc(back.sel)}</b>` : ''}</span></button>` : ''}</div>
+        <div class="flex h-10 items-center px-1">${back ? `<button data-act="drill:${i - 1}" class="flex h-10 min-w-0 items-center gap-0.5 rounded-lg pe-2 text-zinc-600 active:bg-zinc-900/5 dark:text-zinc-400 dark:active:bg-white/10">${ic('left', 'size-5')}<span dir="auto" class="truncate">${esc(colName(back))}${back.kind === 'variants' && back.sel ? ` <b>${esc(back.sel)}</b>` : ''}</span></button>` : ''}</div>
         <div class="flex items-end gap-2 px-3 pb-2"><div class="min-w-0 flex-1"><div dir="auto" class="truncate text-xl font-semibold leading-tight">${esc(colName(c))}</div><div class="mt-0.5 text-xs text-zinc-500">${colCount(c)} ${c.kind === 'variants' ? 'variants' : 'prototypes'}</div></div>
           ${c.kind === 'variants' ? `<button data-act="lobby:proto:${esc(c.p.id)}" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium ring-1 ring-inset ring-black/10 dark:ring-white/15">${ic('grid', 'size-3.5')}All</button>` : c.from ? '' : '<button data-act="lobby:session" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium ring-1 ring-inset ring-black/10 dark:ring-white/15">Overview</button>'}</div>
         ${chips.length > 1 ? `<div data-mcols class="flex gap-1.5 overflow-x-auto px-3 pb-3 [scrollbar-width:none]">${chips.map(({ x, j }) => `<button data-act="drill:${j}" class="h-8 shrink-0 rounded-full px-3 text-xs ${j === i ? 'bg-sky-500/15 font-semibold text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.05] text-zinc-600 dark:bg-white/[.07] dark:text-zinc-300'}"><span dir="auto">${esc(colName(x))}</span> <b>${esc(x.sel)}</b></button>`).join('')}</div>` : ''}
         <div data-vlist data-k="${esc(colKey(c))}" class="space-y-px px-2">${colRows(c, true)}</div></div>`
     }
-    side.className = st.side && !framed ? 'hidden shrink-0 flex-col border-r border-black/[.07] lg:flex dark:border-white/10' : 'hidden'
+    side.className = st.side && !framed ? 'hidden shrink-0 flex-col border-e border-black/[.07] lg:flex dark:border-white/10' : 'hidden'
     side.style.width = `${st.sideW}px`
     grip.classList.toggle('lg:block', st.side)
     grip.setAttribute('aria-valuenow', String(st.sideW))
     keepScroll(side, st.side ? sideNav(false) : '')
-    keepScroll(drawer, st.drawer ? `<div class="fixed inset-0 z-50 lg:hidden"><div data-act="drawer:0" class="absolute inset-0 bg-black/30"></div><div class="absolute inset-y-0 left-0 flex w-[19rem] max-w-[85%] flex-col bg-white shadow-2xl dark:bg-zinc-950">${sideNav(true)}</div></div>` : '')
+    keepScroll(drawer, st.drawer ? `<div class="fixed inset-0 z-50 lg:hidden"><div data-act="drawer:0" class="absolute inset-0 bg-black/30"></div><div class="absolute inset-y-0 start-0 flex w-[19rem] max-w-[85%] flex-col bg-white shadow-2xl dark:bg-zinc-950">${sideNav(true)}</div></div>` : '')
 
     // Focus mode restyles the zone to cover the page; the mounted design stays put. On a phone
     // the variant pill takes a strip at the bottom of the stage, so it never covers the design.
@@ -1164,12 +1169,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const edgeBtn = (side: 'prev' | 'next') => {
       const d = side === 'prev' ? -1 : 1, t = vs[(at + d + vs.length) % vs.length]
       const k = `${st.focus ? 'focus' : 'main'}-${side}`, e = smooth(edge.t[k] || 0), open = !!edge.hover[k]
-      return `<button data-edge="${k}" data-act="step:${d}" aria-label="${d < 0 ? 'Previous' : 'Next'} variant: ${variantLabel(p!, t.id)} ${esc(t.name)}" class="absolute top-1/2 z-10 -mt-6 hidden h-12 items-center rounded-full bg-white/90 px-3 text-zinc-900 shadow-lg shadow-black/10 ring-1 ring-black/10 backdrop-blur [@media(hover:hover)]:flex dark:bg-zinc-900/90 dark:text-white dark:ring-white/15 ${d < 0 ? 'left-3' : 'right-[calc(var(--hw,0px)+0.75rem)] flex-row-reverse'}" style="opacity:${e};pointer-events:${e > 0.3 ? 'auto' : 'none'}">${ic(d < 0 ? 'left' : 'right', 'size-5')}<span data-edge-label class="overflow-hidden whitespace-nowrap text-[13px]" style="width:${open ? edge.w[k] || 0 : 0}px;opacity:${open ? 1 : 0};margin-${d < 0 ? 'left' : 'right'}:${open ? 8 : 0}px;transition:width .32s cubic-bezier(.22,1,.36,1),opacity .2s,margin .32s cubic-bezier(.22,1,.36,1)"><span class="inline-block"><b>${t.id}</b> · ${bd(t.name)}</span></span></button>`
+      return `<button data-edge="${k}" data-act="step:${d}" aria-label="${d < 0 ? 'Previous' : 'Next'} variant: ${variantLabel(p!, t.id)} ${esc(t.name)}" class="absolute top-1/2 z-10 -mt-6 hidden h-12 items-center rounded-full bg-white/90 px-3 text-zinc-900 shadow-lg shadow-black/10 ring-1 ring-black/10 backdrop-blur [@media(hover:hover)]:flex dark:bg-zinc-900/90 dark:text-white dark:ring-white/15 ${d < 0 ? 'start-3' : 'end-[calc(var(--hw,0px)+0.75rem)] flex-row-reverse'}" style="opacity:${e};pointer-events:${e > 0.3 ? 'auto' : 'none'}">${ic(d < 0 ? 'left' : 'right', 'size-5')}<span data-edge-label class="overflow-hidden whitespace-nowrap text-[13px]" style="width:${open ? edge.w[k] || 0 : 0}px;opacity:${open ? 1 : 0};margin-inline-${d < 0 ? 'start' : 'end'}:${open ? 8 : 0}px;transition:width .32s cubic-bezier(.22,1,.36,1),opacity .2s,margin .32s cubic-bezier(.22,1,.36,1)"><span class="inline-block"><b>${t.id}</b> · ${bd(t.name)}</span></span></button>`
     }
     const dockBtn = 'grid size-9 shrink-0 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white'
     const dockSep = '<span class="mx-1 h-5 w-px shrink-0 bg-white/15"></span>'
     overlay.innerHTML = framed || view !== 'variant' || !p ? '' : `
-      ${building(p.id, vid) ? `<div data-building-chip title="${esc(agentName(session.agent))} is still building this one" class="pointer-events-none absolute left-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}Building</div>` : ''}
+      ${building(p.id, vid) ? `<div data-building-chip title="${esc(agentName(session.agent))} is still building this one" class="pointer-events-none absolute start-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}Building</div>` : ''}
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
       ${st.focus ? `
       ${st.open === 'fproto' ? `<div data-pop class="fixed bottom-[76px] left-1/2 z-20 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">${protoMenu}</div>` : ''}
@@ -1179,7 +1184,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             <button data-act="unfocus" class="${dockBtn}" aria-label="Exit focus (Esc)" title="Exit focus · Esc">${ic('shrink')}</button>${dockSep}
             <button data-act="open:fproto" aria-label="Prototypes" class="inline-flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-full px-2 hover:bg-white/10 sm:px-3">${ic('menu', 'size-4 sm:hidden')}<span dir="auto" class="hidden max-w-48 truncate font-medium sm:inline">${esc(p.title)}</span>${ic('chev', 'hidden size-3.5 rotate-180 text-white/50 sm:block')}</button>${dockSep}
             ${many ? `<button data-act="step:-1" class="${dockBtn} w-7" aria-label="Previous">${ic('left', 'size-3.5')}</button>` : ''}
-            ${shown.map(x => `<button data-act="variant:${x.id}" title="${esc(x.name)}" class="relative grid size-9 shrink-0 place-items-center rounded-full text-xs font-semibold ${vid === x.id ? 'bg-white text-zinc-900' : 'text-white/70 hover:bg-white/10'}">${variantLabel(p, x.id)}${editing(p.id, x.id) ? `<span class="absolute right-1 top-1">${pulse('size-1.5')}</span>` : ''}</button>`).join('')}
+            ${shown.map(x => `<button data-act="variant:${x.id}" title="${esc(x.name)}" class="relative grid size-9 shrink-0 place-items-center rounded-full text-xs font-semibold ${vid === x.id ? 'bg-white text-zinc-900' : 'text-white/70 hover:bg-white/10'}">${variantLabel(p, x.id)}${editing(p.id, x.id) ? `<span class="absolute end-1 top-1">${pulse('size-1.5')}</span>` : ''}</button>`).join('')}
             ${many ? `<button data-act="step:1" class="${dockBtn} w-7" aria-label="Next">${ic('right', 'size-3.5')}</button><span class="px-1.5 text-xs tabular-nums text-white/60">${at + 1}/${vs.length}</span>` : ''}${dockSep}
             ${(c => c.lines ? `<button data-act="copymode" aria-pressed="${c.on}" aria-label="Copy options" title="${copySay(c)}" class="${dockBtn} relative ${c.on ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic('text')}${copyCount(c, 'ring-zinc-900')}</button>` : '')(copyCounts())}
             ${phones ? `<button data-act="scale:${[0, 100, 75, 50][([0, 100, 75, 50].indexOf(st.scale) + 1) % 4]}" class="h-9 shrink-0 rounded-full px-2 text-xs tabular-nums text-white/70 hover:bg-white/10" title="Phone scale">${scaleLabel()}</button>` : ''}
@@ -1202,7 +1207,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const on = list.querySelector<HTMLElement>('[aria-current="true"]')
         if (on) list.scrollTop += on.getBoundingClientRect().top - list.getBoundingClientRect().top - list.clientHeight / 2 + on.clientHeight / 2
       }
-      for (const m of root.querySelectorAll<HTMLElement>('[data-mcols]')) m.scrollLeft = m.scrollWidth
+      for (const m of root.querySelectorAll<HTMLElement>('[data-mcols]')) m.scrollLeft = X * m.scrollWidth
     })
     document.title = [where, v && `${variantLabel(p!, v.id)} · ${v.name}`, p?.title, session.name].filter(Boolean).join(' – ')
     paintIcon()
@@ -1274,8 +1279,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
               ${name}
             </div>
             <button data-act="variant:${next.id}" aria-label="Next variant: ${variantLabel(p!, next.id)} ${esc(next.name)}" class="${pillBtn}">${ic('right')}</button>
-            ${tweakList().length ? `${sep}<button data-act="tweaks" data-shoot="tweaks" aria-label="Tweaks" aria-haspopup="dialog" aria-expanded="${tweaksOpen}" class="${pillBtn} relative ${tweaksOpen ? '!bg-sky-700 !text-white' : ''}">${ic('tweaks', 'size-5')}${tweakList().some(isChanged) ? `<span class="absolute right-0 top-0 grid min-w-3.5 rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : ''}</button>` : ''}
-            ${commentHost() ? (c => `${sep}<button data-act="comment:tap" data-shoot="comment" aria-label="Comments" aria-pressed="${c.picking}" class="${pillBtn} relative ${c.picking ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.picking ? 'x' : 'comment', 'size-5')}${c.drafts && !c.picking ? `<span class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold text-proto-primary-fg ring-2 ring-zinc-900">${c.drafts}</span>` : ''}</button>`)(comments.counts()) : ''}
+            ${tweakList().length ? `${sep}<button data-act="tweaks" data-shoot="tweaks" aria-label="Tweaks" aria-haspopup="dialog" aria-expanded="${tweaksOpen}" class="${pillBtn} relative ${tweaksOpen ? '!bg-sky-700 !text-white' : ''}">${ic('tweaks', 'size-5')}${tweakList().some(isChanged) ? `<span class="absolute end-0 top-0 grid min-w-3.5 rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : ''}</button>` : ''}
+            ${commentHost() ? (c => `${sep}<button data-act="comment:tap" data-shoot="comment" aria-label="Comments" aria-pressed="${c.picking}" class="${pillBtn} relative ${c.picking ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.picking ? 'x' : 'comment', 'size-5')}${c.drafts && !c.picking ? `<span class="absolute -end-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold text-proto-primary-fg ring-2 ring-zinc-900">${c.drafts}</span>` : ''}</button>`)(comments.counts()) : ''}
           </div>
         </div>`
         raisePill()
@@ -1445,7 +1450,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (!r) return
     r.hidden = false
     r.innerHTML = d.ids.map((id, i) => ({ id, off: i - d.pos })).filter(x => Math.abs(x.off) < 4).map(({ id, off }) =>
-      `<span class="absolute top-0 grid h-9 w-8 place-items-center text-[13px] font-semibold text-white" style="left:${112 - 16 + off * 32}px;opacity:${1 - Math.min(1, Math.abs(off)) * 0.55}">${variantLabel(d.proto, id)}</span>`).join('')
+      `<span class="absolute top-0 grid h-9 w-8 place-items-center text-[13px] font-semibold text-white" style="left:${112 - 16 + X * off * 32}px;opacity:${1 - Math.min(1, Math.abs(off)) * 0.55}">${variantLabel(d.proto, id)}</span>`).join('')
       + '<span class="absolute left-1/2 top-1 h-7 w-8 -translate-x-1/2 rounded-full ring-1 ring-white/40"></span>'
     const i = Math.min(d.ids.length - 1, Math.max(0, Math.round(d.pos))), v = d.proto.variants.find(x => x.id === d.ids[i])!
     const set = (sel: string, text: string) => { const el = pill.querySelector(sel); if (el) el.textContent = text }
@@ -1456,7 +1461,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // either side of pos are mounted beside it (inert) while they are in reach.
   function slide(d: PillDrag) {
     if (!d.real || d.real !== layer || !d.pitch) return
-    d.real.el.style.transform = `translate3d(${(d.base - d.pos) * d.pitch}px,0,0)`
+    d.real.el.style.transform = `translate3d(${X * (d.base - d.pos) * d.pitch}px,0,0)`
     const want = new Set([Math.floor(d.pos), Math.ceil(d.pos)].filter(i => i >= 0 && i < d.ids.length && i !== d.base))
     for (const [i, k] of d.peeks) if (!want.has(i)) { k.layer.el.remove(); k.layer.dispose(); d.peeks.delete(i) }
     for (const i of want) {
@@ -1520,11 +1525,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   pill.addEventListener('pointermove', e => {
     const d = pd
     if (!d || e.pointerId !== d.id) return
-    const dx = e.clientX - d.x0
+    const dx = X * (e.clientX - d.x0)
     if (!d.moved && Math.abs(dx) < 6) return
     d.moved = true
     const dt = Math.max(1, e.timeStamp - d.lastT)
-    d.v = 0.7 * d.v + 0.3 * ((e.clientX - d.lastX) / dt)
+    d.v = 0.7 * d.v + 0.3 * (X * (e.clientX - d.lastX) / dt)
     d.lastX = e.clientX; d.lastT = e.timeStamp
     d.pos = rubber(Math.max(0, d.base) - dx / STEP, d.ids.length)
     paintRuler(d)
@@ -1568,10 +1573,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const lineOf = (c: Col, i: number) => {
       const v = c.kind === 'variants' ? c.p.variants.find(x => x.id === c.sel) : undefined
       const k = c.kind === 'protos' ? c.list.find(x => x.id === c.sel) : undefined
-      return `<div class="relative flex min-w-0 items-center"><button data-act="line:${i}" title="Open this level" class="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 text-left hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">
+      return `<div class="relative flex min-w-0 items-center"><button data-act="line:${i}" title="Open this level" class="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 text-start hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">
         <span class="grid size-7 shrink-0 place-items-center rounded-md bg-zinc-900/[.05] text-[11px] font-semibold text-zinc-600 dark:bg-white/[.07] dark:text-zinc-300">${v && c.kind === 'variants' ? variantLabel(c.p, v.id) : ic('layers', 'size-3.5 text-zinc-400')}</span>
         <span class="min-w-0 flex-1 leading-tight ${v ? 'pe-9' : ''}"><span dir="auto" class="block truncate text-[10px] text-zinc-500">${esc(colName(c))}</span><span class="flex min-w-0 items-center gap-1 font-medium">${v ? `<span dir="auto" class="truncate">${esc(v.name)}</span>${c.kind === 'variants' && v.id === pickOf(c.p) ? ic('check', `size-3 shrink-0 ${PICK}`) : ''}` : k ? `<span dir="auto" class="truncate">${esc(k.title)}</span>` : '<span class="font-normal text-zinc-400">Choose one</span>'}</span></span>
-        <span class="shrink-0 text-[10px] tabular-nums text-zinc-400">${colCount(c)}</span>${ic('chev', 'size-3 shrink-0 text-zinc-400')}</button>${v && c.kind === 'variants' ? `<button data-act="pv:${esc(c.p.id)}:${v.id}" aria-label="View ${variantLabel(c.p, v.id)}: ${esc(v.name)}" title="View this variant" class="absolute right-10 top-1 grid size-8 place-items-center rounded-md text-zinc-500 hover:bg-zinc-900/[.04] hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[.06] dark:hover:text-white">${ic('eye', 'size-4')}</button>` : ''}</div>`
+        <span class="shrink-0 text-[10px] tabular-nums text-zinc-400">${colCount(c)}</span>${ic('chev', 'size-3 shrink-0 text-zinc-400')}</button>${v && c.kind === 'variants' ? `<button data-act="pv:${esc(c.p.id)}:${v.id}" aria-label="View ${variantLabel(c.p, v.id)}: ${esc(v.name)}" title="View this variant" class="absolute end-10 top-1 grid size-8 place-items-center rounded-md text-zinc-500 hover:bg-zinc-900/[.04] hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[.06] dark:hover:text-white">${ic('eye', 'size-4')}</button>` : ''}</div>`
     }
     // Two columns meet at a separator that can be dragged (see "resizing the columns"); the first takes
     // its share from --split, the second the rest, and neither goes under 6rem.
@@ -1589,28 +1594,28 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const tools = (['play', 'all', 'compare'] as Tool[]).filter(t => toolOk(p, v.id, t))
       const leaf = (x?: State) => {
         const id = x?.id ?? '', on = lit === id, note = x?.about?.[v.id]
-        return `<button data-act="pvs:${esc(p.id)}:${v.id}:${esc(id)}" aria-current="${on}" class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left ${on ? ON : ROWC}">${dot(p, v.id, x, on)}<span class="min-w-0 flex-1"><span class="flex items-center gap-1.5 leading-4 ${on ? 'font-medium text-zinc-900 dark:text-white' : ''}"><span dir="auto" class="truncate">${esc(x?.name ?? 'At rest')}</span>${on && tool === 'play' ? ic('play', 'size-3 text-sky-500') : ''}</span>${note && x ? `<span dir="auto" class="mt-0.5 block text-[10px] leading-[14px] ${noteCls(p, v.id, x)}">${esc(note)}</span>` : ''}</span></button>`
+        return `<button data-act="pvs:${esc(p.id)}:${v.id}:${esc(id)}" aria-current="${on}" class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-start ${on ? ON : ROWC}">${dot(p, v.id, x, on)}<span class="min-w-0 flex-1"><span class="flex items-center gap-1.5 leading-4 ${on ? 'font-medium text-zinc-900 dark:text-white' : ''}"><span dir="auto" class="truncate">${esc(x?.name ?? 'At rest')}</span>${on && tool === 'play' ? ic('play', 'size-3 text-sky-500') : ''}</span>${note && x ? `<span dir="auto" class="mt-0.5 block text-[10px] leading-[14px] ${noteCls(p, v.id, x)}">${esc(note)}</span>` : ''}</span></button>`
       }
       if (sts.length || tools.length) here = `<div class="mt-3 border-t border-black/[.06] pt-2 dark:border-white/[.07]">
-          <div class="flex items-center gap-1 px-1.5 pb-1 text-[10px] font-medium text-zinc-400"><b class="text-zinc-500">${variantLabel(p!, v.id)}</b><span dir="auto" class="truncate">${esc(v.name)}</span><span class="ml-auto">${sts.length ? `${sts.length} state${sts.length === 1 ? '' : 's'}` : ''}</span></div>
+          <div class="flex items-center gap-1 px-1.5 pb-1 text-[10px] font-medium text-zinc-400"><b class="text-zinc-500">${variantLabel(p!, v.id)}</b><span dir="auto" class="truncate">${esc(v.name)}</span><span class="ms-auto">${sts.length ? `${sts.length} state${sts.length === 1 ? '' : 's'}` : ''}</span></div>
           ${sts.length ? `<div>${leaf()}${sts.map(leaf).join('')}</div>` : ''}
           ${tools.length ? `<div class="flex flex-wrap gap-1 px-1 pt-1.5">${tools.map(t => `<button data-act="tool:${esc(p.id)}:${v.id}:${t}" aria-pressed="${tool === t}" title="${TOOLS[t].hint}${tool === t ? ' · click to stop' : ''}" class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] ${tool === t ? 'bg-sky-500/15 font-medium text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${ic(TOOLS[t].icon, 'size-3')}${TOOLS[t].name}${t === 'compare' ? `<span class="text-zinc-400">${variantLabel(p, otherOf(p, v.id))}</span>` : ''}</button>`).join('')}</div>` : ''}
         </div>`
     }
 
     const initial = esc((session.name.trim()[0] || 'P').toUpperCase())
-    return `<div class="flex h-12 shrink-0 items-center gap-2 pl-3 pr-1.5">
-        <button data-act="settings:session" data-shoot="session-name" aria-haspopup="dialog" title="Session settings" class="-ml-1 flex min-w-0 items-center gap-2 rounded-lg px-1 py-1 hover:bg-zinc-900/5 dark:hover:bg-white/10"><span class="relative grid size-5 shrink-0 place-items-center rounded bg-zinc-900 text-[10px] font-bold text-white dark:bg-white dark:text-zinc-900">${initial}<span class="absolute -right-1 -top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-2', st.live && !st.stopped)}</span></span><span dir="auto" class="truncate font-semibold">${esc(session.name)}</span></button>
-        <button data-act="${inDrawer ? 'drawer:0' : 'side:0'}" class="${IB} ml-auto shrink-0" title="${inDrawer ? 'Close' : 'Hide sidebar · ⌘\\'}" aria-label="${inDrawer ? 'Close' : 'Hide sidebar'}">${ic(inDrawer ? 'x' : 'sidebar')}</button>
+    return `<div class="flex h-12 shrink-0 items-center gap-2 ps-3 pe-1.5">
+        <button data-act="settings:session" data-shoot="session-name" aria-haspopup="dialog" title="Session settings" class="-ms-1 flex min-w-0 items-center gap-2 rounded-lg px-1 py-1 hover:bg-zinc-900/5 dark:hover:bg-white/10"><span class="relative grid size-5 shrink-0 place-items-center rounded bg-zinc-900 text-[10px] font-bold text-white dark:bg-white dark:text-zinc-900">${initial}<span class="absolute -end-1 -top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-2', st.live && !st.stopped)}</span></span><span dir="auto" class="truncate font-semibold">${esc(session.name)}</span></button>
+        <button data-act="${inDrawer ? 'drawer:0' : 'side:0'}" class="${IB} ms-auto shrink-0" title="${inDrawer ? 'Close' : 'Hide sidebar · ⌘\\'}" aria-label="${inDrawer ? 'Close' : 'Hide sidebar'}">${ic(inDrawer ? 'x' : 'sidebar')}</button>
       </div>
       ${workStrip()}
       <nav data-tree data-k="tree" class="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-black/[.06] px-2 py-1.5 text-[12px] dark:border-white/[.07]" aria-label="Prototypes">
         ${cols.slice(0, at).map(lineOf).join('')}${box}${cols.slice(at + 2).map((c, j) => lineOf(c, at + 2 + j)).join('')}
         ${here}
       </nav>
-      <div class="flex h-11 shrink-0 items-center gap-1 border-t border-black/[.07] pl-3 pr-1.5 dark:border-white/10">
+      <div class="flex h-11 shrink-0 items-center gap-1 border-t border-black/[.07] ps-3 pe-1.5 dark:border-white/10">
         <span class="flex min-w-0 items-center gap-2 truncate text-[11px] text-zinc-500">${pulse('size-1.5', st.live && !st.stopped)}${st.stopped ? 'Stopped' : !st.live ? 'Reconnecting…' : st.lastEdit ? `Live · edited <span data-ago="${st.lastEdit}">${ago(st.lastEdit)}</span>` : 'Live'}</span>
-        <button data-act="theme:${st.dark ? 'light' : 'dark'}" class="${IB} ml-auto shrink-0" aria-label="Switch to ${st.dark ? 'light' : 'dark'}">${ic(st.dark ? 'sun' : 'moon')}</button>
+        <button data-act="theme:${st.dark ? 'light' : 'dark'}" class="${IB} ms-auto shrink-0" aria-label="Switch to ${st.dark ? 'light' : 'dark'}">${ic(st.dark ? 'sun' : 'moon')}</button>
       </div>`
   }
 
@@ -1627,15 +1632,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const plugged = (t: string) => /^(Plugged in(to)?|Original back( in|, took out)) .+ [A-Z]{1,2}$/.test(t.trim())
     const n = asks.filter(a => !picked(a.text) && !plugged(a.text)).length
     return `<div class="mx-2 mb-2 rounded-xl bg-zinc-900/[.04] p-2 text-[12px] dark:bg-white/[.05]">
-        <button data-act="work:go" ${here ? 'aria-current="true"' : 'title="Go to it · W"'} class="flex w-full min-w-0 items-center gap-2.5 text-left">
+        <button data-act="work:go" ${here ? 'aria-current="true"' : 'title="Go to it · W"'} class="flex w-full min-w-0 items-center gap-2.5 text-start">
           <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-emerald-500/15 text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">${variantLabel(w.p, w.v.id)}</span>
           <span class="min-w-0 flex-1 leading-tight"><span class="flex items-center gap-1.5 text-[10px] text-zinc-500">${here ? 'Your requests change this design' : 'Your requests change'}${editing(w.p.id, w.v.id) ? `<span class="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">${pulse('size-1.5')}editing</span>` : ''}</span>
             <span class="mt-0.5 flex min-w-0 items-center gap-1 font-semibold"><span dir="auto" class="min-w-0 truncate">${esc(w.p.title)}</span><span class="shrink-0 font-normal text-zinc-400">·</span><span class="shrink-0">${variantLabel(w.p, w.v.id)}</span><span dir="auto" class="min-w-0 truncate">${esc(w.v.name)}</span></span></span>
         </button>
-        ${here ? '' : `<button data-act="work:go" class="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-white text-[11px] font-medium shadow-sm ring-1 ring-black/10 hover:bg-zinc-50 dark:bg-zinc-800 dark:ring-white/10 dark:hover:bg-zinc-700">Go to it<span class="font-normal text-zinc-400">· or keep looking here</span><kbd class="ml-1 hidden rounded px-1 font-sans text-[10px] font-normal text-zinc-400 ring-1 ring-inset ring-black/10 [@media(hover:hover)]:inline dark:ring-white/15">W</kbd></button>`}
+        ${here ? '' : `<button data-act="work:go" class="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-white text-[11px] font-medium shadow-sm ring-1 ring-black/10 hover:bg-zinc-50 dark:bg-zinc-800 dark:ring-white/10 dark:hover:bg-zinc-700">Go to it<span class="font-normal text-zinc-400">· or keep looking here</span><kbd class="ms-1 hidden rounded px-1 font-sans text-[10px] font-normal text-zinc-400 ring-1 ring-inset ring-black/10 [@media(hover:hover)]:inline dark:ring-white/15">W</kbd></button>`}
         ${st.failed?.at === 'work' ? `<p role="alert" class="mt-2 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-[11px] text-rose-700 dark:text-rose-300">${esc(st.failed.text)}</p>` : ''}
         ${mv ? `<div class="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-500/[.08] px-2 py-1 text-[11px]"><span class="text-amber-600">${ic('from', 'size-3.5')}</span><span class="min-w-0 flex-1 truncate text-zinc-600 dark:text-zinc-300">Moved here from <b class="font-semibold">${variantLabel(mv.p, mv.v.id)}</b> · ${bd(mv.v.name)}${mv.p !== w.p ? ` <span class="text-zinc-400">in ${bd(mv.p.title)}</span>` : ''}</span><button data-act="work:undo" class="h-6 shrink-0 rounded-md px-1.5 font-medium text-zinc-900 hover:bg-zinc-900/[.06] dark:text-white dark:hover:bg-white/10">Undo</button></div>` : ''}
-        ${asks.length ? `<button data-act="asks" aria-expanded="${st.asks}" class="mt-1.5 flex h-7 w-full items-center gap-1.5 rounded-md px-1 text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-white">${ic('clock', 'size-3.5')}${n} change${n === 1 ? '' : 's'} you asked for${ic('chev', `ml-auto size-3.5 transition-transform ${st.asks ? 'rotate-180' : ''}`)}</button>
+        ${asks.length ? `<button data-act="asks" aria-expanded="${st.asks}" class="mt-1.5 flex h-7 w-full items-center gap-1.5 rounded-md px-1 text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-white">${ic('clock', 'size-3.5')}${n} change${n === 1 ? '' : 's'} you asked for${ic('chev', `ms-auto size-3.5 transition-transform ${st.asks ? 'rotate-180' : ''}`)}</button>
           ${st.asks ? `<ol class="max-h-48 space-y-1.5 overflow-y-auto overscroll-contain px-1 pb-1 pt-1">${asks.map(a => { const pk = picked(a.text), ok = pk || plugged(a.text), t = Date.parse(a.at); return `<li class="flex gap-2 text-[11px] leading-[15px]"><span class="mt-px grid size-3.5 shrink-0 place-items-center rounded-full ${ok ? 'bg-emerald-500 text-white' : 'bg-zinc-900/[.08] text-zinc-500 dark:bg-white/10 dark:text-zinc-400'}">${ic('check', 'size-2.5')}</span><span dir="auto" class="min-w-0 flex-1 ${ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-700 dark:text-zinc-300'}">${pk ? `You picked ${esc(a.text.trim().slice(7))}` : esc(a.text)}</span>${t ? `<span class="shrink-0 text-[10px] text-zinc-400" data-ago="${t}">${ago(t)}</span>` : ''}</li>` }).join('')}</ol>` : ''}` : ''}
       </div>`
   }
@@ -1785,7 +1790,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // A row's own options (its ⋯): the same menu as right-click, beside the button.
     if (name === 'vm') {
       const r = el.getBoundingClientRect()
-      return openVmenu(arg, arg2, r.right + 6, r.top)
+      return openVmenu(arg, arg2, rtl ? r.left - 326 : r.right + 6, r.top)
     }
     act(name, arg, arg2, arg3)
     // Opened from the keyboard, the switcher's columns take the focus, on the row lit last.
@@ -1851,8 +1856,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (opts) { e.preventDefault(); opts.click() }
       return
     }
-    if (e.key === 'ArrowLeft') { e.preventDefault(); return stepCol(-1) }
-    if (e.key === 'ArrowRight') {
+    if (e.key === BACK) { e.preventDefault(); return stepCol(-1) }
+    if (e.key === FWD) {
       e.preventDefault()
       if (!row.hasAttribute('data-opens') || row.getAttribute('aria-current') === 'true') return stepCol(1)
       // Choosing it may wait for the hash to change before the next column is drawn.
@@ -1938,7 +1943,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       setTimeout(() => { if (!e.defaultPrevented && st.place.view === 'variant' && hashOf(st.place) === from) go({ view: 'proto', proto: st.place.proto }) })
       return
     }
-    if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && st.place.view === 'variant') { e.preventDefault(); step(e.key === 'ArrowRight' ? 1 : -1) }
+    if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant') { e.preventDefault(); step(e.key === FWD ? 1 : -1) }
     else if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
     else if (e.key === 'C' && commentHost() && st.place.view === 'variant') { e.preventDefault(); commentWhole() }
     // Focus mode and the design's actions are the page outside's, when this page is in its view (viewKey).
@@ -1964,8 +1969,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     grip.setPointerCapture(e.pointerId)
     grip.dataset.dragging = ''
     document.documentElement.style.cursor = 'col-resize'
-    const left = side.getBoundingClientRect().left
-    const move = (m: PointerEvent) => setSideW(m.clientX - left, false)
+    const b = side.getBoundingClientRect()
+    const move = (m: PointerEvent) => setSideW(rtl ? b.right - m.clientX : m.clientX - b.left, false)
     const end = () => {
       grip.removeEventListener('pointermove', move)
       delete grip.dataset.dragging
@@ -1978,7 +1983,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   grip.addEventListener('dblclick', () => setSideW(SIDE_W))
   grip.addEventListener('keydown', e => {
     const d = e.key === 'ArrowLeft' ? -16 : e.key === 'ArrowRight' ? 16 : 0
-    if (d) { e.preventDefault(); setSideW(st.sideW + d) }
+    if (d) { e.preventDefault(); setSideW(st.sideW + X * d) }
   })
 
   // ---------- resizing the columns ----------
@@ -2001,7 +2006,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       host.dataset.splitting = ''
       document.documentElement.style.cursor = 'col-resize'
       const box = h.parentElement!.getBoundingClientRect()
-      const move = (m: PointerEvent) => setSplit((m.clientX - box.left) / box.width, false)
+      const move = (m: PointerEvent) => setSplit((rtl ? box.right - m.clientX : m.clientX - box.left) / box.width, false)
       const end = () => {
         host.removeEventListener('pointermove', move)
         delete host.dataset.splitting
@@ -2014,7 +2019,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     host.addEventListener('dblclick', e => { if (onSplit(e)) setSplit(SPLIT_W) })
     host.addEventListener('keydown', e => {
       const h = onSplit(e), d = e.key === 'ArrowLeft' ? -0.04 : e.key === 'ArrowRight' ? 0.04 : 0
-      if (h && d) { e.preventDefault(); setSplit(st.split + d) }
+      if (h && d) { e.preventDefault(); setSplit(st.split + X * d) }
     })
   }
 
@@ -2051,7 +2056,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // Commenting lives in the stage's own layer (comments/), over a variant on the page and nowhere
   // else: not a lobby, all states or autoplay, not focus mode, not a shot. Compare shares this layer across both panes.
   const phoneMq = matchMedia('(max-width: 639px)')
-  const HANDLE = 'flex h-9 items-center gap-1.5 rounded-l-lg bg-white/95 pl-2.5 pr-3 text-xs font-medium text-zinc-900 shadow-lg shadow-black/10 ring-1 ring-black/10 backdrop-blur hover:bg-white dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-white/15 dark:hover:bg-zinc-900'
+  const HANDLE = 'flex h-9 items-center gap-1.5 rounded-s-lg bg-white/95 ps-2.5 pe-3 text-xs font-medium text-zinc-900 shadow-lg shadow-black/10 ring-1 ring-black/10 backdrop-blur hover:bg-white dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-white/15 dark:hover:bg-zinc-900'
   // The page inside a device view has none of its own: the page outside comments on it.
   const compareHost = () => st.place.view === 'variant' && st.place.tool === 'compare' ? layer?.el.querySelector<HTMLElement>('[data-comment-compare]') ?? null : null
   const commentHost = () => !framed && !st.focus && q.get('hints') !== '0' ? compareHost() ?? hintHost() : null
@@ -2278,7 +2283,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // and a device view hand it over as the page redraws, which the button is drawn before).
   const copyCounts = () => { const h = copyHost(), n = countHost(), c = comments.copy.store.get(); return { lines: copy.of(n).length, changed: copy.changed(n).length, on: !!h && c.on && (c.stage === h || c.route === copy.routeOf(h)) } }
   const copySay = (c: ReturnType<typeof copyCounts>) => c.on ? 'Close copy options · Esc' : `Copy options for ${c.lines} line${c.lines === 1 ? '' : 's'}${c.changed ? `, ${c.changed} changed` : ''}`
-  const copyCount = (c: ReturnType<typeof copyCounts>, ring: string) => c.on ? '' : `<span aria-hidden="true" class="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold tabular-nums text-proto-primary-fg ring-2 ${ring}">${c.lines}</span>`
+  const copyCount = (c: ReturnType<typeof copyCounts>, ring: string) => c.on ? '' : `<span aria-hidden="true" class="absolute -end-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold tabular-nums text-proto-primary-fg ring-2 ${ring}">${c.lines}</span>`
   const copyBtn = () => {
     const c = copyCounts()
     if (!c.lines || st.focus) return ''
@@ -2311,7 +2316,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const say = d.picked ? `Picked ${d.label} · design actions, Try it and copy options` : 'Design actions: pick, more like this, Try it and copy options'
     return `<button data-act="open:decide" data-decide-btn aria-haspopup="menu" aria-expanded="${on}" aria-label="${say}" title="${say} · P" class="${IB} gap-2 ${on ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}"><span class="size-2 shrink-0 rounded-full ${d.picked ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600'}"></span><span class="hidden text-xs sm:inline">${d.picked ? 'Picked' : 'Decide'}</span>${ic('chev', 'size-3 opacity-60')}</button>`
   }
-  const settingsBtn = (status = false) => `<button data-act="settings" aria-label="Settings" aria-haspopup="dialog" title="Settings" class="${IB}${status ? ' relative' : ''}">${ic('settings')}${status ? `<span class="absolute right-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span>` : ''}</button>`
+  const settingsBtn = (status = false) => `<button data-act="settings" aria-label="Settings" aria-haspopup="dialog" title="Settings" class="${IB}${status ? ' relative' : ''}">${ic('settings')}${status ? `<span class="absolute end-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span>` : ''}</button>`
   const drawShare = createShare()
   const drawSettings = createSettings()
   function paintSettings() {
@@ -2542,8 +2547,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // the comment list is showing is ever rebuilt under it. A phone has no panel: its comments are a
   // sheet from the pill's Comment, and its Try it a sheet from the pill's menu (paintTry).
   hintBox.innerHTML = `<div data-handles></div>
-    <div data-panel role="complementary" class="absolute inset-y-0 right-0 z-20 hidden flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <div data-tabs class="flex h-11 shrink-0 items-center gap-0.5 border-b border-black/[.07] pl-1.5 pr-1 dark:border-white/10"></div>
+    <div data-panel role="complementary" class="absolute inset-y-0 end-0 z-20 hidden flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+      <div data-tabs class="flex h-11 shrink-0 items-center gap-0.5 border-b border-black/[.07] ps-1.5 pe-1 dark:border-white/10"></div>
       <div data-try class="min-h-0 flex-1 overflow-y-auto overscroll-contain" hidden></div>
       <div data-tweak-body class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" hidden></div>
       <div data-cbody class="min-h-0 flex-1" hidden></div>
@@ -2594,13 +2599,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const c = comments.counts()
     if (edge && !peeking) {
       panel.className = 'hidden'
-      handles.innerHTML = `<button data-hint="peek" data-panel-edge data-shoot="panel-edge" aria-label="Show the side panel" aria-expanded="false" title="${tabs.includes('comments') ? 'Comments' : 'Try it'} · C" class="group absolute inset-y-0 right-0 z-20 grid w-3 place-items-center border-l border-black/[.07] hover:bg-proto-primary-soft dark:border-white/10"><span class="h-10 w-1 rounded-full bg-zinc-400/60 group-hover:bg-proto-primary dark:bg-zinc-500/60"></span>${c.total ? `<span class="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 text-[9px] font-semibold tabular-nums text-zinc-500">${c.total > 99 ? '99+' : c.total}</span>` : ''}</button>`
+      handles.innerHTML = `<button data-hint="peek" data-panel-edge data-shoot="panel-edge" aria-label="Show the side panel" aria-expanded="false" title="${tabs.includes('comments') ? 'Comments' : 'Try it'} · C" class="group absolute inset-y-0 end-0 z-20 grid w-3 place-items-center border-s border-black/[.07] hover:bg-proto-primary-soft dark:border-white/10"><span class="h-10 w-1 rounded-full bg-zinc-400/60 group-hover:bg-proto-primary dark:bg-zinc-500/60"></span>${c.total ? `<span class="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 text-[9px] font-semibold tabular-nums text-zinc-500">${c.total > 99 ? '99+' : c.total}</span>` : ''}</button>`
       tryEl.innerHTML = ''
       return
     }
     if (!hintsOpen && !peeking) {
       panel.className = 'hidden'
-      handles.innerHTML = `<div class="absolute bottom-[calc(var(--pill-h,0px)+var(--dock-h,0px)+var(--copy-h,0px)+1rem)] right-0 z-20 flex flex-col items-end gap-2">
+      handles.innerHTML = `<div class="absolute bottom-[calc(var(--pill-h,0px)+var(--dock-h,0px)+var(--copy-h,0px)+1rem)] end-0 z-20 flex flex-col items-end gap-2">
         ${tabs.includes('comments') ? `<button data-hint="open:comments" title="Comments on this design · C" class="${HANDLE}">${ic('comment', 'size-3.5 text-proto-primary-ring')}Comments${c.total ? `<span class="tabular-nums text-zinc-400">${c.total}</span>` : ''}</button>` : ''}
         ${tabs.includes('try') ? `<button data-hint="open:try" title="What to type and try in this design" class="${HANDLE}">${ic('key', 'size-3.5 text-amber-500')}Try it<span class="tabular-nums text-zinc-400">${count}</span></button>` : ''}
       </div>`
@@ -2609,7 +2614,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
     handles.innerHTML = ''
     const wide = wideMq.matches
-    panel.className = `absolute inset-y-0 right-0 z-20 flex flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 ${peeking ? 'border-l border-black/10 shadow-2xl shadow-black/20 dark:border-white/10' : wide ? 'border-l border-black/[.07] dark:border-white/10' : 'w-[min(18rem,88%)] shadow-2xl shadow-black/30'}`
+    panel.className = `absolute inset-y-0 end-0 z-20 flex flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 ${peeking ? 'border-s border-black/10 shadow-2xl shadow-black/20 dark:border-white/10' : wide ? 'border-s border-black/[.07] dark:border-white/10' : 'w-[min(18rem,88%)] shadow-2xl shadow-black/30'}`
     panel.style.width = wide ? `${panelWidth}px` : ''
     // Never on two lines: docked, the panel is 264 px, which the two tabs and Fill in beside them
     // overran. Fill in is at the head of the values it types, To type.
@@ -2617,7 +2622,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const on = shownTab === t, n = t === 'comments' ? c.total : t === 'tweaks' ? fields.filter(isChanged).length : count
       return `<button data-hint="tab:${t}" aria-pressed="${on}" class="inline-flex h-8 shrink-0 items-center ${tabs.length > 2 ? 'gap-1 px-1.5 text-[11px]' : 'gap-1.5 px-2.5 text-xs'} whitespace-nowrap rounded-md font-medium ${on ? 'bg-zinc-900/[.06] text-zinc-900 dark:bg-white/10 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}">${ic(t === 'comments' ? 'comment' : t === 'tweaks' ? 'tweaks' : 'key', `size-3.5 ${t === 'try' ? 'text-amber-500' : on ? 'text-proto-primary-ring' : ''}`)}${t === 'comments' ? 'Comments' : t === 'tweaks' ? 'Tweaks' : 'Try it'}${n ? `<span class="tabular-nums text-zinc-400">${n}</span>` : ''}</button>`
     }
-    tabsEl.innerHTML = `${tabs.map(tabBtn).join('')}<span class="ml-auto"></span>
+    tabsEl.innerHTML = `${tabs.map(tabBtn).join('')}<span class="ms-auto"></span>
       ${peeking ? `<button data-hint="pin" data-shoot="panel-pin" class="${IB} h-7 min-w-7 shrink-0 px-1" aria-label="Keep the panel open" title="Keep open">${ic('pin', 'size-3.5')}</button>` : `<button data-hint="close" class="${IB} h-7 min-w-7 shrink-0 px-1" aria-label="Close panel" title="Close">${ic(wide ? 'right' : 'x', 'size-3.5')}</button>`}`
     cbody.hidden = shownTab !== 'comments'
     tryEl.hidden = shownTab !== 'try'
@@ -2667,8 +2672,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const pick = <K extends Hint['kind']>(k: K) => all.filter(x => x.h.kind === k) as { h: Extract<Hint, { kind: K }>; i: number }[]
     const values = pick('value'), tries = pick('try'), switches = pick('switch'), events = pick('event'), caveats = pick('caveat')
     const py = roomy ? 'py-2.5' : 'py-1.5'
-    const sec = (name: string, body: string, meta = '') => `<section class="border-b border-black/[.05] last:border-b-0 dark:border-white/[.07] ${roomy ? '-mx-1 px-2 py-1' : 'p-1'}"><h3 class="flex items-center px-2 pb-0.5 pt-1 text-[11px] font-medium text-zinc-400">${bd(name)}<span class="ml-auto flex font-normal tabular-nums">${meta}</span></h3>${body}</section>`
-    const value = ({ h, i }: { h: Extract<Hint, { kind: 'value' }>; i: number }) => `<button data-hint="copy:${i}" title="Copy ${esc(h.label.toLowerCase())}" class="group/h flex w-full min-w-0 items-start gap-2 rounded-md px-2 ${roomy ? 'py-2' : 'py-1.5'} text-left hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">
+    const sec = (name: string, body: string, meta = '') => `<section class="border-b border-black/[.05] last:border-b-0 dark:border-white/[.07] ${roomy ? '-mx-1 px-2 py-1' : 'p-1'}"><h3 class="flex items-center px-2 pb-0.5 pt-1 text-[11px] font-medium text-zinc-400">${bd(name)}<span class="ms-auto flex font-normal tabular-nums">${meta}</span></h3>${body}</section>`
+    const value = ({ h, i }: { h: Extract<Hint, { kind: 'value' }>; i: number }) => `<button data-hint="copy:${i}" title="Copy ${esc(h.label.toLowerCase())}" class="group/h flex w-full min-w-0 items-start gap-2 rounded-md px-2 ${roomy ? 'py-2' : 'py-1.5'} text-start hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">
         <span dir="auto" class="w-[4.5rem] shrink-0 pt-px text-[11px] leading-4 text-zinc-500">${esc(h.label)}</span>
         <span class="min-w-0 flex-1"><span ${typeof h.value === 'function' ? `data-live="${i}" ` : ''}dir="auto" class="block break-all font-mono text-[12px] leading-[18px] text-zinc-900 dark:text-zinc-100">${esc(valueOf(h))}</span>${h.note ? `<span dir="auto" class="block text-[11px] leading-4 text-zinc-400">${esc(h.note)}</span>` : ''}</span>
         <span class="grid size-5 shrink-0 place-items-center ${hintCopied === i ? 'text-emerald-500' : 'text-zinc-400 opacity-0 group-hover/h:opacity-100 [@media(hover:none)]:opacity-100'}">${ic(hintCopied === i ? 'check' : 'copy', 'size-3.5')}</span></button>`
@@ -2680,7 +2685,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       return `<div data-try-row="${i}" tabindex="0" title="Show where on the page" class="group/t flex cursor-default items-start gap-2 rounded-md px-2 ${py} outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 data-on:bg-amber-400/[.12] not-data-on:hover:bg-zinc-900/[.04] dark:not-data-on:hover:bg-white/[.06]">${tick}<span class="min-w-0 flex-1">${text}<span class="hidden text-[11px] leading-4 text-zinc-400 group-data-gone/t:block">Not on the page right now</span></span>${showIcon('mt-0.5 text-zinc-400 opacity-0 transition-opacity group-hover/t:opacity-100 group-data-on/t:text-amber-500 group-data-on/t:opacity-100')}</div>`
     }
     const switchRow = ({ h, i }: { h: Extract<Hint, { kind: 'switch' }>; i: number }) => `<div class="flex flex-wrap gap-1 px-2 py-1">${h.options.map((o, j) => `<button data-hint="switch:${i}:${j}" aria-pressed="${o === h.value}" class="${roomy ? 'h-9 px-3' : 'h-7 px-2.5'} rounded-md text-xs ${o === h.value ? 'bg-zinc-900 font-medium text-white dark:bg-white dark:text-zinc-900' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${bd(o)}</button>`).join('')}</div>`
-    const eventRow = ({ h, i }: { h: Extract<Hint, { kind: 'event' }>; i: number }) => `<button data-hint="event:${i}" class="flex w-full items-center gap-2 rounded-md px-2 ${py} text-left text-[12.5px] hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">${ic('bolt', 'size-3.5 text-amber-500')}${bd(h.label)}</button>`
+    const eventRow = ({ h, i }: { h: Extract<Hint, { kind: 'event' }>; i: number }) => `<button data-hint="event:${i}" class="flex w-full items-center gap-2 rounded-md px-2 ${py} text-start text-[12.5px] hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">${ic('bolt', 'size-3.5 text-amber-500')}${bd(h.label)}</button>`
     // The panel has Fill in at the head of the values; the sheet has it in its own head, by its name.
     const fill = !roomy && fillable(list) ? `<button data-hint="fill" title="Type the values into this design's fields" class="-my-1 inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-zinc-900 px-2 text-[11px] font-medium text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">${fillLabel()}</button>` : ''
     return {
@@ -3013,6 +3018,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     },
     // A working variant Claude moved shows where it came from, with Undo, for a few seconds.
     setSession(next: Session) {
+      followSession(next)
       const was = session.work
       const hostChanged = session.agent !== next.agent
       session = next

@@ -11,6 +11,7 @@ import { useStore } from './store'
 import type { Action } from './types'
 import { ACTION, Icon, MOD, PRIMARY, Pulse } from './ui'
 import { BROWSER_HINT, MenuRows, type MenuRow } from './menu'
+import { rtl } from '../i18n'
 
 /** The variant on screen, and whether it is the prototype's pick. */
 export type Subject = { proto: string; variant: string; label: string; name: string; picked: boolean; hints?: boolean; copy?: boolean }
@@ -207,7 +208,7 @@ export function DecidePop({ open, anchor, subject, onClose, at: pointer, onComme
   // A row's menu opens where it was asked for (its ⋯, or the pointer), kept inside the window; the bar's under its button.
   const place = pointer
     ? { top: Math.max(8, Math.min(pointer.y, innerHeight - 420)), left: Math.max(8, Math.min(pointer.x, innerWidth - 328)) }
-    : { top: at!.bottom + 6, right: Math.max(8, innerWidth - at!.right) }
+    : rtl ? { top: at!.bottom + 6, left: Math.max(8, at!.left) } : { top: at!.bottom + 6, right: Math.max(8, innerWidth - at!.right) }
   // The shell closes it on Esc and on a click outside. A click inside goes no further: a choice
   // redraws the menu under it, and the shell would take a click on a removed button for one outside.
   return (

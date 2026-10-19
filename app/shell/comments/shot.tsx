@@ -117,7 +117,7 @@ export function ShotEditor({ src, onCancel, onDone }: { src: string; onCancel: (
           {TOOLS.map(t => <button key={t.id} onClick={() => setTool(t.id)} title={t.name} aria-pressed={tool === t.id} className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs ${tool === t.id ? 'bg-white text-zinc-900' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}><Icon name={t.icon} className="size-3.5" /><span className="hidden sm:inline">{t.name}</span></button>)}
           <span className="mx-1 h-5 w-px bg-white/15" />
           {COLORS.map(c => <button key={c} onClick={() => setColor(c)} aria-label={`Color ${c}`} className={`grid size-8 place-items-center rounded-lg ${color === c ? 'bg-white/15' : 'hover:bg-white/10'}`}><span className="size-4 rounded-full ring-1 ring-white/30" style={{ background: c }} /></button>)}
-          <button onClick={() => setMarks(m => m.slice(0, -1))} disabled={!marks.length} title={`Undo · ${MOD} Z`} aria-label="Undo" className="ml-auto grid size-8 place-items-center rounded-lg text-white/70 hover:bg-white/10 disabled:opacity-30"><Icon name="undo" className="size-4" /></button>
+          <button onClick={() => setMarks(m => m.slice(0, -1))} disabled={!marks.length} title={`Undo · ${MOD} Z`} aria-label="Undo" className="ms-auto grid size-8 place-items-center rounded-lg text-white/70 hover:bg-white/10 disabled:opacity-30"><Icon name="undo" className="size-4" /></button>
         </div>
         <div className="relative min-h-0 flex-1 overflow-auto bg-zinc-800 p-4">
           <div className="relative mx-auto w-fit">
@@ -129,7 +129,7 @@ export function ShotEditor({ src, onCancel, onDone }: { src: string; onCancel: (
         </div>
         <div className="flex items-center gap-2 border-t border-white/10 p-2 text-xs text-white/50">
           <span className="px-1">Draw on what should change. {MOD} Z undoes.</span>
-          <button onClick={onCancel} className="ml-auto h-8 rounded-lg px-3 font-medium text-white/80 hover:bg-white/10">Cancel</button>
+          <button onClick={onCancel} className="ms-auto h-8 rounded-lg px-3 font-medium text-white/80 hover:bg-white/10">Cancel</button>
           <button onClick={done} className={`h-8 rounded-lg px-3 font-semibold ${PRIMARY}`}>Attach</button>
         </div>
       </div>

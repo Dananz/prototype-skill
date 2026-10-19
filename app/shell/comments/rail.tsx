@@ -34,7 +34,7 @@ export function PhoneSheet() {
           <Drawer.Popup className={POPUP}>
             <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700" />
             <Drawer.Content className="flex min-h-0 flex-1 flex-col px-3">
-              <div className="flex items-center gap-2 pb-1 pl-1 pt-1">
+              <div className="flex items-center gap-2 pb-1 ps-1 pt-1">
                 <Drawer.Title className="text-[17px] font-semibold">Comments</Drawer.Title>
                 <Drawer.Close aria-label="Close" className="ms-auto grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10"><Icon name="x" /></Drawer.Close>
               </div>

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // proto: one live prototype app per agent session, served locally or on the tailnet.
 //
-//   proto up [--name "Session name"] [--stack react|vue]   create or restart, print the URL; an existing
+//   proto up [--name "Session name"] [--lang en|he] [--stack react|vue]   create or restart, print the URL; an existing
 //             session's copy of the app (shell, config, packages) is brought up to date first
 //   proto add <slug> --title "…" --variants "A:Name,B:Name" [--ask "…"] [--kind phone] [--screen 402x874]
 //             [--from <slug>/<letter>[,<slug>/<letter>…]]   built from those variants: nested under the first
@@ -68,6 +68,14 @@ import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, isCurrent } from '../app/assignment.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
+// The languages the page speaks (app/shell/i18n.ts). --lang sets the session's: the language the
+// conversation with the user is in.
+const LANGS = ['en', 'he']
+const langFlag = () => {
+  if (flags.lang === undefined) return null
+  if (!LANGS.includes(flags.lang)) die(`--lang must be one of ${LANGS.join(', ')}`)
+  return flags.lang
+}
 const APP = join(SKILL, 'app')
 const INDEX = join(homedir(), '.prototypes', 'sessions.json')
 const IDLE_HOURS = 6
@@ -311,7 +319,7 @@ function scaffold(dir, project) {
   })
   const id = sessionId()
   writeJson(sessionFile(dir), {
-    id, agent: detectedAgent() ?? 'agent', name: flags.name || basename(project), project, path: tilde(project), stack,
+    id, agent: detectedAgent() ?? 'agent', name: flags.name || basename(project), lang: langFlag() ?? 'en', project, path: tilde(project), stack,
     createdAt: new Date().toISOString(), port: null, tailnetPort: null, pid: null,
     url: null, localUrl: null, keep: false, idleHours: IDLE_HOURS, deleteDays: DELETE_DAYS,
   })
@@ -405,6 +413,7 @@ async function up() {
   beat(dir)
   let s = readSession(dir)
   if (flags.name && flags.name !== s.name) s = patchSession(dir, { name: flags.name })
+  if (langFlag() && langFlag() !== (s.lang ?? 'en')) s = patchSession(dir, { lang: langFlag() })
   if (!existsSync(join(dir, 'node_modules', 'vite'))) install(dir)
 
   if (!await running(s)) {

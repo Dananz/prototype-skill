@@ -27,7 +27,7 @@ const GRID = h('svg', { className: 'size-3.5 shrink-0', viewBox: '0 0 24 24', fi
 const X = h('svg', { className: 'size-4 shrink-0', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'M6 6l12 12M18 6 6 18' }))
 const DOT = h('span', { className: 'relative inline-flex size-1.5' }, h('span', { className: 'absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60' }), h('span', { className: 'relative inline-flex size-full rounded-full bg-emerald-500' }))
 
-const ROW = 'flex h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-[13px] outline-none focus-visible:bg-zinc-900/[.06] dark:focus-visible:bg-white/10'
+const ROW = 'flex h-11 w-full items-center gap-3 rounded-xl px-3 text-start text-[13px] outline-none focus-visible:bg-zinc-900/[.06] dark:focus-visible:bg-white/10'
 
 function Sheet(p: SheetProps) {
   const row = (r: SheetRow): ReactNode => h('button', {
@@ -49,7 +49,7 @@ function Sheet(p: SheetProps) {
         h(Drawer.Popup, { className: '-mb-[3rem] w-full max-h-[calc(75vh+3rem)] overflow-y-auto overscroll-contain rounded-t-3xl bg-white pb-[calc(0.75rem+env(safe-area-inset-bottom,0px)+3rem)] pt-2 text-[13px] text-zinc-900 shadow-2xl shadow-black/20 outline-none touch-auto [transform:translateY(var(--drawer-swipe-movement-y))] transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:select-none data-ending-style:[transform:translateY(calc(100%-3rem+2px))] data-starting-style:[transform:translateY(calc(100%-3rem+2px))] data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] dark:bg-zinc-900 dark:text-zinc-100' },
           h('div', { className: 'mx-auto mb-1 h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700' }),
           h(Drawer.Content, { className: 'px-2' },
-            h('div', { className: 'flex items-center justify-between pb-1 pl-3' },
+            h('div', { className: 'flex items-center justify-between pb-1 ps-3' },
               h(Drawer.Title, { dir: 'auto', className: 'min-w-0 truncate text-[15px] font-semibold' }, p.title),
               h(Drawer.Close, { 'aria-label': 'Close', className: 'grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
             p.decide ? h('div', { className: 'mb-2 border-b border-black/[.06] pb-3 pt-1 dark:border-white/10' }, p.decide) : null,
@@ -82,7 +82,7 @@ function MenuSheet(p: MenuSheetProps & { container: HTMLElement }) {
         h(Drawer.Popup, { className: '-mb-[3rem] w-full max-h-[calc(80vh+3rem)] overflow-y-auto overscroll-contain rounded-t-3xl bg-white pb-[calc(0.5rem+env(safe-area-inset-bottom,0px)+3rem)] pt-2 text-[13px] text-zinc-900 shadow-2xl shadow-black/20 outline-none touch-auto [transform:translateY(var(--drawer-swipe-movement-y))] transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:select-none data-ending-style:[transform:translateY(calc(100%-3rem+2px))] data-starting-style:[transform:translateY(calc(100%-3rem+2px))] data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] dark:bg-zinc-900 dark:text-zinc-100' },
           h('div', { className: 'mx-auto mb-1 h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700' }),
           h(Drawer.Content, null,
-            h('div', { className: 'flex items-center justify-between pb-1 pl-5 pr-2' },
+            h('div', { className: 'flex items-center justify-between pb-1 ps-5 pe-2' },
               h(Drawer.Title, { dir: 'auto', className: 'min-w-0 truncate text-[15px] font-semibold' }, p.title),
               h(Drawer.Close, { 'aria-label': 'Close', className: 'grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
             h('div', { ref: setContent, dangerouslySetInnerHTML: { __html: p.html } }))))))
@@ -125,7 +125,7 @@ function TrySheet(p: TrySheetProps & { container: HTMLElement }) {
         h(Drawer.Popup, { ref: popup, initialFocus: popup, className: '-mb-[3rem] flex w-full max-h-[calc(82vh+3rem)] flex-col overflow-hidden rounded-t-3xl bg-white pb-[calc(var(--pill-h,0px)+0.5rem+3rem)] pt-2 text-[13px] text-zinc-900 shadow-2xl shadow-black/20 outline-none touch-auto [transform:translateY(var(--drawer-swipe-movement-y))] transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:select-none data-ending-style:[transform:translateY(calc(100%-3rem+2px))] data-starting-style:[transform:translateY(calc(100%-3rem+2px))] data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] dark:bg-zinc-900 dark:text-zinc-100' },
           h('div', { className: 'mx-auto mb-1 h-1 w-10 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-700' }),
           h(Drawer.Content, { ref: box, className: 'flex min-h-0 flex-1 flex-col px-3' },
-            h('div', { className: 'flex shrink-0 items-center gap-2 pb-1 pl-1 pt-1' },
+            h('div', { className: 'flex shrink-0 items-center gap-2 pb-1 ps-1 pt-1' },
               h(Drawer.Title, { className: 'flex min-w-0 items-center gap-2 text-[17px] font-semibold' }, KEY, 'Try it',
                 p.count ? h('span', { className: 'text-[15px] font-normal tabular-nums text-zinc-400' }, String(p.count)) : null),
               h('span', { className: 'ms-auto' }),

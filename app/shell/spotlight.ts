@@ -117,7 +117,7 @@ class Glide {
   }
 }
 
-const pillCls = 'absolute flex h-6 items-center gap-1 whitespace-nowrap rounded-full bg-amber-400 pl-2 pr-2.5 text-[11.5px] font-semibold text-zinc-950 shadow-lg shadow-black/30'
+const pillCls = 'absolute flex h-6 items-center gap-1 whitespace-nowrap rounded-full bg-amber-400 ps-2 pe-2.5 text-[11.5px] font-semibold text-zinc-950 shadow-lg shadow-black/30'
 const rise = (delay: number) => still() ? '' : `animation:spot-rise 280ms ${EASE} ${delay}ms both;`
 
 export function createSpotlight(layer: HTMLElement) {
@@ -157,9 +157,9 @@ export function createSpotlight(layer: HTMLElement) {
         ${Array.from({ length: holes }, (_, i) => `<rect data-ring rx="10" fill="none" stroke="${AMBER}" stroke-width="1.5" ${hasTo && i === 1 ? 'stroke-dasharray="5 4"' : ''} style="${fade(60 + (hasTo ? i * 260 : i * 50))}"/>`).join('')}
         ${hasTo ? `<g fill="none" stroke="${AMBER}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path data-arc stroke-dasharray="6 5" mask="url(#spot-draw-${n})"/><polyline data-head style="${still() ? '' : `animation:spot-fade 160ms ${EASE} 560ms both`}"/></g>` : ''}
       </svg>
-      ${s.at && label ? `<div data-pill="a" class="${pillCls}" style="${rise(120)}">${step ? `<span class="-ml-0.5 grid size-4 place-items-center rounded-full bg-zinc-950 text-[10px] tabular-nums text-amber-300">${s.step! + 1}</span>` : ''}${ai ? icon(ai) : ''}${esc(label)}</div>` : ''}
+      ${s.at && label ? `<div data-pill="a" class="${pillCls}" style="${rise(120)}">${step ? `<span class="-ms-0.5 grid size-4 place-items-center rounded-full bg-zinc-950 text-[10px] tabular-nums text-amber-300">${s.step! + 1}</span>` : ''}${ai ? icon(ai) : ''}${esc(label)}</div>` : ''}
       ${hasTo && b ? `<div data-pill="b" class="${pillCls}" style="${rise(520)}">${icon(bi)}${b}</div>` : ''}
-      ${t.key ? `<div data-keys class="absolute flex -translate-x-1/2 items-center gap-1.5 rounded-xl bg-zinc-950/90 py-2 pl-3 pr-2 text-[12.5px] font-medium text-white shadow-xl shadow-black/40 ring-1 ring-amber-400/70" style="${rise(s.at ? 300 : 80)}">${icon('key', 15, 'text-amber-300')}Press${t.key.split(' ').map(k => `<kbd class="grid h-7 min-w-7 place-items-center rounded-md bg-amber-400 px-1.5 font-sans text-[13px] font-semibold text-zinc-950 shadow-[inset_0_-2px_0_rgb(0_0_0/.18)]">${esc(k)}</kbd>`).join('')}</div>` : ''}`
+      ${t.key ? `<div data-keys class="absolute flex -translate-x-1/2 items-center gap-1.5 rounded-xl bg-zinc-950/90 py-2 ps-3 pe-2 text-[12.5px] font-medium text-white shadow-xl shadow-black/40 ring-1 ring-amber-400/70" style="${rise(s.at ? 300 : 80)}">${icon('key', 15, 'text-amber-300')}Press${t.key.split(' ').map(k => `<kbd class="grid h-7 min-w-7 place-items-center rounded-md bg-amber-400 px-1.5 font-sans text-[13px] font-semibold text-zinc-950 shadow-[inset_0_-2px_0_rgb(0_0_0/.18)]">${esc(k)}</kbd>`).join('')}</div>` : ''}`
   }
 
   function frame(now: number) {

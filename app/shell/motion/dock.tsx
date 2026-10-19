@@ -286,7 +286,7 @@ function Curves({ ctl, w, top, base }: { ctl: Ctl; w: number; top: number; base:
   const hx = Math.round(X(ctl.p.t)) + 0.5
   const near = (pts: [number, number][], t: number) => { let best = pts[0]; for (const q of pts) if (Math.abs(q[0] - t) < Math.abs(best[0] - t)) best = q; return best[1] }
   return (
-    <svg width={w} height={base + 2} className="pointer-events-none absolute left-0 top-0 overflow-visible" aria-hidden="true">
+    <svg width={w} height={base + 2} className="pointer-events-none absolute start-0 top-0 overflow-visible" aria-hidden="true">
       {ctl.points.map(({ item: c }) => c.time!.to !== undefined
         ? <rect key={c.id} x={X(c.time!.at)} y={top - 8} width={Math.max(2, X(c.time!.to) - X(c.time!.at))} height={base - top + 8} rx={4} style={{ fill: 'var(--proto-primary)' }} fillOpacity={ctl.open?.item.id === c.id ? 0.14 : 0.06} />
         : <line key={c.id} x1={Math.round(X(c.time!.at)) + 0.5} x2={Math.round(X(c.time!.at)) + 0.5} y1={top - 8} y2={base} strokeDasharray="2 3" style={{ stroke: 'var(--proto-primary)' }} strokeOpacity={ctl.open?.item.id === c.id ? 0.9 : 0.45} />)}

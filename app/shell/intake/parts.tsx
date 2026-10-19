@@ -35,7 +35,7 @@ function Demo({ demo }: { demo: NonNullable<IntakeOption['demo']> }) {
     <div ref={ref} className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-black/10 bg-zinc-50 dark:border-white/10">
       {demo.image
         ? <img src={`/${demo.image}`} alt="" className="size-full object-cover" />
-        : <div className="absolute left-0 top-0 h-[120px] w-[160px] origin-top-left overflow-hidden" style={{ transform: `scale(${k})` }} dangerouslySetInnerHTML={{ __html: demo.html ?? '' }} />}
+        : <div className="absolute start-0 top-0 h-[120px] w-[160px] origin-top-left overflow-hidden" style={{ transform: `scale(${k})` }} dangerouslySetInnerHTML={{ __html: demo.html ?? '' }} />}
     </div>
   )
 }

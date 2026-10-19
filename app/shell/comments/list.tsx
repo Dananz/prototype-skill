@@ -145,7 +145,7 @@ function Answer({ r }: { r: Row }) {
       {error && <span role="alert" className="block px-1.5 pb-1 text-[11px] text-rose-600 dark:text-rose-400">{error}</span>}
       <span className="flex items-center justify-end gap-1">
         <button onClick={cancel} className="h-7 rounded-lg px-2 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Cancel</button>
-        <button data-shoot="comment-answer-send" onClick={() => void send()} disabled={!text.trim() || busy} title={`Send to ${agent} · ${MOD} Enter`} className={`inline-flex h-7 items-center gap-1 rounded-lg pl-2 pr-2.5 text-[11px] font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name="send" className="size-3" />{busy ? 'Sending…' : 'Send'}</button>
+        <button data-shoot="comment-answer-send" onClick={() => void send()} disabled={!text.trim() || busy} title={`Send to ${agent} · ${MOD} Enter`} className={`inline-flex h-7 items-center gap-1 rounded-lg ps-2 pe-2.5 text-[11px] font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name="send" className="size-3" />{busy ? 'Sending…' : 'Send'}</button>
       </span>
     </span>
   )
