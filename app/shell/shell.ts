@@ -187,6 +187,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     open: null as string | null,
     /** The variant whose options are open (from its row in the sidebar), and where. */
     vmenu: null as { proto: string; variant: string; x: number; y: number; hint?: boolean; el?: HTMLElement; art?: boolean } | null,
+    /** The popover a variant's options opened from (the switcher), kept open under them. */
+    under: null as string | null,
     /** The right-click menu of what is not a variant: where, and on what. */
     ctx: null as { x: number; y: number; on: CtxOn } | null,
     archived: false,
@@ -227,6 +229,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
 
   // ---------- data helpers ----------
+  /** Whether a popover shows: open, or kept open under a variant's options. */
+  const opened = (k: string) => st.open === k || (st.open === 'vmenu' && st.under === k)
   const active = () => protos.filter(p => !p.archived)
   const archived = () => protos.filter(p => p.archived)
   const byId = (id: string) => protos.find(p => p.id === id)
@@ -893,7 +897,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     stay = false
     const moved = JSON.stringify(p) !== JSON.stringify(st.place) || !layer
     st.place = p
-    if (!keepOpen) { st.open = null; st.menu = ''; st.drawer = false }
+    if (!keepOpen) { st.open = null; st.under = null; st.menu = ''; st.drawer = false }
     keepOpen = false
     st.pairAt = null
     st.drill = null
@@ -1111,12 +1115,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         // Then the others it combines, each after a plus.
         + alsoOf(p!).map(s => `${ic('plus', 'size-3 shrink-0 text-zinc-400')}<span class="min-w-0 max-w-[12rem] shrink truncate">${srcName(p!, s)}</span>`).join('')
     const switcher = `<div class="relative flex min-w-0">
-        <button data-act="open:switch" data-shoot="switcher" aria-haspopup="dialog" aria-expanded="${st.open === 'switch'}" title="${t('Every prototype and variant')}" class="flex h-10 min-w-0 items-center gap-2 rounded-lg px-2.5 text-start hover:bg-zinc-900/5 dark:hover:bg-white/10 ${st.open === 'switch' ? ON : ''}">
+        <button data-act="open:switch" data-shoot="switcher" aria-haspopup="dialog" aria-expanded="${opened('switch')}" title="${t('Every prototype and variant')}" class="flex h-10 min-w-0 items-center gap-2 rounded-lg px-2.5 text-start hover:bg-zinc-900/5 dark:hover:bg-white/10 ${opened('switch') ? ON : ''}">
           <span class="min-w-0 leading-tight">
             <span class="flex min-w-0 items-center gap-1.5 font-semibold">${view === 'session' ? `<span dir="auto" class="truncate">${esc(session.name)}</span>` : `<span dir="auto" class="truncate">${esc(p!.title)}</span><span class="shrink-0 font-normal text-zinc-400">·</span>${v ? `<b class="shrink-0">${variantLabel(p!, v.id)}</b><span dir="auto" class="min-w-0 truncate">${esc(v.name)}</span>` : `<span class="shrink-0 font-normal text-zinc-500">${t('All variants')}</span>`}`}${p && pickOf(p) && v?.id === pickOf(p) ? ic('check', `size-3.5 shrink-0 ${PICK}`) : ''}</span>
             <span class="flex min-w-0 items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">${sub}${where ? `<span class="shrink-0 text-zinc-300 dark:text-zinc-600">·</span><span dir="auto" class="min-w-0 truncate font-medium text-sky-700 dark:text-sky-300">${whereHtml}</span>` : ''}</span>
-          </span>${ic('chev', `size-3.5 shrink-0 text-zinc-400 transition-transform ${st.open === 'switch' ? 'rotate-180' : ''}`)}</button>
-        ${pop(st.open === 'switch', miller(), 'start-0 top-11')}</div>`
+          </span>${ic('chev', `size-3.5 shrink-0 text-zinc-400 transition-transform ${opened('switch') ? 'rotate-180' : ''}`)}</button>
+        ${pop(opened('switch'), miller(), 'start-0 top-11')}</div>`
     const stepper = v && vs.length > 1 ? `<button data-act="step:-1" aria-label="${t('Previous variant')}" title="${t('Previous variant · ←')}" class="${IB} shrink-0">${ic('left')}</button><span class="w-9 shrink-0 text-center text-xs tabular-nums text-zinc-500">${at + 1}<span class="text-zinc-400 dark:text-zinc-600">/${vs.length}</span></span><button data-act="step:1" aria-label="${t('Next variant')}" title="${t('Next variant · →')}" class="${IB} shrink-0">${ic('right')}</button>` : ''
     keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
       ${switcher}
@@ -1927,6 +1931,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (comments.copy.escape()) return
       if (comments.escape()) return
       if (card && card.phase !== 'exit') return closeCard()
+      // A variant's options opened from the switcher step back to it, still open.
+      if (st.open === 'vmenu' && st.under) { const m = st.vmenu; st.open = st.under; st.under = null; render(); if (m) bar.querySelector<HTMLElement>(`[data-pop] [data-act="vm:${m.proto}:${m.variant}"]`)?.focus(); return }
       // A menu closed from inside gives the focus back to its button.
       if (st.open) { const was = st.open, inside = !!t.closest?.('[data-pop]'); st.open = null; render(); if (inside) bar.querySelector<HTMLElement>(`[data-act="open:${was}"]`)?.focus(); return }
       if (st.drawer) { st.drawer = false; return render() }
@@ -2356,6 +2362,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // its Try it list and copy lines read, so another's extras always offer to add them.
   function openVmenu(proto: string, variant: string, x: number, y: number, more: { hint?: boolean; el?: HTMLElement; art?: boolean } = {}) {
     st.vmenu = { proto, variant, x, y, ...more }
+    st.under = st.open === 'switch' ? 'switch' : null
     st.open = 'vmenu'
     refreshStatus()
     render()
@@ -2367,11 +2374,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     return { proto: q.id, variant: v.id, label: variantLabel(q, v.id), name: v.name, picked: pickOf(q) === v.id, hints: same ? cur.hints : false, copy: same ? cur.copy : false }
   }
   const drawVmenu = comments.mountDecide(root.querySelector<HTMLElement>('[data-vmenu]')!)
+  // A press outside both the options and the switcher under them closes the two together.
+  document.addEventListener('pointerdown', e => {
+    const at = e.target as Element
+    if (st.open === 'vmenu' && st.under && !at.closest?.('[data-pop], [role="menu"], [data-vmenu]')) st.under = null
+  }, true)
   const paintVmenu = () => drawVmenu({
     open: st.open === 'vmenu', subject: vmenuSubject(), anchor: () => null,
     at: st.vmenu ? { x: st.vmenu.x, y: st.vmenu.y } : undefined,
-    onClose: () => { if (st.open === 'vmenu') { st.open = null; render() } },
-    onComment: () => { const m = st.vmenu; if (m) commentWhole(m.proto, m.variant) },
+    // Closing the options goes back to the switcher they opened from, still open.
+    onClose: () => { if (st.open === 'vmenu') { st.open = st.under; st.under = null; render() } },
+    onComment: () => { const m = st.vmenu; st.under = null; if (m) commentWhole(m.proto, m.variant) },
     hint: !!st.vmenu?.hint,
     commentLabel: st.vmenu?.art ? t('Comment on the whole variant') : undefined,
     ...vmenuRows(),
