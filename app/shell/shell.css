@@ -4,11 +4,17 @@
 @source "../shell";
 @source "../src";
 @import "../src/theme.css";
+@import "@fontsource-variable/google-sans";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 html, body, #app { height: 100%; }
 body { margin: 0; }
+
+/* The page's own words are Google Sans (Latin and Hebrew alike). A design keeps the font it would
+   have without the page around it: Tailwind's default, or its own --font-sans from theme.css. */
+body { font-family: "Google Sans Variable", ui-sans-serif, system-ui, sans-serif; }
+[data-mount] { font-family: var(--default-font-family, ui-sans-serif, system-ui, sans-serif); }
 
 /* Keep the switcher's description scrollbar visible on systems with overlay scrollbars. */
 [data-switch-description]::-webkit-scrollbar { width: 6px; }
