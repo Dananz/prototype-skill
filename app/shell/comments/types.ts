@@ -26,7 +26,10 @@ export type Use = { component: string; at: string; key?: string; props?: string 
  * the `data-opened-by` of each such part around it, outermost first, each the selector of the
  * control that opens that part. */
 /** label stays in saved data for compatibility; the UI uses numbered references, not element names. */
-export type Target = { label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; stage?: { w: number; h: number }; point?: { x: number; y: number }; view?: ViewSize; uses?: Use[]; within?: string; route?: string[]; whole?: true }
+export type VariantRef = { proto: string; variant: string; label: string; name: string }
+export type CommentRef = { id: string; proto: string; variant: string; n: number; quote: string }
+export type Source = { proto: string; variant: string; state?: string }
+export type Target = { source?: Source; commentRef?: CommentRef; variantRef?: VariantRef; label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; stage?: { w: number; h: number }; point?: { x: number; y: number }; view?: ViewSize; uses?: Use[]; within?: string; route?: string[]; whole?: true }
 
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
 export type Seg = string | { tag: number }
@@ -94,7 +97,7 @@ export type Mode =
 
 /** Where the page is, when it is on a single variant that can be commented on; view: the device
  *  view's layout while one is on, where comments are written and their pins shown. */
-export type Place = { proto: string; variant: string; state?: string; phone: boolean; title: string; view?: ViewSize }
+export type Place = { proto: string; variant: string; state?: string; phone: boolean; title: string; compare?: true; view?: ViewSize }
 
 export type State = {
   items: Item[]

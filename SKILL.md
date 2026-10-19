@@ -45,6 +45,15 @@ pinch, Space-drag or middle-button drag (from anywhere, at any zoom; the page st
 left, and Fit centres it again), comment, try things, pick copy and scrub motion there. Nothing to build for it
 beyond a web variant that lays out well at each width.
 
+Compare uses the same Comments panel, numbered pins, screenshots, drafts, sending and agent
+replies as a single variant. Click Comment (or press C), then choose something in either pane.
+While writing on one variant, click an element or existing comment in the other pane to reference
+it. The variants do not need matching elements. Type `@` in the composer to find a variant by
+letter or name, then select it with a click or the arrow keys and Enter/Tab. “Pick an element
+instead” keeps precise visual tagging available. References retain the source variant and route
+in the agent inbox. Keep this flow in the shell; generated designs do not need their own comment
+store, sidebar or agent-reply simulation.
+
 ## Agent setup (Claude Code, Codex and other harnesses)
 
 Resolve **the directory containing this loaded `SKILL.md`** to an absolute path before

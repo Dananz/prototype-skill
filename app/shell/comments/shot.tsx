@@ -2,13 +2,14 @@
 // (Pinpoint's draw modal, cut to the tools that matter: box, arrow, pen, text, numbers).
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { domToCanvas } from 'modern-screenshot'
-import { find, zoomOf } from './dom'
+import { find, zoomOf, targetMount } from './dom'
 import { Icon, MOD, PRIMARY } from './ui'
 import type { Target } from './types'
 import { listen } from '../quiet'
 
 /** The variant, drawn as it is and cropped to a margin around `target`, as a PNG data URL. Null when it can't be found. */
 export async function capture(mount: HTMLElement | null, target: Target, dark: boolean) {
+  mount = targetMount(mount, target)
   const root = (mount?.firstElementChild as HTMLElement | null) ?? mount, el = find(mount, target)
   if (!mount || !root || !el) return null
   const scale = 2, z = zoomOf(mount)
