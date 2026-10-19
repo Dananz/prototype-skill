@@ -16,6 +16,13 @@ body { margin: 0; }
 body { font-family: "Google Sans Variable", ui-sans-serif, system-ui, sans-serif; }
 [data-mount] { font-family: var(--default-font-family, ui-sans-serif, system-ui, sans-serif); }
 
+/* The chrome's quiet grays, tuned so every muted line reads at 4.5:1 or more on the page's own
+   backgrounds (white, zinc-50, zinc-100 light; zinc-950, 900, 800 dark). Tailwind's zinc-400 and
+   500 sit near 2.6:1 and 3.7:1 there. A design keeps Tailwind's values. */
+:root { --color-zinc-400: #6b6b75; --color-zinc-500: #5a5a64; }
+:root.dark { --color-zinc-400: oklch(70.5% 0.015 286.067); --color-zinc-500: #8e8e98; }
+[data-mount] { --color-zinc-400: oklch(70.5% 0.015 286.067); --color-zinc-500: oklch(55.2% 0.016 285.938); }
+
 /* User text (a Hebrew title in the English page, an English one in the Hebrew page) runs in its own
    direction (dir="auto") but lines up with the page around it, not with its own start. Fields the
    user types in keep their own side; so does everything in a design. */
