@@ -2,7 +2,7 @@
 // the guard that keeps every press from reaching the design while commenting, and the live boxes
 // pins and outlines are drawn from.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { climb, describe, find, seen, spot, spotAt, openerOf, passing, shows, routeOf, seeThrough } from './dom'
+import { climb, describe, find, frameOf, inFrame, region, regionAt, seen, spot, spotAt, openerOf, passing, shows, routeOf, seeThrough } from './dom'
 import { Icon } from './ui'
 import type { Box, Target } from './types'
 import { useCtx } from './ctx'
@@ -13,6 +13,9 @@ export const GLIDE_MS = 110
 export const FADE_MS = 90
 /** How long a finger holds still on the design to pin a comment to that spot. */
 export const HOLD_MS = 500
+/** How far a held mouse moves before it is dragging out a region, and the least a region is on each side. */
+const DRAG_PX = 6
+export const MIN_REGION = 8
 
 /**
  * One box that follows whatever it is told to point at: it glides between targets with a long
@@ -48,7 +51,7 @@ export function useBoxes(list: { id: string; t: Target }[]) {
   const { host, store } = useCtx()
   const [boxes, setBoxes] = useState<Record<string, Box>>({})
   // A route a comment learns (below) is part of the key, so its pin can then go on the opener.
-  const key = list.map(x => x.id + JSON.stringify(x.t.source) + x.t.selector + (x.t.route?.join('>') ?? '')).join('|')
+  const key = list.map(x => x.id + JSON.stringify(x.t.source) + x.t.selector + (x.t.route?.join('>') ?? '') + (x.t.region ? JSON.stringify(x.t.region) : '')).join('|')
   useEffect(() => {
     if (!list.length) { setBoxes({}); return }
     let raf = 0, last = ''
@@ -57,7 +60,7 @@ export function useBoxes(list: { id: string; t: Target }[]) {
       const mount = host.mount()
       const next: Record<string, Box> = {}
       if (mount) for (const x of list) {
-        const el = find(mount, x.t), b = shows(el) && (x.t.point ? spotAt(x.t, el, mount, host.layer) : seen(el, mount, host.layer))
+        const el = find(mount, x.t), b = shows(el) && (x.t.point ? spotAt(x.t, el, mount, host.layer) : x.t.region ? regionAt(x.t, el, mount, host.layer) : seen(el, mount, host.layer))
         // A comment kept without a way there (written before designs marked what opens what, or
         // before the design did) learns it the first time its element is on the page.
         if (el && !x.t.route && x.id !== '__new' && !learned.has(x.id)) {
@@ -90,15 +93,17 @@ export type Inspect = { box: Box; touch: boolean; parent: boolean } | null
  * While commenting, the design is only looked at, never used: no press, tap or key reaches it.
  * A mouse inspects by hovering and acts on click. A finger inspects with the first tap and acts
  * with a second tap on the same element (a drag still scrolls), or holds still for HOLD_MS to act
- * on that exact spot, for when no element fits. `on` is picking (the act starts a comment, or a
+ * on that exact spot, for when no element fits. A mouse held down and dragged across the design
+ * draws a region instead, and acts on that box. `on` is picking (the act starts a comment, or a
  * tag); `guard` is a comment being written: then nothing is inspected or picked, so the comment
  * stays on what it was started on, and a press on an element only calls `onGuard`. `hold` is a
- * finger holding, from the layer's corner.
+ * finger holding, from the layer's corner; `drag` the region being dragged out, from there too.
  */
 export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Target) => void; onCancel: () => void; onGuard: (el?: HTMLElement) => void }) {
   const { host } = useCtx()
   const [hover, setHover] = useState<Inspect>(null)
   const [hold, setHold] = useState<{ x: number; y: number } | null>(null)
+  const [drag, setDrag] = useState<Box | null>(null)
   const hoverRef = useRef<Inspect>(null)
   hoverRef.current = hover
   const cb = useRef(handlers)
@@ -115,6 +120,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     cur.current = null
     setHover(null)
     setHold(null)
+    setDrag(null)
     raised.current = false
     if (!on && !guard) return
     // An SVG part (an icon, a chart) stands for the nearest HTML element around it. Asked of the
@@ -172,8 +178,11 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     // sweeping across the design doesn't make it flicker through everything on the way.
     let timer = 0, pending: HTMLElement | null | undefined
     const settle = () => { clearTimeout(timer); pending = undefined }
+    // A mouse held down on the design: where, and on what. Once it has moved DRAG_PX it is
+    // dragging out a region, and the outline stops following it.
+    let held: { x: number; y: number; el: HTMLElement; dragging: boolean } | null = null
     const move = (e: PointerEvent) => {
-      if (!on || e.pointerType !== 'mouse') return
+      if (!on || e.pointerType !== 'mouse' || held?.dragging) return
       if ((e.target as Element).closest?.('[data-inspect-ui]')) return settle()
       const el = part(targetOf(e))
       if (el === cur.current) return settle()
@@ -249,6 +258,38 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       if (el && !on) cb.current.onGuard(el)
       else if (el) act.current(raised.current && cur.current?.contains(el) ? cur.current : el)
     }
+    const dragStart = (e: PointerEvent) => {
+      if (!on || e.pointerType !== 'mouse' || e.button !== 0 || passing.on) return
+      const el = part(targetOf(e))
+      // Space held over a device view drags the view (gestures.ts turns its frame's pointer off meanwhile).
+      if (el && frameOf(el)?.style.pointerEvents === 'none') return
+      held = el ? { x: e.clientX, y: e.clientY, el, dragging: false } : null
+    }
+    const dragMove = (e: PointerEvent) => {
+      if (!held) return
+      if (!held.dragging) {
+        if (Math.hypot(e.clientX - held.x, e.clientY - held.y) < DRAG_PX) return
+        held.dragging = true
+        settle()
+        show(null, false)
+      }
+      const L = host.layer.getBoundingClientRect()
+      setDrag({ x: Math.min(held.x, e.clientX) - L.left, y: Math.min(held.y, e.clientY) - L.top, w: Math.abs(e.clientX - held.x), h: Math.abs(e.clientY - held.y) })
+    }
+    const dragEnd = (e: PointerEvent) => {
+      const h = held
+      held = null
+      if (!h?.dragging) return
+      setDrag(null)
+      const mount = host.mount()
+      // A sliver is a slip of the hand: the click it ends in picks the element as always.
+      if (!mount || e.type !== 'pointerup' || Math.abs(e.clientX - h.x) < MIN_REGION || Math.abs(e.clientY - h.y) < MIN_REGION) return
+      // The click this press ends in is not a pick of its own.
+      pinnedAt.current = performance.now()
+      // In a device view the region is measured in the frame's px, as its design is laid out.
+      cb.current.onPick(onView(region(mount, h.el, ...inFrame(h.el, h.x, h.y), ...inFrame(h.el, e.clientX, e.clientY))))
+    }
+    const dragDrop = () => { held = null; setDrag(null) }
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && on) { e.preventDefault(); e.stopPropagation(); cb.current.onCancel() }
       else if (e.key === 'ArrowUp' && cur.current && !(e.target as Element).closest?.('[contenteditable], input, textarea')) { e.preventDefault(); e.stopPropagation(); raise.current() }
@@ -281,6 +322,11 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     // In the capture phase: the design's hover gate (hover.ts) sits on the mount, below the stage.
     stage.addEventListener('pointermove', move, true)
     for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'contextmenu']) listen(document, t, press, true)
+    listen(document, 'pointerdown', dragStart, true)
+    listen(document, 'pointermove', dragMove, true)
+    listen(document, 'pointerup', dragEnd, true)
+    listen(document, 'pointercancel', dragEnd, true)
+    listen(window, 'blur', dragDrop)
     listen(document, 'touchstart', touchStart, opts)
     listen(document, 'touchend', touchEnd, opts)
     listen(document, 'touchmove', touchMove, opts)
@@ -297,6 +343,11 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       cancelAnimationFrame(raf)
       stage.removeEventListener('pointermove', move, true)
       for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'contextmenu']) document.removeEventListener(t, press, true)
+      document.removeEventListener('pointerdown', dragStart, true)
+      document.removeEventListener('pointermove', dragMove, true)
+      document.removeEventListener('pointerup', dragEnd, true)
+      document.removeEventListener('pointercancel', dragEnd, true)
+      window.removeEventListener('blur', dragDrop)
       document.removeEventListener('touchstart', touchStart, opts)
       document.removeEventListener('touchend', touchEnd, opts)
       document.removeEventListener('touchmove', touchMove, opts)
@@ -310,7 +361,13 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
   }, [on, guard, host])
   /** Acts on what a finger inspected, from the outline's own button. */
   const confirm = () => { if (cur.current) act.current(cur.current) }
-  return { hover, hold, confirm, up: () => raise.current() }
+  return { hover, hold, drag, confirm, up: () => raise.current() }
+}
+
+/** The region a held mouse is dragging out over the design. */
+export function Marquee({ box }: { box: Box | null }) {
+  if (!box) return null
+  return <div className="pointer-events-none absolute z-30 rounded-sm border-2 border-proto-primary-ring bg-proto-primary/[.08]" style={{ left: box.x, top: box.y, width: box.w, height: box.h }} />
 }
 
 /** A ring that fills under a holding finger, so a long press shows it is counting. */

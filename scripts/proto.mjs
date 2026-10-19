@@ -1036,7 +1036,7 @@ async function shootPin(dir, s, out) {
     if (!c.view && !b.viewport?.w) console.error(`batch ${b.id} has no page size; shooting at 1440x900`)
     return {
       batch: b.id, n: c.n, route, text: c.text, theme: flags.theme || b.theme || 'light', ...page,
-      target: c.target, point: c.point, ...(c.take ? { take: c.take, at: c.at } : {}),
+      target: c.target, point: c.point, ...(c.region ? { region: c.region } : {}), ...(c.take ? { take: c.take, at: c.at } : {}),
       images: (c.images || []).map(im => ({ file: join(folder, im.file), name: im.name })),
       margin, after, hover: !!flags.hover,
       // The stage the design was in when the comment was made, and the design's saved settings
@@ -1730,9 +1730,11 @@ function printBatch(dir, b) {
     if (c.action) console.log(`   action: ${c.action} (${actionText(dir, c)})`)
     // A comment pinned with a long press is on a spot; its element is only where that spot is.
     if (c.point) console.log(`   at: ${c.point.x},${c.point.y} (a spot, pinned with a long press)`)
+    // One dragged out with the mouse is on that region; its element is only the smallest around it.
+    if (c.region) console.log(`   region: ${c.region.x},${c.region.y} ${c.region.w}x${c.region.h} (dragged out with the mouse; its picture is attached)`)
     // On the motion (the page's motion dock): a moment or a range of its take, and how to see it.
     if (c.take) console.log(`   at: ${spanOf(c)} of the motion (its take is ${secs(c.take)}): see it with proto shoot ${c.route} ${c.to !== undefined ? `--frames 8 --at ${c.at}-${c.to}` : `--at ${c.at}`}`)
-    if (c.target) console.log(`   ${c.point ? 'in' : 'on'}: ${where(c.target)}`)
+    if (c.target) console.log(`   ${c.point || c.region ? 'in' : 'on'}: ${where(c.target)}`)
     if (c.target?.src) printSource(dir, c.target.src)
     if (c.target?.uses) printUses(dir, c.target, c.route)
     // Written in the page's device view: about that layout, which a shot at that size shows.

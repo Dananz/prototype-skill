@@ -707,7 +707,7 @@ shows there as "You picked X".
 ## Comments from the page
 
 The user can leave comments on the design in the page (the Comment button, or C): click an
-element (or, on a phone, hold a finger on a spot), write, tag other elements with `@`, attach a
+element (or drag out a region with the mouse, or, on a phone, hold a finger on a spot), write, tag other elements with `@`, attach a
 screenshot and mark it up (or paste an image with Ctrl/⌘ V, or drop one on the comment), then send
 every draft at once. Commenting never reaches the design, so a menu or popover open in it stays
 open and what is in it can be commented on. Hover-only parts work the same way, with no key: while
@@ -751,11 +751,14 @@ Each comment prints its route (`<slug>/<letter>[/<state>]`), the user's words, t
 it is on (tag, text, `data-shoot` or selector, its box in CSS px from the variant's top left,
 and where it is written: its file from the app's folder, line and component, as
 `src/protos/today/parts.tsx:30 (PriceCard)`; open it there) and any elements it tags (numbered `with @1`, `with @2`, matching the comment), and the absolute path of each image attached to it:
-`(marked up)` is a screenshot of the design, `(pasted by the user)` an image they pasted or
-dropped (a reference, another app, anything). A comment
+`(marked up)` is a screenshot of the design, `(the region, as dragged out)` the picture of a
+dragged-out region, `(pasted by the user)` an image they pasted or dropped (a reference, another
+app, anything). A comment
 pinned to a spot with a long press (on a phone, where no element fit) prints `at:` the spot, in
 the same px, and `in:` the element under it: the change is about that spot, not the whole
-element. The user can delete a comment after sending it: one deleted before you took its batch
+element. One dragged out as a region with the mouse prints `region:` its box, in the same px,
+and `in:` the smallest element around it: the change is about what is in that box.
+The user can delete a comment after sending it: one deleted before you took its batch
 never reaches you, and one deleted after is withdrawn: `proto inbox` leaves it out (the batch
 line counts it, `(1 withdrawn in the page)`) and `proto reply` to it says so. Leave a withdrawn
 comment alone. Under each comment with an element, the source around its line is printed (`>`

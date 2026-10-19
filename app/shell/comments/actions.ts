@@ -3,7 +3,7 @@
 // Send posts every draft as one batch. Whatever is being written when the composer is put away
 // any way but Cancel or Add is held, and comes back with the next comment.
 import type { CommentBatch } from '../shell'
-import { climb, describe, designStorage, find, reveal, openerOf, wholeTarget, targetMount } from './dom'
+import { climb, describe, designStorage, find, inFrame, region, reveal, openerOf, wholeTarget, targetMount } from './dom'
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import { progress, threadOf, type Store } from './store'
@@ -35,13 +35,14 @@ export function createActions(store: Store, host: Host) {
         route: routeOf(i),
         text: plain(i),
         ...(i.target?.point ? { point: i.target.point } : {}),
+        ...(i.target?.region ? { region: i.target.region } : {}),
         target: i.target,
         // Written in a device view: about that layout.
         ...(i.target?.view ? { view: i.target.view } : {}),
         // On the motion: a moment or a range, in ms of the take, and how long the take is.
         ...(i.time ? { at: i.time.at, ...(i.time.to !== undefined ? { to: i.time.to } : {}), take: i.time.take } : {}),
         ...(i.tags.length ? { tags: i.tags } : {}),
-        ...(shotsOf(i).length ? { images: shotsOf(i).map(s => ({ dataUrl: s.src, name: s.pasted ? 'pasted by the user' : 'marked up' })) } : {}),
+        ...(shotsOf(i).length ? { images: shotsOf(i).map(s => ({ dataUrl: s.src, name: s.pasted ? 'pasted by the user' : s.region ? 'the region, as dragged out' : 'marked up' })) } : {}),
       })),
     }
     set({ sending: true, error: '' })
@@ -86,15 +87,29 @@ export function createActions(store: Store, host: Host) {
     /**
      * Moves the new comment being written up to the element around the one it is on, keeping what
      * was typed; `down` steps back to the element it came up from. A saved comment, or one on a
-     * spot, stays where it is.
+     * spot or a region, stays where it is.
      */
     parent() {
       const m = get().mode, mount = host.mount()
-      if (m.kind !== 'compose' || m.id || m.target.point || !mount) return
+      if (m.kind !== 'compose' || m.id || m.target.point || m.target.region || !mount) return
       const el = find(mount, m.target), up = el && climb(mount, el)
       if (!up) return
       const t = describe(mount, up)
       set({ mode: { ...m, target: m.target.view ? { ...t, view: m.target.view } : t, trail: [...(m.trail ?? []), m.target] } })
+    },
+    /**
+     * Moves or resizes the region a new comment is on, to the box (l, t)-(r, b) in this page's px:
+     * it is on the smallest element around the new box, under the box's middle.
+     */
+    reshape(l: number, t: number, r: number, b: number) {
+      const m = get().mode, mount = host.mount()
+      if (m.kind !== 'compose' || m.id || !m.target.region || !mount) return
+      const cx = (l + r) / 2, cy = (t + b) / 2
+      const under = (host.view?.()?.at(cx, cy)?.el ?? document.elementsFromPoint(cx, cy).find(e => e !== mount && mount.contains(e))) as HTMLElement | undefined
+      const el = under && under !== mount && mount.contains(under) ? under : find(mount, m.target)
+      if (!el) return
+      const t2 = region(mount, el, ...inFrame(el, l, t), ...inFrame(el, r, b))
+      set({ mode: { ...m, target: m.target.view ? { ...t2, view: m.target.view } : t2 } })
     },
     down() {
       const m = get().mode
@@ -313,6 +328,7 @@ export function createActions(store: Store, host: Host) {
           route: root.variant ? routeOf(root) : root.proto,
           text: words,
           ...(root.target?.point ? { point: root.target.point } : {}),
+          ...(root.target?.region ? { region: root.target.region } : {}),
           ...(root.target ? { target: root.target } : {}),
           ...(root.target?.view ? { view: root.target.view } : {}),
           ...(root.time ? { at: root.time.at, ...(root.time.to !== undefined ? { to: root.time.to } : {}), take: root.time.take } : {}),

@@ -72,7 +72,7 @@ export type Pinned = { source?: { proto: string; variant: string; state?: string
 /** One send: route is <slug>/<letter>[/<state>]; images are data URLs (png, jpeg, webp). A decision
  *  on a variant (pick, unpick, more, build) is a comment with an action and no target. */
 export type CommentBatch = {
-  comments: { route: string; text: string; action?: Action; note?: string; count?: number; point?: { x: number; y: number }; target?: Pinned; tags?: Pinned[]; images?: { dataUrl: string; name?: string }[]
+  comments: { route: string; text: string; action?: Action; note?: string; count?: number; point?: { x: number; y: number }; region?: { x: number; y: number; w: number; h: number }; target?: Pinned; tags?: Pinned[]; images?: { dataUrl: string; name?: string }[]
     /** On the motion (motion/): a moment of its take in ms, or a range to `to`, and the take's length. */
     at?: number; to?: number; take?: number
     /** Written in a device view (view/): about that layout. */

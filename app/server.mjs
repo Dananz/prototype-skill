@@ -250,12 +250,15 @@ export function inboxStatus() {
 
 const box = r => r && typeof r === 'object' ? { x: Math.round(+r.x || 0), y: Math.round(+r.y || 0), w: Math.round(+r.w || 0), h: Math.round(+r.h || 0) } : undefined
 const clip = (s, n) => typeof s === 'string' ? s.slice(0, n) : undefined
+// A region dragged out on the design: a box in its px with some size to it.
+const regionOf = r => { const b = box(r); return b && b.w >= 1 && b.h >= 1 ? b : undefined }
 const element = t => t && typeof t === 'object' ? {
   selector: clip(t.selector, 500), shoot: clip(t.shoot, 100), src: clip(t.src, 300), component: clip(t.component, 100),
   tag: clip(t.tag, 40), text: clip(t.text, 300), rect: box(t.rect), within: clip(t.within, 100),
   ...(t.stage && Number.isInteger(t.stage.w) && Number.isInteger(t.stage.h) && t.stage.w > 0 && t.stage.h > 0 && t.stage.w <= 10000 && t.stage.h <= 10000 ? { stage: { w: t.stage.w, h: t.stage.h } } : {}),
   ...(t.source && typeof t.source.proto === 'string' && /^[a-z0-9][a-z0-9-]*$/i.test(t.source.proto) && typeof t.source.variant === 'string' && /^[A-Z]+$/.test(t.source.variant) ? { source: { proto: clip(t.source.proto, 100), variant: clip(t.source.variant, 12), ...(typeof t.source.state === 'string' ? { state: clip(t.source.state, 100) } : {}) } } : {}),
   ...(t.whole === true ? { whole: true } : {}),
+  ...(regionOf(t.region) ? { region: regionOf(t.region) } : {}),
   ...(t.commentRef && typeof t.commentRef === 'object' && typeof t.commentRef.id === 'string' && typeof t.commentRef.proto === 'string' && typeof t.commentRef.variant === 'string' && Number.isInteger(t.commentRef.n) && t.commentRef.n > 0 ? { commentRef: { id: clip(t.commentRef.id, 160), proto: clip(t.commentRef.proto, 100), variant: clip(t.commentRef.variant, 12), n: t.commentRef.n, quote: clip(t.commentRef.quote, 2000) } } : {}),
   ...(t.variantRef && typeof t.variantRef === 'object' && typeof t.variantRef.proto === 'string' && typeof t.variantRef.variant === 'string' && typeof t.variantRef.label === 'string' && typeof t.variantRef.name === 'string' && /^[a-z0-9][a-z0-9-]*$/i.test(t.variantRef.proto) && /^[A-Z]+$/.test(t.variantRef.variant) ? { variantRef: { proto: clip(t.variantRef.proto, 100), variant: clip(t.variantRef.variant, 12), label: clip(t.variantRef.label, 80), name: clip(t.variantRef.name, 160) } } : {}),
   ...(Array.isArray(t.route) && t.route.length ? { route: t.route.slice(0, 6).filter(r => typeof r === 'string').map(r => clip(r, 200)) } : {}),
@@ -326,7 +329,7 @@ function receive(data) {
     if (typeof c.route !== 'string' || !/^[a-z0-9][a-z0-9-]*(\/[A-Z]{1,2}(\/[\w-]+)?)?$/.test(c.route)) throw bad(i, ': route is <slug>[/<letter>[/<state>]]')
     const time = timeOf(c)
     if (time === false) throw bad(i, `: a moment of the motion is at (and to, for a range) in ms inside the take, and take, its length in ms (up to ${MAX_TAKE})`)
-    if (time && (!/^[^/]+\/[A-Z]{1,2}(\/|$)/.test(c.route) || c.action !== undefined || c.point !== undefined)) throw bad(i, ': a comment on the motion is on a variant (<slug>/<letter>), with no action and no point')
+    if (time && (!/^[^/]+\/[A-Z]{1,2}(\/|$)/.test(c.route) || c.action !== undefined || c.point !== undefined || c.region !== undefined)) throw bad(i, ': a comment on the motion is on a variant (<slug>/<letter>), with no action, point or region')
     // A follow-up answers the reply to a comment sent before: which one, so `proto inbox` can say
     // what was said before it. Only its address is kept; the thread itself is in the batches.
     if (c.re !== undefined && (typeof c.re?.batch !== 'string' || !/^[\w-]{1,60}$/.test(c.re.batch) || !Number.isInteger(c.re.n) || c.re.n < 1 || c.action !== undefined)) throw bad(i, ': re is { batch, n }, the sent comment whose reply this answers, on a comment with no action')
@@ -338,7 +341,7 @@ function receive(data) {
       if (rest.length) throw bad(i, ': more-variants is on a prototype (<slug>), not a variant')
       if (!existsSync(join(dir, 'src', 'protos', slug))) throw bad(i, `: there is no prototype ${slug}`)
       if (!Number.isInteger(c.count) || c.count < 1 || c.count > 9) throw bad(i, ': count is a whole number from 1 to 9')
-      if (c.point !== undefined || c.target !== undefined || time) throw bad(i, ': more-variants has no element, spot or moment')
+      if (c.point !== undefined || c.region !== undefined || c.target !== undefined || time) throw bad(i, ': more-variants has no element, spot, region or moment')
     } else if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
       if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it or copy-options, on a variant (<slug>/<letter>)')
@@ -361,6 +364,7 @@ function receive(data) {
       ...(c.action === 'more-variants' ? { count: c.count } : {}),
       ...(c.action === 'pick' && typeof c.note === 'string' && c.note.trim() ? { note: c.note.trim().slice(0, 600) } : {}),
       point: c.point && { x: Math.round(+c.point.x || 0), y: Math.round(+c.point.y || 0) },
+      ...(regionOf(c.region) ? { region: regionOf(c.region) } : {}),
       ...time,
       ...(view ? { view } : {}),
       ...(c.re ? { re: { batch: c.re.batch, n: c.re.n } } : {}),
