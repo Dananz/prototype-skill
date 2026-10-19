@@ -20,7 +20,7 @@ import { fitOf, outOf, pinchOn, room, useBox, useGestures, usePinch, usePlace } 
 import { trackPointer } from '../motion'
 import { hoverMove } from '../comments/hover'
 import { seeThrough } from '../comments/dom'
-import { dims, ORDER, SIZES, type Size } from './sizes'
+import { dims, FILL_MIN_W, ORDER, SIZES, type Size } from './sizes'
 
 /** size null: the stage's own artboard (fill), as big as the stage, with no line over it. */
 export type View = { size: Size | null; land: boolean; zoom: number; /** Counts Fit chosen from the zoom control: each one centres the device again. */ home?: number }
@@ -172,8 +172,11 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
   const { act } = useCtx()
   const { s, rows } = useRows()
   const [area, box] = useBox<HTMLDivElement>()
-  // The stage's own artboard is the area's size: at 100% it is the stage as it always was.
-  const d = view.size ? dims(view.size, view.land) : { w: box.w, h: box.h }
+  // The stage's own artboard is the area's size: at 100% it is the stage as it always was. In a desktop window
+  // whose side panels leave the stage narrower than a desktop (FILL_MIN_W), it stays a desktop: laid out at that
+  // width, the stage's shape, and fitted down, instead of becoming a tablet layout because a panel opened.
+  const fillW = !view.size && innerWidth >= FILL_MIN_W && box.w > 0 && box.w < FILL_MIN_W ? FILL_MIN_W : box.w
+  const d = view.size ? dims(view.size, view.land) : { w: fillW, h: box.w ? Math.round((box.h * fillW) / box.w) : box.h }
   const pad = !view.size || box.w < 640 ? 0 : 16
   const fit = fitOf(box, d, pad)
   const scale = view.zoom ? view.zoom / 100 : fit
