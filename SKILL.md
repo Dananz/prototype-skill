@@ -42,7 +42,7 @@ the stage's width (its breakpoints see the stage, not the window); the stage's o
 selected. Choosing another shows the page at that size, zoomed to fit (a 1440 × 900 desktop on a
 phone, a phone on a desktop); the zoom there goes either from 10% to 400%, and the user can
 pinch, Space-drag or middle-button drag (from anywhere, at any zoom; the page stays where it is
-left, and Fit centres it again), comment, try things, pick copy and scrub motion there. Nothing to build for it
+left, and Fit or Mod+0 (Cmd+0 on Mac, Ctrl+0 elsewhere) resets the zoom and centres it again), comment, try things, pick copy and scrub motion there. Nothing to build for it
 beyond a web variant that lays out well at each width.
 
 Compare uses the same Comments panel, numbered pins, screenshots, drafts, sending and agent
