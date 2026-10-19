@@ -13,7 +13,8 @@ import { climb, describe } from './dom'
 import { Selection } from './selection'
 import { PhoneSheet, Rail } from './rail'
 import { createStore, isRoot, progress, threadOf } from './store'
-import { inScope, type Place, type State } from './types'
+import { plain } from './ui'
+import { inScope, type Place, type State, type Target, type Item } from './types'
 
 export type { ContextPopProps, DecidePopProps, Place, State, Subject }
 export type { MenuRow } from './menu'
@@ -27,8 +28,26 @@ export function createComments(host: Host, sessionId: string) {
   const ctx: Ctx = { store, host, act, copyStore, copyAct }
   const wrap = (el: JSX.Element) => <CommentsCtx.Provider value={ctx}>{el}</CommentsCtx.Provider>
   createRoot(host.layer).render(wrap(<><Layer /><Selection /><CopyMarks /></>))
-  return {
+  const api = {
     store,
+    /** Reuse this instance from a live prototype rather than creating another comment store. */
+    mount: host.mount,
+    show: () => host.show?.(),
+    mentionVariants(fn: () => Target[]) {
+      const previous = host.variantMentions
+      host.variantMentions = fn
+      return () => { if (host.variantMentions === fn) host.variantMentions = previous }
+    },
+    referenceComments(fn: (item: Item) => boolean) {
+      const previous = host.onReferenceComment
+      host.onReferenceComment = fn
+      return () => { if (host.onReferenceComment === fn) host.onReferenceComment = previous }
+    },
+    referenceOnPress(fn: (el: HTMLElement) => boolean) {
+      const previous = host.onGuardPick
+      host.onGuardPick = fn
+      return () => { if (host.onGuardPick === fn) host.onGuardPick = previous }
+    },
     hostChanged: () => store.set({}),
     act,
     /** The copy picker (copy.tsx): its state and actions, for the T buttons, Esc and the stage. */
@@ -53,13 +72,13 @@ export function createComments(host: Host, sessionId: string) {
       act.begin(v?.size ? { ...t, view: { size: v.size, w: v.w!, h: v.h! } } : t)
     },
     /** Whether an element is part of the design on the stage (not its page's body, nor the root itself). */
-    inDesign(el: Element) { const mount = host.mount(); return !!mount && el !== mount && mount.contains(el) },
+    inDesign(el: Element) { const mount = host.mount(); return !!mount && el !== mount && mount.contains(el) && (!mount.hasAttribute('data-comment-compare') || !!el.closest('[data-mount]')) },
     /** The element around one of the design on the stage, if there is one inside it. */
     parentOf(el: HTMLElement): HTMLElement | null { const mount = host.mount(); return mount && mount.contains(el) ? climb(mount, el) : null },
     /** A comment as the list has it (its words as one line), for a menu on it. */
     wordsOf(id: string): string {
       const i = store.get().items.find(x => x.id === id)
-      return i ? i.body.map(s => typeof s === 'string' ? s : `@${s.tag + 1}`).join('').trim() : ''
+      return i ? plain(i) : ''
     },
     setPlace: act.setPlace,
     setInbox(inbox: Inbox | undefined) { store.set({ inbox }) },
@@ -99,5 +118,27 @@ export function createComments(host: Host, sessionId: string) {
       else act.toggle()
     },
   }
+  registerComments(host.layer.ownerDocument, api)
+  return api
 }
 export type Comments = ReturnType<typeof createComments>
+
+
+// The stage may live in a same-origin layout iframe. Resolve its owning shell, not the
+// framed page's disabled comment instance. The document owns this reference for its lifetime.
+const INSTANCE = '__prototypeComments'
+function registerComments(doc: Document, comments: Comments) {
+  ;(doc as Document & { [INSTANCE]?: Comments })[INSTANCE] = comments
+}
+export function commentsFor(el: HTMLElement): Comments | null {
+  let win: Window | null = el.ownerDocument.defaultView
+  while (win) {
+    try {
+      const comments = (win.document as Document & { [INSTANCE]?: Comments })[INSTANCE]
+      if (comments?.mount()?.contains(el)) return comments
+      if (win.parent === win) break
+      win = win.parent
+    } catch { break }
+  }
+  return null
+}

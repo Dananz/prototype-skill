@@ -2,7 +2,7 @@
 // primary color classes (placeholder tokens in shell.css), and a few text pieces.
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { AGENT, type Agent } from '../agent'
-import { useAgentName } from './ctx'
+import { useAgentName, useCtx } from './ctx'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { uiBox } from '../portals'
 import { SIZE_PATHS, sizeIcon, sizeName, type ViewSize } from '../view/sizes'
@@ -125,8 +125,8 @@ export const ViewChip = ({ v, className = '' }: { v?: ViewSize; className?: stri
 ) : null
 
 /** A comment's number on a dot; one on the variant as a whole wears the frame beside it. */
-export const PinDot = ({ n, done, size = 'md', whole }: { n: number; done?: boolean; size?: 'sm' | 'md'; whole?: boolean }) => (
-  <span className={`inline-grid shrink-0 place-items-center rounded-full font-semibold tabular-nums ${whole && !done ? 'grid-flow-col gap-0.5 px-1.5' : ''} ${size === 'sm' ? `h-4 ${whole && !done ? 'min-w-4' : 'w-4'} text-[9px]` : `h-5 ${whole && !done ? 'min-w-5' : 'w-5'} text-[10px]`} ${done ? 'bg-emerald-500 text-white' : 'bg-proto-primary text-proto-primary-fg'}`}>{done ? <Icon name="check" className="size-2.5" /> : <>{whole && <Icon name="frame" className="size-2.5" />}{n}</>}</span>
+export const PinDot = ({ n, done, size = 'md', whole, label }: { n: number; label?: string; done?: boolean; size?: 'sm' | 'md'; whole?: boolean }) => (
+  <span className={`inline-grid shrink-0 place-items-center rounded-full font-semibold tabular-nums ${(whole || label) && !done ? 'grid-flow-col gap-0.5 px-1.5' : ''} ${size === 'sm' ? `h-4 ${(whole || label) && !done ? 'min-w-4' : 'w-4'} text-[9px]` : `h-5 ${(whole || label) && !done ? 'min-w-5' : 'w-5'} text-[10px]`} ${done ? 'bg-emerald-500 text-white' : 'bg-proto-primary text-proto-primary-fg'}`}>{done ? <Icon name="check" className="size-2.5" /> : <>{whole && <Icon name="frame" className="size-2.5" />}{label}{n}</>}</span>
 )
 
 /**
@@ -145,7 +145,21 @@ export function SrcTag({ t, className = 'max-w-[50%] shrink-0' }: { t?: Pick<Tar
   return s ? <span title={s.full} className={`truncate font-mono text-[11px] text-zinc-400 ${className}`}>{s.short}</span> : null
 }
 
-export const Chip = ({ t, n }: { t?: Target; n: number }) => <span title={srcOf(t)?.full} className="mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg">@{n}</span>
+export function Chip({ t, n }: { t?: Target; n: number }) {
+  const { act } = useCtx()
+  const ref = t?.variantRef
+  const comment = t?.commentRef
+  const linked = !!ref || !!comment || !!t?.source
+  const open = () => {
+    act.openSheet(false)
+    if (comment) { act.open(comment.id, false); return }
+    if (t) act.revealTarget(t)
+  }
+  return <span title={comment?.quote ?? (ref ? `${ref.label} · ${ref.name}` : srcOf(t)?.full)} role={linked ? 'link' : undefined} tabIndex={linked ? 0 : undefined}
+    onClick={linked ? e => { e.stopPropagation(); open() } : undefined}
+    onKeyDown={linked ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); open() } } : undefined}
+    className={`mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? `Comment ${comment.n}` : `@${ref?.label ?? (t?.source ? `${t.source.variant}·${n}` : n)}`}</span>
+}
 
 export function Body({ c, className = '' }: { c: { body: Seg[]; tags: Target[] }; className?: string }): ReactNode {
   return <span dir="auto" className={className}>{c.body.map((s, i) => typeof s === 'string' ? <span key={i}>{s}</span> : <Chip key={i} t={c.tags[s.tag]} n={s.tag + 1} />)}</span>
@@ -168,7 +182,7 @@ export const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `
 export const aboutOf = (i: Item) => i.action === 'more-variants' ? `${i.count ?? 5} more variants` : i.action ? ACTION[i.action].say(i.variant) : i.time ? `${i.time.to === undefined ? 'At' : 'Over'} ${spanOf(i.time)}` : i.target?.whole ? 'Whole variant' : `Comment ${i.n}`
 
 /** The words of a comment as plain text, tags written as @1, @2, …: their order in the accompanying targets. */
-export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : `@${s.tag + 1}`).join('').replace(/ /g, ' ').trim()
+export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : (c.tags[s.tag]?.commentRef ? `Comment ${c.tags[s.tag].commentRef!.n}` : `@${c.tags[s.tag]?.variantRef?.label ?? (c.tags[s.tag]?.source ? `${c.tags[s.tag].source!.variant}·${s.tag + 1}` : s.tag + 1)}`)).join('').replace(/ /g, ' ').trim()
 
 export type { Item }
 

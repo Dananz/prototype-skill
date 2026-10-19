@@ -3,11 +3,11 @@
 // Send posts every draft as one batch. Whatever is being written when the composer is put away
 // any way but Cancel or Add is held, and comes back with the next comment.
 import type { CommentBatch } from '../shell'
-import { climb, describe, designStorage, find, reveal, openerOf, wholeTarget } from './dom'
+import { climb, describe, designStorage, find, reveal, openerOf, wholeTarget, targetMount } from './dom'
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import { progress, threadOf, type Store } from './store'
-import type { Action, Draft, Item, Place, Target, Time } from './types'
+import type { Action, Draft, Item, Place, Target, Time, Source } from './types'
 import { shotsOf } from './types'
 import { inScope, routeOf } from './types'
 import { sameView } from '../view/sizes'
@@ -17,7 +17,7 @@ const hasWords = (d: Draft) => d.body.some(s => typeof s !== 'string' || s.trim(
 
 export function createActions(store: Store, host: Host) {
   const get = store.get, set = store.set
-  const here = (i: Item) => { const p = get().place; return !!p && i.proto === p.proto && i.variant === p.variant && (i.state ?? '') === (p.state ?? '') }
+  const here = (i: Pick<Item, 'proto' | 'variant' | 'state'>) => { if (host.visible?.(i)) return true; const p = get().place; return !!p && i.proto === p.proto && i.variant === p.variant && (i.state ?? '') === (p.state ?? '') }
   let opening = 0
   // Sent from the prototype the page was on when it began: a continuation after navigating on must not
   // widen to what the new page holds (in the session lobby, which holds every prototype's comments).
@@ -70,6 +70,7 @@ export function createActions(store: Store, host: Host) {
     setPlace(place: Place | null) {
       const was = get().place
       const same = !!place && !!was && place.proto === was.proto && place.variant === was.variant && (place.state ?? '') === (was.state ?? '')
+      if (same && place!.compare !== was!.compare) { set({ place, mode: { kind: 'idle' }, active: null, pendingTag: null }); return }
       // Another device view (or none) is another layout: a comment open on the last one is held.
       if (same && !sameView(place!.view, was!.view)) { set(s => ({ place, ...(s.mode.kind === 'compose' || s.mode.kind === 'tag' ? { mode: { kind: 'idle' as const }, pendingTag: null } : {}) })); return }
       if (same) { if (place!.title !== was!.title || place!.phone !== was!.phone) set({ place }); return }
@@ -133,9 +134,11 @@ export function createActions(store: Store, host: Host) {
         : s.mode.kind === 'time' && s.mode.tagging ? { mode: { ...s.mode, tagging: false }, pendingTag: picked } : {})
     },
     tagTaken() { set({ pendingTag: null }) },
-    open(id: string) {
-      const i = get().items.find(x => x.id === id)
-      if (!i) return
+    open(id: string, reference = true) {
+      const found = get().items.find(x => x.id === id)
+      if (!found) return
+      const i = get().place?.compare && found.target ? { ...found, target: { ...found.target, source: { proto: found.proto, variant: found.variant, ...(found.state ? { state: found.state } : {}) } } } : found
+      if (reference && get().mode.kind === 'compose' && host.onReferenceComment?.(i)) return
       const request = ++opening
       // A comment on the design shows on the layout it was written on: its device view, or none.
       if (i.target || i.time) host.setView?.(i.target?.view ?? null)
@@ -146,10 +149,10 @@ export function createActions(store: Store, host: Host) {
         // The destination and its iframe can finish mounting after navigation. A later selection
         // cancels this request before it can press controls in another comment's design.
         for (const end = performance.now() + 5000; request === opening && get().items.some(x => x.id === id) && performance.now() < end; await new Promise(r => setTimeout(r, 40))) {
-          const mount = host.mount()
-          if (!here(i) || !mount || mount.dataset.route !== routeOf(i) || !(find(mount, i.target) || openerOf(mount, i.target))) continue
+          const scope = host.mount(), mount = targetMount(scope, i.target)
+          if (!here(i) || !mount || mount.dataset.route !== `${i.proto}/${i.variant}` || !(find(mount, i.target) || openerOf(mount, i.target))) continue
           set(mode())
-          const current = () => request === opening && get().active === id && here(i) && mount === host.mount() && mount.isConnected
+          const current = () => request === opening && get().active === id && here(i) && mount === targetMount(host.mount(), i.target) && mount.isConnected
           const el = await reveal(mount, i.target, current)
           if (current()) el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
           return
@@ -159,17 +162,48 @@ export function createActions(store: Store, host: Host) {
       set(mode())
       void show()
     },
-    resume() { opening++; const h = get().held; if (h) set({ active: null, mode: h.time ? { kind: 'time', time: h.time } : { kind: 'compose', target: h.target! } }) },
+    /** Follow a reference, including its state and closed menu/tab, after navigation is ready. */
+    revealTarget(target: Target) {
+      const source: Source | undefined = target.source ?? target.variantRef
+      if (!source) return
+      const request = ++opening
+      if (!here(source)) host.go(source.proto, source.variant, source.state)
+      void (async () => {
+        for (const end = performance.now() + 5000; request === opening && performance.now() < end; await new Promise(r => setTimeout(r, 40))) {
+          if (!here(source)) continue
+          const scope = host.mount(), mount = targetMount(scope, { source })
+          if (!mount || mount.dataset.route !== `${source.proto}/${source.variant}`) continue
+          const current = () => request === opening && here(source) && scope === host.mount() && mount.isConnected
+          const el = await reveal(mount, target, current)
+          if (current()) el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+          return
+        }
+      })()
+    },
+    resume() {
+      const request = ++opening, h = get().held
+      if (!h) return
+      const show = () => set({ active: null, mode: h.time ? { kind: 'time', time: h.time } : { kind: 'compose', target: h.target! } })
+      const source = h.target?.source
+      if (!source || here(source)) { show(); return }
+      host.go(source.proto, source.variant, source.state)
+      void (async () => {
+        for (const end = performance.now() + 5000; request === opening && get().held === h && performance.now() < end; await new Promise(r => setTimeout(r, 40))) {
+          if (targetMount(host.mount(), h.target)) { show(); return }
+        }
+      })()
+    },
     discardHeld() { set({ held: null }) },
     /** Called as a new comment is written, so it survives being put away. */
     hold(d: Draft, target?: Target, time?: Time) { set(s => ({ held: hasWords(d) ? { ...d, ...(time ? { time } : { target }), ...(s.place ? { proto: s.place.proto } : {}) } : null })) },
     /** Pressing the design while a comment is open: the comment stays where it is and the composer says so. */
-    guard() { if (get().mode.kind === 'compose') set(s => ({ nudge: s.nudge + 1 })) },
+    guard(el?: HTMLElement) { if (el && host.onGuardPick?.(el)) return; if (get().mode.kind === 'compose') set(s => ({ nudge: s.nudge + 1 })) },
 
     save(d: Draft, target: Target | undefined, id?: string, time?: Time) {
       opening++
-      const p = get().place
-      if (!p) return
+      const base = get().place
+      if (!base) return
+      const p = target?.source ?? base
       if (id) set(s => ({ items: s.items.map(i => i.id === id ? { ...i, ...d } : i), held: null, mode: { kind: 'idle' }, active: null }))
       else {
         const n = Math.max(0, ...get().items.filter(i => i.proto === p.proto && i.variant === p.variant).map(i => i.n)) + 1

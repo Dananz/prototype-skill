@@ -19,6 +19,7 @@ import { commentWholeChecks } from './comment-whole-checks.mjs'
 import { commentScrollChecks } from './comment-scroll-checks.mjs'
 import { commentUsesChecks } from './comment-uses-checks.mjs'
 import { commentRoutesChecks } from './comment-routes-checks.mjs'
+import { commentCompareChecks } from './comment-compare-checks.mjs'
 import { commentNavigationChecks } from './comment-navigation-checks.mjs'
 import { commentPicturesChecks } from './comment-pictures-checks.mjs'
 import { shootPinChecks } from './shoot-pin-checks.mjs'
@@ -183,6 +184,15 @@ let { pid } = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
 // The stylesheet as served, read once before any prototype folder exists. Each read opens
 // its own connection: the spawnSync calls block this script for many seconds, long enough for
 // the server to close an idle kept-alive socket without fetch noticing.
+// A focused run uses the same real browser/server harness as the full suite.
+if (process.argv.includes('--compare-comments-only')) {
+  await commentCompareChecks({ proto, app, openPage, fail })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused Compare comments checks')
+  process.exit(0)
+}
+
 const css = () => new Promise(ok => get(`${local}shell/shell.css?direct`, { agent: false }, r => {
   let text = ''
   r.setEncoding('utf8').on('data', c => { text += c }).on('end', () => r.statusCode === 200 ? ok(text) : fail(`the stylesheet answered ${r.statusCode}: ${text.slice(0, 400)}`))
@@ -202,6 +212,7 @@ await commentScrollChecks({ proto, app, openPage, fail })
 await commentUsesChecks({ proto, app, openPage, fail })
 await commentRoutesChecks({ proto, app, openPage, fail })
 await commentNavigationChecks({ app, openPage, fail })
+await commentCompareChecks({ proto, app, openPage, fail })
 await commentPicturesChecks({ proto, app, openPage, fail })
 await shootPinChecks({ proto, app, local, fail })
 await commentUntilChecks({ proto, app, fail })
@@ -849,7 +860,13 @@ try {
     document.execCommand('insertText', false, '@')
     await new Promise(r => setTimeout(r, 300))
     const composer = document.querySelector('[data-motion-bar] [data-composer]')
-    const said = !document.querySelector('[data-tag-menu]') && composer?.classList.contains('opacity-60') ? 'ok' : '@ should start visual tagging without a named-element menu'
+    const menu = document.querySelector('[data-tag-menu]'), options = menu?.querySelectorAll('[role=option]')
+    if (!options?.length || !options[0].textContent.includes('@A')) return '@ should offer variant mentions'
+    const r = menu.getBoundingClientRect(), pick = [...menu.querySelectorAll('button')].find(b => b.textContent.includes('Pick an element instead')), p = pick?.getBoundingClientRect()
+    if (r.top < 0 || r.bottom > innerHeight || !p || !document.elementFromPoint(p.left+10,p.top+p.height/2)?.closest('[data-tag-menu]')) return 'the dock clipped its variant menu'
+    pick.click()
+    await new Promise(r => setTimeout(r, 100))
+    const said = !document.querySelector('[data-tag-menu]') && composer?.classList.contains('opacity-60') ? 'ok' : 'Pick an element instead should start visual tagging'
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     ed.textContent = ''
     ed.dispatchEvent(new Event('input', { bubbles: true }))

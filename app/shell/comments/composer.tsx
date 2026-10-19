@@ -1,9 +1,11 @@
 // Writing a comment on one element, or on a moment or a range of the design's motion (in the motion
-// dock). `@` or Tag another element starts the existing visual picker, without a named-element menu; the camera captures the design around the
+// dock). `@` offers whole-variant mentions; Tag another element keeps the existing visual picker; the camera captures the design around the
 // element (all of it, on a moment) and opens the editor; an image pasted (Ctrl+V) or dropped on the
 // composer is added beside the screenshots (several per comment); ⌘↩ adds it. Whatever is written is held by
 // the store as it is typed, so putting the composer away any way but Cancel or Add loses nothing.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
+import { uiBox } from '../portals'
 import { useAgentName, useCtx } from './ctx'
 import { find } from './dom'
 import { capture, ShotEditor } from './shot'
@@ -28,7 +30,9 @@ const chipNode = (t: Target | undefined, i: number) => {
   const src = srcOf(t)
   if (src) s.title = src.full
   s.className = 'mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg'
-  s.textContent = `@${i + 1}`
+  s.textContent = t?.commentRef ? `Comment ${t.commentRef.n}` : `@${t?.variantRef?.label ?? (t?.source ? `${t.source.variant}·${i + 1}` : i + 1)}`
+  if (t?.commentRef) s.title = t.commentRef.quote
+  if (t?.variantRef) s.title = `${t.variantRef.label} · ${t.variantRef.name}`
   return s
 }
 const endRange = (el: HTMLElement) => { const x = document.createRange(); x.selectNodeContents(el); x.collapse(false); return x }
@@ -85,6 +89,11 @@ const TIME_PATH = { at: 'M12 9.5V20M9 4h6l-3 4z', range: 'M5 5v14M19 5v14M8.5 12
 export function Composer({ target, time, docked, n, initial, place, sheet, tagging, editing, id }: Props) {
   const agent = useAgentName()
   const { host, store, act } = useCtx()
+  const [mention, setMention] = useState<{ query: string; index: number } | null>(null)
+  const choices = host.variantMentions?.() ?? []
+  const query = mention?.query.toLocaleLowerCase() ?? ''
+  const exact = query ? choices.filter(t => t.variantRef?.label.toLocaleLowerCase() === query || t.variantRef?.variant.toLocaleLowerCase() === query) : []
+  const variants = exact.length ? exact : choices.filter(t => !query || `${t.variantRef?.label} ${t.variantRef?.variant} ${t.variantRef?.name}`.toLocaleLowerCase().includes(query))
   const nudge = store.get().nudge
   const pending = store.get().pendingTag
   const ed = useRef<HTMLDivElement>(null)
@@ -124,6 +133,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
 
   const saveRange = () => { const s = getSelection(); if (s?.rangeCount && ed.current?.contains(s.anchorNode)) range.current = s.getRangeAt(0).cloneRange() }
   const insert = (p: Target) => {
+    setMention(null)
     const el = ed.current!
     const i = tagsRef.current.length
     setTags(t => [...t, p])
@@ -166,21 +176,38 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     try { const url = await imageUrl(file); if (url) setShots(s => s.length < MAX_SHOTS ? [...s, { src: url, pasted: true }] : s) } finally { setCapturing(null); refocus() }
   }
 
+  const [height, setHeight] = useState(260)
+  useLayoutEffect(() => {
+    if (docked || !box.current) return
+    const observer = new ResizeObserver(() => setHeight(box.current?.offsetHeight ?? 260))
+    observer.observe(box.current)
+    return () => observer.disconnect()
+  }, [docked])
   const W = 312
   const lay = host.layer.getBoundingClientRect()
-  let style: CSSProperties = {}
+  let style: CSSProperties = docked ? {} : { maxHeight: 'calc(100% - 16px)', overflowY: 'auto' }
   if (!sheet && !docked && place) {
     const right = place.x + place.w + 12 + W < lay.width - 8
     const left = place.x - 12 - W > 8
     const x = right ? place.x + place.w + 12 : left ? place.x - 12 - W : Math.min(Math.max(8, place.x), lay.width - W - 8)
-    const y = right || left ? Math.min(Math.max(8, place.y - 8), lay.height - 260) : Math.min(place.y + place.h + 12, lay.height - 260)
-    style = { left: x, top: Math.max(8, y), width: W }
+    const y = right || left ? Math.min(Math.max(8, place.y - 8), lay.height - height - 8) : Math.min(place.y + place.h + 12, lay.height - height - 8)
+    style = { ...style, left: x, top: Math.max(8, y), width: W }
   }
   const keys = (e: React.KeyboardEvent) => {
+    if (mention && !e.nativeEvent.isComposing) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMention(null); return }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const step = e.key === 'ArrowDown' ? 1 : -1; setMention(m => m && ({ ...m, index: (m.index + step + Math.max(1, variants.length)) % Math.max(1, variants.length) })); return }
+      if ((e.key === 'Enter' || e.key === 'Tab') && !e.metaKey && !e.ctrlKey && !e.shiftKey && variants.length) { e.preventDefault(); insert(variants[Math.min(mention.index, variants.length - 1)]); return }
+    }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); void act.send() }
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); act.close() }
   }
   const refocus = () => requestAnimationFrame(() => ed.current?.focus())
+  const menu = mention && (<div data-tag-menu role="listbox" aria-label="Variants" style={docked ? { position: 'fixed', zIndex: 250, left: Math.max(8, Math.min(ed.current?.getBoundingClientRect().left ?? 8, innerWidth - Math.min(312, innerWidth - 16) - 8)), bottom: innerHeight - (ed.current?.getBoundingClientRect().top ?? innerHeight) + 8, width: Math.min(312, innerWidth - 16), maxHeight: Math.max(80, (ed.current?.getBoundingClientRect().top ?? innerHeight) - 24), overflowY: 'auto' } : undefined} className="pointer-events-auto my-2 overflow-hidden text-zinc-900 dark:text-zinc-100 rounded-xl border border-black/10 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-950">
+            <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-zinc-400">Mention a variant</div>
+            <div className="max-h-36 overflow-y-auto">{variants.map((t, i) => <button key={`${t.variantRef?.proto}/${t.variantRef?.variant}/${t.variantRef?.label}`} type="button" role="option" aria-selected={i === Math.min(mention.index, variants.length - 1)} onMouseDown={e => e.preventDefault()} onClick={() => insert(t)} className={`flex min-h-9 w-full items-center gap-2 px-3 py-2 text-left text-xs ${i === Math.min(mention.index, variants.length - 1) ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}><span className="font-semibold">@{t.variantRef?.label}</span><span className="min-w-0 flex-1 truncate">{t.variantRef?.name}</span></button>)}{!variants.length && <p className="px-3 py-2 text-xs text-zinc-400">No matching variants</p>}</div>
+            <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => { setMention(null); act.tagPick() }} className="flex min-h-9 w-full items-center gap-2 border-t border-black/[.06] px-3 py-2 text-left text-xs text-zinc-500 hover:bg-zinc-900/5 dark:border-white/10 dark:hover:bg-white/5"><Icon name="target" className="size-3.5"/>Pick an element instead</button>
+          </div>)
   return (
     <>
       <div ref={box} data-composer onKeyDown={keys}
@@ -193,7 +220,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           {time
             ? <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[11px] font-semibold tabular-nums text-proto-primary-soft-fg"><svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={time.to === undefined ? TIME_PATH.at : TIME_PATH.range} /></svg>{time.to === undefined ? `At ${spanOf(time)}` : spanOf(time)}</span>
             // In a view the size takes the file's place: the list shows the file under the words.
-            : <><ViewChip v={target?.view} /><span dir="auto" className="min-w-0 flex-1 truncate text-xs font-medium">{target?.whole ? 'Whole variant' : 'Comment'}</span>{!target?.view && <SrcTag t={target} />}</>}
+            : <><ViewChip v={target?.view} /><span dir="auto" className="min-w-0 flex-1 truncate text-xs font-medium">{`${target?.whole ? 'Whole variant' : 'Comment'}${target?.source ? ` on ${target.source.variant}` : ''}`}</span>{!target?.view && <SrcTag t={target} />}</>}
         </div>
         <div className="relative px-3 pt-1.5">
           <div ref={ed} contentEditable suppressContentEditableWarning role="textbox" aria-label="Comment" aria-multiline="true" dir="auto"
@@ -201,12 +228,15 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
               saveRange(); setEmpty(!ed.current!.innerText.trim()); emit()
               const s = getSelection(), node = s?.anchorNode
               const text = node?.nodeType === 3 ? node.textContent!.slice(0, s!.anchorOffset) : ''
-              if (/(^|\s)@$/.test(text)) act.tagPick()
+              const match = text.match(/(?:^|\s)@([^\s@]*)$/u)
+              if (match && (host.variantMentions?.().length ?? 0) > 0) setMention({ query: match[1], index: 0 })
+              else { setMention(null); if (/(^|\s)@$/.test(text)) act.tagPick() }
             }}
             onKeyUp={saveRange} onMouseUp={saveRange} onBlur={saveRange}
             onPaste={e => { const f = imageIn(e.clipboardData); if (!f) return; e.preventDefault(); void attach(f) }}
             className="max-h-40 min-h-[52px] overflow-y-auto whitespace-pre-wrap break-words py-1 leading-5 outline-none [@media(pointer:coarse)]:min-h-[60px] [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6" />
-          {empty && <span className="pointer-events-none absolute left-3 top-2.5 text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">{time ? `What should change ${time.to === undefined ? 'at this moment' : 'over this range'}? @ tags an element` : 'What should change? @ tags another element'}</span>}
+          {docked && menu ? createPortal(menu, uiBox()) : menu}
+          {empty && <span className="pointer-events-none absolute left-3 top-2.5 text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">{time ? `What should change ${time.to === undefined ? 'at this moment' : 'over this range'}? @ mentions a variant or element` : 'What should change? @ mentions a variant or element'}</span>}
 
         </div>
         {(capturing || shots.length > 0) && (
@@ -221,7 +251,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           </PictureStrip>
         )}
         <div className="flex items-center gap-1 px-2 pb-2 pt-1">
-          <button onClick={() => { saveRange(); act.tagPick() }} title="Tag another element on the design" aria-label="Tag another element" className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="target" /></button>
+          <button onClick={() => { setMention(null); saveRange(); act.tagPick() }} title="Tag another element on the design" aria-label="Tag another element" className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="target" /></button>
           <button onClick={shoot} disabled={full} title={full ? `${MAX_SHOTS} pictures is the most one comment takes; remove one to add another` : `Add a screenshot of this part of the design, then draw on it (or paste an image: ${MOD} V, or drop one here; each adds a picture)`} aria-label="Attach a screenshot" className={`${IB} h-8 min-w-8 px-1.5 disabled:opacity-40`}><Icon name="camera" /></button>
           {editing && <button onClick={() => id && act.remove(id)} title="Delete" aria-label="Delete comment" className={`${IB} h-8 min-w-8 px-1.5 hover:text-rose-600`}><Icon name="trash" /></button>}
           <span className="ms-auto" />

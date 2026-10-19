@@ -4,6 +4,19 @@
 // zoom taken out, so it means the same on any screen.
 import type { Box, Target, Use } from './types'
 
+/** Resolve a target inside its own variant, even when both panes use identical selectors. */
+export function targetMount(mount: HTMLElement | null, t?: Pick<Target, 'source'>): HTMLElement | null {
+  if (!mount) return null
+  const source = t?.source
+  const matches = (m: HTMLElement) => !source || (m.dataset.route === `${source.proto}/${source.variant}` && (m.dataset.commentState ?? '') === (source.state ?? ''))
+  if (!mount.hasAttribute('data-comment-compare')) return matches(mount) ? mount : null
+  const route = source ? `${source.proto}/${source.variant}` : mount.dataset.commentCurrent
+  return [...mount.querySelectorAll<HTMLElement>('[data-mount]')].find(m => m.dataset.route === route && matches(m)) ?? null
+}
+function elementMount(mount: HTMLElement, el: HTMLElement) {
+  const inner = el.closest<HTMLElement>('[data-mount]')
+  return mount.hasAttribute('data-comment-compare') && inner && mount.contains(inner) ? inner : mount
+}
 const squash = (s: string) => s.replace(/\s+/g, ' ').trim()
 const textOf = (el: HTMLElement) => squash(el.innerText ?? '')
 
@@ -86,6 +99,7 @@ function pathOf(mount: HTMLElement, el: HTMLElement) {
 }
 
 export function describe(mount: HTMLElement, el: HTMLElement): Target {
+  mount = elementMount(mount, el)
   const r = el.getBoundingClientRect(), o = originOf(mount).getBoundingClientRect(), z = zoomOf(mount)
   const text = textOf(el)
   // Where it is written: its own place in the prototype's files, else that of the nearest element
@@ -94,6 +108,7 @@ export function describe(mount: HTMLElement, el: HTMLElement): Target {
   const at = code && mount.contains(code) ? code : null
   return {
     label: 'Element',
+    ...(mount.closest('[data-comment-compare]') && mount.dataset.route ? { source: { proto: mount.dataset.route.split('/')[0], variant: mount.dataset.route.split('/')[1], ...(mount.dataset.commentState ? { state: mount.dataset.commentState } : {}) } } : {}),
     selector: pathOf(mount, el),
     ...(el.dataset.shoot ? { shoot: el.dataset.shoot } : (() => {
       const w = el.parentElement?.closest<HTMLElement>('[data-shoot]')
@@ -134,6 +149,7 @@ export function designStorage(): Record<string, string> | undefined {
 
 /** The variant as a whole, as a target: its root element, with the variant's name in place of the root's text. */
 export function wholeTarget(mount: HTMLElement, name = ''): Target {
+  mount = targetMount(mount) ?? mount
   const t = describe(mount, originOf(mount))
   return { ...t, label: 'Variant', whole: true, text: name.slice(0, 80) }
 }
@@ -169,6 +185,7 @@ export function usesOf(el: HTMLElement): Use[] {
  * part), outermost first.
  */
 export function routeOf(mount: HTMLElement, el: HTMLElement): string[] {
+  mount = elementMount(mount, el)
   const out: string[] = []
   for (let p: HTMLElement | null = el; p && p !== mount && mount.contains(p); p = p.parentElement) {
     const by = p.getAttribute('data-opened-by')
@@ -192,7 +209,9 @@ export function shows(el: HTMLElement | null): el is HTMLElement {
 const partOpenedBy = (mount: HTMLElement, by: string) => [...mount.querySelectorAll<HTMLElement>('[data-opened-by]')].find(e => e.getAttribute('data-opened-by') === by && shows(e)) ?? null
 
 /** What opens a hidden element: the innermost control on its route that is on the page now. */
-export function openerOf(mount: HTMLElement, t: Pick<Target, 'route'>): HTMLElement | null {
+export function openerOf(mount: HTMLElement, t: Pick<Target, 'route' | 'source'>): HTMLElement | null {
+  mount = targetMount(mount, t)!
+  if (!mount) return null
   for (let i = (t.route?.length ?? 0) - 1; i >= 0; i--) { const o = q(mount, t.route![i]); if (shows(o)) return o }
   return null
 }
@@ -230,6 +249,7 @@ const until = async (f: () => boolean, ms = 1500) => { for (const end = performa
  * is (pressing its control again would close it). Resolves to the element, or null.
  */
 export async function reveal(mount: HTMLElement | null, t: Target, current: () => boolean = () => true): Promise<HTMLElement | null> {
+  mount = targetMount(mount, t)
   if (!mount || !current()) return null
   const have = find(mount, t)
   if (shows(have) || !t.route?.length) return shows(have) ? have : null
@@ -255,6 +275,7 @@ export async function reveal(mount: HTMLElement | null, t: Target, current: () =
 
 /** A spot pinned with a long press, at screen point (cx, cy), with the element under it. */
 export function spot(mount: HTMLElement, el: HTMLElement, cx: number, cy: number): Target {
+  mount = elementMount(mount, el)
   const t = describe(mount, el), o = originOf(mount).getBoundingClientRect(), z = zoomOf(mount)
   return { ...t, label: 'Spot', point: { x: Math.round((cx - o.left) / z), y: Math.round((cy - o.top) / z) } }
 }
@@ -264,13 +285,15 @@ export function spot(mount: HTMLElement, el: HTMLElement, cx: number, cy: number
  * it the spot was, so it moves with the element. Null when the spot is scrolled out of view.
  */
 export function spotAt(t: Target, el: Element, mount: HTMLElement, host: Element): Box | null {
+  mount = targetMount(mount, t) ?? mount
   if (!t.point) return null
   const b = rel(el, host), m = rel(mount, host), z = zoomOf(mount) * scaleOf(el)
   const x = b.x + (t.point.x - t.rect.x) * z, y = b.y + (t.point.y - t.rect.y) * z
   return x >= m.x && x <= m.x + m.w && y >= m.y && y <= m.y + m.h ? { x, y, w: 0, h: 0 } : null
 }
 
-export function find(mount: HTMLElement | null, t: Pick<Target, 'selector' | 'shoot' | 'within'>): HTMLElement | null {
+export function find(mount: HTMLElement | null, t: Pick<Target, 'selector' | 'shoot' | 'within' | 'source'>): HTMLElement | null {
+  mount = targetMount(mount, t)
   let el: HTMLElement | null
   try { el = mount ? mount.querySelector<HTMLElement>(t.selector) : null } catch { return null }
   // One place in the page can hold another element later (the menu open now where another menu was
@@ -287,6 +310,7 @@ export function find(mount: HTMLElement | null, t: Pick<Target, 'selector' | 'sh
  * them) or exactly `el`'s size would draw no outline, or the same one, so they are skipped.
  */
 export function climb(mount: HTMLElement, el: HTMLElement): HTMLElement | null {
+  mount = elementMount(mount, el)
   const a = el.getBoundingClientRect()
   for (let p = el.parentElement; p && p !== mount && mount.contains(p); p = p.parentElement) {
     const b = p.getBoundingClientRect()

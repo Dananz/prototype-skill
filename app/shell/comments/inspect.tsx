@@ -48,7 +48,7 @@ export function useBoxes(list: { id: string; t: Target }[]) {
   const { host, store } = useCtx()
   const [boxes, setBoxes] = useState<Record<string, Box>>({})
   // A route a comment learns (below) is part of the key, so its pin can then go on the opener.
-  const key = list.map(x => x.id + x.t.selector + (x.t.route?.join('>') ?? '')).join('|')
+  const key = list.map(x => x.id + JSON.stringify(x.t.source) + x.t.selector + (x.t.route?.join('>') ?? '')).join('|')
   useEffect(() => {
     if (!list.length) { setBoxes({}); return }
     let raf = 0, last = ''
@@ -95,7 +95,7 @@ export type Inspect = { box: Box; touch: boolean; parent: boolean } | null
  * stays on what it was started on, and a press on an element only calls `onGuard`. `hold` is a
  * finger holding, from the layer's corner.
  */
-export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Target) => void; onCancel: () => void; onGuard: () => void }) {
+export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Target) => void; onCancel: () => void; onGuard: (el?: HTMLElement) => void }) {
   const { host } = useCtx()
   const [hover, setHover] = useState<Inspect>(null)
   const [hold, setHold] = useState<{ x: number; y: number } | null>(null)
@@ -121,8 +121,10 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     // node itself, not by instanceof: in a device view the design is another window's.
     const inDesign = (t: EventTarget | null) => {
       let el = t && (t as Node).nodeType === 1 ? t as Element : null
+      if (el?.closest('[data-proto-comment-control]')) return null
       while (el && el.namespaceURI !== 'http://www.w3.org/1999/xhtml') el = el.parentElement
       const m = host.mount()
+      if (m?.hasAttribute('data-comment-compare') && !el?.closest('[data-mount]')) return null
       return m && el && m.contains(el) ? el as HTMLElement : null
     }
     // A device view (view/) covers its frame with a layer while commenting: what a press there is on
@@ -231,7 +233,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       // A tap: no click follows it, so nothing in the design fires.
       e.preventDefault()
       const el = part(target)
-      if (!on) { if (el) cb.current.onGuard(); return }
+      if (!on) { if (el) cb.current.onGuard(el); return }
       if (!el) return show(null, true)
       if (cur.current === el) act.current(el)
       else show(el, true)
@@ -244,7 +246,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       if (justPinned()) return
       settle()
       const el = part(target)
-      if (el && !on) cb.current.onGuard()
+      if (el && !on) cb.current.onGuard(el)
       else if (el) act.current(raised.current && cur.current?.contains(el) ? cur.current : el)
     }
     const key = (e: KeyboardEvent) => {

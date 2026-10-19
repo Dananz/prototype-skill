@@ -1737,7 +1737,11 @@ function printBatch(dir, b) {
     if (c.target?.uses) printUses(dir, c.target, c.route)
     // Written in the page's device view: about that layout, which a shot at that size shows.
     if (c.view) console.log(`   view: ${c.view.size} ${c.view.w}x${c.view.h} (shoot it: proto shoot ${c.route} --size ${c.view.w}x${c.view.h})`)
-    for (const [i, t] of (c.tags || []).entries()) console.log(`   with @${i + 1}: ${where(t)}`)
+    for (const [i, t] of (c.tags || []).entries()) console.log(t.commentRef
+      ? `   with comment ${t.commentRef.n}: ${t.commentRef.proto}/${t.commentRef.variant} (${t.commentRef.id}) “${t.commentRef.quote}”`
+      : t.variantRef
+      ? `   with @${t.variantRef.label}: variant ${t.variantRef.proto}/${t.variantRef.variant} · ${t.variantRef.name} (${where(t)})`
+      : `   with @${i + 1}: ${t.source ? `${t.source.proto}/${t.source.variant}${t.source.state ? `/${t.source.state}` : ''} · ` : ''}${where(t)}`)
     for (const img of c.images || []) console.log(`   image: ${join(inboxDir(dir), 'taken', b.id, img.file)}${img.name ? `  (${img.name})` : ''}`)
   }
   if (live.some(c => c.target && !c.action)) console.log(`\nSee one as the user saw it (their page size, the way to it opened, beside their pictures): proto shoot --pin ${b.id}/<n>`)

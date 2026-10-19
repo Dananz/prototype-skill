@@ -22,6 +22,8 @@ import { createTweakControls, createTweaksDrawer } from './tweaks-ui'
 import { copy } from './copy'
 import { createSheet, createMenuSheet, createTrySheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
+import { describe as describeComment, targetMount, wholeTarget as wholeComment } from './comments/dom'
+import { plain as commentText } from './comments/ui'
 import { createComments, type MenuRow, type Subject } from './comments/index'
 import { createMotion } from './motion/index'
 import { motion } from './motion/registry'
@@ -66,7 +68,7 @@ export type Inbox = {
 }
 /** An element a comment is on or tags. Rect is in CSS px from the variant root's top left; src and
  *  component say where it is written (`today/parts.tsx:30`, `PriceCard`). */
-export type Pinned = { selector?: string; shoot?: string; src?: string; component?: string; tag?: string; text?: string; rect?: { x: number; y: number; w: number; h: number } }
+export type Pinned = { source?: { proto: string; variant: string; state?: string }; commentRef?: { id: string; proto: string; variant: string; n: number; quote: string }; variantRef?: { proto: string; variant: string; label: string; name: string }; selector?: string; shoot?: string; src?: string; component?: string; tag?: string; text?: string; rect?: { x: number; y: number; w: number; h: number } }
 /** One send: route is <slug>/<letter>[/<state>]; images are data URLs (png, jpeg, webp). A decision
  *  on a variant (pick, unpick, more, build) is a comment with an action and no target. */
 export type CommentBatch = {
@@ -576,6 +578,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       // Copy choices are kept per variant, so every place it is mounted reads the same words.
       copy.bind(host, routeOfFile(v.file))
       host.dataset.route = routeOfFile(v.file)
+      if (s) host.dataset.commentState = s.id
       markBuilding(host)
       const here = () => !gone && live.has(host) && generations.get(host) === generation
       // Each card gets its own viewport: its media queries see the chosen layout, not the phone.
@@ -756,9 +759,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const others = proto.variants.filter(x => x.id !== v.id)
     const diffs = statesOf(proto, v.id).filter(x => changed(proto, v.id, x) || changed(proto, o.id, x))
     const pane = (x: Variant) => `<div class="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div class="flex h-9 shrink-0 items-center gap-2 border-b border-black/[.07] px-3 text-xs dark:border-white/10"><b>${variantLabel(proto, x.id)}</b><span dir="auto" class="truncate text-zinc-500">${esc(x.name)}</span>${x.id === v.id ? '' : `<button data-act="pvs:${esc(proto.id)}:${x.id}:${esc(s?.id ?? '')}" class="ml-auto shrink-0 rounded-md px-1.5 py-1 text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white">Open ${variantLabel(proto, x.id)}</button>`}</div>
+        <div class="flex h-9 shrink-0 items-center gap-2 border-b border-black/[.07] px-3 text-xs dark:border-white/10"><b>${variantLabel(proto, x.id)}</b><span dir="auto" class="truncate text-zinc-500">${esc(x.name)}</span><span class="ml-auto flex shrink-0 items-center gap-1">${x.id === v.id ? '' : `<button data-act="pvs:${esc(proto.id)}:${x.id}:${esc(s?.id ?? '')}" class="shrink-0 rounded-md px-1.5 py-1 text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white">Open ${variantLabel(proto, x.id)}</button>`}<button data-act="compare-comment:${x.id}" aria-label="Comment on variant ${variantLabel(proto, x.id)}" title="Comment on this variant" class="grid size-8 shrink-0 place-items-center rounded-md text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">${ic('comment', 'size-3.5')}</button></span></div>
         <div data-fit data-chipbox ${x.id !== ref ? 'data-compare' : ''} class="relative min-h-0 flex-1 [contain:layout_paint]"><div class="absolute inset-0 overflow-auto">${frameOf(proto)}</div></div></div>`
-    return `<div class="flex h-full flex-col">
+    return `<div data-comment-compare data-comment-current="${esc(proto.id)}/${v.id}" class="flex h-full flex-col">
       <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-amber-500/30 bg-amber-50 px-3 py-2 text-xs dark:bg-amber-500/10">
         <span class="flex items-center gap-1.5 font-semibold text-amber-900 dark:text-amber-200">${variantLabel(proto, v.id)} against${others.length > 1 ? `<span class="flex gap-0.5 rounded-md bg-amber-500/10 p-0.5">${others.map(x => `<button data-act="vs:${x.id}" aria-pressed="${x.id === o.id}" class="h-6 min-w-6 rounded px-1.5 ${x.id === o.id ? 'bg-white text-amber-900 shadow-sm dark:bg-amber-200 dark:text-amber-950' : 'text-amber-800 hover:bg-amber-500/15 dark:text-amber-200'}">${variantLabel(proto, x.id)}</button>`).join('')}</span>` : ` ${variantLabel(proto, o.id)}`}</span>
         <span class="min-w-0 flex-1 text-amber-900/80 dark:text-amber-200/80"><b class="font-medium">${bd(s?.name ?? 'At rest')}</b>${line ? ` · ${bd(line)}` : ''}</span>
@@ -1675,6 +1678,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         else { selectPanelTab('tweaks'); hintsOpen = true; if (wideMq.matches) remember('proto-hints', '1') }
         return render()
       }
+      case 'compare-comment': {
+        const scope = compareHost(), p = cur(), v = p?.variants.find(v => v.id === arg)
+        const state = p && st.place.view === 'variant' ? stateOf(p, arg, st.place.state) : undefined
+        const mount = scope && p ? targetMount(scope, { source: { proto: p.id, variant: arg, ...(state ? { state: state.id } : {}) } }) : null
+        if (!mount || !v) return
+        const t = wholeComment(mount, v.name), m = comments.store.get().mode
+        if (m.kind === 'compose' && t.source?.variant !== (m.target.source?.variant ?? comments.store.get().place?.variant)) comments.store.set({ pendingTag: { ...t, variantRef: { proto: p!.id, variant: v.id, label: variantLabel(p!, v.id), name: v.name } } })
+        else comments.act.begin(t)
+        return
+      }
       case 'comment': if (arg === 'tap') { comments.copy.off(); return comments.tap() } return toggleComment()
       // The phone's Try it key: the sheet up, or down. Brought back from away, the spot goes out.
       case 'try': { const to = trySheet === 'open' ? 'closed' : 'open'; trySheet = to; setTry(null); return setTrySheet(to) }
@@ -2028,15 +2041,49 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- comments ----------
   // Commenting lives in the stage's own layer (comments/), over a variant on the page and nowhere
-  // else: not a lobby, not a tool (all states, compare, autoplay), not focus mode, not a shot.
+  // else: not a lobby, all states or autoplay, not focus mode, not a shot. Compare shares this layer across both panes.
   const phoneMq = matchMedia('(max-width: 639px)')
   const HANDLE = 'flex h-9 items-center gap-1.5 rounded-l-lg bg-white/95 pl-2.5 pr-3 text-xs font-medium text-zinc-900 shadow-lg shadow-black/10 ring-1 ring-black/10 backdrop-blur hover:bg-white dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-white/15 dark:hover:bg-zinc-900'
   // The page inside a device view has none of its own: the page outside comments on it.
-  const commentHost = () => !framed && !st.focus && q.get('hints') !== '0' ? hintHost() : null
+  const compareHost = () => st.place.view === 'variant' && st.place.tool === 'compare' ? layer?.el.querySelector<HTMLElement>('[data-comment-compare]') ?? null : null
+  const commentHost = () => !framed && !st.focus && q.get('hints') !== '0' ? compareHost() ?? hintHost() : null
   // The side panel carries the list; a phone has it as a sheet from the pill.
   const railOn = () => !!commentHost() && !phoneMq.matches
   const comments = createComments({
     layer: zone.querySelector<HTMLElement>('[data-comments]')!,
+    visible: place => {
+      const scope = compareHost(), p = st.place
+      return !!scope && p.view === 'variant' && place.proto === p.proto && !![...scope.querySelectorAll<HTMLElement>('[data-mount]')].find(m => m.dataset.route === `${place.proto}/${place.variant}` && (m.dataset.commentState ?? '') === (place.state ?? ''))
+    },
+    onGuardPick: el => {
+      const scope = compareHost(), mode = comments.store.get().mode
+      if (!scope || mode.kind !== 'compose' || !scope.contains(el)) return false
+      const target = describeComment(scope, el)
+      if (!target.source || target.source.variant === (mode.target.source?.variant ?? comments.store.get().place?.variant)) return false
+      comments.store.set({ pendingTag: target })
+      return true
+    },
+    onReferenceComment: item => {
+      const mode = comments.store.get().mode
+      if (!compareHost() || mode.kind !== 'compose' || mode.id === item.id || item.proto !== comments.store.get().place?.proto || item.variant === (mode.target.source?.variant ?? comments.store.get().place?.variant)) return false
+      if (!item.target) return false
+      comments.act.openSheet(false)
+      comments.store.set({ pendingTag: { ...item.target, source: { proto: item.proto, variant: item.variant, ...(item.state ? { state: item.state } : {}) }, commentRef: { id: item.id, proto: item.proto, variant: item.variant, n: item.n, quote: commentText(item) } } })
+      return true
+    },
+    variantMentions: () => {
+      const p = cur()
+      return !p || p.variants.length < 2 ? [] : p.variants.map(v => ({
+        label: 'Variant', selector: ':scope > *', tag: 'variant', text: `Variant ${variantLabel(p, v.id)} · ${v.name}`,
+        rect: { x: 0, y: 0, w: 0, h: 0 },
+        source: { proto: p.id, variant: v.id },
+        variantRef: { proto: p.id, variant: v.id, label: variantLabel(p, v.id), name: v.name },
+      }))
+    },
+    show: () => {
+      if (phoneMq.matches) comments.act.openSheet(true)
+      else { selectPanelTab('comments'); hintsOpen = true; remember('proto-hints', '1'); paintHints() }
+    },
     // While a device view is on, comments are on the design in its frame, about that layout.
     // The stage's own artboard is the stage's layout: what is written there carries no other.
     mount: () => !commentHost() ? null : frameOn() ? deviceView.mount() : commentHost(),
@@ -2170,7 +2217,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const host = commentHost(), pl = st.place, p = cur()
     comments.copy.setStage(copyHost(), copy.routeOf(copyHost()))
     comments.act.setScope(pl.view === 'session' ? null : pl.proto)
-    comments.setPlace(host && pl.view === 'variant' && p ? { proto: pl.proto, variant: pl.variant, ...(pl.state ? { state: pl.state } : {}), phone: phoneMq.matches, title: p.title, ...(viewOn() ? { view: viewSize() } : {}) } : null)
+    comments.setPlace(host && pl.view === 'variant' && p ? { proto: pl.proto, variant: pl.variant, ...(pl.state ? { state: pl.state } : {}), phone: phoneMq.matches, title: p.title, ...(viewOn() ? { view: viewSize() } : {}), ...(compareHost() ? { compare: true as const } : {}) } : null)
     if (st.status?.inbox !== seenInbox) { seenInbox = st.status?.inbox; comments.setInbox(seenInbox); intake.set(seenInbox?.intake, protos.length > 0) }
     zone.toggleAttribute('data-picking', !!host && comments.counts().picking)
   }

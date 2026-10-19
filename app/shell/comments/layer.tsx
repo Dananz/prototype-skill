@@ -16,7 +16,7 @@ import type { Box, Item, Target } from './types'
 import { Icon, PinDot, Reply, STATE, Body } from './ui'
 import { sameView } from '../view/sizes'
 
-function Pins({ items, boxes, active, onOpen }: { items: { item: Item; done: boolean }[]; boxes: Record<string, Box>; active: string | null; onOpen: (id: string) => void }) {
+function Pins({ items, boxes, active, onOpen, compare }: { compare?: boolean; items: { item: Item; done: boolean }[]; boxes: Record<string, Box>; active: string | null; onOpen: (id: string) => void }) {
   // Comments hidden in something closed share their opener: one pin there, with how many.
   const via = new Map<string, { n: number; ids: string[] }>()
   for (const { item: c, done } of items) {
@@ -55,7 +55,7 @@ function Pins({ items, boxes, active, onOpen }: { items: { item: Item; done: boo
             ? <div className={`pointer-events-none absolute z-10 ring-2 ring-inset ${ring}`} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} />
             : <div className={`pointer-events-none absolute z-10 rounded-md ring-2 ${ring}`} style={{ left: b.x - 3, top: b.y - 3, width: b.w + 6, height: b.h + 6 }} />)}
         {!done && <button data-comment={c.id} onClick={() => onOpen(c.id)} aria-label={whole ? `Comment ${c.n}, on the whole variant` : `Comment ${c.n}`} className="pointer-events-auto absolute z-20 rounded-full shadow-md ring-2 ring-white transition hover:scale-110 dark:ring-zinc-950" style={pt ? { left: b.x - 10, top: b.y - 10 } : whole ? { left: b.x + 8, top: b.y + 8 } : { left: b.x + b.w - 10, top: b.y - 10 }}>
-          <PinDot n={c.n} whole={whole} />
+          <PinDot n={c.n} label={compare ? c.variant : undefined} whole={whole} />
         </button>}
       </div>
     )
@@ -111,7 +111,7 @@ export function Layer() {
   // Only comments are on the design; a decision (Pick, More, Build) is on the variant as a whole.
   // One written in a device view is on that layout: its pin shows over the view at that size only.
   const here = rows.filter(r => r.here && r.item.target && !r.item.action && sameView(r.item.target.view, s.place?.view))
-  const listed = here.map(r => ({ id: r.item.id, t: r.item.target! }))
+  const listed = here.map(r => ({ id: r.item.id, t: s.place?.compare ? { ...r.item.target!, source: { proto: r.item.proto, variant: r.item.variant, ...(r.item.state ? { state: r.item.state } : {}) } } : r.item.target! }))
   if (editing && !editing.id) listed.push({ id: '__new', t: editing.target })
   // The whole-variant box has the focus: the variant is outlined edge to edge, with no composer.
   const wholeT = s.wholeFocus && s.place ? act.wholeTarget() : null
@@ -119,7 +119,7 @@ export function Layer() {
   const boxes = useBoxes(listed)
   if (!s.place) return null
   const phone = s.place.phone
-  const nextN = Math.max(0, ...s.items.filter(i => i.proto === s.place!.proto && i.variant === s.place!.variant).map(i => i.n)) + 1
+  const nextN = Math.max(0, ...s.items.filter(i => i.proto === s.place!.proto && i.variant === (editing?.target.source?.variant ?? s.place!.variant)).map(i => i.n)) + 1
   // What a new comment is on stays outlined while it is written (an existing one is outlined by its pin).
   const onNew = editing && !editing.id ? boxes['__new'] : undefined
   const onSpot = !!editing?.target.point
@@ -137,7 +137,7 @@ export function Layer() {
           <span className="absolute start-14 top-0 inline-flex h-6 items-center gap-1.5 rounded-b-md bg-proto-primary px-2 text-[11px] font-semibold text-proto-primary-fg"><Icon name="frame" className="size-3" />Whole variant</span>
         </div>
       )}
-      <Pins items={here.map(r => ({ item: r.item, done: r.state === 'done' }))} boxes={boxes} active={s.active} onOpen={act.open} />
+      <Pins items={here.map(r => ({ item: r.item, done: r.state === 'done' }))} boxes={boxes} active={s.active} onOpen={act.open} compare={s.place.compare} />
       {editing && (
         <Composer key={editing.id ?? '__new'} target={editing.target} n={editedItem?.n ?? nextN} place={boxes[editing.id ?? '__new'] ?? null}
           sheet={phone} tagging={m.kind === 'tag'} editing={!!editedItem} id={editedItem?.id}
