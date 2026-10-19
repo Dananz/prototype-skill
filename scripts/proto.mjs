@@ -581,7 +581,24 @@ function add() {
 
 // A placeholder for a variant, from one of app/stubs/: its name kept on one line, which the
 // "Placeholder while" header needs.
-const stubOf = (template, id, name) => template.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name.replace(/[\r\n]+/g, ' '))
+// Its words follow the session's language (`proto up --lang`); the header stays English, the tools read it.
+const stubOf = (template, id, name) => localStub(template.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name.replace(/[\r\n]+/g, ' ')))
+const STUB_WORDS = {
+  he: { 'Planning the look': 'מתכנן את המראה', 'Plan and look chosen': 'התוכנית והמראה נבחרו', 'Writing the first screen': 'כותב את המסך הראשון',
+    'Content and interactions': 'תוכן ואינטראקציות', 'Checks and screenshots': 'בדיקות וצילומי מסך', '>Building<': '>בבנייה<' },
+}
+const RTL_LANGS = new Set(['he'])
+function localStub(text) {
+  const lang = readSession(sessionDir())?.lang
+  const words = STUB_WORDS[lang]
+  if (!words) return text
+  const [head, ...body] = text.split('\n')
+  let out = body.join('\n')
+  // Step labels are quoted strings; '>Building<' is the text of an element.
+  for (const [en, local] of Object.entries(words)) out = en.startsWith('>') ? out.replaceAll(en, local) : out.replaceAll(`'${en}'`, `'${local}'`)
+  if (RTL_LANGS.has(lang)) out = out.replace('dir="ltr"', `dir="rtl" lang="${lang}"`)
+  return [head, out].join('\n')
+}
 // What one line of a direction's plan holds (.proto/briefs/<slug>.json), shown on its placeholder.
 const PLAN_KEYS = ['name', 'concept', 'display', 'body', 'surface', 'ink', 'accent', 'signature']
 
