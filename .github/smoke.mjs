@@ -38,6 +38,7 @@ import { shareChecks } from './share-checks.mjs'
 import { tweaksChecks } from './tweaks-checks.mjs'
 import { tweaksRegistryChecks } from './tweaks-registry-checks.mjs'
 import { middleDragChecks } from './middle-drag-checks.mjs'
+import { zoomResetChecks } from './zoom-reset-checks.mjs'
 import { virtualVariantsChecks } from './virtual-variants-checks.mjs'
 import { virtualWindowChecks } from './virtual-window-checks.mjs'
 import { virtualReactChecks } from './virtual-react-checks.mjs'
@@ -185,6 +186,13 @@ let { pid } = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
 // its own connection: the spawnSync calls block this script for many seconds, long enough for
 // the server to close an idle kept-alive socket without fetch noticing.
 // A focused run uses the same real browser/server harness as the full suite.
+if (process.argv.includes('--zoom-reset-only')) {
+  await zoomResetChecks({ proto, app, local, openPage, fail, keepShots })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused zoom reset checks')
+  process.exit(0)
+}
 if (process.argv.includes('--compare-comments-only')) {
   await commentCompareChecks({ proto, app, openPage, fail })
   proto(['rm'])
@@ -229,6 +237,7 @@ await splitChecks({ proto, app, local, openPage, fail, keepShots })
 await keyboardColumnsChecks({ proto, app, local, openPage, fail, keepShots })
 await slotChecks({ proto, app, local, openPage, fail })
 await middleDragChecks({ proto, app, local, openPage, fail })
+await zoomResetChecks({ proto, app, local, openPage, fail })
 await variantLabelsChecks({ proto, app, local, openPage, fail })
 await headerChecks({ proto, app, local, openPage, fail })
 await phoneFrameChecks({ proto, app, local, openPage, fail })

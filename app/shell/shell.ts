@@ -540,6 +540,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (frameOn()) return patchView(v ? { zoom: v } : { zoom: 0, home: st.view.home + 1 })
     st.scale = v; render(); fit()
   }
+  function resetViewKey(e: KeyboardEvent) {
+    if (e.key !== '0' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.defaultPrevented || !frameOn()) return false
+    if ((e.target as Element)?.closest?.('input, textarea, select, [contenteditable]')) return false
+    e.preventDefault()
+    setScale(0)
+    return true
+  }
   const phoneSize = (proto: Proto) => `width:${proto.screen[0] + 20}px;height:${proto.screen[1] + 20}px`
   // A phone's card holds the phone itself, so the phone scale can size it (see fit).
   const thumb = (proto: Proto, aspect: string) => proto.kind === 'phone'
@@ -1903,6 +1910,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   listen(window, 'keydown', e => {
     const t = e.target as Element
     if (settingsOpen || shareOpen) return
+    if (resetViewKey(e)) return
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); return act('side', (wide() ? st.side : st.drawer) ? '0' : '1', '') }
     // Cmd or Ctrl Enter sends what's ready to Claude, from anywhere but a field of the design's own.
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
@@ -2179,6 +2187,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
    *  actions, as out here, and Esc stops. */
   function viewKey(e: KeyboardEvent) {
     if (settingsOpen || shareOpen) return
+    if (resetViewKey(e)) return
     const t = e.target as Element
     if (e.metaKey || e.ctrlKey || e.altKey || t.closest?.('input, textarea, select, [contenteditable]')) return
     if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }

@@ -107,6 +107,7 @@ function Settings(p: Props) {
   const shortcuts = [
     ['Previous / next variant', '← / →'], ['Comment on an element', 'C'], ['Comment on the whole variant', 'Shift C'],
     ['Send draft comments', `${mod} Enter`], ['Toggle sidebar', `${mod} \\`], ['Toggle focus mode', 'F'],
+    ['Fit and center canvas', `${mod} 0`],
     ['Go to the working variant', 'W'], ['Design actions (desktop)', 'P'], ['Close a tool or go back', 'Esc'],
   ]
   const pane = category === 'appearance' ? h('div', { className: 'pb-6' },
