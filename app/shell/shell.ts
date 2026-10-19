@@ -2374,10 +2374,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     return { proto: q.id, variant: v.id, label: variantLabel(q, v.id), name: v.name, picked: pickOf(q) === v.id, hints: same ? cur.hints : false, copy: same ? cur.copy : false }
   }
   const drawVmenu = comments.mountDecide(root.querySelector<HTMLElement>('[data-vmenu]')!)
-  // A press outside both the options and the switcher under them closes the two together.
+  // A press anywhere outside the options closes them: in the switcher under them, the switcher
+  // stays (and the press goes on to what it was on); anywhere else, the two close together.
   document.addEventListener('pointerdown', e => {
     const at = e.target as Element
-    if (st.open === 'vmenu' && st.under && !at.closest?.('[data-pop], [role="menu"], [data-vmenu]')) st.under = null
+    if (st.open !== 'vmenu' || at.closest?.('[role="menu"], [data-vmenu]')) return
+    st.open = st.under && at.closest?.('[data-pop]') ? st.under : null
+    st.under = null
+    // Only the options close now: redrawing the switcher here would replace the row under the
+    // pointer and lose its click, so the rest is drawn once the press is over.
+    paintVmenu()
+    addEventListener('pointerup', () => setTimeout(render), { once: true })
   }, true)
   const paintVmenu = () => drawVmenu({
     open: st.open === 'vmenu', subject: vmenuSubject(), anchor: () => null,
