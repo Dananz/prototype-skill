@@ -9,7 +9,9 @@ export type Box = { x: number; y: number; w: number; h: number; via?: boolean }
  * What a comment is on, or tags. `selector` finds it again from the variant's mount (it holds
  * across hot reloads while the structure does); `rect` is where it was, in CSS px from the
  * variant root's top left, which is what the agent is told. A comment pinned with a long press
- * has a `point` too, in the same px: the spot itself, with the element under it for context.
+ * has a `point` too, in the same px: the spot itself, with the element under it for context. One
+ * dragged out with the mouse has a `region`, in the same px: the box itself, and its element is the
+ * smallest one around all of it (whose `rect` is still its own box, to find it again by).
  * `src` is where it is written, its file under src/protos and line (`today/parts.tsx:30`), and
  * `component` the component it is written in (both stamped by source.mjs). One picked in a device
  * view (view/) has its `view`: the layout it is on, which its rect is measured in. `uses` is the
@@ -29,12 +31,12 @@ export type Use = { component: string; at: string; key?: string; props?: string 
 export type VariantRef = { proto: string; variant: string; label: string; name: string }
 export type CommentRef = { id: string; proto: string; variant: string; n: number; quote: string }
 export type Source = { proto: string; variant: string; state?: string }
-export type Target = { source?: Source; commentRef?: CommentRef; variantRef?: VariantRef; label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; stage?: { w: number; h: number }; point?: { x: number; y: number }; view?: ViewSize; uses?: Use[]; within?: string; route?: string[]; whole?: true }
+export type Target = { source?: Source; commentRef?: CommentRef; variantRef?: VariantRef; label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; stage?: { w: number; h: number }; point?: { x: number; y: number }; region?: Box; view?: ViewSize; uses?: Use[]; within?: string; route?: string[]; whole?: true }
 
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
 export type Seg = string | { tag: number }
-/** A comment's picture: one of the design (the camera, marked up or not), or an image the user pasted or dropped (`pasted`). */
-export type Shot = { src: string; pasted?: boolean }
+/** A comment's picture: one of the design (the camera, marked up or not), or an image the user pasted or dropped (`pasted`). `region`: the crop of a dragged-out region, as it was taken. */
+export type Shot = { src: string; pasted?: boolean; region?: boolean }
 /**
  * `shots` are its pictures, at most MAX_SHOTS. `shot` and `pasted` are the one picture a draft saved
  * before a comment could have several; `shotsOf` reads either.

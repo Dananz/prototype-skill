@@ -650,6 +650,7 @@ try {
           if (found.passed) out.push(`   passed over: ${found.passed.what}, found by ${found.passed.how}: not the shape of the comment's box`)
           if (hovered) out.push(`   shown by: the pointer on ${hovered}`)
           if (p.point) out.push(`   the spot: ${p.point.x},${p.point.y} in the design (pinned with a long press)`)
+          if (p.region) out.push(`   the region: ${p.region.x},${p.region.y} ${p.region.w}x${p.region.h} in the design (dragged out with the mouse)`)
           // Another size with the same shape is the same element drawn at another scale (a design
           // that fits its stage, in a stage of another size); another shape is another element, or
           // the page in another state than the user's.

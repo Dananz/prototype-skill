@@ -89,10 +89,12 @@ function scrollerAt(doc: Document, el: Element | null) {
  * The layer over the frame while commenting. The comment layer's inspect does the looking and the
  * picking through it; this keeps what a press on it would otherwise lose: a drag scrolls (the view
  * first when zoomed in, then the page in the frame), a wheel scrolls the page in the frame, and
- * the click that ends a drag picks nothing.
+ * the click that ends a drag picks nothing. While picking, a mouse's drag draws a region to comment
+ * on instead (comments/inspect.tsx); a finger's still scrolls.
  */
 function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>; scale: number; zoomed: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
+  const { store } = useCtx()
   const now = useRef({ scale, zoomed })
   now.current = { scale, zoomed }
   useEffect(() => {
@@ -101,9 +103,10 @@ function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>;
     const doc = () => live?.doc() ?? null
     const local = (x: number, y: number) => { const r = el.getBoundingClientRect(); return [(x - r.left) / now.current.scale, (y - r.top) / now.current.scale] as const }
     let drag: { x: number; y: number; moved: boolean; sc: HTMLElement | null; id: number } | null = null, fingers = 0, dragged = 0
+    const picking = () => { const m = store.get().mode; return m.kind === 'pick' || m.kind === 'tag' || (m.kind === 'time' && !!m.tagging) }
     const down = (e: PointerEvent) => {
       if (e.pointerType === 'touch' && ++fingers > 1) { drag = null; return }
-      if (e.button !== 0) return
+      if (e.button !== 0 || (e.pointerType === 'mouse' && picking())) return
       const d = doc()
       drag = { x: e.clientX, y: e.clientY, moved: false, sc: d && scrollerAt(d, d.elementFromPoint(...local(e.clientX, e.clientY))), id: e.pointerId }
     }
@@ -111,7 +114,7 @@ function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>;
     // in the frame (comments/hover.ts), and leaving the layer is leaving the design.
     const hover = (e: PointerEvent) => {
       const d = doc()
-      if (!d || e.pointerType !== 'mouse' || drag?.moved) return
+      if (!d || e.pointerType !== 'mouse' || drag?.moved || (e.buttons & 1 && picking())) return
       const [x, y] = local(e.clientX, e.clientY)
       hoverMove(d, d.elementFromPoint(x, y), x, y)
     }
