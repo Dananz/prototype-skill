@@ -21,6 +21,7 @@ import { trackPointer } from '../motion'
 import { hoverMove } from '../comments/hover'
 import { seeThrough } from '../comments/dom'
 import { dims, FILL_MIN_W, ORDER, SIZES, type Size } from './sizes'
+import { t, tn } from '../i18n'
 
 /** size null: the stage's own artboard (fill), as big as the stage, with no line over it. */
 export type View = { size: Size | null; land: boolean; zoom: number; /** Counts Fit chosen from the zoom control: each one centres the device again. */ home?: number }
@@ -218,21 +219,21 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
       {!view.size ? null : picking
         ? <div data-view-banner className="flex h-10 shrink-0 items-center gap-2 bg-proto-primary pe-1.5 ps-3 text-xs font-medium text-proto-primary-fg [@media(hover:hover)]:pe-28">
             <Icon name="comment" className="size-4" />
-            <span className="min-w-0 flex-1 truncate">{coarse.matches ? 'Tap' : 'Click'} what to change on {name.toLowerCase()}</span>
+            <span className="min-w-0 flex-1 truncate">{coarse.matches ? t('Tap what to change on {device}', { device: name.toLowerCase() }) : t('Click what to change on {device}', { device: name.toLowerCase() })}</span>
             <span className="hidden shrink-0 tabular-nums opacity-70 sm:inline">{d.w} × {d.h}</span>
-            <button type="button" onClick={() => act.stop()} className="h-7 shrink-0 rounded-full bg-white/20 px-2.5 font-semibold hover:bg-white/30">Done</button>
+            <button type="button" onClick={() => act.stop()} className="h-7 shrink-0 rounded-full bg-white/20 px-2.5 font-semibold hover:bg-white/30">{t('Done')}</button>
           </div>
         : <div data-view-line className="flex h-10 shrink-0 items-center gap-1 pe-1 ps-3 text-[11px] text-zinc-500 dark:text-zinc-400 [@media(hover:hover)]:pe-28">
             <span className="shrink-0 tabular-nums"><span className="font-medium text-zinc-800 dark:text-zinc-200">{d.w} × {d.h}</span> · {pct}%</span>
             <span className="ms-auto" />
             {others.map(({ x, k }) => (
-              <button key={x} type="button" data-view-other={x} onClick={() => set({ size: x, zoom: 0 })} title={`${k} comment${k === 1 ? '' : 's'} on the ${SIZES[x].name.toLowerCase()} layout`}
+              <button key={x} type="button" data-view-other={x} onClick={() => set({ size: x, zoom: 0 })} title={tn(k, '{n} comment on the {name} layout', '{n} comments on the {name} layout', { name: SIZES[x].name.toLowerCase() })}
                 className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[11px] font-medium text-proto-primary-soft-fg hover:bg-proto-primary-soft">
                 <Icon name={x} className="size-3.5" />{k}
               </button>
             ))}
             {view.size === 'tablet' && (
-              <button type="button" data-view-turn onClick={() => set({ land: !view.land, zoom: 0 })} aria-label={view.land ? 'Turn upright' : 'Turn on its side'} title={view.land ? 'Upright' : 'On its side'}
+              <button type="button" data-view-turn onClick={() => set({ land: !view.land, zoom: 0 })} aria-label={view.land ? t('Turn upright') : t('Turn on its side')} title={view.land ? t('Upright') : t('On its side')}
                 className="grid size-8 shrink-0 place-items-center rounded-full text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><Icon name="rotate" className="size-[17px]" /></button>
             )}
           </div>}

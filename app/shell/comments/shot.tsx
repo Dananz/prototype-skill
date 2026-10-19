@@ -6,6 +6,7 @@ import { find, zoomOf, targetMount } from './dom'
 import { Icon, MOD, PRIMARY } from './ui'
 import type { Target } from './types'
 import { listen } from '../quiet'
+import { t } from '../i18n'
 
 /** The variant, drawn as it is and cropped to a margin around `target` (to exactly its region, for a dragged-out one), as a PNG data URL. Null when it can't be found. */
 export async function capture(mount: HTMLElement | null, target: Target, dark: boolean) {
@@ -33,8 +34,8 @@ export async function capture(mount: HTMLElement | null, target: Target, dark: b
 type Mark = { tool: 'box' | 'arrow' | 'pen' | 'text' | 'num'; color: string; pts: [number, number][]; text?: string; n?: number }
 const COLORS = ['#ef4444', '#f59e0b', '#4f46e5', '#18181b']
 const TOOLS: { id: Mark['tool']; icon: string; name: string }[] = [
-  { id: 'box', icon: 'box', name: 'Box' }, { id: 'arrow', icon: 'arrow', name: 'Arrow' }, { id: 'pen', icon: 'pen', name: 'Pen' },
-  { id: 'text', icon: 'text', name: 'Text' }, { id: 'num', icon: 'hash', name: 'Number' },
+  { id: 'box', icon: 'box', name: t('Box') }, { id: 'arrow', icon: 'arrow', name: t('Arrow') }, { id: 'pen', icon: 'pen', name: t('Pen') },
+  { id: 'text', icon: 'text', name: t('Text') }, { id: 'num', icon: 'hash', name: t('Number') },
 ]
 function draw(ctx: CanvasRenderingContext2D, m: Mark, k: number) {
   ctx.strokeStyle = ctx.fillStyle = m.color
@@ -120,21 +121,21 @@ export function ShotEditor({ src, onCancel, onDone }: { src: string; onCancel: (
         <div className="flex flex-wrap items-center gap-1 border-b border-white/10 p-2">
           {TOOLS.map(t => <button key={t.id} onClick={() => setTool(t.id)} title={t.name} aria-pressed={tool === t.id} className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs ${tool === t.id ? 'bg-white text-zinc-900' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}><Icon name={t.icon} className="size-3.5" /><span className="hidden sm:inline">{t.name}</span></button>)}
           <span className="mx-1 h-5 w-px bg-white/15" />
-          {COLORS.map(c => <button key={c} onClick={() => setColor(c)} aria-label={`Color ${c}`} className={`grid size-8 place-items-center rounded-lg ${color === c ? 'bg-white/15' : 'hover:bg-white/10'}`}><span className="size-4 rounded-full ring-1 ring-white/30" style={{ background: c }} /></button>)}
-          <button onClick={() => setMarks(m => m.slice(0, -1))} disabled={!marks.length} title={`Undo · ${MOD} Z`} aria-label="Undo" className="ml-auto grid size-8 place-items-center rounded-lg text-white/70 hover:bg-white/10 disabled:opacity-30"><Icon name="undo" className="size-4" /></button>
+          {COLORS.map(c => <button key={c} onClick={() => setColor(c)} aria-label={t('Color {c}', { c })} className={`grid size-8 place-items-center rounded-lg ${color === c ? 'bg-white/15' : 'hover:bg-white/10'}`}><span className="size-4 rounded-full ring-1 ring-white/30" style={{ background: c }} /></button>)}
+          <button onClick={() => setMarks(m => m.slice(0, -1))} disabled={!marks.length} title={t('Undo · {mod} Z', { mod: MOD })} aria-label={t('Undo')} className="ms-auto grid size-8 place-items-center rounded-lg text-white/70 hover:bg-white/10 disabled:opacity-30"><Icon name="undo" className="size-4" /></button>
         </div>
         <div className="relative min-h-0 flex-1 overflow-auto bg-zinc-800 p-4">
           <div className="relative mx-auto w-fit">
             <canvas ref={cv} onPointerDown={down} onPointerMove={move} onPointerUp={up} className={`block max-h-[52vh] max-w-full touch-none rounded-lg shadow-lg ${tool === 'text' ? 'cursor-text' : 'cursor-crosshair'}`} />
-            {typing && <input autoFocus placeholder="Type, then Enter" className="absolute h-7 rounded-md bg-white px-2 text-[13px] [@media(pointer:coarse)]:h-9 [@media(pointer:coarse)]:text-base text-zinc-900 shadow outline-none ring-2 ring-proto-primary-ring" style={{ left: typing.x, top: typing.y - 14 }}
+            {typing && <input autoFocus placeholder={t('Type, then Enter')} className="absolute h-7 rounded-md bg-white px-2 text-[13px] [@media(pointer:coarse)]:h-9 [@media(pointer:coarse)]:text-base text-zinc-900 shadow outline-none ring-2 ring-proto-primary-ring" style={{ left: typing.x, top: typing.y - 14 }}
               onKeyDown={e => { if (e.key === 'Enter') { const v = e.currentTarget.value.trim(); if (v) setMarks(m => [...m, { tool: 'text', color, pts: [[typing.cx, typing.cy]], text: v }]); setTyping(null) } if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTyping(null) } }}
               onBlur={() => setTyping(null)} />}
           </div>
         </div>
         <div className="flex items-center gap-2 border-t border-white/10 p-2 text-xs text-white/50">
-          <span className="px-1">Draw on what should change. {MOD} Z undoes.</span>
-          <button onClick={onCancel} className="ml-auto h-8 rounded-lg px-3 font-medium text-white/80 hover:bg-white/10">Cancel</button>
-          <button onClick={done} className={`h-8 rounded-lg px-3 font-semibold ${PRIMARY}`}>Attach</button>
+          <span className="px-1">{t('Draw on what should change. {mod} Z undoes.', { mod: MOD })}</span>
+          <button onClick={onCancel} className="ms-auto h-8 rounded-lg px-3 font-medium text-white/80 hover:bg-white/10">{t('Cancel')}</button>
+          <button onClick={done} className={`h-8 rounded-lg px-3 font-semibold ${PRIMARY}`}>{t('Attach')}</button>
         </div>
       </div>
     </div>

@@ -6,7 +6,8 @@ import { useAgentName, useCtx } from './ctx'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { uiBox } from '../portals'
 import { SIZE_PATHS, sizeIcon, sizeName, type ViewSize } from '../view/sizes'
-import { ic } from '../ui'
+import { ago, ic } from '../ui'
+import { t, tn } from '../i18n'
 import type { Action, CState, Item, Seg, Target } from './types'
 
 const PATHS: Record<string, string> = {
@@ -63,7 +64,7 @@ export function PictureStrip({ children, className = '' }: { children: ReactNode
     update()
     return () => { observer.disconnect(); el.removeEventListener('scroll', update) }
   }, [])
-  return <span ref={box} data-shoot="comment-pictures" dir="ltr" role="region" aria-label="Comment pictures" className={`block min-w-0 max-w-full overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-proto-primary-ring ${className}`}>
+  return <span ref={box} data-shoot="comment-pictures" dir="ltr" role="region" aria-label={t('Comment pictures')} className={`block min-w-0 max-w-full overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-proto-primary-ring ${className}`}>
     <span ref={row} className="flex w-max min-w-full items-center gap-2 px-2 py-2 [&>*]:shrink-0">{children}</span>
   </span>
 }
@@ -75,13 +76,13 @@ export function ImageChip({ src, onOpen, onRemove, size = 'md' }: { src: string;
     <Tooltip.Root>
       <Tooltip.Trigger delay={0} render={<span />} data-shoot="image-chip" className={`relative inline-flex ${h} shrink-0 items-center gap-1.5 rounded-lg bg-proto-primary-soft ps-1 ${onRemove ? 'pe-0.5' : 'pe-2'} text-[11px] font-medium text-proto-primary-soft-fg`}>
         {onOpen
-          ? <button onClick={onOpen} title="Draw on the image" className="inline-flex items-center gap-1.5"><img src={src} alt="" className="size-5 rounded object-cover ring-1 ring-black/10 dark:ring-white/20" />Image</button>
-          : <span className="inline-flex items-center gap-1.5"><img src={src} alt="" className="size-5 rounded object-cover ring-1 ring-black/10 dark:ring-white/20" />Image</span>}
-        {onRemove && <button onClick={onRemove} aria-label="Remove the image" title="Remove the image" className="grid size-6 place-items-center rounded-md hover:bg-zinc-900/5 dark:hover:bg-white/10"><Icon name="x" className="size-3" /></button>}
+          ? <button onClick={onOpen} title={t('Draw on the image')} className="inline-flex items-center gap-1.5"><img src={src} alt="" className="size-5 rounded object-cover ring-1 ring-black/10 dark:ring-white/20" />{t('Image')}</button>
+          : <span className="inline-flex items-center gap-1.5"><img src={src} alt="" className="size-5 rounded object-cover ring-1 ring-black/10 dark:ring-white/20" />{t('Image')}</span>}
+        {onRemove && <button onClick={onRemove} aria-label={t('Remove the image')} title={t('Remove the image')} className="grid size-6 place-items-center rounded-md hover:bg-zinc-900/5 dark:hover:bg-white/10"><Icon name="x" className="size-3" /></button>}
       </Tooltip.Trigger>
       <Tooltip.Portal container={uiBox()}>
         <Tooltip.Positioner side="top" align="start" sideOffset={8} collisionPadding={8} className="pointer-events-none z-[250]">
-          <Tooltip.Popup className="w-56 overflow-hidden rounded-lg bg-white shadow-xl ring-1 ring-black/10 dark:bg-zinc-900 dark:ring-white/15"><img src={src} alt="Image preview" className="block max-h-64 w-full object-contain" /></Tooltip.Popup>
+          <Tooltip.Popup className="w-56 overflow-hidden rounded-lg bg-white shadow-xl ring-1 ring-black/10 dark:bg-zinc-900 dark:ring-white/15"><img src={src} alt={t('Image preview')} className="block max-h-64 w-full object-contain" /></Tooltip.Popup>
         </Tooltip.Positioner>
       </Tooltip.Portal>
     </Tooltip.Root>
@@ -98,10 +99,10 @@ export const IB = 'inline-flex h-9 min-w-9 items-center justify-center gap-1.5 r
 export const PRIMARY = 'bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-proto-primary-ring'
 
 export const STATE: Record<CState, { label: string; cls: string }> = {
-  draft: { label: 'Draft', cls: 'text-zinc-400' },
-  sent: { label: 'Sent', cls: 'text-proto-primary-soft-fg' },
-  seen: { label: 'Agent is on it', cls: 'text-proto-primary-soft-fg' },
-  done: { label: 'Done', cls: 'text-emerald-600 dark:text-emerald-400' },
+  draft: { label: t('Draft'), cls: 'text-zinc-400' },
+  sent: { label: t('Sent'), cls: 'text-proto-primary-soft-fg' },
+  seen: { label: t('Agent is on it'), cls: 'text-proto-primary-soft-fg' },
+  done: { label: t('Done'), cls: 'text-emerald-600 dark:text-emerald-400' },
 }
 
 export function Pulse({ on = true, className = 'size-2' }: { on?: boolean; className?: string }) {
@@ -113,13 +114,13 @@ export function Pulse({ on = true, className = 'size-2' }: { on?: boolean; class
 /** Whether Claude will see a send now, in the page's own words. */
 export function Listening({ on, stalled = false, className = '' }: { on: boolean; stalled?: boolean; className?: string }) {
   const agent = useAgentName()
-  if (stalled) return <span className={`inline-flex items-center gap-1.5 text-xs text-zinc-500 ${className}`}><span className="size-1.5 rounded-full bg-amber-500" />Not listening</span>
-  return <span className={`inline-flex items-center gap-1.5 text-xs text-zinc-500 ${className}`}><Pulse on={on} className="size-1.5" />{on ? `${agent} is listening` : `${agent} sees these on its next turn`}</span>
+  if (stalled) return <span className={`inline-flex items-center gap-1.5 text-xs text-zinc-500 ${className}`}><span className="size-1.5 rounded-full bg-amber-500" />{t('Not listening')}</span>
+  return <span className={`inline-flex items-center gap-1.5 text-xs text-zinc-500 ${className}`}><Pulse on={on} className="size-1.5" />{on ? t('{agent} is listening', { agent }) : t('{agent} sees these on its next turn', { agent })}</span>
 }
 
 /** The layout a comment was written on, in a device view (view/): `Desktop · 1440 × 900`. */
 export const ViewChip = ({ v, className = '' }: { v?: ViewSize; className?: string }) => v ? (
-  <span data-view-chip title={`Written in the ${sizeName(v).toLowerCase().replace(' · ', ' view, ')}`} className={`inline-flex shrink-0 items-center gap-1 rounded-md bg-proto-primary-soft px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-proto-primary-soft-fg ${className}`}>
+  <span data-view-chip title={t('Written in the {layout}', { layout: sizeName(v).toLowerCase().replace(' · ', ' view, ') })} className={`inline-flex shrink-0 items-center gap-1 rounded-md bg-proto-primary-soft px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-proto-primary-soft-fg ${className}`}>
     <Icon name={sizeIcon(v.size, v.size === 'tablet' && v.w > v.h)} className="size-3.5" />{sizeName(v)}
   </span>
 ) : null
@@ -145,20 +146,20 @@ export function SrcTag({ t, className = 'max-w-[50%] shrink-0' }: { t?: Pick<Tar
   return s ? <span title={s.full} className={`truncate font-mono text-[11px] text-zinc-400 ${className}`}>{s.short}</span> : null
 }
 
-export function Chip({ t, n }: { t?: Target; n: number }) {
+export function Chip({ t: target, n }: { t?: Target; n: number }) {
   const { act } = useCtx()
-  const ref = t?.variantRef
-  const comment = t?.commentRef
-  const linked = !!ref || !!comment || !!t?.source
+  const ref = target?.variantRef
+  const comment = target?.commentRef
+  const linked = !!ref || !!comment || !!target?.source
   const open = () => {
     act.openSheet(false)
     if (comment) { act.open(comment.id, false); return }
-    if (t) act.revealTarget(t)
+    if (target) act.revealTarget(target)
   }
-  return <span title={comment?.quote ?? (ref ? `${ref.label} · ${ref.name}` : srcOf(t)?.full)} role={linked ? 'link' : undefined} tabIndex={linked ? 0 : undefined}
+  return <span title={comment?.quote ?? (ref ? `${ref.label} · ${ref.name}` : srcOf(target)?.full)} role={linked ? 'link' : undefined} tabIndex={linked ? 0 : undefined}
     onClick={linked ? e => { e.stopPropagation(); open() } : undefined}
     onKeyDown={linked ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); open() } } : undefined}
-    className={`mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? `Comment ${comment.n}` : `@${ref?.label ?? (t?.source ? `${t.source.variant}·${n}` : n)}`}</span>
+    className={`mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? t('Comment {n}', { n: comment.n }) : `@${ref?.label ?? (target?.source ? `${target.source.variant}·${n}` : n)}`}</span>
 }
 
 export function Body({ c, className = '' }: { c: { body: Seg[]; tags: Target[] }; className?: string }): ReactNode {
@@ -179,7 +180,18 @@ export const ACTION: Record<Action, { say: (v: string) => string; icon: string }
 /** A moment or a range of the motion, as the dock and the inbox write it: `0.35 s`, `0.30–0.62 s`. */
 export const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `${(t.at / 1000).toFixed(2)} s` : `${(t.at / 1000).toFixed(2)}–${(t.to / 1000).toFixed(2)} s`
 /** What a row of the list is about: the element a comment is on, the moment of the motion, or what a decision asked. */
-export const aboutOf = (i: Item) => i.action === 'more-variants' ? `${i.count ?? 5} more variants` : i.action ? ACTION[i.action].say(i.variant) : i.time ? `${i.time.to === undefined ? 'At' : 'Over'} ${spanOf(i.time)}` : i.target?.whole ? 'Whole variant' : `Comment ${i.n}`
+export const aboutOf = (i: Item) => i.action === 'more-variants'
+  ? tn(i.count ?? 5, '{n} more variant', '{n} more variants')
+  : i.action === 'pick' ? t('Picked {v}', { v: i.variant })
+  : i.action === 'unpick' ? t('Unpicked {v}', { v: i.variant })
+  : i.action === 'more' ? t('More like {v}', { v: i.variant })
+  : i.action === 'build' ? t('Build {v}', { v: i.variant })
+  : i.action === 'try-it' ? t('Needs explanation: {v}', { v: i.variant })
+  : i.action === 'copy-options' ? t('Generate copy options for {v}', { v: i.variant })
+  : i.action === 'copy' ? t('Copy for {v}', { v: i.variant })
+  : i.time ? (i.time.to === undefined ? t('At {time}', { time: spanOf(i.time) }) : t('Over {time}', { time: spanOf(i.time) }))
+  : i.target?.whole ? t('Whole variant')
+  : t('Comment {n}', { n: i.n })
 
 /** The words of a comment as plain text, tags written as @1, @2, …: their order in the accompanying targets. */
 export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : (c.tags[s.tag]?.commentRef ? `Comment ${c.tags[s.tag].commentRef!.n}` : `@${c.tags[s.tag]?.variantRef?.label ?? (c.tags[s.tag]?.source ? `${c.tags[s.tag].source!.variant}·${s.tag + 1}` : s.tag + 1)}`)).join('').replace(/ /g, ' ').trim()
@@ -216,6 +228,5 @@ export const Working = ({ className = 'size-2' }: { className?: string }) => (
 export function since(at?: string | number) {
   const t = typeof at === 'number' ? at : at ? Date.parse(at) : NaN
   if (!Number.isFinite(t)) return ''
-  const m = Math.max(0, Math.round((Date.now() - t) / 60000))
-  return m < 1 ? 'now' : m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`
+  return ago(t)
 }

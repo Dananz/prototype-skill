@@ -5,6 +5,7 @@
 // variants does. Shift + right-click is never taken: the shell leaves it to the browser, and the
 // footer says so.
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { t } from '../i18n'
 import { useAgentName, useCtx } from './ctx'
 import { useStore } from './store'
 import { Icon, MOD, PRIMARY, Pulse } from './ui'
@@ -25,7 +26,7 @@ export type MenuRow =
   | { head: string }
 
 export const ROW = 'flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-start text-[13px] outline-none hover:bg-zinc-900/[.04] focus-visible:bg-zinc-900/[.06] disabled:opacity-50 dark:hover:bg-white/[.06] dark:focus-visible:bg-white/10'
-export const BROWSER_HINT = 'Shift + right-click for the browser menu'
+export const BROWSER_HINT = t('Shift + right-click for the browser menu')
 
 /** The rows as a menu's buttons. Choosing one that runs closes the menu (onDone); one that asks hands its ask up. */
 export function MenuRows({ rows, onAsk, onDone }: { rows: MenuRow[]; onAsk: (a: MenuAsk) => void; onDone: () => void }) {
@@ -64,14 +65,14 @@ export function AskForm({ ask, onBack, onDone }: { ask: MenuAsk; onBack: () => v
     if (sending.current) return
     sending.current = true; setBusy(true); setError('')
     try { await ask.send(note, count); setSaid(true) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Could not send') }
+    catch (e) { setError(e instanceof Error ? e.message : t('Could not send')) }
     finally { sending.current = false; setBusy(false) }
   }
-  const status = <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-zinc-500"><Pulse on={listening} className="size-1.5" /><span className="truncate">{listening ? `${agent} is listening` : `${agent} sees this on its next turn`}</span></span>
+  const status = <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-zinc-500"><Pulse on={listening} className="size-1.5" /><span className="truncate">{listening ? t('{agent} is listening', { agent }) : t('{agent} sees this on its next turn', { agent })}</span></span>
   if (said) return (
     <div role="status" className="p-3">
       <p className="flex items-center gap-2 text-[13px] font-medium"><span className="grid size-5 shrink-0 place-items-center rounded-full bg-proto-primary-soft text-proto-primary-soft-fg"><Icon name="check" className="size-3" /></span>{ask.done(count)}</p>
-      <p className="mt-1.5 ps-7 text-xs text-zinc-500">{listening ? `Sent to ${agent}.` : `It waits until ${agent} listens, on its next turn.`}</p>
+      <p className="mt-1.5 ps-7 text-xs text-zinc-500">{listening ? t('Sent to {agent}.', { agent }) : t('It waits until {agent} listens, on its next turn.', { agent })}</p>
     </div>
   )
   const step = 'grid size-8 place-items-center rounded-lg text-zinc-600 hover:bg-zinc-900/5 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10'
@@ -81,20 +82,20 @@ export function AskForm({ ask, onBack, onDone }: { ask: MenuAsk; onBack: () => v
       else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() }
     }}>
       <div className="flex items-center gap-1 pb-1.5">
-        <button onClick={() => { if (!sending.current) onBack() }} aria-label="Back" className="grid size-8 shrink-0 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white"><Icon name="left" /></button>
+        <button onClick={() => { if (!sending.current) onBack() }} aria-label={t('Back')} className="grid size-8 shrink-0 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white"><Icon name="left" /></button>
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{ask.title}</span>
         {ask.count !== undefined && <span data-shoot="ctx-count" className="flex shrink-0 items-center rounded-xl bg-zinc-900/[.04] dark:bg-white/[.06]">
-          <button onClick={() => setCount(c => Math.max(1, c - 1))} disabled={count <= 1} aria-label="One fewer" className={step}><Icon name="minus" className="size-3.5" /></button>
+          <button onClick={() => setCount(c => Math.max(1, c - 1))} disabled={count <= 1} aria-label={t('One fewer')} className={step}><Icon name="minus" className="size-3.5" /></button>
           <output aria-live="polite" className="min-w-5 text-center text-[13px] font-semibold tabular-nums">{count}</output>
-          <button onClick={() => setCount(c => Math.min(9, c + 1))} disabled={count >= 9} aria-label="One more" className={step}><Icon name="plus" className="size-3.5" /></button>
+          <button onClick={() => setCount(c => Math.min(9, c + 1))} disabled={count >= 9} aria-label={t('One more')} className={step}><Icon name="plus" className="size-3.5" /></button>
         </span>}
       </div>
       <textarea autoFocus value={note} onChange={e => setNote(e.target.value)} rows={3} maxLength={600} dir="auto" placeholder={ask.hint} aria-label={ask.title}
         className="block w-full resize-none rounded-xl bg-zinc-900/[.04] px-3 py-2 text-[13px] leading-5 outline-none ring-1 ring-inset ring-transparent placeholder:text-zinc-400 focus:ring-proto-primary-ring dark:bg-white/[.06] [@media(pointer:coarse)]:text-base" />
       {error && <p role="alert" className="mt-2 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-xs text-rose-700 dark:text-rose-300">{error}</p>}
       <div className="mt-2 flex items-center justify-end gap-1.5">
-        <button onClick={() => { if (!sending.current) onBack() }} className="h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">Cancel</button>
-        <button onClick={send} disabled={busy} title={`${MOD} Enter`} data-shoot="ctx-send" className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-50 ${PRIMARY}`}><Icon name="send" className="size-3.5" />{busy ? 'Sending…' : 'Send'}</button>
+        <button onClick={() => { if (!sending.current) onBack() }} className="h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>
+        <button onClick={send} disabled={busy} title={`${MOD} Enter`} data-shoot="ctx-send" className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-50 ${PRIMARY}`}><Icon name="send" className="size-3.5" />{busy ? t('Sending…') : t('Send')}</button>
       </div>
       <div className="mx-1 mt-2 border-t border-black/[.06] pt-2 dark:border-white/10">{status}</div>
     </div>
@@ -141,7 +142,7 @@ export function ContextPop({ open, at, title, sub, rows, onClose }: ContextPopPr
       className="fixed z-40 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={pos}>
       {ask
         ? <AskForm ask={ask} onBack={() => setAsk(null)} onDone={onClose} />
-        : <div role="menu" aria-label={title ?? 'Options'} onKeyDown={arrows} className="p-1.5">
+        : <div role="menu" aria-label={title ?? t('Options')} onKeyDown={arrows} className="p-1.5">
             {title && <div className="flex min-w-0 items-center gap-1.5 px-2 pb-1 pt-1 text-[11px] text-zinc-500"><b className="font-semibold text-zinc-700 dark:text-zinc-200">{title}</b>{sub && <span dir="auto" className="truncate">{sub}</span>}</div>}
             <MenuRows rows={rows} onAsk={setAsk} onDone={onClose} />
             <p className="mx-2 mt-1.5 border-t border-black/[.06] pb-1 pt-2 text-xs text-zinc-400 dark:border-white/10">{BROWSER_HINT}</p>

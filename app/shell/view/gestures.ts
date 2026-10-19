@@ -37,7 +37,9 @@ export const fitOf = (area: { w: number; h: number }, d: { w: number; h: number 
 
 /** Whether the area can still scroll by (dx, dy) on each axis. */
 export function room(a: HTMLElement, dx: number, dy: number) {
-  const x = dx < 0 ? a.scrollLeft > 0 : dx > 0 && a.scrollLeft < a.scrollWidth - a.clientWidth - 1
+  // Right to left, scrollLeft runs from minus the overflow up to 0; measured here from the left.
+  const max = a.scrollWidth - a.clientWidth, left = getComputedStyle(a).direction === 'rtl' ? a.scrollLeft + max : a.scrollLeft
+  const x = dx < 0 ? left > 0 : dx > 0 && left < max - 1
   const y = dy < 0 ? a.scrollTop > 0 : dy > 0 && a.scrollTop < a.scrollHeight - a.clientHeight - 1
   return { x, y }
 }

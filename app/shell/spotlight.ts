@@ -8,6 +8,7 @@
 import type { Act, Hint } from './hints'
 import { esc } from './ui'
 import { frameOf } from './comments/dom'
+import { t } from './i18n'
 
 type Try = Extract<Hint, { kind: 'try' }>
 type Box = { x: number; y: number; w: number; h: number }
@@ -35,8 +36,8 @@ export const showIcon = (cls = '') => icon('show', 14, cls)
 
 /** What an action is called on its spot, and its icon: the start, and for a drag the end. */
 const WORDS: Record<Act, [string, string, string, string]> = {
-  click: ['Click', 'click', '', ''], hover: ['Hover', 'hover', '', ''], 'right-click': ['Right-click', 'right-click', '', ''],
-  drag: ['Grab', 'grab', 'Drop', 'drop'], type: ['Type', 'type', '', ''], key: ['', '', '', ''],
+  click: [t('Click'), 'click', '', ''], hover: [t('Hover'), 'hover', '', ''], 'right-click': [t('Right-click'), 'right-click', '', ''],
+  drag: [t('Grab'), 'grab', t('Drop'), 'drop'], type: [t('Type'), 'type', '', ''], key: ['', '', '', ''],
 }
 export const actOf = (t: Try): Act => t.act ?? (t.key && !t.at ? 'key' : t.to ? 'drag' : 'click')
 /** Whether a thing to try has anything to show on the page. */
@@ -117,7 +118,7 @@ class Glide {
   }
 }
 
-const pillCls = 'absolute flex h-6 items-center gap-1 whitespace-nowrap rounded-full bg-amber-400 pl-2 pr-2.5 text-[11.5px] font-semibold text-zinc-950 shadow-lg shadow-black/30'
+const pillCls = 'absolute flex h-6 items-center gap-1 whitespace-nowrap rounded-full bg-amber-400 ps-2 pe-2.5 text-[11.5px] font-semibold text-zinc-950 shadow-lg shadow-black/30'
 const rise = (delay: number) => still() ? '' : `animation:spot-rise 280ms ${EASE} ${delay}ms both;`
 
 export function createSpotlight(layer: HTMLElement) {
@@ -139,12 +140,12 @@ export function createSpotlight(layer: HTMLElement) {
 
   // The parts are built once per thing shown (and per step), so their entrance plays then;
   // every frame after only moves them.
-  function build(t: Try, s: Spot) {
+  function build(tr: Try, s: Spot) {
     n++
-    const step = s.step !== null ? t.steps?.[s.step] : undefined
-    const act = step ? step.act ?? 'click' : actOf(t)
+    const step = s.step !== null ? tr.steps?.[s.step] : undefined
+    const act = step ? step.act ?? 'click' : actOf(tr)
     const [a, ai, b, bi] = WORDS[act]
-    const label = step ? step.label ?? a : t.label ?? a
+    const label = step ? step.label ?? a : tr.label ?? a
     const hasTo = !!(s.at && s.to)
     const holes = s.at ? 1 + (hasTo ? 1 : 0) + s.more.length : 0
     const fade = (delay: number) => still() ? '' : `animation:spot-fade 300ms ${EASE} ${delay}ms both`
@@ -157,9 +158,9 @@ export function createSpotlight(layer: HTMLElement) {
         ${Array.from({ length: holes }, (_, i) => `<rect data-ring rx="10" fill="none" stroke="${AMBER}" stroke-width="1.5" ${hasTo && i === 1 ? 'stroke-dasharray="5 4"' : ''} style="${fade(60 + (hasTo ? i * 260 : i * 50))}"/>`).join('')}
         ${hasTo ? `<g fill="none" stroke="${AMBER}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path data-arc stroke-dasharray="6 5" mask="url(#spot-draw-${n})"/><polyline data-head style="${still() ? '' : `animation:spot-fade 160ms ${EASE} 560ms both`}"/></g>` : ''}
       </svg>
-      ${s.at && label ? `<div data-pill="a" class="${pillCls}" style="${rise(120)}">${step ? `<span class="-ml-0.5 grid size-4 place-items-center rounded-full bg-zinc-950 text-[10px] tabular-nums text-amber-300">${s.step! + 1}</span>` : ''}${ai ? icon(ai) : ''}${esc(label)}</div>` : ''}
+      ${s.at && label ? `<div data-pill="a" class="${pillCls}" style="${rise(120)}">${step ? `<span class="-ms-0.5 grid size-4 place-items-center rounded-full bg-zinc-950 text-[10px] tabular-nums text-amber-300">${s.step! + 1}</span>` : ''}${ai ? icon(ai) : ''}${esc(label)}</div>` : ''}
       ${hasTo && b ? `<div data-pill="b" class="${pillCls}" style="${rise(520)}">${icon(bi)}${b}</div>` : ''}
-      ${t.key ? `<div data-keys class="absolute flex -translate-x-1/2 items-center gap-1.5 rounded-xl bg-zinc-950/90 py-2 pl-3 pr-2 text-[12.5px] font-medium text-white shadow-xl shadow-black/40 ring-1 ring-amber-400/70" style="${rise(s.at ? 300 : 80)}">${icon('key', 15, 'text-amber-300')}Press${t.key.split(' ').map(k => `<kbd class="grid h-7 min-w-7 place-items-center rounded-md bg-amber-400 px-1.5 font-sans text-[13px] font-semibold text-zinc-950 shadow-[inset_0_-2px_0_rgb(0_0_0/.18)]">${esc(k)}</kbd>`).join('')}</div>` : ''}`
+      ${tr.key ? `<div data-keys class="absolute flex -translate-x-1/2 items-center gap-1.5 rounded-xl bg-zinc-950/90 py-2 ps-3 pe-2 text-[12.5px] font-medium text-white shadow-xl shadow-black/40 ring-1 ring-amber-400/70" style="${rise(s.at ? 300 : 80)}">${icon('key', 15, 'text-amber-300')}${t('Press')}${tr.key.split(' ').map(k => `<kbd class="grid h-7 min-w-7 place-items-center rounded-md bg-amber-400 px-1.5 font-sans text-[13px] font-semibold text-zinc-950 shadow-[inset_0_-2px_0_rgb(0_0_0/.18)]">${esc(k)}</kbd>`).join('')}</div>` : ''}`
   }
 
   function frame(now: number) {

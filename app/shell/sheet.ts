@@ -8,6 +8,7 @@ import { Drawer } from '@base-ui/react/drawer'
 import { uiBox } from './portals'
 import { VIRTUAL_THRESHOLD } from './virtual'
 import { CachedList } from './virtual-react'
+import { t } from './i18n'
 
 export type SheetRow = { id: string; label: string; name: string; on: boolean; picked: boolean; editing: boolean }
 export type SheetProps = {
@@ -27,7 +28,7 @@ const GRID = h('svg', { className: 'size-3.5 shrink-0', viewBox: '0 0 24 24', fi
 const X = h('svg', { className: 'size-4 shrink-0', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'M6 6l12 12M18 6 6 18' }))
 const DOT = h('span', { className: 'relative inline-flex size-1.5' }, h('span', { className: 'absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60' }), h('span', { className: 'relative inline-flex size-full rounded-full bg-emerald-500' }))
 
-const ROW = 'flex h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-[13px] outline-none focus-visible:bg-zinc-900/[.06] dark:focus-visible:bg-white/10'
+const ROW = 'flex h-11 w-full items-center gap-3 rounded-xl px-3 text-start text-[13px] outline-none focus-visible:bg-zinc-900/[.06] dark:focus-visible:bg-white/10'
 
 function Sheet(p: SheetProps) {
   const row = (r: SheetRow): ReactNode => h('button', {
@@ -37,7 +38,7 @@ function Sheet(p: SheetProps) {
     h('span', { className: `w-6 shrink-0 text-center text-xs font-semibold tabular-nums ${r.on ? '' : 'text-zinc-400'}` }, r.label),
     h('span', { dir: 'auto', className: 'min-w-0 flex-1 truncate text-start' }, r.name),
     r.editing ? DOT : null,
-    r.picked ? h('span', { className: 'shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-400' }, 'Picked') : null,
+    r.picked ? h('span', { className: 'shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-400' }, t('Picked')) : null,
     r.on ? CHECK : null)
 
   return h(Drawer.Root, { open: p.open, onOpenChange: (open: boolean) => { if (!open) p.onClose() } },
@@ -49,9 +50,9 @@ function Sheet(p: SheetProps) {
         h(Drawer.Popup, { className: '-mb-[3rem] w-full max-h-[calc(75vh+3rem)] overflow-y-auto overscroll-contain rounded-t-3xl bg-white pb-[calc(0.75rem+env(safe-area-inset-bottom,0px)+3rem)] pt-2 text-[13px] text-zinc-900 shadow-2xl shadow-black/20 outline-none touch-auto [transform:translateY(var(--drawer-swipe-movement-y))] transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:select-none data-ending-style:[transform:translateY(calc(100%-3rem+2px))] data-starting-style:[transform:translateY(calc(100%-3rem+2px))] data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] dark:bg-zinc-900 dark:text-zinc-100' },
           h('div', { className: 'mx-auto mb-1 h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700' }),
           h(Drawer.Content, { className: 'px-2' },
-            h('div', { className: 'flex items-center justify-between pb-1 pl-3' },
+            h('div', { className: 'flex items-center justify-between pb-1 ps-3' },
               h(Drawer.Title, { dir: 'auto', className: 'min-w-0 truncate text-[15px] font-semibold' }, p.title),
-              h(Drawer.Close, { 'aria-label': 'Close', className: 'grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
+              h(Drawer.Close, { 'aria-label': t('Close'), className: 'grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
             p.decide ? h('div', { className: 'mb-2 border-b border-black/[.06] pb-3 pt-1 dark:border-white/10' }, p.decide) : null,
             p.rows.length > VIRTUAL_THRESHOLD ? h(CachedList<SheetRow>, {
               items: p.rows, itemKey: r => r.id, render: row, estimate: () => 44,
@@ -61,7 +62,7 @@ function Sheet(p: SheetProps) {
             h('div', { className: 'mt-1.5 border-t border-black/[.06] pt-1.5 dark:border-white/10' },
               h('button', { type: 'button', onClick: p.onLobby, 'aria-current': p.lobby, className: `${ROW} ${p.lobby ? 'font-medium text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'}` },
                 h('span', { className: 'flex w-6 shrink-0 justify-center text-zinc-500 dark:text-zinc-400' }, GRID),
-                h('span', { className: 'min-w-0 flex-1 truncate' }, 'All variants'),
+                h('span', { className: 'min-w-0 flex-1 truncate' }, t('All variants')),
                 h('span', { className: 'shrink-0 text-xs tabular-nums text-zinc-400' }, String(p.rows.length)))))))))
 }
 
@@ -82,9 +83,9 @@ function MenuSheet(p: MenuSheetProps & { container: HTMLElement }) {
         h(Drawer.Popup, { className: '-mb-[3rem] w-full max-h-[calc(80vh+3rem)] overflow-y-auto overscroll-contain rounded-t-3xl bg-white pb-[calc(0.5rem+env(safe-area-inset-bottom,0px)+3rem)] pt-2 text-[13px] text-zinc-900 shadow-2xl shadow-black/20 outline-none touch-auto [transform:translateY(var(--drawer-swipe-movement-y))] transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:select-none data-ending-style:[transform:translateY(calc(100%-3rem+2px))] data-starting-style:[transform:translateY(calc(100%-3rem+2px))] data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] dark:bg-zinc-900 dark:text-zinc-100' },
           h('div', { className: 'mx-auto mb-1 h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700' }),
           h(Drawer.Content, null,
-            h('div', { className: 'flex items-center justify-between pb-1 pl-5 pr-2' },
+            h('div', { className: 'flex items-center justify-between pb-1 ps-5 pe-2' },
               h(Drawer.Title, { dir: 'auto', className: 'min-w-0 truncate text-[15px] font-semibold' }, p.title),
-              h(Drawer.Close, { 'aria-label': 'Close', className: 'grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
+              h(Drawer.Close, { 'aria-label': t('Close'), className: 'grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
             h('div', { ref: setContent, dangerouslySetInnerHTML: { __html: p.html } }))))))
 }
 
@@ -125,12 +126,12 @@ function TrySheet(p: TrySheetProps & { container: HTMLElement }) {
         h(Drawer.Popup, { ref: popup, initialFocus: popup, className: '-mb-[3rem] flex w-full max-h-[calc(82vh+3rem)] flex-col overflow-hidden rounded-t-3xl bg-white pb-[calc(var(--pill-h,0px)+0.5rem+3rem)] pt-2 text-[13px] text-zinc-900 shadow-2xl shadow-black/20 outline-none touch-auto [transform:translateY(var(--drawer-swipe-movement-y))] transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:select-none data-ending-style:[transform:translateY(calc(100%-3rem+2px))] data-starting-style:[transform:translateY(calc(100%-3rem+2px))] data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] dark:bg-zinc-900 dark:text-zinc-100' },
           h('div', { className: 'mx-auto mb-1 h-1 w-10 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-700' }),
           h(Drawer.Content, { ref: box, className: 'flex min-h-0 flex-1 flex-col px-3' },
-            h('div', { className: 'flex shrink-0 items-center gap-2 pb-1 pl-1 pt-1' },
-              h(Drawer.Title, { className: 'flex min-w-0 items-center gap-2 text-[17px] font-semibold' }, KEY, 'Try it',
+            h('div', { className: 'flex shrink-0 items-center gap-2 pb-1 ps-1 pt-1' },
+              h(Drawer.Title, { className: 'flex min-w-0 items-center gap-2 text-[17px] font-semibold' }, KEY, t('Try it'),
                 p.count ? h('span', { className: 'text-[15px] font-normal tabular-nums text-zinc-400' }, String(p.count)) : null),
               h('span', { className: 'ms-auto' }),
-              p.fill ? h('button', { type: 'button', 'data-hint': 'fill', title: 'Type the values into this design’s fields', className: 'inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-zinc-900/[.05] px-3.5 text-[13px] font-medium text-zinc-700 active:bg-zinc-900/10 dark:bg-white/[.08] dark:text-zinc-200 dark:active:bg-white/15', dangerouslySetInnerHTML: { __html: p.fill } }) : null,
-              h(Drawer.Close, { 'aria-label': 'Close', className: 'grid size-9 shrink-0 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
+              p.fill ? h('button', { type: 'button', 'data-hint': 'fill', title: t('Type the values into this design’s fields'), className: 'inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-zinc-900/[.05] px-3.5 text-[13px] font-medium text-zinc-700 active:bg-zinc-900/10 dark:bg-white/[.08] dark:text-zinc-200 dark:active:bg-white/15', dangerouslySetInnerHTML: { __html: p.fill } }) : null,
+              h(Drawer.Close, { 'aria-label': t('Close'), className: 'grid size-9 shrink-0 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
             h('div', { 'data-try-list': '', className: '-mx-3 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1' }),
             h('div', { 'data-try-foot': '', className: '-mx-3 shrink-0' }))))))
 }

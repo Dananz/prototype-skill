@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // proto: one live prototype app per agent session, served locally or on the tailnet.
 //
-//   proto up [--name "Session name"] [--stack react|vue]   create or restart, print the URL; an existing
+//   proto up [--name "Session name"] [--lang en|he] [--stack react|vue]   create or restart, print the URL; an existing
 //             session's copy of the app (shell, config, packages) is brought up to date first
 //   proto add <slug> --title "…" --variants "A:Name,B:Name" [--ask "…"] [--kind phone] [--screen 402x874]
 //             [--from <slug>/<letter>[,<slug>/<letter>…]]   built from those variants: nested under the first
@@ -68,6 +68,14 @@ import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, isCurrent } from '../app/assignment.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
+// The languages the page speaks (app/shell/i18n.ts). --lang sets the session's: the language the
+// conversation with the user is in.
+const LANGS = ['en', 'he']
+const langFlag = () => {
+  if (flags.lang === undefined) return null
+  if (!LANGS.includes(flags.lang)) die(`--lang must be one of ${LANGS.join(', ')}`)
+  return flags.lang
+}
 const APP = join(SKILL, 'app')
 const INDEX = join(homedir(), '.prototypes', 'sessions.json')
 const IDLE_HOURS = 6
@@ -80,7 +88,7 @@ const BASE = { vite: '^8.3.0', tailwindcss: '^4.3.0', '@tailwindcss/vite': '^4.3
 // UI's Drawer, which is React, and so is the comment layer (which takes its screenshots with
 // modern-screenshot). The few icons the shell takes from Phosphor are its own SVG files, so they
 // work the same in a Vue app.
-const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.9.0', 'modern-screenshot': '^4.7.0', '@phosphor-icons/core': '^2.1.1' }
+const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.9.0', 'modern-screenshot': '^4.7.0', '@phosphor-icons/core': '^2.1.1', '@fontsource-variable/google-sans': '^5.3.2' }
 // What a variant can reach for without an install (an install reloads the page): icons and
 // motion. Fonts come from Google Fonts at run time (src/fonts.ts, `proto fonts`). New sessions
 // only; `proto up` never adds them to an existing one, so a running session isn't reinstalled and
@@ -311,7 +319,7 @@ function scaffold(dir, project) {
   })
   const id = sessionId()
   writeJson(sessionFile(dir), {
-    id, agent: detectedAgent() ?? 'agent', name: flags.name || basename(project), project, path: tilde(project), stack,
+    id, agent: detectedAgent() ?? 'agent', name: flags.name || basename(project), lang: langFlag() ?? 'en', project, path: tilde(project), stack,
     createdAt: new Date().toISOString(), port: null, tailnetPort: null, pid: null,
     url: null, localUrl: null, keep: false, idleHours: IDLE_HOURS, deleteDays: DELETE_DAYS,
   })
@@ -405,6 +413,7 @@ async function up() {
   beat(dir)
   let s = readSession(dir)
   if (flags.name && flags.name !== s.name) s = patchSession(dir, { name: flags.name })
+  if (langFlag() && langFlag() !== (s.lang ?? 'en')) s = patchSession(dir, { lang: langFlag() })
   if (!existsSync(join(dir, 'node_modules', 'vite'))) install(dir)
 
   if (!await running(s)) {
@@ -572,7 +581,24 @@ function add() {
 
 // A placeholder for a variant, from one of app/stubs/: its name kept on one line, which the
 // "Placeholder while" header needs.
-const stubOf = (template, id, name) => template.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name.replace(/[\r\n]+/g, ' '))
+// Its words follow the session's language (`proto up --lang`); the header stays English, the tools read it.
+const stubOf = (template, id, name) => localStub(template.replaceAll('__ID__', () => id).replaceAll('__NAME__', () => name.replace(/[\r\n]+/g, ' ')))
+const STUB_WORDS = {
+  he: { 'Planning the look': 'מתכנן את המראה', 'Plan and look chosen': 'התוכנית והמראה נבחרו', 'Writing the first screen': 'כותב את המסך הראשון',
+    'Content and interactions': 'תוכן ואינטראקציות', 'Checks and screenshots': 'בדיקות וצילומי מסך', '>Building<': '>בבנייה<' },
+}
+const RTL_LANGS = new Set(['he'])
+function localStub(text) {
+  const lang = readSession(sessionDir())?.lang
+  const words = STUB_WORDS[lang]
+  if (!words) return text
+  const [head, ...body] = text.split('\n')
+  let out = body.join('\n')
+  // Step labels are quoted strings; '>Building<' is the text of an element.
+  for (const [en, local] of Object.entries(words)) out = en.startsWith('>') ? out.replaceAll(en, local) : out.replaceAll(`'${en}'`, `'${local}'`)
+  if (RTL_LANGS.has(lang)) out = out.replace('dir="ltr"', `dir="rtl" lang="${lang}"`)
+  return [head, out].join('\n')
+}
 // What one line of a direction's plan holds (.proto/briefs/<slug>.json), shown on its placeholder.
 const PLAN_KEYS = ['name', 'concept', 'display', 'body', 'surface', 'ink', 'accent', 'signature']
 

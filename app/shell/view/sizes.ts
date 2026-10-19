@@ -1,12 +1,14 @@
 // The device view's sizes: a phone, a tablet (turned on its side or upright) and a desktop, in CSS
 // pixels, and the layout this screen already is, which is where the view is off.
 
+import { t } from '../i18n'
+
 export type Size = 'phone' | 'tablet' | 'desktop'
 export const ORDER: Size[] = ['phone', 'tablet', 'desktop']
 export const SIZES: Record<Size, { name: string; w: number; h: number }> = {
-  phone: { name: 'Phone', w: 390, h: 844 },
-  tablet: { name: 'Tablet', w: 834, h: 1194 },
-  desktop: { name: 'Desktop', w: 1440, h: 900 },
+  phone: { name: t('Phone'), w: 390, h: 844 },
+  tablet: { name: t('Tablet'), w: 834, h: 1194 },
+  desktop: { name: t('Desktop'), w: 1440, h: 900 },
 }
 /** A comment written in a view is on that layout: its size and the page's px. */
 export type ViewSize = { size: Size; w: number; h: number }

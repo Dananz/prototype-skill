@@ -1,5 +1,6 @@
 // Small HTML building blocks for the shell chrome. Everything here returns strings.
 import { SIZE_PATHS } from './view/sizes'
+import { t, time } from './i18n'
 import dotsThree from '@phosphor-icons/core/assets/bold/dots-three-bold.svg?raw'
 import checkCircle from '@phosphor-icons/core/assets/regular/check-circle.svg?raw'
 import checkCircleFill from '@phosphor-icons/core/assets/fill/check-circle-fill.svg?raw'
@@ -7,6 +8,8 @@ import keyboard from '@phosphor-icons/core/assets/regular/keyboard.svg?raw'
 import settings from '@phosphor-icons/core/assets/regular/gear-six.svg?raw'
 import eye from '@phosphor-icons/core/assets/regular/eye.svg?raw'
 import tweaksIcon from '@phosphor-icons/core/assets/regular/sliders-horizontal.svg?raw'
+import translate from '@phosphor-icons/core/assets/regular/translate.svg?raw'
+import globe from '@phosphor-icons/core/assets/regular/globe-simple.svg?raw'
 
 import share from '@phosphor-icons/core/assets/regular/export.svg?raw'
 import download from '@phosphor-icons/core/assets/regular/download-simple.svg?raw'
@@ -17,7 +20,7 @@ import shotTablet from '@phosphor-icons/core/assets/regular/device-tablet.svg?ra
 import shotDesktop from '@phosphor-icons/core/assets/regular/desktop.svg?raw'
 import shotPencil from '@phosphor-icons/core/assets/regular/pencil-simple.svg?raw'
 /** Icons that are Phosphor's own files, never drawn here: the ⋯ and the pick's check circle. */
-const PHOSPHOR: Record<string, string> = { 'share-stage': shotStage, 'share-phone': shotPhone, 'share-tablet': shotTablet, 'share-desktop': shotDesktop, 'share-pencil': shotPencil, share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon }
+const PHOSPHOR: Record<string, string> = { 'share-stage': shotStage, 'share-phone': shotPhone, 'share-tablet': shotTablet, 'share-desktop': shotDesktop, 'share-pencil': shotPencil, share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon, translate, globe }
 
 const PATHS: Record<string, string> = {
   ...SIZE_PATHS,
@@ -57,7 +60,9 @@ const PATHS: Record<string, string> = {
   curves: 'M3 19.5c3.6 0 4.6-14 9.2-14 2.6 0 3 3 5.6 3H21',
 }
 
-export const ic = (name: string, cls = 'size-4') => PHOSPHOR[name]
+// Icons that point along the line mirror with it: in a right-to-left page, forward points left.
+const ALONG = new Set(['right', 'left', 'branch', 'from'])
+export const ic = (name: string, size = 'size-4', cls = ALONG.has(name) ? `${size} rtl:-scale-x-100` : size) => PHOSPHOR[name]
   ? PHOSPHOR[name].replace('<svg', `<svg class="${cls} shrink-0" aria-hidden="true"`)
   : `<svg class="${cls} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${PATHS[name]}"/></svg>`
 
@@ -83,18 +88,18 @@ export const pop = (open: boolean, html: string, cls: string) => open
   : ''
 
 export const item = (act: string, label: string, meta = '', on = false, lead = '') =>
-  `<button data-act="${act}" class="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-left hover:bg-zinc-900/[.03] dark:hover:bg-white/5 ${on ? 'font-medium text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'}">${lead}<span class="min-w-0 flex-1 truncate">${label}</span><span class="shrink-0 text-xs text-zinc-400">${meta}</span></button>`
+  `<button data-act="${act}" class="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-start hover:bg-zinc-900/[.03] dark:hover:bg-white/5 ${on ? 'font-medium text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'}">${lead}<span class="min-w-0 flex-1 truncate">${label}</span><span class="shrink-0 text-xs text-zinc-400">${meta}</span></button>`
 
-export const ago = (t: number) => {
-  const s = Math.max(0, Math.round((Date.now() - t) / 1000))
-  if (s < 5) return 'just now'
-  if (s < 60) return `${s}s ago`
-  if (s < 3600) return `${Math.round(s / 60)} min ago`
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`
-  return `${Math.round(s / 86400)}d ago`
+export const ago = (at: number) => {
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000))
+  if (s < 5) return t('just now')
+  if (s < 60) return t('{n}s ago', { n: s })
+  if (s < 3600) return t('{n} min ago', { n: Math.round(s / 60) })
+  if (s < 86400) return t('{n}h ago', { n: Math.round(s / 3600) })
+  return t('{n}d ago', { n: Math.round(s / 86400) })
 }
 
 export const clock = (iso: string) => {
   const d = new Date(iso)
-  return isNaN(+d) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return isNaN(+d) ? '' : time(d)
 }

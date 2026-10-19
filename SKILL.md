@@ -96,8 +96,15 @@ before building or ending the first turn. Follow the startup step below for ever
 Before reading the codebase or designing anything:
 
 ```
-proto up --name "<short session title, e.g. Refuel redesign>"
+proto up --name "<short session title, e.g. Refuel redesign>" --lang <en|he>
 ```
+
+**`--lang` is the language you and the user are talking in**, not the product's: a conversation
+in Hebrew gets `--lang he`, and the whole page around the designs (sidebar, menus, comments,
+settings, placeholders) reads Hebrew, right to left. Pass it on every `proto up`; if the user
+switches language mid-session, the next `proto up` with the new one switches the open page too.
+Name the session in that language. The designs are separate: they follow the product (see Right
+to left below). The user can override the page's language in Settings.
 
 It creates the app on the first call in a session, restarts it if it stopped, and prints
 `url …`. Send that URL to the user right away in one short message ("Live link: … it fills

@@ -4,11 +4,39 @@
 @source "../shell";
 @source "../src";
 @import "../src/theme.css";
+@import "@fontsource-variable/google-sans";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 html, body, #app { height: 100%; }
 body { margin: 0; }
+
+/* The page's own words are Google Sans (Latin and Hebrew alike). A design keeps the font it would
+   have without the page around it: Tailwind's default, or its own --font-sans from theme.css. */
+body { font-family: "Google Sans Variable", ui-sans-serif, system-ui, sans-serif; }
+[data-mount] { font-family: var(--default-font-family, ui-sans-serif, system-ui, sans-serif); }
+
+/* Google Sans at 400 is thin at the chrome's 11-13px, and antialiased smoothing thins it more on
+   macOS: the chrome reads at 450 with the system's own smoothing (font-normal included). A design
+   keeps 400 and the antialiased smoothing it had before. */
+:root { --font-weight-normal: 450; }
+body { font-weight: 450; }
+[data-mount] { --font-weight-normal: 400; font-weight: 400; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+/* The chrome's quiet grays, tuned so every muted line reads at 4.5:1 or more on the page's own
+   backgrounds (white, zinc-50, zinc-100 light; zinc-950, 900, 800 dark). Tailwind's zinc-400 and
+   500 sit near 2.6:1 and 3.7:1 there. A design keeps Tailwind's values. */
+:root { --color-zinc-400: #6b6b75; --color-zinc-500: #5a5a64; }
+:root.dark { --color-zinc-400: oklch(70.5% 0.015 286.067); --color-zinc-500: #8e8e98; }
+[data-mount] { --color-zinc-400: oklch(70.5% 0.015 286.067); --color-zinc-500: oklch(55.2% 0.016 285.938); }
+
+/* User text (a Hebrew title in the English page, an English one in the Hebrew page) runs in its own
+   direction (dir="auto") but lines up with the page around it, not with its own start. Fields the
+   user types in keep their own side; so does everything in a design. */
+/* Chrome has no text-align: match-parent, so the page's side is named. Zero specificity: a
+   text-center or text-end on the element still wins, and centered blocks are left alone. */
+:where(html[dir="ltr"] [dir="auto"]:not(input, textarea, [data-mount] *, .text-center, .text-center *)) { text-align: left; }
+:where(html[dir="rtl"] [dir="auto"]:not(input, textarea, [data-mount] *, .text-center, .text-center *)) { text-align: right; }
 
 /* Keep the switcher's description scrollbar visible on systems with overlay scrollbars. */
 [data-switch-description]::-webkit-scrollbar { width: 6px; }

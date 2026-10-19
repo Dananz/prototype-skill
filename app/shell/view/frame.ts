@@ -3,6 +3,7 @@
 // looking (its pings only ask for the status), never writes where it is or what it chose to this
 // browser's storage, keeps its comments apart, and offers no device view of its own. What its design
 // reports (Try it, copy lines, motion) goes to the page outside, which runs those tools (shared.ts).
+import { t } from '../i18n'
 
 /** Whether this page is the one inside a device view: opened with ?dv (as the view loads it), or in a
  *  frame of this page's own (same origin, with a view). Any other frame (an editor's preview pane, a
@@ -48,8 +49,8 @@ export type Frame = {
  */
 export function openFrame(host: HTMLElement, url: string, on: { route: (hash: string) => void; bind: (d: Document) => () => void; bound: () => void }): Frame {
   const el = document.createElement('iframe')
-  el.title = 'This page at another size'
-  el.className = 'absolute left-0 top-0 block origin-top-left border-0 bg-white dark:bg-zinc-950'
+  el.title = t('This page at another size')
+  el.className = 'absolute start-0 top-0 block origin-top-left border-0 bg-white dark:bg-zinc-950'
   host.append(el)
   let d: Document | null = null, unbind = () => {}, closed = false
   const page = () => { try { const n = el.contentDocument; return n && n.URL !== 'about:blank' ? n : null } catch { return null } }

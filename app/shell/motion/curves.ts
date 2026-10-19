@@ -2,6 +2,7 @@
 // 1 where a spring overshoots), named by what it moves, with staggered siblings as one line each in
 // one group. Worked out from each part's timing and keyframes, so drawing them never moves the design.
 import type { Part, Take } from './take'
+import { t } from '../i18n'
 
 /** One animation's progress over the take, as [ms, progress] points. */
 export type Line = { pts: [number, number][]; start: number; end: number }
@@ -44,7 +45,7 @@ const nice = (s: string) => { const t = s.replace(/[-_]+/g, ' ').trim(); return 
  *  variant's own), a short text, else its tag. */
 export function nameOf(el: Element | null, root: Element | null) {
   // Not by instanceof: a design in a device view's frame is another window's.
-  if (!el || !('dataset' in el)) return 'Animation'
+  if (!el || !('dataset' in el)) return t('Animation')
   const h = el as HTMLElement
   if (h.dataset.shoot) return nice(h.dataset.shoot)
   const own = el.getAttribute('aria-label')?.trim()

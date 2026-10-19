@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client'
 import { Icon } from './icons'
 import { Choices, DecideButton, type Api } from './parts'
 import type { Answers, Attach, Files, Intake, IntakeQuestion } from './types'
+import { t } from '../i18n'
 
 /** A small copy of an image, so a strip of big files stays light. Empty when it can't be made. */
 async function makeThumb(f: File) {
@@ -72,7 +73,7 @@ function Card({ intake, name, submitted, send, close }: Props) {
     try {
       const files: { question: string; name: string; dataUrl: string }[] = []
       for (const [key, list] of Object.entries(st.files)) for (const f of list) {
-        if (f.file.size > MAX_FILE) throw new Error(`${f.name} is over 20 MB: remove it or send a smaller one`)
+        if (f.file.size > MAX_FILE) throw new Error(t('{name} is over 20 MB: remove it or send a smaller one', { name: f.name }))
         files.push({ question: key, name: f.name, dataUrl: await dataUrl(f.file) })
       }
       const answers: Answers = {}, decided: string[] = []
@@ -82,30 +83,30 @@ function Card({ intake, name, submitted, send, close }: Props) {
         else if (a.length) answers[q.id] = a
       }
       const ok = await send({ id: intake.id, answers, decided, files, viewport: { w: innerWidth, h: innerHeight, phone: matchMedia('(max-width:639px)').matches }, theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light' })
-      if (!ok) setError('The server didn’t take the answers. Is it still running? Nothing was lost: try again.')
+      if (!ok) setError(t('The server didn’t take the answers. Is it still running? Nothing was lost: try again.'))
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     setBusy(false)
   }
 
   return (
-    <div className="flex h-full flex-col bg-zinc-100 text-[13px] text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="flex h-full flex-col bg-zinc-100 text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-8">
         <div className="mx-auto flex max-w-3xl flex-col rounded-[28px] border border-black/5 bg-white shadow-[0_1px_0_rgb(0_0_0/.03),0_24px_60px_-32px_rgb(0_0_0/.25)] dark:border-white/10 dark:bg-zinc-900 dark:shadow-none">
           <header className="px-5 pb-5 pt-6 sm:px-9 sm:pt-8">
             <div className="flex items-center gap-2 text-xs text-zinc-500">
               <span className="relative inline-flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex size-full rounded-full bg-emerald-500" /></span>
-              <span dir="auto">{name}</span><span className="text-zinc-300 dark:text-zinc-600">·</span>Before I build
+              <span dir="auto">{name}</span><span className="text-zinc-300 dark:text-zinc-600">·</span>{t('Before I build')}
             </div>
             {submitted ? (
               <>
-                <h1 className="mt-4 text-2xl font-semibold tracking-tight">Thank you</h1>
-                <p className="mt-1.5 text-zinc-500">I’m planning the directions from your answers. They appear on this page in a moment.</p>
-                <button type="button" onClick={close} className="mt-5 h-9 rounded-full border border-black/10 px-4 text-xs font-medium hover:bg-zinc-100 dark:border-white/15 dark:hover:bg-zinc-800">Show the page</button>
+                <h1 className="mt-4 text-2xl font-semibold tracking-tight">{t('Thank you')}</h1>
+                <p className="mt-1.5 text-zinc-500">{t('I’m planning the directions from your answers. They appear on this page in a moment.')}</p>
+                <button type="button" onClick={close} className="mt-5 h-9 rounded-full border border-black/10 px-4 text-xs font-medium hover:bg-zinc-100 dark:border-white/15 dark:hover:bg-zinc-800">{t('Show the page')}</button>
               </>
             ) : (
               <>
-                <h1 dir="auto" className="mt-4 text-2xl font-semibold tracking-tight">{intake.title || 'A few things that change what I build'}</h1>
-                <p dir="auto" className="mt-1.5 text-zinc-500">{intake.ask ? <>You asked: “{intake.ask}”. </> : null}Answer what you know, skip the rest.</p>
+                <h1 dir="auto" className="mt-4 text-2xl font-semibold tracking-tight">{intake.title || t('A few things that change what I build')}</h1>
+                <p dir="auto" className="mt-1.5 text-zinc-500">{intake.ask ? t('You asked: “{ask}”. ', { ask: intake.ask }) : null}{t('Answer what you know, skip the rest.')}</p>
               </>
             )}
           </header>
@@ -130,12 +131,12 @@ function Card({ intake, name, submitted, send, close }: Props) {
         <footer className="shrink-0 border-t border-black/5 bg-white/90 backdrop-blur dark:border-white/10 dark:bg-zinc-900/90">
           <div className="mx-auto flex max-w-3xl items-center gap-4 px-5 py-3.5 sm:px-9">
             <div className="min-w-0 flex-1">
-              <div className="text-xs text-zinc-500">{error ? <span role="alert" className="text-rose-600 dark:text-rose-400">{error}</span> : `${count} of ${total} answered`}</div>
+              <div className="text-xs text-zinc-500">{error ? <span role="alert" className="text-rose-600 dark:text-rose-400">{error}</span> : t('{count} of {total} answered', { count, total })}</div>
               <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-black/5 dark:bg-white/10"><div className="h-full rounded-full bg-proto-primary transition-[width] duration-300" style={{ width: `${(count / total) * 100}%` }} /></div>
             </div>
             <button type="button" disabled={busy} onClick={submit} data-shoot="intake-start"
               className="flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-proto-primary px-5 text-[13px] font-medium text-white hover:bg-proto-primary-hover disabled:opacity-60">
-              <Icon name="sparkleFill" size={14} />{busy ? 'Sending…' : count ? 'Start building' : 'Let Claude decide everything'}
+              <Icon name="sparkleFill" size={14} />{busy ? t('Sending…') : count ? t('Start building') : t('Let Claude decide everything')}
             </button>
           </div>
         </footer>
