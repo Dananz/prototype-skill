@@ -17,10 +17,18 @@ or MCP transport if the initial tool catalog is incomplete.
 1. Run `list_scheduled_tasks` first. Reuse the enabled webhook for this project/session
    and owning thread. Never create one per turn or batch.
 2. If none exists, create one with `schedule: {type: "webhook"}` and
-   `bindToCurrentThread: true`. Its prompt must name the absolute skill CLI path, original
-   project and session, and say to run `proto inbox` and handle the pending comments there.
-   `{{body.batchId}}` is only a wakeup hint. The durable inbox is the source of truth;
-   retries or several sends can wake the same thread again with nothing new to claim.
+   `bindToCurrentThread: true`. T3 posts its prompt into the thread on every page send,
+   so keep it to this one line, with the project and session filled in:
+
+   ```text
+   Prototype comments arrived. Handle them with the prototype skill: `proto inbox --project <project> --session <session>`
+   ```
+
+   Naming the skill loads it in a thread that doesn't have it yet; in the owning thread it
+   is already loaded. Don't repeat this file's rules in the prompt, and leave out
+   `{{body.batchId}}`: the inbox is the source of truth, and T3 appends an untrusted-data
+   notice to every placeholder. Retries or several sends can wake the thread with nothing
+   new to claim.
 3. Save `{ "url": "<returned webhookUrl>", "id": "<scheduledTaskId>",
    "threadId": "<owning thread ID>" }` to a private temporary JSON file outside the served
    project. Run `proto inbox --listen "<config.json>"` with the original project/session
