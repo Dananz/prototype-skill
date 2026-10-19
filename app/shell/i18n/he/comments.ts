@@ -64,4 +64,5 @@ export default {
   'Add, to send with the rest · {mod} Enter adds and sends to {agent}': 'הוסף, לשליחה עם השאר · {mod} Enter מוסיף ושולח אל {agent}',
   'Save': 'שמור',
   'Add': 'הוסף',
+  'Drag to move; drag an edge or a corner to resize': 'גרור כדי להזיז; גרור קצה או פינה כדי לשנות גודל',
 } satisfies Record<string, string>

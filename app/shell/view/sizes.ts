@@ -17,6 +17,9 @@ export type ViewSize = { size: Size; w: number; h: number }
 export const dims = (s: Size, land = false) => { const d = SIZES[s]; return s === 'tablet' && land ? { w: d.h, h: d.w } : { w: d.w, h: d.h } }
 /** The layout a window this wide is: the page's own breakpoints (its phone below 640, its docked panel from 1024). */
 export const nativeOf = (w: number): Size => (w < 640 ? 'phone' : w < 1024 ? 'tablet' : 'desktop')
+/** The narrowest the stage's own artboard is laid out in a desktop window (view/index.tsx): side panels that leave
+ *  the stage narrower scale a desktop layout down rather than turning it into a tablet one. */
+export const FILL_MIN_W = 1024
 export const sizeIcon = (s: Size, land = false) => (s === 'tablet' && land ? 'tablet-land' : s)
 /** How a layout reads on a chip or a tooltip: `Desktop · 1440 × 900`. */
 export const sizeName = (v: ViewSize) => `${SIZES[v.size].name} · ${v.w} × ${v.h}`

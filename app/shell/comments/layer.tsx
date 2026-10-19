@@ -7,7 +7,7 @@ import { useAgentName, useCtx } from './ctx'
 import { frameClicks } from '../view/frame'
 import { climb, describe, find } from './dom'
 import { listen } from '../quiet'
-import { Glide, HoldRing, HoverBox, useBoxes, usePick } from './inspect'
+import { Glide, HoldRing, HoverBox, Marquee, MIN_REGION, useBoxes, usePick } from './inspect'
 import { Composer } from './composer'
 import { freeze, release, watch } from './hover'
 import { useRows } from './list'
@@ -73,7 +73,7 @@ export function Layer() {
   const editing = m.kind === 'compose' || m.kind === 'tag' ? m : null
   const editedItem = editing?.id ? s.items.find(x => x.id === editing.id) : undefined
 
-  const { hover, hold, confirm, up } = usePick(picking && !!s.place, m.kind === 'compose' && !!s.place, {
+  const { hover, hold, drag, confirm, up } = usePick(picking && !!s.place, m.kind === 'compose' && !!s.place, {
     onPick: t => (tagging ? act.tagDone(t) : act.begin(t)),
     onCancel: () => (tagging ? act.tagDone(null) : act.stop()),
     onGuard: act.guard,
@@ -129,8 +129,10 @@ export function Layer() {
     <>
       <HoverBox hover={hover} verb={verb} onConfirm={confirm} onUp={up} />
       <HoldRing at={hold} />
-      <Glide item={onNew && !onSpot ? { box: onNew } : null} pad={3} className="rounded-md border-2 border-proto-primary-ring bg-proto-primary/[.08]">
-        {h => onNew && !onSpot && m.kind === 'compose' && <Climb box={h.box} up={canClimb(host.mount(), m.target)} down={!!m.trail?.length} />}
+      <Marquee box={drag} />
+      {onNew && m.kind === 'compose' && m.target.region && <RegionEdit box={onNew} />}
+      <Glide item={onNew && !onSpot && !(m.kind === 'compose' && m.target.region) ? { box: onNew } : null} pad={3} className="rounded-md border-2 border-proto-primary-ring bg-proto-primary/[.08]">
+        {h => onNew && !onSpot && m.kind === 'compose' && !m.target.region && <Climb box={h.box} up={canClimb(host.mount(), m.target)} down={!!m.trail?.length} />}
       </Glide>
       {onNew && onSpot && <div className="pointer-events-none absolute z-10 size-8 rounded-full ring-2 ring-proto-primary-ring" style={{ left: onNew.x - 16, top: onNew.y - 16 }} />}
       {wholeT && boxes['__whole'] && (
@@ -146,6 +148,90 @@ export function Layer() {
       )}
       {opened && <ReadCard row={opened} box={boxes[opened.item.id]} />}
     </>
+  )
+}
+
+// Which sides of the region each handle moves: [left, top, right, bottom].
+const HANDLES: { at: string; sides: [number, number, number, number]; cursor: string; corner?: true }[] = [
+  { at: 'left-0 top-0 h-2.5 w-full -translate-y-1/2', sides: [0, 1, 0, 0], cursor: 'ns-resize' },
+  { at: 'bottom-0 left-0 h-2.5 w-full translate-y-1/2', sides: [0, 0, 0, 1], cursor: 'ns-resize' },
+  { at: 'left-0 top-0 h-full w-2.5 -translate-x-1/2', sides: [1, 0, 0, 0], cursor: 'ew-resize' },
+  { at: 'right-0 top-0 h-full w-2.5 translate-x-1/2', sides: [0, 0, 1, 0], cursor: 'ew-resize' },
+  { at: 'left-0 top-0 -translate-x-1/2 -translate-y-1/2', sides: [1, 1, 0, 0], cursor: 'nwse-resize', corner: true },
+  { at: 'right-0 top-0 translate-x-1/2 -translate-y-1/2', sides: [0, 1, 1, 0], cursor: 'nesw-resize', corner: true },
+  { at: 'bottom-0 left-0 -translate-x-1/2 translate-y-1/2', sides: [1, 0, 0, 1], cursor: 'nesw-resize', corner: true },
+  { at: 'bottom-0 right-0 translate-x-1/2 translate-y-1/2', sides: [0, 0, 1, 1], cursor: 'nwse-resize', corner: true },
+]
+
+// The four corner marks, as [is right, is bottom], and the sides each one resizes.
+const CORNERS: { right: boolean; bottom: boolean; sides: [number, number, number, number] }[] = [
+  { right: false, bottom: false, sides: [1, 1, 0, 0] }, { right: true, bottom: false, sides: [0, 1, 1, 0] },
+  { right: false, bottom: true, sides: [1, 0, 0, 1] }, { right: true, bottom: true, sides: [0, 0, 1, 1] },
+]
+/** How near a corner the pointer comes for its mark to grow. */
+const CORNER_NEAR = 24
+
+/**
+ * The region a new comment is on, while it is written: dragged by its inside to move it, by an
+ * edge or a corner to resize it. Let go, the comment is on the new box (and its picture retaken).
+ * At rest it is a thin outline; thin marks on its corners show while the pointer is on it, and
+ * the corner the pointer nears (or drags) grows, so it reads as the one to grab.
+ */
+function RegionEdit({ box }: { box: Box }) {
+  const { host, act } = useCtx()
+  const [live, setLive] = useState<Box | null>(null)
+  const [hover, setHover] = useState(false)
+  const [nearest, setNearest] = useState(-1)
+  const [held, setHeld] = useState<[number, number, number, number] | null>(null)
+  // The box drawn while dragging stays until the comment's own box has caught up with it.
+  const key = `${box.x},${box.y},${box.w},${box.h}`
+  useEffect(() => setLive(null), [key])
+  const grab = (e: React.PointerEvent, sides: [number, number, number, number]) => {
+    if (e.button !== 0) return
+    e.preventDefault(); e.stopPropagation()
+    const x0 = e.clientX, y0 = e.clientY, b0 = box
+    const el = e.currentTarget as HTMLElement
+    el.setPointerCapture(e.pointerId)
+    setHeld(sides)
+    let next = b0
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - x0, dy = ev.clientY - y0
+      let l = b0.x, t = b0.y, r = b0.x + b0.w, b = b0.y + b0.h
+      // The inside moves every side; a handle only its own, never past the side across from it.
+      const all = !sides.some(Boolean)
+      if (all || sides[0]) l = all ? l + dx : Math.min(l + dx, r - MIN_REGION)
+      if (all || sides[1]) t = all ? t + dy : Math.min(t + dy, b - MIN_REGION)
+      if (all || sides[2]) r = all ? r + dx : Math.max(r + dx, l + MIN_REGION)
+      if (all || sides[3]) b = all ? b + dy : Math.max(b + dy, t + MIN_REGION)
+      next = { x: l, y: t, w: r - l, h: b - t }
+      setLive(next)
+    }
+    const up = () => {
+      el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up)
+      setHeld(null)
+      if (next === b0) return setLive(null)
+      const L = host.layer.getBoundingClientRect()
+      act.reshape(L.left + next.x, L.top + next.y, L.left + next.x + next.w, L.top + next.y + next.h)
+    }
+    el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up)
+  }
+  const near = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    setNearest(CORNERS.findIndex(c => Math.hypot(e.clientX - (c.right ? r.right : r.left), e.clientY - (c.bottom ? r.bottom : r.top)) < CORNER_NEAR))
+  }
+  const b = live ?? box
+  const shown = hover || !!held
+  return (
+    <div data-inspect-ui data-region-edit onPointerDown={e => grab(e, [0, 0, 0, 0])} title={t('Drag to move; drag an edge or a corner to resize')}
+      onPointerEnter={() => setHover(true)} onPointerLeave={() => { setHover(false); setNearest(-1) }} onPointerMove={near}
+      className="pointer-events-auto absolute z-20 cursor-move touch-none rounded-[3px] border border-proto-primary-ring/70 bg-proto-primary/[.07]"
+      style={{ left: b.x, top: b.y, width: b.w, height: b.h }}>
+      {CORNERS.map((c, k) => {
+        const big = k === nearest || (!!held && c.sides.every((v, i) => v === held[i]))
+        return <span key={k} className={`pointer-events-none absolute transition-all duration-150 ease-out ${c.bottom ? '-bottom-px border-b-2' : '-top-px border-t-2'} ${c.right ? '-right-px border-r-2' : '-left-px border-l-2'} ${c.bottom ? (c.right ? 'rounded-br-[3px]' : 'rounded-bl-[3px]') : (c.right ? 'rounded-tr-[3px]' : 'rounded-tl-[3px]')} ${big ? 'size-5 border-proto-primary' : 'size-2.5 border-proto-primary-ring'} ${shown ? 'opacity-100' : 'opacity-0'}`} />
+      })}
+      {HANDLES.map(h => <span key={h.at} onPointerDown={e => grab(e, h.sides)} className={`absolute ${h.at} ${h.corner ? 'size-3.5' : ''}`} style={{ cursor: h.cursor }} />)}
+    </div>
   )
 }
 

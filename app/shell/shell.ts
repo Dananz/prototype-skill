@@ -38,7 +38,7 @@ import { followSession, rtl, t, tn, day } from './i18n'
 import { createShare } from './share'
 import { framed, frameClicks, frameMenus, offerTheme, openFrame, frameUrl, type Frame } from './view/frame'
 import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
-import { dims, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
+import { dims, FILL_MIN_W, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
 
 export type Variant = { id: string; name: string; file: string; load: () => Promise<unknown> }
 /** Something behind clicks in a prototype's variants (a menu, a drawer, a dialog), reached by
@@ -77,7 +77,7 @@ export type Pinned = { source?: { proto: string; variant: string; state?: string
 /** One send: route is <slug>/<letter>[/<state>]; images are data URLs (png, jpeg, webp). A decision
  *  on a variant (pick, unpick, more, build) is a comment with an action and no target. */
 export type CommentBatch = {
-  comments: { route: string; text: string; action?: Action; note?: string; count?: number; point?: { x: number; y: number }; target?: Pinned; tags?: Pinned[]; images?: { dataUrl: string; name?: string }[]
+  comments: { route: string; text: string; action?: Action; note?: string; count?: number; point?: { x: number; y: number }; region?: { x: number; y: number; w: number; h: number }; target?: Pinned; tags?: Pinned[]; images?: { dataUrl: string; name?: string }[]
     /** On the motion (motion/): a moment of its take in ms, or a range to `to`, and the take's length. */
     at?: number; to?: number; take?: number
     /** Written in a device view (view/): about that layout. */
@@ -2156,7 +2156,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const viewOk = () => frameable() && !st.focus && (!phoneMq.matches || pillOn())
   const fillOk = () => frameable() && !phoneMq.matches && st.place.view === 'variant' && !st.place.tool
   const native = (): Size | null => {
-    if (fillOk()) return nativeOf(layers.clientWidth || innerWidth)
+    // a desktop window keeps the desktop layout even when the side panels narrow the stage (view/index.tsx FILL_MIN_W)
+    if (fillOk()) return nativeOf(innerWidth >= FILL_MIN_W ? Math.max(layers.clientWidth || innerWidth, FILL_MIN_W) : layers.clientWidth || innerWidth)
     const s = nativeOf(innerWidth); return !layers.clientWidth || nativeOf(layers.clientWidth) === s ? s : null
   }
   /** A layout other than the stage's own is chosen. */

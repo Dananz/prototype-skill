@@ -8,7 +8,7 @@ import type { Target } from './types'
 import { listen } from '../quiet'
 import { t } from '../i18n'
 
-/** The variant, drawn as it is and cropped to a margin around `target`, as a PNG data URL. Null when it can't be found. */
+/** The variant, drawn as it is and cropped to a margin around `target` (to exactly its region, for a dragged-out one), as a PNG data URL. Null when it can't be found. */
 export async function capture(mount: HTMLElement | null, target: Target, dark: boolean) {
   mount = targetMount(mount, target)
   const root = (mount?.firstElementChild as HTMLElement | null) ?? mount, el = find(mount, target)
@@ -18,8 +18,12 @@ export async function capture(mount: HTMLElement | null, target: Target, dark: b
   const ow = o.width / z, oh = o.height / z
   // Sized explicitly: left to measure the root, it takes its zoomed screen size and draws only that much of the design.
   const full = await domToCanvas(root, { scale, width: ow, height: oh, backgroundColor: dark ? '#09090b' : '#ffffff' })
-  const m = 48, x = Math.max(0, (r.left - o.left) / z - m), y = Math.max(0, (r.top - o.top) / z - m)
-  const w = Math.min(ow - x, r.width / z + m * 2), h = Math.min(oh - y, r.height / z + m * 2)
+  // A region is kept where it is in its element, which may have moved since it was dragged out.
+  const g = target.region
+  const ex = (r.left - o.left) / z, ey = (r.top - o.top) / z
+  const m = g ? 0 : 48
+  const x = Math.max(0, g ? ex + g.x - target.rect.x : ex - m), y = Math.max(0, g ? ey + g.y - target.rect.y : ey - m)
+  const w = Math.min(ow - x, g ? g.w : r.width / z + m * 2), h = Math.min(oh - y, g ? g.h : r.height / z + m * 2)
   if (w <= 0 || h <= 0) return null
   const c = document.createElement('canvas')
   c.width = Math.round(w * scale); c.height = Math.round(h * scale)

@@ -281,6 +281,41 @@ export function spot(mount: HTMLElement, el: HTMLElement, cx: number, cy: number
 }
 
 /**
+ * A region dragged out with the mouse, from screen point (ax, ay) to (bx, by), on the smallest
+ * element around all of it: the one the drag started on, or the nearest one around it that holds
+ * the whole box (the design's root when none does).
+ */
+export function region(mount: HTMLElement, el: HTMLElement, ax: number, ay: number, bx: number, by: number): Target {
+  mount = elementMount(mount, el)
+  let l = Math.min(ax, bx), t = Math.min(ay, by), r = Math.max(ax, bx), b = Math.max(ay, by)
+  const holds = (e: HTMLElement) => { const x = e.getBoundingClientRect(); return x.left <= l + 1 && x.top <= t + 1 && x.right >= r - 1 && x.bottom >= b - 1 }
+  const o = originOf(mount).getBoundingClientRect(), z = zoomOf(mount)
+  // Only what is on the design: a drag that runs off its edge stops there.
+  l = Math.max(l, o.left); t = Math.max(t, o.top); r = Math.min(r, o.right); b = Math.min(b, o.bottom)
+  let on: HTMLElement | null = el
+  while (on && !holds(on)) on = climb(mount, on)
+  return { ...describe(mount, on ?? originOf(mount)), label: 'Region', region: { x: Math.round((l - o.left) / z), y: Math.round((t - o.top) / z), w: Math.round((r - l) / z), h: Math.round((b - t) / z) } }
+}
+
+/** A point of this page in the px of the frame `el` is in (a device view's), or as it is when it is in no frame. */
+export function inFrame(el: Element, x: number, y: number): [number, number] {
+  const f = frameOf(el)
+  if (!f) return [x, y]
+  const r = f.getBoundingClientRect(), s = r.width / (f.offsetWidth || 1)
+  return [(x - r.left) / s, (y - r.top) / s]
+}
+
+/** Where a dragged-out region is now: its element's live box plus where in it the region was, cut to what shows of the design. Null when none of it does. */
+export function regionAt(t: Target, el: Element, mount: HTMLElement, host: Element): Box | null {
+  mount = targetMount(mount, t) ?? mount
+  if (!t.region) return null
+  const b = rel(el, host), z = zoomOf(mount) * scaleOf(el)
+  const box = { x: b.x + (t.region.x - t.rect.x) * z, y: b.y + (t.region.y - t.rect.y) * z, w: t.region.w * z, h: t.region.h * z }
+  const shown = seen(mount, mount, host)
+  return shown ? cut(box, shown) : null
+}
+
+/**
  * Where a pinned spot is now (see `rel`), as an empty box: its element's live box plus where in
  * it the spot was, so it moves with the element. Null when the spot is scrolled out of view.
  */

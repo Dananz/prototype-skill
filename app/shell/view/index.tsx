@@ -20,7 +20,7 @@ import { fitOf, outOf, pinchOn, room, useBox, useGestures, usePinch, usePlace } 
 import { trackPointer } from '../motion'
 import { hoverMove } from '../comments/hover'
 import { seeThrough } from '../comments/dom'
-import { dims, ORDER, SIZES, type Size } from './sizes'
+import { dims, FILL_MIN_W, ORDER, SIZES, type Size } from './sizes'
 import { t, tn } from '../i18n'
 
 /** size null: the stage's own artboard (fill), as big as the stage, with no line over it. */
@@ -90,10 +90,12 @@ function scrollerAt(doc: Document, el: Element | null) {
  * The layer over the frame while commenting. The comment layer's inspect does the looking and the
  * picking through it; this keeps what a press on it would otherwise lose: a drag scrolls (the view
  * first when zoomed in, then the page in the frame), a wheel scrolls the page in the frame, and
- * the click that ends a drag picks nothing.
+ * the click that ends a drag picks nothing. While picking, a mouse's drag draws a region to comment
+ * on instead (comments/inspect.tsx); a finger's still scrolls.
  */
 function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>; scale: number; zoomed: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
+  const { store } = useCtx()
   const now = useRef({ scale, zoomed })
   now.current = { scale, zoomed }
   useEffect(() => {
@@ -102,9 +104,10 @@ function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>;
     const doc = () => live?.doc() ?? null
     const local = (x: number, y: number) => { const r = el.getBoundingClientRect(); return [(x - r.left) / now.current.scale, (y - r.top) / now.current.scale] as const }
     let drag: { x: number; y: number; moved: boolean; sc: HTMLElement | null; id: number } | null = null, fingers = 0, dragged = 0
+    const picking = () => { const m = store.get().mode; return m.kind === 'pick' || m.kind === 'tag' || (m.kind === 'time' && !!m.tagging) }
     const down = (e: PointerEvent) => {
       if (e.pointerType === 'touch' && ++fingers > 1) { drag = null; return }
-      if (e.button !== 0) return
+      if (e.button !== 0 || (e.pointerType === 'mouse' && picking())) return
       const d = doc()
       drag = { x: e.clientX, y: e.clientY, moved: false, sc: d && scrollerAt(d, d.elementFromPoint(...local(e.clientX, e.clientY))), id: e.pointerId }
     }
@@ -112,7 +115,7 @@ function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>;
     // in the frame (comments/hover.ts), and leaving the layer is leaving the design.
     const hover = (e: PointerEvent) => {
       const d = doc()
-      if (!d || e.pointerType !== 'mouse' || drag?.moved) return
+      if (!d || e.pointerType !== 'mouse' || drag?.moved || (e.buttons & 1 && picking())) return
       const [x, y] = local(e.clientX, e.clientY)
       hoverMove(d, d.elementFromPoint(x, y), x, y)
     }
@@ -173,8 +176,11 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
   const { act } = useCtx()
   const { s, rows } = useRows()
   const [area, box] = useBox<HTMLDivElement>()
-  // The stage's own artboard is the area's size: at 100% it is the stage as it always was.
-  const d = view.size ? dims(view.size, view.land) : { w: box.w, h: box.h }
+  // The stage's own artboard is the area's size: at 100% it is the stage as it always was. In a desktop window
+  // whose side panels leave the stage narrower than a desktop (FILL_MIN_W), it stays a desktop: laid out at that
+  // width, the stage's shape, and fitted down, instead of becoming a tablet layout because a panel opened.
+  const fillW = !view.size && innerWidth >= FILL_MIN_W && box.w > 0 && box.w < FILL_MIN_W ? FILL_MIN_W : box.w
+  const d = view.size ? dims(view.size, view.land) : { w: fillW, h: box.w ? Math.round((box.h * fillW) / box.w) : box.h }
   const pad = !view.size || box.w < 640 ? 0 : 16
   const fit = fitOf(box, d, pad)
   const scale = view.zoom ? view.zoom / 100 : fit

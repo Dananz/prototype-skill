@@ -1,6 +1,6 @@
 // Writing a comment on one element, or on a moment or a range of the design's motion (in the motion
 // dock). `@` offers whole-variant mentions; Tag another element keeps the existing visual picker; the camera captures the design around the
-// element (all of it, on a moment) and opens the editor; an image pasted (Ctrl+V) or dropped on the
+// element (all of it, on a moment) and opens the editor, and a region dragged out on the design brings its own picture; an image pasted (Ctrl+V) or dropped on the
 // composer is added beside the screenshots (several per comment); ⌘↩ adds it. Whatever is written is held by
 // the store as it is typed, so putting the composer away any way but Cancel or Add loses nothing.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
@@ -111,8 +111,9 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const box = useRef<HTMLDivElement>(null)
   const [empty, setEmpty] = useState(!initial || !initial.body.some(s => typeof s !== 'string' || s.trim()))
   const emit = () => { if (!editing && ed.current) act.hold({ body: readEditor(ed.current), tags: tagsRef.current, ...(shotsRef.current.length ? { shots: shotsRef.current } : {}) }, target, time) }
-  // Moving the comment to the parent (or back) keeps what is held on the element it is on now.
-  useEffect(emit, [tags, shots, target?.selector]) // eslint-disable-line react-hooks/exhaustive-deps
+  const regionKey = target?.region ? JSON.stringify(target.region) : ''
+  // Moving the comment to the parent (or back), or its region, keeps what is held on what it is on now.
+  useEffect(emit, [tags, shots, target?.selector, regionKey]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (nudge) box.current?.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(-3px)' }, { transform: 'translateX(0)' }], { duration: 320, easing: 'ease-out' })
   }, [nudge])
@@ -173,6 +174,24 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     // A design in a device view's frame may not draw from this window; then there is no picture.
     try { const url = await capture(host.mount(), target ?? WHOLE, host.dark()); if (url) setMarking({ src: url, at: -1 }) } catch { /* nothing to mark up */ } finally { setCapturing(null) }
   }
+  // A region dragged out on the design comes with its picture, taken as the composer opens and
+  // retaken each time the region is moved or resized, while that picture is still as it was taken
+  // (one drawn on, or removed, is the user's: left alone).
+  const regionShot = useRef('')
+  useEffect(() => {
+    if (editing || !target?.region || regionShot.current === regionKey) return
+    const first = !regionShot.current
+    regionShot.current = regionKey
+    if (first ? shotsRef.current.some(p => p.region) : !shotsRef.current.some(p => p.region)) return
+    setCapturing('Capturing…')
+    capture(host.mount(), target, host.dark())
+      .then(url => {
+        if (!url || regionShot.current !== regionKey) return
+        setShots(s => s.some(p => p.region) ? s.map(p => p.region ? { src: url, region: true } : p) : s.length < MAX_SHOTS ? [...s, { src: url, region: true }] : s)
+      })
+      .catch(() => { /* a design in a device view's frame may not draw from here */ })
+      .finally(() => setCapturing(null))
+  }, [regionKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const attach = async (file: File) => {
     if (shotsRef.current.length >= MAX_SHOTS) return
     setCapturing(t('Adding…'))
@@ -270,7 +289,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
       </div>
       {marking && <ShotEditor src={marking.src} onCancel={() => { setMarking(null); refocus() }} onDone={url => {
         const at = marking.at
-        setShots(s => at < 0 ? (s.length < MAX_SHOTS ? [...s, { src: url }] : s) : s.map((p, j) => j === at ? { ...p, src: url } : p))
+        setShots(s => at < 0 ? (s.length < MAX_SHOTS ? [...s, { src: url }] : s) : s.map((p, j) => j === at ? { src: url, ...(p.pasted ? { pasted: true } : {}) } : p))
         setMarking(null); refocus()
       }} />}
     </>
