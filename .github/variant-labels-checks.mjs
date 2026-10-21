@@ -1,4 +1,4 @@
-// Display numbers for long variant lists without changing the IDs used by links and actions.
+// Variants show as numbers (A is 1, AA 27), fixed by the letter, without changing the IDs used by links and actions.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -50,7 +50,8 @@ export async function variantLabelsChecks({ proto, app, local, openPage, fail, k
     } finally { page.close() }
   }
   if (before) return
-  for (const [slug, last, expected] of [['labels22', 'V', 'V'], ['labels23', 'W', '23'], ['labels-sparse', 'AA', '2']]) {
+  // Short lists are numbered too, and a gap keeps the number the letter has (AA stays 27 with no B … Z).
+  for (const [slug, last, expected] of [['labels22', 'V', '22'], ['labels23', 'W', '23'], ['labels-sparse', 'AA', '27'], ['labels-sparse', 'A', '1']]) {
     const page = await openPage(`${local}#/${slug}/${last}`)
     try {
       await until(page, `!!document.querySelector('[data-side] [data-act="mv:${slug}:${last}"]')`)
@@ -65,5 +66,9 @@ export async function variantLabelsChecks({ proto, app, local, openPage, fail, k
     await until(child, `location.hash === '#/labels30/AC'`)
   } finally { child.close() }
   proto(['pick', 'labels30', 'AD', '--off'])
-  console.log('variant labels: 22/23 boundary, beyond Z, desktop/phone lists and original routes passed')
+  // The CLI takes the number the page shows: labels30/29 is labels30/AC.
+  const picked = proto(['pick', 'labels30', '29'])
+  assert(/picked 29 \(AC\)/.test(picked), `proto pick labels30 29 should pick AC: ${picked}`)
+  proto(['pick', 'labels30', '--off'])
+  console.log('variant labels: numbers in short and long lists, past Z, stable over gaps, desktop/phone lists, original routes and numbers in the CLI passed')
 }

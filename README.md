@@ -141,10 +141,11 @@ Keep talking in the same conversation and everything lands in the same app:
 
 | You say | You get |
 | --- | --- |
-| "two more" | D and E next to A, B and C |
-| "B, but with a map" | new variants built from B |
+| "two more" | 4 and 5 next to 1, 2 and 3 |
+| "2, but with a map" | new variants built from 2 |
 | "try other headlines" | copy options you can pick on the design |
-| "go with A" | A marked as the pick |
+| "go with 1" | 1 marked as the pick |
+| "star 12 and 40" | those two starred; Favorites only shows just your stars, side by side |
 | "build it" | the real feature in your codebase |
 
 You can also send comments and requests from the prototype itself. **In T3 Code, Codex and

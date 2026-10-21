@@ -46,6 +46,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { startChrome, stopChrome, waitReady } from './chrome.mjs'
+import { numberOf } from '../app/numbers.mjs'
 
 const args = process.argv.slice(2)
 const flags = Object.fromEntries(args.filter(a => a.startsWith('--') && !a.startsWith('--click=')).map(a => a.slice(2).split('=')))
@@ -843,7 +844,7 @@ try {
       const width = across * w + (across - 1) * GAP
       // A shot at the column's width, or the part of it a phone prototype's sheet shows.
       const img = (s, picked) => { const k = w / s.w; return `<div style="width:${w}px;height:${Math.round(s.h * k)}px;margin-top:${INNER}px;overflow:hidden;outline:${picked ? '3px solid #34d399' : '1px solid #3f3f46'}"><img src="${pathToFileURL(s.file).href}" style="display:block;width:${s.full * k}px;margin:${-s.y * k}px 0 0 ${-s.x * k}px"></div>` }
-      const cell = c => `<figure style="margin:0;width:${w}px"><figcaption style="height:${LABEL}px;display:flex;align-items:center;gap:10px;white-space:nowrap"><b>${esc(c.id)}</b><span dir="auto" style="min-width:0;overflow:hidden;text-overflow:ellipsis;color:#d4d4d8">${esc(c.name)}</span>${
+      const cell = c => `<figure style="margin:0;width:${w}px"><figcaption style="height:${LABEL}px;display:flex;align-items:center;gap:10px;white-space:nowrap"><b>${numberOf(c.id) || esc(c.id)}</b><span dir="auto" style="min-width:0;overflow:hidden;text-overflow:ellipsis;color:#d4d4d8">${esc(c.name)}</span>${
         c.id === p.picked ? '<span style="flex:none;margin-inline-start:auto;padding:3px 10px;border-radius:99px;background:#065f46;color:#d1fae5;font-size:16px">Picked</span>' : ''}</figcaption>${c.shots.map(s => img(s, c.id === p.picked)).join('')}</figure>`
       const head = [p.title, p.note, pages > 1 && `${i + 1} of ${pages}`].filter(Boolean).map(esc).join(' · ')
       const html = `<!doctype html><meta charset="utf-8"><body style="margin:0;padding:${PAD}px;width:max-content;background:#18181b;color:#fafafa;font:500 22px/1.2 system-ui,sans-serif">

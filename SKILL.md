@@ -451,6 +451,12 @@ so the user sees them land:
 
 - One file per variant, named by its letter: `A.tsx` (or `A.vue` in a Vue app). Names live in
   `meta.ts`. Never rename the files; letters run A … Z, then AA.
+- **The user sees numbers, not letters.** The page shows each variant by number, counted from
+  its letter the way spreadsheet columns are: A is 1, Z 26, AA 27, AC 29. The number never
+  changes when other variants are added or removed. Talk to the user in numbers ("3 and 29 are
+  the strongest", never "C and AC"), and read theirs the same way ("idea 29" is AC). Every
+  `proto` command takes a number where it takes a letter: `proto pick hero 29`,
+  `proto work hero/29`, `proto shoot hero/29`. Files, routes and `meta.ts` keep the letters.
 - Default export is the component. Its root fills the stage: `h-full` for anything that is one
   screen (app screens, drawers, sheets, overlays, a bar pinned to the bottom), `min-h-full`
   for a page that scrolls. `--kind phone` variants go in a phone frame whose screen is
@@ -616,7 +622,7 @@ proto shoot --pin <batch>/<n>                   # what a comment is on, as its w
 
 `--sheet` shoots every variant (a web one at 1440×900 and 390×844, a `--kind phone` one at
 phone size only) and prints one contact sheet per prototype, `<slug>-sheet.png`: a column per
-variant with its letter and name, desktop above phone, the picked one outlined, no more than
+variant with its number and name, desktop above phone, the picked one outlined, no more than
 2000 px either way. Then one line says where the single shots are (`<slug>-<letter>-desktop.png`,
 `-mobile.png`, in the app's `.proto/shots/`). **Read the sheet: one image a round.** It is for
 comparing layout, hierarchy and how far apart the directions are; desktop shows at about a third
@@ -678,16 +684,26 @@ A pick in a prototype built `--from` a variant also picks that variant, and its 
 chain (choosing a part of B means choosing B); `also` parents are left alone, and undoing a pick
 leaves the parents picked.
 
-As soon as the user chooses in chat, run `proto pick <slug> <letter>` before anything else,
+As soon as the user chooses in chat, run `proto pick <slug> <number>` before anything else,
 without asking. If they don't
 name the prototype, it's the one you showed them last. The page then marks it (a check in the
 sidebar, the variant first and outlined in its overview, the rest faded but still there) and
 everything built from the prototype stays nested under it. Choosing again replaces the pick;
-"undo that" is `proto pick <slug> --off` (in the page, Picked B undoes it). A pick also makes that variant the one being worked
+"undo that" is `proto pick <slug> --off` (in the page, Picked 2 undoes it). A pick also makes that variant the one being worked
 on (next section). Then do what they asked next, if anything.
 
 A pick is not an archive: archive is for directions the user drops, and a picked prototype is
 the one they will come back to.
+
+**Favorites.** With many variants the user stars the ones worth a second look: Favorite in a
+variant's right-click or ⋯ menu, or S on the variant shown. A star marks it in the sidebar, the
+overview and the phone's sheet, and **Favorites only** (beside Grid / Full size, the star by the
+sidebar's count, or the phone's sheet) lists just the favorites, so they can be compared side by
+side. Favorites are the user's own marks, not decisions: nothing reaches the inbox and nothing is
+asked of you. They are kept in `meta.ts` as `favorites` (letters); `proto fav` lists them by
+number, and when the user asks in chat ("star 12 and 40", "which ones did I star?") use
+`proto fav <slug>/12 <slug>/40` (`--off` to unstar) or `proto fav`. A follow-up round on the
+favorites ("more like my favorites", "combine my favorites") starts from that list.
 
 If `proto up` or `proto shoot` failed, say so with the error instead of leaving things out.
 
@@ -754,7 +770,8 @@ only the author mark on that reply.
 Set `PROTO_AGENT=codex|claude|agent` or pass `proto reply ... --as codex|claude|agent` when the
 harness does not expose identity, or when switching agents on an existing session.
 
-Each comment prints its route (`<slug>/<letter>[/<state>]`), the user's words, the element
+Each comment prints its route (`<slug>/<letter>[/<state>]`, with the number the user saw beside
+it: `hero/AC (29)`; say the number when you reply), the user's words, the element
 it is on (tag, text, `data-shoot` or selector, its box in CSS px from the variant's top left,
 and where it is written: its file from the app's folder, line and component, as
 `src/protos/today/parts.tsx:30 (PriceCard)`; open it there) and any elements it tags (numbered `with @1`, `with @2`, matching the comment), and the absolute path of each image attached to it:
@@ -898,7 +915,8 @@ When the user wants the prototypes in a doc or artifact to share: read `referenc
 | Variants of one element that should replace it where it is ("more of this button") | lift it into a `<Slot>`, then `proto add <new slug> --from <slug>/<letter> --slot <id> …` |
 | Parts of several variants together ("E's layout with B's style") | `proto add <new slug> --from <slug>/E,<slug>/B …`, the one whose layout it keeps first |
 | One design from everything they picked ("a final design from all my picks") | `proto add <new slug> --from-picks …` |
-| A choice in chat ("go with A", "build B") | `proto pick <slug> <letter>` first, then what they asked |
+| A choice in chat ("go with 3", "build 29") | `proto pick <slug> <number>` first, then what they asked |
+| Stars in chat ("star 12 and 40", "show my favorites") | `proto fav <slug>/12 <slug>/40`, or `proto fav` to list them; Favorites only in the page shows just those |
 | The winner built into the codebase ("build B", "ship it") | `proto pick` if not yet, then `proto handoff <slug>/<letter>` and step 7 |
 | A pick, More like this or Build it from the page (`action:` in a batch) | the table under Comments from the page |
 | Other copy for some lines ("better headlines", "other button text") | `proto ask "…"`, then `useCopy` on those lines (Offer other copy when asked) |

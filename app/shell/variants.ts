@@ -1,5 +1,13 @@
-/** A display label in the prototype's original order. Routes and actions keep the file ID. */
-export function variantLabel(p: { variants: { id: string }[] }, id: string): string {
-  const index = p.variants.findIndex(v => v.id === id)
-  return index >= 0 && (p.variants.length > 22 || p.variants.some(v => v.id.length > 1)) ? String(index + 1) : id
+/**
+ * A variant's number, as the page shows it: its letter counted the way columns are (A is 1, Z 26,
+ * AA 27, AC 29). Fixed by the letter, so removing a variant never renumbers the others. Routes,
+ * files and actions keep the letter. app/numbers.mjs is the same count for the CLI.
+ */
+export const numberOf = (id: string): number => /^[A-Z]{1,2}$/.test(id) ? [...id].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) : 0
+/** The label the page shows for a variant: its number; an ID that isn't a letter, its place in the list. */
+export function variantLabel(p: { variants: { id: string }[] } | null, id: string): string {
+  const n = numberOf(id)
+  if (n) return String(n)
+  const index = p ? p.variants.findIndex(v => v.id === id) : -1
+  return index >= 0 ? String(index + 1) : id
 }

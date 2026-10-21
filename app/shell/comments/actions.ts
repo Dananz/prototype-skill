@@ -12,6 +12,7 @@ import { shotsOf } from './types'
 import { inScope, routeOf } from './types'
 import { sameView } from '../view/sizes'
 import { t } from '../i18n'
+import { variantLabel } from '../variants'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 const hasWords = (d: Draft) => d.body.some(s => typeof s !== 'string' || s.trim()) || d.tags.length > 0 || shotsOf(d).length > 0
@@ -259,7 +260,7 @@ export function createActions(store: Store, host: Host) {
      * couldn't be made (it waits with Claude then, saying why).
      */
     async decide(to: { proto: string; variant: string }, action: Action, note = '') {
-      const say = ACTION[action].say(to.variant), words = note.trim()
+      const label = variantLabel(null, to.variant), say = ACTION[action].say(label), words = note.trim()
       const sent = await host.send({
         theme: host.dark() ? 'dark' : 'light',
         viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 },
@@ -269,9 +270,9 @@ export function createActions(store: Store, host: Host) {
       set(s => ({ items: s.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? s.items : [...s.items, item] }))
       const r = sent.results[0]
       if (!r?.failed) return
-      if (r.nothing) throw new Error(`${to.variant} isn’t picked any more, so there was nothing to take back.`)
-      if (r.marked) throw new Error(`Picked ${to.variant}, but your requests still change the variant they did (${r.failed}). ${host.agentName?.() ?? 'Agent'} is told.`)
-      throw new Error(`Couldn’t ${action === 'pick' ? `pick ${to.variant}` : 'take the pick back'}: ${r.failed}. ${host.agentName?.() ?? 'Agent'} is told.`)
+      if (r.nothing) throw new Error(`${label} isn’t picked any more, so there was nothing to take back.`)
+      if (r.marked) throw new Error(`Picked ${label}, but your requests still change the variant they did (${r.failed}). ${host.agentName?.() ?? 'Agent'} is told.`)
+      throw new Error(`Couldn’t ${action === 'pick' ? `pick ${label}` : 'take the pick back'}: ${r.failed}. ${host.agentName?.() ?? 'Agent'} is told.`)
     },
     /**
      * More variants of a prototype, a request of its own (action more-variants, on the prototype, not

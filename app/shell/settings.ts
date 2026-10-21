@@ -109,7 +109,7 @@ function Settings(p: Props) {
     [t('Previous / next variant'), '← / →'], [t('Comment on an element'), 'C'], [t('Comment on the whole variant'), 'Shift C'],
     [t('Send draft comments'), `${mod} Enter`], [t('Toggle sidebar'), `${mod} \\`], [t('Toggle focus mode'), 'F'],
     [t('Fit and center canvas'), `${mod} 0`],
-    [t('Go to the working variant'), 'W'], [t('Design actions (desktop)'), 'P'], [t('Close a tool or go back'), 'Esc'],
+    [t('Go to the working variant'), 'W'], [t('Design actions (desktop)'), 'P'], [t('Favorite or unfavorite the variant'), 'S'], [t('Close a tool or go back'), 'Esc'],
   ]
   const pane = category === 'appearance' ? h('div', { className: 'pb-6' },
     choices(t('Appearance'), (['system', 'light', 'dark'] as const).map(value => choice('theme', value, value === 'system' ? t('System') : value === 'light' ? t('Light') : t('Dark'), p.appearance === value, () => p.onAppearance(value), value === 'light' ? 'sun' : value === 'dark' ? 'moon' : 'desktop'))),

@@ -9,6 +9,7 @@ import { SIZE_PATHS, sizeIcon, sizeName, type ViewSize } from '../view/sizes'
 import { ago, ic } from '../ui'
 import { t, tn } from '../i18n'
 import type { Action, CState, Item, Seg, Target } from './types'
+import { variantLabel } from '../variants'
 
 const PATHS: Record<string, string> = {
   ...SIZE_PATHS,
@@ -159,7 +160,7 @@ export function Chip({ t: target, n }: { t?: Target; n: number }) {
   return <span title={comment?.quote ?? (ref ? `${ref.label} · ${ref.name}` : srcOf(target)?.full)} role={linked ? 'link' : undefined} tabIndex={linked ? 0 : undefined}
     onClick={linked ? e => { e.stopPropagation(); open() } : undefined}
     onKeyDown={linked ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); open() } } : undefined}
-    className={`mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? t('Comment {n}', { n: comment.n }) : `@${ref?.label ?? (target?.source ? `${target.source.variant}·${n}` : n)}`}</span>
+    className={`mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? t('Comment {n}', { n: comment.n }) : `@${ref?.label ?? (target?.source ? `${variantLabel(null, target.source.variant)}·${n}` : n)}`}</span>
 }
 
 export function Body({ c, className = '' }: { c: { body: Seg[]; tags: Target[] }; className?: string }): ReactNode {
@@ -182,19 +183,19 @@ export const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `
 /** What a row of the list is about: the element a comment is on, the moment of the motion, or what a decision asked. */
 export const aboutOf = (i: Item) => i.action === 'more-variants'
   ? tn(i.count ?? 5, '{n} more variant', '{n} more variants')
-  : i.action === 'pick' ? t('Picked {v}', { v: i.variant })
-  : i.action === 'unpick' ? t('Unpicked {v}', { v: i.variant })
-  : i.action === 'more' ? t('More like {v}', { v: i.variant })
-  : i.action === 'build' ? t('Build {v}', { v: i.variant })
-  : i.action === 'try-it' ? t('Needs explanation: {v}', { v: i.variant })
-  : i.action === 'copy-options' ? t('Generate copy options for {v}', { v: i.variant })
-  : i.action === 'copy' ? t('Copy for {v}', { v: i.variant })
+  : i.action === 'pick' ? t('Picked {v}', { v: variantLabel(null, i.variant) })
+  : i.action === 'unpick' ? t('Unpicked {v}', { v: variantLabel(null, i.variant) })
+  : i.action === 'more' ? t('More like {v}', { v: variantLabel(null, i.variant) })
+  : i.action === 'build' ? t('Build {v}', { v: variantLabel(null, i.variant) })
+  : i.action === 'try-it' ? t('Needs explanation: {v}', { v: variantLabel(null, i.variant) })
+  : i.action === 'copy-options' ? t('Generate copy options for {v}', { v: variantLabel(null, i.variant) })
+  : i.action === 'copy' ? t('Copy for {v}', { v: variantLabel(null, i.variant) })
   : i.time ? (i.time.to === undefined ? t('At {time}', { time: spanOf(i.time) }) : t('Over {time}', { time: spanOf(i.time) }))
   : i.target?.whole ? t('Whole variant')
   : t('Comment {n}', { n: i.n })
 
 /** The words of a comment as plain text, tags written as @1, @2, …: their order in the accompanying targets. */
-export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : (c.tags[s.tag]?.commentRef ? `Comment ${c.tags[s.tag].commentRef!.n}` : `@${c.tags[s.tag]?.variantRef?.label ?? (c.tags[s.tag]?.source ? `${c.tags[s.tag].source!.variant}·${s.tag + 1}` : s.tag + 1)}`)).join('').replace(/ /g, ' ').trim()
+export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : (c.tags[s.tag]?.commentRef ? `Comment ${c.tags[s.tag].commentRef!.n}` : `@${c.tags[s.tag]?.variantRef?.label ?? (c.tags[s.tag]?.source ? `${variantLabel(null, c.tags[s.tag].source!.variant)}·${s.tag + 1}` : s.tag + 1)}`)).join('').replace(/ /g, ' ').trim()
 
 export type { Item }
 

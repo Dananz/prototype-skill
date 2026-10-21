@@ -10,6 +10,7 @@ import { isRoot, progress, threadOf, useStore, type Said } from './store'
 import type { CState, Item } from './types'
 import { inScope, shotsOf } from './types'
 import { WholeBox } from './whole'
+import { variantLabel } from '../variants'
 import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, PRIMARY, Reply, since, spanOf, SrcTag, ViewChip, Working, ImageChip, PictureStrip } from './ui'
 
 export function useRows() {
@@ -58,7 +59,7 @@ const Remove = ({ item, className = '' }: { item: Item; className?: string }) =>
   const sent = !!item.sent
   return <button data-shoot="remove" onClick={e => { e.stopPropagation(); act.remove(item.id) }} aria-label={t('Delete this comment')} title={sent ? t('Delete this comment ({agent} is told to leave it)', { agent }) : t('Delete this comment')} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10 ${className}`}><Icon name="trash" className="size-4" /></button>
 }
-const Where = ({ item, here }: { item: Item; here: boolean }) => { const { store } = useCtx(); return here && !store.get().place?.compare ? null : <span className="shrink-0 rounded bg-zinc-900/[.05] px-1 font-mono text-[10px] text-zinc-500 dark:bg-white/10">{item.variant}</span> }
+const Where = ({ item, here }: { item: Item; here: boolean }) => { const { store } = useCtx(); return here && !store.get().place?.compare ? null : <span className="shrink-0 rounded bg-zinc-900/[.05] px-1 font-mono text-[10px] text-zinc-500 dark:bg-white/10">{variantLabel(null, item.variant)}</span> }
 /** What a row is about: the element a comment is on, or a decision with its icon (it is on no element). */
 const About = ({ item }: { item: Item }) => item.action
   ? <span className="inline-flex min-w-0 items-center gap-1.5"><Icon name={ACTION[item.action].icon} className="size-3.5" /><span className="truncate">{aboutOf(item)}</span></span>

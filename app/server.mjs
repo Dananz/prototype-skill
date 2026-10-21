@@ -190,6 +190,24 @@ function pick(route, off) {
   return moved ? 'moved' : 'done'
 }
 
+// A favorite is the user's own mark on a variant, for finding it again among many: kept in
+// meta.ts as `favorites` (letter IDs in the page's order), where `proto fav` reads and writes it
+// too. Unlike a pick it asks nothing of the agent, so it is no comment. Returns the list as it is now.
+const order = (a, b) => a.length - b.length || a.localeCompare(b)
+function fav({ proto, variant, on }) {
+  if (typeof proto !== 'string' || typeof variant !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(proto) || !/^[A-Z]{1,2}$/.test(variant)) throw Object.assign(new Error('send { proto, variant, on }'), { status: 400 })
+  let text, meta
+  try { text = readFileSync(metaFile(proto), 'utf8'); meta = metaOf(text) } catch { throw Object.assign(new Error(`src/protos/${proto}/meta.ts is missing or isn't plain JSON`), { status: 404 }) }
+  if (!meta.variants?.[variant] && !hasVariant(proto, variant)) throw Object.assign(new Error(`${proto} has no variant ${variant}`), { status: 404 })
+  const was = Array.isArray(meta.favorites) ? meta.favorites.filter(x => typeof x === 'string') : []
+  const now = (on ? [...new Set([...was, variant])] : was.filter(x => x !== variant)).sort(order)
+  if (now.join() === was.join()) return now
+  if (now.length) meta.favorites = now
+  else delete meta.favorites
+  writeWhole(metaFile(proto), withMeta(text, meta))
+  return now
+}
+
 // ---------- the inbox: comments from the page, for the agent running the session ----------
 // Each send is one batch folder under .proto/inbox/: batch.json, plus its screenshots as files.
 // A new batch waits in new/ until `proto inbox` takes it, which moves it to taken/ (a rename,
@@ -606,6 +624,12 @@ export function prototypeServer(session) {
             let took
             if (route === '/withdraw') {
               try { took = withdraw(data) } catch (e) { return fail(e.status || 500, e.message) }
+            }
+            if (route === '/fav') {
+              let favorites
+              try { favorites = fav(data) } catch (e) { return fail(e.status || 500, e.message) }
+              res.setHeader('content-type', 'application/json')
+              return res.end(JSON.stringify({ favorites }))
             }
             // A send answers with its batch, whether a pick in it moved the working variant, and how
             // each decision in it went: done, or failed and why.

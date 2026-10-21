@@ -43,6 +43,7 @@ import { virtualVariantsChecks } from './virtual-variants-checks.mjs'
 import { virtualWindowChecks } from './virtual-window-checks.mjs'
 import { virtualReactChecks } from './virtual-react-checks.mjs'
 import { variantLabelsChecks } from './variant-labels-checks.mjs'
+import { favoritesChecks } from './favorites-checks.mjs'
 import { headerChecks } from './header-checks.mjs'
 import { phoneFrameChecks } from './phone-frame-checks.mjs'
 
@@ -186,6 +187,14 @@ let { pid } = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
 // its own connection: the spawnSync calls block this script for many seconds, long enough for
 // the server to close an idle kept-alive socket without fetch noticing.
 // A focused run uses the same real browser/server harness as the full suite.
+if (process.argv.includes('--labels-favorites-only')) {
+  await variantLabelsChecks({ proto, app, local, openPage, fail })
+  await favoritesChecks({ proto, app, local, openPage, fail })
+  proto(['rm'])
+  try { rmSync(scratch, { recursive: true, force: true }) } catch { /* temp dir */ }
+  console.log('OK: focused variant label and favorites checks')
+  process.exit(0)
+}
 if (process.argv.includes('--zoom-reset-only')) {
   await zoomResetChecks({ proto, app, local, openPage, fail, keepShots })
   proto(['rm'])
@@ -239,6 +248,7 @@ await slotChecks({ proto, app, local, openPage, fail })
 await middleDragChecks({ proto, app, local, openPage, fail })
 await zoomResetChecks({ proto, app, local, openPage, fail })
 await variantLabelsChecks({ proto, app, local, openPage, fail })
+await favoritesChecks({ proto, app, local, openPage, fail })
 await headerChecks({ proto, app, local, openPage, fail })
 await phoneFrameChecks({ proto, app, local, openPage, fail })
 
@@ -870,7 +880,7 @@ try {
     await new Promise(r => setTimeout(r, 300))
     const composer = document.querySelector('[data-motion-bar] [data-composer]')
     const menu = document.querySelector('[data-tag-menu]'), options = menu?.querySelectorAll('[role=option]')
-    if (!options?.length || !options[0].textContent.includes('@A')) return '@ should offer variant mentions'
+    if (!options?.length || !options[0].textContent.includes('@1')) return '@ should offer variant mentions'
     const r = menu.getBoundingClientRect(), pick = [...menu.querySelectorAll('button')].find(b => b.textContent.includes('Pick an element instead')), p = pick?.getBoundingClientRect()
     if (r.top < 0 || r.bottom > innerHeight || !p || !document.elementFromPoint(p.left+10,p.top+p.height/2)?.closest('[data-tag-menu]')) return 'the dock clipped its variant menu'
     pick.click()
