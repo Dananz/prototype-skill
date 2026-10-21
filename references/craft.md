@@ -202,9 +202,14 @@ preference:
    With a synchronous tool, save its output before continuing; do not invent a background API. Variants read them with
    `image()` from `src/images.ts` (undefined until the file lands): a drawn shape holds the place
    and the page swaps the image in by itself. No tool available: skip this, don't ask.
+   Which tool, where its style comes from, and the style guide: `references/images.md`.
 3. Drawing from the subject in code: SVG shapes, a chart, a map, a gradient with grain.
 
 Depth comes from layering and light, not from a shadow on everything.
+
+**Parallax from one image.** With a strong image tool, a hero can be one generated scene split
+into depth layers, moved at different rates. Every layer overflows what covers it and the frame,
+or the seams show as it moves: `references/images.md`, section 4, and `parallax()`.
 
 ## 7. Motion in this tooling
 

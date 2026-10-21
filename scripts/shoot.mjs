@@ -30,6 +30,9 @@
 // --phone lists the phone prototypes: their variants are shot at phone size only, where the phone
 // shows larger than in the desktop shell. Their lobbies still get both.
 //
+// --parallax=<x>,<y> holds every parallax() layer at that point of its travel (-1 to 1 each way), so
+// the ends can be checked for holes and edges (hero-A-desktop-parallax1_1.png).
+//
 // --size=<w>x<h> shoots at that one viewport instead (hero-A-834x1194.png), the way the page's
 // device view shows a tablet or a desktop: a web prototype's stage at that width, no phone frame.
 //
@@ -74,7 +77,8 @@ base.searchParams.set('theme', flags.theme === 'dark' ? 'dark' : 'light') // hea
 base.searchParams.set('hints', '0') // the Try it panel would narrow the design
 if (flags.focus) base.searchParams.set('focus', '1')
 if (flags.copy) base.searchParams.set('copy', '1')
-const suffix = [flags.focus && 'focus', flags.copy && 'copy', flags.theme === 'dark' && 'dark', clicks.length && 'clicked'].filter(Boolean).map(s => `-${s}`).join('')
+if (flags.parallax) base.searchParams.set('parallax', flags.parallax) // parallax() layers held at that end of their travel
+const suffix = [flags.focus && 'focus', flags.copy && 'copy', flags.parallax && `parallax${flags.parallax.replace(/,/, '_')}`, flags.theme === 'dark' && 'dark', clicks.length && 'clicked'].filter(Boolean).map(s => `-${s}`).join('')
 const fileOf = route => route.replace(/^\/+|\/+$/g, '').replace(/\//g, '-') || 'session'
 const phones = new Set(String(flags.phone || '').split(',').filter(Boolean))
 const phoneOnly = route => { const [slug, variant] = route.replace(/^\/+/, '').split('/'); return !!variant && phones.has(slug) }

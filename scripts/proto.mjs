@@ -16,6 +16,7 @@
 //             [--at <ms>]     instead, the variant's motion (useMotion) at that moment of its take
 //             [--frames <n>] [--at <ms>-<ms>]   n frames of the take on one sheet, with its curves
 //             [--size <w>x<h>]   instead of desktop and phone, that viewport (a layout from the page's device view)
+//             [--parallax <x>,<y>]   parallax() layers held at that point of their travel (1,1 and -1,-1: the ends)
 //   proto shoot [slug…] --sheet [--state <id>] [--theme dark]   every variant on one contact sheet per prototype
 //   proto shoot --pin <batch>[/<n>] [--margin <px>] [--state <id>] [--hover] [--after <ms>]
 //             what a comment from the page is on, as the user saw it: their page size and theme at 2x,
@@ -298,6 +299,25 @@ function tailnetPort(s, net) {
   die('no free tailnet port in 9500-9599')
 }
 
+// ---------- image tools ----------
+// What makes the session's images (references/images.md): the codex-image skill when it is installed
+// beside this one or in a known skills folder; else, with the Codex CLI on the PATH, a line to suggest
+// installing it; and inside Codex, a line to suggest the host's latest image model for the assets.
+const CODEX_IMAGE_REPO = 'https://github.com/Dananz/codex-image'
+function imageTools() {
+  const home = homedir()
+  const skill = [dirname(SKILL), join(home, '.claude', 'skills'), join(home, '.agents', 'skills'), join(home, '.codex', 'skills')]
+    .map(d => join(d, 'codex-image')).find(d => existsSync(join(d, 'SKILL.md')))
+  const exe = process.platform === 'win32' ? ['codex.cmd', 'codex.exe', 'codex'] : ['codex']
+  const cli = (process.env.PATH || '').split(process.platform === 'win32' ? ';' : ':').some(d => d && exe.some(e => existsSync(join(d, e))))
+  const lines = []
+  if (skill) lines.push(`images: codex-image at ${tilde(skill)}: every generated image goes through it (references/images.md)`)
+  else if (cli) lines.push(`images: codex-image is not installed and the Codex CLI is: suggest it to the user once, git clone ${CODEX_IMAGE_REPO} ${tilde(join(dirname(SKILL), 'codex-image'))}`)
+  if (detectedAgent() === 'codex') lines.push('images: running in Codex: suggest making the assets with the latest image model the host offers, named by version, once (references/images.md)')
+  if (!lines.length) lines.push('images: no codex-image here; another image tool of the host if it has one (references/images.md)')
+  return lines
+}
+
 // ---------- create ----------
 function scaffold(dir, project) {
   const { stack, why } = flags.stack ? { stack: flags.stack, why: 'asked for' } : detectStack(project)
@@ -446,6 +466,7 @@ async function up() {
   console.log(`dir ${dir}`)
   console.log(`stack ${s.stack}`)
   for (const name of kitNames()) console.log(kitLine(name, project))
+  for (const line of imageTools()) console.log(line)
   printListener(dir)
 }
 
@@ -951,7 +972,8 @@ async function shoot() {
   if (flags.pin !== undefined) return shootPin(dir, s, out)
   const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
   let routes = args.filter(a => !clicked.has(a)).length ? args.filter(a => !clicked.has(a)) : ['']
-  const extra = ['theme', 'focus', 'copy'].filter(k => flags[k]).map(k => `--${k}=${flags[k] === true ? '1' : flags[k]}`)
+  if (flags.parallax !== undefined && !/^-?(0|1|0?\.\d+)(,-?(0|1|0?\.\d+))$/.test(String(flags.parallax))) die('--parallax is <x>,<y>, each from -1 to 1: 1,1 and -1,-1 are the two ends of the travel')
+  const extra = ['theme', 'focus', 'copy', 'parallax'].filter(k => flags[k]).map(k => `--${k}=${flags[k] === true ? '1' : flags[k]}`)
   if (flags.ref === true) die('--ref takes a screenshot of the real screen: --ref <png>')
   if (flags.ref && flags.sheet) die('--ref and --sheet are separate shots: run one, then the other')
   if (flags.state && !flags.sheet) die(`--state goes with --sheet; one variant in a state is proto shoot <slug>/<letter>/${flags.state === true ? '<state>' : flags.state}`)
@@ -1017,7 +1039,7 @@ async function shootPin(dir, s, out) {
   const ref = flags.pin === true ? '' : String(flags.pin)
   const [prefix, nth, more] = ref.split('/')
   if (!prefix || more !== undefined || (nth !== undefined && !/^\d+$/.test(nth))) die('--pin takes a batch, or one comment of it, as proto inbox prints them: proto shoot --pin <batch>/<n>')
-  for (const k of ['sheet', 'ref', 'as', 'at', 'frames', 'size', 'click', 'copy', 'focus']) if (flags[k] !== undefined) die(`--pin shoots what a comment is on: not with --${k}`)
+  for (const k of ['sheet', 'ref', 'as', 'at', 'frames', 'size', 'click', 'copy', 'focus', 'parallax']) if (flags[k] !== undefined) die(`--pin shoots what a comment is on: not with --${k}`)
   if (args.length) die(`--pin finds its route in the comment: leave out ${args.join(' ')}`)
   const found = ['taken', 'new'].flatMap(sub => batchesIn(dir, sub).filter(id => id.startsWith(prefix)).map(id => ({ id, sub })))
   if (found.length !== 1) die(found.length ? `"${prefix}" matches ${found.length} batches; give more of the id` : `no batch "${prefix}" in the inbox (proto inbox prints their ids)`)
@@ -2181,6 +2203,7 @@ function kitStatus() {
     console.log(`  read first: ${tilde(join(kitDir(name), 'design-system.md'))}`)
     const pk = Object.entries(k.packages || {})
     console.log(`  has: theme.css${k.parts.length ? `, ${k.parts.join(', ')}` : ''}${pk.length ? `, packages ${pk.map(([p, v]) => `${p}@${v}`).join(' ')}` : ''}`)
+    if (k.style?.length) console.log(`  image style: ${k.style.join(', ')} (in ${tilde(join(kitDir(name), 'style'))})`)
     console.log(`  sources: ${Object.keys(k.sources).length} tracked, ${d.n ? driftSay(d) : 'all unchanged'}`)
     if (later) console.log(`  the project is ${plural(later, 'commit')} past the save (${k.commit}): check the screens you build on still look like it`)
     for (const [sn, sc] of screens) {
@@ -2217,6 +2240,9 @@ function kitDoc(k, kd) {
     '## Icons, fonts and assets', '',
     ...(Object.keys(k.packages).length ? Object.entries(k.packages).map(([p, v]) => `- \`${p}@${v}\``) : []),
     '- Where fonts and images are imported from, and any stand-ins:', '',
+    '## Image style', '',
+    ...(k.style?.length ? k.style.map(f => `- \`style/${f}\``) : []),
+    '- The guide and anchor every generated image follows (references/images.md), or the project images it takes its style from:', '',
     '## Traps', '',
     '- What took rounds to match, and why, so the next session gets it right the first time:', '',
   ].join('\n')
@@ -2250,12 +2276,34 @@ function kitSave() {
     kind: meta.kind === 'phone' ? 'phone' : 'web', ...(Array.isArray(meta.screen) ? { screen: meta.screen } : {}),
     parts, packages, sources: sourcesOf(texts, project), screens: was?.screens || {},
   }
+  const style = keepStyle(dir, slug, kd, meta)
+  if (style.length) k.style = [...new Set([...(was?.style || []), ...style])].sort()
+  else if (was?.style) k.style = was.style
   writeJson(join(kd, 'kit.json'), k)
   const doc = join(kd, 'design-system.md'), first = !existsSync(doc)
   if (first) writeFileSync(doc, kitDoc(k, kd))
   console.log(`${was ? 'updated' : 'saved'} kit ${name}: theme.css${parts.length ? `, ${parts.join(', ')}` : ''}${Object.keys(packages).length ? `, packages ${Object.keys(packages).join(' ')}` : ''}`)
   console.log(`tracking ${plural(Object.keys(k.sources).length, 'source')}${Object.keys(k.sources).length ? `: ${Object.keys(k.sources).join(', ')}` : ' (name them with --sources, or the kit can\'t tell when it is out of date)'}`)
   console.log(`${first ? 'fill in' : 'bring up to date'}: ${tilde(doc)}`)
+}
+
+// The picked direction's asset style guide and anchor (src/assets/style/<slug>-<letter>.md and
+// <slug>-<letter>-anchor.png, references/images.md) go into the kit's style/, which a save never
+// clears. Before a pick there is no one style to keep, so it says so instead.
+function keepStyle(dir, slug, kd, meta) {
+  const from = join(dir, 'src', 'assets', 'style')
+  const mine = existsSync(from) ? readdirSync(from).filter(f => f.startsWith(`${slug}-`)) : []
+  if (!mine.length) return []
+  if (!meta.picked) {
+    console.log(`style guides for ${slug} not kept: nothing is picked yet. proto pick ${slug} <letter>, then save again`)
+    return []
+  }
+  const files = mine.filter(f => f.startsWith(`${slug}-${meta.picked}.`) || f.startsWith(`${slug}-${meta.picked}-`))
+  if (!files.length) return []
+  mkdirSync(join(kd, 'style'), { recursive: true })
+  for (const f of files) cpSync(join(from, f), join(kd, 'style', f))
+  console.log(`kept ${slug}/${meta.picked}'s image style: ${files.join(', ')} (in ${tilde(join(kd, 'style'))}; name them in design-system.md)`)
+  return files
 }
 
 /** `proto kit screen <name> <slug>[/<letter>]`: a Current that matches its reference, with the reference. */
@@ -2318,6 +2366,13 @@ function useKit(dir, pdir, slug, { name, k, kd }, a) {
     pkg.dependencies = { ...pkg.dependencies, ...Object.fromEntries(want) }
     writeJson(pkgFile, pkg)
     install(dir)
+  }
+  const style = (k.style || []).filter(f => existsSync(join(kd, 'style', f)))
+  if (style.length) {
+    const to = join(dir, 'src', 'assets', 'style')
+    mkdirSync(to, { recursive: true })
+    for (const f of style) if (!existsSync(join(to, f))) cpSync(join(kd, 'style', f), join(to, f))
+    console.log(`image style: src/assets/style/${style.join(', src/assets/style/')}. Every generated image starts from this guide, with its anchor as the first reference (references/images.md)`)
   }
   console.log(`on kit ${name}: theme.css, ${k.parts.join(', ') || 'no parts'}${want.length ? `, installed ${want.map(([p]) => p).join(' ')}` : ''}${kept.length ? ` (kept this session's own ${kept.join(', ')})` : ''}`)
   const project = projectRoot(), d = drift(k.sources, project), later = commitsSince(project, k.commit)
