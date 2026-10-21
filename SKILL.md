@@ -328,6 +328,15 @@ started as plan step 5 says. Variants use them through `image()` from `src/image
 `undefined` until the file exists: a drawn shape holds the place, and the page swaps the image in
 by itself when it lands. Subagents don't generate images.
 
+**Read `references/images.md` before the first image of a session**, and follow the `images:` line
+`proto up` prints. In short: `codex-image` makes every image when it is installed (with only the
+Codex CLI, suggest installing it; inside Codex, suggest the host's latest image model for the
+assets). Every request starts from the assets that already exist, passed as references and
+matched in style, unless the user asks for another style. From scratch, each direction gets an
+asset style guide and an anchor image first, so all its images speak one language. A layered
+parallax hero uses `parallax()` from `src/parallax.ts`, with every layer overflowing what covers
+it and the frame, checked at both ends with `proto shoot --parallax`.
+
 **First usable output: one complete, high-quality direction.** No special prompt is needed.
 Keep the real-product grounding, exact Current/reference match, real tokens/assets/chrome,
 working interactions, responsive layout and necessary visual QA below. For an existing
@@ -941,7 +950,7 @@ session builds and saves a new one.
 - **A variant shows a red error box:** that variant threw. Fix the file; it re-renders.
 - **`proto shoot` prints `slow …`:** a shot took over 3 s, and the line says which step took
   the time. Pass the line on to the user.
-- **Don't edit** the app's `shell/`, `src/main.ts`, `src/registry.ts`, `src/mount.*`, `src/hints.ts`, `src/copy.ts`, `src/motion.ts` or `src/fonts.ts`. If the
+- **Don't edit** the app's `shell/`, `src/main.ts`, `src/registry.ts`, `src/mount.*`, `src/hints.ts`, `src/copy.ts`, `src/motion.ts`, `src/parallax.ts` or `src/fonts.ts`. If the
   shell itself misbehaves, say so; the template is `app/` in the resolved skill directory (replaced on
   every plugin update, so a fix belongs upstream). `proto up` copies the template over an
   existing session's app files (everything except `src/protos/` and `src/theme.css`) and adds

@@ -40,7 +40,9 @@ The main agent generates them (in the background when supported) into `src/asset
 `<slug>-<letter>-<what>` (`kiosk-B-hero.jpg`). Use them through `image()` from `src/images.ts`:
 `image('kiosk-B-hero')` is the URL once the file exists and `undefined` until then, so draw a
 shape in its place meanwhile. The page swaps the image in by itself when it lands; don't wait
-for it, poll for it or generate images yourself.
+for it, poll for it or generate images yourself. When your direction needs an image the main
+agent didn't list, name it in your reply (what, and which existing asset or style guide in
+`src/assets/style/` it should follow). A layered parallax hero: `references/images.md`, section 4.
 
 ```tsx
 import { image } from '../../images'
