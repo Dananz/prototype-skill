@@ -11,6 +11,8 @@ export async function pickNoteChecks({ proto, app, local, openPage, fail, keepSh
   const inboxFile = (id, sub = 'taken') => join(app, '.proto/inbox', sub, id, 'batch.json')
   for (const phone of [false, true]) {
     const layout = phone ? 'phone' : 'desktop', variant = phone ? 'A' : 'B'
+    // The page names a variant by its number (A is 1, B is 2).
+    const label = phone ? '1' : '2'
     const page = await openPage(`${local}#/picknotes/${variant}`, phone ? { width: 390, height: 844, phone: true } : {})
     const run = async code => {
       const result = await page.run(`(async () => { ${until} try { ${code}; return 'ok' } catch (e) { return e.message } })()`)
@@ -26,15 +28,15 @@ export async function pickNoteChecks({ proto, app, local, openPage, fail, keepSh
       await run(`const t = document.querySelector('textarea[aria-label^="Note for "]'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, ${JSON.stringify(note)}); t.dispatchEvent(new Event('input', { bubbles: true })); await until(() => document.querySelector('textarea[aria-label^="Note for "]').value === ${JSON.stringify(note)})`)
       await page.screenshot(join(keepShots, `${layout}-after-note.png`))
       // A failed request keeps the note and can be retried; two same-task clicks enqueue once.
-      await run(`const original = window.fetch; window.fetch = async (...args) => { if (args[0] === '/__proto/comments') { window.fetch = original; throw new TypeError('Test connection failure') } return original(...args) }; [...document.querySelectorAll('button')].find(b => b.textContent === 'Pick ${variant}').click(); await until(() => document.querySelector('[role=alert]')?.textContent.includes('Test connection failure')); await until(() => ![...document.querySelectorAll('button')].find(b => b.textContent === 'Pick ${variant}').disabled); if (document.querySelector('textarea[aria-label^="Note for "]').value !== ${JSON.stringify(note)}) throw new Error('failed send lost note')`)
+      await run(`const original = window.fetch; window.fetch = async (...args) => { if (args[0] === '/__proto/comments') { window.fetch = original; throw new TypeError('Test connection failure') } return original(...args) }; [...document.querySelectorAll('button')].find(b => b.textContent === 'Pick ${label}').click(); await until(() => document.querySelector('[role=alert]')?.textContent.includes('Test connection failure')); await until(() => ![...document.querySelectorAll('button')].find(b => b.textContent === 'Pick ${label}').disabled); if (document.querySelector('textarea[aria-label^="Note for "]').value !== ${JSON.stringify(note)}) throw new Error('failed send lost note')`)
       const earlier = new Set((await batches()).map(b => b.id))
-      await run(`const b = [...document.querySelectorAll('button')].find(b => b.textContent === 'Pick ${variant}'); b.click(); b.click(); await until(() => !document.querySelector('textarea[aria-label^="Note for "]')); await until(() => !document.querySelector('[data-pick-note]'))`)
+      await run(`const b = [...document.querySelectorAll('button')].find(b => b.textContent === 'Pick ${label}'); b.click(); b.click(); await until(() => !document.querySelector('textarea[aria-label^="Note for "]')); await until(() => !document.querySelector('[data-pick-note]'))`)
       let sent
       for (let end = Date.now() + 10000; Date.now() < end && !sent; await new Promise(r => setTimeout(r, 100))) sent = (await batches()).find(b => !earlier.has(b.id) && b.comments.some(c => c.route === `picknotes/${variant}` && c.action === 'pick'))
       assert(sent && (await batches()).filter(b => !earlier.has(b.id)).length === 1, `${layout} send was missing or duplicated`)
       const pending = JSON.parse(readFileSync(inboxFile(sent.id, 'new'), 'utf8'))
       assert(!pending.done && !pending.comments[0].done, 'note was completed before the agent handled it')
-      assert(pending.comments[0].text === `Picked ${variant}: ${note}` && pending.comments[0].note === note && pending.comments[0].marked, 'persisted pick lost note or selection marker')
+      assert(pending.comments[0].text === `Picked ${label}: ${note}` && pending.comments[0].note === note && pending.comments[0].marked, 'persisted pick lost note or selection marker')
       assert(readFileSync(join(app, 'src/protos/picknotes/meta.ts'), 'utf8').includes(`"picked": "${variant}"`), 'selection was not marked')
       const session = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
       assert(session.work?.proto === 'picknotes' && session.work.variant === variant && session.asks?.[`picknotes/${variant}`]?.at(-1)?.text === `Picked ${variant}`, 'working variant or history missing')
@@ -49,7 +51,7 @@ export async function pickNoteChecks({ proto, app, local, openPage, fail, keepSh
       proto(['reply', `${sent.id}/1`, 'Handled the note', '--done'])
       assert(JSON.parse(readFileSync(inboxFile(sent.id), 'utf8')).comments[0].done, 'reply did not complete note')
       if (!phone) await run(`${menu}; await until(() => document.querySelector('[role=menu]')); if (document.querySelector('[data-pick-note]')) throw new Error('picked variant offers note again')`)
-      else await run(`if (document.querySelector('[data-pick-note]')) throw new Error('picked sheet offers note again'); if ([...document.querySelectorAll('button')].some(b => b.textContent === 'Pick ${variant}')) throw new Error('phone composer did not reset')`)
+      else await run(`if (document.querySelector('[data-pick-note]')) throw new Error('picked sheet offers note again'); if ([...document.querySelectorAll('button')].some(b => b.textContent === 'Pick ${label}')) throw new Error('phone composer did not reset')`)
     } finally { page.close() }
     if (!phone && !before) proto(['pick', 'picknotes', '--off'])
   }

@@ -554,9 +554,14 @@ for (const bad of [{ route: 'hero/Z', text: 'x', action: 'pick' }, { route: 'her
 const heroText = readFileSync(heroMeta, 'utf8')
 writeFileSync(heroMeta, heroText.replace('export default {', 'export default { oops'))
 if ((await postJson('comments', { comments: [{ route: 'hero/B', text: 'Picked B', action: 'pick' }] })).status !== 400) fail('a pick on a meta.ts that does not read was accepted')
-// More and Build write nothing there, so they only need the variant's file.
+// More writes nothing there, and Build picks only when it can, so they only need the variant's file.
 if ((await postJson('comments', { comments: [{ route: 'hero/B', text: 'Build B', action: 'build' }] })).status !== 200) fail('Build on a variant whose meta.ts does not read was refused')
 writeFileSync(heroMeta, heroText)
+// Build it picks the variant too, and the inbox says so.
+const built = await postJson('comments', { comments: [{ route: 'hero/B', text: 'Build B', action: 'build' }] })
+if (built.status !== 200 || !readFileSync(heroMeta, 'utf8').includes('"picked": "B"')) fail(`Build B did not pick B: ${built.status}`)
+if (!/^ {3}action: build \(picked in the page/m.test(proto(['inbox']))) fail('proto inbox did not say the build picked the variant')
+proto(['pick', 'hero', '--off'])
 const incoming = join(app, '.proto', 'inbox', '.incoming')
 if (existsSync(incoming) && readdirSync(incoming).length) fail(`a refused send left ${readdirSync(incoming).join(', ')} in .incoming`)
 // A variant's name is written back as it is, `$` patterns and all, by a pick from the page, by
