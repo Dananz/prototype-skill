@@ -1,0 +1,101 @@
+---
+import Icon from '../components/Icon.astro'
+import Base from '../layouts/Base.astro'
+import { LogoMark } from '../components/logo'
+import Machine from '../components/Machine'
+import Beats from '../components/Beats'
+import { Install } from '../components/Install'
+import { SITE, FAQ } from '../content'
+
+const ring = 'focus-visible:ring-2 focus-visible:ring-[#6d68f0] focus-visible:outline-none'
+---
+<Base>
+  <div dir="ltr" class="d-root min-h-full bg-white text-[13px] text-[#121019] antialiased">
+    <a href="#main" class="sr-only z-50 rounded-lg bg-[#121019] px-4 py-2 text-sm font-medium text-white focus:not-sr-only focus:fixed focus:top-3 focus:left-3">Skip to content</a>
+
+    <header class="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
+      <a href="#top" class:list={['flex items-center gap-2 rounded-md text-[17px] font-semibold tracking-tight', ring]}>
+        <LogoMark tile className="h-8 w-8" title="" /> Prototype
+      </a>
+      <a href={SITE.repo} target="_blank" rel="noreferrer" aria-label="Prototype on GitHub"
+        class:list={['grid h-9 w-9 place-items-center rounded-lg text-[#5b5870] transition-colors hover:bg-[#f3f2fe] hover:text-[#121019]', ring]}>
+        <Icon name="github" />
+      </a>
+    </header>
+
+    <main id="main">
+      <section id="top" class="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] items-center gap-10 gap-y-8 px-5 pt-6 pb-16 sm:px-8 lg:grid-cols-[1fr_1.1fr] lg:gap-14 lg:pt-14 lg:pb-24">
+        <div class="contents lg:block">
+          <h1 class="d-rise order-1 text-[44px] leading-[1.02] font-bold tracking-[-0.035em] text-balance sm:text-[64px]">
+            Type one line. <span class="text-[#6d68f0]">Pick one</span> of five.
+          </h1>
+          <p class="d-rise order-3 max-w-md text-lg leading-relaxed text-[#4a4760] lg:mt-6" style="animation-delay:.12s">{SITE.description}</p>
+          <div class="d-rise order-4 flex flex-wrap items-center gap-x-6 gap-y-3 lg:mt-8" style="animation-delay:.24s">
+            <a href="#install" class="inline-flex h-12 items-center rounded-xl bg-[#5a53e3] px-6 font-medium text-white transition-[background-color,transform] duration-200 hover:-translate-y-0.5 hover:bg-[#4a42d4] focus-visible:ring-2 focus-visible:ring-[#6d68f0] focus-visible:ring-offset-2 focus-visible:outline-none">
+              Start prototyping
+            </a>
+          </div>
+        </div>
+        <div class="d-rise order-2 lg:order-none" style="animation-delay:.2s"><Machine client:load /></div>
+      </section>
+
+      <Beats client:visible />
+
+      <Install client:visible />
+
+      <section aria-labelledby="faq-title" class="mx-auto max-w-3xl px-5 pt-6 pb-20 sm:px-8 sm:pb-28">
+        <h2 id="faq-title" class="text-[28px] leading-[1.1] font-bold tracking-[-0.03em] sm:text-[36px]">Questions</h2>
+        <div class="mt-8 divide-y divide-[#efedfb] border-t border-[#efedfb]">
+          {FAQ.map(f => (
+            <details class="faq">
+              <summary class:list={['flex cursor-pointer list-none items-center justify-between gap-6 rounded-md py-5 text-[17px] font-medium [&::-webkit-details-marker]:hidden', ring]}>
+                {f.q}
+                <Icon name="plus" size={18} class="faq-i shrink-0 text-[#6d68f0]" />
+              </summary>
+              <div class="faq-body"><p class="faq-a max-w-2xl pb-6 text-[15px] leading-[1.65] text-[#4a4760]">{f.a}</p></div>
+            </details>
+          ))}
+        </div>
+      </section>
+    </main>
+
+    <footer class="border-t border-[#efedfb]">
+      <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-5 py-8 text-sm text-[#5b5870] sm:px-8">
+        <span class="flex items-center gap-2"><LogoMark animate="none" className="h-6 w-6" title="" /> Prototype, by Dananz</span>
+        <a href={SITE.repo} target="_blank" rel="noreferrer" class:list={['rounded transition-colors hover:text-[#121019]', ring]}>GitHub</a>
+      </div>
+    </footer>
+  </div>
+</Base>
+
+<script>
+  // Questions: animate the answer's height open and closed. <details> keeps its meaning and find-in-page;
+  // the script only delays the close until the fold has played, and sets .is-open for the text and icon.
+  const spring = getComputedStyle(document.documentElement).getPropertyValue('--spring').trim() || 'ease-out'
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)')
+  for (const d of document.querySelectorAll<HTMLDetailsElement>('details.faq')) {
+    const summary = d.querySelector('summary')!
+    const body = d.querySelector<HTMLElement>('.faq-body')!
+    let anim: Animation | null = null
+    summary.addEventListener('click', e => {
+      e.preventDefault()
+      const opening = !d.classList.contains('is-open')
+      if (reduced.matches) { d.open = opening; d.classList.toggle('is-open', opening); return }
+      const from = d.open ? body.offsetHeight : 0
+      anim?.cancel()
+      if (opening) {
+        d.open = true
+        d.classList.add('is-open')
+        anim = body.animate({ height: [`${from}px`, `${body.scrollHeight}px`] }, { duration: 600, easing: spring })
+        anim.onfinish = () => { anim = null }
+      } else {
+        d.classList.remove('is-open')
+        const a = body.animate({ height: [`${from}px`, '0px'] }, { duration: 340, delay: 100, easing: 'cubic-bezier(.55,0,.8,.25)', fill: 'both' })
+        anim = a
+        a.onfinish = () => { d.open = false; a.cancel(); anim = null }
+      }
+    })
+    // Opened some other way (find in page): show the text too.
+    d.addEventListener('toggle', () => { if (d.open && !anim) d.classList.add('is-open') })
+  }
+</script>
