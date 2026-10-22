@@ -129,7 +129,7 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
     // (a) The follow-up reaches the inbox with the exchange before it.
     const second = await heard(/Better, but the button still feels cramped/)
     if (!second.includes(`batch ${id2} `)) fail(`reply thread: the follow-up's batch ${id2} never reached the inbox:\n${second}`)
-    if (!second.includes(`1. threadfx/A  (reply to ${id}/1)`)) fail(`reply thread: the inbox does not say which comment the follow-up answers:\n${second}`)
+    if (!second.includes(`1. threadfx/A (1)  (reply to ${id}/1)`)) fail(`reply thread: the inbox does not say which comment the follow-up answers:\n${second}`)
     if (!second.includes('   earlier: "Give the whole page more air"  ->  Claude: "Opened up the padding everywhere"')) fail(`reply thread: the inbox does not print the exchange before the follow-up:\n${second}`)
     if (!/on: the whole variant/.test(second)) fail(`reply thread: the follow-up lost what the comment is on:\n${second}`)
 
@@ -179,7 +179,7 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
     })()`)
     if (!/^sent \S+$/.test(again)) fail(`reply thread: ${again}`)
     const third = await heard(/Same for the footer\?/)
-    const walked = [`1. threadfx/A  (reply to ${id2}/1)`, '   earlier: "Give the whole page more air"  ->  Claude: "Opened up the padding everywhere"',
+    const walked = [`1. threadfx/A (1)  (reply to ${id2}/1)`, '   earlier: "Give the whole page more air"  ->  Claude: "Opened up the padding everywhere"',
       '   earlier: "Better, but the button still feels cramped"  ->  Claude: "Gave the button 8 px more each side"', '   Good. Same for the footer?'].join('\n')
     if (!third.includes(walked)) fail(`reply thread: the inbox should print the whole exchange before the second answer, oldest first:\n${third}`)
     proto(['reply', `${again.slice(5)}/1`, 'Footer too', '--done', '--as', 'claude'])

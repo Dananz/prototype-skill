@@ -19,8 +19,10 @@ import shotPhone from '@phosphor-icons/core/assets/regular/device-mobile.svg?raw
 import shotTablet from '@phosphor-icons/core/assets/regular/device-tablet.svg?raw'
 import shotDesktop from '@phosphor-icons/core/assets/regular/desktop.svg?raw'
 import shotPencil from '@phosphor-icons/core/assets/regular/pencil-simple.svg?raw'
-/** Icons that are Phosphor's own files, never drawn here: the ⋯ and the pick's check circle. */
-const PHOSPHOR: Record<string, string> = { 'share-stage': shotStage, 'share-phone': shotPhone, 'share-tablet': shotTablet, 'share-desktop': shotDesktop, 'share-pencil': shotPencil, share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon, translate, globe }
+import star from '@phosphor-icons/core/assets/regular/star.svg?raw'
+import starFill from '@phosphor-icons/core/assets/fill/star-fill.svg?raw'
+/** Icons that are Phosphor's own files, never drawn here: the ⋯, the pick's check circle, the favorite's star. */
+const PHOSPHOR: Record<string, string> = { 'share-stage': shotStage, 'share-phone': shotPhone, 'share-tablet': shotTablet, 'share-desktop': shotDesktop, 'share-pencil': shotPencil, share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon, translate, globe, star, 'star-fill': starFill }
 
 const PATHS: Record<string, string> = {
   ...SIZE_PATHS,

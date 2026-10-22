@@ -9,8 +9,9 @@ import { uiBox } from './portals'
 import { VIRTUAL_THRESHOLD } from './virtual'
 import { CachedList } from './virtual-react'
 import { t } from './i18n'
+import { ic } from './ui'
 
-export type SheetRow = { id: string; label: string; name: string; on: boolean; picked: boolean; editing: boolean }
+export type SheetRow = { id: string; label: string; name: string; on: boolean; picked: boolean; fav: boolean; editing: boolean }
 export type SheetProps = {
   open: boolean
   title: string
@@ -21,12 +22,17 @@ export type SheetProps = {
   onClose: () => void
   onPick: (id: string) => void
   onLobby: () => void
+  /** Favorites only, offered when the prototype has favorites: whether it is on, and how many. */
+  favs?: { on: boolean; count: number }
+  onFavs?: () => void
 }
 
 const CHECK = h('svg', { className: 'size-4 shrink-0', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'M5 12l5 5 9-10' }))
 const GRID = h('svg', { className: 'size-3.5 shrink-0', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z' }))
 const X = h('svg', { className: 'size-4 shrink-0', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'M6 6l12 12M18 6 6 18' }))
 const DOT = h('span', { className: 'relative inline-flex size-1.5' }, h('span', { className: 'absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60' }), h('span', { className: 'relative inline-flex size-full rounded-full bg-emerald-500' }))
+
+const star = (fill: boolean, cls: string) => h('span', { className: 'contents', dangerouslySetInnerHTML: { __html: ic(fill ? 'star-fill' : 'star', cls) } })
 
 const ROW = 'flex h-11 w-full items-center gap-3 rounded-xl px-3 text-start text-[13px] outline-none focus-visible:bg-zinc-900/[.06] dark:focus-visible:bg-white/10'
 
@@ -38,6 +44,7 @@ function Sheet(p: SheetProps) {
     h('span', { className: `w-6 shrink-0 text-center text-xs font-semibold tabular-nums ${r.on ? '' : 'text-zinc-400'}` }, r.label),
     h('span', { dir: 'auto', className: 'min-w-0 flex-1 truncate text-start' }, r.name),
     r.editing ? DOT : null,
+    r.fav ? star(true, 'size-4 text-amber-500 dark:text-amber-400') : null,
     r.picked ? h('span', { className: 'shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-400' }, t('Picked')) : null,
     r.on ? CHECK : null)
 
@@ -63,7 +70,11 @@ function Sheet(p: SheetProps) {
               h('button', { type: 'button', onClick: p.onLobby, 'aria-current': p.lobby, className: `${ROW} ${p.lobby ? 'font-medium text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'}` },
                 h('span', { className: 'flex w-6 shrink-0 justify-center text-zinc-500 dark:text-zinc-400' }, GRID),
                 h('span', { className: 'min-w-0 flex-1 truncate' }, t('All variants')),
-                h('span', { className: 'shrink-0 text-xs tabular-nums text-zinc-400' }, String(p.rows.length)))))))))
+                h('span', { className: 'shrink-0 text-xs tabular-nums text-zinc-400' }, String(p.rows.length))),
+              p.favs ? h('button', { type: 'button', onClick: p.onFavs, 'aria-pressed': p.favs.on, 'data-fav-toggle': '', className: `${ROW} ${p.favs.on ? 'font-medium text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'}` },
+                h('span', { className: 'flex w-6 shrink-0 justify-center' }, star(p.favs.on, `size-4 ${p.favs.on ? 'text-amber-500 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400'}`)),
+                h('span', { className: 'min-w-0 flex-1 truncate' }, t('Favorites only')),
+                h('span', { className: 'shrink-0 text-xs tabular-nums text-zinc-400' }, String(p.favs.count))) : null))))))
 }
 
 export type MenuSheetProps = { open: boolean; title: string; html: string; onClose: () => void; onContentReady?: (root: HTMLElement) => void | (() => void) }

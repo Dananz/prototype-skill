@@ -44,7 +44,7 @@ export type Variant = { id: string; name: string; file: string; load: () => Prom
 /** Something behind clicks in a prototype's variants (a menu, a drawer, a dialog), reached by
  *  clicking its selectors in order. about: one line per variant; only: the variants that have it. */
 export type State = { id: string; name: string; click: string[]; about?: Record<string, string>; only?: string[] }
-export type Proto = { id: string; title: string; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; slot?: string; also: { proto: string; variant: string }[]; picked?: string; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[] }
+export type Proto = { id: string; title: string; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; slot?: string; also: { proto: string; variant: string }[]; picked?: string; favorites: string[]; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[] }
 /** A variant of one prototype ("pricing" and "C"). */
 export type Ref = { proto: string; variant: string }
 /** work: the variant being changed now; before: the ones worked on before it (newest first);
@@ -162,8 +162,16 @@ async function replay(host: HTMLElement, steps: string[], alive: () => boolean, 
 
 export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Proto[]; session: Session }) {
   const { mount } = opts
-  let protos = opts.protos
   let session = opts.session
+  // Favorites only: each prototype with favorites shows just those, everywhere variants are listed
+  // (sidebar, All variants, the arrows, the phone's sheet), so they can be compared side by side.
+  // `all` is every prototype as registry.ts has it; `protos` is what the page shows. Remembered
+  // per session, in this browser.
+  const favKey = `proto-favs-only:${session.id}`
+  let favOnly = localStorage.getItem(favKey) === '1'
+  let all = opts.protos
+  const shown = (list: Proto[]) => favOnly ? list.map(p => p.favorites.length ? { ...p, variants: p.variants.filter(v => p.favorites.includes(v.id)) } : p) : list
+  let protos = shown(all)
   // The page inside a device view (view/frame.ts) shares this browser's storage with the page
   // outside, so it keeps comments under names of its own, and writes nothing else: what it chooses
   // (its place, theme, sidebar, panel) lasts until it reloads. Its copy choices are the page's own
@@ -279,6 +287,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const tool = a?.startsWith('~') ? a.slice(1) as Tool : undefined
     const state = tool ? b : a
     const p: Place = !proto ? { view: 'session' } : !variant ? { view: 'proto', proto } : { view: 'variant', proto, variant }
+    // A link to a variant that Favorites only hides shows everything again, so the link still opens it.
+    if (hash && !valid(p) && favOnly && p.view === 'variant' && all.find(x => x.id === p.proto)?.variants.some(v => v.id === p.variant)) { favOnly = false; remember(favKey, '0'); protos = shown(all) }
     if (!hash || !valid(p)) return null
     // A state or tool that isn't there (renamed, removed) falls back to the variant at rest.
     if (p.view === 'variant') {
@@ -338,6 +348,39 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const nestKey = () => active().map(p => `${p.id}<${p.from?.proto ?? ''}/${p.from?.variant ?? ''}${p.also.map(r => `+${r.proto}/${r.variant}`).join('')}:${p.title}:${p.variants.length}:${pickOf(p)}`).join('|')
   // The variant the user chose ("go with A"); it's listed first and the rest stay reachable.
   const pickOf = (p: Proto) => p.picked && p.variants.some(v => v.id === p.picked) ? p.picked : ''
+  // ---------- favorites ----------
+  // The user's own marks on variants (meta.ts `favorites`, written by the server's /fav and by
+  // `proto fav`): a star on the variant everywhere it is listed, and the Favorites only view.
+  const favOf = (p: Proto, v: string) => p.favorites.includes(v)
+  const STAR = 'text-amber-500 dark:text-amber-400'
+  const starMark = (p: Proto, v: string, size = 'size-3.5') => favOf(p, v) ? `<span title="${esc(t('Favorite'))}" data-fav-mark class="shrink-0">${ic('star-fill', `${size} ${STAR}`)}</span>` : ''
+  /** Shows the new list at once; a place it hid (the variant on screen unfavorited) becomes its
+   *  prototype's All variants. An overview's cards are its layer, so it is drawn again. */
+  function showProtos() {
+    protos = shown(all)
+    if (!valid(st.place) && st.place.view !== 'session' && byId(st.place.proto)) return go({ view: 'proto', proto: st.place.proto })
+    if (st.place.view === 'variant') return render()
+    show(false)
+    render()
+  }
+  function setFavOnly(on: boolean) {
+    favOnly = on
+    remember(favKey, on ? '1' : '0')
+    showProtos()
+  }
+  /** Stars or unstars a variant: shown at once, then written to meta.ts (which comes back through registry.ts). */
+  async function toggleFav(proto: string, variant: string) {
+    const p = all.find(x => x.id === proto)
+    if (!p) return
+    const on = !p.favorites.includes(variant)
+    const set = (list: string[]) => { all = all.map(x => x.id === proto ? { ...x, favorites: list } : x); showProtos() }
+    const was = p.favorites
+    set(on ? [...was, variant] : was.filter(f => f !== variant))
+    try {
+      const res = await fetch('/__proto/fav', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ proto, variant, on }) })
+      if (!res.ok) throw new Error()
+    } catch { set(was) }
+  }
   const lobbyOrder = (p: Proto) => { const k = pickOf(p); return k ? [...p.variants.filter(v => v.id === k), ...p.variants.filter(v => v.id !== k)] : p.variants }
   const PICK = 'text-emerald-700 dark:text-emerald-400'
   const pickChip = (p: Proto, cls = '') => pickOf(p) ? `<span title="${esc(t('Picked {label}', { label: variantLabel(p, pickOf(p)) }))} · ${esc(p.variants.find(v => v.id === pickOf(p))!.name)}" class="inline-flex h-5 shrink-0 items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 text-[11px] font-semibold ${PICK} ${cls}">${ic('check', 'size-3')}${esc(variantLabel(p, pickOf(p)))}</span>` : ''
@@ -383,7 +426,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const pl = st.place, here = pl.view === 'variant' && pl.proto === q.id && pl.variant === v.id
     const w = workOf(), kids = kidsOf(q, v.id).length > 0
     return `<div data-mv="${esc(q.id)}:${v.id}" class="group/vr relative"><button data-act="mv:${esc(q.id)}:${v.id}" aria-current="${sel}"${kids ? ' data-opens' : ''} class="${rowCls(big)} ${here ? 'bg-sky-500/15 font-medium text-sky-950 dark:text-sky-50' : sel ? SELC : ROWC}">
-      <span class="min-w-3.5 shrink-0 text-center text-[11px] font-semibold tabular-nums ${sel ? '' : 'text-zinc-400'}">${variantLabel(q, v.id)}</span><span dir="auto" class="min-w-0 flex-1 truncate">${esc(v.name)}</span><span class="flex shrink-0 items-center justify-end gap-1.5 empty:hidden ${big ? 'group-hover/vr:min-w-8 group-has-[:focus-visible]/vr:min-w-8 group-has-[[aria-expanded=true]]/vr:min-w-8 [@media(pointer:coarse)]:min-w-8' : 'group-hover/vr:min-w-6 group-has-[:focus-visible]/vr:min-w-6 group-has-[[aria-expanded=true]]/vr:min-w-6 [@media(pointer:coarse)]:min-w-6'} group-hover/vr:empty:flex group-hover/vr:invisible group-has-[:focus-visible]/vr:empty:flex group-has-[:focus-visible]/vr:invisible group-has-[[aria-expanded=true]]/vr:empty:flex group-has-[[aria-expanded=true]]/vr:invisible [@media(pointer:coarse)]:empty:flex [@media(pointer:coarse)]:me-6">${v.id === pickOf(q) ? `<span title="${esc(t('Picked'))}" class="shrink-0">${ic('picked', `size-4 ${PICK}`)}</span>` : ''}${w?.p === q && w.v === v ? `<span title="${esc(t('Your requests change this one'))}" class="shrink-0">${ic('pin', 'size-3 text-emerald-600 dark:text-emerald-400')}</span>` : ''}${openComments(q.id, v.id)}${editing(q.id, v.id) ? pulse('size-1.5') : ''}${kids ? ic('right', `size-3 shrink-0 ${sel ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400'}`) : ''}</span></button><button data-act="vm:${esc(q.id)}:${v.id}" aria-label="${esc(t('Options for {name}', { name: v.name }))}" aria-haspopup="menu" aria-expanded="${st.open === 'vmenu' && st.vmenu?.proto === q.id && st.vmenu.variant === v.id}" title="${esc(t('Options: comment on this, pick, build, Try it, copy options, share screenshots'))}" class="absolute ${big ? 'end-2 size-8' : 'end-1 size-6'} top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-zinc-500 opacity-0 hover:bg-zinc-900/10 hover:text-zinc-900 focus-visible:opacity-100 group-hover/vr:opacity-100 group-has-[:focus-visible]/vr:opacity-100 aria-expanded:bg-zinc-900/10 aria-expanded:opacity-100 dark:text-zinc-400 dark:hover:bg-white/15 dark:hover:text-white dark:aria-expanded:bg-white/15 [@media(pointer:coarse)]:opacity-100">${ic('dots', 'size-5')}</button></div>`
+      <span class="min-w-3.5 shrink-0 text-center text-[11px] font-semibold tabular-nums ${sel ? '' : 'text-zinc-400'}">${variantLabel(q, v.id)}</span><span dir="auto" class="min-w-0 flex-1 truncate">${esc(v.name)}</span><span class="flex shrink-0 items-center justify-end gap-1.5 empty:hidden ${big ? 'group-hover/vr:min-w-8 group-has-[:focus-visible]/vr:min-w-8 group-has-[[aria-expanded=true]]/vr:min-w-8 [@media(pointer:coarse)]:min-w-8' : 'group-hover/vr:min-w-6 group-has-[:focus-visible]/vr:min-w-6 group-has-[[aria-expanded=true]]/vr:min-w-6 [@media(pointer:coarse)]:min-w-6'} group-hover/vr:empty:flex group-hover/vr:invisible group-has-[:focus-visible]/vr:empty:flex group-has-[:focus-visible]/vr:invisible group-has-[[aria-expanded=true]]/vr:empty:flex group-has-[[aria-expanded=true]]/vr:invisible [@media(pointer:coarse)]:empty:flex [@media(pointer:coarse)]:me-6">${starMark(q, v.id)}${v.id === pickOf(q) ? `<span title="${esc(t('Picked'))}" class="shrink-0">${ic('picked', `size-4 ${PICK}`)}</span>` : ''}${w?.p === q && w.v === v ? `<span title="${esc(t('Your requests change this one'))}" class="shrink-0">${ic('pin', 'size-3 text-emerald-600 dark:text-emerald-400')}</span>` : ''}${openComments(q.id, v.id)}${editing(q.id, v.id) ? pulse('size-1.5') : ''}${kids ? ic('right', `size-3 shrink-0 ${sel ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400'}`) : ''}</span></button><button data-act="vm:${esc(q.id)}:${v.id}" aria-label="${esc(t('Options for {name}', { name: v.name }))}" aria-haspopup="menu" aria-expanded="${st.open === 'vmenu' && st.vmenu?.proto === q.id && st.vmenu.variant === v.id}" title="${esc(t('Options: comment on this, pick, build, Try it, copy options, share screenshots'))}" class="absolute ${big ? 'end-2 size-8' : 'end-1 size-6'} top-1/2 grid -translate-y-1/2 place-items-center rounded-md text-zinc-500 opacity-0 hover:bg-zinc-900/10 hover:text-zinc-900 focus-visible:opacity-100 group-hover/vr:opacity-100 group-has-[:focus-visible]/vr:opacity-100 aria-expanded:bg-zinc-900/10 aria-expanded:opacity-100 dark:text-zinc-400 dark:hover:bg-white/15 dark:hover:text-white dark:aria-expanded:bg-white/15 [@media(pointer:coarse)]:opacity-100">${ic('dots', 'size-5')}</button></div>`
   }
   /** One prototype in a column; choosing it opens its variants. */
   const pRow = (k: Proto, sel: boolean, big = false) => `<button data-act="mp:${esc(k.id)}" aria-current="${sel}" data-opens class="${rowCls(big)} ${sel ? SELC : k.archived ? 'text-zinc-400 hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]' : ROWC}">
@@ -438,7 +481,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const title = c.kind === 'variants' ? tn(c.p.variants.length, 'Variant of {title}', 'All {n} variants of {title}', { title: esc(c.p.title) }) : c.from ? '' : t('Overview of the session')
     const inner = `<span dir="auto" class="truncate">${esc(colName(c))}</span>${act ? ic('grid', 'size-3 shrink-0 opacity-0 group-hover/h:opacity-100') : ''}<span class="ms-auto shrink-0 tabular-nums">${colCount(c)}</span>`
     const cls = 'group/h flex h-7 w-full min-w-0 shrink-0 items-center gap-1 px-2.5 text-start text-[10px] font-medium text-zinc-400'
-    return act ? `<button data-act="${act}" title="${title}" class="${cls} hover:text-zinc-900 dark:hover:text-white">${inner}</button>` : `<div class="${cls}">${inner}</div>`
+    const head = act ? `<button data-act="${act}" title="${title}" class="${cls} hover:text-zinc-900 dark:hover:text-white">${inner}</button>` : `<div class="${cls}">${inner}</div>`
+    // A prototype with favorites offers Favorites only beside its count.
+    if (c.kind !== 'variants' || !c.p.favorites.length) return head
+    const say = esc(favOnly ? t('Show every variant') : t('Show only favorites'))
+    return `<div class="flex min-w-0 shrink-0 items-center">${head.replace('w-full min-w-0', 'min-w-0 flex-1')}<button data-act="favs:${favOnly ? 0 : 1}" data-fav-toggle aria-pressed="${favOnly}" aria-label="${say}" title="${say}" class="me-1 grid size-6 shrink-0 place-items-center rounded-md ${favOnly ? STAR : 'text-zinc-400 hover:text-amber-500'} hover:bg-zinc-900/5 dark:hover:bg-white/10">${ic(favOnly ? 'star-fill' : 'star', 'size-3.5')}</button></div>`
   }
 
   // ---------- skeleton ----------
@@ -967,13 +1014,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${p.variants.length ? `<div class="overflow-hidden rounded-md ring-1 ring-black/5 dark:ring-white/10">${thumb(p, 'aspect-[16/10]')}</div>` : '<div class="aspect-[16/10] rounded-md bg-zinc-900/[.03] dark:bg-white/[.04]"></div>'}
         <div class="mt-3 flex items-center gap-2 px-1"><span dir="auto" class="truncate font-semibold">${esc(p.title)}</span>${editing(p.id) ? pulse('size-1.5') : ''}<span class="ms-auto shrink-0 text-xs text-zinc-400">${tn(p.variants.length, '{n} variant', '{n} variants')} · ${pickOf(p) ? `<span class="inline-flex items-center gap-0.5 align-top font-medium ${PICK}">${ic('check', 'size-3')}${t('Picked {label}', { label: esc(variantLabel(p, pickOf(p))) })}</span>` : clock(p.created)}</span></div>
         <div dir="auto" class="truncate px-1 pb-1 text-xs text-zinc-500">${p.ask ? `“${esc(p.ask)}”` : ''}</div></button>
-        ${family(p).map(({ p: k, depth }) => `<button data-act="lobby:proto:${esc(k.id)}" class="flex h-8 w-full min-w-0 items-center gap-1.5 rounded-lg pe-1 text-start text-xs text-zinc-600 hover:bg-zinc-900/[.04] dark:text-zinc-400 dark:hover:bg-white/[.06]" style="padding-inline-start:${4 + nestIndent(depth) - nestIndent(1)}px">${ic('branch', 'size-3.5 text-sky-500')}<span dir="auto" class="truncate">${esc(k.title)}</span>${pickChip(k)}${editingUnder(k) ? pulse('size-1.5') : ''}${k.from!.variant ? `<span class="shrink-0 text-zinc-400">${t('from {variant}', { variant: esc(k.from!.variant) })}</span>` : ''}${alsoOf(k).length ? (t => `<span title="${t.replace(/<\/?bdi>/g, '')}" class="min-w-8 flex-1 truncate text-zinc-400">${t}</span>`)(alsoOf(k).map(s => `+ ${srcName(k, s)}`).join(' ')) : ''}<span class="ms-auto shrink-0 tabular-nums text-zinc-400">${k.variants.length}</span></button>`).join('')}</div>`).join('')}</div></div>`
+        ${family(p).map(({ p: k, depth }) => `<button data-act="lobby:proto:${esc(k.id)}" class="flex h-8 w-full min-w-0 items-center gap-1.5 rounded-lg pe-1 text-start text-xs text-zinc-600 hover:bg-zinc-900/[.04] dark:text-zinc-400 dark:hover:bg-white/[.06]" style="padding-inline-start:${4 + nestIndent(depth) - nestIndent(1)}px">${ic('branch', 'size-3.5 text-sky-500')}<span dir="auto" class="truncate">${esc(k.title)}</span>${pickChip(k)}${editingUnder(k) ? pulse('size-1.5') : ''}${k.from!.variant ? `<span class="shrink-0 text-zinc-400">${t('from {variant}', { variant: esc(variantLabel(byId(k.from!.proto) ?? null, k.from!.variant)) })}</span>` : ''}${alsoOf(k).length ? (t => `<span title="${t.replace(/<\/?bdi>/g, '')}" class="min-w-8 flex-1 truncate text-zinc-400">${t}</span>`)(alsoOf(k).map(s => `+ ${srcName(k, s)}`).join(' ')) : ''}<span class="ms-auto shrink-0 tabular-nums text-zinc-400">${k.variants.length}</span></button>`).join('')}</div>`).join('')}</div></div>`
   }
 
   function protoLobby(p: Proto) {
     const tab = (on: boolean, act: string, icon: string, label: string) => `<button data-act="${act}" aria-pressed="${on}" title="${label}" class="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs ${on ? TAB_ON : TAB_OFF}">${ic(icon, 'size-3.5')}<span class="hidden sm:inline">${label}</span></button>`
+    const favToggle = (p: Proto) => p.favorites.length ? `<button data-act="favs:${favOnly ? 0 : 1}" data-fav-toggle aria-pressed="${favOnly}" title="${esc(favOnly ? t('Show every variant') : t('Show only favorites'))}" class="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs ${favOnly ? `bg-amber-500/15 font-medium text-amber-800 dark:text-amber-200` : 'bg-zinc-900/[.04] text-zinc-600 hover:text-zinc-900 dark:bg-white/[.06] dark:text-zinc-300 dark:hover:text-white'}">${ic(favOnly ? 'star-fill' : 'star', `size-3.5 ${favOnly ? STAR : ''}`)}${t('Favorites only')}<span class="tabular-nums opacity-70">${p.favorites.length}</span></button>` : ''
     const layoutToggle = `<div class="flex gap-0.5 rounded-lg bg-zinc-900/[.04] p-0.5 dark:bg-white/[.06]">${tab(!st.stack, 'stack:0', 'grid', t('Grid'))}${tab(st.stack, 'stack:1', 'rows', t('Full size'))}</div>`
-    return `<div class="flex flex-wrap items-end justify-between gap-2 px-4 pt-5 sm:px-6"><div class="min-w-0">${sources(p).length ? `<div class="mb-2 flex flex-wrap gap-1.5">${fromChips(p)}</div>` : ''}<h2 class="flex items-center gap-2 text-xl font-semibold tracking-tight">${bd(p.title)}${pickOf(p) ? `<span class="inline-flex h-6 items-center gap-1 rounded-full bg-emerald-500/10 px-2 text-xs font-semibold tracking-normal ${PICK}">${ic('check', 'size-3.5')}${t('Picked {label}', { label: esc(variantLabel(p, pickOf(p))) })}</span>` : ''}</h2><p class="text-xs text-zinc-500">${p.ask ? `<bdi>“${esc(p.ask)}”</bdi> · ` : ''}${tn(p.variants.length, '{n} variant', '{n} variants')} · ${clock(p.created)}</p>${wholeKids(p).length ? `<div class="mt-2 flex flex-wrap gap-1.5">${wholeKids(p).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}<span dir="auto" class="truncate">${esc(k.title)}</span></button>`).join('')}</div>` : ''}</div>${p.variants.length ? layoutToggle : `<p class="text-xs text-zinc-400">${t('No variants yet')}</p>`}</div>
+    return `<div class="flex flex-wrap items-end justify-between gap-2 px-4 pt-5 sm:px-6"><div class="min-w-0">${sources(p).length ? `<div class="mb-2 flex flex-wrap gap-1.5">${fromChips(p)}</div>` : ''}<h2 class="flex items-center gap-2 text-xl font-semibold tracking-tight">${bd(p.title)}${pickOf(p) ? `<span class="inline-flex h-6 items-center gap-1 rounded-full bg-emerald-500/10 px-2 text-xs font-semibold tracking-normal ${PICK}">${ic('check', 'size-3.5')}${t('Picked {label}', { label: esc(variantLabel(p, pickOf(p))) })}</span>` : ''}</h2><p class="text-xs text-zinc-500">${p.ask ? `<bdi>“${esc(p.ask)}”</bdi> · ` : ''}${(n => n > p.variants.length ? t('{n} of {total} variants', { n: p.variants.length, total: n }) : tn(p.variants.length, '{n} variant', '{n} variants'))(all.find(x => x.id === p.id)?.variants.length ?? 0)} · ${clock(p.created)}</p>${wholeKids(p).length ? `<div class="mt-2 flex flex-wrap gap-1.5">${wholeKids(p).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}<span dir="auto" class="truncate">${esc(k.title)}</span></button>`).join('')}</div>` : ''}</div>${p.variants.length ? `<div class="flex flex-wrap items-center gap-2">${favToggle(p)}${layoutToggle}</div>` : `<p class="text-xs text-zinc-400">${t('No variants yet')}</p>`}</div>
       ${st.stack ? stack(p) : protoGrid(p)}`
   }
 
@@ -981,7 +1029,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const k = pickOf(p)
     return `<div class="min-w-0 ${k && v.id !== k ? 'opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" class="group block w-full min-w-0 text-start">
         <div class="overflow-hidden rounded-lg transition ${v.id === k ? 'ring-2 ring-emerald-500' : 'ring-1 ring-black/10 group-hover:ring-2 group-hover:ring-zinc-900 dark:ring-white/10 dark:group-hover:ring-white'}">${thumb(p, 'aspect-[16/10]')}</div>
-        <div class="mt-2 flex items-center gap-2"><span class="font-semibold">${variantLabel(p, v.id)}</span><span class="truncate text-zinc-500">${esc(v.name)}</span>${v.id === k ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}${t('Picked')}</span>` : ''}${editing(p.id, v.id) ? `<span class="ms-auto inline-flex items-center gap-1.5 text-xs text-emerald-600">${pulse('size-1.5')}${building(p.id, v.id) ? t('building') : t('editing')}</span>` : ''}</div></button>${kidChips(p, v.id)}</div>`
+        <div class="mt-2 flex items-center gap-2"><span class="font-semibold">${variantLabel(p, v.id)}</span><span class="truncate text-zinc-500">${esc(v.name)}</span>${starMark(p, v.id)}${v.id === k ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}${t('Picked')}</span>` : ''}${editing(p.id, v.id) ? `<span class="ms-auto inline-flex items-center gap-1.5 text-xs text-emerald-600">${pulse('size-1.5')}${building(p.id, v.id) ? t('building') : t('editing')}</span>` : ''}</div></button>${kidChips(p, v.id)}</div>`
   }
   function protoGrid(p: Proto) {
     return `<div ${p.variants.length > VIRTUAL_THRESHOLD ? 'data-virtual-preview' : ''} class="${GRID} p-4 sm:p-6">${p.variants.length > VIRTUAL_THRESHOLD ? '' : lobbyOrder(p).map(v => gridCard(p, v)).join('')}</div>`
@@ -990,7 +1038,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // Every variant at full size, one after another, live. Each frame is at least as tall as the
   // stage (a grid, so a root with h-full fills it) and contains its own position:fixed.
   function stackCard(p: Proto, v: Variant) {
-    const head = (v: Variant) => `<div class="mb-3 flex h-8 min-w-0 items-center gap-2 ${p.kind === 'phone' ? 'justify-center' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" title="${esc(t('Open {v}', { v: variantLabel(p, v.id) }))}" class="flex min-w-0 cursor-pointer items-center gap-2 rounded-md hover:underline hover:decoration-zinc-400 hover:underline-offset-4"><span class="font-semibold">${variantLabel(p!, v.id)}</span><span dir="auto" class="truncate text-zinc-500">${esc(v.name)}</span></button>${v.id === pickOf(p) ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}${t('Picked')}</span>` : ''}${editing(p.id, v.id) ? pulse('size-1.5') : ''}${builtFrom(p, v.id).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}${bd(k.title)}</button>`).join('')}</div>`
+    const head = (v: Variant) => `<div class="mb-3 flex h-8 min-w-0 items-center gap-2 ${p.kind === 'phone' ? 'justify-center' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" title="${esc(t('Open {v}', { v: variantLabel(p, v.id) }))}" class="flex min-w-0 cursor-pointer items-center gap-2 rounded-md hover:underline hover:decoration-zinc-400 hover:underline-offset-4"><span class="font-semibold">${variantLabel(p!, v.id)}</span><span dir="auto" class="truncate text-zinc-500">${esc(v.name)}</span></button>${starMark(p, v.id)}${v.id === pickOf(p) ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}${t('Picked')}</span>` : ''}${editing(p.id, v.id) ? pulse('size-1.5') : ''}${builtFrom(p, v.id).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}${bd(k.title)}</button>`).join('')}</div>`
     if (cardView()) return `<section data-stack-item class="min-w-0 px-4">${head(v)}${thumb(p, 'aspect-[16/10]')}</section>`
     return p.kind === 'phone' ? `<section data-stack-item class="min-w-0">${head(v)}<div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(p)}"><div data-phone-screen class="h-full overflow-hidden"><div data-mount dir="ltr" class="h-full overflow-y-auto"></div></div></div></section>` : `<section data-stack-item><div class="px-4 sm:px-6">${head(v)}</div><div class="grid min-h-[var(--stage-h)] border-y border-black/[.07] bg-white [contain:layout_paint] dark:border-white/10 dark:bg-zinc-950"><div data-mount dir="ltr" class="min-w-0"></div></div></section>`
   }
@@ -1302,8 +1350,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     paintSheet({
       open: st.sheet && !!key,
       title: p?.title ?? '',
-      rows: vs.map(v => ({ id: v.id, label: variantLabel(p!, v.id), name: v.name, on: v.id === vid, picked: v.id === (p ? pickOf(p) : ''), editing: !!p && editing(p.id, v.id) })),
+      rows: vs.map(v => ({ id: v.id, label: variantLabel(p!, v.id), name: v.name, on: v.id === vid, picked: v.id === (p ? pickOf(p) : ''), fav: !!p && favOf(p, v.id), editing: !!p && editing(p.id, v.id) })),
       lobby: st.place.view === 'proto',
+      favs: p?.favorites.length ? { on: favOnly, count: p.favorites.length } : undefined,
+      onFavs: () => setFavOnly(!favOnly),
       decide: (d => d && comments.decideIn(d))(decideOf()),
       onClose: () => { st.sheet = false; render() },
       onPick: id => { st.sheet = false; if (p) go(keepIn(p, id)); render() },
@@ -1761,6 +1811,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'side': recenter = true; if (!wide()) { st.drawer = arg === '1'; return render() } st.side = arg === '1'; remember('proto-side', st.side ? '1' : '0'); return render()
       case 'drawer': st.drawer = arg === '1'; return render()
       case 'menu': st.menu = arg as typeof st.menu; recenter = true; return render()
+      case 'favs': return setFavOnly(arg === '1')
+      case 'fav': return void toggleFav(arg, arg2)
       case 'stack': {
         const on = arg === '1'
         if (st.stack === on) return
@@ -1956,6 +2008,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else if (e.key === 'f' && st.place.view === 'variant' && !framed) act(st.focus ? 'unfocus' : 'focus', '', '')
     else if (e.key === 'w' && workOf()) act('work', 'go', '')
     else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches && !framed) act('open', 'decide', '')
+    else if (e.key === 's' && st.place.view === 'variant' && !framed) act('fav', st.place.proto, st.place.variant)
   })
 
   // ---------- resizing the sidebar ----------
@@ -2195,8 +2248,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onKey: viewKey,
     })
   }
-  /** Keys pressed in the page inside the view: C comments on it, F is focus mode and P the design's
-   *  actions, as out here, and Esc stops. */
+  /** Keys pressed in the page inside the view: C comments on it, F is focus mode, P the design's
+   *  actions and S stars it, as out here, and Esc stops. */
   function viewKey(e: KeyboardEvent) {
     if (settingsOpen || shareOpen) return
     if (resetViewKey(e)) return
@@ -2206,6 +2259,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else if (e.key === 'C' && commentHost() && st.place.view === 'variant') { e.preventDefault(); commentWhole() }
     else if (e.key === 'f' && st.place.view === 'variant') act(st.focus ? 'unfocus' : 'focus', '', '')
     else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches) act('open', 'decide', '')
+    else if (e.key === 's' && st.place.view === 'variant') act('fav', st.place.proto, st.place.variant)
     else if (e.key === 'Escape' && comments.counts().picking) { e.preventDefault(); comments.escape() }
     // Esc leaves the view from inside it too, as it does out here, unless the design used it first.
     else if (e.key === 'Escape' && !e.defaultPrevented && viewOn()) patchView({ size: null, zoom: 0 })
@@ -2473,7 +2527,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const m = st.vmenu, q = m && byId(m.proto), v = q?.variants.find(x => x.id === m?.variant)
     if (!m || !q || !v) return {}
     const here = st.place.view === 'variant' && st.place.proto === q.id && st.place.variant === v.id
-    const rows: MenuRow[] = []
+    const fav = favOf(q, v.id)
+    const rows: MenuRow[] = [{ id: 'fav', label: fav ? t('Unfavorite') : t('Favorite'), icon: fav ? 'star-fill' : 'star', kbd: here ? 'S' : undefined, run: () => { void toggleFav(q.id, v.id) } }]
     if (m.art) {
       rows.push({ id: 'fit', label: frameOn() ? t('Zoom to fit') : t('Fit to the window'), icon: 'grow', run: () => setScale(0) })
       if (st.place.view === 'variant') rows.push({ id: 'focus', label: t('Focus mode'), icon: 'shrink', run: () => act('focus', '', '') })
@@ -3004,7 +3059,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // editing dot, so the view never jumps while someone is looking at something.
     setProtos(next: Proto[]) {
       const before = new Map(protos.map(p => [p.id, new Set(p.variants.map(v => v.id))]))
-      protos = next
+      // Stars changed elsewhere (`proto fav`, another tab): an overview's cards are its layer, so it is drawn again below.
+      const starsOf = (list: Proto[]) => list.map(p => `${p.id}:${p.favorites.join()}`).join('|')
+      const restar = starsOf(all) !== starsOf(next)
+      all = next
+      protos = shown(next)
       intake.set(st.status?.inbox?.intake, protos.length > 0)
       if (framed) {
         // The page in a view follows nothing itself: the page outside does, and it goes along. A place
@@ -3012,18 +3071,19 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const p = parseHash()
         if (p && hashOf(p) !== hashOf(st.place)) return arrive(p, false)
       } else {
-        const fresh = next.filter(p => !p.archived && !before.has(p.id))
-        const grown = next.map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
+        const fresh = protos.filter(p => !p.archived && !before.has(p.id))
+        const grown = protos.map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
         if (fresh.length) return go({ view: 'proto', proto: fresh.at(-1)!.id })
         const here = st.place.view === 'proto' ? st.place.proto : null
         const g = grown.find(x => x.p.id !== here)
         if (g) return go(g.added.length === 1 ? { view: 'variant', proto: g.p.id, variant: g.added[0].id } : { view: 'proto', proto: g.p.id })
-        if (!valid(st.place)) return go(defaultPlace())
+        // A variant that went away (or, with favorites only, was unfavorited) leaves its prototype's All variants.
+        if (!valid(st.place)) return go(st.place.view !== 'session' && byId(st.place.proto) ? { view: 'proto', proto: st.place.proto } : defaultPlace())
       }
       // Same place, new modules (a meta edit or a re-evaluated file): swap without a fade. A
       // variant that failed to load gets another try with the fresh registry.
       const refs = refsFor(st.place)
-      if (!layer || failed.size || refs.length !== layer.refs.length || refs.some((r, i) => r !== layer!.refs[i])) show(false)
+      if (!layer || failed.size || refs.length !== layer.refs.length || refs.some((r, i) => r !== layer!.refs[i]) || (restar && st.place.view !== 'variant')) show(false)
       render()
     },
     /** Whether this file's module is in use on the page (loaded, or failed and waiting for a fix). */

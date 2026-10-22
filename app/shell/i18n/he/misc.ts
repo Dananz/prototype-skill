@@ -21,6 +21,7 @@ export default {
   'Fit and center canvas': 'התאם ומרכז את משטח העבודה',
   'Go to the working variant': 'עבור לווריאנט העבודה',
   'Design actions (desktop)': 'פעולות עיצוב (מחשב)',
+  'Favorite or unfavorite the variant': 'סמן או הסר את הווריאנט מהמועדפים',
   'Close a tool or go back': 'סגור כלי או חזור',
   'System': 'מערכת',
   'Light': 'בהיר',

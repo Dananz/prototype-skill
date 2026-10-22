@@ -36,12 +36,12 @@ export async function commentCompareChecks({ proto, app, openPage, fail }) {
       if(c.store.get().mode.target.source?.variant!=='B')return 'B pick lost its source route'
       type('Bring the unmatched element here: @foc')
       if(!await until(()=>document.querySelectorAll('[data-tag-menu] [role=option]').length===1))return '@ filter did not find Focus'
-      return document.querySelector('[data-tag-menu] [role=option]').textContent.includes('@A')?'ok':'filter offered wrong variant'
+      return document.querySelector('[data-tag-menu] [role=option]').textContent.includes('@1')?'ok':'filter offered wrong variant'
     })()`)
     if (begin !== 'ok') fail(`compare comments: ${begin}`)
     await page.key('Enter')
     const mention = await page.run(`(async()=>{${helpers}
-      if(!await until(()=>c.store.get().held?.tags[0]?.variantRef?.variant==='A'))return 'Enter did not insert @A'
+      if(!await until(()=>c.store.get().held?.tags[0]?.variantRef?.variant==='A'))return 'Enter did not insert @1'
       const e=document.querySelector('[data-comment-compare] [data-route="comparefx/A"] [data-shoot=unique-A]'),r=e.getBoundingClientRect()
       return {x:r.left+30,y:r.top+30}
     })()`)
@@ -49,7 +49,7 @@ export async function commentCompareChecks({ proto, app, openPage, fail }) {
     await page.press(mention.x, mention.y)
     const saved = await page.run(`(async()=>{${helpers}
       if(!await until(()=>c.store.get().held?.tags.some(t=>t.shoot==='unique-A'&&t.source?.variant==='A')))return 'cross-pane press did not tag the unmatched A element'
-      if(!editor().textContent.includes('@A'))return 'reference insertion lost the @ mention'
+      if(!editor().textContent.includes('@1'))return 'reference insertion lost the @ mention'
       if(!await until(()=>button('Add')&&!button('Add').disabled))return 'Add did not become enabled'
       button('Add').click()
       if(!await until(()=>c.store.get().items.length===1))return 'Add did not save'
@@ -84,7 +84,7 @@ export async function commentCompareChecks({ proto, app, openPage, fail }) {
     })()`)
     if (!linked?.batch) fail(`compare comments: ${linked}`)
     const inbox = proto(['inbox'])
-    if (!inbox.includes('comparefx/B') || !inbox.includes('with @A: variant comparefx/A') || !inbox.includes('comparefx/A ·') || !inbox.includes('with comment 1: comparefx/A')) fail('compare comments: inbox lost destination, variant, element or comment reference metadata')
+    if (!inbox.includes('comparefx/B') || !inbox.includes('with @1: variant comparefx/A (1)') || !inbox.includes('comparefx/A ·') || !inbox.includes('with comment 1: comparefx/A')) fail('compare comments: inbox lost destination, variant, element or comment reference metadata')
     const b = linked.items.find(i=>i.variant==='B')
     proto(['reply', `${b.sent.batch}/${b.sent.i}`, 'Verified shared Compare thread', '--done'])
     const replied = await page.run(`(async()=>{${helpers}

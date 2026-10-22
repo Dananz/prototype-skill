@@ -30,7 +30,8 @@
 //             threads are, and the design's slowest functions; run it on anything that animates
 //   proto handoff <slug>/<letter>   a checklist of what that variant has, for building it into the codebase
 //   proto snap <slug>[/<letter>]… [--width 672]   static HTML snapshots for a shared document
-//   proto pick <slug> <letter> [--off]   the user chose this variant: marked in the page
+//   proto pick <slug> <number> [--off]   the user chose this variant: marked in the page
+//   proto fav [<slug>] | <slug>/<number>[ …] [--off]   the user's favorites (the page's stars): list them, or star some
 //   proto work <slug>/<letter> [--ask "…"] [--off]   the variant being worked on: pinned in the page
 //   proto ask "…" [--to <slug>/<letter>]   a change the user asked for, kept with that variant
 //   proto ask --each "…" "…" …   several at once (a batch of comments)
@@ -53,6 +54,9 @@
 //   proto archive <slug> [--off]    proto keep [--off]      proto url    proto stack
 //   proto stop    proto rm    proto ls    proto gc
 //
+// Variants: the page shows each by number (A is 1, Z 26, AA 27, AC 29), and that is how the user names
+// them. Wherever a command takes <slug>/<letter>, <slug>/<number> works too (hero/29 is hero/AC).
+//
 // Common flags: --project <dir> (default: git root of the cwd), --session <id>
 // (default: PROTO_SESSION_ID, CODEX_THREAD_ID, CLAUDE_CODE_SESSION_ID, CLAUDE_SESSION_ID, in that order).
 // Reply identity: --as claude|codex|agent, then PROTO_AGENT, then the detected agent (or agent).
@@ -67,6 +71,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, isCurrent } from '../app/assignment.mjs'
+import { idOf, letterOf, numberOf } from '../app/numbers.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 // The languages the page speaks (app/shell/i18n.ts). --lang sets the session's: the language the
@@ -114,6 +119,12 @@ for (let i = 1; i < argv.length; i++) {
   flags[k] = v !== undefined ? v : !SWITCHES.has(k) && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true
 }
 
+// A variant as the agent reads it: the number the user sees, with its letter ID (29 (AC)).
+const shown = id => numberOf(id) ? `${numberOf(id)} (${id})` : String(id)
+// A prototype's variants as the user knows them, by number, in the page's order.
+const choices = meta => Object.keys(meta?.variants || {}).sort((a, b) => a.length - b.length || a.localeCompare(b)).map(id => numberOf(id) || id).join(', ')
+// A route with the number the user saw beside it: hero/AC (29), so a reply can say 29.
+const routeShown = r => { const n = numberOf(String(r).split('/')[1]); return n ? `${r} (${n})` : String(r) }
 const die = msg => { console.error(`proto: ${msg}`); process.exit(1) }
 const readJson = (f, fallback) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return fallback } }
 // Windows keeps a directory busy while a scanner or a watcher has a file in it, so a rename can
@@ -787,14 +798,16 @@ function pickParents(dir, slug) {
 function pick() {
   const dir = sessionDir()
   need(dir)
-  const [slug, id] = args
+  // proto pick hero 29, hero AC or hero/29: the variant by the number the page shows, or its letter.
+  const [slug, given] = args[0]?.includes('/') ? args[0].split('/') : args
+  const id = idOf(given) || given
   const metaFile = join(dir, 'src', 'protos', slug || '', 'meta.ts')
-  if (!slug || !existsSync(metaFile)) die('which prototype? proto pick <slug> <letter>')
+  if (!slug || !existsSync(metaFile)) die('which prototype? proto pick <slug> <number>')
   const text = readFileSync(metaFile, 'utf8')
   const meta = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
   const was = meta.picked
   if (flags.off) delete meta.picked
-  else if (!id || !meta.variants?.[id]) die(`which variant of ${slug}? (${Object.keys(meta.variants || {}).join(', ')})`)
+  else if (!id || !meta.variants?.[id]) die(`which variant of ${slug}? (${choices(meta)})`)
   else meta.picked = id
   // Before the pick is marked: if the parent can't be written, nothing is marked and this can be run again.
   const letter = flags.off ? was : id
@@ -805,10 +818,46 @@ function pick() {
   if (!flags.off) setWork(dir, { proto: slug, variant: id }, `Picked ${id}`)
   if (plugged) try { notePlug(dir, plugged, slug, letter) } catch { /* a trace in the history, never a failed pick */ }
   const back = flags.off || isCurrent(meta.variants?.[letter])
-  console.log((flags.off ? `${slug}: no pick` : `${slug}: picked ${id} · ${meta.variants[id]}`) + (plugged ? ` · ${back ? 'original back in' : 'plugged into'} ${plugged.where}` : '') + (parents.length ? ` · also picked ${parents.join(', ')}` : ''))
+  console.log((flags.off ? `${slug}: no pick` : `${slug}: picked ${shown(id)} · ${meta.variants[id]}`) + (plugged ? ` · ${back ? 'original back in' : 'plugged into'} ${plugged.where}` : '') + (parents.length ? ` · also picked ${parents.join(', ')}` : ''))
   if (!flags.off) {
     const pending = assignmentNeeded(dir, slug, id)
     if (pending) console.log(pending)
+  }
+}
+
+// ---------- favorites ----------
+// The user's stars, for finding variants again among many: `favorites` in meta.ts (letter IDs),
+// which the page's Favorite (its menu, or S) writes too. They ask nothing of the agent.
+//   proto fav                      every prototype's favorites, by number
+//   proto fav <slug>               that prototype's
+//   proto fav <slug>/<n> […] [--off]   star (or unstar) those variants
+function fav() {
+  const dir = sessionDir()
+  need(dir)
+  const root = join(dir, 'src', 'protos')
+  const sorted = list => [...new Set(list)].sort((a, b) => a.length - b.length || a.localeCompare(b))
+  const line = (slug, m) => `${slug}: ${(m.favorites || []).length ? m.favorites.map(id => `${numberOf(id) || id} · ${m.variants?.[id] ?? id}`).join(', ') : 'no favorites'}`
+  const marks = args.filter(a => a.includes('/'))
+  if (!marks.length) {
+    const slugs = args.length ? args : (existsSync(root) ? readdirSync(root) : []).filter(s => existsSync(join(root, s, 'meta.ts')))
+    const rows = []
+    for (const slug of slugs) {
+      const m = readMeta(dir, slug)
+      if (!m) die(`no prototype "${slug}" here`)
+      if (args.length || m.favorites?.length) rows.push(line(slug, m))
+    }
+    return console.log(rows.join('\n') || 'no favorites yet')
+  }
+  const bySlug = new Map()
+  for (const spec of marks) { const t = target(dir, spec); bySlug.set(t.proto, [...(bySlug.get(t.proto) || []), t.variant]) }
+  for (const [slug, ids] of bySlug) {
+    const f = join(root, slug, 'meta.ts'), text = readFileSync(f, 'utf8'), m = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
+    const was = Array.isArray(m.favorites) ? m.favorites : []
+    const now = sorted(flags.off ? was.filter(x => !ids.includes(x)) : [...was, ...ids])
+    if (now.length) m.favorites = now
+    else delete m.favorites
+    writeWhole(f, withMeta(text, m), scratchOf(dir))
+    console.log(line(slug, m))
   }
 }
 
@@ -842,8 +891,8 @@ const sameVariant = (a, b) => !!a && !!b && a.proto === b.proto && a.variant ===
 function target(dir, spec) {
   const [proto, variant] = String(spec || '').split('/')
   const meta = readMeta(dir, proto)
-  if (!meta) die(`no prototype "${proto || ''}" here: give <slug>/<letter>`)
-  if (!variant || !meta.variants?.[variant]) die(`which variant of ${proto}? (${Object.keys(meta.variants || {}).join(', ')})`)
+  if (!meta) die(`no prototype "${proto || ''}" here: give <slug>/<number>`)
+  if (!variant || !meta.variants?.[variant]) die(`which variant of ${proto}? (${choices(meta)})`)
   return { proto, variant, name: meta.variants[variant] }
 }
 /** Points the session at a variant; the one it leaves goes first in `before` (three kept). */
@@ -867,10 +916,10 @@ function work() {
   const dir = sessionDir()
   const s = need(dir)
   if (flags.off) { patchSession(dir, { work: null }); return console.log('no working variant') }
-  if (!args[0]) return console.log(s.work ? `working on ${s.work.proto}/${s.work.variant}` : 'no working variant')
+  if (!args[0]) return console.log(s.work ? `working on ${routeShown(`${s.work.proto}/${s.work.variant}`)}` : 'no working variant')
   const t = target(dir, args[0])
   setWork(dir, t, typeof flags.ask === 'string' ? flags.ask.trim() : '')
-  console.log(`working on ${t.proto}/${t.variant} · ${t.name}`)
+  console.log(`working on ${routeShown(`${t.proto}/${t.variant}`)} · ${t.name}`)
 }
 
 function ask() {
@@ -1771,7 +1820,7 @@ function printBatch(dir, b) {
   if (b.orphaned) console.log('   taken earlier by a session that ended before it answered: handle these first')
   for (const c of live) {
     if (c.action === 'intake' && c.intake) { printIntake(dir, b, c); continue }
-    console.log(`\n${c.n}. ${c.route}${c.re ? `  (reply to ${c.re.batch}/${c.re.n})` : ''}`)
+    console.log(`\n${c.n}. ${routeShown(c.route)}${c.re ? `  (reply to ${c.re.batch}/${c.re.n})` : ''}`)
     if (c.re) for (const t of turnsBefore(dir, c.re)) console.log(t.gone ? `   earlier: ${t.gone} (no longer in the inbox)` : `   earlier: "${oneLine(t.text, 160)}"  ->  ${t.reply ? `${WHO[t.reply.by] ?? 'Claude'}: "${oneLine(t.reply.text, 160)}"` : 'no reply'}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
     if (c.action === 'more-variants') console.log(`   count: ${c.count} new variant${c.count === 1 ? '' : 's'}`)
@@ -1790,7 +1839,7 @@ function printBatch(dir, b) {
     for (const [i, t] of (c.tags || []).entries()) console.log(t.commentRef
       ? `   with comment ${t.commentRef.n}: ${t.commentRef.proto}/${t.commentRef.variant} (${t.commentRef.id}) “${t.commentRef.quote}”`
       : t.variantRef
-      ? `   with @${t.variantRef.label}: variant ${t.variantRef.proto}/${t.variantRef.variant} · ${t.variantRef.name} (${where(t)})`
+      ? `   with @${t.variantRef.label}: variant ${routeShown(`${t.variantRef.proto}/${t.variantRef.variant}`)} ·${t.variantRef.name} (${where(t)})`
       : `   with @${i + 1}: ${t.source ? `${t.source.proto}/${t.source.variant}${t.source.state ? `/${t.source.state}` : ''} · ` : ''}${where(t)}`)
     for (const img of c.images || []) console.log(`   image: ${join(inboxDir(dir), 'taken', b.id, img.file)}${img.name ? `  (${img.name})` : ''}`)
   }
@@ -2409,7 +2458,7 @@ function fonts() {
 }
 
 const commands = {
-  up, add, plan, done, pick, work, ask, archive, shoot, compare, perf, handoff, snap, intake, inbox, reply, gc: () => gc(false), ls,
+  up, add, plan, done, pick, fav, work, ask, archive, shoot, compare, perf, handoff, snap, intake, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
   rm: () => rm(),
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },
@@ -2418,6 +2467,20 @@ const commands = {
   fonts,
   kit: () => !args[0] ? kitStatus() : args[0] === 'save' ? kitSave() : args[0] === 'screen' ? kitScreen() : die(`proto kit ${args[0]}? It is proto kit, proto kit save or proto kit screen`),
 }
+// The page shows variants by number (app/numbers.mjs), so the user names them that way: a route
+// given with a number (hero/29, hero/29/open) means that letter (hero/AC). Only where the slug is a
+// prototype of this session, so a batch's comment (<batch>/2) or a file path is left as it is.
+function numbersToLetters() {
+  const id = flags.session || process.env.PROTO_SESSION_ID || process.env.CODEX_THREAD_ID || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID
+  const shaped = a => typeof a === 'string' && /^[a-z0-9][a-z0-9-]*\/\d/.test(a)
+  if (!id || id === true || !args.concat(['from', 'to', 'until'].map(k => flags[k])).some(a => shaped(a) || (typeof a === 'string' && a.split(',').some(shaped)))) return
+  const root = join(projectRoot(), '.prototypes'), dirs = [join(root, short(String(id))), UUID.test(id) ? join(root, String(id).slice(0, 8)) : ''].filter(Boolean)
+  const isProto = slug => dirs.some(d => existsSync(join(d, 'src', 'protos', slug, 'meta.ts')))
+  const byNumber = r => r.replace(/^([a-z0-9][a-z0-9-]*)\/(\d{1,3})(?=\/|$)/, (all, slug, n) => letterOf(n) && isProto(slug) ? `${slug}/${letterOf(n)}` : all)
+  for (const [i, a] of args.entries()) args[i] = byNumber(a)
+  for (const k of ['from', 'to', 'until']) if (typeof flags[k] === 'string') flags[k] = flags[k].split(',').map(r => byNumber(r.trim())).join(',')
+}
+if (commands[cmd]) numbersToLetters()
 // The help is this file's opening comment, however many lines it grows to.
 if (!commands[cmd]) {
   const head = readFileSync(fileURLToPath(import.meta.url), 'utf8').split(/\r?\n/).slice(1)

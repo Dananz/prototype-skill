@@ -13,6 +13,7 @@ import type { Box, Draft, Seg, Shot, Target, Time } from './types'
 import { MAX_SHOTS, shotsOf } from './types'
 import { IB, Icon, MOD, PinDot, PRIMARY, SrcTag, srcOf, ImageChip, PictureStrip, ViewChip } from './ui'
 import { t } from '../i18n'
+import { variantLabel } from '../variants'
 
 const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `${(t.at / 1000).toFixed(2)} s` : `${(t.at / 1000).toFixed(2)}–${(t.to / 1000).toFixed(2)} s`
 
@@ -34,7 +35,7 @@ const chipNode = (target: Target | undefined, i: number) => {
   const src = srcOf(target)
   if (src) s.title = src.full
   s.className = 'mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg'
-  s.textContent = target?.commentRef ? t('Comment {n}', { n: target.commentRef.n }) : `@${target?.variantRef?.label ?? (target?.source ? `${target.source.variant}·${i + 1}` : i + 1)}`
+  s.textContent = target?.commentRef ? t('Comment {n}', { n: target.commentRef.n }) : `@${target?.variantRef?.label ?? (target?.source ? `${variantLabel(null, target.source.variant)}·${i + 1}` : i + 1)}`
   if (target?.commentRef) s.title = target.commentRef.quote
   if (target?.variantRef) s.title = `${target.variantRef.label} · ${target.variantRef.name}`
   return s
