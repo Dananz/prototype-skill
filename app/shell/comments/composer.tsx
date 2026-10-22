@@ -29,6 +29,7 @@ function readEditor(el: HTMLElement): Seg[] {
 const chipNode = (target: Target | undefined, i: number) => {
   const s = document.createElement('span')
   s.contentEditable = 'false'
+  s.dir = 'auto'
   s.dataset.tag = String(i)
   const src = srcOf(target)
   if (src) s.title = src.full

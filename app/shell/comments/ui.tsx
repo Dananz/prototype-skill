@@ -156,14 +156,16 @@ export function Chip({ t: target, n }: { t?: Target; n: number }) {
     if (comment) { act.open(comment.id, false); return }
     if (target) act.revealTarget(target)
   }
-  return <span title={comment?.quote ?? (ref ? `${ref.label} · ${ref.name}` : srcOf(target)?.full)} role={linked ? 'link' : undefined} tabIndex={linked ? 0 : undefined}
+  // Its own dir keeps the chip's words out of the comment's direction: a Hebrew comment that opens
+  // with "Comment 2" still reads right to left.
+  return <span dir="auto" title={comment?.quote ?? (ref ? `${ref.label} · ${ref.name}` : srcOf(target)?.full)} role={linked ? 'link' : undefined} tabIndex={linked ? 0 : undefined}
     onClick={linked ? e => { e.stopPropagation(); open() } : undefined}
     onKeyDown={linked ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); open() } } : undefined}
     className={`mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? t('Comment {n}', { n: comment.n }) : `@${ref?.label ?? (target?.source ? `${target.source.variant}·${n}` : n)}`}</span>
 }
 
 export function Body({ c, className = '' }: { c: { body: Seg[]; tags: Target[] }; className?: string }): ReactNode {
-  return <span dir="auto" className={className}>{c.body.map((s, i) => typeof s === 'string' ? <span key={i}>{s}</span> : <Chip key={i} t={c.tags[s.tag]} n={s.tag + 1} />)}</span>
+  return <span dir="auto" data-own-side className={className}>{c.body.map((s, i) => typeof s === 'string' ? <span key={i}>{s}</span> : <Chip key={i} t={c.tags[s.tag]} n={s.tag + 1} />)}</span>
 }
 
 /** A decision on a variant: what it says (to the agent, and as its line in the list) and its icon. */
@@ -214,7 +216,7 @@ export function Reply({ text, by = 'claude', small }: { text: string; by?: Agent
   return (
     <span className={`flex items-start ${small ? 'gap-1.5' : 'gap-2'}`}>
       <span className={`mt-px grid shrink-0 place-items-center rounded-full ${by !== 'claude' ? 'bg-zinc-900/[.07] text-zinc-900 dark:bg-white/10 dark:text-white' : 'bg-[#d97757]/15'} ${small ? 'size-4' : 'size-6'}`} title={AGENT[by]}><AgentMark by={by} className={small ? 'size-2.5' : 'size-3.5'} /></span>
-      <span dir="auto" className={`min-w-0 rounded-2xl rounded-ss-sm bg-zinc-900/[.05] text-zinc-800 dark:bg-white/[.08] dark:text-zinc-100 ${small ? 'px-2 py-1 text-[11px] leading-4' : 'px-3 py-1.5 text-[12.5px] leading-[18px]'}`}>{text}</span>
+      <span dir="auto" data-own-side className={`min-w-0 rounded-2xl rounded-ss-sm bg-zinc-900/[.05] text-zinc-800 dark:bg-white/[.08] dark:text-zinc-100 ${small ? 'px-2 py-1 text-[11px] leading-4' : 'px-3 py-1.5 text-[12.5px] leading-[18px]'}`}>{text}</span>
     </span>
   )
 }
