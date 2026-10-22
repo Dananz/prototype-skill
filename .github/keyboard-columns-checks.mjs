@@ -80,8 +80,8 @@ export async function keyboardColumnsChecks({ proto, app, local, openPage, fail,
     // Left goes to the lit row of the column before, without stepping the variant on screen.
     await page.key('ArrowLeft')
     assert(await focused() === 'mv:keys:F' && await hash() === '#/keys/F', `ArrowLeft went to ${await focused()} at ${await hash()}`)
-    await page.key('b')
-    assert(await focused() === 'mv:keys:B', 'a letter did not jump to its row')
+    await page.key('2')
+    assert(await focused() === 'mv:keys:B', 'a number did not jump to its row')
     await page.key('End')
     assert(await focused() === 'mv:keys:G', 'End did not go to the last row')
     await page.key('Home')
