@@ -495,7 +495,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // pill, where it always is, and the copy picker's bar (--copy-h) over the dock while copy mode is
   // on. The copy picker's phone sheet covers both. A device view covers the stage, under the edge
   // arrows, the spotlight and the comment layer.
-  root.innerHTML = `<div class="flex h-dvh bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+  root.innerHTML = `<div ${framed ? '' : 'data-desk '}class="flex h-dvh bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
     <aside data-side></aside>
     <div data-grip role="separator" aria-orientation="vertical" aria-label="${t('Resize sidebar')}" tabindex="0" title="${t('Drag to resize · double-click to reset')}" class="group relative z-40 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none outline-none">
       <span class="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-transparent transition-colors group-hover:bg-sky-500/50 group-focus-visible:bg-sky-500 group-data-[dragging]:bg-sky-500"></span>
@@ -1093,6 +1093,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const scaleMenu = `<div class="space-y-1.5 p-2"><div class="flex gap-0.5 rounded-lg bg-zinc-900/[.04] p-0.5 dark:bg-white/[.06]">${SCALES.map(s => `<button data-act="scale:${s}" data-scale-seg="${s}" aria-pressed="${sc === s}" class="${segCls(sc === s)}">${s ? s + '%' : t('Fit')}</button>`).join('')}</div>
       <div class="flex items-center">${scaleStep(-5, 'minus', t('Smaller'))}<input data-scale-range type="range" min="${scLo}" max="${scHi}" step="1" value="${sc || 50}" aria-label="${frameOn() ? t('Zoom') : t('Phone scale')}" class="${RANGE} ${sc ? '' : 'opacity-40'}" style="--p:${rangeAt(sc || 50)}%">${scaleStep(5, 'plus', t('Bigger'))}</div></div>`
 
+    // Back to Fit, in the middle, in one click: the zoom and wherever the design was dragged, undone (Mod+0).
+    // It is the end of the layout button, one control with it.
+    const centerBtn = `<span class="h-5 w-px shrink-0 bg-black/[.08] dark:bg-white/10"></span><button data-act="center" data-shoot="center" aria-label="${t('Center the design')}" title="${t('Center the design')} · ⌘0" class="${IB} shrink-0 rounded-s-none">${ic('center', 'size-4')}</button>`
     // The layout the design is shown at and its zoom, in one menu: the three sizes with their
     // dimensions, then the scale. The button says which layout and zoom are on.
     const deviceBtn = () => {
@@ -1107,7 +1110,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const zoom = fits ? `${sizes ? SEP : ''}<div class="px-3.5 pt-2.5 text-[11px] font-medium text-zinc-400">${frameOn() ? t('Zoom') : t('Phone scale')}</div>${scaleMenu}`
         // On the stage the design is at its own size: the button stays, so choosing a layout doesn't move the bar.
         : `${SEP}<p class="px-3.5 py-3 text-xs text-zinc-500">${t('The design is at its full size here. Choose a layout to zoom it.')}</p>`
-      return `<div class="relative shrink-0"><button data-act="open:device" data-shoot="device" aria-haspopup="menu" aria-expanded="${on}" aria-label="${t('Layout and zoom')}" title="${fits ? `${frameOn() ? t('Layout and zoom') : t('Phone scale')}` : t('Layout')}" class="${IB} text-xs tabular-nums ${on ? ON : ''}">${ic(icon)}<span data-scale-label${fits ? '' : ' class="opacity-60"'}>${label}</span>${ic('chev', 'size-3 opacity-60')}</button>${pop(on, `${sizes}${zoom}`, 'end-0 top-11 w-72')}</div>`
+      const joined = frameOn()
+      return `<div class="relative flex shrink-0 items-center ${joined ? 'rounded-md ring-1 ring-inset ring-black/[.08] dark:ring-white/10' : ''}"><button data-act="open:device" data-shoot="device" aria-haspopup="menu" aria-expanded="${on}" aria-label="${t('Layout and zoom')}" title="${fits ? `${frameOn() ? t('Layout and zoom') : t('Phone scale')}` : t('Layout')}" class="${IB} text-xs tabular-nums ${joined ? 'rounded-e-none' : ''} ${on ? ON : ''}">${ic(icon)}<span data-scale-label${fits ? '' : ' class="opacity-60"'}>${label}</span>${ic('chev', 'size-3 opacity-60')}</button>${joined ? centerBtn : ''}${pop(on, `${sizes}${zoom}`, 'end-0 top-11 w-72')}</div>`
     }
 
     // Everything that is not the work of the moment: Focus, Share, the shortcuts, Settings.
@@ -1823,6 +1827,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       // The device view: a size, the tablet turned (its zoom is the scale control's, above).
       case 'size': if (st.open === 'device') st.open = null; return pickSize(arg as Size)
       case 'turn': return patchView({ land: !st.view.land, zoom: 0 })
+      case 'center': return setScale(0)
       case 'scalestep': { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || 50) + Number(arg)) / 5) * 5))) }
       case 'theme': return setTheme(arg === 'dark')
       case 'focus': if (st.place.view !== 'variant') return; st.focus = true; st.open = null; dock.hold = performance.now() + 1600; edge.hover = {}; render(); return fit()

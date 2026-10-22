@@ -22,7 +22,7 @@ import shotPencil from '@phosphor-icons/core/assets/regular/pencil-simple.svg?ra
 import star from '@phosphor-icons/core/assets/regular/star.svg?raw'
 import starFill from '@phosphor-icons/core/assets/fill/star-fill.svg?raw'
 /** Icons that are Phosphor's own files, never drawn here: the ⋯, the pick's check circle, the favorite's star. */
-const PHOSPHOR: Record<string, string> = { 'share-stage': shotStage, 'share-phone': shotPhone, 'share-tablet': shotTablet, 'share-desktop': shotDesktop, 'share-pencil': shotPencil, share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon, translate, globe, star, 'star-fill': starFill }
+const PHOSPHOR: Record<string, string> = { 'share-stage': shotStage, 'share-phone': shotPhone, 'share-tablet': shotTablet, 'share-desktop': shotDesktop, 'share-pencil': shotPencil, share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon, translate, globe, star, 'star-fill': starFill, center: shotStage }
 
 const PATHS: Record<string, string> = {
   ...SIZE_PATHS,

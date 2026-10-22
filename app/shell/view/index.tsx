@@ -23,6 +23,10 @@ import { seeThrough } from '../comments/dom'
 import { dims, FILL_MIN_W, ORDER, SIZES, type Size } from './sizes'
 import { t, tn } from '../i18n'
 
+// The desk's margin around the stage's own artboard, and whether the page is on the desk (shell.css: a wide window).
+const DESK_PAD = 20
+const deskOn = () => !!document.querySelector('[data-desk]') && matchMedia('(min-width: 1024px)').matches
+
 /** size null: the stage's own artboard (fill), as big as the stage, with no line over it. */
 export type View = { size: Size | null; land: boolean; zoom: number; /** Counts Fit chosen from the zoom control: each one centres the device again. */ home?: number }
 export type ViewProps = {
@@ -179,9 +183,12 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
   // The stage's own artboard is the area's size: at 100% it is the stage as it always was. In a desktop window
   // whose side panels leave the stage narrower than a desktop (FILL_MIN_W), it stays a desktop: laid out at that
   // width, the stage's shape, and fitted down, instead of becoming a tablet layout because a panel opened.
-  const fillW = !view.size && innerWidth >= FILL_MIN_W && box.w > 0 && box.w < FILL_MIN_W ? FILL_MIN_W : box.w
-  const d = view.size ? dims(view.size, view.land) : { w: fillW, h: box.w ? Math.round((box.h * fillW) / box.w) : box.h }
-  const pad = !view.size || box.w < 640 ? 0 : 16
+  // On the desk (shell.css) the artboard keeps a margin of the desk around it, so the design sits on it as a sheet.
+  const desk = deskOn()
+  const inner = desk && !view.size ? { w: Math.max(0, box.w - 2 * DESK_PAD), h: Math.max(0, box.h - 2 * DESK_PAD) } : box
+  const fillW = !view.size && innerWidth >= FILL_MIN_W && inner.w > 0 && inner.w < FILL_MIN_W ? FILL_MIN_W : inner.w
+  const d = view.size ? dims(view.size, view.land) : { w: fillW, h: inner.w ? Math.round((inner.h * fillW) / inner.w) : inner.h }
+  const pad = desk && !view.size ? DESK_PAD : !view.size || box.w < 640 ? 0 : 16
   const fit = fitOf(box, d, pad)
   const scale = view.zoom ? view.zoom / 100 : fit
   const zoomed = scale > fit + 0.001
@@ -242,7 +249,7 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
       <div ref={area} data-view-area className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ touchAction: 'pan-x pan-y' }}>
         <div ref={wrap} className="flex h-max min-h-full w-max min-w-full items-start justify-start">
           <LiveFrame hash={hash} dark={dark} w={d.w} h={d.h} scale={scale} route={route} bind={bind}
-            ring={!view.size ? 'bg-white dark:bg-zinc-950' : `bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${pad ? 'rounded-[10px]' : ''}`}>
+            ring={!view.size ? `bg-white dark:bg-zinc-950 ${desk ? 'rounded-[10px] ring-1 ring-black/[.08] shadow-[0_18px_44px_-18px_rgb(0_0_0/.35)] dark:ring-white/[.12]' : ''}` : `bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${pad ? 'rounded-[10px]' : ''}`}>
             {picking && <Pick area={area} scale={scale} zoomed={zoomed} />}
           </LiveFrame>
         </div>

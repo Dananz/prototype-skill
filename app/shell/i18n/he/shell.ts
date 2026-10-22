@@ -63,6 +63,7 @@ export default {
   'building': 'בבנייה',
   'editing': 'עורך',
   'Smaller': 'קטן יותר',
+  'Center the design': 'מרכז את העיצוב',
   'Bigger': 'גדול יותר',
   'Zoom': 'זום',
   'Phone scale': 'קנה מידה של טלפון',

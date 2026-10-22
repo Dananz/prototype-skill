@@ -37,13 +37,13 @@ Preferences save automatically;
 use the page's layout, zoom and motion controls for the design currently on screen.
 
 The bar's layout button, before Comment, opens the three sizes, phone, tablet and desktop, with
-their dimensions, and the zoom under them (on a phone, the Layout row of the pill's menu). On a wide screen a web variant sits on an artboard as big as the stage, laid out for
+their dimensions, and the zoom under them (on a phone, the Layout row of the pill's menu). On a wide screen the page is a dotted desk (the sidebar, the bar and the side panel float on it as cards) and a web variant sits on it as an artboard as big as the stage, less a margin of the desk, laid out for
 the stage's width (its breakpoints see the stage, not the window; in a desktop window it is never
 laid out narrower than 1024, so side panels scale the desktop layout down rather than turning it into
 the tablet one); the stage's own layout is selected. Choosing another shows the page at that size, zoomed to fit (a 1440 × 900 desktop on a
 phone, a phone on a desktop); the zoom there goes either from 10% to 400%, and the user can
 pinch, Space-drag or middle-button drag (from anywhere, at any zoom; the page stays where it is
-left, and Fit or Mod+0 (Cmd+0 on Mac, Ctrl+0 elsewhere) resets the zoom and centres it again), comment, try things, pick copy and scrub motion there. Nothing to build for it
+left, and Fit, the frame button at the end of the layout button, or Mod+0 (Cmd+0 on Mac, Ctrl+0 elsewhere) resets the zoom and centres it again), comment, try things, pick copy and scrub motion there. Nothing to build for it
 beyond a web variant that lays out well at each width.
 
 Compare uses the same Comments panel, numbered pins, screenshots, drafts, sending and agent
