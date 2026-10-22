@@ -1809,6 +1809,7 @@ function actionText(dir, c) {
     return `marked in the page; ${pendingAssignment(dir, c) || 'assignment is resolved or superseded by another choice; handle any note, then reply --done'}`
   }
   if (c.action === 'pick' && c.note && !c.done) return 'marked in the page and now the working variant; handle the note, then reply --done' + suffix
+  if (c.action === 'build' && c.picked) return 'picked in the page and now the working variant; build this variant into the codebase' + suffix
   return (ACTIONS[c.action] || '') + suffix
 }
 

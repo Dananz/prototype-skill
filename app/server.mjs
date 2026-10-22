@@ -410,6 +410,14 @@ function receive(data) {
   // meta.ts has it, only the working variant didn't move), and so does an unpick that changed nothing.
   let moved = false
   for (const c of list) {
+    // Build it picks the variant too: best effort, since a build never waits on meta.ts.
+    if (c.action === 'build') {
+      const [slug, letter] = c.route.split('/')
+      try {
+        if (metaOf(readFileSync(metaFile(slug), 'utf8'))?.picked !== letter) { moved = pick(c.route, false) === 'moved' || moved; c.picked = true }
+      } catch { /* the build is asked for either way */ }
+      continue
+    }
     if (c.action !== 'pick' && c.action !== 'unpick') continue
     const [slug, letter] = c.route.split('/')
     try {
