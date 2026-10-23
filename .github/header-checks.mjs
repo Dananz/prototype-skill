@@ -13,7 +13,7 @@ export async function headerChecks({ proto, app, local, openPage, fail, keepShot
   proto(['add', 'headerfx', '--title', 'Header', '--variants', 'A:One,B:Two'])
   for (const id of ['A', 'B']) writeFileSync(join(app, `src/protos/headerfx/${id}.tsx`), `export default function V() { return <main className="p-8"><h1>Header ${id}</h1><button>Go</button></main> }`)
   proto(['done', 'headerfx'])
-  const page = await openPage(`${local}?theme=light#/headerfx/A`, { width: 1440, height: 900 })
+  const page = await openPage(`${local}headerfx/A?theme=light`, { width: 1440, height: 900 })
   try {
     await until(page, `!!document.querySelector('[data-bar] [data-decide-btn]')`, 'the bar never drew')
     if (keepShots) await page.screenshot(join(keepShots, `header-${before ? 'before' : 'after'}-bar.png`))

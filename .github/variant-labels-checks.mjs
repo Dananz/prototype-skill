@@ -18,7 +18,7 @@ export async function variantLabelsChecks({ proto, app, local, openPage, fail, k
   proto(['pick', 'labels30', 'AD'])
   proto(['done', 'labels22', 'labels23', 'labels30', 'labels-sparse', 'labels-child'])
   for (const phone of [false, true]) {
-    const page = await openPage(`${local}?theme=dark#/labels30/AD`, phone ? { width: 393, height: 852, phone: true } : {})
+    const page = await openPage(`${local}labels30/AD?theme=dark`, phone ? { width: 393, height: 852, phone: true } : {})
     try {
       await until(page, `!!document.querySelector('[data-act="open:switch"], [data-pill-handle]')`)
       if (phone) {
@@ -45,25 +45,25 @@ export async function variantLabelsChecks({ proto, app, local, openPage, fail, k
       } else {
         await page.run(`document.querySelector('[data-pop] [data-act="mv:labels30:AA"]').click()`)
       }
-      await until(page, `location.hash === '#/labels30/AA'`)
+      await until(page, `location.pathname === '/labels30/AA'`)
       assert(await page.run(`document.title.startsWith('#27 ·')`), 'numeric selection did not open the original AA route')
     } finally { page.close() }
   }
   if (before) return
   // Short lists are numbered too, and a gap keeps the number the letter has (AA stays 27 with no B … Z).
   for (const [slug, last, expected] of [['labels22', 'V', '22'], ['labels23', 'W', '23'], ['labels-sparse', 'AA', '27'], ['labels-sparse', 'A', '1']]) {
-    const page = await openPage(`${local}#/${slug}/${last}`)
+    const page = await openPage(`${local}${slug}/${last}`)
     try {
       await until(page, `!!document.querySelector('[data-side] [data-act="mv:${slug}:${last}"]')`)
       assert(await page.run(`document.querySelector('[data-side] [data-act="mv:${slug}:${last}"]').firstElementChild.textContent`) === expected, `${slug} did not show ${expected}`)
     } finally { page.close() }
   }
-  const child = await openPage(`${local}#/labels-child`)
+  const child = await openPage(`${local}labels-child`)
   try {
     await until(child, `!!document.querySelector('[data-layers] [data-act="pv:labels30:AC"]')`)
     assert(await child.run(`document.querySelector('[data-layers] [data-act="pv:labels30:AC"]').textContent.includes('29')`), 'the source link kept its letter label')
     await child.run(`document.querySelector('[data-layers] [data-act="pv:labels30:AC"]').click()`)
-    await until(child, `location.hash === '#/labels30/AC'`)
+    await until(child, `location.pathname === '/labels30/AC'`)
   } finally { child.close() }
   proto(['pick', 'labels30', 'AD', '--off'])
   // The CLI takes the number the page shows: labels30/29 is labels30/AC.

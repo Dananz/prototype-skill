@@ -388,11 +388,15 @@ if (/animate-spin/.test(globbed)) fail('proto handoff listed a class from inside
 
 // Where each part of a design is written: the variant's DOM elements carry their file and line
 // under src/protos and the component they are in, and the shell's own elements carry neither.
-const stamped = await inPage(`${local}?theme=light#/hero/A`, `(() => {
+const stamped = await inPage(`${local}hero/A?theme=light`, `(() => {
   const b = document.querySelector('[data-mount] [data-shoot=open]')
   return [b?.dataset.protoSrc, b?.dataset.protoComponent, document.querySelectorAll('[data-bar] [data-proto-src], [data-side] [data-proto-src]').length].join(' ')
 })()`)
 if (stamped !== 'hero/A.tsx:6 A 0') fail(`the variant's button should say hero/A.tsx:6 A (and the shell nothing), says: ${stamped}`)
+
+// An older #/ link opens its place, and the address becomes that place's path, query kept.
+const legacy = await inPage(`${local}?theme=light#/hero/A`, `location.pathname + location.search + location.hash + ' ' + !!document.querySelector('[data-mount] [data-shoot=open]')`)
+if (legacy !== '/hero/A?theme=light true') fail(`a #/hero/A link should open hero/A at /hero/A?theme=light, got: ${legacy}`)
 
 proto(['snap', 'hero/A'])
 if (!existsSync(join(app, '.proto', 'snaps', 'hero-A.jsx'))) fail('proto snap wrote no hero-A.jsx')
@@ -808,7 +812,7 @@ const near = (a, b, by) => typeof a === 'number' && Math.abs(a - b) <= by
 // The bar keeps Focus, Share and Settings behind its ⋯ menu.
 const OPEN_MORE = `document.querySelector('[data-bar] [data-act="open:more"][aria-expanded="false"]')?.click()`
 const HELPERS = `window.__D = () => window.__protoDesign?.()?.ownerDocument ?? document; window.__R = el => { const r = el.getBoundingClientRect(), f = el.ownerDocument === document ? null : el.ownerDocument.defaultView.frameElement; if (!f) return r; const o = f.getBoundingClientRect(), s = o.width / (f.offsetWidth || 1); return { x: o.left + r.x * s, y: o.top + r.y * s, width: r.width * s, height: r.height * s } }`
-const motionPage = await openPage(`${local}?theme=light#/move/A`)
+const motionPage = await openPage(`${local}move/A?theme=light`)
 try {
   // The design is in the stage's own artboard, a frame of the page: __D is its document (portals
   // included) and __R a box of it where the page draws it, for a real press.
@@ -1112,9 +1116,9 @@ writeFileSync(join(app, 'src', 'protos', 'words', 'A.tsx'), [
   '}',
 ].join('\n'))
 writeFileSync(join(app, 'src', 'protos', 'words', 'B.tsx'), 'export default function B() {\n  return <h1 className="p-8 text-2xl">Save more</h1>\n}\n')
-const plain = await inPage(`${local}?theme=light#/words/B`, 'new Promise(r => setTimeout(r, 800)).then(() => document.querySelectorAll("[data-act=copymode]").length)')
+const plain = await inPage(`${local}words/B?theme=light`, 'new Promise(r => setTimeout(r, 800)).then(() => document.querySelectorAll("[data-act=copymode]").length)')
 if (plain !== 0) fail(`a variant without copy options shows ${plain} T buttons`)
-const words = await openPage(`${local}?theme=light#/words/A`).catch(e => fail(`copy options in the page: ${e.message}`))
+const words = await openPage(`${local}words/A?theme=light`).catch(e => fail(`copy options in the page: ${e.message}`))
 // With HELPERS: __D, the design's document (the artboard's frame on a wide page).
 const until = `${HELPERS}; const until = async (f, ms = 4000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } return null }`
 // Chooses a row of the pill's menu on a phone (copy options, Try it, Motion, a size).
@@ -1325,7 +1329,7 @@ const stacked = (motionOn, copyOn) => `(async () => {
     if (window.__protoMotion.state().late !== null) return 'turning copy mode on was taken for a missed step at ' + window.__protoMotion.state().late + ' ms'
     return 'ok'
   })()`
-const deskBoth = await openPage(`${local}?theme=light#/both/A`)
+const deskBoth = await openPage(`${local}both/A?theme=light`)
 try {
   const r = await deskBoth.run(stacked(`(await until(() => document.querySelector('[data-bar] [data-act=motion]')))?.click()`, copyOn))
   if (r !== 'ok') fail(`copy mode on a design with motion, desktop: ${r}`)
@@ -1355,7 +1359,7 @@ try {
   })()`)
   if (focused !== 'ok') fail(`focus mode with copy mode on and motion: ${focused}`)
 } finally { deskBoth.close() }
-const phoneBoth = await openPage(`${local}?theme=light#/both/A`, { width: 360, height: 740, phone: true })
+const phoneBoth = await openPage(`${local}both/A?theme=light`, { width: 360, height: 740, phone: true })
 try {
   const r = await phoneBoth.run(stacked(viaMenu('motion'), viaMenu('copymode')))
   if (r !== 'ok') fail(`copy mode on a design with motion, 360 px phone: ${r}`)
@@ -1419,7 +1423,7 @@ export default function A() {
   </div>
 }
 `)
-const tryPhone = await openPage(`${local}?theme=light#/tryit/A`, { width: 360, height: 740, phone: true })
+const tryPhone = await openPage(`${local}tryit/A?theme=light`, { width: 360, height: 740, phone: true })
 try {
   const r = await tryPhone.run(`(async () => {
     ${until}
@@ -1460,11 +1464,11 @@ try {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     if (!await until(() => !document.querySelector('[data-try-sheet] [data-try-list]'))) return 'Esc should put the sheet away'
     await new Promise(r => setTimeout(r, 300))
-    return location.hash === '#/tryit/A' ? 'ok' : 'Esc left the variant for ' + location.hash
+    return location.pathname === '/tryit/A' ? 'ok' : 'Esc left the variant for ' + location.pathname
   })()`, 20_000)
   if (down !== 'ok') fail(`Try it on a phone: ${down}`)
 } finally { tryPhone.close() }
-const tryDesk = await openPage(`${local}?theme=light#/tryit/A`)
+const tryDesk = await openPage(`${local}tryit/A?theme=light`)
 try {
   const r = await tryDesk.run(`(async () => {
     ${until}
@@ -1493,7 +1497,7 @@ try {
 // and variants fast never freezes the page.
 const frameOf = `const frame = () => document.querySelector('[data-view] iframe')
     const inFrame = () => { try { const d = frame()?.contentDocument; return d && d.URL !== 'about:blank' && d.documentElement.dataset.ready === '1' && d.querySelector('[data-layers] [data-mount] > *') ? d : null } catch { return null } }`
-const viewDesk = await openPage(`${local}?theme=light#/tryit/A`)
+const viewDesk = await openPage(`${local}tryit/A?theme=light`)
 try {
   const r = await viewDesk.run(`(async () => {
     ${until}
@@ -1513,7 +1517,7 @@ try {
     tabs.querySelector('[data-act="size:phone"]').click()
     if (!await until(() => inFrame(), 15000)) return 'no page in a view'
     const url = new URL(frame().src)
-    if (!url.searchParams.has('dv') || url.hash !== '#/tryit/A') return 'the view should show this place, framed: ' + frame().src
+    if (!url.searchParams.has('dv') || url.pathname !== '/tryit/A') return 'the view should show this place, framed: ' + frame().src
     if (!/^390 × 844 · 100%/.test(document.querySelector('[data-view-line]').textContent)) return 'the view line says ' + document.querySelector('[data-view-line]').textContent
     const d = inFrame(), w = d.defaultView
     if (d.querySelector('[data-size-tabs], [data-act="comment:toggle"], [data-act="comment:tap"]')) return 'the page in the view has sizes or a Comment of its own'
@@ -1524,9 +1528,9 @@ try {
     w.fetch = (u, o) => { if ((o?.method || 'GET') !== 'GET') w.__posts.push(String(u)); return f.call(w, u, o) }
     d.dispatchEvent(new w.Event('visibilitychange'))
     w.location.hash = '#/tryit'
-    if (!await until(() => location.hash === '#/tryit', 5000)) return 'the page should follow the view to #/tryit, is on ' + location.hash
+    if (!await until(() => location.pathname === '/tryit', 5000)) return 'the page should follow the view to /tryit, is on ' + location.pathname
     location.hash = '#/tryit/A'
-    if (!await until(() => w.location.hash === '#/tryit/A' && inFrame(), 8000)) return 'the view should follow the page back to #/tryit/A, is on ' + w.location.hash
+    if (!await until(() => w.location.pathname === '/tryit/A' && inFrame(), 8000)) return 'the view should follow the page back to /tryit/A, is on ' + w.location.pathname
     await new Promise(r => setTimeout(r, 300))
     if (w.__posts.length) return 'the page in the view posted ' + w.__posts.join(', ')
     if (w.__writes.length) return 'the page in the view wrote ' + w.__writes.join(', ')
@@ -1585,7 +1589,7 @@ for (const view of [{ size: 'watch', w: 390, h: 844 }, { size: 'phone', w: 390.5
   if (res.status !== 400 || !/view/.test(await res.text())) fail(`a comment with view ${JSON.stringify(view)} was answered ${res.status}, not refused`)
 }
 if ((await postJson('comments', { comments: [{ route: 'tryit/A', text: 'x', action: 'more', view: { size: 'phone', w: 390, h: 844 } }] })).status !== 400) fail('a decision with a view was accepted')
-const viewPhone = await openPage(`${local}?theme=dark#/tryit/A`, { width: 390, height: 844, phone: true })
+const viewPhone = await openPage(`${local}tryit/A?theme=dark`, { width: 390, height: 844, phone: true })
 try {
   const r = await viewPhone.run(`(async () => {
     ${until}
@@ -1636,7 +1640,7 @@ try {
   if (drift > 6) fail(`the point between the fingers moved ${Math.round(drift)} page px`)
 } finally { viewPhone.close() }
 // Sizes and variants switched fast with a view open: the page answers every step and ends in step.
-const viewFast = await openPage(`${local}?theme=dark#/home/A`)
+const viewFast = await openPage(`${local}home/A?theme=dark`)
 try {
   // It ends on the phone, which a desktop's stage never is (the tablet can be its own artboard).
   for (const step of ['size:phone', 'v:B', 'size:tablet', 'v:C', 'size:desktop', 'size:phone', 'v:A', 'size:tablet', 'v:B', 'size:phone', 'v:A', 'size:tablet', 'size:phone']) {
@@ -1648,7 +1652,7 @@ try {
   const end = await viewFast.run(`(async () => {
     ${until}
     ${frameOf}
-    if (!await until(() => inFrame()?.defaultView.location.hash === location.hash, 15000)) return 'the view never caught up: ' + location.hash + ' in the page, ' + frame()?.contentWindow.location.hash + ' in the view'
+    if (!await until(() => inFrame()?.defaultView.location.pathname === location.pathname, 15000)) return 'the view never caught up: ' + location.pathname + ' in the page, ' + frame()?.contentWindow.location.pathname + ' in the view'
     return /^390 × 844/.test(document.querySelector('[data-view-line]')?.textContent ?? '') && document.querySelectorAll('[data-view] iframe').length === 1 ? 'ok' : 'the view should be one phone: ' + document.querySelector('[data-view-line]')?.textContent
   })()`, 20_000)
   if (end !== 'ok') fail(`switching fast with a view open: ${end}`)

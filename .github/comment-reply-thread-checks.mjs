@@ -11,7 +11,7 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
     return <main style={{ padding: 24 }}><button data-shoot="only" style={{ width: 140, height: 48 }}>Thread me</button></main>
   }
 `)
-  const page = await openPage(`${local}?theme=light#/threadfx/A`)
+  const page = await openPage(`${local}threadfx/A?theme=light`)
   const helpers = `
     const until = async (f, ms = 10000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } return null }
     const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.filter(i => i.proto === 'threadfx') ?? []

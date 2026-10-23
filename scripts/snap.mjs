@@ -189,7 +189,7 @@ try {
     url.searchParams.set('theme', 'light')
     url.searchParams.set('hints', '0')
     if (phone) url.searchParams.set('focus', '1')
-    url.hash = '/' + v.route
+    url.pathname = '/' + v.route
     await send('Page.navigate', { url: url.href }, sessionId)
     await waitReady(expression => send('Runtime.evaluate', { expression, returnByValue: true }, sessionId).then(r => r.result?.value))
     await sleep(1200)

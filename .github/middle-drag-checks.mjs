@@ -29,7 +29,7 @@ export default function A() {
 `)
   proto(['done', 'mdrag'])
   const wait = ms => new Promise(r => setTimeout(r, ms))
-  const page = await openPage(`${local}?theme=light#/mdrag/A`)
+  const page = await openPage(`${local}mdrag/A?theme=light`)
   const geo = `(() => {
     const a = document.querySelector('[data-view-area]')?.getBoundingClientRect(), f = document.querySelector('[data-view] iframe')?.getBoundingClientRect()
     return a && f ? { ax: a.left, ay: a.top, aw: a.width, ah: a.height, fx: f.left, fy: f.top, fw: f.width, fh: f.height } : null

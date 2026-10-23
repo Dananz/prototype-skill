@@ -22,8 +22,8 @@ export default function A() {
   writeFileSync(file, initial)
   // __D: the design's document (the stage's own artboard is a frame of the page); __R: a box of an
   // element of it in the page's px, for a real press.
-  const until = `window.__D = () => window.__protoDesign?.()?.ownerDocument ?? document; window.__R = el => { const r = el.getBoundingClientRect(), f = el.ownerDocument === document ? null : el.ownerDocument.defaultView.frameElement; if (!f) return r; const o = f.getBoundingClientRect(), s = o.width / (f.offsetWidth || 1); return { x: o.left + r.x * s, y: o.top + r.y * s, width: r.width * s, height: r.height * s } }; let step = 0; const until = async f => { const at = ++step; for (let end = Date.now() + 8000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } throw new Error('UI condition ' + at + ' timed out at ' + location.hash + ': ' + [...document.querySelectorAll('[data-shoot]')].map(e => e.dataset.shoot).join(',')) };`
-  const page = await openPage(`${local}#/first/A`)
+  const until = `window.__D = () => window.__protoDesign?.()?.ownerDocument ?? document; window.__R = el => { const r = el.getBoundingClientRect(), f = el.ownerDocument === document ? null : el.ownerDocument.defaultView.frameElement; if (!f) return r; const o = f.getBoundingClientRect(), s = o.width / (f.offsetWidth || 1); return { x: o.left + r.x * s, y: o.top + r.y * s, width: r.width * s, height: r.height * s } }; let step = 0; const until = async f => { const at = ++step; for (let end = Date.now() + 8000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } throw new Error('UI condition ' + at + ' timed out at ' + location.pathname + ': ' + [...document.querySelectorAll('[data-shoot]')].map(e => e.dataset.shoot).join(',')) };`
+  const page = await openPage(`${local}first/A`)
   const run = async body => {
     const result = await page.run(`(async () => { ${until} try { ${body}; return 'ok' } catch(e) { return e.message } })()`)
     if (result !== 'ok') await page.screenshot(join(keepShots, 'first-prototype-failure.png'))
@@ -108,7 +108,7 @@ export default function A() {
     for (const w of [w1, w2]) await postJson('withdraw', { batch: w, n: 1 })
     for (const route of ['first', 'first/Z', 'first/A/state']) assert((await postJson('comments', { comments: [{ route, text: 'Try it', action: 'try-it' }] })).status === 400, `accepted invalid route ${route}`)
   } finally { page.close() }
-  const phone = await openPage(`${local}#/first/B`, { width: 390, height: 844, phone: true })
+  const phone = await openPage(`${local}first/B`, { width: 390, height: 844, phone: true })
   try {
     const result = await phone.run(`(async () => { ${until} try {
       (await until(() => document.querySelector('[data-pill-handle]'))).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));

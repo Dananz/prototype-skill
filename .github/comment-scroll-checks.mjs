@@ -11,7 +11,7 @@ export async function commentScrollChecks({ proto, app, openPage, fail }) {
       </section>)}</main>
   }`)
   const local = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8')).localUrl
-  const page = await openPage(`${local}?theme=light#/scrollfx/A`)
+  const page = await openPage(`${local}scrollfx/A?theme=light`)
   const helpers = `
     const until = async f => { for (const end = Date.now() + 5000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
     const frame = () => document.querySelector('[data-view] iframe')

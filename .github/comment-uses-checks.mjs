@@ -22,7 +22,7 @@ ${nested ? `function Leaf({ label, shoot }: { label: string; shoot: string }) {
   return <button data-shoot={shoot} style={{ width: 140, height: 40 }}>{label}</button>
 }` : ''}
 `)
-  const page = await openPage(`${local}?theme=light#/${slug}/A`)
+  const page = await openPage(`${local}${slug}/A?theme=light`)
   const helpers = `
     const until = async f => { for (const end = Date.now() + 5000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
     const editor = () => document.querySelector('[data-composer] [role=textbox]')
@@ -88,7 +88,7 @@ export default function Swap() {
   </main>
 }
 `)
-  const swap = await openPage(`${local}?theme=light#/swapfx/A`)
+  const swap = await openPage(`${local}swapfx/A?theme=light`)
   const h2 = `
     const until = async (f, ms = 5000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
     const editor = () => document.querySelector('[data-composer] [role=textbox]')

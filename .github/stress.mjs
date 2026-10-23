@@ -92,31 +92,32 @@ await sleep(3000)
 
 // ---------- 2. page: first load and idle in each view ----------
 const pg = await page()
-const base = local.replace(/\/$/, '') + '/?theme=light'
+const root = local.replace(/\/$/, ''), base = root + '/?theme=light'
+const at = (route, q = '') => `${root}/${route}?theme=light${q}`
 note('page load, session overview (20 live thumbnails)', `${await pg.go(base + '#/')} ms`)
 const mods = () => pg.ev(`new Set(performance.getEntriesByType('resource').map(r => r.name.split('?')[0]).filter(n => /\\/src\\/protos\\/[^/]+\\/[A-Z]{1,2}\\.tsx$/.test(n))).size`)
 const liveHosts = () => pg.ev(`[...document.querySelectorAll('[data-layers] [data-mount]')].filter(h => h.childElementCount).length + ' of ' + document.querySelectorAll('[data-layers] [data-mount]').length`)
 note('  variant modules loaded', String(await mods()))
 let m = await pg.mem(); note('  memory', `${f1(m.heapMB)} MB JS heap, ${m.nodes} DOM nodes`)
 let i = await pg.idle(10000); note('  idle (10 s)', `${f1(i.cpuPct)}% CPU, ${i.layouts} layouts`)
-note(`prototype overview, grid (${VARIANTS} live thumbnails)`, `${await pg.go(base + '#/p3')} ms`)
+note(`prototype overview, grid (${VARIANTS} live thumbnails)`, `${await pg.go(at('p3'))} ms`)
 await sleep(800); note('  previews running', await liveHosts())
 m = await pg.mem(); note('  memory', `${f1(m.heapMB)} MB JS heap, ${m.nodes} DOM nodes`)
 i = await pg.idle(10000); note('  idle (10 s)', `${f1(i.cpuPct)}% CPU, ${i.layouts} layouts`)
 await pg.ev(`localStorage.setItem('proto-lobby','stack')`)
-note(`prototype overview, full size (${VARIANTS} live designs)`, `${await pg.go(base + '#/p5')} ms`)
+note(`prototype overview, full size (${VARIANTS} live designs)`, `${await pg.go(at('p5'))} ms`)
 await sleep(800); note('  designs running', await liveHosts())
 m = await pg.mem(); note('  memory', `${f1(m.heapMB)} MB JS heap, ${m.nodes} DOM nodes`)
 i = await pg.idle(10000); note('  idle (10 s)', `${f1(i.cpuPct)}% CPU, ${i.layouts} layouts`)
 await pg.ev(`localStorage.setItem('proto-lobby','grid')`)
-note('one variant', `${await pg.go(base + '#/p3/C')} ms`)
+note('one variant', `${await pg.go(at('p3/C'))} ms`)
 m = await pg.mem(); note('  memory', `${f1(m.heapMB)} MB JS heap, ${m.nodes} DOM nodes`)
 i = await pg.idle(10000); note('  idle (10 s)', `${f1(i.cpuPct)}% CPU, ${i.layouts} layouts`)
-await pg.go(base + '&focus=1#/p3/C'); await sleep(500)
+await pg.go(at('p3/C', '&focus=1')); await sleep(500)
 i = await pg.idle(10000); note('  idle in focus mode (10 s)', `${f1(i.cpuPct)}% CPU, ${i.layouts} layouts, ${i.styles} style recalcs`)
 await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 720, y: 880 }, pg.s); await sleep(1500)
 i = await pg.idle(10000); note('  idle in focus mode, pointer resting on the dock (10 s)', `${f1(i.cpuPct)}% CPU, ${i.layouts} layouts, ${i.styles} style recalcs`)
-await pg.go(base + '#/p3/C')
+await pg.go(at('p3/C'))
 
 // ---------- 3. navigation churn: every variant, by hash ----------
 const before = await pg.mem()
@@ -130,7 +131,7 @@ note(`navigation churn: ${PROTOS * VARIANTS} variants + ${PROTOS} overviews`, `$
 note('  memory before → after (same place, after GC)', `${f1(before.heapMB)} → ${f1(after.heapMB)} MB heap, ${before.nodes} → ${after.nodes} nodes, ${before.listeners} → ${after.listeners} listeners`)
 
 // ---------- 4. edit storm with the page open on a lobby ----------
-await pg.go(base + '#/p7')
+await pg.go(at('p7'))
 const sBefore = tree(pid), pBefore = await pg.mem(), pm0 = await pg.metrics()
 t0 = Date.now()
 const EDITS = Number(process.env.EDITS || 300)

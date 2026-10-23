@@ -23,7 +23,7 @@ export const frameMenus = new Set<(e: MouseEvent, x: number, y: number) => void>
 export const frameSelections = new Set<() => void>()
 
 /** The page at a place, as a device view loads it: framed, in the theme of the page outside. */
-export const frameUrl = (hash: string, dark: boolean) => `${location.origin}${location.pathname}?dv=1&theme=${dark ? 'dark' : 'light'}${hash.startsWith('#') ? hash : `#${hash}`}`
+export const frameUrl = (path: string, dark: boolean) => `${location.origin}${path.startsWith('/') ? path : `/${path}`}?dv=1&theme=${dark ? 'dark' : 'light'}`
 
 type ThemeWindow = Window & { __protoTheme?: (dark: boolean) => void }
 /** The same-origin frame accepts its parent's theme without remounting the design. */
@@ -34,8 +34,8 @@ export type Frame = {
   /** The frame's document, once it is the page (not the blank one an iframe starts with). */
   doc(): Document | null
   /** Takes the frame to a place, without a reload; nothing when it is there already. */
-  go(hash: string): void
-  hash(): string
+  go(path: string): void
+  path(): string
   theme(dark: boolean): void
   close(): void
 }
@@ -47,14 +47,14 @@ export type Frame = {
  * `bound` says it is there, for the page outside to take it where it is now (it may have moved
  * while the frame loaded).
  */
-export function openFrame(host: HTMLElement, url: string, on: { route: (hash: string) => void; bind: (d: Document) => () => void; bound: () => void }): Frame {
+export function openFrame(host: HTMLElement, url: string, on: { route: (path: string) => void; bind: (d: Document) => () => void; bound: () => void }): Frame {
   const el = document.createElement('iframe')
   el.title = t('This page at another size')
   el.className = 'absolute start-0 top-0 block origin-top-left border-0 bg-white dark:bg-zinc-950'
   host.append(el)
   let d: Document | null = null, unbind = () => {}, closed = false
   const page = () => { try { const n = el.contentDocument; return n && n.URL !== 'about:blank' ? n : null } catch { return null } }
-  const route = () => { try { on.route(el.contentWindow!.location.hash) } catch { /* gone */ } }
+  const route = () => { try { on.route(el.contentWindow!.location.pathname) } catch { /* gone */ } }
   // A load event comes late under a dev server (after every module), so the document is looked for
   // a few times a second: a new one appears as soon as the frame starts loading the page.
   const watch = () => {
@@ -63,9 +63,9 @@ export function openFrame(host: HTMLElement, url: string, on: { route: (hash: st
     unbind()
     d = n
     const w = n.defaultView!
-    w.addEventListener('hashchange', route)
+    w.addEventListener('proto:place', route)
     const off = on.bind(n)
-    unbind = () => { off(); w.removeEventListener('hashchange', route) }
+    unbind = () => { off(); w.removeEventListener('proto:place', route) }
     on.bound()
   }
   const timer = setInterval(watch, 250)
@@ -74,8 +74,16 @@ export function openFrame(host: HTMLElement, url: string, on: { route: (hash: st
   return {
     el,
     doc: () => (page() === d ? d : null),
-    go(hash) { try { const w = el.contentWindow!; if (w.location.hash !== hash) w.location.hash = hash } catch { /* gone */ } },
-    hash() { try { return el.contentWindow!.location.hash } catch { return '' } },
+    // As Back would move it: its own address changes, and its page follows (popstate), no reload.
+    go(path) {
+      try {
+        const w = el.contentWindow!
+        if (w.location.pathname === path) return
+        w.history.pushState(null, '', path + w.location.search)
+        w.dispatchEvent(new PopStateEvent('popstate'))
+      } catch { /* gone */ }
+    },
+    path() { try { return el.contentWindow!.location.pathname } catch { return '' } },
     theme(dark) {
       try {
         const w = el.contentWindow as ThemeWindow | null
@@ -86,7 +94,7 @@ export function openFrame(host: HTMLElement, url: string, on: { route: (hash: st
           w.__protoTheme(dark)
         }
         // While still loading there is no design state to keep, and its URL supplies the theme.
-        else if (w) w.location.replace(frameUrl(w.location.hash, dark))
+        else if (w) w.location.replace(frameUrl(w.location.pathname, dark))
       } catch { /* gone */ }
     },
     close() { if (closed) return; closed = true; clearInterval(timer); unbind(); el.remove() },

@@ -467,7 +467,7 @@ the drop-ins' props before presenting the options; verify the replacement in its
 the user makes their actual choice.
 
 This writes `src/protos/<slug>/meta.ts` and a "Building…" placeholder per variant, prints a
-direct link to the prototype (`…/#/<slug>`), and the page jumps there by itself. Then replace each placeholder file whole, one at a time,
+direct link to the prototype (`…/<slug>`), and the page jumps there by itself. Then replace each placeholder file whole, one at a time,
 so the user sees them land:
 
 - One file per variant, named by its letter: `A.tsx` (or `A.vue` in a Vue app). Names live in

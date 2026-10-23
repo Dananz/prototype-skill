@@ -136,7 +136,7 @@ export default function Click() {
   if (b.comments[0].reply?.text !== 'Slowed to 30 fps' || b.comments[1].reply?.text !== 'Heading is 48 px' || !b.done) fail(`the paired replies were not written: ${JSON.stringify(b.comments.map(c => c.reply))}`)
 
   // Send each comment as you add it
-  const page = await openPage(`${local}?theme=light#/speedfx/B`)
+  const page = await openPage(`${local}speedfx/B?theme=light`)
   const until = 'const until = async (f, ms = 4000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } return null }'
   const add = async words => {
     // Comment mode on (its button says so), then a press on the box; a press that lands before the

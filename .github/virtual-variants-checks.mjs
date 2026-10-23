@@ -16,7 +16,7 @@ export default function Exercise(){useEffect(()=>{window.__previewMounts=(window
   proto(['done', 'virtualfx'])
   const metrics = []
   const shot = async (page, name) => { if (keepShots) { await wait(300); await page.screenshot(join(keepShots, `${before ? 'before' : 'after'}-${name}.png`)) } }
-  const phone = await openPage(`${local}?theme=dark#/virtualfx/A`, {width:393,height:852,phone:true})
+  const phone = await openPage(`${local}virtualfx/A?theme=dark`, {width:393,height:852,phone:true})
   try {
     await until(phone, `!!document.querySelector('[data-pill-handle]')`)
     await phone.run(`document.querySelector('[data-pill-handle]').focus()`); await phone.key('Enter')
@@ -27,7 +27,7 @@ export default function Exercise(){useEffect(()=>{window.__previewMounts=(window
     if (keepShots) {
       await phone.key('Escape')
       await until(phone, `!document.querySelector('[role="dialog"]')`)
-      await phone.run(`(async()=>{const {createShare}=await import('/shell/share.ts');window.__evidenceShare=createShare();window.__evidenceShare({title:'Exercise library',slug:'virtualfx',variants:${JSON.stringify(ids)}.map((id,i)=>({id,name:'Exercise '+(i+1),hash:'#/virtualfx/'+id})),current:'A',size:{w:320,h:240},dark:true,onClose:()=>window.__evidenceShare(null),returnFocus:()=>null})})()`)
+      await phone.run(`(async()=>{const {createShare}=await import('/shell/share.ts');window.__evidenceShare=createShare();window.__evidenceShare({title:'Exercise library',slug:'virtualfx',variants:${JSON.stringify(ids)}.map((id,i)=>({id,name:'Exercise '+(i+1),path:'/virtualfx/'+id})),current:'A',size:{w:320,h:240},dark:true,onClose:()=>window.__evidenceShare(null),returnFocus:()=>null})})()`)
       await until(phone, `!!document.querySelector('[data-share-tile] canvas')`)
       await shot(phone, 'phone-share')
       await phone.run(`document.querySelector('[data-share-close]').click()`)
@@ -35,7 +35,7 @@ export default function Exercise(){useEffect(()=>{window.__previewMounts=(window
 
     if (!before) assert(n < 50, `phone sheet rendered ${n} rows`)
   } finally { phone.close() }
-  const page = await openPage(`${local}?theme=dark#/virtualfx/A`)
+  const page = await openPage(`${local}virtualfx/A?theme=dark`)
   try {
     await until(page, `!!document.querySelector('[data-side] [data-k="v:virtualfx"] [data-mv]')`)
     const sideCount = await page.run(`document.querySelectorAll('[data-side] [data-mv^="virtualfx:"]').length`)
@@ -73,7 +73,7 @@ export default function Exercise(){useEffect(()=>{window.__previewMounts=(window
       await shot(page, 'desktop-full-size')
       await page.run(`document.querySelector('[data-act="stack:0"]').click()`)
       await until(page, `!!document.querySelector('[data-layers] [data-thumb]')`)
-      await page.run(`(async()=>{const {createShare}=await import('/shell/share.ts');window.__evidenceShare=createShare();window.__evidenceShare({title:'Exercise library',slug:'virtualfx',variants:${JSON.stringify(ids)}.map((id,i)=>({id,name:'Exercise '+(i+1),hash:'#/virtualfx/'+id})),current:'A',size:{w:320,h:240},dark:true,onClose:()=>window.__evidenceShare(null),returnFocus:()=>null})})()`)
+      await page.run(`(async()=>{const {createShare}=await import('/shell/share.ts');window.__evidenceShare=createShare();window.__evidenceShare({title:'Exercise library',slug:'virtualfx',variants:${JSON.stringify(ids)}.map((id,i)=>({id,name:'Exercise '+(i+1),path:'/virtualfx/'+id})),current:'A',size:{w:320,h:240},dark:true,onClose:()=>window.__evidenceShare(null),returnFocus:()=>null})})()`)
       await until(page, `!!document.querySelector('[data-share-tile] canvas')`)
       await shot(page, 'desktop-share')
       await page.run(`document.querySelector('[data-share-close]').click()`)
@@ -100,7 +100,7 @@ export default function Exercise(){useEffect(()=>{window.__previewMounts=(window
       await until(page, `!!document.querySelector('[data-layers] [data-act="pv:virtualfx:DP"]')`, 'scrolling did not reveal the final card')
       assert(await page.run(`window.__previewUnmounts > 0 && window.__previewMounts - window.__previewUnmounts < 30`), 'offscreen preview effects stayed mounted')
       await page.run(`document.querySelector('[data-layers] [data-act="pv:virtualfx:DP"]').click()`)
-      await until(page, `location.hash === '#/virtualfx/DP'`)
+      await until(page, `location.pathname === '/virtualfx/DP'`)
       await page.run(`location.hash='#/virtualfx'`)
       await until(page, `!!document.querySelector('[data-layers] [data-act="pv:virtualfx:DP"]')`, 'returning to the overview lost its scroll position')
       await page.run(`document.querySelector('[data-act="stack:1"]').click()`)
@@ -124,7 +124,7 @@ export default function Exercise(){useEffect(()=>{window.__previewMounts=(window
   } finally { page.close() }
   if (!before || keepShots) {
     proto(['add', 'virtualfx', '--kind', 'phone', '--screen', '393x852'])
-    const phones = await openPage(`${local}?theme=dark#/virtualfx`)
+    const phones = await openPage(`${local}virtualfx?theme=dark`)
     try {
       await until(phones, `!!document.querySelector('[data-act="stack:1"]')`)
       await phones.run(`document.querySelector('[data-act="stack:1"]').click()`)

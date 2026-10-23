@@ -13,12 +13,12 @@ export const LOOKS: { id: Look; label: string }[] = [
 export const SIZES: ShotSize[] = ORDER.map(id => ({ id, label: VIEW_SIZES[id].name, w: VIEW_SIZES[id].w, h: VIEW_SIZES[id].h }))
 const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
-async function renderRoute(hash: string, size: ShotSize, dark: boolean, signal: AbortSignal, values: Record<string, string | boolean> = {}) {
+async function renderRoute(path: string, size: ShotSize, dark: boolean, signal: AbortSignal, values: Record<string, string | boolean> = {}) {
   const frame = document.createElement('iframe')
   frame.title = t('Screenshot capture')
   frame.setAttribute('aria-hidden', 'true'); frame.tabIndex = -1
   frame.style.cssText = `position:fixed;left:-20000px;top:0;width:${size.w}px;height:${size.h}px;border:0;pointer-events:none`
-  const url = new URL(frameUrl(hash, dark)); url.searchParams.set('shot', '1')
+  const url = new URL(frameUrl(path, dark)); url.searchParams.set('shot', '1')
   frame.src = url.href
   document.body.append(frame)
   const remove = () => frame.remove()
@@ -55,7 +55,7 @@ async function renderRoute(hash: string, size: ShotSize, dark: boolean, signal: 
 
 // One deadline covers page load, fonts, images and rasterization. Closing the board also
 // releases an in-flight capture, even when a font or image never finishes loading.
-export async function captureRoute(hash: string, size: ShotSize, dark: boolean, signal: AbortSignal, values: Record<string, string | boolean> = {}) {
+export async function captureRoute(path: string, size: ShotSize, dark: boolean, signal: AbortSignal, values: Record<string, string | boolean> = {}) {
   signal.throwIfAborted()
   const controller = new AbortController()
   const cancel = () => controller.abort(signal.reason)
@@ -66,7 +66,7 @@ export async function captureRoute(hash: string, size: ShotSize, dark: boolean, 
     rejectAbort = () => reject(controller.signal.reason)
     controller.signal.addEventListener('abort', rejectAbort, { once: true })
   })
-  try { return await Promise.race([renderRoute(hash, size, dark, controller.signal, values), aborted]) }
+  try { return await Promise.race([renderRoute(path, size, dark, controller.signal, values), aborted]) }
   finally {
     clearTimeout(timer); signal.removeEventListener('abort', cancel)
     controller.signal.removeEventListener('abort', rejectAbort)

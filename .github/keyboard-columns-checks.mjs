@@ -22,7 +22,7 @@ export async function keyboardColumnsChecks({ proto, app, local, openPage, fail,
   const until = async (f, why) => { for (const end = Date.now() + 5000; Date.now() < end; await wait(50)) { const v = await f(); if (v) return v } fail(`columns by keyboard: ${why}`) }
 
   const open = async (theme, hash) => {
-    const page = await openPage(`${local}?theme=${theme}#/${hash}`)
+    const page = await openPage(`${local}${hash}?theme=${theme}`)
     await until(() => page.run(`!!document.querySelector('[data-act="open:switch"]') && document.querySelectorAll('[data-side] [data-vlist]').length === 2`), 'the page did not draw its columns')
     const focused = () => page.run('document.activeElement?.dataset?.act ?? document.activeElement?.tagName')
     const switcherOpen = () => page.run(`!!document.querySelector('[data-pop] [data-mcols]')`)
@@ -64,7 +64,7 @@ export async function keyboardColumnsChecks({ proto, app, local, openPage, fail,
   if (before) return
 
   const { page, focused, switcherOpen, openSwitcher } = await open('light', 'keys/F')
-  const hash = () => page.run('location.hash')
+  const hash = () => page.run('location.pathname')
   const sideLists = () => page.run(`[...document.querySelectorAll('[data-side] [data-vlist]')].map(e => e.dataset.k).join(' ')`)
   try {
     // Opened from the keyboard, the last column takes the focus (nothing is lit there: its first row).
@@ -79,7 +79,7 @@ export async function keyboardColumnsChecks({ proto, app, local, openPage, fail,
     assert(style === 'solid' && width >= 1 && width <= 1.5 && offset === -width, `a focused row has the outline ${ring}, not the shell's`)
     // Left goes to the lit row of the column before, without stepping the variant on screen.
     await page.key('ArrowLeft')
-    assert(await focused() === 'mv:keys:F' && await hash() === '#/keys/F', `ArrowLeft went to ${await focused()} at ${await hash()}`)
+    assert(await focused() === 'mv:keys:F' && await hash() === '/keys/F', `ArrowLeft went to ${await focused()} at ${await hash()}`)
     await page.key('2')
     assert(await focused() === 'mv:keys:B', 'a number did not jump to its row')
     await page.key('End')
@@ -92,10 +92,10 @@ export async function keyboardColumnsChecks({ proto, app, local, openPage, fail,
     await page.run(`document.querySelector('[data-pop] [data-act="mp:keyslogo"]').focus()`)
     await page.key('ArrowRight')
     await until(async () => await focused() === 'mv:keyslogo:A', `ArrowRight on a prototype went to ${await focused()}`)
-    assert(await hash() === '#/keyslogo' && await switcherOpen(), 'ArrowRight on a prototype did not open it in the dropdown')
+    assert(await hash() === '/keyslogo' && await switcherOpen(), 'ArrowRight on a prototype did not open it in the dropdown')
     // Enter chooses; a variant with nothing built from it closes the dropdown.
     await page.key('Enter')
-    await until(async () => await hash() === '#/keyslogo/A' && !await switcherOpen(), 'Enter did not open the variant')
+    await until(async () => await hash() === '/keyslogo/A' && !await switcherOpen(), 'Enter did not open the variant')
     // Escape closes the dropdown and gives the focus back to the switcher.
     await openSwitcher()
     await page.key('Escape')
@@ -111,7 +111,7 @@ export async function keyboardColumnsChecks({ proto, app, local, openPage, fail,
     await page.key('ArrowRight')
     await page.key('ArrowRight')
     assert(await sideLists() === 'v:keys v:keysdeep' && await focused() === 'mv:keysdeep:A', `ArrowRight back showed ${await sideLists()} on ${await focused()}`)
-    assert(await hash() === '#/keysdeep/A', `moving along the sidebar opened ${await hash()}`)
+    assert(await hash() === '/keysdeep/A', `moving along the sidebar opened ${await hash()}`)
 
     // A redraw (a pick from the command line) keeps the focus on its row.
     proto(['pick', 'keysdeep', 'B'])

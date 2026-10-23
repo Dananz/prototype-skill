@@ -87,7 +87,7 @@ try {
     const f = t => { if (last) d.push(t - last); last = t; if (d.length < 60) requestAnimationFrame(f); else { d.sort((a, b) => a - b); r(d[d.length >> 1]) } }
     requestAnimationFrame(f) })`)
   const url = new URL(rawUrl)
-  url.hash = '/' + route.replace(/^\/+/, '')
+  url.pathname = '/' + route.replace(/^\/+/, '')
   // As proto shoot: no artboard frame (the page's design in its own iframe since the stage's
   // artboard), so --click, --drag and the measured element are the design that shows.
   url.searchParams.set('hints', '0')

@@ -12,7 +12,7 @@ export async function contextMenuChecks({ proto, app, local, openPage, fail }) {
     return <main style={{ padding: 24 }}><section data-shoot="card"><h1 data-shoot="title">Variant ${v}</h1><input data-shoot="field" defaultValue="typed" /></section></main>
   }
 `)
-  const page = await openPage(`${local}?theme=light#/ctxfx/A`)
+  const page = await openPage(`${local}ctxfx/A?theme=light`)
   const helpers = `
     const until = async f => { for (const end = Date.now() + 6000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
     // A right-click as the page hears it; false when something took it (preventDefault).

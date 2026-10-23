@@ -274,7 +274,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const refOf = (p: Proto) => p.variants[0]?.id ?? ''
   const changed = (p: Proto, v: string, s: State) => v !== refOf(p) && !!s.about?.[v]
   const toolOk = (p: Proto, v: string, t?: Tool) => !t || (t === 'compare' ? p.variants.length > 1 : statesOf(p, v).length > 0)
-  const hashOf = (p: Place) => p.view === 'session' ? '#/' : p.view === 'proto' ? `#/${p.proto}` : `#/${p.proto}/${p.variant}${p.tool ? `/~${p.tool}` : ''}${p.state ? `/${encodeURIComponent(p.state)}` : ''}`
+  const pathOf = (p: Place) => p.view === 'session' ? '/' : p.view === 'proto' ? `/${p.proto}` : `/${p.proto}/${p.variant}${p.tool ? `/~${p.tool}` : ''}${p.state ? `/${encodeURIComponent(p.state)}` : ''}`
+  // Where the address points: its path, or an older link's #/ route, which then gives way to the path.
+  const address = () => location.hash.startsWith('#/') ? location.hash.slice(1) : location.pathname
+  const urlOf = (p: Place) => pathOf(p) + location.search
+  const atUrl = (p: Place) => location.pathname === pathOf(p) && !location.hash.startsWith('#/')
   const valid = (p: Place): boolean => {
     if (p.view === 'session') return true
     const proto = byId(p.proto)
@@ -282,14 +286,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (p.view === 'proto') return true
     return proto.variants.some(v => v.id === p.variant) && (!p.state || !!stateOf(proto, p.variant, p.state)) && toolOk(proto, p.variant, p.tool)
   }
-  const parseHash = (hash = location.hash): Place | null => {
-    const [proto, variant, a, b] = hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent)
+  const parsePlace = (route = address()): Place | null => {
+    const [proto, variant, a, b] = route.replace(/^#?\/?/, '').split('/').filter(Boolean).map(decodeURIComponent)
     const tool = a?.startsWith('~') ? a.slice(1) as Tool : undefined
     const state = tool ? b : a
     const p: Place = !proto ? { view: 'session' } : !variant ? { view: 'proto', proto } : { view: 'variant', proto, variant }
     // A link to a variant that Favorites only hides shows everything again, so the link still opens it.
-    if (hash && !valid(p) && favOnly && p.view === 'variant' && all.find(x => x.id === p.proto)?.variants.some(v => v.id === p.variant)) { favOnly = false; remember(favKey, '0'); protos = shown(all) }
-    if (!hash || !valid(p)) return null
+    if (route && !valid(p) && favOnly && p.view === 'variant' && all.find(x => x.id === p.proto)?.variants.some(v => v.id === p.variant)) { favOnly = false; remember(favKey, '0'); protos = shown(all) }
+    if (!route || !valid(p)) return null
     // A state or tool that isn't there (renamed, removed) falls back to the variant at rest.
     if (p.view === 'variant') {
       const q = byId(proto)!
@@ -646,7 +650,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const here = () => !gone && live.has(host) && generations.get(host) === generation
       // Each card gets its own viewport: its media queries see the chosen layout, not the phone.
       if (p.view === 'proto' && cardView() && host.closest('[data-thumb]')) {
-        const frame = openFrame(host, frameUrl(hashOf({ view: 'variant', proto: p.proto, variant: v.id }), st.dark), { route: () => {}, bind: () => () => {}, bound: () => {} })
+        const frame = openFrame(host, frameUrl(pathOf({ view: 'variant', proto: p.proto, variant: v.id }), st.dark), { route: () => {}, bind: () => () => {}, bound: () => {} })
         frame.el.className = 'block h-full w-full border-0'
         cardFrames.add(frame)
         live.set(host, () => { cardFrames.delete(frame); frame.close() })
@@ -861,7 +865,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const next = buildLayer(st.place)
     const prev = layer
     layer = next
-    lobbyKey = st.place.view === 'variant' ? '' : hashOf(st.place) + (st.stack ? ':stack' : '')
+    lobbyKey = st.place.view === 'variant' ? '' : pathOf(st.place) + (st.stack ? ':stack' : '')
     layers.prepend(next.el)
     next.refresh?.()
     fit()
@@ -932,8 +936,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // ---------- navigation ----------
   function go(p: Place) {
     if (!valid(p)) p = defaultPlace()
-    if (location.hash !== hashOf(p)) location.hash = hashOf(p)
+    if (!atUrl(p)) visit(pathOf(p))
     else arrive(p, true)
+  }
+  /** Moves the address as a link would, without loading the page: it changes now, the page follows
+   *  on the next turn (where a hash link's hashchange used to arrive), or at once with `now`. */
+  function visit(path: string, now = false) {
+    history.pushState(null, '', path + location.search)
+    if (now) follow()
+    else setTimeout(follow)
   }
   // Choosing a variant something was built from, or a prototype, inside the switcher's columns
   // (or the phone's sheet) keeps them open on what comes next.
@@ -953,20 +964,24 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     tweaksOpen = false
     closeCard(true)
     if (p.view !== 'variant') st.focus = false
-    remember(`proto-place-${session.id}`, hashOf(p))
+    remember(`proto-place-${session.id}`, pathOf(p))
     if (moved) show(fade && !!layer)
     render()
     if (moved) side.querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'nearest' })
+    // Heard by the page outside when this one is in its view, and by keys waiting on a move.
+    dispatchEvent(new Event('proto:place'))
   }
-  addEventListener('hashchange', () => {
+  function follow() {
     // The page in a view goes where the page outside is. A place it doesn't know yet (a variant just
     // added, before its module reaches this page) it waits for (setProtos), instead of falling back
     // somewhere the page outside would then follow.
-    if (framed && !parseHash()) return
-    const p = parseHash() ?? defaultPlace()
-    if (location.hash !== hashOf(p)) history.replaceState(null, '', hashOf(p))
+    if (framed && !parsePlace()) return
+    const p = parsePlace() ?? defaultPlace()
+    if (!atUrl(p)) history.replaceState(null, '', urlOf(p))
     arrive(p, true)
-  })
+  }
+  // Back, Forward, and an older #/ link followed in this page.
+  addEventListener('popstate', follow)
 
   function step(d: number) {
     const proto = cur()
@@ -1549,7 +1564,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     pill.querySelector<HTMLElement>('[data-ruler]')?.setAttribute('hidden', '')
     if (target === d.base) { endSlide(d); pillKey = ''; return render() }
     // The design that slid in becomes the page's layer as it is, so nothing remounts or fades;
-    // the place is set first, so the hash change that follows only redraws the chrome.
+    // the place is set first, so the address change that follows only redraws the chrome.
     if (k && d.real && d.real === layer) {
       endSlide(d, target)
       k.layer.el.style.transform = ''
@@ -1736,7 +1751,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const w = host?.clientWidth || Math.round(r?.width || p.screen[0] || 1440)
         const h = host?.clientHeight || Math.round(r?.height || p.screen[1] || 900)
         drawShare({ title: p.title, slug: p.id, current: selected, dark: st.dark, size: { w, h },
-          variants: p.variants.map(v => ({ id: v.id, name: v.name, ...(host && v.id === here?.variant ? { tweaks: Object.fromEntries(tweaks.of(host).map(t => [t.id, t.value])) } : {}), hash: hashOf({ view: 'variant', proto: p.id, variant: v.id, ...(here?.proto === p.id && here.state && stateOf(p, v.id, here.state) ? { state: here.state } : {}) }) })),
+          variants: p.variants.map(v => ({ id: v.id, name: v.name, ...(host && v.id === here?.variant ? { tweaks: Object.fromEntries(tweaks.of(host).map(t => [t.id, t.value])) } : {}), path: pathOf({ view: 'variant', proto: p.id, variant: v.id, ...(here?.proto === p.id && here.state && stateOf(p, v.id, here.state) ? { state: here.state } : {}) }) })),
           onClose: () => { shareOpen = false; drawShare(null) }, returnFocus: () => phoneMq.matches ? menuBtn() : [...root.querySelectorAll<HTMLElement>('[data-act]')].find(el => el.dataset.act === `vm:${p.id}:${selected}` && el.getClientRects().length > 0) ?? bar.querySelector<HTMLElement>('[data-shoot=switcher]'),
         })
         return
@@ -1921,11 +1936,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (e.key === FWD) {
       e.preventDefault()
       if (!row.hasAttribute('data-opens') || row.getAttribute('aria-current') === 'true') return stepCol(1)
-      // Choosing it may wait for the hash to change before the next column is drawn.
-      const hash = location.hash
+      // Choosing it may wait for the address to change before the next column is drawn.
+      const at = location.pathname
       row.click()
-      if (location.hash === hash) return stepCol(1)
-      return addEventListener('hashchange', () => stepCol(1), { once: true })
+      if (location.pathname === at) return stepCol(1)
+      return addEventListener('proto:place', () => stepCol(1), { once: true })
     }
     if (e.key.length === 1 && e.key.trim()) {
       const k = e.key.toLowerCase(), order = [...rows.slice(i + 1), ...rows.slice(0, i + 1)]
@@ -2002,8 +2017,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // design closing its own menu calls preventDefault). Its handlers may run after this one,
     // so the check waits a tick.
     if (e.key === 'Escape' && st.place.view === 'variant') {
-      const from = hashOf(st.place)
-      setTimeout(() => { if (!e.defaultPrevented && st.place.view === 'variant' && hashOf(st.place) === from) go({ view: 'proto', proto: st.place.proto }) })
+      const from = pathOf(st.place)
+      setTimeout(() => { if (!e.defaultPrevented && st.place.view === 'variant' && pathOf(st.place) === from) go({ view: 'proto', proto: st.place.proto }) })
       return
     }
     if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant') { e.preventDefault(); step(e.key === FWD ? 1 : -1) }
@@ -2245,11 +2260,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function paintView() {
     deviceView.paint({
       view: frameOn() ? { size: viewOn() ? st.view.size! : null, land: st.view.land, zoom: st.view.zoom, home: st.view.home } : null,
-      hash: hashOf(st.place),
+      path: pathOf(st.place),
       dark: st.dark,
       set: patchView,
       // The page in the view moved (its own chrome): this page follows, unless it is there already.
-      route: h => { if (h && h !== location.hash) location.hash = h },
+      // At once: a move out here before the next turn would find the place unchanged and leave the view behind.
+      route: path => { if (path && path !== location.pathname) visit(path, true) },
       onKey: viewKey,
     })
   }
@@ -2525,7 +2541,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     refreshStatus()
     render()
   }
-  const linkOf = (hash: string) => `${session.url || location.origin + location.pathname}${hash}`
+  const linkOf = (path: string) => `${(session.url || location.origin).replace(/\/$/, '')}${path}`
   const copyText = (text: string) => { void navigator.clipboard?.writeText(text) }
   /** The rows a variant's menu has beside its decisions, and on the artboard the ones about the element and the view. */
   function vmenuRows(): { rows?: MenuRow[]; lead?: MenuRow[] } {
@@ -2544,7 +2560,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         rows.push({ id: `tool-${t}`, label: TOOLS[t].name, icon: TOOLS[t].icon, hint: t === 'compare' ? variantRef(q, otherOf(q, v.id)) : undefined, on: here && st.place.view === 'variant' && st.place.tool === t, run: () => act('tool', q.id, v.id, t) })
       }
       rows.push({ id: 'share', label: t('Share screenshots'), icon: 'share', run: () => act('share', q.id, v.id) })
-      rows.push({ id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(linkOf(hashOf({ view: 'variant', proto: q.id, variant: v.id }))) })
+      rows.push({ id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(linkOf(pathOf({ view: 'variant', proto: q.id, variant: v.id }))) })
     }
     const el = m.el
     if (!m.art || !el) return { rows }
@@ -2583,7 +2599,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             send: (note, count) => comments.act.moreVariants(p.id, count, note),
             done: count => tn(count, 'Asked for {n} more variant', 'Asked for {n} more variants'),
           } },
-          { id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(linkOf(hashOf({ view: 'proto', proto: p.id }))) },
+          { id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(linkOf(pathOf({ view: 'proto', proto: p.id }))) },
         ] }
       }
       case 'state': {
@@ -2592,7 +2608,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const place: Place = { view: 'variant', proto: p.id, variant: on.variant, state: s.id }
         return { title: on.variant, sub: s.name, rows: [
           { id: 'open', label: t('Open this state'), icon: 'right', run: () => go(place) },
-          { id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(linkOf(hashOf(place))) },
+          { id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(linkOf(pathOf(place))) },
         ] }
       }
       case 'session':
@@ -3048,8 +3064,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   if (framed) offerTheme(applyTheme)
   applyTheme(st.dark)
   // The link opens where it points; a bare link reopens where this browser last was.
-  const start = parseHash() ?? parseHash(localStorage.getItem(`proto-place-${session.id}`) ?? '') ?? defaultPlace()
-  if (location.hash !== hashOf(start)) history.replaceState(null, '', hashOf(start))
+  const linked = location.pathname !== '/' || location.hash.startsWith('#/')
+  const start = (linked ? parsePlace() : null) ?? parsePlace(localStorage.getItem(`proto-place-${session.id}`) ?? '') ?? defaultPlace()
+  if (!atUrl(start)) history.replaceState(null, '', urlOf(start))
   arrive(start, false)
   if (q.has('focus')) act('focus', '', '')
   // ?copy=1 (proto shoot --copy): copy mode opens once the design on the stage declares its lines.
@@ -3072,9 +3089,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       intake.set(st.status?.inbox?.intake, protos.length > 0)
       if (framed) {
         // The page in a view follows nothing itself: the page outside does, and it goes along. A place
-        // it was waiting for (see hashchange) is one it knows now.
-        const p = parseHash()
-        if (p && hashOf(p) !== hashOf(st.place)) return arrive(p, false)
+        // it was waiting for (see follow) is one it knows now.
+        const p = parsePlace()
+        if (p && pathOf(p) !== pathOf(st.place)) return arrive(p, false)
       } else {
         const fresh = protos.filter(p => !p.archived && !before.has(p.id))
         const grown = protos.map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)

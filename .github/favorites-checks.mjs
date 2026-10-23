@@ -26,8 +26,10 @@ export async function favoritesChecks({ proto, app, local, openPage, fail }) {
   await settle(['B', 'E'], 'proto fav favfx/2 favfx/E')
   assert(/#2 · Option 2, #5 · Option 5/.test(starred), `proto fav should list by number: ${starred}`)
 
-  const page = await openPage(`${local}?theme=dark#/favfx`)
+  const page = await openPage(`${local}favfx?theme=dark`)
   try {
+    // Every module the page loads stays listed (performance's default keeps 250), for the wait before the reload.
+    await page.run('performance.setResourceTimingBufferSize(1e5)')
     await until(page, `document.querySelectorAll('[data-layers] [data-fav-mark]').length === 2`, 'the overview should star 2 and 5')
     assert(await page.run(`document.querySelectorAll('[data-side] [data-fav-mark]').length === 2`), 'the sidebar should star 2 and 5')
     // A star from the CLI reaches the open page (meta.ts through registry.ts), overview included, without a reload.
@@ -48,6 +50,13 @@ export async function favoritesChecks({ proto, app, local, openPage, fail }) {
     await until(page, `document.querySelectorAll('[data-layers] [data-act^="pv:favfx:"]').length === 3`, 'Favorites only should show 3 cards')
     assert(await page.run(`[...document.querySelectorAll('[data-side] [data-act^="mv:favfx:"]')].map(b => b.dataset.act.split(':')[2]).join() === 'B,C,E'`), 'Favorites only should list B, C and E in the sidebar')
     assert(await page.run(`document.querySelector('[data-layers] [data-fav-toggle]').getAttribute('aria-pressed') === 'true'`), 'the toggle should read as on')
+    // Reloaded before the dev server sees the write, the page would load the meta.ts from before it and
+    // miss the update that follows while it boots: wait until the page has the version with C.
+    await until(page, `(async () => {
+      const url = (await fetch('/src/registry.ts').then(r => r.text())).match(/\\/src\\/protos\\/favfx\\/meta\\.ts(\\?t=\\d+)?/)?.[0]
+      if (!url || !performance.getEntriesByType('resource').some(e => e.name.endsWith(url))) return false
+      return JSON.stringify(JSON.parse((await fetch(url).then(r => r.text())).match(/export default ([\\s\\S]*?);?\\s*(\\/\\/# sourceMappingURL|$)/)[1]).favorites) === '["B","C","E"]'
+    })()`, 'the page should load the meta.ts with C before the reload')
     await page.run(`location.reload()`)
     await wait(500)
     await until(page, `document.documentElement.dataset.ready === '1' && document.querySelectorAll('[data-layers] [data-act^="pv:favfx:"]').length === 3`, 'Favorites only should be remembered over a reload')
@@ -55,11 +64,11 @@ export async function favoritesChecks({ proto, app, local, openPage, fail }) {
     await page.run(`location.hash = '#/favfx/B'`)
     await until(page, `document.title.startsWith('#2 ·')`, 'variant 2 should open')
     await page.run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))`)
-    await until(page, `location.hash === '#/favfx/C'`, 'the next arrow should go to the next favorite')
+    await until(page, `location.pathname === '/favfx/C'`, 'the next arrow should go to the next favorite')
     // S unstars the variant shown; with Favorites only on, it leaves for the overview.
     await page.run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }))`)
     await settle(['B', 'E'], 'S on a favorite')
-    await until(page, `location.hash === '#/favfx'`, 'unstarring the variant shown should go to the overview')
+    await until(page, `location.pathname === '/favfx'`, 'unstarring the variant shown should go to the overview')
     // A link to a variant Favorites only hides still opens it (and shows everything again).
     await page.run(`location.hash = '#/favfx/A'`)
     await until(page, `document.title.startsWith('#1 ·')`, 'a link to a hidden variant should open it')
@@ -74,7 +83,7 @@ export async function favoritesChecks({ proto, app, local, openPage, fail }) {
   } finally { page.close() }
 
   // The phone's sheet stars them and offers Favorites only.
-  const phone = await openPage(`${local}?theme=dark#/favfx/B`, { width: 393, height: 852, phone: true })
+  const phone = await openPage(`${local}favfx/B?theme=dark`, { width: 393, height: 852, phone: true })
   try {
     await until(phone, `!!document.querySelector('[data-pill-handle]')`, 'the phone pill should draw')
     await phone.run(`document.querySelector('[data-pill-handle]').focus()`)

@@ -11,7 +11,7 @@ export async function virtualReactChecks({ proto, app, local, openPage, fail }) 
     for (const end = Date.now() + timeout; Date.now() < end; await new Promise(r => setTimeout(r, 80))) if (await page.run(expression)) return
     fail(`virtual React: ${why}`)
   }
-  const phone = await openPage(`${local}#/virtual-react-check/A`, { width: 390, height: 844, phone: true })
+  const phone = await openPage(`${local}virtual-react-check/A`, { width: 390, height: 844, phone: true })
   try {
     await phone.run(`(async()=>{
       const {createSheet}=await import('/shell/sheet.ts');const host=document.createElement('div');document.body.append(host);
@@ -44,11 +44,11 @@ export async function virtualReactChecks({ proto, app, local, openPage, fail }) 
     await until(phone, `window.__menuClean===1`, 'closing did not clean up the menu list')
   } finally { phone.close() }
 
-  const page = await openPage(`${local}#/virtual-react-check/A`)
+  const page = await openPage(`${local}virtual-react-check/A`)
   try {
     await page.run(`(async()=>{
       const {createShare}=await import('/shell/share.ts');window.__virtualShare=createShare();
-      window.__virtualShare({title:'Long screenshots',slug:'virtual-react-check',variants:Array.from({length:120},(_,i)=>({id:'V'+(i+1),name:'Variant '+(i+1),hash:i===119?'#/virtual-react-check/B':'#/virtual-react-check/A'})),current:'V120',size:{w:320,h:240},dark:false,onClose:()=>window.__virtualShare(null),returnFocus:()=>null})
+      window.__virtualShare({title:'Long screenshots',slug:'virtual-react-check',variants:Array.from({length:120},(_,i)=>({id:'V'+(i+1),name:'Variant '+(i+1),path:i===119?'/virtual-react-check/B':'/virtual-react-check/A'})),current:'V120',size:{w:320,h:240},dark:false,onClose:()=>window.__virtualShare(null),returnFocus:()=>null})
     })()`)
     await until(page, `!!document.querySelector('[data-share-variant=V120] canvas')`, 'context target was not visible and prepared')
     assert(await page.run(`document.querySelectorAll('[data-share-variant]').length<12 && document.querySelectorAll('[data-share-tile] canvas').length<24`), 'board eagerly mounted every screenshot')

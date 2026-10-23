@@ -13,7 +13,7 @@ export async function pickNoteChecks({ proto, app, local, openPage, fail, keepSh
     const layout = phone ? 'phone' : 'desktop', variant = phone ? 'A' : 'B'
     // The page names a variant in words by its number after a # (A is #1, B is #2).
     const label = phone ? '#1' : '#2'
-    const page = await openPage(`${local}#/picknotes/${variant}`, phone ? { width: 390, height: 844, phone: true } : {})
+    const page = await openPage(`${local}picknotes/${variant}`, phone ? { width: 390, height: 844, phone: true } : {})
     const run = async code => {
       const result = await page.run(`(async () => { ${until} try { ${code}; return 'ok' } catch (e) { return e.message } })()`)
       assert(result === 'ok', result)
