@@ -172,15 +172,15 @@ the app; Shift + right-click keeps the browser menu. Delete a pending request to
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/variant-dark.png">
-  <img src="docs/images/variant-light.png" alt="A variant of a revenue dashboard, with the session's prototypes and variants in columns in the sidebar">
+  <img src="docs/images/variant-light.png" alt="A variant of a home energy dashboard, with the session's prototypes and variants in the sidebar and the Comments panel docked on the right">
 </picture>
-<br><sub>A variant, with every prototype and variant of the session in the sidebar.</sub>
+<br><sub>A variant, with every prototype and variant of the session in the sidebar, and comments docked on the right.</sub>
 </p>
 
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/comments-dark.png">
-  <img src="docs/images/comments-light.png" alt="A comment being written on the date range, and another ready to send in the Comments panel">
+  <img src="docs/images/comments-light.png" alt="A comment being written on the grid in the design, with three finished comments in the Comments panel">
 </picture>
 <br><sub>Comments on the design go to your agent, who makes the change and replies.</sub>
 </p>
