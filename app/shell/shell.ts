@@ -1325,7 +1325,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const k = ink, btn = pillBtn
         const sep = `<span class="mx-0.5 h-5 w-px shrink-0 ${k.sep}"></span>`
         const prev = vs[at <= 0 ? vs.length - 1 : at - 1], next = vs[at < 0 || at === vs.length - 1 ? 0 : at + 1]
-        const name = v ? `<b data-pill-id class="shrink-0 text-[15px]">${variantRef(p!, v.id)}</b><span data-pill-name dir="auto" class="min-w-0 truncate ${k.name}">${esc(v.name)}</span><span data-pill-n class="shrink-0 text-[11px] tabular-nums ${k.n}">${at + 1}/${vs.length}</span>${editing(p!.id, v.id) ? pulse('size-1.5') : ''}`
+        const name = v ? `<b data-pill-id class="shrink-0 font-semibold">${variantRef(p!, v.id)}</b><span data-pill-name dir="auto" class="min-w-0 truncate ${k.name}">${esc(v.name)}</span><span data-pill-n class="shrink-0 text-[11px] tabular-nums ${k.n}">${at + 1}/${vs.length}</span>${editing(p!.id, v.id) ? pulse('size-1.5') : ''}`
           : `<span class="truncate font-medium">${t('All variants')}</span><span class="shrink-0 text-[11px] tabular-nums ${k.n}">${vs.length}</span>`
         // The pill holds the menu, the variants and Comment, never more: the page's other tools
         // (All variants, copy options, Try it, motion, the layout or the phone scale) are in the
