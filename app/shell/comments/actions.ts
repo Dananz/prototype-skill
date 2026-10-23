@@ -359,6 +359,7 @@ export function createActions(store: Store, host: Host) {
     },
     clearError() { set({ error: '' }) },
     openSheet(open: boolean) { set({ sheet: open }) },
+    openIsland(open: boolean) { if (get().island !== open) set({ island: open }) },
   }
   return act
 }

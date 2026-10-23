@@ -1331,7 +1331,13 @@ try {
   if (r !== 'ok') fail(`copy mode on a design with motion, desktop: ${r}`)
   // In copy mode a real press on a line opens its options over the moment held: the take isn't let go.
   await deskBoth.run('window.__protoMotion.seek(150)')
-  const [lx, ly] = await deskBoth.run(`(() => { const r = document.querySelector('[data-layers] [data-copy=title]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
+  // Where the title is drawn: in the artboard's frame when the stage shows one, mapped out to this page.
+  const [lx, ly] = await deskBoth.run(`(() => {
+    const el = window.__protoDesign().querySelector('[data-copy=title]'), r = el.getBoundingClientRect(), f = el.ownerDocument.defaultView.frameElement
+    if (!f) return [r.x + r.width / 2, r.y + r.height / 2]
+    const fr = f.getBoundingClientRect(), s = fr.width / f.offsetWidth
+    return [fr.x + (r.x + r.width / 2) * s, fr.y + (r.y + r.height / 2) * s]
+  })()`)
   await deskBoth.press(lx, ly)
   const picked = await deskBoth.run(`(async () => {
     ${until}
@@ -1361,8 +1367,12 @@ try {
   if (r !== 'ok') fail(`copy mode on a design with motion, 360 px phone: ${r}`)
   const fits = await phoneBoth.run(`(() => {
     const bar = document.querySelector('[data-pill-bar]'), r = bar.getBoundingClientRect()
-    if (!bar.querySelector('[data-act="comment:tap"]') || !bar.querySelector('[data-pill-menu]')) return 'the pill should hold the menu and Comment'
-    if (bar.querySelectorAll(':scope > button').length !== 4) return 'the pill should hold four buttons (the menu, the arrows, Comment), not ' + bar.querySelectorAll(':scope > button').length
+    if (!bar.querySelector('[data-pill-menu]')) return 'the pill should hold the menu'
+    if (bar.querySelectorAll(':scope > button').length !== 3) return 'the pill should hold three buttons (the menu, the arrows), not ' + bar.querySelectorAll(':scope > button').length
+    // The comments island is the pill's top row, as wide as the pill: Select, the box and the count.
+    const isl = document.querySelector('[data-island]'), ir = isl?.getBoundingClientRect()
+    if (!isl || !isl.querySelector('[data-act="comment:toggle"]') || !isl.querySelector('[data-shoot=island-open]')) return 'the pill should have the comments island as its top row'
+    if (Math.abs(ir.bottom - r.top) > 1 || Math.abs(ir.left - r.left) > 1 || Math.abs(ir.right - r.right) > 1) return 'the island should sit on the pill as one capsule: ' + JSON.stringify([ir.left, ir.right, ir.bottom, r.left, r.right, r.top])
     if (r.left < 0 || r.right > innerWidth || bar.scrollWidth > bar.clientWidth + 1) return 'the pill overflows 360 px: ' + r.left + '-' + r.right + ', ' + bar.scrollWidth + '/' + bar.clientWidth
     if (document.querySelector('[data-pill-handle]').offsetWidth < 100) return 'the pill handle was squeezed to ' + document.querySelector('[data-pill-handle]').offsetWidth + ' px'
     const tight = [...document.querySelectorAll('[data-motion-bar] button')].filter(b => b.offsetParent && b.offsetWidth < 32).map(b => (b.dataset.motion || b.getAttribute('aria-label')) + ' ' + b.offsetWidth)
@@ -1509,7 +1519,7 @@ try {
     const sizes = [...tabs.querySelectorAll('[role=radio]')].map(b => b.dataset.act + '=' + b.getAttribute('aria-checked'))
     if (sizes.join() !== ['phone', 'tablet', 'desktop'].map(x => 'size:' + x + '=' + (x === own)).join()) return 'the bar should have phone, tablet and desktop, ' + own + ' (the stage\\'s) selected: ' + sizes.join()
     if (tabs.querySelector('[data-act="size:desktop"]').title !== 'Desktop · 1440 × 900') return 'the desktop size says ' + tabs.querySelector('[data-act="size:desktop"]').title
-    if (device.parentElement.nextElementSibling?.dataset.act !== 'comment:toggle') return 'the layout menu should come just before Comment'
+    if (document.querySelector('[data-bar] [data-act="comment:toggle"]')) return 'Comment should be in the comments island, not the bar'
     tabs.querySelector('[data-act="size:phone"]').click()
     if (!await until(() => inFrame(), 15000)) return 'no page in a view'
     const url = new URL(frame().src)
@@ -1553,7 +1563,7 @@ try {
     ed.dispatchEvent(new Event('input', { bubbles: true }))
     await new Promise(r => setTimeout(r, 100))
     ;[...document.querySelectorAll('[data-composer] button')].find(b => /Add/.test(b.textContent)).click()
-    if (!await until(() => document.querySelector('[data-hints] [data-view-chip]'))) return 'the comments list should show the size on the comment'
+    if (!await until(() => document.querySelector('[data-island] [data-view-chip]'))) return 'the comments list should show the size on the comment'
     document.querySelector('[data-shoot=send]').click()
     return 'ok'
   })()`)

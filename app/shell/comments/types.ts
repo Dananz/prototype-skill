@@ -118,6 +118,8 @@ export type State = {
   inbox?: Inbox
   /** The phone's list, in a sheet. */
   sheet: boolean
+  /** The island (island.tsx) is open as the comments panel, on a wide screen. */
+  island: boolean
   sending: boolean
   /** The whole-variant box has the focus: the variant is outlined edge to edge. */
   wholeFocus: boolean

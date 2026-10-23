@@ -5,6 +5,7 @@ import { Dialog } from '@base-ui/react/dialog'
 import { Drawer } from '@base-ui/react/drawer'
 import { ago, ic, IB } from './ui'
 import { uiBox } from './portals'
+import { islandPrefs, useIslandPrefs } from './comments/island-prefs'
 import { LANG_NAMES, LANGS, langChoice, sessionLang, setLangChoice, t } from './i18n'
 
 export type Appearance = 'system' | 'light' | 'dark'
@@ -56,6 +57,7 @@ const button = 'h-9 shrink-0 rounded-md border border-black/10 px-3 text-xs font
 
 function Settings(p: Props) {
   const titleId = useId()
+  const island = useIslandPrefs()
   const [category, setCategory] = useState<Category>('appearance')
   useEffect(() => { if (p.open && p.category) setCategory(p.category) }, [p.open, p.category])
   const [mobile, setMobile] = useState(() => matchMedia('(max-width:639px)').matches)
@@ -120,11 +122,17 @@ function Settings(p: Props) {
         className: `inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs ${langChoice === value ? 'bg-white font-medium text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'}` },
         value === 'auto' ? icon('translate') : null, value === 'auto' ? t('Conversation') : LANG_NAMES[value]))),
       h('p', { className: muted }, langChoice === 'auto' ? t('Follows the language you talk to the agent in, now {name}.', { name: LANG_NAMES[sessionLang()] }) : t('Always {name} in this browser.', { name: LANG_NAMES[langChoice] }))))
-    : category === 'feedback' ? h('div', { className: 'pb-6' }, toggle('live', t('Send each comment as you add it'), t('Send new comments immediately. Turn off to collect drafts and send them together.'), p.live, p.onLive))
+    : category === 'feedback' ? h('div', { className: 'space-y-5 pb-6' }, toggle('live', t('Send each comment as you add it'), t('Send new comments immediately. Turn off to collect drafts and send them together.'), p.live, p.onLive),
+      // The comments island (comments/island.tsx): where it rests on a wide screen, and which news grows it.
+      h('div', { 'data-setting-island': '', className: 'space-y-3 border-t border-black/[.06] pt-5 dark:border-white/10' },
+        h('div', null, h('p', { className: 'text-[13px] font-medium' }, t('Comments island')), h('p', { className: muted }, t('Where it rests on a wide screen. Drag it to move it; double-click its edge to bring it back.'))),
+        choices(t('Comments island'), (['bottom', 'top'] as const).map(value => choice('island', value, value === 'bottom' ? t('Bottom') : t('Top'), island.place === value, () => islandPrefs.set({ place: value, at: { x: 0, y: 0 } }), value === 'bottom' ? 'chev' : 'caret-up'))),
+        h('div', { className: 'pt-2' }, h('p', { className: 'text-[13px] font-medium' }, t('Notifications')), h('p', { className: muted }, t('Which news from the agent grows the island for a moment.'))),
+        choices(t('Notifications'), (['all', 'replies', 'off'] as const).map(value => choice('island-news', value, value === 'all' ? t('All') : value === 'replies' ? t('Replies') : t('Off'), island.news === value, () => islandPrefs.set({ news: value }), value === 'off' ? 'x' : value === 'replies' ? 'comment' : 'check')))))
     : category === 'browsing' ? h('div', { className: 'space-y-5' },
       h('div', { className: 'space-y-3' }, h('div', null, h('p', { className: 'text-[13px] font-medium' }, t('Overview layout')), h('p', { className: muted }, t('How variants appear in overviews.'))), choices(t('Overview layout'), [choice('layout', 'grid', t('Grid'), !p.stack, () => p.onLayout(false), 'grid'), choice('layout', 'stack', t('List'), p.stack, () => p.onLayout(true), 'rows')])),
       toggle('sidebar', t('Show sidebar'), t('Keep prototype navigation open on wide screens.'), p.sidebar, p.onSidebar),
-      toggle('review', t('Show review panel'), t('Keep Comments and Try it open on wide screens when available.'), p.review, p.onReview),
+      toggle('review', t('Show review panel'), t('Keep Try it and Tweaks open on wide screens when available.'), p.review, p.onReview),
       h('div', { className: 'flex flex-wrap items-center justify-between gap-3 border-t border-black/[.06] pt-4 dark:border-white/10' }, h('p', { className: muted }, t('Restore sidebar and column widths.')), h('button', { type: 'button', 'data-setting-reset': '', onClick: p.onResetWidths, className: button }, t('Reset widths'))))
     : category === 'session' ? h('div', { className: 'space-y-5' },
       h('div', null, h('p', { dir: 'auto', className: 'text-[13px] font-medium' }, p.session.name),

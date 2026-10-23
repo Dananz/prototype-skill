@@ -91,7 +91,7 @@ export default function Variant() {
   const phoneKind = await openPage(`${local}#/tweaks-phone-check/A`)
   try {
     await until(phoneKind, `document.querySelector('[data-hint="tab:tweaks"]')?.getAttribute('aria-pressed') === 'true'`, 'phone-kind desktop inspector did not open')
-    for (const [tab, variant] of [['comments', 'B'], ['try', 'A']]) {
+    for (const [tab, variant] of [['try', 'B'], ['tweaks', 'A']]) {
       await click(phoneKind, `[data-hint="tab:${tab}"]`)
       await phoneKind.run(`location.hash='/tweaks-phone-check/${variant}'`)
       await until(phoneKind, `window.__protoDesign()?.querySelector('[data-tweak-demo]')?.getAttribute('data-tweak-demo') === '${variant}' && document.querySelector('[data-tweak-body]').textContent.includes('Content state ${variant}')`, 'phone-kind navigation did not finish registering controls')

@@ -1,5 +1,6 @@
-// The desktop header: one mark and no session popover, a device menu, a ⋯ menu, a textless
-// Comment button, the Decision card, and a side panel that folds to an edge you can peek at.
+// The desktop header: one mark and no session popover, a device menu, a ⋯ menu, the comments
+// island's textless Select button, the Decision card, and a side panel (Try it) that folds to an
+// edge you can peek at.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -11,7 +12,8 @@ export async function headerChecks({ proto, app, local, openPage, fail, keepShot
     fail(`header: ${why ?? `timed out: ${expression}`}`)
   }
   proto(['add', 'headerfx', '--title', 'Header', '--variants', 'A:One,B:Two'])
-  for (const id of ['A', 'B']) writeFileSync(join(app, `src/protos/headerfx/${id}.tsx`), `export default function V() { return <main className="p-8"><h1>Header ${id}</h1><button>Go</button></main> }`)
+  for (const id of ['A', 'B']) writeFileSync(join(app, `src/protos/headerfx/${id}.tsx`), `import { useHints } from '../../hints'
+export default function V() { useHints([{ kind: 'try', text: 'Press Go' }]); return <main className="p-8"><h1>Header ${id}</h1><button>Go</button></main> }`)
   proto(['done', 'headerfx'])
   const page = await openPage(`${local}?theme=light#/headerfx/A`, { width: 1440, height: 900 })
   try {
@@ -52,10 +54,12 @@ export async function headerChecks({ proto, app, local, openPage, fail, keepShot
     await page.run(`document.querySelector('[data-settings-close]').click()`)
     await until(page, `!document.querySelector('[data-settings-dialog]')`)
 
-    // Comment mode is the button filled in, without words, and a frame round the design.
-    await page.run(`document.querySelector('[data-bar] [data-act="comment:toggle"]').click()`)
-    await until(page, `document.querySelector('[data-bar] [data-act="comment:toggle"]')?.getAttribute('aria-pressed') === 'true' && document.querySelector('[data-zone]').hasAttribute('data-picking')`, 'commenting did not arm the button and the design')
-    assert(await page.run(`document.querySelector('[data-bar] [data-act="comment:toggle"]').textContent.trim() === ''`), 'the armed Comment button has words')
+    // Comment mode is the island's Select filled in, without words, and a frame round the design;
+    // the bar has no Comment of its own.
+    assert(await page.run(`!document.querySelector('[data-bar] [data-act="comment:toggle"]')`), 'the bar still has a Comment button')
+    await page.run(`document.querySelector('[data-island] [data-act="comment:toggle"]').click()`)
+    await until(page, `document.querySelector('[data-island] [data-act="comment:toggle"]')?.getAttribute('aria-pressed') === 'true' && document.querySelector('[data-zone]').hasAttribute('data-picking')`, 'commenting did not arm the button and the design')
+    assert(await page.run(`document.querySelector('[data-island] [data-act="comment:toggle"]').textContent.trim() === ''`), 'the armed Comment button has words')
     await page.key('Escape')
     await until(page, `!document.querySelector('[data-zone]').hasAttribute('data-picking')`, 'Escape did not stop commenting')
 

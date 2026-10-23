@@ -507,6 +507,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         <div data-view hidden class="absolute inset-0 z-[5]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-island-host class="pointer-events-none absolute inset-0 z-[17]" style="inset-inline-end:var(--hw,0px)"></div>
         <div data-motion-dock class="absolute start-0 z-[18]" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-copy-bar class="absolute start-0 z-[14]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px))"></div>
         <div data-copy-sheet class="pointer-events-none absolute inset-0 z-[19] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
@@ -1177,8 +1178,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
       ${switcher}
       <div class="ms-auto flex shrink-0 items-center gap-1">
-        ${stepper}${stepper && (view === 'variant' || viewOk() || commentHost() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${deviceBtn()}${commentBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${moreBtn()}
+        ${stepper}${stepper && (view === 'variant' || viewOk() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
+        ${deviceBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${moreBtn()}
       </div></div>`)
     menus = { protos: drill(), session: '' }
 
@@ -1219,7 +1220,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
     // Focus mode restyles the zone to cover the page; the mounted design stays put. On a phone
     // the variant pill takes a strip at the bottom of the stage, so it never covers the design.
-    zone.className = st.focus ? 'fixed inset-0 z-[100] bg-white text-[13px] dark:bg-zinc-950' : `relative min-h-0 flex-1 ${pillOn() ? 'max-sm:[--pill-h:calc(4.25rem+env(safe-area-inset-bottom))]' : ''}`
+    zone.className = st.focus ? 'fixed inset-0 z-[100] bg-white text-[13px] dark:bg-zinc-950' : `relative min-h-0 flex-1 ${pillOn() ? `max-sm:[--pill-h:calc(4.25rem+var(--isl-h,0px)+env(safe-area-inset-bottom))] ${commentHost() ? 'max-sm:[--isl-h:45px]' : ''}` : ''}`
     document.documentElement.style.overflow = st.focus ? 'hidden' : ''
 
     const edgeBtn = (side: 'prev' | 'next') => {
@@ -1326,8 +1327,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const menuBtn = mode
           ? `<button data-pill-menu="mode" data-act="${mode.act}" data-shoot="menu" aria-label="${mode.label}" aria-pressed="true" class="${pillBtn} !bg-proto-primary !text-proto-primary-fg">${ic(mode.icon, 'size-5')}</button>`
           : `<button data-pill-menu data-shoot="menu" aria-label="${t('Menu')}" aria-haspopup="dialog" aria-expanded="false" class="${pillBtn} transition-colors ${cardBtnCls()}">${ic('menu', 'size-5')}</button>`
-        pill.innerHTML = `<div class="absolute inset-x-0 bottom-0 z-10 flex h-[var(--pill-h,0px)] items-start justify-center pt-2 sm:hidden">
-          <div data-pill-bar class="relative flex h-12 max-w-[calc(100%-1rem)] items-center gap-0.5 rounded-full bg-zinc-900/90 p-1 text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/90">
+        pill.innerHTML = `<div class="absolute inset-x-0 bottom-0 z-10 flex h-[var(--pill-h,0px)] items-start justify-center pt-[calc(.5rem+var(--isl-h,0px))] sm:hidden">
+          <div data-pill-bar class="relative flex h-12 max-w-[calc(100%-1rem)] items-center gap-0.5 ${commentHost() ? 'w-[calc(100%-1rem)] justify-between rounded-b-3xl' : 'rounded-full'} bg-zinc-900/90 p-1 text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/90">
             <div data-ruler hidden class="pointer-events-none absolute bottom-full left-1/2 mb-2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-zinc-900/90 shadow-lg ring-1 ring-white/10 [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)] dark:bg-zinc-800/90"></div>
             ${menuBtn}${sep}
             <button data-act="variant:${prev.id}" aria-label="${t('Previous variant: {label} {name}', { label: variantRef(p!, prev.id), name: prev.name })}" class="${pillBtn}">${ic('left')}</button>
@@ -1336,7 +1337,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             </div>
             <button data-act="variant:${next.id}" aria-label="${t('Next variant: {label} {name}', { label: variantRef(p!, next.id), name: next.name })}" class="${pillBtn}">${ic('right')}</button>
             ${tweakList().length ? `${sep}<button data-act="tweaks" data-shoot="tweaks" aria-label="${t('Tweaks')}" aria-haspopup="dialog" aria-expanded="${tweaksOpen}" class="${pillBtn} relative ${tweaksOpen ? '!bg-sky-700 !text-white' : ''}">${ic('tweaks', 'size-5')}${tweakList().some(isChanged) ? `<span class="absolute end-0 top-0 grid min-w-3.5 rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : ''}</button>` : ''}
-            ${commentHost() ? (c => `${sep}<button data-act="comment:tap" data-shoot="comment" aria-label="${t('Comments')}" aria-pressed="${c.picking}" class="${pillBtn} relative ${c.picking ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic(c.picking ? 'x' : 'comment', 'size-5')}${c.drafts && !c.picking ? `<span class="absolute -end-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-proto-primary text-[10px] font-semibold text-proto-primary-fg ring-2 ring-zinc-900">${c.drafts}</span>` : ''}</button>`)(comments.counts()) : ''}
           </div>
         </div>`
         raisePill()
@@ -2124,8 +2124,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // The page inside a device view has none of its own: the page outside comments on it.
   const compareHost = () => st.place.view === 'variant' && st.place.tool === 'compare' ? layer?.el.querySelector<HTMLElement>('[data-comment-compare]') ?? null : null
   const commentHost = () => !framed && !st.focus && q.get('hints') !== '0' ? compareHost() ?? hintHost() : null
-  // The side panel carries the list; a phone has it as a sheet from the pill.
-  const railOn = () => !!commentHost() && !phoneMq.matches
+  // The comments island floats over the stage and opens into the list; a phone has it as the top
+  // row of the pill, and the list as a sheet.
+  const islandHost = zone.querySelector<HTMLElement>('[data-island-host]')!
   const comments = createComments({
     layer: zone.querySelector<HTMLElement>('[data-comments]')!,
     visible: place => {
@@ -2159,7 +2160,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     },
     show: () => {
       if (phoneMq.matches) comments.act.openSheet(true)
-      else { selectPanelTab('comments'); hintsOpen = true; remember('proto-hints', '1'); paintHints() }
+      else comments.act.openIsland(true)
     },
     // While a device view is on, comments are on the design in its frame, about that layout.
     // The stage's own artboard is the stage's layout: what is written there carries no other.
@@ -2180,7 +2181,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // A design's own page listeners don't hear commenting: anything while picking or writing, a press
   // on the comment chrome, or the C that starts it. So a menu open in the design stays open, and
   // what is in it can be commented on.
-  const COMMENT_UI = '[data-comments], [data-cbody], [data-comments-sheet], [data-comment-ui], [data-composer], [data-tag-menu], [data-act^="comment:"]'
+  const COMMENT_UI = '[data-comments], [data-island], [data-comments-sheet], [data-comment-ui], [data-composer], [data-tag-menu], [data-act^="comment:"]'
   quiet(e => {
     if (comments.busy()) return true
     const t = e.target instanceof Element ? e.target : null
@@ -2278,14 +2279,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const n = comments.counts().by.get(`${proto}/${variant}`) ?? 0
     return n ? `<span title="${tn(n, '{n} open comment', '{n} open comments')}" class="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-proto-primary-soft px-1 text-[10px] font-semibold tabular-nums text-proto-primary-soft-fg">${n}</span>` : ''
   }
-  const mac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent)
-  const commentBtn = () => {
-    if (!commentHost()) return ''
-    const on = comments.counts().picking
-    // At rest an icon; while you are picking what to comment on it fills in (no words), and
-    // hovering it shows the way out.
-    return `<button data-act="comment:toggle" data-shoot="comment" aria-pressed="${on}" aria-label="${t('Comment')}" title="${on ? t('Stop commenting · Esc') : t('Comment on the design · C ({key}-click comments on one thing)', { key: mac ? '⌥' : 'Alt' })}" class="group/c relative hidden h-9 min-w-9 items-center justify-center rounded-lg sm:inline-flex ${on ? 'bg-proto-primary px-2 text-proto-primary-fg shadow-sm shadow-proto-primary/30 ring-4 ring-proto-primary/20 hover:bg-proto-primary-hover' : 'text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'}">${ic('comment', `size-4 transition-opacity ${on ? 'group-hover/c:opacity-0' : ''}`)}${on ? `<span class="absolute grid place-items-center opacity-0 transition-opacity group-hover/c:opacity-100">${ic('x')}</span>` : ''}</button>`
-  }
   // The agent's questions are a screen of their own over the whole shell until they are answered.
   const intake = createIntake(root.querySelector<HTMLElement>('[data-intake]')!, {
     name: () => session.name,
@@ -2300,6 +2293,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     comments.setPlace(host && pl.view === 'variant' && p ? { proto: pl.proto, variant: pl.variant, ...(pl.state ? { state: pl.state } : {}), phone: phoneMq.matches, title: p.title, ...(viewOn() ? { view: viewSize() } : {}), ...(compareHost() ? { compare: true as const } : {}) } : null)
     if (st.status?.inbox !== seenInbox) { seenInbox = st.status?.inbox; comments.setInbox(seenInbox); intake.set(seenInbox?.intake, protos.length > 0) }
     zone.toggleAttribute('data-picking', !!host && comments.counts().picking)
+    islandHost.hidden = !host || (phoneMq.matches && !pillOn())
   }
   comments.mountSheet(root.querySelector<HTMLElement>('[data-comments-sheet]')!)
   // ---------- the motion dock: under a design that declared its motion (useMotion) ----------
@@ -2462,12 +2456,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
    */
   function commentWhole(proto?: string, variant?: string) {
     if (proto && variant && !(st.place.view === 'variant' && st.place.proto === proto && st.place.variant === variant)) go({ view: 'variant', proto, variant })
-    if (phoneMq.matches) comments.act.openSheet(true)
-    else if (railOn()) {
-      selectPanelTab('comments')
-      if (!hintsOpen) { hintsOpen = true; remember('proto-hints', '1') }
-      paintHints()
-    }
+    comments.act.openSheet(false)
     comments.act.askWhole()
   }
 
@@ -2563,11 +2552,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     comments.copy.off()
     comments.commentOn(el)
     if (phoneMq.matches) comments.act.openSheet(true)
-    else if (railOn()) {
-      selectPanelTab('comments')
-      if (!hintsOpen) { hintsOpen = true; remember('proto-hints', '1') }
-      paintHints()
-    }
   }
   const drawCtx = comments.mountContext(root.querySelector<HTMLElement>('[data-ctx]')!)
   function ctxRows(on: CtxOn): { title?: string; sub?: string; rows: MenuRow[] } | null {
@@ -2648,7 +2632,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const drawTweaksDrawer = createTweaksDrawer(hintBox.querySelector<HTMLElement>('[data-tweaks-sheet]')!)
   let autoTweaksShown = false
   function selectPanelTab(next: typeof tab) { tab = next; autoTweaksShown = true }
-  comments.mountRail(cbody)
+  comments.mountIsland(islandHost)
 
   function paintHints() { syncComments(); motionDock.sync(); paintPanel(); paintTweaks(); syncSpot() }
   // Starting to comment opens the Comments tab beside the design, where the new one lands. Only
@@ -2656,16 +2640,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function toggleComment() {
     comments.copy.off()
     comments.act.toggle()
-    if (!comments.counts().picking || !railOn() || !wideMq.matches) return
-    selectPanelTab('comments')
-    if (!hintsOpen) { hintsOpen = true; remember('proto-hints', '1') }
-    paintHints()
   }
   function paintPanel() {
     const list = hintList(), fields = tweakList()
     if (fields.length && !autoTweaksShown && wideMq.matches) { tab = 'tweaks'; autoTweaksShown = true }
     paintTry(list)
-    const tabs: ('comments' | 'try' | 'tweaks')[] = [...(railOn() ? ['comments' as const] : []), ...(list.length && !phoneMq.matches ? ['try' as const] : []), ...(fields.length && !phoneMq.matches ? ['tweaks' as const] : [])]
+    const tabs: ('comments' | 'try' | 'tweaks')[] = [...(list.length && !phoneMq.matches ? ['try' as const] : []), ...(fields.length && !phoneMq.matches ? ['tweaks' as const] : [])]
     const shownTab = tabs.includes(tab) ? tab : tabs[0]
     const panelWidth = shownTab === 'tweaks' || tabs.length > 2 ? 320 : HINTS_W
     const docked = tabs.length > 0 && hintsOpen && wideMq.matches

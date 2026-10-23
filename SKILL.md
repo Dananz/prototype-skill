@@ -15,7 +15,8 @@ session lives in that one app: **session › prototype › variant**.
 The app already has its navigation (a switcher in the bar that opens the session as columns,
 a sidebar with one line per level and the current level as two columns, a stepper through the
 variants (on a phone, a pill at the bottom you drag along, with a menu for the page's tools and
-Comment, and the columns as a sheet you drill into), edge arrows, a focus mode with a dock, light and dark, phone frames, "editing" dots, a
+the comments island as its top row, and the columns as a sheet you drill into), a comments island
+floating over the stage, edge arrows, a focus mode with a dock, light and dark, phone frames, "editing" dots, a
 strip naming the variant your requests change). You only write variant files.
 
 A variant's context menu (right-click its row or open its ⋯) offers Share screenshots for
@@ -26,8 +27,8 @@ the system share sheet. Captions affect exports only.
 
 Settings (the bar's ⋯ menu, or the session name at the top of the sidebar) opens browser
 preferences: System, Light or Dark appearance, instant comment sending (off by default, so
-drafts can be sent together), Grid or List overviews, and whether the sidebar and review panel
-stay open on wide screens. It also resets sidebar/column widths and lists keyboard shortcuts.
+drafts can be sent together), where the comments island rests and which news grows it, Grid or
+List overviews, and whether the sidebar and review panel stay open on wide screens. It also resets sidebar/column widths and lists keyboard shortcuts.
 Its Session category is the session's one home: its folder and start time, the public URL to
 copy, whether it is live and when it was last edited, when it stops when idle and when it is
 deleted, keeping it forever, stopping its server, and a listener restart message to paste in
@@ -46,8 +47,15 @@ pinch, Space-drag or middle-button drag (from anywhere, at any zoom; the page st
 left, and Fit, the frame button at the end of the layout button, or Mod+0 (Cmd+0 on Mac, Ctrl+0 elsewhere) resets the zoom and centres it again), comment, try things, pick copy and scrub motion there. Nothing to build for it
 beyond a web variant that lays out well at each width.
 
-Compare uses the same Comments panel, numbered pins, screenshots, drafts, sending and agent
-replies as a single variant. Click Comment (or press C), then choose something in either pane.
+Comments live in the **comments island**, a small bar floating over the stage and collapsed most of
+the time: Select (or C) to pick an element, a box for a comment on the whole variant, Send when
+drafts wait, and the count, which opens the list above the same bar. When the agent takes a
+comment, finishes it or replies, the island grows for a moment to say so and its edge takes the
+news's colour (amber working, green done, blue reply). It drags anywhere on a wide stage. On a
+phone it is the pill's top row and its count opens the list as a sheet.
+
+Compare uses the same island, numbered pins, screenshots, drafts, sending and agent
+replies as a single variant. Click Select (or press C), then choose something in either pane.
 While writing on one variant, click an element or existing comment in the other pane to reference
 it. The variants do not need matching elements. Type `@` in the composer to find a variant by
 letter or name, then select it with a click or the arrow keys and Enter/Tab. “Pick an element
@@ -759,7 +767,7 @@ open and what is in it can be commented on. Hover-only parts work the same way, 
 commenting, whatever a hover made appear (a dot's readout, a panel that opens under the pointer) stays
 up while the pointer moves onto it, parts drawn with `pointer-events: none` can be picked, and the
 hover is held while that comment is written. Nothing to build for it: plain hover state in the
-variant is enough (a CSS-only `:hover` is the exception in a device view). The side panel's Comments tab lists
+variant is enough (a CSS-only `:hover` is the exception in a device view). The comments island's list shows
 them and shows what became of each. `@` opens the existing visual picker to tag another
 element. Do not author special comment-element names or a catalog of elements. The outline
 and numbered references identify selected targets; source locations are stamped automatically.
@@ -821,13 +829,13 @@ change the call that passes them. Change the component itself, and so every use,
 dropdowns", "every row", "each menu"); when it is unclear, change the one and say in the reply
 that the others are untouched. The reply names which one changed ("only the Phase menu").
 
-**A comment on the whole variant** (written in the box at the foot of the Comments panel, or from a
+**A comment on the whole variant** (written in the comments island's box, or from a
 sidebar row's Comment on this) prints `on: the whole variant (its root <div> at 0,0 WxH)`: it is
 about the design as a whole (its density, tone, structure or flow), not one element. Make the change
 where the design lives, across the parts it names, rather than on one element; the reply says what
 changed overall.
 
-**The user can answer your reply** (Reply under it, in the Comments panel), and the comment becomes a
+**The user can answer your reply** (Reply under it, in the comments island's list), and the comment becomes a
 thread there. The answer reaches you as a comment in a batch of its own, on the same element, spot or
 moment as the comment it follows, with the exchange so far printed before its words, oldest first:
 `2. plugin/A  (reply to 20261014T005910-51b2/2)` then
