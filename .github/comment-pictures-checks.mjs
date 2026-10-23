@@ -77,7 +77,7 @@ export async function commentPicturesChecks({ proto, app, openPage, fail }) {
       if (!camera().disabled) return 'with 6 pictures the camera should be off'
       document.querySelector('[data-composer] [data-shoot=comment-pictures] button[aria-label="Remove the image"]').click()
       if (!await until(() => pictures() === 5 && !camera().disabled)) return 'removing one should make room again'
-      ;[...document.querySelectorAll('[data-composer] button')].find(b => b.textContent === 'Cancel').click()
+      ;[...document.querySelectorAll('[data-composer] button')].find(b => b.textContent === 'Cancel' || b.getAttribute('aria-label') === 'Cancel').click()
       return 'ok'
     })()`)
     if (six !== 'ok') fail(`pictures: ${six}`)
@@ -106,7 +106,7 @@ export async function commentPicturesChecks({ proto, app, openPage, fail }) {
       row().querySelector('button').click()
       if (!await until(editor)) return 'the empty-picture draft did not reopen'
       if (pictures() !== 0) return 'the removed picture came back on reopen'
-      ;[...document.querySelectorAll('[data-composer] button')].find(b => b.textContent === 'Cancel').click()
+      ;[...document.querySelectorAll('[data-composer] button')].find(b => b.textContent === 'Cancel' || b.getAttribute('aria-label') === 'Cancel').click()
       const data = JSON.parse(localStorage.getItem('proto-comments-smoke'))
       data.items.push(legacy)
       localStorage.setItem('proto-comments-smoke', JSON.stringify(data))

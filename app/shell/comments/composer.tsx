@@ -94,6 +94,8 @@ const TIME_PATH = { at: 'M12 9.5V20M9 4h6l-3 4z', range: 'M5 5v14M19 5v14M8.5 12
 export function Composer({ target, time, docked, n, initial, place, sheet, tagging, editing, id }: Props) {
   const agent = useAgentName()
   const { host, store, act } = useCtx()
+  // The popover over the design closes with its X; the phone's sheet and the motion dock keep Cancel.
+  const pop = !docked && !sheet
   const [mention, setMention] = useState<{ query: string; index: number } | null>(null)
   const choices = host.variantMentions?.() ?? []
   const query = mention?.query.toLocaleLowerCase() ?? ''
@@ -245,6 +247,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             ? <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[11px] font-semibold tabular-nums text-proto-primary-soft-fg"><svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={time.to === undefined ? TIME_PATH.at : TIME_PATH.range} /></svg>{time.to === undefined ? t('At {time}', { time: spanOf(time) }) : spanOf(time)}</span>
             // In a view the size takes the file's place: the list shows the file under the words.
             : <><ViewChip v={target?.view} /><span dir="auto" className="min-w-0 flex-1 truncate text-xs font-medium">{target?.whole ? (target.source ? t('Whole variant on {variant}', { variant: target.source.variant }) : t('Whole variant')) : (target?.source ? t('Comment on {variant}', { variant: target.source.variant }) : t('Comment'))}</span>{!target?.view && <SrcTag t={target} />}</>}
+          {pop && <button onClick={() => act.cancel()} data-shoot="composer-close" aria-label={t('Cancel')} title={`${t('Cancel')} · Esc`} className={`${IB} -me-1.5 h-7 min-w-7 shrink-0 px-1`}><Icon name="x" className="size-3.5" /></button>}
         </div>
         <div className="relative px-3 pt-1.5">
           <div ref={ed} contentEditable suppressContentEditableWarning role="textbox" aria-label={t('Comment')} aria-multiline="true" dir="auto"
@@ -285,7 +288,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           <button onClick={shoot} disabled={full} title={full ? t('{n} pictures is the most one comment takes; remove one to add another', { n: MAX_SHOTS }) : t('Add a screenshot of this part of the design, then draw on it (or paste an image: {mod} V, or drop one here; each adds a picture)', { mod: MOD })} aria-label={t('Attach a screenshot')} className={`${IB} h-8 min-w-8 px-1.5 disabled:opacity-40`}><Icon name="camera" /></button>
           {editing && <button onClick={() => id && act.remove(id)} title={t('Delete')} aria-label={t('Delete comment')} className={`${IB} h-8 min-w-8 px-1.5 hover:text-rose-600`}><Icon name="trash" /></button>}
           <span className="ms-auto" />
-          <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>
+          {!pop && <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>}
           <button onClick={submit} disabled={empty && !tags.length} title={t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={editing ? 'check' : 'plus'} className="size-3.5" />{editing ? t('Save') : t('Add')}</button>
         </div>
       </div>
