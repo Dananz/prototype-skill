@@ -283,7 +283,7 @@ export function Island() {
     )
     const shape = open ? 'panel' : rail ? 'rail' : 'tab'
     return (
-      <div ref={card} data-island data-comment-ui="" data-open={open || undefined} data-side={side} data-shape={shape} onDoubleClick={home}
+      <div ref={card} data-island data-comment-ui="" data-open={open || undefined} data-edge-side={side} data-shape={shape} onDoubleClick={home}
         className={`${surface} cursor-grab transition-[width,height,border-radius] duration-300 ease-[cubic-bezier(.2,.9,.25,1)] ${right ? 'rounded-l-[22px]' : 'rounded-r-[22px]'}`}
         style={{ width: open ? 340 : rail ? 48 : 40, height: open ? 'calc(100% - 32px - var(--pill-h, 0px) - var(--dock-h, 0px) - var(--copy-h, 0px))' : rail ? 153 : 56, visibility: 'hidden', ...ring }}>
         {open
@@ -316,7 +316,7 @@ export function Island() {
     )
   }
   return (
-    <div ref={card} data-island data-comment-ui="" data-open={open || undefined} data-side="flat" onDoubleClick={home}
+    <div ref={card} data-island data-comment-ui="" data-open={open || undefined} data-edge-side="flat" onDoubleClick={home}
       className={`${surface} flex max-w-[calc(100%-32px)] cursor-grab flex-col overflow-hidden rounded-[22px] transition-[width,box-shadow] duration-500 ease-[cubic-bezier(.2,.9,.25,1.1)] ${top ? 'flex-col-reverse' : ''}`}
       style={{ width, visibility: 'hidden', ...ring }}>
       {list}

@@ -25,6 +25,17 @@ const rubber = (v: number, lo: number, hi: number, r = 120) => {
   if (v > hi) return hi + r * (1 - 1 / ((v - hi) * 0.55 / r + 1))
   return v
 }
+// The stage's edge arrows (shell.ts) sit in the middle of each side, 48 px tall: a tab resting
+// upright keeps out of that band, just above or below it, whichever is nearer.
+const ARROW = 24 + 8
+const clear = (y: number, h: number, d: { H: number; foot: number }) => {
+  const top = d.H / 2 - ARROW, bottom = d.H / 2 + ARROW
+  if (y >= bottom || y + h <= top) return y
+  const above = top - h, below = bottom
+  const fitsAbove = above >= INSET, fitsBelow = below + h <= d.H - d.foot
+  if (fitsAbove && (!fitsBelow || y - above <= below - y)) return above
+  return fitsBelow ? below : y
+}
 const px = (el: Element, name: string) => parseFloat(getComputedStyle(el).getPropertyValue(name)) || 0
 
 export function useEdgeDrag(o: {
@@ -134,6 +145,7 @@ export function useEdgeDrag(o: {
         if (mode === 'held') return
         side = opts.current.place === 'left' || opts.current.place === 'right' ? opts.current.place : null
         const to = rest(fromPrefs())
+        if (side && !full()) to.y = clear(to.y, el.offsetHeight, dims())
         if (Number.isNaN(pos.x)) { pos.x = to.x; pos.y = to.y; goal = { ...to }; draw(); el.style.visibility = ''; return }
         if (Math.hypot(pos.x - to.x, pos.y - to.y) < 0.5) return
         goal = to
@@ -193,6 +205,7 @@ export function useEdgeDrag(o: {
       }
       opts.current.place = place
       goal = rest(pos)
+      if (side) goal.y = clear(goal.y, m.h, m)
       vel.x = vel.y = 0
       const v = velocity()
       vel.x = v.x; vel.y = v.y
