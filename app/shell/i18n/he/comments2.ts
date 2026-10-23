@@ -45,6 +45,7 @@ export default {
   'the prototype': 'אב הטיפוס',
   'Marked done, no note.': 'סומן כהושלם, ללא הערה.',
   'Nothing yet. Press C, then click anything in the design.': 'אין עדיין כלום. לחץ C, ואז לחץ על כל דבר בעיצוב.',
+  'Nothing yet. Tap the hand, then anything in the design.': 'אין עדיין כלום. הקש על היד, ואז על כל דבר בעיצוב.',
   'Ready to send': 'מוכן לשליחה',
   'Unfinished comment': 'הערה שלא הושלמה',
   'Continue': 'המשך',

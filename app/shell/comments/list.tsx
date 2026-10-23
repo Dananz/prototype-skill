@@ -215,7 +215,7 @@ export function CommentList({ roomy, onOpen }: { roomy?: boolean; onOpen?: (id: 
   const open = (id: string) => { onOpen?.(id); act.open(id) }
   const by = (st: CState[]) => rows.filter(r => st.includes(r.state))
   const drafts = by(['draft']), wait = by(['sent', 'seen']), done = by(['done'])
-  if (!rows.length && !held) return <p className="px-3 py-6 text-center text-xs text-zinc-400">{t('Nothing yet. Press C, then click anything in the design.')}</p>
+  if (!rows.length && !held) return <p className="px-3 py-6 text-center text-xs text-zinc-400">{matchMedia('(pointer: coarse)').matches ? t('Nothing yet. Tap the hand, then anything in the design.') : t('Nothing yet. Press C, then click anything in the design.')}</p>
   return (
     <div>
       {(drafts.length > 0 || held) && (
