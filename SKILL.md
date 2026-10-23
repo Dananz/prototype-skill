@@ -460,10 +460,11 @@ so the user sees them land:
 
 - One file per variant, named by its letter: `A.tsx` (or `A.vue` in a Vue app). Names live in
   `meta.ts`. Never rename the files; letters run A … Z, then AA.
-- **The user sees numbers, not letters.** The page shows each variant by number, counted from
-  its letter the way spreadsheet columns are: A is 1, Z 26, AA 27, AC 29. The number never
-  changes when other variants are added or removed. Talk to the user in numbers ("3 and 29 are
-  the strongest", never "C and AC"), and read theirs the same way ("idea 29" is AC). Every
+- **The user sees numbers, not letters.** The page shows each variant by number after a #,
+  counted from its letter the way spreadsheet columns are: A is #1, Z #26, AA #27, AC #29. The
+  number never changes when other variants are added or removed. Talk to the user in numbers
+  with the # ("#3 and #29 are the strongest", never "C and AC" or "3 and 29"), and read theirs
+  the same way ("idea 29" is AC). Every
   `proto` command takes a number where it takes a letter: `proto pick hero 29`,
   `proto work hero/29`, `proto shoot hero/29`. Files, routes and `meta.ts` keep the letters.
 - Default export is the component. Its root fills the stage: `h-full` for anything that is one
@@ -698,7 +699,7 @@ without asking. If they don't
 name the prototype, it's the one you showed them last. The page then marks it (a check in the
 sidebar, the variant first and outlined in its overview, the rest faded but still there) and
 everything built from the prototype stays nested under it. Choosing again replaces the pick;
-"undo that" is `proto pick <slug> --off` (in the page, Picked 2 undoes it). A pick also makes that variant the one being worked
+"undo that" is `proto pick <slug> --off` (in the page, Picked #2 undoes it). A pick also makes that variant the one being worked
 on (next section). Then do what they asked next, if anything.
 
 A pick is not an archive: archive is for directions the user drops, and a picked prototype is
@@ -780,7 +781,7 @@ Set `PROTO_AGENT=codex|claude|agent` or pass `proto reply ... --as codex|claude|
 harness does not expose identity, or when switching agents on an existing session.
 
 Each comment prints its route (`<slug>/<letter>[/<state>]`, with the number the user saw beside
-it: `hero/AC (29)`; say the number when you reply), the user's words, the element
+it: `hero/AC (#29)`; say #29 when you reply), the user's words, the element
 it is on (tag, text, `data-shoot` or selector, its box in CSS px from the variant's top left,
 and where it is written: its file from the app's folder, line and component, as
 `src/protos/today/parts.tsx:30 (PriceCard)`; open it there) and any elements it tags (numbered `with @1`, `with @2`, matching the comment), and the absolute path of each image attached to it:

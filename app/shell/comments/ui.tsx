@@ -9,7 +9,7 @@ import { SIZE_PATHS, sizeIcon, sizeName, type ViewSize } from '../view/sizes'
 import { ago, ic } from '../ui'
 import { t, tn } from '../i18n'
 import type { Action, CState, Item, Seg, Target } from './types'
-import { variantLabel } from '../variants'
+import { variantLabel, variantRef } from '../variants'
 
 const PATHS: Record<string, string> = {
   ...SIZE_PATHS,
@@ -185,13 +185,13 @@ export const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `
 /** What a row of the list is about: the element a comment is on, the moment of the motion, or what a decision asked. */
 export const aboutOf = (i: Item) => i.action === 'more-variants'
   ? tn(i.count ?? 5, '{n} more variant', '{n} more variants')
-  : i.action === 'pick' ? t('Picked {v}', { v: variantLabel(null, i.variant) })
-  : i.action === 'unpick' ? t('Unpicked {v}', { v: variantLabel(null, i.variant) })
-  : i.action === 'more' ? t('More like {v}', { v: variantLabel(null, i.variant) })
-  : i.action === 'build' ? t('Build {v}', { v: variantLabel(null, i.variant) })
-  : i.action === 'try-it' ? t('Needs explanation: {v}', { v: variantLabel(null, i.variant) })
-  : i.action === 'copy-options' ? t('Generate copy options for {v}', { v: variantLabel(null, i.variant) })
-  : i.action === 'copy' ? t('Copy for {v}', { v: variantLabel(null, i.variant) })
+  : i.action === 'pick' ? t('Picked {v}', { v: variantRef(null, i.variant) })
+  : i.action === 'unpick' ? t('Unpicked {v}', { v: variantRef(null, i.variant) })
+  : i.action === 'more' ? t('More like {v}', { v: variantRef(null, i.variant) })
+  : i.action === 'build' ? t('Build {v}', { v: variantRef(null, i.variant) })
+  : i.action === 'try-it' ? t('Needs explanation: {v}', { v: variantRef(null, i.variant) })
+  : i.action === 'copy-options' ? t('Generate copy options for {v}', { v: variantRef(null, i.variant) })
+  : i.action === 'copy' ? t('Copy for {v}', { v: variantRef(null, i.variant) })
   : i.time ? (i.time.to === undefined ? t('At {time}', { time: spanOf(i.time) }) : t('Over {time}', { time: spanOf(i.time) }))
   : i.target?.whole ? t('Whole variant')
   : t('Comment {n}', { n: i.n })

@@ -12,7 +12,7 @@ import { shotsOf } from './types'
 import { inScope, routeOf } from './types'
 import { sameView } from '../view/sizes'
 import { t } from '../i18n'
-import { variantLabel } from '../variants'
+import { variantRef } from '../variants'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 const hasWords = (d: Draft) => d.body.some(s => typeof s !== 'string' || s.trim()) || d.tags.length > 0 || shotsOf(d).length > 0
@@ -260,7 +260,7 @@ export function createActions(store: Store, host: Host) {
      * couldn't be made (it waits with Claude then, saying why).
      */
     async decide(to: { proto: string; variant: string }, action: Action, note = '') {
-      const label = variantLabel(null, to.variant), say = ACTION[action].say(label), words = note.trim()
+      const label = variantRef(null, to.variant), say = ACTION[action].say(label), words = note.trim()
       const sent = await host.send({
         theme: host.dark() ? 'dark' : 'light',
         viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 },

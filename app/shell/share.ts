@@ -6,7 +6,7 @@ import { uiBox } from './portals'
 import { VIRTUAL_THRESHOLD } from './virtual'
 import { CachedList } from './virtual-react'
 import { ic, IB } from './ui'
-import { variantLabel } from './variants'
+import { variantLabel, variantRef } from './variants'
 import { captureRoute, compose, download, filePart, LOOKS, png, SIZES, type Look, type ShotSize, type Tone } from './share-capture'
 import { t, tn } from './i18n'
 
@@ -57,7 +57,7 @@ function Board(p: Props) {
   const variants = p.variants
   const options: ShotSize[] = [{ id: 'stage', label: t('As shown'), ...p.size }, ...SIZES]
   const chosen = options.filter(s => sizes.includes(s.id))
-  const labelOf = (v: Subject) => variantLabel(p, v.id)
+  const labelOf = (v: Subject) => variantRef(p, v.id)
   const nameOf = (v: Subject) => names[v.id] ?? `${labelOf(v)} · ${v.name}`
   const keyOf = (v: Subject, s: ShotSize) => `${v.id}|${s.id}`
   const captureKey = `${variants.map(v => v.hash).join()}|${chosen.map(s => `${s.id}:${s.w}x${s.h}`).join()}|${p.dark}|${retry}`
@@ -185,7 +185,7 @@ function Board(p: Props) {
     void navigator.share({ files, title: p.title }).catch(e => { if (live.current && e.name !== 'AbortError') setNotice(t('Could not share: {error}. Use Download PNGs.', { error: e.message })) }).finally(() => { busy.current = false; if (live.current) setProgress(null) })
   }
   const section = (v: Subject) => h('section', { key: v.id, 'data-share-variant': v.id },
-            h('div', { className: 'mb-2 flex items-center gap-2' }, h('span', { className: 'grid size-8 shrink-0 place-items-center rounded-lg bg-zinc-900 text-xs font-semibold text-white dark:bg-white dark:text-zinc-900' }, labelOf(v)),
+            h('div', { className: 'mb-2 flex items-center gap-2' }, h('span', { className: 'grid size-8 shrink-0 place-items-center rounded-lg bg-zinc-900 text-xs font-semibold text-white dark:bg-white dark:text-zinc-900' }, variantLabel(p, v.id)),
               h('label', { className: 'relative block min-w-0 max-w-sm flex-1' },
                 h('input', { 'aria-label': t('Screenshot name for {variant}', { variant: labelOf(v) }), value: names[v.id] ?? '', placeholder: `${labelOf(v)} · ${v.name}`, dir: 'auto', onChange: (e: { target: { value: string } }) => setNames(a => ({ ...a, [v.id]: e.target.value })), className: 'h-10 w-full rounded-lg bg-zinc-900/[.04] ps-3 pe-9 text-[13px] text-zinc-900 outline-none ring-1 ring-inset ring-transparent placeholder:text-zinc-700 focus:bg-white focus:ring-proto-primary-ring dark:bg-white/[.06] dark:text-white dark:placeholder:text-zinc-300 dark:focus:bg-zinc-800' }),
                 h('span', { className: 'pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-zinc-400' }, icon('share-pencil'))),

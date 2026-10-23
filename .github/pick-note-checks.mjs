@@ -11,8 +11,8 @@ export async function pickNoteChecks({ proto, app, local, openPage, fail, keepSh
   const inboxFile = (id, sub = 'taken') => join(app, '.proto/inbox', sub, id, 'batch.json')
   for (const phone of [false, true]) {
     const layout = phone ? 'phone' : 'desktop', variant = phone ? 'A' : 'B'
-    // The page names a variant by its number (A is 1, B is 2).
-    const label = phone ? '1' : '2'
+    // The page names a variant in words by its number after a # (A is #1, B is #2).
+    const label = phone ? '#1' : '#2'
     const page = await openPage(`${local}#/picknotes/${variant}`, phone ? { width: 390, height: 844, phone: true } : {})
     const run = async code => {
       const result = await page.run(`(async () => { ${until} try { ${code}; return 'ok' } catch (e) { return e.message } })()`)

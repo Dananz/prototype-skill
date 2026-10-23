@@ -1,6 +1,7 @@
 // A variant's number, as the page shows it and as people say it: its letter counted the way
 // spreadsheet columns are (A is 1, Z 26, AA 27, AC 29). The letter stays the variant's ID (its
-// file, its route, what meta.ts keys it by); the number is only how it is shown and spoken.
+// file, its route, what meta.ts keys it by); the number is only how it is shown and spoken,
+// written after a # (#29) so it reads as a name, not a count.
 // app/shell/variants.ts keeps the page's copy of numberOf.
 
 /** The number of a letter ID (A → 1, AC → 29); 0 when it isn't one. */
@@ -15,5 +16,5 @@ export function letterOf(n) {
   return s
 }
 
-/** A variant as the user writes it, a number (29) or the letter (AC, ac), as its letter ID; '' if neither. */
-export const idOf = spec => /^\d+$/.test(String(spec ?? '')) ? letterOf(spec) : /^[A-Za-z]{1,2}$/.test(String(spec ?? '')) ? String(spec).toUpperCase() : ''
+/** A variant as the user writes it, a number (29, #29) or the letter (AC, ac), as its letter ID; '' if neither. */
+export const idOf = spec => { const s = String(spec ?? '').replace(/^#/, ''); return /^\d+$/.test(s) ? letterOf(s) : /^[A-Za-z]{1,2}$/.test(s) ? s.toUpperCase() : '' }

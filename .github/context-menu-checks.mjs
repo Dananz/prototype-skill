@@ -81,7 +81,7 @@ export async function contextMenuChecks({ proto, app, local, openPage, fail }) {
       if (!await until(menu)) return 'right-click on the design opened no menu'
       const got = labels()
       for (const want of ['Comment on this element', 'Comment on the whole variant']) if (!got.some(l => l.startsWith(want))) return 'the artboard menu has no ' + want + ': ' + got.join(', ')
-      if (!got.some(l => l === 'Pick' || l.startsWith('Picked')) || !menu().querySelector('textarea[aria-label="Note for Pick 1"]')) return 'the artboard menu has no Pick for the variant: ' + got.join(', ')
+      if (!got.some(l => l === 'Pick' || l.startsWith('Picked')) || !menu().querySelector('textarea[aria-label="Note for Pick #1"]')) return 'the artboard menu has no Pick for the variant: ' + got.join(', ')
       menu().querySelector('[data-shoot="ctx-comment-el"]').click()
       if (!await until(() => document.querySelector('[data-composer]'))) return 'Comment on this element opened no composer'
       return 'ok'

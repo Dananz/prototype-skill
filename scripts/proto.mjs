@@ -119,12 +119,12 @@ for (let i = 1; i < argv.length; i++) {
   flags[k] = v !== undefined ? v : !SWITCHES.has(k) && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true
 }
 
-// A variant as the agent reads it: the number the user sees, with its letter ID (29 (AC)).
-const shown = id => numberOf(id) ? `${numberOf(id)} (${id})` : String(id)
+// A variant as the agent reads it: the number the user sees, with its letter ID (#29 (AC)).
+const shown = id => numberOf(id) ? `#${numberOf(id)} (${id})` : String(id)
 // A prototype's variants as the user knows them, by number, in the page's order.
-const choices = meta => Object.keys(meta?.variants || {}).sort((a, b) => a.length - b.length || a.localeCompare(b)).map(id => numberOf(id) || id).join(', ')
-// A route with the number the user saw beside it: hero/AC (29), so a reply can say 29.
-const routeShown = r => { const n = numberOf(String(r).split('/')[1]); return n ? `${r} (${n})` : String(r) }
+const choices = meta => Object.keys(meta?.variants || {}).sort((a, b) => a.length - b.length || a.localeCompare(b)).map(id => numberOf(id) ? `#${numberOf(id)}` : id).join(', ')
+// A route with the number the user saw beside it: hero/AC (#29), so a reply can say #29.
+const routeShown = r => { const n = numberOf(String(r).split('/')[1]); return n ? `${r} (#${n})` : String(r) }
 const die = msg => { console.error(`proto: ${msg}`); process.exit(1) }
 const readJson = (f, fallback) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return fallback } }
 // Windows keeps a directory busy while a scanner or a watcher has a file in it, so a rename can
@@ -836,7 +836,7 @@ function fav() {
   need(dir)
   const root = join(dir, 'src', 'protos')
   const sorted = list => [...new Set(list)].sort((a, b) => a.length - b.length || a.localeCompare(b))
-  const line = (slug, m) => `${slug}: ${(m.favorites || []).length ? m.favorites.map(id => `${numberOf(id) || id} · ${m.variants?.[id] ?? id}`).join(', ') : 'no favorites'}`
+  const line = (slug, m) => `${slug}: ${(m.favorites || []).length ? m.favorites.map(id => `${numberOf(id) ? `#${numberOf(id)}` : id} · ${m.variants?.[id] ?? id}`).join(', ') : 'no favorites'}`
   const marks = args.filter(a => a.includes('/'))
   if (!marks.length) {
     const slugs = args.length ? args : (existsSync(root) ? readdirSync(root) : []).filter(s => existsSync(join(root, s, 'meta.ts')))

@@ -56,7 +56,7 @@ export default function A() {
     await page.run(`location.reload(); true`)
     await run(`await until(() => document.documentElement?.dataset.ready === '1'); ${menu}; await until(() => document.querySelector('[data-request-extra="try-it"]')?.disabled)`)
 
-    await run(`const row = [...document.querySelectorAll('[data-shoot=comment-row]')].find(r => r.textContent.includes('Needs explanation: A')); if (!row) throw new Error('requested extra absent from Comments'); row.querySelector('[data-shoot=remove]').click()`)
+    await run(`const row = [...document.querySelectorAll('[data-shoot=comment-row]')].find(r => r.textContent.includes('Needs explanation: #1')); if (!row) throw new Error('requested extra absent from Comments'); row.querySelector('[data-shoot=remove]').click()`)
     await run(`await until(() => !document.querySelector('[data-request-extra="try-it"]')?.disabled); document.querySelector('[data-request-extra="try-it"]').click(); await until(() => document.querySelector('textarea[aria-label^="Note for "]')); [...document.querySelectorAll('[data-decide] button')].find(b => b.textContent === 'Send').click(); await until(() => document.querySelector('[data-decide] [role=status]'))`)
     requests = await matching('try-it')
     assert(requests.length === 1 && requests[0].id !== first, 'withdrawal did not allow a fresh request')
