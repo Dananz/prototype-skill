@@ -157,3 +157,32 @@ body { font-weight: 450; }
   content: ''; position: absolute; inset: 0 var(--hw, 0px) calc(var(--pill-h, 0px) + var(--dock-h, 0px) + var(--copy-h, 0px)) 0; z-index: 15; pointer-events: none;
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--proto-primary) 65%, transparent);
 }
+
+/* The desk (a wide window, not the page inside a view): the page is a dotted desk, and the
+   sidebar, the bar and the side panel float on it as cards, so the tool reads as a tool and never
+   as part of the design on the stage, whatever that design's colors. The stage shows the desk
+   between them; the design sits on it as a sheet (view/index.tsx keeps a margin around it).
+   background-attachment: fixed lines up the dots of the page and of the view's stage. */
+:root { --desk: #e9e9ed; --desk-dot: #bdbdc7; --desk-card: #fff; --desk-line: rgb(0 0 0 / .07); --desk-gap: 10px; }
+:root.dark { --desk: #0e0e11; --desk-dot: #2e2e36; --desk-card: #18181b; --desk-line: rgb(255 255 255 / .09); }
+@media (min-width: 1024px) {
+  [data-desk], [data-desk] [data-view-stage] {
+    background-color: var(--desk);
+    background-image: radial-gradient(var(--desk-dot) 1.1px, transparent 1.4px);
+    background-size: 20px 20px;
+    background-attachment: fixed;
+  }
+  [data-desk] { padding: var(--desk-gap); }
+  [data-desk] > [data-side], [data-desk] [data-bar], [data-desk] [data-panel]:not(.hidden) {
+    background: var(--desk-card);
+    border: 1px solid var(--desk-line) !important;
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgb(0 0 0 / .06), 0 10px 28px -14px rgb(0 0 0 / .3);
+  }
+  [data-desk] > [data-side] { overflow: hidden; }
+  [data-desk] > [data-grip] + div { margin-inline-start: var(--desk-gap); }
+  [data-desk] [data-bar] { margin-bottom: var(--desk-gap); }
+  [data-desk] [data-panel]:not(.hidden) { overflow: hidden; }
+  /* The stage's layers end a gap before the side panel. */
+  [data-desk] [data-zone] > :is([data-layers], [data-view], [data-spot], [data-comments]) { inset-inline-end: calc(var(--hw, 0px) + var(--desk-gap)) !important; }
+}
