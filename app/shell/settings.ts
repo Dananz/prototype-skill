@@ -126,13 +126,13 @@ function Settings(p: Props) {
       // The comments island (comments/island.tsx): where it rests on a wide screen, and which news grows it.
       h('div', { 'data-setting-island': '', className: 'space-y-3 border-t border-black/[.06] pt-5 dark:border-white/10' },
         h('div', null, h('p', { className: 'text-[13px] font-medium' }, t('Comments island')), h('p', { className: muted }, t('Which edge of the stage it rests on, on a wide screen. Drag it to another edge to move it; on a side it stands upright. Double-click its edge to bring it back to the foot.'))),
-        choices(t('Comments island'), (['bottom', 'top', 'left', 'right'] as const).map(value => choice('island', value, { bottom: t('Bottom'), top: t('Top'), left: t('Left'), right: t('Right') }[value], island.place === value, () => islandPrefs.set({ place: value, along: 0 }), { bottom: 'chev', top: 'caret-up', left: 'left', right: 'right' }[value]))),
+        choices(t('Comments island'), (['bottom', 'top', 'right'] as const).map(value => choice('island', value, { bottom: t('Bottom'), top: t('Top'), right: t('Right') }[value], island.place === value, () => islandPrefs.set({ place: value, along: 0 }), { bottom: 'chev', top: 'caret-up', right: 'right' }[value]))),
         h('div', { className: 'pt-2' }, h('p', { className: 'text-[13px] font-medium' }, t('Notifications')), h('p', { className: muted }, t('Which news from the agent grows the island for a moment.'))),
         choices(t('Notifications'), (['all', 'replies', 'off'] as const).map(value => choice('island-news', value, value === 'all' ? t('All') : value === 'replies' ? t('Replies') : t('Off'), island.news === value, () => islandPrefs.set({ news: value }), value === 'off' ? 'x' : value === 'replies' ? 'comment' : 'check')))))
     : category === 'browsing' ? h('div', { className: 'space-y-5' },
       h('div', { className: 'space-y-3' }, h('div', null, h('p', { className: 'text-[13px] font-medium' }, t('Overview layout')), h('p', { className: muted }, t('How variants appear in overviews.'))), choices(t('Overview layout'), [choice('layout', 'grid', t('Grid'), !p.stack, () => p.onLayout(false), 'grid'), choice('layout', 'stack', t('List'), p.stack, () => p.onLayout(true), 'rows')])),
       toggle('sidebar', t('Show sidebar'), t('Keep prototype navigation open on wide screens.'), p.sidebar, p.onSidebar),
-      toggle('review', t('Show review panel'), t('Keep Try it and Tweaks open on wide screens when available.'), p.review, p.onReview),
+      toggle('review', t('Show review panel'), t('Keep Try it open on wide screens when available.'), p.review, p.onReview),
       h('div', { className: 'flex flex-wrap items-center justify-between gap-3 border-t border-black/[.06] pt-4 dark:border-white/10' }, h('p', { className: muted }, t('Restore sidebar and column widths.')), h('button', { type: 'button', 'data-setting-reset': '', onClick: p.onResetWidths, className: button }, t('Reset widths'))))
     : category === 'session' ? h('div', { className: 'space-y-5' },
       h('div', null, h('p', { dir: 'auto', className: 'text-[13px] font-medium' }, p.session.name),

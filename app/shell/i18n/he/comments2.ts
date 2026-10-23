@@ -128,7 +128,6 @@ export default {
   'Comments island': 'אי ההערות',
   'Which edge of the stage it rests on, on a wide screen. Drag it to another edge to move it; on a side it stands upright. Double-click its edge to bring it back to the foot.': 'על איזה צד של הבמה הוא נח במסך רחב. גרור אותו לצד אחר כדי להזיז; בצד הוא עומד לאורך. לחיצה כפולה על השוליים מחזירה אותו לתחתית.',
   'Bottom': 'למטה',
-  'Left': 'שמאל',
   'Fold the comments': 'קפל את ההערות',
   'Right': 'ימין',
   'Top': 'למעלה',

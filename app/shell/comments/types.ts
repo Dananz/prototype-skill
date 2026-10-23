@@ -125,6 +125,10 @@ export type State = {
   wholeFocus: boolean
   /** Set to put the focus in the whole-variant box (⇧C, a sidebar row's Comment on this); the box clears it once it has. */
   focusAsk: boolean
+  /** Picking an element to tag in the whole-variant box (its @ menu's Tag an element), not to comment on. */
+  wholeTag: boolean
+  /** The element picked for it, waiting for the box to take it as a chip. */
+  wholePicked: Target | null
   /** Send as I add: each comment goes to Claude the moment it is added, so work starts while the next is written. */
   live: boolean
   error: string

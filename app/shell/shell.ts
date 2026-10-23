@@ -1804,7 +1804,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'tweaks': {
         if (!tweakList().length) return
         if (phoneMq.matches) { tweaksOpen = !tweaksOpen; trySheet = 'closed'; if (tweaksOpen) comments.escape(); closeCard(true) }
-        else { selectPanelTab('tweaks'); hintsOpen = true; if (wideMq.matches) remember('proto-hints', '1') }
+        else st.open = st.open === 'tweaks' ? null : 'tweaks'
         return render()
       }
       case 'compare-comment': {
@@ -2171,7 +2171,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const hintList = () => framed || q.get('hints') === '0' ? [] : hints.of(countHost())
   const tweakList = () => framed || q.get('hints') === '0' || !hintHost() ? [] : tweaks.of(toolHost())
   let tweaksOpen = false, tweaksUp = false
-  const tweaksBtn = () => !tweakList().length || st.focus ? '' : `<button data-act="tweaks" data-shoot="tweaks" aria-label="${t('Tweaks')}" aria-expanded="${hintsOpen && tab === 'tweaks'}" class="${IB} hidden sm:inline-flex">${ic('tweaks')}<span class="hidden xl:inline">${t('Tweaks')}</span></button>`
+  const tweaksBtn = () => !tweakList().length || st.focus ? '' : `<button data-act="open:tweaks" data-shoot="tweaks" aria-label="${t('Tweaks')}" aria-haspopup="dialog" aria-expanded="${st.open === 'tweaks'}" class="${IB} relative hidden sm:inline-flex ${st.open === 'tweaks' ? ON : ''}">${ic('tweaks')}<span class="hidden xl:inline">${t('Tweaks')}</span>${tweakList().some(isChanged) ? `<span class="absolute -end-0.5 -top-0.5 grid min-w-3.5 place-items-center rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : ''}</button>`
   const valueOf = (h: Extract<Hint, { kind: 'value' }>) => { try { return String(typeof h.value === 'function' ? h.value() : h.value) } catch { return '' } }
   const flash = () => { clearTimeout(hintTimer); hintTimer = window.setTimeout(() => { hintSaid = ''; hintCopied = -1; paintHints() }, 1400) }
 
@@ -2748,9 +2748,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div data-panel role="complementary" class="absolute inset-y-0 end-0 z-20 hidden flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div data-tabs class="flex h-11 shrink-0 items-center gap-0.5 border-b border-black/[.07] ps-1.5 pe-1 dark:border-white/10"></div>
       <div data-try class="min-h-0 flex-1 overflow-y-auto overscroll-contain" hidden></div>
-      <div data-tweak-body class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" hidden></div>
       <div data-cbody class="min-h-0 flex-1" hidden></div>
       <div data-caveats></div>
+    </div>
+    <div data-pop data-tweaks-pop role="dialog" aria-label="${t('Tweaks')}" hidden class="fixed z-40 flex max-h-[min(70vh,36rem)] w-80 flex-col overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">
+      <div class="px-4 pb-1 pt-3 text-[11px] font-medium text-zinc-400">${t('Tweaks')}</div>
+      <div data-tweak-body class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-2"></div>
     </div>
     <div data-try-sheet></div><div data-tweaks-sheet></div>`
   const handles = hintBox.querySelector<HTMLElement>('[data-handles]')!
@@ -2760,11 +2763,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const cbody = hintBox.querySelector<HTMLElement>('[data-cbody]')!
   const caveatEl = hintBox.querySelector<HTMLElement>('[data-caveats]')!
   let tab: 'comments' | 'try' | 'tweaks' = 'comments'
+  // On a wide screen the tweaks are a popover under the bar's Tweaks button, like Layout and zoom:
+  // they never take room from the stage. Its controls are made once and stay, so a pick in progress
+  // (a colour, a select) is never torn down by the bar being drawn again.
+  const tweaksPop = hintBox.querySelector<HTMLElement>('[data-tweaks-pop]')!
   const tweakBody = hintBox.querySelector<HTMLElement>('[data-tweak-body]')!
   const drawTweaks = createTweakControls(tweakBody)
   const drawTweaksDrawer = createTweaksDrawer(hintBox.querySelector<HTMLElement>('[data-tweaks-sheet]')!)
-  let autoTweaksShown = false
-  function selectPanelTab(next: typeof tab) { tab = next; autoTweaksShown = true }
+  function selectPanelTab(next: typeof tab) { tab = next }
   comments.mountIsland(islandHost)
 
   function paintHints() { syncComments(); motionDock.sync(); paintPanel(); paintTweaks(); syncSpot() }
@@ -2776,11 +2782,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   function paintPanel() {
     const list = hintList(), fields = tweakList()
-    if (fields.length && !autoTweaksShown && wideMq.matches) { tab = 'tweaks'; autoTweaksShown = true }
     paintTry(list)
-    const tabs: ('comments' | 'try' | 'tweaks')[] = [...(list.length && !phoneMq.matches ? ['try' as const] : []), ...(fields.length && !phoneMq.matches ? ['tweaks' as const] : [])]
+    const tabs: ('comments' | 'try' | 'tweaks')[] = list.length && !phoneMq.matches ? ['try'] : []
     const shownTab = tabs.includes(tab) ? tab : tabs[0]
-    const panelWidth = shownTab === 'tweaks' || tabs.length > 2 ? 320 : HINTS_W
+    const panelWidth = tabs.length > 2 ? 320 : HINTS_W
     const docked = tabs.length > 0 && hintsOpen && wideMq.matches
     const edge = tabs.length > 0 && !hintsOpen && wideMq.matches
     const w = docked ? panelWidth : edge ? EDGE_W : 0
@@ -2820,7 +2825,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ${peeking ? `<button data-hint="pin" data-shoot="panel-pin" class="${IB} h-7 min-w-7 shrink-0 px-1" aria-label="${t('Keep the panel open')}" title="${t('Keep open')}">${ic('pin', 'size-3.5')}</button>` : `<button data-hint="close" class="${IB} h-7 min-w-7 shrink-0 px-1" aria-label="${t('Close panel')}" title="${t('Close')}">${ic(wide ? 'right' : 'x', 'size-3.5')}</button>`}`
     cbody.hidden = shownTab !== 'comments'
     tryEl.hidden = shownTab !== 'try'
-    tweakBody.hidden = shownTab !== 'tweaks'
     if (shownTab !== 'try') { tryEl.innerHTML = ''; caveatEl.innerHTML = ''; return }
     const tBody = tryBody(list, false)
     tryEl.innerHTML = tBody.list
@@ -2834,6 +2838,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onReset: (id?: string) => { if (host && host === toolHost()) tweaks.reset(host, id) },
     }
     drawTweaks(props)
+    const btn = bar.querySelector<HTMLElement>('[data-act="open:tweaks"]')
+    const popOn = st.open === 'tweaks' && !phoneMq.matches && fields.length > 0 && !!btn
+    tweaksPop.hidden = !popOn
+    if (popOn) {
+      const r = btn!.getBoundingClientRect()
+      tweaksPop.style.top = `${r.bottom + 8}px`
+      tweaksPop.style.left = `${Math.max(8, Math.min(r.right - 320, innerWidth - 328))}px`
+    } else if (st.open === 'tweaks' && !fields.length) st.open = null
     const open = phoneMq.matches && tweaksOpen && fields.length > 0
     if (open) tweaksUp = true
     if (!phoneMq.matches || !fields.length) tweaksOpen = false

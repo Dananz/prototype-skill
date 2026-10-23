@@ -74,11 +74,11 @@ export function Layer() {
   const editedItem = editing?.id ? s.items.find(x => x.id === editing.id) : undefined
 
   const { hover, hold, drag, confirm, up, down } = usePick(picking && !!s.place, m.kind === 'compose' && !!s.place, {
-    onPick: (t, trail) => (tagging ? act.tagDone(t) : act.begin(t, undefined, trail)),
-    onCancel: () => (tagging ? act.tagDone(null) : act.stop()),
+    onPick: (t, trail) => (tagging ? act.tagDone(t) : s.wholeTag ? act.wholeTagDone(t) : act.begin(t, undefined, trail)),
+    onCancel: () => (tagging ? act.tagDone(null) : s.wholeTag ? act.wholeTagDone(null) : act.stop()),
     onGuard: act.guard,
   })
-  const verb = tagging ? t('Tag') : held ? t('Continue your comment') : t('Comment')
+  const verb = tagging || s.wholeTag ? t('Tag') : held ? t('Continue your comment') : t('Comment')
 
   // Hover-only parts of the design (hover.ts): while picking, whatever a hover made appear stays up
   // while the pointer is on it; from the moment a comment's pin goes down until it is closed, the

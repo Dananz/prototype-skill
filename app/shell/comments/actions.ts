@@ -81,11 +81,16 @@ export function createActions(store: Store, host: Host) {
       set({ place, mode: { kind: 'idle' }, active: null, pendingTag: null })
     },
 
-    toggle() { opening++; if (get().place) set(s => ({ mode: s.mode.kind === 'pick' ? { kind: 'idle' } : { kind: 'pick' }, active: null })) },
-    stop() { opening++; set({ mode: { kind: 'idle' } }) },
-    close() { opening++; set({ mode: { kind: 'idle' }, active: null, pendingTag: null }) },
+    toggle() { opening++; if (get().place) set(s => ({ mode: s.mode.kind === 'pick' ? { kind: 'idle' } : { kind: 'pick' }, active: null, wholeTag: false })) },
+    stop() { opening++; set({ mode: { kind: 'idle' }, wholeTag: false }) },
+    close() { opening++; set({ mode: { kind: 'idle' }, active: null, pendingTag: null, wholeTag: false }) },
+    /** The whole-variant box's Tag an element: the next pick is a tag for it, not a new comment. */
+    tagWhole() { opening++; if (get().place) set({ mode: { kind: 'pick' }, active: null, wholeTag: true }) },
+    /** The element picked for the whole-variant box (null: picking was called off). */
+    wholeTagDone(picked: Target | null) { opening++; set({ mode: { kind: 'idle' }, wholeTag: false, wholePicked: picked }) },
+    wholeTagTaken() { if (get().wholePicked) set({ wholePicked: null }) },
     /** `quote`: the words highlighted on the design, which start the comment as a quote. */
-    begin(target: Target, quote?: string, trail?: Target[]) { opening++; set({ mode: { kind: 'compose', target, ...(quote ? { quote } : {}), ...(trail?.length ? { trail } : {}) }, active: null }) },
+    begin(target: Target, quote?: string, trail?: Target[]) { opening++; set({ mode: { kind: 'compose', target, ...(quote ? { quote } : {}), ...(trail?.length ? { trail } : {}) }, active: null, wholeTag: false }) },
     /**
      * Moves the new comment being written up to the element around the one it is on, keeping what
      * was typed; `down` steps back to the element it came up from. A saved comment, or one on a
@@ -128,12 +133,14 @@ export function createActions(store: Store, host: Host) {
     /**
      * A comment on the variant as a whole, from the box in the Comments panel: saved as a draft at
      * once with no composer in between, so a comment half-written on an element is left as it is.
+     * `tags`: what it tagged (elements, other variants), each mentioned after the words.
      */
-    commentWhole(text: string) {
+    commentWhole(text: string, tags: Target[] = []) {
       const p = get().place, t = act.wholeTarget(), words = text.trim()
-      if (!p || !t || !words) return false
+      if (!p || !t || (!words && !tags.length)) return false
       const n = Math.max(0, ...get().items.filter(i => i.proto === p.proto && i.variant === p.variant).map(i => i.n)) + 1
-      const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, body: [words], tags: [], target: t, at: Date.now() }
+      const body = [words, ...tags.flatMap((_, i) => [words || i ? ' ' : '', { tag: i }])].filter(s => s !== '')
+      const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, body, tags, target: t, at: Date.now() }
       set(s => ({ items: [...s.items, item] }))
       if (get().live) void act.send()
       return true

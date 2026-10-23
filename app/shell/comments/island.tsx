@@ -3,18 +3,20 @@
 // opens the list above the same bar. When the agent starts on a comment, finishes it or replies,
 // the island grows for a moment to say so, like a system notification, and its edge takes the
 // colour of the news. A wide screen keeps it on an edge of the stage (island-drag.ts): flat on the
-// foot or the top, or upright on a side, where it rests as a small tab, widens into a rail under the
+// foot or the top, or upright on the right, where it rests as a small tab, widens into a rail under the
 // pointer and opens as the full-height panel. A phone has it as the top row of one bar with the
 // pill, flush with the screen's foot, and its count opens the list in it.
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { uiBox } from '../portals'
 import { t, tn } from '../i18n'
 import { useAgentName, useCtx } from './ctx'
 import { islandPrefs, useIslandPrefs, type IslandPrefs } from './island-prefs'
 import { useEdgeDrag, type Side } from './island-drag'
 import { CommentList, Notices, useRows } from './list'
-import { Icon, Listening, MOD, plain } from './ui'
+import { Icon, Listening, MOD, plain, srcOf, elementName } from './ui'
 import { useKeyboard } from './keyboard'
-import type { CState } from './types'
+import type { CState, Target } from './types'
 
 type Kind = 'working' | 'done' | 'reply'
 type News = { key: number; kind: Kind; title: string; text: string }
@@ -86,7 +88,7 @@ function useShown(news: News | null) {
 const NEWS_ICON: Record<Kind, string> = { working: 'spinner', done: 'check', reply: 'comment' }
 
 export function Island() {
-  const { act, copyStore } = useCtx()
+  const { act, copyStore, host } = useCtx()
   const copying = useSyncExternalStore(copyStore.subscribe, () => copyStore.get().on)
   const agent = useAgentName()
   const { s, rows, drafts, stalled } = useRows()
@@ -95,6 +97,28 @@ export function Island() {
   const { news, unread, read } = useNews(rows, agent, prefs.news, !!s.inbox)
   const { shown, leaving } = useShown(news)
   const [text, setText] = useState('')
+  // What the comment on the whole variant tags: other variants (from its @ menu) and elements picked
+  // on the design (the menu's Tag an element), shown as chips over the box and sent after its words.
+  const [tags, setTags] = useState<Target[]>([])
+  // The @ menu: what follows the @ typed in the box, the highlighted row, and where the @ is.
+  const [mention, setMention] = useState<{ query: string; index: number; at: number } | null>(null)
+  // Closed, the menu stays a moment as it was, so it can sink away instead of vanishing.
+  const [menuGone, setMenuGone] = useState<typeof mention>(null)
+  const lastMention = useRef(mention)
+  if (mention) lastMention.current = mention
+  useEffect(() => {
+    if (mention) { setMenuGone(null); return }
+    const was = lastMention.current
+    if (!was) return
+    lastMention.current = null
+    setMenuGone(was)
+    const id = window.setTimeout(() => setMenuGone(null), 140)
+    return () => clearTimeout(id)
+  }, [!!mention])
+  const menuAt = mention ?? menuGone
+  // The highlighted row is kept in view as the arrows move it.
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { menuRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }) }, [mention?.index, !!mention])
   const [focus, setFocus] = useState(false)
   const input = useRef<HTMLTextAreaElement>(null)
   const card = useRef<HTMLDivElement>(null)
@@ -109,6 +133,19 @@ export function Island() {
     return () => zone?.removeAttribute('data-typing')
   }, [phone, focus])
   const picking = s.mode.kind === 'pick'
+  // Selecting an element to comment on (the button or C): the open list folds away, so the whole
+  // design is free to point at.
+  useEffect(() => { if (picking && s.island) act.openIsland(false) }, [picking])
+  // The element picked for a tag (the @ menu's Tag an element) comes back as a chip, with the box (and
+  // on the right edge, the panel it is in) open again and the cursor in it.
+  useEffect(() => {
+    const picked = s.wholePicked
+    if (!picked) return
+    act.wholeTagTaken()
+    setTags(ts => [...ts, picked])
+    if (!phone && side) act.openIsland(true)
+    window.setTimeout(() => input.current?.focus({ preventScroll: true }), side ? 160 : 0)
+  }, [s.wholePicked])
 
   useLayoutEffect(() => {
     const el = input.current
@@ -133,13 +170,16 @@ export function Island() {
 
   // On a wide screen it rests on an edge of the stage (island-drag.ts). `side` turns with the drag,
   // ahead of the preferences, so the card stands upright while it is still held.
-  const sideOf = (place: IslandPrefs['place']): Side | null => place === 'left' || place === 'right' ? place : null
+  const sideOf = (place: IslandPrefs['place']): Side | null => place === 'right' ? 'right' : null
   const [side, setSide] = useState<Side | null>(sideOf(prefs.place))
   useEffect(() => setSide(sideOf(prefs.place)), [prefs.place])
   const [rail, setRail] = useState(false)
   // Folding the panel, its contents stay a moment, fading at full width while the card shrinks to
   // the tab, so nothing reflows on the way; opening or folding, the rail's hover starts over.
   const [closing, setClosing] = useState(false)
+  // Sizes dragged by hand (the edges of the open list or panel), live while dragged, kept on release.
+  const [size, setSize] = useState({ listH: prefs.listH, listW: prefs.listW, sideW: prefs.sideW })
+  const [resizing, setResizing] = useState(false)
   const wasOpen = useRef(open)
   useEffect(() => {
     setRail(false)
@@ -156,6 +196,8 @@ export function Island() {
   useEdgeDrag({
     card, on: !phone && !!s.place && !copying, place: prefs.place, along: prefs.along, full: !!side && open,
     onSide: next => { setSide(next); setRail(false) },
+    // Picked up, the open list folds out of the way.
+    onHold: on => { setRail(false); if (on && s.island) act.openIsland(false) },
     onDrop: (place, along) => islandPrefs.set({ place, along }),
   })
 
@@ -177,21 +219,59 @@ export function Island() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [phone, !!s.place])
+  // One button beside the box goes through every state, its width gliding between them: hidden, the
+  // add arrow while there is text, the Send n pill while drafts wait, hidden again. Leaving, it keeps
+  // what it showed until it has shrunk away; the pill's width is measured off a hidden copy.
+  const act1: 'add' | 'send' | null = text.trim() || tags.length ? 'add' : drafts > 0 && !s.live ? 'send' : null
+  const lastAct = useRef(act1)
+  if (act1) lastAct.current = act1
+  const shownAct = act1 ?? lastAct.current
+  const sendLabel = s.sending ? t('Sending…') : tn(drafts, 'Send {n}', 'Send {n}')
+  const pillRef = useRef<HTMLSpanElement>(null)
+  const [pillW, setPillW] = useState(0)
+  useLayoutEffect(() => { if (pillRef.current) setPillW(pillRef.current.offsetWidth) }, [sendLabel, phone, !!s.place])
   if (!s.place || (copying && !phone)) return null
 
-  const add = () => { if (act.commentWhole(text)) setText('') }
-  const typing = focus || !!text.trim()
+  const add = () => { if (act.commentWhole(text, tags)) { setText(''); setTags([]); setMention(null) } }
+  const typing = focus || !!text.trim() || tags.length > 0
+  // The @ menu's rows: the variants it can mention, narrowed by what follows the @, then Tag an element.
+  const choices = menuAt ? (host.variantMentions?.() ?? []).filter(c => !menuAt.query || `${c.variantRef?.label} ${c.variantRef?.variant} ${c.variantRef?.name}`.toLocaleLowerCase().includes(menuAt.query.toLocaleLowerCase())) : []
+  const options = mention ? [...choices, null] : []
+  const choose = (c: Target | null) => {
+    if (!mention) return
+    const el = input.current, end = el?.selectionStart ?? text.length
+    // The @ and what was typed after it go; the chip takes their place.
+    setText(text.slice(0, mention.at) + text.slice(end))
+    setMention(null)
+    if (c) { setTags(ts => [...ts, c]); window.setTimeout(() => el?.focus({ preventScroll: true }), 0) }
+    else act.tagWhole()
+  }
+  const watchMention = (el: HTMLTextAreaElement) => {
+    const before = el.value.slice(0, el.selectionStart ?? el.value.length), m = /(?:^|\s)@([^\s@]*)$/.exec(before)
+    setMention(m ? { query: m[1], index: 0, at: before.length - m[1].length - 1 } : null)
+  }
   const working = rows.some(r => r.state === 'seen' && !r.stopped)
   const live = news && !open ? news : null
   const edge = live ? EDGE[live.kind] : working ? EDGE.working : ''
   const top = prefs.place === 'top' && !phone
   const total = rows.length
   const dot = unread && !open ? EDGE.reply : working ? EDGE.working : total ? EDGE.done : ''
-  const width = phone ? '100%' : open ? 440 : typing ? 400 : shown && !open ? 360 : 300
+  const width = phone ? '100%' : open ? size.listW ?? 440 : typing ? 400 : shown && !open ? 360 : 300
   const showNews = !!shown && !open
   // Send n takes the field's room: then the short placeholder, so it stays on one line.
   const sendShown = !text.trim() && drafts > 0 && !s.live
   const openList = () => act.openIsland(!s.island)
+  // The count: a comments icon carrying the number as a badge, in the colour of the news. A new reply
+  // pops it once and leaves it blue until the list is opened; nothing keeps pulsing. The news colours
+  // are light, so their number is near-black (white on them barely reads); the grey keeps white.
+  const mark = (
+    <span className="relative grid place-items-center">
+      <Icon name="chats" className="size-[18px]" />
+      {total > 0 && <span key={`u${unread}`} className={`absolute -end-2 -top-2 grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-semibold tabular-nums transition-colors duration-500 ${unread > 0 && !open ? 'animate-[proto-isl-pop_.5s_cubic-bezier(.3,1.6,.5,1)]' : ''}`} style={{ background: dot || '#71717a', color: dot ? '#18181b' : '#fff' }}>
+        {total}
+      </span>}
+    </span>
+  )
 
   const newsRow = (
     <div className="grid transition-[grid-template-rows] duration-500 ease-[cubic-bezier(.2,.9,.25,1)]" style={{ gridTemplateRows: showNews ? '1fr' : '0fr' }}>
@@ -211,56 +291,105 @@ export function Island() {
   )
 
   const listBody = (fold?: ReactNode) => (<>
-    <div className="flex shrink-0 items-center gap-2 px-3.5 pb-1 pt-3">
-      {fold && <Icon name="grip-v" className="-ms-1.5 size-4 text-zinc-300 dark:text-zinc-600" />}
+    <div data-island-grip className="flex shrink-0 cursor-grab items-center gap-2 px-3.5 pb-1 pt-3">
       <h2 className="text-[13px] font-semibold">{t('Comments')}</h2>
       <Listening on={!!s.inbox?.listening} stalled={stalled > 0} className="ms-auto" />
       {fold}
     </div>
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4"><CommentList /></div>
+    {/* The list fades out at its own foot, so the fade never lies over what comes after it (a notice,
+        the tags over the box). */}
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4"><CommentList /></div>
+      <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-white to-transparent dark:from-zinc-900" />
+    </div>
     <div className="shrink-0 space-y-2 px-2 empty:hidden"><Notices /></div>
   </>)
   const list = (
     <div data-island-list className="grid transition-[grid-template-rows] duration-500 ease-[cubic-bezier(.2,.9,.25,1)]" style={{ gridTemplateRows: open ? '1fr' : '0fr' }} inert={!open}>
       <div className="min-h-0 overflow-hidden">
-        <div data-shoot="comments" className="flex max-h-[min(30rem,calc(100dvh-12rem))] flex-col">{listBody()}</div>
+        <div data-shoot="comments" className="flex max-h-[min(30rem,calc(100dvh-12rem))] flex-col" style={size.listH ? { height: size.listH, maxHeight: 'calc(100dvh - 9rem)' } : undefined}>{listBody()}</div>
       </div>
     </div>
   )
 
+  // The tags, as chips over the box: a variant by its label, an element by what it is.
+  const chips = tags.length > 0 && (
+    <div className="flex flex-wrap gap-1 px-2.5 pt-2">
+      {tags.map((c, i) => (
+        <span key={i} dir="auto" title={c.variantRef ? `${c.variantRef.label} · ${c.variantRef.name}` : srcOf(c)?.full ?? c.label} className="inline-flex max-w-full items-center gap-0.5 rounded-md bg-proto-primary-soft py-0.5 pe-0.5 ps-1.5 text-xs font-medium text-proto-primary-soft-fg">
+          <span className="max-w-40 truncate">{c.variantRef ? `@${c.variantRef.label} ${c.variantRef.name}` : elementName(c)}</span>
+          <button type="button" onClick={() => setTags(ts => ts.filter((_, k) => k !== i))} aria-label={t('Remove the tag')} title={t('Remove the tag')}
+            className="grid size-4 shrink-0 place-items-center rounded opacity-60 hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"><Icon name="x" className="size-3" /></button>
+        </span>
+      ))}
+    </div>
+  )
+  // The @ menu, over the page (outside the card, which clips), just above the box.
+  const box = menuAt ? input.current?.getBoundingClientRect() : null
+  const menu = menuAt && box && createPortal(
+    <div ref={menuRef} role="listbox" aria-label={t('Mention a variant')} data-comment-ui=""
+      style={{ position: 'fixed', zIndex: 250, left: Math.max(8, Math.min(box.left, innerWidth - Math.min(300, innerWidth - 16) - 8)), bottom: innerHeight - box.top + 8, width: Math.min(300, innerWidth - 16) }}
+      className={`origin-bottom-left overflow-hidden rounded-xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-lg dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100 ${mention ? 'pointer-events-auto animate-[proto-isl-menu-in_.18s_cubic-bezier(.2,.9,.25,1)_both]' : 'pointer-events-none animate-[proto-isl-menu-out_.14s_ease-in_forwards]'}`}>
+      <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-zinc-400">{t('Mention a variant')}</div>
+      <div className="max-h-48 overflow-y-auto">
+        {choices.map((c, i) => (
+          <button key={`${c.variantRef?.proto}/${c.variantRef?.variant}/${c.variantRef?.label}`} type="button" role="option" aria-selected={i === menuAt.index} onMouseDown={e => e.preventDefault()} onClick={() => choose(c)}
+            className={`flex min-h-9 w-full items-center gap-2 px-3 py-2 text-start text-xs ${i === menuAt.index ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}>
+            <span className="font-semibold">@{c.variantRef?.label}</span><span className="min-w-0 flex-1 truncate">{c.variantRef?.name}</span>
+          </button>
+        ))}
+        {!choices.length && <p className="px-3 py-2 text-xs text-zinc-400">{t('No matching variants')}</p>}
+      </div>
+      <button type="button" role="option" data-tag-pick aria-selected={menuAt.index === choices.length} onMouseDown={e => e.preventDefault()} onClick={() => choose(null)}
+        className={`flex min-h-9 w-full items-center gap-2 border-t border-black/[.06] px-3 py-2 text-start text-xs dark:border-white/10 ${menuAt.index === choices.length ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}>
+        <Icon name="target" className="size-3.5" />{t('Tag an element')}
+      </button>
+    </div>, uiBox())
+
   const bar = (
     <div className={`relative flex shrink-0 items-end ${phone ? 'gap-2 p-2' : 'gap-1.5 p-1.5'}`}>
-      {open && <span aria-hidden className={`pointer-events-none absolute inset-x-0 h-5 ${top ? 'top-full bg-gradient-to-b' : 'bottom-full bg-gradient-to-t'} from-white to-transparent dark:from-zinc-900`} />}
       <button type="button" data-act="comment:toggle" data-shoot="comment" aria-pressed={picking} aria-label={t('Select an element to comment on')}
         title={picking ? t('Stop selecting · Esc') : `${t('Select an element to comment on')} · C`}
         className={`grid shrink-0 place-items-center rounded-full transition-colors ${phone ? 'size-10' : 'size-8'} ${picking ? 'bg-proto-primary text-proto-primary-fg' : 'bg-zinc-900/[.05] text-zinc-600 hover:bg-zinc-900/10 hover:text-zinc-900 dark:bg-white/[.08] dark:text-zinc-300 dark:hover:bg-white/15 dark:hover:text-white'}`}>
         <Icon name={phone ? (picking ? 'tap-on' : 'tap') : picking ? 'select-on' : 'select'} className={phone ? 'size-5' : 'size-4'} />
       </button>
-      <textarea ref={input} data-shoot="whole-input" rows={1} value={text} onChange={e => setText(e.target.value)} dir="auto" autoComplete="off" enterKeyHint="enter"
-        aria-label={t('Comment on the entire variant')} placeholder={picking ? (phone ? t('Tap an element') : t('Click what to comment on')) : (typing || phone) && !sendShown && fits ? t('Comment on the entire variant') : t('Comment…')} title={`${t('Comment on the whole variant')} · ⇧C`}
-        onFocus={() => { setFocus(true); act.wholeFocus(true) }} onBlur={() => { setFocus(false); act.wholeFocus(false) }}
+      <textarea ref={input} data-shoot="whole-input" rows={1} value={text} onChange={e => { setText(e.target.value); watchMention(e.target) }} dir="auto" autoComplete="off" enterKeyHint="enter"
+        aria-label={t('Comment on the entire variant')} placeholder={picking ? (s.wholeTag ? t('Click what to tag') : phone ? t('Tap an element') : t('Click what to comment on')) : (typing || phone) && !sendShown && fits ? t('Comment on the entire variant') : t('Comment…')} title={`${t('Comment on the whole variant')} · ⇧C`}
+        onFocus={() => { setFocus(true); act.wholeFocus(true) }} onBlur={() => { setFocus(false); act.wholeFocus(false); setMention(null) }}
         onKeyDown={e => {
           if (e.nativeEvent.isComposing) return
+          if (mention) {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const step = e.key === 'ArrowDown' ? 1 : -1; setMention({ ...mention, index: (mention.index + step + options.length) % options.length }); return }
+            if ((e.key === 'Enter' || e.key === 'Tab') && !e.metaKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); choose(options[Math.min(mention.index, options.length - 1)] ?? null); return }
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMention(null); return }
+          }
+          // Backspace in an empty box takes off the last tag.
+          if (e.key === 'Backspace' && !text && tags.length) { e.preventDefault(); setTags(ts => ts.slice(0, -1)); return }
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); add() }
           else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); input.current?.blur() }
         }}
         className={`max-h-[116px] min-w-0 flex-1 resize-none overflow-y-auto outline-none ${phone ? 'min-h-10 rounded-[20px] px-4 py-2 text-base leading-6' : 'min-h-8 rounded-2xl px-3 py-1.5 text-[13px] leading-5 [@media(pointer:coarse)]:text-base'} bg-zinc-900/[.05] placeholder:text-zinc-400 dark:bg-white/[.08] ${phone ? '' : 'focus:ring-2 focus:ring-proto-primary-ring'}`} />
-      {text.trim()
-        ? <button type="button" data-shoot="whole-add" onClick={add} aria-label={t('Add the comment')} title={`${t('Add the comment')} · ${MOD} Enter`}
-            className={`grid shrink-0 place-items-center rounded-full bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover ${phone ? 'size-10' : 'size-8'}`}><Icon name="send" className={phone ? 'size-5' : 'size-4'} /></button>
-        : drafts > 0 && !s.live && <button type="button" data-shoot="send" onClick={act.send} disabled={s.sending} title={`${tn(drafts, 'Send {n} to {agent}', 'Send {n} to {agent}', { agent })} · ${MOD} Enter`}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full bg-proto-primary px-3 font-semibold ${phone ? 'h-10 text-sm' : 'h-8 text-xs'} text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-60`}>
-            <Icon name="send" className="size-3.5" />{s.sending ? t('Sending…') : tn(drafts, 'Send {n}', 'Send {n}')}
-          </button>}
+      <div inert={!act1} className="relative shrink-0"
+        style={{ width: act1 === 'send' ? pillW : act1 ? (phone ? 40 : 32) : 0, marginInlineStart: act1 ? 0 : phone ? -8 : -6, transition: `width .42s ${SOFT}, margin .42s ${SOFT}` }}>
+        <span ref={pillRef} aria-hidden className={`invisible absolute flex items-center gap-1.5 whitespace-nowrap px-3 font-semibold ${phone ? 'text-sm' : 'text-xs'}`}><Icon name="send" className="size-3.5" />{sendLabel}</span>
+        <button type="button" data-shoot={shownAct === 'send' ? 'send' : 'whole-add'} onClick={shownAct === 'send' ? act.send : add} disabled={shownAct === 'send' && s.sending}
+          aria-label={shownAct === 'send' ? undefined : t('Add the comment')}
+          title={shownAct === 'send' ? `${tn(drafts, 'Send {n} to {agent}', 'Send {n} to {agent}', { agent })} · ${MOD} Enter` : `${t('Add the comment')} · ${MOD} Enter`}
+          className={`flex w-full items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full bg-proto-primary font-semibold text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-60 ${phone ? 'h-10 text-sm' : 'h-8 text-xs'}`}
+          style={act1
+            // In, it pops a little past its size as its room opens; out, it shrinks and fades a beat ahead of the room closing.
+            ? { transform: 'none', opacity: 1, transition: `transform .5s cubic-bezier(.3,1.5,.5,1) 60ms, opacity .2s ease-out 60ms, background-color .15s` }
+            : { transform: 'scale(.3)', opacity: 0, transition: `transform .24s cubic-bezier(.4,0,1,1), opacity .18s ease-in, background-color .15s` }}>
+          <Icon name="send" className={`shrink-0 ${shownAct === 'send' ? 'size-3.5' : phone ? 'size-5' : 'size-4'}`} />
+          {shownAct === 'send' && <span key="label" className="animate-[proto-isl-rise_.35s_cubic-bezier(.2,.9,.25,1)_both]">{sendLabel}</span>}
+        </button>
+      </div>
       {/* Upright, the panel has its own fold button and the count is its header's. */}
       {(phone || !side) && <button type="button" data-shoot="island-open" onClick={() => { read(); openList() }} aria-expanded={open} aria-label={open ? t('Collapse the comments') : tn(total, 'Open {n} comment', 'Open all {n} comments')}
         className={`flex shrink-0 items-center rounded-full ${phone ? 'size-10 justify-center gap-0.5 text-sm' : 'h-8 gap-1.5 px-2 text-xs'} text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10`}>
-        {/* A phone has no room for the dot: the count itself takes its colour, lined up over the pill's end button. */}
-        {!phone && <span className="relative grid size-2 place-items-center">
-          {unread > 0 && !open && <span className="absolute size-2 animate-ping rounded-full" style={{ background: EDGE.reply }} />}
-          <span className={`size-2 rounded-full transition-colors duration-500 ${dot ? '' : 'bg-zinc-300 dark:bg-zinc-600'}`} style={dot ? { background: dot } : undefined} />
-        </span>}
-        <span className="tabular-nums" style={phone && dot ? { color: dot } : undefined}>{total}</span>
+        {/* Wide, the count is the comments icon with its badge, as on the side tab. A phone has no room
+            for it: the count itself takes the news colour, lined up over the pill's end button. */}
+        {phone ? <span className="tabular-nums" style={dot ? { color: dot } : undefined}>{total}</span> : <span className="me-0.5">{mark}</span>}
         <span className={`transition-transform duration-300 ${open !== top ? 'rotate-180' : ''}`}><Icon name="caret-up" className="size-3 opacity-60" /></span>
       </button>}
     </div>
@@ -277,41 +406,73 @@ export function Island() {
       style={{ ...(kb || focus ? { bottom: kb, paddingBottom: 4 } : {}), ...(edge ? { boxShadow: `inset 0 2px ${edge}, inset 2px 0 ${edge}, inset -2px 0 ${edge}` } : {}) }}>
       {list}
       {newsRow}
+      {chips}
       {bar}
     </div>
+    {menu}
   </>)
+  // An edge of the open list (its far edge for the height, its sides for the width, growing both ways
+  // from its centre) or of the panel on the right (its left edge): dragged, it resizes; double-clicked,
+  // it goes back to its own size. It holds the pointer, so the drag goes on over the design's iframe.
+  const edgeHandle = (k: 'listH' | 'listW' | 'sideW', at: 'top' | 'bottom' | 'start' | 'end') => {
+    const across = at === 'top' || at === 'bottom'
+    return (
+      <div aria-hidden data-island-resize className={`group absolute z-10 ${across ? `inset-x-8 h-2 cursor-ns-resize ${at === 'top' ? 'top-0' : 'bottom-0'}` : `inset-y-8 w-2 cursor-ew-resize ${at === 'start' ? 'left-0' : 'right-0'}`}`}
+        onPointerDown={e => {
+          const c = card.current, handle = e.currentTarget
+          if (e.button !== 0 || !c) return
+          e.stopPropagation()
+          e.preventDefault()
+          handle.setPointerCapture(e.pointerId)
+          const x0 = e.clientX, y0 = e.clientY, stage = c.closest<HTMLElement>('[data-island-host]')
+          const from = k === 'listH' ? c.querySelector<HTMLElement>('[data-shoot="comments"]')?.offsetHeight ?? 320 : c.offsetWidth
+          const within = (v: number, lo: number, hi: number) => Math.round(Math.min(Math.max(v, lo), Math.max(lo, hi)))
+          let last = from
+          setResizing(true)
+          const move = (ev: PointerEvent) => {
+            const dx = ev.clientX - x0, dy = ev.clientY - y0, W = stage?.clientWidth ?? innerWidth, H = stage?.clientHeight ?? innerHeight
+            last = k === 'listH' ? within(from + (at === 'top' ? -dy : dy), 160, H - 160)
+              : k === 'listW' ? within(from + 2 * (at === 'start' ? -dx : dx), 320, W - 32)
+              : within(from - dx, 280, Math.min(720, W - 120))
+            setSize(z => ({ ...z, [k]: last }))
+          }
+          const end = () => {
+            handle.removeEventListener('pointermove', move)
+            handle.removeEventListener('lostpointercapture', end)
+            setResizing(false)
+            islandPrefs.set({ [k]: last })
+          }
+          handle.addEventListener('pointermove', move)
+          handle.addEventListener('lostpointercapture', end)
+        }}
+        onDoubleClick={e => { e.stopPropagation(); setSize(z => ({ ...z, [k]: undefined })); islandPrefs.set({ [k]: undefined }) }}>
+        <span className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-400/0 transition-colors duration-150 group-hover:bg-zinc-400/70 ${across ? 'h-1 w-10' : 'h-10 w-1'}`} />
+      </div>
+    )
+  }
   const home = (e: ReactMouseEvent) => { if (!(e.target as Element).closest('button, textarea, [data-island-list]')) islandPrefs.set({ place: 'bottom', along: 0 }) }
   const ring = edge ? { boxShadow: `0 0 0 2px ${edge}, 0 18px 44px -14px rgb(0 0 0 / .35)` } : {}
-  const surface = 'pointer-events-auto absolute left-0 top-0 bg-white text-zinc-900 shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.08] will-change-transform dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10 data-[held]:cursor-grabbing data-[held]:select-none'
+  const surface = 'pointer-events-auto absolute left-0 top-0 data-[held]:!transition-none bg-white text-zinc-900 shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.08] will-change-transform dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10 data-[held]:cursor-grabbing data-[held]:select-none'
   if (side) {
-    const right = side === 'right'
     const toPanel = () => { read(); act.openIsland(true) }
     const toWrite = () => { toPanel(); window.setTimeout(() => input.current?.focus({ preventScroll: true }), 140) }
-    const n = total
-    // The count: a comments icon carrying the number as a badge, in the colour of the news.
-    const mark = (
-      <span className="relative grid place-items-center">
-        <Icon name="chats" className="size-[18px]" />
-        {n > 0 && <span className="absolute -end-2 -top-2 grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-semibold tabular-nums text-white" style={{ background: dot || '#71717a' }}>
-          {unread > 0 && !open && <span className="absolute inset-0 animate-ping rounded-full" style={{ background: EDGE.reply }} />}
-          <span className="relative">{n}</span>
-        </span>}
-      </span>
-    )
+    // No ring of the news colour on the right edge: the count's badge carries it.
     const shape = open ? 'panel' : rail ? 'rail' : 'tab'
     return (
       <div ref={card} data-island data-comment-ui="" data-open={open || undefined} data-edge-side={side} data-shape={shape} onDoubleClick={home}
-        className={`${surface} cursor-grab transition-[width,height,border-radius] duration-[360ms] ease-[cubic-bezier(.32,.72,0,1)] ${right ? 'rounded-l-[22px]' : 'rounded-r-[22px]'} ${folding ? 'overflow-hidden' : ''}`}
-        style={{ width: open ? 340 : rail ? 48 : 40, height: open ? 'calc(100% - 32px - var(--pill-h, 0px) - var(--dock-h, 0px) - var(--copy-h, 0px))' : rail ? 153 : 56, visibility: 'hidden', ...ring }}>
+        className={`${surface} cursor-grab ${resizing ? '' : 'transition-[width,height,border-radius] duration-[360ms] ease-[cubic-bezier(.32,.72,0,1)]'} rounded-l-[22px] ${folding ? 'overflow-hidden' : ''}`}
+        style={{ width: open ? size.sideW ?? 340 : rail ? 48 : 40, height: open ? 'calc(100% - 32px - var(--pill-h, 0px) - var(--dock-h, 0px) - var(--copy-h, 0px))' : rail ? 153 : 56, visibility: 'hidden' }}>
         {open || folding
           // The panel: its header, the comments and the bar arrive one after another as it grows.
-          ? <div data-island-list data-shoot="comments" inert={folding} style={folding ? { width: 340, height: lastPanel.current || undefined } : undefined}
+          ? <div data-island-list data-shoot="comments" inert={folding} style={folding ? { width: size.sideW ?? 340, height: lastPanel.current || undefined } : undefined}
               ref={el => { if (el && !folding) lastPanel.current = el.offsetHeight }}
-              className={`flex flex-col overflow-hidden ${folding ? `absolute top-0 ${right ? 'left-0' : 'right-0'} opacity-0 transition-opacity duration-[80ms] ease-linear` : 'size-full'} ${right ? 'rounded-l-[22px]' : 'rounded-r-[22px]'} [&>*]:animate-[proto-isl-rise_.45s_cubic-bezier(.2,.9,.25,1)_both] [&>*:nth-child(2)]:[animation-delay:60ms] [&>*:nth-child(3)]:[animation-delay:100ms] [&>*:nth-child(4)]:[animation-delay:130ms] [&>*:nth-child(5)]:[animation-delay:160ms]`}>
+              className={`flex flex-col overflow-hidden ${folding ? `absolute left-0 top-0 opacity-0 transition-opacity duration-[80ms] ease-linear` : 'size-full'} rounded-l-[22px] [&>*]:animate-[proto-isl-rise_.45s_cubic-bezier(.2,.9,.25,1)_both] [&>*:nth-child(2)]:[animation-delay:60ms] [&>*:nth-child(3)]:[animation-delay:100ms] [&>*:nth-child(4)]:[animation-delay:130ms] [&>*:nth-child(5)]:[animation-delay:160ms]`}>
               {listBody(<button type="button" data-shoot="island-fold" onClick={() => act.openIsland(false)} aria-label={t('Fold the comments')} title={t('Fold the comments')}
-                className="-me-1.5 grid size-7 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"><Icon name={right ? 'fold-right' : 'fold-left'} className="size-3.5" /></button>)}
+                className="-me-1.5 grid size-7 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"><Icon name="fold-right" className="size-3.5" /></button>)}
               {newsRow}
-              <div className="border-t border-black/[.06] dark:border-white/[.06]">{bar}</div>
+              <div className="border-t border-black/[.06] dark:border-white/[.06]">{chips}{bar}</div>
+              {menu}
+              {open && !folding && edgeHandle('sideW', 'start')}
             </div>
           // The tab and the rail are one set of buttons, placed from the foot: under the pointer the
           // card grows upward, the count settles a little lower and the rest rise out from behind it,
@@ -337,16 +498,20 @@ export function Island() {
   }
   return (
     <div ref={card} data-island data-comment-ui="" data-open={open || undefined} data-edge-side="flat" onDoubleClick={home}
-      className={`${surface} flex max-w-[calc(100%-32px)] cursor-grab flex-col overflow-hidden rounded-[22px] transition-[width,box-shadow] duration-500 ease-[cubic-bezier(.2,.9,.25,1.1)] ${top ? 'flex-col-reverse' : ''}`}
+      className={`${surface} flex max-w-[calc(100%-32px)] cursor-grab flex-col overflow-hidden rounded-[22px] ${resizing ? '' : 'transition-[width,box-shadow] duration-500 ease-[cubic-bezier(.2,.9,.25,1.1)]'} ${top ? 'flex-col-reverse' : ''}`}
       style={{ width, visibility: 'hidden', ...ring }}>
+      {open && <>{edgeHandle('listH', top ? 'bottom' : 'top')}{edgeHandle('listW', 'start')}{edgeHandle('listW', 'end')}</>}
       {list}
       {newsRow}
+      {chips}
       {bar}
+      {menu}
     </div>
   )
 }
 
 const EASE = 'cubic-bezier(.2,.9,.25,1)'
+const SOFT = 'cubic-bezier(.32,.72,0,1)'
 /** One of the rail's buttons: placed from the foot when open, folded into the count when not. */
 function Rise({ open, at, order, children }: { open: boolean; at: number; order: number; children: ReactNode }) {
   return (

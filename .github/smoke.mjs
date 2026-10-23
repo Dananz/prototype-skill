@@ -896,8 +896,8 @@ try {
     const r = menu.getBoundingClientRect(), pick = [...menu.querySelectorAll('button')].find(b => b.textContent.includes('Pick an element instead')), p = pick?.getBoundingClientRect()
     if (r.top < 0 || r.bottom > innerHeight || !p || !document.elementFromPoint(p.left+10,p.top+p.height/2)?.closest('[data-tag-menu]')) return 'the dock clipped its variant menu'
     pick.click()
-    await new Promise(r => setTimeout(r, 100))
-    const said = !document.querySelector('[data-tag-menu]') && composer?.classList.contains('opacity-60') ? 'ok' : 'Pick an element instead should start visual tagging'
+    await new Promise(r => setTimeout(r, 300))
+    const said = !document.querySelector('[data-tag-menu]') && composer?.matches('.opacity-40, .opacity-60') ? 'ok' : 'Pick an element instead should start visual tagging'
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     ed.textContent = ''
     ed.dispatchEvent(new Event('input', { bubbles: true }))

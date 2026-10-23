@@ -33,9 +33,12 @@ export default function Variant() {
   const design = key => `window.__protoDesign()?.querySelector('[data-tweak-demo]')?.getAttribute('data-${key}')`
   const page = await openPage(`${local}tweaks-check/A`)
   try {
-    await until(page, `document.querySelector('[data-hint="tab:tweaks"]')?.getAttribute('aria-pressed') === 'true'`, 'desktop inspector did not open for declared controls')
+    await until(page, `!!document.querySelector('[data-bar] [data-act="open:tweaks"]')`, 'desktop bar has no Tweaks button for declared controls')
+    assert(await page.run(`!document.querySelector('[data-hint="tab:tweaks"]')`), 'Tweaks is still a side panel tab on desktop')
+    await click(page, '[data-bar] [data-act="open:tweaks"]')
+    await until(page, `(()=>{const p=document.querySelector('[data-tweaks-pop]');if(!p||p.hidden||!p.querySelector('[data-tweak=state]'))return false;const r=p.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0})()`, 'desktop Tweaks popover did not open under its button')
     assert(await page.run(`(async()=>{const {tweaks}=await import('/shell/tweaks.ts');const {hints}=await import('/shell/hints.ts');const host=window.__protoDesign();if(!host || host.ownerDocument===document)return false;window.__pendingTweaks={host,fields:tweaks.of(host),hints:hints.of(host)};tweaks.drop(host);hints.drop(host);return true})()`), 'delayed registry check needs an active device frame')
-    await until(page, `!document.querySelector('[data-bar] [data-act=tweaks]') && !document.querySelector('[data-tweak-body] [data-tweak]')`, 'pending frame registration exposes stage controls that cannot receive writes')
+    await until(page, `!document.querySelector('[data-bar] [data-act="open:tweaks"]') && !document.querySelector('[data-tweak-body] [data-tweak]')`, 'pending frame registration exposes stage controls that cannot receive writes')
     await page.run(`(async()=>{const {tweaks}=await import('/shell/tweaks.ts');const {hints}=await import('/shell/hints.ts');const p=window.__pendingTweaks;hints.set(p.host,p.hints);tweaks.set(p.host,p.fields);delete window.__pendingTweaks})()`)
     await until(page, `!!document.querySelector('[data-tweak-body] [data-tweak=state]')`, 'controls did not return when the device frame registered')
     await click(page, '[data-tweak-body] [data-tweak=state] [data-tweak-option=Empty]')
@@ -44,7 +47,6 @@ export default function Variant() {
     await until(page, `${design('accent')} === '#be123c'`, 'color preset did not update the design')
     await click(page, '[data-tweak-body] [data-tweak-input=long]')
     await until(page, `${design('long')} === 'true'`, 'toggle did not update the design')
-    assert(await page.run(`(()=>{const tabs=document.querySelector('[data-tabs]');return [...tabs.querySelectorAll('button')].every(b=>b.getBoundingClientRect().right<=tabs.getBoundingClientRect().right)})()`), 'three tabs and their counts clip the panel close button')
     await click(page, '[data-tweak-body] [data-tweak-reset=state]')
     await until(page, `${design('state')} === 'Full'`, 'per-control reset failed')
     assert(await page.run(`${design('accent')} === '#be123c' && ${design('long')} === 'true'`), 'single reset changed unrelated controls')
@@ -59,9 +61,9 @@ export default function Variant() {
     await click(page, '[data-tweak-body] [data-tweak=state] [data-tweak-option=Error]')
     await until(page, `${design('state')} === 'Error'`, 'B did not receive its own write')
     await page.run(`location.hash='/tweaks-check/C'`)
-    await until(page, `!!window.__protoDesign()?.querySelector('[data-no-tweaks]') && !document.querySelector('[data-bar] [data-act=tweaks]')`, 'undeclared desktop variant exposes Tweaks')
+    await until(page, `!!window.__protoDesign()?.querySelector('[data-no-tweaks]') && !document.querySelector('[data-bar] [data-act="open:tweaks"]')`, 'undeclared desktop variant exposes Tweaks')
     await page.run(`location.hash='/tweaks-check'`)
-    await until(page, '!document.querySelector("[data-bar] [data-act=tweaks]")', 'overview still exposes one variant’s controls')
+    await until(page, `!document.querySelector('[data-bar] [data-act="open:tweaks"]')`, 'overview still exposes one variant’s controls')
   } finally { page.close() }
   const phone = await openPage(`${local}tweaks-check/A`, { width: 360, height: 800, phone: true })
   try {
@@ -90,13 +92,11 @@ export default function Variant() {
   for (const id of ['A', 'B']) writeFileSync(join(app, 'src/protos/tweaks-phone-check', `${id}.tsx`), readFileSync(join(app, 'src/protos/tweaks-check', `${id}.tsx`)))
   const phoneKind = await openPage(`${local}tweaks-phone-check/A`)
   try {
-    await until(phoneKind, `document.querySelector('[data-hint="tab:tweaks"]')?.getAttribute('aria-pressed') === 'true'`, 'phone-kind desktop inspector did not open')
-    for (const [tab, variant] of [['try', 'B'], ['tweaks', 'A']]) {
-      await click(phoneKind, `[data-hint="tab:${tab}"]`)
-      await phoneKind.run(`location.hash='/tweaks-phone-check/${variant}'`)
-      await until(phoneKind, `window.__protoDesign()?.querySelector('[data-tweak-demo]')?.getAttribute('data-tweak-demo') === '${variant}' && document.querySelector('[data-tweak-body]').textContent.includes('Content state ${variant}')`, 'phone-kind navigation did not finish registering controls')
-      assert(await phoneKind.run(`document.querySelector('[data-hint="tab:${tab}"]')?.getAttribute('aria-pressed') === 'true'`), 'phone-kind navigation stole the selected ' + tab + ' tab')
-    }
+    await until(phoneKind, `!!document.querySelector('[data-bar] [data-act="open:tweaks"]')`, 'phone-kind desktop bar has no Tweaks button')
+    await click(phoneKind, '[data-bar] [data-act="open:tweaks"]')
+    await until(phoneKind, `!document.querySelector('[data-tweaks-pop]').hidden`, 'phone-kind desktop Tweaks popover did not open')
+    await phoneKind.run(`location.hash='/tweaks-phone-check/B'`)
+    await until(phoneKind, `window.__protoDesign()?.querySelector('[data-tweak-demo]')?.getAttribute('data-tweak-demo') === 'B' && document.querySelector('[data-tweak-body]').textContent.includes('Content state B')`, 'phone-kind navigation did not finish registering controls')
   } finally { phoneKind.close() }
   console.log('\nOK: Tweaks inspector and mobile dock drawer update, reset and scope controls')
 }

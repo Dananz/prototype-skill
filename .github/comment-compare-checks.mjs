@@ -35,7 +35,7 @@ export async function commentCompareChecks({ proto, app, openPage, fail }) {
       if(!await until(editor))return 'native picker did not open the composer'
       if(c.store.get().mode.target.source?.variant!=='B')return 'B pick lost its source route'
       type('Bring the unmatched element here: @foc')
-      if(!await until(()=>document.querySelectorAll('[data-tag-menu] [role=option]').length===1))return '@ filter did not find Focus'
+      if(!await until(()=>document.querySelectorAll('[data-tag-menu] [role=option]:not([data-tag-pick])').length===1))return '@ filter did not find Focus'
       return document.querySelector('[data-tag-menu] [role=option]').textContent.includes('@1')?'ok':'filter offered wrong variant'
     })()`)
     if (begin !== 'ok') fail(`compare comments: ${begin}`)
