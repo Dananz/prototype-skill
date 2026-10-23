@@ -14,8 +14,8 @@ session lives in that one app: **session › prototype › variant**.
 
 The app already has its navigation (a switcher in the bar that opens the session as columns,
 a sidebar with one line per level and the current level as two columns, a stepper through the
-variants (on a phone, a pill at the bottom you drag along, with a menu for the page's tools and
-the comments island as its top row, and the columns as a sheet you drill into), a comments island
+variants (on a phone, one solid bar at the foot: the comments island over a pill you drag along,
+with a menu for the page's tools, and the columns as a sheet you drill into), a comments island
 floating over the stage, edge arrows, a focus mode with a dock, light and dark, phone frames, "editing" dots, a
 strip naming the variant your requests change). You only write variant files.
 
@@ -52,7 +52,10 @@ the time: Select (or C) to pick an element, a box for a comment on the whole var
 drafts wait, and the count, which opens the list above the same bar. When the agent takes a
 comment, finishes it or replies, the island grows for a moment to say so and its edge takes the
 news's colour (amber working, green done, blue reply). It drags anywhere on a wide stage. On a
-phone it is the pill's top row and its count opens the list as a sheet.
+phone it and the pill are one bar at the screen's foot, in the page's light or dark, which folds to
+the comment bar while the design scrolls down; its count opens the list in the bar, the composer
+opens as a drawer (a swipe down puts it away), the pill's end is Tweaks, else the layouts, else the
+star, and two fingers zoom the design only (Fit resets it).
 
 Compare uses the same island, numbered pins, screenshots, drafts, sending and agent
 replies as a single variant. Click Select (or press C), then choose something in either pane.
