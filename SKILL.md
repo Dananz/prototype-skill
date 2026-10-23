@@ -51,7 +51,10 @@ Comments live in the **comments island**, a small bar floating over the stage an
 the time: Select (or C) to pick an element, a box for a comment on the whole variant, Send when
 drafts wait, and the count, which opens the list above the same bar. When the agent takes a
 comment, finishes it or replies, the island grows for a moment to say so and its edge takes the
-news's colour (amber working, green done, blue reply). It drags anywhere on a wide stage. On a
+news's colour (amber working, green done, blue reply). On a wide stage it always rests on an
+edge: flat on the foot or the top, or, dragged to a side, upright and flush with it as a small tab
+(the count as a badge) that widens into a rail under the pointer and opens as the full-height
+comments panel. On a
 phone it and the pill are one bar at the screen's foot, in the page's light or dark, which folds to
 the comment bar while the design scrolls down; its count opens the list in the bar, the composer
 opens as a drawer (a swipe down puts it away), the pill's end is Tweaks, else the layouts, else the
