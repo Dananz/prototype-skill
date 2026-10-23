@@ -344,14 +344,29 @@ export function find(mount: HTMLElement | null, t: Pick<Target, 'selector' | 'sh
  * that shows as a region of its own. Wrappers with no size (their children are positioned out of
  * them) or exactly `el`'s size would draw no outline, or the same one, so they are skipped.
  */
+// The variant itself: its root (the mount's lone child, and its lone child in turn while each is
+// as big as the one around it) or a layer as big as all of it. The whole variant has its own field
+// in the comments bar, so picking never outlines it.
+export function whole(mount: HTMLElement, el: HTMLElement) {
+  let root: Element = elementMount(mount, el), b = root.getBoundingClientRect()
+  for (let c = root.firstElementChild; root.childElementCount === 1 && c; c = root.firstElementChild) {
+    const r = c.getBoundingClientRect()
+    if (r.width < b.width - 1 || r.height < b.height - 1) break
+    root = c; b = r
+  }
+  const a = el.getBoundingClientRect()
+  return a.left <= b.left + 1 && a.top <= b.top + 1 && a.right >= b.right - 1 && a.bottom >= b.bottom - 1
+}
+
 export function climb(mount: HTMLElement, el: HTMLElement): HTMLElement | null {
   mount = elementMount(mount, el)
+  if (whole(mount, el)) return null
   const a = el.getBoundingClientRect()
   for (let p = el.parentElement; p && p !== mount && mount.contains(p); p = p.parentElement) {
     const b = p.getBoundingClientRect()
     if (b.width < 1 || b.height < 1) continue
     if (Math.abs(b.left - a.left) < 1 && Math.abs(b.top - a.top) < 1 && Math.abs(b.width - a.width) < 1 && Math.abs(b.height - a.height) < 1) continue
-    return p
+    return whole(mount, p) ? null : p
   }
   return null
 }

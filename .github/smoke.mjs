@@ -1335,7 +1335,13 @@ try {
   if (r !== 'ok') fail(`copy mode on a design with motion, desktop: ${r}`)
   // In copy mode a real press on a line opens its options over the moment held: the take isn't let go.
   await deskBoth.run('window.__protoMotion.seek(150)')
-  const [lx, ly] = await deskBoth.run(`(() => { const r = document.querySelector('[data-layers] [data-copy=title]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] })()`)
+  // Where the title is drawn: in the artboard's frame when the stage shows one, mapped out to this page.
+  const [lx, ly] = await deskBoth.run(`(() => {
+    const el = window.__protoDesign().querySelector('[data-copy=title]'), r = el.getBoundingClientRect(), f = el.ownerDocument.defaultView.frameElement
+    if (!f) return [r.x + r.width / 2, r.y + r.height / 2]
+    const fr = f.getBoundingClientRect(), s = fr.width / f.offsetWidth
+    return [fr.x + (r.x + r.width / 2) * s, fr.y + (r.y + r.height / 2) * s]
+  })()`)
   await deskBoth.press(lx, ly)
   const picked = await deskBoth.run(`(async () => {
     ${until}
@@ -1365,9 +1371,17 @@ try {
   if (r !== 'ok') fail(`copy mode on a design with motion, 360 px phone: ${r}`)
   const fits = await phoneBoth.run(`(() => {
     const bar = document.querySelector('[data-pill-bar]'), r = bar.getBoundingClientRect()
-    if (!bar.querySelector('[data-act="comment:tap"]') || !bar.querySelector('[data-pill-menu]')) return 'the pill should hold the menu and Comment'
-    if (bar.querySelectorAll(':scope > button').length !== 4) return 'the pill should hold four buttons (the menu, the arrows, Comment), not ' + bar.querySelectorAll(':scope > button').length
-    if (r.left < 0 || r.right > innerWidth || bar.scrollWidth > bar.clientWidth + 1) return 'the pill overflows 360 px: ' + r.left + '-' + r.right + ', ' + bar.scrollWidth + '/' + bar.clientWidth
+    if (!bar.querySelector('[data-pill-menu]')) return 'the pill should hold the menu'
+    // The menu, the arrows and its end (here the layouts: the design has no tweaks).
+    const btns = bar.querySelectorAll('button')
+    if (btns.length !== 4 || !bar.querySelector('[data-pill-layout]')) return 'the pill should hold four buttons (the menu, the arrows, the layouts), not ' + btns.length
+    // The comments island is the top row of one bar with the pill, flush with the screen's sides and foot: Select, the box and the count.
+    const isl = document.querySelector('[data-island]'), ir = isl?.getBoundingClientRect()
+    if (!isl || !isl.querySelector('[data-act="comment:toggle"]') || !isl.querySelector('[data-shoot=island-open]')) return 'the pill should have the comments island as its top row'
+    const sel = isl.querySelector('[data-act="comment:toggle"]').getBoundingClientRect()
+    if (Math.abs(ir.bottom - r.bottom) > 1 || ir.left !== 0 || Math.abs(ir.right - innerWidth) > 1 || r.left !== 0 || Math.abs(r.right - innerWidth) > 1 || sel.bottom > r.top + 1) return 'the island and the pill should be one bar at the foot: ' + JSON.stringify([ir.left, ir.right, ir.bottom, r.left, r.right, r.top, r.bottom, sel.bottom])
+    const line = bar.firstElementChild
+    if (line.scrollWidth > line.clientWidth + 1) return 'the pill overflows 360 px: ' + line.scrollWidth + '/' + line.clientWidth
     if (document.querySelector('[data-pill-handle]').offsetWidth < 100) return 'the pill handle was squeezed to ' + document.querySelector('[data-pill-handle]').offsetWidth + ' px'
     const tight = [...document.querySelectorAll('[data-motion-bar] button')].filter(b => b.offsetParent && b.offsetWidth < 32).map(b => (b.dataset.motion || b.getAttribute('aria-label')) + ' ' + b.offsetWidth)
     if (tight.length) return 'dock buttons squeezed: ' + tight.join(', ')
@@ -1513,7 +1527,7 @@ try {
     const sizes = [...tabs.querySelectorAll('[role=radio]')].map(b => b.dataset.act + '=' + b.getAttribute('aria-checked'))
     if (sizes.join() !== ['phone', 'tablet', 'desktop'].map(x => 'size:' + x + '=' + (x === own)).join()) return 'the bar should have phone, tablet and desktop, ' + own + ' (the stage\\'s) selected: ' + sizes.join()
     if (tabs.querySelector('[data-act="size:desktop"]').title !== 'Desktop · 1440 × 900') return 'the desktop size says ' + tabs.querySelector('[data-act="size:desktop"]').title
-    if (device.parentElement.nextElementSibling?.dataset.act !== 'comment:toggle') return 'the layout menu should come just before Comment'
+    if (document.querySelector('[data-bar] [data-act="comment:toggle"]')) return 'Comment should be in the comments island, not the bar'
     tabs.querySelector('[data-act="size:phone"]').click()
     if (!await until(() => inFrame(), 15000)) return 'no page in a view'
     const url = new URL(frame().src)
@@ -1557,7 +1571,7 @@ try {
     ed.dispatchEvent(new Event('input', { bubbles: true }))
     await new Promise(r => setTimeout(r, 100))
     ;[...document.querySelectorAll('[data-composer] button')].find(b => /Add/.test(b.textContent)).click()
-    if (!await until(() => document.querySelector('[data-hints] [data-view-chip]'))) return 'the comments list should show the size on the comment'
+    if (!await until(() => document.querySelector('[data-island] [data-view-chip]'))) return 'the comments list should show the size on the comment'
     document.querySelector('[data-shoot=send]').click()
     return 'ok'
   })()`)
@@ -1598,7 +1612,7 @@ try {
     if (!await until(m, 8000)) return 'the pill has no menu'
     m().click()
     const card = await until(() => document.querySelector('[data-menu-card]'))
-    if (!card || m().getAttribute('aria-expanded') !== 'true' || !m().classList.contains('!bg-white')) return 'the menu button should open its card and turn white'
+    if (!card || m().getAttribute('aria-expanded') !== 'true' || !m().classList.contains('!bg-zinc-900') || !m().classList.contains('dark:!bg-white')) return 'the menu button should open its card and stand out (dark on the light pill, white on the dark one)'
     const sizes = [...card.querySelectorAll('[data-act^="size:"]')]
     if (sizes.length !== 3 || card.querySelector('[data-act=turn]')) return 'with no view on, the Layout row has the three sizes only'
     if (sizes[0].getAttribute('aria-pressed') !== 'true') return 'the phone, this window\\'s own size, should be the one chosen'

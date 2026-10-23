@@ -60,7 +60,7 @@ export async function commentParentChecks({ proto, app, openPage, fail }) {
       if (!await until(editor)) return 'the saved draft did not reopen'
       if (editor().textContent !== 'Keep this parent comment') return 'reopening lost the words'
       if (parent() || back()) return 'reopening a saved draft left invisible Parent/back controls in the DOM'
-      ;[...document.querySelectorAll('[data-composer] button')].find(b => b.textContent === 'Cancel').click()
+      ;[...document.querySelectorAll('[data-composer] button')].find(b => b.textContent === 'Cancel' || b.getAttribute('aria-label') === 'Cancel').click()
       return 'ok'
     })()`)
     if (saved !== 'ok') fail(`comment parents: ${saved}`)

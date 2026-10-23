@@ -166,7 +166,7 @@ export default function Click() {
       ed.textContent = ${JSON.stringify(words)}
       ed.dispatchEvent(new Event('input', { bubbles: true }))
       await new Promise(r => setTimeout(r, 100))
-      ;[...document.querySelectorAll('[data-composer] button')].find(b => /Add/.test(b.textContent)).click()
+      document.querySelector('[data-composer] [data-shoot=composer-add]').click()
       return 'ok'
     })()`)
     if (r !== 'ok') fail(`adding a comment: ${r}`)

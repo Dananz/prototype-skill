@@ -11,7 +11,8 @@ import { Layer } from './layer'
 import { ContextPop, type ContextPopProps } from './menu'
 import { climb, describe } from './dom'
 import { Selection } from './selection'
-import { PhoneSheet, Rail } from './rail'
+import { PhoneSheet } from './rail'
+import { Island } from './island'
 import { createStore, isRoot, progress, threadOf } from './store'
 import { plain } from './ui'
 import { inScope, type Place, type State, type Target, type Item } from './types'
@@ -56,7 +57,8 @@ export function createComments(host: Host, sessionId: string) {
     mountCopy(bar: HTMLElement, sheet: HTMLElement) { createRoot(bar).render(wrap(<><CopyBar /><CopySheet container={sheet} /></>)) },
     /** Something drawn in a root of its own (the motion dock) with the comment layer's context. */
     wrap,
-    mountRail(el: HTMLElement) { createRoot(el).render(wrap(<Rail />)) },
+    /** The floating comments island over the stage (island.tsx): its bar, its news and, opened, the list. */
+    mountIsland(el: HTMLElement) { createRoot(el).render(wrap(<Island />)) },
     mountSheet(el: HTMLElement) { createRoot(el).render(wrap(<PhoneSheet />)) },
     /** The bar's Pick, More and Build menu, mounted once; the returned function draws it with new props. */
     mountDecide(el: HTMLElement) { const root = createRoot(el); return (p: DecidePopProps) => root.render(wrap(<DecidePop {...p} />)) },
@@ -106,6 +108,7 @@ export function createComments(host: Host, sessionId: string) {
     escape(): boolean {
       const s = store.get()
       if (s.sheet) { act.openSheet(false); return true }
+      if (s.island && s.mode.kind === 'idle') { act.openIsland(false); return true }
       if (s.mode.kind === 'tag' || (s.mode.kind === 'time' && s.mode.tagging)) { act.tagDone(null); return true }
       if (s.mode.kind !== 'idle' || s.active) { act.close(); return true }
       return false

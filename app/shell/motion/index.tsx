@@ -41,7 +41,7 @@ export function createMotion(o: MotionHost) {
   // Put away: in focus mode, or on the page until the reviewer asks for it. A shot has no dock and
   // asks for nothing, so its takes hold.
   const putAway = () => o.focused() || (o.show() && !o.on())
-  const room = () => o.zone.style.setProperty('--dock-h', `${shown ? o.el.offsetHeight : 0}px`)
+  const room = () => { o.zone.style.setProperty('--dock-h', `${shown ? o.el.offsetHeight : 0}px`); o.zone.toggleAttribute('data-dock', shown) }
   new ResizeObserver(room).observe(o.el)
 
   // Using the design itself (a real press or key in it, or in what it renders through a portal, such

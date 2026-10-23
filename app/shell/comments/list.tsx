@@ -9,7 +9,6 @@ import { useAgentName, useCtx } from './ctx'
 import { isRoot, progress, threadOf, useStore, type Said } from './store'
 import type { CState, Item } from './types'
 import { inScope, shotsOf } from './types'
-import { WholeBox } from './whole'
 import { variantRef } from '../variants'
 import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, PRIMARY, Reply, since, spanOf, SrcTag, ViewChip, Working, ImageChip, PictureStrip } from './ui'
 
@@ -216,7 +215,7 @@ export function CommentList({ roomy, onOpen }: { roomy?: boolean; onOpen?: (id: 
   const open = (id: string) => { onOpen?.(id); act.open(id) }
   const by = (st: CState[]) => rows.filter(r => st.includes(r.state))
   const drafts = by(['draft']), wait = by(['sent', 'seen']), done = by(['done'])
-  if (!rows.length && !held) return <p className="px-3 py-6 text-center text-xs text-zinc-400">{t('Nothing yet. Press C, then click anything in the design.')}</p>
+  if (!rows.length && !held) return <p className="px-3 py-6 text-center text-xs text-zinc-400">{matchMedia('(pointer: coarse), (max-width: 639px)').matches ? t('Nothing yet. Tap the hand, then anything in the design.') : t('Nothing yet. Press C, then click anything in the design.')}</p>
   return (
     <div>
       {(drafts.length > 0 || held) && (
@@ -272,34 +271,43 @@ function copyText(text: string) {
   try { document.execCommand('copy') } finally { el.remove() }
 }
 
-/** Add (a round button, picking on the design) and Send, with the send error and who is listening. */
-export function SendBar({ className = '', onAdd }: { className?: string; onAdd?: () => void }) {
+/** The send error, and a word when the agent is not listening, with the message that restarts it. */
+export function Notices({ restart = true }: { restart?: boolean }) {
   const agent = useAgentName()
-  const { store, act } = useCtx()
+  const { act } = useCtx()
   const { s, drafts, stalled } = useRows()
   const [copied, setCopied] = useState(false)
   const timer = useRef(0)
   useEffect(() => { if (!stalled) setCopied(false) }, [stalled])
   useEffect(() => () => window.clearTimeout(timer.current), [])
   const copy = () => { copyText(restartMessage(stalled)); setCopied(true); window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setCopied(false), 6000) }
-  // With nothing of its own to send, the send row gives way to the one action that helps.
-  const restart = stalled > 0 && !drafts
+  return <>
+    {s.error && <p role="alert" className="flex items-start gap-2 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300"><span className="min-w-0 flex-1">{s.error}</span><button onClick={act.clearError} aria-label={t('Dismiss')} className="shrink-0 opacity-70 hover:opacity-100"><Icon name="x" className="size-3.5" /></button></p>}
+    {stalled > 0 && (
+      <p data-shoot="stalled" className="flex items-start gap-2 px-1 text-xs leading-4 text-amber-700 dark:text-amber-300">
+        <Icon name="warn" className="mt-0.5 size-3.5" />
+        <span>{copied ? t('Paste it in your agent conversation. {agent} picks them up when it listens.', { agent }) : tn(stalled, '{agent} is not listening. {n} comment waits. Copy the message, paste it in your agent conversation.', '{agent} is not listening. {n} comments wait. Copy the message, paste it in your agent conversation.', { agent })}</span>
+      </p>
+    )}
+    {/* With nothing of its own to send, the send row gives way to the one action that helps. */}
+    {restart && stalled > 0 && !drafts && <button data-shoot="restart" onClick={copy} className="inline-flex h-10 w-full min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-amber-400 px-3 text-[12.5px] font-semibold text-amber-950 hover:bg-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"><Icon name={copied ? 'check' : 'more'} className="size-4" />{copied ? t('Copied') : t('Copy restart message')}</button>}
+  </>
+}
+
+/** Add (a round button, picking on the design) and Send, with the send error and who is listening.
+ *  The words on the whole variant are written in the island, which a phone has over its pill. */
+export function SendBar({ className = '', onAdd }: { className?: string; onAdd?: () => void }) {
+  const { store, act } = useCtx()
+  const { drafts, stalled } = useRows()
   return (
     <div className={`space-y-2 ${className}`}>
-      {s.place && <WholeBox />}
-      {s.error && <p role="alert" className="flex items-start gap-2 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300"><span className="min-w-0 flex-1">{s.error}</span><button onClick={act.clearError} aria-label={t('Dismiss')} className="shrink-0 opacity-70 hover:opacity-100"><Icon name="x" className="size-3.5" /></button></p>}
-      {stalled > 0 && (
-        <p data-shoot="stalled" className="flex items-start gap-2 px-1 text-xs leading-4 text-amber-700 dark:text-amber-300">
-          <Icon name="warn" className="mt-0.5 size-3.5" />
-          <span>{copied ? t('Paste it in your agent conversation. {agent} picks them up when it listens.', { agent }) : tn(stalled, '{agent} is not listening. {n} comment waits. Copy the message, paste it in your agent conversation.', '{agent} is not listening. {n} comments wait. Copy the message, paste it in your agent conversation.', { agent })}</span>
-        </p>
+      <Notices />
+      {!(stalled > 0 && !drafts) && (
+        <div className="flex gap-2">
+          <button data-shoot="add" onClick={onAdd ?? act.toggle} aria-label={t('Add a comment')} title={`${t('Comment on the design')} · C`} className="grid size-12 shrink-0 place-items-center rounded-full ring-1 ring-inset ring-black/10 hover:bg-zinc-900/5 dark:ring-white/15 dark:hover:bg-white/10"><Icon name="plus" className="size-5" /></button>
+          <SendButton className="flex-1" />
+        </div>
       )}
-      <div className="flex gap-2">
-        <button data-shoot="add" onClick={onAdd ?? act.toggle} aria-label={t('Add a comment')} title={`${t('Comment on the design')} · C`} className="grid size-12 shrink-0 place-items-center rounded-full ring-1 ring-inset ring-black/10 hover:bg-zinc-900/5 dark:ring-white/15 dark:hover:bg-white/10"><Icon name="plus" className="size-5" /></button>
-        {restart
-          ? <button data-shoot="restart" onClick={copy} className="inline-flex h-12 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-amber-400 px-3 text-[12.5px] font-semibold text-amber-950 hover:bg-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"><Icon name={copied ? 'check' : 'more'} className="size-4" />{copied ? t('Copied') : t('Copy restart message')}</button>
-          : <SendButton className="flex-1" />}
-      </div>
       <Listening on={!!store.get().inbox?.listening} stalled={stalled > 0} className="justify-center" />
     </div>
   )

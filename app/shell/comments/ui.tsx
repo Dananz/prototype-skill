@@ -116,7 +116,7 @@ export function Pulse({ on = true, className = 'size-2' }: { on?: boolean; class
 export function Listening({ on, stalled = false, className = '' }: { on: boolean; stalled?: boolean; className?: string }) {
   const agent = useAgentName()
   if (stalled) return <span className={`inline-flex items-center gap-1.5 text-xs text-zinc-500 ${className}`}><span className="size-1.5 rounded-full bg-amber-500" />{t('Not listening')}</span>
-  return <span className={`inline-flex items-center gap-1.5 text-xs text-zinc-500 ${className}`}><Pulse on={on} className="size-1.5" />{on ? t('{agent} is listening', { agent }) : t('{agent} sees these on its next turn', { agent })}</span>
+  return <span className={`inline-flex items-center gap-1.5 text-xs text-zinc-500 ${className}`}><Pulse on={on} className="size-1.5" />{on ? t('{agent} is listening', { agent }) : t('{agent} reads these next turn', { agent })}</span>
 }
 
 /** The layout a comment was written on, in a device view (view/): `Desktop · 1440 × 900`. */

@@ -2,7 +2,7 @@
 // the guard that keeps every press from reaching the design while commenting, and the live boxes
 // pins and outlines are drawn from.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { climb, describe, find, frameOf, inFrame, region, regionAt, seen, spot, spotAt, openerOf, passing, shows, routeOf, seeThrough } from './dom'
+import { climb, whole, describe, find, frameOf, inFrame, region, regionAt, seen, spot, spotAt, openerOf, passing, shows, routeOf, seeThrough } from './dom'
 import { Icon } from './ui'
 import type { Box, Target } from './types'
 import { useCtx } from './ctx'
@@ -88,7 +88,7 @@ export function useBoxes(list: { id: string; t: Target }[]) {
   return boxes
 }
 
-export type Inspect = { box: Box; touch: boolean; parent: boolean } | null
+export type Inspect = { box: Box; touch: boolean; parent: boolean; down: boolean } | null
 
 /**
  * While commenting, the design is only looked at, never used: no press, tap or key reaches it.
@@ -100,7 +100,7 @@ export type Inspect = { box: Box; touch: boolean; parent: boolean } | null
  * stays on what it was started on, and a press on an element only calls `onGuard`. `hold` is a
  * finger holding, from the layer's corner; `drag` the region being dragged out, from there too.
  */
-export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Target) => void; onCancel: () => void; onGuard: (el?: HTMLElement) => void }) {
+export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Target, trail?: Target[]) => void; onCancel: () => void; onGuard: (el?: HTMLElement) => void }) {
   const { host } = useCtx()
   const [hover, setHover] = useState<Inspect>(null)
   const [hold, setHold] = useState<{ x: number; y: number } | null>(null)
@@ -117,6 +117,9 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
   const pinnedAt = useRef(0)
   const act = useRef<(el: HTMLElement) => void>(() => {})
   const raise = useRef<() => void>(() => {})
+  const lower = useRef<() => void>(() => {})
+  // The elements Parent climbed from, the last one nearest: the way back down.
+  const trail = useRef<HTMLElement[]>([])
   useEffect(() => {
     cur.current = null
     setHover(null)
@@ -152,28 +155,37 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     }
     // What is picked carries the layout it was picked on, in a device view.
     const onView = (t: Target): Target => { const v = host.view?.(); return v?.size ? { ...t, view: { size: v.size, w: v.w!, h: v.h! } } : t }
-    const part = (t: EventTarget | null) => { const el = inDesign(t); return el && el !== host.mount() ? el : null }
+    const part = (t: EventTarget | null) => { const el = inDesign(t), m = host.mount(); return el && m && el !== m && !whole(m, el) ? el : null }
     const parentOf = (el: HTMLElement) => { const m = host.mount(); return m ? climb(m, el) : null }
     let touching = false
-    const show = (el: HTMLElement | null, touch: boolean) => {
+    const show = (el: HTMLElement | null, touch: boolean, keep = false) => {
       touching = touch
       cur.current = el
       raised.current = false
+      if (!keep) trail.current = []
       const up = el && parentOf(el)
       const box = el && seen(el, host.mount()!, host.layer)
-      setHover(el && box ? { box, touch, parent: !!up } : null)
+      setHover(el && box ? { box, touch, parent: !!up, down: trail.current.length > 0 } : null)
     }
-    // Skips to the parent of what is outlined, as often as there is one.
+    // Skips to the parent of what is outlined, as often as there is one, and back down the same way.
     raise.current = () => {
       const up = cur.current && parentOf(cur.current)
       if (!up) return
-      const touch = !!hoverRef.current?.touch
-      show(up, touch)
+      trail.current.push(cur.current!)
+      show(up, !!hoverRef.current?.touch, true)
       raised.current = true
     }
+    lower.current = () => {
+      const el = trail.current.pop()
+      if (!el) return
+      show(el, !!hoverRef.current?.touch, true)
+      raised.current = trail.current.length > 0
+    }
     act.current = el => {
+      // Picked after Parent, the comment keeps the way back down (Climb, layer.tsx).
+      const from = el === cur.current ? trail.current.map(e => onView(describe(host.mount()!, e))) : []
       show(null, false)
-      cb.current.onPick(onView(describe(host.mount()!, el)))
+      cb.current.onPick(onView(describe(host.mount()!, el)), from)
     }
     // Moving between elements is debounced: the outline waits for the pointer to settle, so
     // sweeping across the design doesn't make it flicker through everything on the way.
@@ -305,7 +317,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
         if (!el.isConnected) show(null, false)
         else {
           const box = m && seen(el, m, host.layer), key = JSON.stringify(box)
-          if (key !== last) { last = key; setHover(box ? { box, touch: touching, parent: !!parentOf(el) } : null) }
+          if (key !== last) { last = key; setHover(box ? { box, touch: touching, parent: !!parentOf(el), down: trail.current.length > 0 } : null) }
         }
       }
       raf = requestAnimationFrame(follow)
@@ -362,7 +374,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
   }, [on, guard, host])
   /** Acts on what a finger inspected, from the outline's own button. */
   const confirm = () => { if (cur.current) act.current(cur.current) }
-  return { hover, hold, drag, confirm, up: () => raise.current() }
+  return { hover, hold, drag, confirm, up: () => raise.current(), down: () => lower.current() }
 }
 
 /** The region a held mouse is dragging out over the design. */
@@ -394,27 +406,36 @@ export function HoldRing({ at }: { at: { x: number; y: number } | null }) {
  * pointer gets the region alone, no words: a click starts the comment, and the comment's own
  * outline offers Parent (and back down) from there. ↑ still skips up while hovering.
  */
-export function HoverBox({ hover, verb, onConfirm, onUp }: { hover: Inspect; verb: string; onConfirm: () => void; onUp: () => void }) {
+export function HoverBox({ hover, verb, onConfirm, onUp, onDown }: { hover: Inspect; verb: string; onConfirm: () => void; onUp: () => void; onDown: () => void }) {
   const { host } = useCtx()
-  // The buttons stay on screen: above the outline, else below it, else inside its visible part
-  // (an outline taller than the screen has neither end in view). Offsets are from the outline's
-  // own corner, past its padding and border.
-  const spot = (box: Box, h: number, w: number): CSSProperties => {
+  // A finger's buttons are a small tab on the outline, in its colour, the same as the composer's Parent tab:
+  // on its top edge, else under its bottom edge, else just inside its visible top (an outline
+  // taller than the screen has neither end in view). Offsets are from the outline's own corner,
+  // past its padding and border.
+  const TAB = 20
+  const spot = (box: Box, w: number): { style: CSSProperties; side: 'above' | 'below' | 'inside' } => {
     const H = host.layer.clientHeight, W = host.layer.clientWidth
-    let y = box.y - h - 4
-    if (y < 8) y = box.y + box.h + 8
-    y = Math.min(Math.max(y, 8), Math.max(8, H - h - 8))
-    const x = Math.min(Math.max(box.x, 8), Math.max(8, W - w - 8))
-    return { top: y - (box.y - 5), left: x - (box.x - 5) }
+    const x = Math.min(Math.max(box.x + box.w / 2 - w / 2, 8), Math.max(8, W - w - 8)) - (box.x - 5)
+    if (box.y - 5 - TAB >= 4) return { style: { left: x, bottom: '100%' }, side: 'above' }
+    if (box.y + box.h + 5 + TAB <= H - 4) return { style: { left: x, top: '100%' }, side: 'below' }
+    return { style: { left: x, top: Math.max(0, -(box.y - 5)) }, side: 'inside' }
   }
+  const tap = (f: () => void) => ({ onClick: f, onTouchEnd: (e: { preventDefault(): void; stopPropagation(): void }) => { e.preventDefault(); e.stopPropagation(); f() } })
   return (
     <Glide item={hover} pad={3} className={`rounded-md border-2 border-proto-primary-ring ${hover?.touch ? 'bg-proto-primary/[.10]' : 'bg-proto-primary/[.06]'}`}>
-      {h => h.touch
-        ? <div data-inspect-ui style={spot(h.box, 36, h.parent ? 190 : 150)} className={`absolute flex h-9 items-center whitespace-nowrap rounded-lg bg-proto-primary text-xs font-medium text-proto-primary-fg shadow-lg ${hover ? 'pointer-events-auto' : ''}`}>
-            {h.parent && <><button aria-label={t('Select the parent')} onClick={onUp} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); onUp() }} className="grid size-9 place-items-center rounded-s-lg active:bg-white/15"><Icon name="up" className="size-4" /></button><span className="h-4 w-px bg-white/30" /></>}
-            <button onClick={onConfirm} onTouchEnd={e => { e.preventDefault(); e.stopPropagation(); onConfirm() }} className={`inline-flex h-9 items-center gap-1.5 ps-2.5 pe-3 active:bg-white/15 ${h.parent ? 'rounded-e-lg' : 'rounded-lg'}`}><Icon name="comment" className="size-3.5" />{verb}</button>
+      {h => {
+        if (!h.touch) return null
+        const at = spot(h.box, (h.parent ? 64 : 0) + (h.down ? 26 : 0) + 84)
+        const round = at.side === 'above' ? 'rounded-t' : 'rounded-b'
+        const sep = <span className="my-1 w-px bg-white/30" />
+        return (
+          <div data-inspect-ui style={at.style} className={`absolute flex h-5 items-stretch overflow-hidden whitespace-nowrap bg-proto-primary-ring text-[11px] font-semibold text-proto-primary-fg ${round} ${hover ? 'pointer-events-auto' : ''}`}>
+            {h.parent && <><button data-shoot="pick-parent" aria-label={t('Select the parent')} {...tap(onUp)} className="inline-flex items-center gap-1 px-1.5 active:bg-white/15"><Icon name="up" className="size-3" />{t('Parent')}</button>{sep}</>}
+            {h.down && <><button data-shoot="pick-down" aria-label={t('Back to the element inside')} title={t('Back to the element inside')} {...tap(onDown)} className="grid place-items-center px-1.5 active:bg-white/15"><Icon name="child" className="size-3" /></button>{sep}</>}
+            <button data-shoot="pick-comment" {...tap(onConfirm)} className="inline-flex items-center gap-1 px-1.5 active:bg-white/15"><Icon name="comment" className="size-3" />{verb}</button>
           </div>
-        : null}
+        )
+      }}
     </Glide>
   )
 }

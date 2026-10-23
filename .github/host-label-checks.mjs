@@ -23,9 +23,10 @@ export async function hostLabelChecks({ proto, app, local, openPage, fail }) {
         proto(['inbox'])
         proto(['reply', `${batch}/1`, 'Earlier Claude reply', '--as', 'claude'])
         await page.run('location.reload()')
-        const ready = await page.run(`(async () => { for (let end = Date.now() + 6000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (document.documentElement.dataset.ready === '1' && document.querySelector('button[aria-label="Comments"]')) return true; return false })()`)
+        const ready = await page.run(`(async () => { for (let end = Date.now() + 6000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (document.documentElement.dataset.ready === '1' && document.querySelector('[data-shoot=island-open]')) return true; return false })()`)
         if (!ready) fail('host controls never mounted')
-        if (phone) await page.run(`document.querySelector('button[aria-label="Comments"]').click()`)
+        // The comments island's count opens the list: above it on a wide screen, as a sheet on a phone.
+        await page.run(`document.querySelector('[data-shoot=island-open]').click()`)
         await page.run(`window.__hostSentinel = 'same page'`)
         for (const [agent, name] of [['codex', 'Codex'], ['claude', 'Claude'], ['agent', 'Agent'], ['codex', 'Codex']]) {
           as(agent)
@@ -34,7 +35,7 @@ export async function hostLabelChecks({ proto, app, local, openPage, fail }) {
             for (let end = Date.now() + 6000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) {
               const send = document.querySelector('[data-shoot="send"]')
               const group = document.querySelector('section[aria-label="With ' + name + '"]')
-              if (send?.textContent.includes('Send 1 to ' + name) && group && document.body.textContent.includes(name + ' sees these on its next turn')) {
+              if ((send?.textContent + ' ' + send?.title).includes('Send 1 to ' + name) && group && document.body.textContent.includes(name + ' reads these next turn')) {
                 if (window.__hostSentinel !== 'same page') return 'host change reloaded the page'
                 if (!document.body.textContent.includes('Draft stays here')) return 'draft lost'
                 if (!group.querySelector('[title="Claude"]')) return 'historical reply author changed'

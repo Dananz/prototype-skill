@@ -73,8 +73,8 @@ export function Layer() {
   const editing = m.kind === 'compose' || m.kind === 'tag' ? m : null
   const editedItem = editing?.id ? s.items.find(x => x.id === editing.id) : undefined
 
-  const { hover, hold, drag, confirm, up } = usePick(picking && !!s.place, m.kind === 'compose' && !!s.place, {
-    onPick: t => (tagging ? act.tagDone(t) : act.begin(t)),
+  const { hover, hold, drag, confirm, up, down } = usePick(picking && !!s.place, m.kind === 'compose' && !!s.place, {
+    onPick: (t, trail) => (tagging ? act.tagDone(t) : act.begin(t, undefined, trail)),
     onCancel: () => (tagging ? act.tagDone(null) : act.stop()),
     onGuard: act.guard,
   })
@@ -127,7 +127,7 @@ export function Layer() {
   const opened = !editing && s.active ? rows.find(r => r.item.id === s.active && r.here && !r.item.time) : undefined
   return (
     <>
-      <HoverBox hover={hover} verb={verb} onConfirm={confirm} onUp={up} />
+      <HoverBox hover={hover} verb={verb} onConfirm={confirm} onUp={up} onDown={down} />
       <HoldRing at={hold} />
       <Marquee box={drag} />
       {onNew && m.kind === 'compose' && m.target.region && <RegionEdit box={onNew} />}
@@ -252,7 +252,7 @@ function Climb({ box, up, down }: { box: Box; up: boolean; down: boolean }) {
   const inside = box.y < 26
   const btn = 'inline-flex h-5 items-center gap-1 px-1.5 hover:bg-white/15'
   return (
-    <div data-inspect-ui className={`pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-stretch whitespace-nowrap bg-proto-primary text-[11px] font-semibold text-proto-primary-fg shadow ${inside ? 'top-0 rounded-b' : 'bottom-full rounded-t'}`}>
+    <div data-inspect-ui className={`pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-stretch whitespace-nowrap bg-proto-primary-ring text-[11px] font-semibold text-proto-primary-fg shadow ${inside ? 'top-0 rounded-b' : 'bottom-full rounded-t'}`}>
       {up && <button onClick={act.parent} title={t('Comment on the element around it')} className={`${btn} ${inside ? 'rounded-es' : 'rounded-ss'} ${down ? '' : inside ? 'rounded-ee' : 'rounded-se'}`}><Icon name="up" className="size-3" />{t('Parent')}</button>}
       {up && down && <span className="my-1 w-px bg-white/30" />}
       {down && <button onClick={act.down} aria-label={t('Back to the element inside')} title={t('Back to the element inside')} className={`${btn} ${inside ? 'rounded-ee' : 'rounded-se'} ${up ? '' : inside ? 'rounded-es' : 'rounded-ss'}`}><Icon name="child" className="size-3" /></button>}
