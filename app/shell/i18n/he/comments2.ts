@@ -105,7 +105,7 @@ export default {
   'Image preview': 'תצוגה מקדימה של התמונה',
   'Draft': 'טיוטה',
   'Agent is on it': 'הסוכן מטפל בזה',
-  '{agent} sees these on its next turn': '{agent} יראה אותן בתור הבא שלו',
+  '{agent} reads these next turn': '{agent} יקרא אותן בתור הבא',
   'Written in the {layout}': 'נכתב ב-{layout}',
   'Unpicked {v}': 'בוטלה הבחירה ב-{v}',
   'Copy for {v}': 'נוסח עבור {v}',

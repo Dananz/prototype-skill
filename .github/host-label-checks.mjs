@@ -35,7 +35,7 @@ export async function hostLabelChecks({ proto, app, local, openPage, fail }) {
             for (let end = Date.now() + 6000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) {
               const send = document.querySelector('[data-shoot="send"]')
               const group = document.querySelector('section[aria-label="With ' + name + '"]')
-              if ((send?.textContent + ' ' + send?.title).includes('Send 1 to ' + name) && group && document.body.textContent.includes(name + ' sees these on its next turn')) {
+              if ((send?.textContent + ' ' + send?.title).includes('Send 1 to ' + name) && group && document.body.textContent.includes(name + ' reads these next turn')) {
                 if (window.__hostSentinel !== 'same page') return 'host change reloaded the page'
                 if (!document.body.textContent.includes('Draft stays here')) return 'draft lost'
                 if (!group.querySelector('[title="Claude"]')) return 'historical reply author changed'
