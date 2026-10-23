@@ -270,7 +270,7 @@ export function Island() {
   if (phone) return (<>
     {open && <button type="button" aria-label={t('Collapse the comments')} onClick={() => act.openIsland(false)} className="pointer-events-auto absolute inset-0 bg-black/30" />}
     <div ref={cap} data-island data-comment-ui="" data-open={open || undefined}
-      className="pointer-events-auto absolute inset-x-0 bottom-0 flex flex-col overflow-hidden rounded-t-[22px] border-t border-black/10 bg-white pb-[calc(var(--pill-h,0px)-var(--isl-h,0px))] text-zinc-900 shadow-[0_-10px_30px_-18px_rgb(0_0_0/.35)] transition-[padding-bottom,bottom] duration-300 ease-out dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 [[data-fold]_&]:pb-[max(.5rem,env(safe-area-inset-bottom))]"
+      className="pointer-events-auto absolute inset-x-0 bottom-0 flex flex-col overflow-hidden rounded-t-[22px] border-t border-black/10 bg-white pb-[calc(var(--pill-h,0px)-var(--isl-h,0px))] text-zinc-900 shadow-[0_-10px_30px_-18px_rgb(0_0_0/.35)] transition-[padding-bottom,bottom] duration-300 ease-out dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100 [[data-fold]_&]:pb-[max(.5rem,env(safe-area-inset-bottom))]"
       style={{ ...(kb || focus ? { bottom: kb, paddingBottom: 4 } : {}), ...(edge ? { boxShadow: `inset 0 2px ${edge}, inset 2px 0 ${edge}, inset -2px 0 ${edge}` } : {}) }}>
       {list}
       {newsRow}
