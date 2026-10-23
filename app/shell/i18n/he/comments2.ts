@@ -113,7 +113,6 @@ export default {
   '{n} more variants': 'עוד {n} וריאנטים',
   'Comment on the entire variant': 'הערה על כל הווריאנט',
   'Add the comment': 'הוסף את ההערה',
-  'Open a variant to comment on it.': 'פתח וריאנט כדי להוסיף הערה.',
   // The comments island (comments/island.tsx) and its settings.
   '{agent} replied': '{agent} ענה',
   'Select an element to comment on': 'בחר רכיב כדי להוסיף הערה',
@@ -122,7 +121,7 @@ export default {
   'Comment…': 'הערה…',
   'Send {n}': 'שלח {n}',
   'Collapse the comments': 'כווץ את ההערות',
-  'Open {n} comment': 'פתח הערה אחת',
+  'Open {n} comment': 'פתח {n} הערה',
   'Open all {n} comments': 'פתח את כל {n} ההערות',
   'Comments island': 'אי ההערות',
   'Where it rests on a wide screen. Drag it to move it; double-click its edge to bring it back.': 'היכן הוא נח במסך רחב. גרור אותו כדי להזיז; לחיצה כפולה על השוליים מחזירה אותו.',

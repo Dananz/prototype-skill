@@ -160,8 +160,6 @@ export default {
   'You picked {choice}': 'בחרת ב-{choice}',
   '{n} open comment': '{n} הערה פתוחה',
   '{n} open comments': '{n} הערות פתוחות',
-  'Stop commenting · Esc': 'הפסק להוסיף הערות · Esc',
-  'Comment on the design · C ({key}-click comments on one thing)': 'הערה על העיצוב · C (לחיצה עם {key} להערה על רכיב בודד)',
   'Hide the motion timeline': 'הסתר את ציר הזמן של התנועה',
   'Show the motion timeline: scrub it, see its curves, comment on a moment': 'הצג את ציר הזמן של התנועה: גרור אותו, צפה בעקומות, הוסף הערה על רגע',
   'Close copy options · Esc': 'סגור אפשרויות נוסח · Esc',
