@@ -36,7 +36,7 @@ export default {
   'List': 'רשימה',
   'Keep prototype navigation open on wide screens.': 'השאר את הניווט באב הטיפוס פתוח במסכים רחבים.',
   'Show review panel': 'הצג חלונית בדיקה',
-  'Keep Try it and Tweaks open on wide screens when available.': 'השאר את "נסה" ו"כוונונים" פתוחים במסכים רחבים כשהם זמינים.',
+  'Keep Try it open on wide screens when available.': 'השאר את "נסה" פתוח במסכים רחבים כשהוא זמין.',
   'Restore sidebar and column widths.': 'שחזר את רוחב סרגל הצד והעמודות.',
   'Reset widths': 'אפס רוחב',
   'Session URL': 'כתובת URL של הסשן',

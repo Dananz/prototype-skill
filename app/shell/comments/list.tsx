@@ -185,12 +185,13 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
   const when = since(reply?.at)
   return (
     <div data-comment={item.id} data-shoot="comment-row">
-      <div className={`flex items-center rounded-xl ${active ? 'bg-emerald-500/10' : ''}`}>
+      {/* Under the pointer the line lights up and its words come forward, so it reads as one to open. */}
+      <div className={`group flex items-center rounded-xl transition-colors duration-150 ${active ? 'bg-emerald-500/10' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.05]'}`}>
         <button onClick={() => setOpen(!open)} aria-expanded={open} className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-1 text-start active:bg-zinc-900/[.04] dark:active:bg-white/5 ${roomy ? 'h-11' : 'h-9'}`}>
           <PinDot n={item.n} done whole={item.target?.whole} />
-          <span className={`min-w-0 flex-1 truncate text-zinc-500 ${roomy ? 'text-[13.5px]' : 'text-[12.5px]'}`}>{item.action ? <span dir="auto">{aboutOf(item)}{item.body.length ? `: ${item.body.join('')}` : ''}</span> : <Body c={item} />}</span>
+          <span className={`min-w-0 flex-1 truncate text-zinc-500 transition-colors duration-150 group-hover:text-zinc-800 dark:group-hover:text-zinc-200 ${roomy ? 'text-[13.5px]' : 'text-[12.5px]'}`}>{item.action ? <span dir="auto">{aboutOf(item)}{item.body.length ? `: ${item.body.join('')}` : ''}</span> : <Body c={item} />}</span>
           <Where item={item} here={r.here} />
-          <Icon name="right" className={`size-4 text-zinc-400 transition-transform ${open ? 'rotate-90' : ''}`} />
+          <Icon name="right" className={`size-4 text-zinc-400 transition-[transform,color] group-hover:text-zinc-600 dark:group-hover:text-zinc-300 ${open ? 'rotate-90' : ''}`} />
         </button>
         <Remove item={item} />
       </div>

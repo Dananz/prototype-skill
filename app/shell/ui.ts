@@ -30,10 +30,9 @@ import circleNotch from '@phosphor-icons/core/assets/bold/circle-notch-bold.svg?
 import chatsCircle from '@phosphor-icons/core/assets/regular/chats-circle.svg?raw'
 import chatText from '@phosphor-icons/core/assets/regular/chat-circle-text.svg?raw'
 import gripV from '@phosphor-icons/core/assets/regular/dots-six-vertical.svg?raw'
-import foldLeft from '@phosphor-icons/core/assets/regular/caret-double-left.svg?raw'
 import foldRight from '@phosphor-icons/core/assets/regular/caret-double-right.svg?raw'
 /** Icons that are Phosphor's own files, never drawn here: the ⋯, the pick's check circle, the favorite's star. */
-const PHOSPHOR: Record<string, string> = { select: cursor, 'select-on': cursorFill, tap: handTap, 'tap-on': handTapFill, chats: chatsCircle, 'chat-text': chatText, 'grip-v': gripV, 'fold-left': foldLeft, 'fold-right': foldRight, 'caret-up': caretUp, spinner: circleNotch, 'share-stage': shotStage, 'share-phone': shotPhone, 'share-tablet': shotTablet, 'share-desktop': shotDesktop, 'share-pencil': shotPencil, share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon, translate, globe, star, 'star-fill': starFill, center: shotStage }
+const PHOSPHOR: Record<string, string> = { select: cursor, 'select-on': cursorFill, tap: handTap, 'tap-on': handTapFill, chats: chatsCircle, 'chat-text': chatText, 'grip-v': gripV, 'fold-right': foldRight, 'caret-up': caretUp, spinner: circleNotch, 'share-stage': shotStage, 'share-phone': shotPhone, 'share-tablet': shotTablet, 'share-desktop': shotDesktop, 'share-pencil': shotPencil, share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon, translate, globe, star, 'star-fill': starFill, center: shotStage }
 
 const PATHS: Record<string, string> = {
   ...SIZE_PATHS,

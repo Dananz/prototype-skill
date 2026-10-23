@@ -10,6 +10,10 @@
 
 html, body, #app { height: 100%; }
 body { margin: 0; }
+/* The page is the window: on a wide screen it never scrolls itself. Something a few pixels past its
+   edge (a design's backdrop, a card near the foot) would otherwise let typing a comment nudge the
+   whole page up, a scrollbar flashing with it. A phone keeps its own keyboard handling. */
+@media (min-width: 640px) { html, body { overflow: clip; } }
 
 /* The page's own words are Google Sans (Latin and Hebrew alike). A design keeps the font it would
    have without the page around it: Tailwind's default, or its own --font-sans from theme.css. */
@@ -100,6 +104,9 @@ body { font-weight: 450; }
 @keyframes proto-isl-pop { 0% { opacity: 0; transform: scale(.4) } 60% { opacity: 1; transform: scale(1.12) } 100% { transform: none } }
 @keyframes proto-isl-rise { from { opacity: 0; transform: translateY(10px); filter: blur(3px) } to { opacity: 1; transform: none; filter: none } }
 @keyframes proto-isl-out { to { opacity: 0; transform: translateY(-8px); filter: blur(2px) } }
+/* The whole-variant box's @ menu: it rises out of the box, and sinks back into it. */
+@keyframes proto-isl-menu-in { from { opacity: 0; transform: translateY(6px) scale(.97) } to { opacity: 1; transform: none } }
+@keyframes proto-isl-menu-out { to { opacity: 0; transform: translateY(4px) scale(.98) } }
 
 /* The comment layer's primary (comments/ui.tsx). A placeholder until the page has an accent of
    its own: one hue, used by role, never by raw value, and named apart from the project's own

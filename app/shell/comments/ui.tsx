@@ -147,6 +147,17 @@ export function SrcTag({ t, className = 'max-w-[50%] shrink-0' }: { t?: Pick<Tar
   return s ? <span title={s.full} className={`truncate font-mono text-[11px] text-zinc-400 ${className}`}>{s.short}</span> : null
 }
 
+/**
+ * What a tagged element is called on its chip: its words when they are short (a button, a label),
+ * else its component (a card or a row of them reads as all their words run together), else the
+ * start of its words, else what it is.
+ */
+export const elementName = (t: Pick<Target, 'text' | 'component' | 'tag'>) => {
+  const words = t.text.replace(/\s+/g, ' ').trim()
+  if (words && words.length <= 28) return words
+  return t.component || (words ? `${words.slice(0, 24).trimEnd()}…` : t.tag)
+}
+
 export function Chip({ t: target, n }: { t?: Target; n: number }) {
   const { act } = useCtx()
   const ref = target?.variantRef
@@ -162,7 +173,7 @@ export function Chip({ t: target, n }: { t?: Target; n: number }) {
   return <span dir="auto" title={comment?.quote ?? (ref ? `${ref.label} · ${ref.name}` : srcOf(target)?.full)} role={linked ? 'link' : undefined} tabIndex={linked ? 0 : undefined}
     onClick={linked ? e => { e.stopPropagation(); open() } : undefined}
     onKeyDown={linked ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); open() } } : undefined}
-    className={`mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? t('Comment {n}', { n: comment.n }) : `@${ref?.label ?? (target?.source ? `${variantLabel(null, target.source.variant)}·${n}` : n)}`}</span>
+    className={`mx-px inline-block max-w-[16rem] truncate rounded bg-proto-primary-soft px-1 align-bottom font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? t('Comment {n}', { n: comment.n }) : ref ? `@${ref.label} ${ref.name}` : target ? `@${target.source ? `${variantLabel(null, target.source.variant)}·` : ''}${elementName(target)}` : `@${n}`}</span>
 }
 
 export function Body({ c, className = '' }: { c: { body: Seg[]; tags: Target[] }; className?: string }): ReactNode {

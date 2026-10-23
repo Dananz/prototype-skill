@@ -14,7 +14,7 @@ import { useKeyboard } from './keyboard'
 import { capture, ShotEditor } from './shot'
 import type { Box, Draft, Seg, Shot, Target, Time } from './types'
 import { MAX_SHOTS, shotsOf } from './types'
-import { IB, Icon, MOD, PinDot, PRIMARY, SrcTag, srcOf, ImageChip, PictureStrip, ViewChip } from './ui'
+import { IB, Icon, MOD, PinDot, PRIMARY, SrcTag, srcOf, ImageChip, PictureStrip, ViewChip, elementName } from './ui'
 import { t } from '../i18n'
 import { variantLabel } from '../variants'
 
@@ -37,8 +37,9 @@ const chipNode = (target: Target | undefined, i: number) => {
   s.dataset.tag = String(i)
   const src = srcOf(target)
   if (src) s.title = src.full
-  s.className = 'mx-px inline-flex items-center rounded bg-proto-primary-soft px-1 font-medium text-proto-primary-soft-fg'
-  s.textContent = target?.commentRef ? t('Comment {n}', { n: target.commentRef.n }) : `@${target?.variantRef?.label ?? (target?.source ? `${variantLabel(null, target.source.variant)}·${i + 1}` : i + 1)}`
+  // A variant shows by its number and its name; long names are cut short (the title has it all).
+  s.className = 'mx-px inline-block max-w-[16rem] truncate rounded bg-proto-primary-soft px-1 align-bottom font-medium text-proto-primary-soft-fg'
+  s.textContent = target?.commentRef ? t('Comment {n}', { n: target.commentRef.n }) : target?.variantRef ? `@${target.variantRef.label} ${target.variantRef.name}` : target ? `@${target.source ? `${variantLabel(null, target.source.variant)}·` : ''}${elementName(target)}` : `@${i + 1}`
   if (target?.commentRef) s.title = target.commentRef.quote
   if (target?.variantRef) s.title = `${target.variantRef.label} · ${target.variantRef.name}`
   return s
@@ -102,10 +103,28 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const pop = !docked && !sheet
   const live = store.get().live
   const [mention, setMention] = useState<{ query: string; index: number } | null>(null)
+  // Closed, the @ menu stays a moment as it was, so it can sink away instead of vanishing.
+  const [menuGone, setMenuGone] = useState<typeof mention>(null)
+  const lastMention = useRef(mention)
+  if (mention) lastMention.current = mention
+  useEffect(() => {
+    if (mention) { setMenuGone(null); return }
+    const was = lastMention.current
+    if (!was) return
+    lastMention.current = null
+    setMenuGone(was)
+    const id = window.setTimeout(() => setMenuGone(null), 140)
+    return () => clearTimeout(id)
+  }, [!!mention])
+  const menuAt = mention ?? menuGone
   const choices = host.variantMentions?.() ?? []
-  const query = mention?.query.toLocaleLowerCase() ?? ''
+  const query = menuAt?.query.toLocaleLowerCase() ?? ''
   const exact = query ? choices.filter(t => t.variantRef?.label.toLocaleLowerCase() === query || t.variantRef?.variant.toLocaleLowerCase() === query) : []
   const variants = exact.length ? exact : choices.filter(t => !query || `${t.variantRef?.label} ${t.variantRef?.variant} ${t.variantRef?.name}`.toLocaleLowerCase().includes(query))
+  // The highlighted row: a variant, or (one past them) Pick an element instead. It is kept in view.
+  const sel = Math.min(menuAt?.index ?? 0, variants.length)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { menuRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }) }, [sel, !!mention])
   const nudge = store.get().nudge
   const pending = store.get().pendingTag
   const ed = useRef<HTMLDivElement>(null)
@@ -233,24 +252,39 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const keys = (e: React.KeyboardEvent) => {
     if (mention && !e.nativeEvent.isComposing) {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMention(null); return }
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const step = e.key === 'ArrowDown' ? 1 : -1; setMention(m => m && ({ ...m, index: (m.index + step + Math.max(1, variants.length)) % Math.max(1, variants.length) })); return }
-      if ((e.key === 'Enter' || e.key === 'Tab') && !e.metaKey && !e.ctrlKey && !e.shiftKey && variants.length) { e.preventDefault(); insert(variants[Math.min(mention.index, variants.length - 1)]); return }
+      // The rows are the variants and, last, Pick an element instead: the arrows go round all of them.
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const step = e.key === 'ArrowDown' ? 1 : -1; setMention(m => m && ({ ...m, index: (Math.min(m.index, variants.length) + step + variants.length + 1) % (variants.length + 1) })); return }
+      if ((e.key === 'Enter' || e.key === 'Tab') && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+        e.preventDefault()
+        if (sel < variants.length) insert(variants[sel])
+        else { setMention(null); act.tagPick() }
+        return
+      }
     }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); void act.send() }
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); act.close() }
   }
   const refocus = () => requestAnimationFrame(() => ed.current?.focus())
-  const menu = mention && (<div data-tag-menu role="listbox" aria-label={t('Variants')} style={docked ? { position: 'fixed', zIndex: 250, left: Math.max(8, Math.min(ed.current?.getBoundingClientRect().left ?? 8, innerWidth - Math.min(312, innerWidth - 16) - 8)), bottom: innerHeight - (ed.current?.getBoundingClientRect().top ?? innerHeight) + 8, width: Math.min(312, innerWidth - 16), maxHeight: Math.max(80, (ed.current?.getBoundingClientRect().top ?? innerHeight) - 24), overflowY: 'auto' } : undefined} className="pointer-events-auto my-2 overflow-hidden text-zinc-900 dark:text-zinc-100 rounded-xl border border-black/10 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-950">
+  // The @ menu floats over the page, off the composer's edge (above it, or below it when there is
+  // more room there), lined up with the editor; it rises in and sinks away. The phone's sheet keeps
+  // it inline.
+  const edRect = menuAt && !sheet ? ed.current?.getBoundingClientRect() : null
+  const outer = edRect ? (box.current?.getBoundingClientRect() ?? edRect) : null
+  const edBox = edRect && outer ? { left: edRect.left, top: outer.top, bottom: outer.bottom } : null
+  const above = !!edBox && edBox.top - 16 >= innerHeight - edBox.bottom - 16
+  const menu = menuAt && (<div ref={menuRef} data-tag-menu role="listbox" aria-label={t('Variants')}
+            style={edBox ? { position: 'fixed', zIndex: 250, left: Math.max(8, Math.min(edBox.left, innerWidth - Math.min(312, innerWidth - 16) - 8)), width: Math.min(312, innerWidth - 16), ...(above ? { bottom: innerHeight - edBox.top + 8, maxHeight: Math.max(80, edBox.top - 24) } : { top: edBox.bottom + 8, maxHeight: Math.max(80, innerHeight - edBox.bottom - 24) }), overflowY: 'auto' } : undefined}
+            className={`overflow-hidden text-zinc-900 dark:text-zinc-100 rounded-xl border border-black/10 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-950 ${edBox ? (above ? 'origin-bottom-left' : 'origin-top-left') : 'my-2'} ${mention ? 'pointer-events-auto animate-[proto-isl-menu-in_.18s_cubic-bezier(.2,.9,.25,1)_both]' : 'pointer-events-none animate-[proto-isl-menu-out_.14s_ease-in_forwards]'}`}>
             <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-zinc-400">{t('Mention a variant')}</div>
-            <div className="max-h-36 overflow-y-auto">{variants.map((t, i) => <button key={`${t.variantRef?.proto}/${t.variantRef?.variant}/${t.variantRef?.label}`} type="button" role="option" aria-selected={i === Math.min(mention.index, variants.length - 1)} onMouseDown={e => e.preventDefault()} onClick={() => insert(t)} className={`flex min-h-9 w-full items-center gap-2 px-3 py-2 text-start text-xs ${i === Math.min(mention.index, variants.length - 1) ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}><span className="font-semibold">@{t.variantRef?.label}</span><span className="min-w-0 flex-1 truncate">{t.variantRef?.name}</span></button>)}{!variants.length && <p className="px-3 py-2 text-xs text-zinc-400">{t('No matching variants')}</p>}</div>
-            <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => { setMention(null); act.tagPick() }} className="flex min-h-9 w-full items-center gap-2 border-t border-black/[.06] px-3 py-2 text-start text-xs text-zinc-500 hover:bg-zinc-900/5 dark:border-white/10 dark:hover:bg-white/5"><Icon name="target" className="size-3.5"/>{t('Pick an element instead')}</button>
+            <div className="max-h-36 overflow-y-auto">{variants.map((t, i) => <button key={`${t.variantRef?.proto}/${t.variantRef?.variant}/${t.variantRef?.label}`} type="button" role="option" aria-selected={i === sel} onMouseDown={e => e.preventDefault()} onClick={() => insert(t)} className={`flex min-h-9 w-full items-center gap-2 px-3 py-2 text-start text-xs ${i === sel ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}><span className="font-semibold">@{t.variantRef?.label}</span><span className="min-w-0 flex-1 truncate">{t.variantRef?.name}</span></button>)}{!variants.length && <p className="px-3 py-2 text-xs text-zinc-400">{t('No matching variants')}</p>}</div>
+            <button type="button" role="option" data-tag-pick aria-selected={sel === variants.length} onMouseDown={e => e.preventDefault()} onClick={() => { setMention(null); act.tagPick() }} className={`flex min-h-9 w-full items-center gap-2 border-t border-black/[.06] px-3 py-2 text-start text-xs dark:border-white/10 ${sel === variants.length ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}><Icon name="target" className="size-3.5"/>{t('Pick an element instead')}</button>
           </div>)
   const body = (
       <div ref={box} data-composer onKeyDown={keys}
         onDragOver={e => { if (!carriesImage(e.dataTransfer)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDropping(true) }}
         onDragLeave={e => { if (!box.current?.contains(e.relatedTarget as Node)) setDropping(false) }}
         onDrop={e => { setDropping(false); const f = imageIn(e.dataTransfer); if (!f) return; e.preventDefault(); void attach(f) }}
-        className={`pointer-events-auto z-30 flex flex-col text-[13px] text-zinc-900 dark:text-zinc-100 ${docked || sheet ? 'relative' : 'absolute rounded-2xl border border-black/10 bg-white shadow-2xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900'} ${tagging ? 'opacity-60' : ''} ${dropping ? 'ring-2 ring-proto-primary-ring' : ''}`} style={sheet ? undefined : style}>
+        className={`z-30 flex flex-col text-[13px] text-zinc-900 dark:text-zinc-100 ${docked || sheet ? 'relative' : 'absolute rounded-2xl border border-black/10 bg-white shadow-2xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900'} ${!tagging ? 'pointer-events-auto' : sheet ? 'pointer-events-auto opacity-60' : 'pointer-events-none opacity-40'} ${dropping ? 'ring-2 ring-proto-primary-ring' : ''}`} style={sheet ? undefined : style}>
         <div className={`flex items-center gap-1 px-3 ${sheet ? 'pt-1.5' : 'pt-2.5'}`}>
           <PinDot n={n} size="sm" whole={target?.whole} />
           {time
@@ -272,7 +306,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             onKeyUp={saveRange} onMouseUp={saveRange} onBlur={saveRange}
             onPaste={e => { const f = imageIn(e.clipboardData); if (!f) return; e.preventDefault(); void attach(f) }}
             className="max-h-40 min-h-[52px] overflow-y-auto whitespace-pre-wrap break-words py-1 leading-5 outline-none [@media(pointer:coarse)]:min-h-[60px] [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6" />
-          {docked && menu ? createPortal(menu, uiBox()) : menu}
+          {menu && edBox ? createPortal(menu, uiBox()) : menu}
           {/* The @ hint starts its own line, so it never breaks in the middle. */}
           {empty && <span className="pointer-events-none absolute start-3 top-2.5 whitespace-pre-line text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">
             {(time
