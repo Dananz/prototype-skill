@@ -912,7 +912,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     for (const [t, cw] of thumbs.map(t => [t, t.clientWidth] as const)) {
       if (!cw) continue
       const inner = t.firstElementChild as HTMLElement
-      inner.style.zoom = String(!t.hasAttribute('data-pthumb') ? cw / w : scale ? Math.min(scale / 100, (cw - 24) / parseFloat(inner.style.width)) : .78 * cw / 1200)
+      const z = !t.hasAttribute('data-pthumb') ? cw / w : scale ? Math.min(scale / 100, (cw - 24) / parseFloat(inner.style.width)) : .78 * cw / 1200
+      // A card's own layout is an iframe, and WebKit zooms an iframe's page a second time under an
+      // ancestor's zoom (the design shrank into a corner), so those cards scale like the device view.
+      const framed = !!size && !t.hasAttribute('data-pthumb')
+      inner.style.zoom = framed ? '' : String(z)
+      inner.style.transform = framed ? `scale(${z})` : ''
+      inner.style.transformOrigin = framed ? '0 0' : ''
+      inner.style.position = framed ? 'absolute' : ''
+      inner.style.left = inner.style.top = framed ? '0' : ''
     }
     if (layer) fitBox(layer.el)
   }
