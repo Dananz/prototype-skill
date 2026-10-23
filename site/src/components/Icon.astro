@@ -1,9 +1,10 @@
 ---
 // A Phosphor icon for the static page, inlined from @phosphor-icons/core's SVG files: no JavaScript.
 import github from '@phosphor-icons/core/assets/regular/github-logo.svg?raw'
+import arrowUpRight from '@phosphor-icons/core/assets/regular/arrow-up-right.svg?raw'
 import plus from '@phosphor-icons/core/assets/regular/plus.svg?raw'
 
-const icons = { github, plus }
+const icons = { arrowUpRight, github, plus }
 interface Props { name: keyof typeof icons; size?: number; class?: string }
 const { name, size = 20, class: className } = Astro.props
 const svg = icons[name].replace('<svg ', `<svg width="${size}" height="${size}" fill="currentColor" aria-hidden="true" focusable="false"${className ? ` class="${className}"` : ''} `)

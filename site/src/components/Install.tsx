@@ -1,8 +1,9 @@
 // The install band: agent-neutral copy, and terminal-style tabs that switch the card's lines
 // between Claude Code and Codex.
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { CaretRight, Check, Copy } from '@phosphor-icons/react'
+import { ArrowUpRight, CaretRight, Check, Copy, GithubLogo } from '@phosphor-icons/react'
 import { LogoMark } from './logo'
+import { SITE } from '../content'
 
 type AgentId = 'claude' | 'codex'
 
@@ -109,7 +110,7 @@ export function Install() {
           <div className="d-rise-in">
             <h2 className="text-[32px] leading-[1.1] font-bold tracking-[-0.03em] text-balance sm:text-[44px]">Install it in your agent</h2>
             <p className="mt-4 max-w-md text-lg leading-relaxed text-[#e6e4fc]">Install once, then ask for any screen. The live link opens on your phone over Tailscale.</p>
-            <p className="mt-6 text-[15px] text-white/85">Open source, MIT. <a href="https://github.com/Dananz/prototype-skill" target="_blank" rel="noreferrer" className="rounded font-medium text-white underline decoration-white/40 decoration-2 underline-offset-4 transition-colors hover:decoration-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none">github.com/Dananz/prototype-skill</a></p>
+            <p className="mt-6 text-[15px] text-white/85">Open source, MIT. <a href={SITE.repo} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded align-[-3px] font-medium text-white underline decoration-white/40 decoration-2 underline-offset-4 transition-colors hover:decoration-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"><GithubLogo size={16} aria-hidden /> GitHub <ArrowUpRight size={13} aria-hidden className="text-white/70" /></a></p>
           </div>
           <div className="d-rise-in min-w-0" style={{ animationDelay: '.15s' }}>
             <div className="-mx-5 -mb-12 sm:mx-0 sm:mb-0">

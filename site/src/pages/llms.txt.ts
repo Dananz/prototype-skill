@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro'
-import { SITE, FAQ } from '../content'
+import { SITE, FAQ, faqMarkdown } from '../content'
 
 // llms.txt: a plain-text summary for AI agents and answer engines (https://llmstxt.org).
 export const GET: APIRoute = () => {
@@ -16,7 +16,7 @@ Prototype is an open-source skill (MIT) for AI coding agents: Claude Code, Codex
 
 ## Questions
 
-${FAQ.map(f => `### ${f.q}\n\n${f.a}`).join('\n\n')}
+${FAQ.map(f => `### ${f.q}\n\n${faqMarkdown(f.a)}`).join('\n\n')}
 
 ## Links
 

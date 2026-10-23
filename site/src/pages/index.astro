@@ -52,7 +52,14 @@ const ring = 'focus-visible:ring-2 focus-visible:ring-[#6d68f0] focus-visible:ou
                 {f.q}
                 <Icon name="plus" size={18} class="faq-i shrink-0 text-[#6d68f0]" />
               </summary>
-              <div class="faq-body"><p class="faq-a max-w-2xl pb-6 text-[15px] leading-[1.65] text-[#4a4760]">{f.a}</p></div>
+              <div class="faq-body"><p class="faq-a max-w-2xl pb-6 text-[15px] leading-[1.65] text-[#4a4760]">{f.a.split(/(`[^`]+`|\{repo\})/).map(part =>
+                part === '{repo}' ? (
+                  <a href={SITE.repo} target="_blank" rel="noreferrer" class:list={['inline-flex items-center gap-1 rounded align-[-3px] font-medium text-[#121019] underline decoration-[#c9c6f7] decoration-2 underline-offset-4 transition-colors hover:decoration-[#6d68f0]', ring]}>
+                    <Icon name="github" size={16} /> GitHub repository <Icon name="arrowUpRight" size={13} class="text-[#6d68f0]" />
+                  </a>
+                ) : part.startsWith('`') ? (
+                  <code class="rounded-md bg-[#f3f2fe] d-code px-1.5 py-0.5 text-[13px] text-[#121019] [box-decoration-break:clone]">{part.slice(1, -1)}</code>
+                ) : part)}</p></div>
             </details>
           ))}
         </div>
