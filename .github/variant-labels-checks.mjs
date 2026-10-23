@@ -37,16 +37,16 @@ export async function variantLabelsChecks({ proto, app, local, openPage, fail, k
         ? `[...document.querySelectorAll('[role="dialog"] button[aria-current]')].slice(0,30).map(b => b.firstElementChild.textContent)`
         : `[...document.querySelectorAll('[data-pop] [data-k="v:labels30"] [data-act^="mv:"]')].map(b => b.firstElementChild.textContent)`)
       assert(JSON.stringify(labels) === JSON.stringify(ids.map((_, i) => String(i + 1))), `${phone ? 'phone' : 'desktop'} list did not show 1 through 30: ${labels}`)
-      assert(await page.run(`document.title.startsWith('30 ·')`), 'the page title kept the letter ID')
-      if (!phone) assert(await page.run(`document.querySelector('[data-pop] [data-fitw] > div:last-child b')?.textContent === '30'`), 'the switcher detail kept the letter ID')
+      assert(await page.run(`document.title.startsWith('#30 ·')`), 'the page title kept the letter ID')
+      if (!phone) assert(await page.run(`document.querySelector('[data-pop] [data-fitw] > div:last-child b')?.textContent === '#30'`), 'the switcher detail kept the letter ID')
       if (phone) {
-        assert(await page.run(`document.querySelector('[data-pill-id]').textContent === '30'`), 'the pill kept the letter ID')
+        assert(await page.run(`document.querySelector('[data-pill-id]').textContent === '#30'`), 'the pill kept the letter ID')
         await page.run(`[...document.querySelectorAll('[role="dialog"] button[aria-current]')][26].click()`)
       } else {
         await page.run(`document.querySelector('[data-pop] [data-act="mv:labels30:AA"]').click()`)
       }
       await until(page, `location.hash === '#/labels30/AA'`)
-      assert(await page.run(`document.title.startsWith('27 ·')`), 'numeric selection did not open the original AA route')
+      assert(await page.run(`document.title.startsWith('#27 ·')`), 'numeric selection did not open the original AA route')
     } finally { page.close() }
   }
   if (before) return
@@ -68,7 +68,7 @@ export async function variantLabelsChecks({ proto, app, local, openPage, fail, k
   proto(['pick', 'labels30', 'AD', '--off'])
   // The CLI takes the number the page shows: labels30/29 is labels30/AC.
   const picked = proto(['pick', 'labels30', '29'])
-  assert(/picked 29 \(AC\)/.test(picked), `proto pick labels30 29 should pick AC: ${picked}`)
+  assert(/picked #29 \(AC\)/.test(picked), `proto pick labels30 29 should pick AC: ${picked}`)
   proto(['pick', 'labels30', '--off'])
   console.log('variant labels: numbers in short and long lists, past Z, stable over gaps, desktop/phone lists, original routes and numbers in the CLI passed')
 }

@@ -84,7 +84,7 @@ export async function commentCompareChecks({ proto, app, openPage, fail }) {
     })()`)
     if (!linked?.batch) fail(`compare comments: ${linked}`)
     const inbox = proto(['inbox'])
-    if (!inbox.includes('comparefx/B') || !inbox.includes('with @1: variant comparefx/A (1)') || !inbox.includes('comparefx/A ·') || !inbox.includes('with comment 1: comparefx/A')) fail('compare comments: inbox lost destination, variant, element or comment reference metadata')
+    if (!inbox.includes('comparefx/B') || !inbox.includes('with @1: variant comparefx/A (#1)') || !inbox.includes('comparefx/A ·') || !inbox.includes('with comment 1: comparefx/A')) fail('compare comments: inbox lost destination, variant, element or comment reference metadata')
     const b = linked.items.find(i=>i.variant==='B')
     proto(['reply', `${b.sent.batch}/${b.sent.i}`, 'Verified shared Compare thread', '--done'])
     const replied = await page.run(`(async()=>{${helpers}

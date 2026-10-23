@@ -24,7 +24,7 @@ export async function favoritesChecks({ proto, app, local, openPage, fail }) {
   // The CLI stars by the number the page shows, and lists by number.
   const starred = proto(['fav', 'favfx/2', 'favfx/E'], { stdout: true })
   await settle(['B', 'E'], 'proto fav favfx/2 favfx/E')
-  assert(/2 · Option 2, 5 · Option 5/.test(starred), `proto fav should list by number: ${starred}`)
+  assert(/#2 · Option 2, #5 · Option 5/.test(starred), `proto fav should list by number: ${starred}`)
 
   const page = await openPage(`${local}?theme=dark#/favfx`)
   try {
@@ -53,7 +53,7 @@ export async function favoritesChecks({ proto, app, local, openPage, fail }) {
     await until(page, `document.documentElement.dataset.ready === '1' && document.querySelectorAll('[data-layers] [data-act^="pv:favfx:"]').length === 3`, 'Favorites only should be remembered over a reload')
     // The arrows step through the favorites only: 2 → 3.
     await page.run(`location.hash = '#/favfx/B'`)
-    await until(page, `document.title.startsWith('2 ·')`, 'variant 2 should open')
+    await until(page, `document.title.startsWith('#2 ·')`, 'variant 2 should open')
     await page.run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))`)
     await until(page, `location.hash === '#/favfx/C'`, 'the next arrow should go to the next favorite')
     // S unstars the variant shown; with Favorites only on, it leaves for the overview.
@@ -62,7 +62,7 @@ export async function favoritesChecks({ proto, app, local, openPage, fail }) {
     await until(page, `location.hash === '#/favfx'`, 'unstarring the variant shown should go to the overview')
     // A link to a variant Favorites only hides still opens it (and shows everything again).
     await page.run(`location.hash = '#/favfx/A'`)
-    await until(page, `document.title.startsWith('1 ·')`, 'a link to a hidden variant should open it')
+    await until(page, `document.title.startsWith('#1 ·')`, 'a link to a hidden variant should open it')
     assert(await page.run(`document.querySelectorAll('[data-side] [data-act^="mv:favfx:"]').length === 5`), 'opening a hidden variant should show every variant again')
     await page.run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }))`)
     await settle(['A', 'B', 'E'], 'S on a variant')
