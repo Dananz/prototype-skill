@@ -98,6 +98,7 @@ export function Island() {
   const [focus, setFocus] = useState(false)
   const input = useRef<HTMLTextAreaElement>(null)
   const card = useRef<HTMLDivElement>(null)
+  const lastPanel = useRef(0)
   const cap = useRef<HTMLDivElement>(null)
   const open = s.island
   // Typing on a phone, the bar rides the keyboard and the pill row under it steps aside (shell.ts).
@@ -136,6 +137,22 @@ export function Island() {
   const [side, setSide] = useState<Side | null>(sideOf(prefs.place))
   useEffect(() => setSide(sideOf(prefs.place)), [prefs.place])
   const [rail, setRail] = useState(false)
+  // Folding the panel, its contents stay a moment, fading at full width while the card shrinks to
+  // the tab, so nothing reflows on the way; opening or folding, the rail's hover starts over.
+  const [closing, setClosing] = useState(false)
+  const wasOpen = useRef(open)
+  useEffect(() => {
+    setRail(false)
+    const was = wasOpen.current
+    wasOpen.current = open
+    if (!was || open || !side) return setClosing(false)
+    setClosing(true)
+    const id = window.setTimeout(() => setClosing(false), 300)
+    return () => clearTimeout(id)
+  }, [open])
+  // From the very render that folds it, not one later: otherwise the tab's hover area fills the
+  // still-large card for a frame and the pointer over it reads as a hover.
+  const folding = closing || (wasOpen.current && !open && !!side)
   useEdgeDrag({
     card, on: !phone && !!s.place && !copying, place: prefs.place, along: prefs.along, full: !!side && open,
     onSide: next => { setSide(next); setRail(false) },
@@ -284,11 +301,13 @@ export function Island() {
     const shape = open ? 'panel' : rail ? 'rail' : 'tab'
     return (
       <div ref={card} data-island data-comment-ui="" data-open={open || undefined} data-edge-side={side} data-shape={shape} onDoubleClick={home}
-        className={`${surface} cursor-grab transition-[width,height,border-radius] duration-300 ease-[cubic-bezier(.2,.9,.25,1)] ${right ? 'rounded-l-[22px]' : 'rounded-r-[22px]'}`}
+        className={`${surface} cursor-grab transition-[width,height,border-radius] duration-[360ms] ease-[cubic-bezier(.32,.72,0,1)] ${right ? 'rounded-l-[22px]' : 'rounded-r-[22px]'} ${folding ? 'overflow-hidden' : ''}`}
         style={{ width: open ? 340 : rail ? 48 : 40, height: open ? 'calc(100% - 32px - var(--pill-h, 0px) - var(--dock-h, 0px) - var(--copy-h, 0px))' : rail ? 153 : 56, visibility: 'hidden', ...ring }}>
-        {open
+        {open || folding
           // The panel: its header, the comments and the bar arrive one after another as it grows.
-          ? <div data-island-list data-shoot="comments" className={`flex size-full flex-col overflow-hidden ${right ? 'rounded-l-[22px]' : 'rounded-r-[22px]'} [&>*]:animate-[proto-isl-rise_.45s_cubic-bezier(.2,.9,.25,1)_both] [&>*:nth-child(2)]:[animation-delay:60ms] [&>*:nth-child(3)]:[animation-delay:100ms] [&>*:nth-child(4)]:[animation-delay:130ms] [&>*:nth-child(5)]:[animation-delay:160ms]`}>
+          ? <div data-island-list data-shoot="comments" inert={folding} style={folding ? { width: 340, height: lastPanel.current || undefined } : undefined}
+              ref={el => { if (el && !folding) lastPanel.current = el.offsetHeight }}
+              className={`flex flex-col overflow-hidden ${folding ? `absolute top-0 ${right ? 'left-0' : 'right-0'} opacity-0 transition-opacity duration-[80ms] ease-linear` : 'size-full'} ${right ? 'rounded-l-[22px]' : 'rounded-r-[22px]'} [&>*]:animate-[proto-isl-rise_.45s_cubic-bezier(.2,.9,.25,1)_both] [&>*:nth-child(2)]:[animation-delay:60ms] [&>*:nth-child(3)]:[animation-delay:100ms] [&>*:nth-child(4)]:[animation-delay:130ms] [&>*:nth-child(5)]:[animation-delay:160ms]`}>
               {listBody(<button type="button" data-shoot="island-fold" onClick={() => act.openIsland(false)} aria-label={t('Fold the comments')} title={t('Fold the comments')}
                 className="-me-1.5 grid size-7 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"><Icon name={right ? 'fold-right' : 'fold-left'} className="size-3.5" /></button>)}
               {newsRow}
@@ -308,8 +327,9 @@ export function Island() {
                   className="grid size-8 place-items-center rounded-full bg-zinc-900/[.05] text-zinc-600 hover:bg-zinc-900/10 hover:text-zinc-900 dark:bg-white/[.08] dark:text-zinc-300 dark:hover:bg-white/15 dark:hover:text-white"><Icon name="chat-text" className="size-4" /></button>
               </Rise>
               <Rise open={rail} at={46} order={1}><span className="block h-px w-5 bg-zinc-900/10 dark:bg-white/10" /></Rise>
+              {/* The count pops in as the tab appears: docked, or folded back from the panel. */}
               <button type="button" data-shoot="island-open" onClick={toPanel} aria-expanded={false} aria-label={tn(total, 'Open {n} comment', 'Open all {n} comments')}
-                className={`absolute left-1/2 grid size-8 -translate-x-1/2 place-items-center rounded-full text-zinc-600 dark:text-zinc-300 ${rail ? 'hover:bg-zinc-900/5 dark:hover:bg-white/10' : ''}`}
+                className={`absolute left-1/2 grid size-8 -translate-x-1/2 place-items-center rounded-full text-zinc-600 [animation:proto-isl-pop_.45s_cubic-bezier(.3,1.6,.5,1)_both] dark:text-zinc-300 ${rail ? 'hover:bg-zinc-900/5 dark:hover:bg-white/10' : ''}`}
                 style={{ bottom: rail ? 6 : 12, transition: `bottom .42s ${EASE}` }}>{mark}</button>
             </div>}
       </div>

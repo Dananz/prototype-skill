@@ -59,7 +59,10 @@ export function useEdgeDrag(o: {
     if (!o.on || !el || !host) return
     const pos: Pt = { x: NaN, y: NaN }, vel: Pt = { x: 0, y: 0 }
     let goal: Pt = { x: 0, y: 0 }, mode: 'idle' | 'held' | 'settle' = 'idle', spring = SETTLE
-    let raf = 0, last = 0, tracking = 0, lastH = 0, lastFull = false
+    let raf = 0, last = 0, tracking = 0, lastH = 0
+    // A change of height while upright (the rail, the panel, back to the tab): the top moves in step
+    // with the height as it animates, from where it was to where it ends, so both edges glide together.
+    let morph: { h0: number; y0: number; h1: number; y1: number } | null = null
     // Where it is upright while held, ahead of the props catching up.
     let side: Side | null = o.place === 'left' || o.place === 'right' ? o.place : null
     // The foot it had before going full height, so closing puts it back on the same spot.
@@ -113,27 +116,40 @@ export function useEdgeDrag(o: {
         goal = rest(goal)
         step(dt, spring)
         if (Math.hypot(pos.x - goal.x, pos.y - goal.y) < 0.3 && Math.hypot(vel.x, vel.y) < 8) { pos.x = goal.x; pos.y = goal.y; vel.x = vel.y = 0; mode = 'idle' }
+      } else if (side) {
+        const d = dims(), f = full(), hh = d.h
+        // The height it is animating to: the card's own, or the full one (the stage less its insets).
+        const h1 = el.style.height.endsWith('px') ? parseFloat(el.style.height) : d.H - INSET - d.foot
+        if (Math.abs(hh - h1) > 0.5) {
+          if (!morph || morph.h1 !== h1) {
+            const h0 = morph ? hh : lastH || hh
+            // Going full height, it remembers its foot; coming back, it ends on that foot; otherwise
+            // the foot stays where it is (the rail grows upward from the tab).
+            if (f && foot === null) foot = pos.y + h0
+            const y1 = f ? INSET : foot !== null ? foot - h1 : pos.y + h0 - h1
+            morph = { h0, y0: pos.y, h1, y1: clamp(y1, INSET, d.H - h1 - d.foot) }
+          }
+          const p = morph.h1 === morph.h0 ? 1 : clamp((hh - morph.h0) / (morph.h1 - morph.h0), 0, 1)
+          pos.y = morph.y0 + (morph.y1 - morph.y0) * p
+          pos.x = edgeX(side, d)
+        } else {
+          if (morph) { pos.y = morph.y1; morph = null }
+          if (!f) foot = null
+          const to = rest(pos)
+          pos.x = to.x
+          pos.y = to.y
+        }
+        goal = { ...pos }
       } else {
-        const hh = el.offsetHeight, f = full()
-        if (f && !lastFull && lastH) foot = pos.y + lastH
-        // Upright, a change of height keeps the foot where it is: the rail grows upward from the tab.
-        if (side && lastH && hh !== lastH && !f && !lastFull && foot === null) pos.y += lastH - hh
-        // Into full height and back out, the top glides there while the size animates.
-        const to = rest(!f && foot !== null ? { x: pos.x, y: foot - hh } : pos), glide = f || foot !== null
+        const to = rest(pos)
         pos.x = to.x
-        pos.y = glide ? pos.y + (to.y - pos.y) * (1 - Math.exp(-dt * 16)) : to.y
+        pos.y = to.y
         goal = { ...pos }
       }
       lastH = el.offsetHeight
-      lastFull = full()
       draw()
       if (mode !== 'idle' || tracking > performance.now()) raf = requestAnimationFrame(tick)
-      else {
-        last = 0
-        // Back from full height: exactly on the foot it left from.
-        if (!full() && foot !== null) { const to = rest({ x: pos.x, y: foot - el.offsetHeight }); pos.x = to.x; pos.y = to.y; draw() }
-        if (!full()) foot = null
-      }
+      else last = 0
     }
     const run = () => { if (!raf) raf = requestAnimationFrame(tick) }
     const follow = () => { tracking = performance.now() + 600; run() }
@@ -171,6 +187,7 @@ export function useEdgeDrag(o: {
         drag.moved = true
         // Moved by hand: the spot it opened the panel from no longer holds.
         foot = null
+        morph = null
         el.dataset.held = ''
         mode = 'held'
       }
