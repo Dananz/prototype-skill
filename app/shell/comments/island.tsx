@@ -179,6 +179,22 @@ export function Island() {
 
   // Copy mode is the other way of acting on the design, with a bar of its own: a wide screen puts
   // the island away while it is on, so the lines it marks are all free to press.
+  // The long placeholder only where it fits on one line; a narrow phone gets the short one.
+  const [fits, setFits] = useState(true)
+  useLayoutEffect(() => {
+    const el = input.current
+    const c = document.createElement('canvas').getContext('2d')
+    if (!el || !c) return
+    const f = () => {
+      const cs = getComputedStyle(el)
+      c.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+      setFits(c.measureText(t('Comment on the entire variant')).width <= el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight))
+    }
+    f()
+    const ro = new ResizeObserver(f)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [phone, !!s.place])
   if (!s.place || (copying && !phone)) return null
 
   const add = () => { if (act.commentWhole(text)) setText('') }
@@ -236,7 +252,7 @@ export function Island() {
         <Icon name={phone ? (picking ? 'tap-on' : 'tap') : picking ? 'select-on' : 'select'} className={phone ? 'size-5' : 'size-4'} />
       </button>
       <textarea ref={input} data-shoot="whole-input" rows={1} value={text} onChange={e => setText(e.target.value)} dir="auto" autoComplete="off" enterKeyHint="enter"
-        aria-label={t('Comment on the entire variant')} placeholder={picking ? (phone ? t('Tap what to comment on') : t('Click what to comment on')) : (typing || phone) && !sendShown ? t('Comment on the entire variant') : t('Comment…')} title={`${t('Comment on the whole variant')} · ⇧C`}
+        aria-label={t('Comment on the entire variant')} placeholder={picking ? (phone ? t('Tap what to comment on') : t('Click what to comment on')) : (typing || phone) && !sendShown && fits ? t('Comment on the entire variant') : t('Comment…')} title={`${t('Comment on the whole variant')} · ⇧C`}
         onFocus={() => { setFocus(true); act.wholeFocus(true) }} onBlur={() => { setFocus(false); act.wholeFocus(false) }}
         onKeyDown={e => {
           if (e.nativeEvent.isComposing) return
@@ -252,12 +268,13 @@ export function Island() {
             <Icon name="send" className="size-3.5" />{s.sending ? t('Sending…') : tn(drafts, 'Send {n}', 'Send {n}')}
           </button>}
       <button type="button" data-shoot="island-open" onClick={() => { read(); openList() }} aria-expanded={open} aria-label={open ? t('Collapse the comments') : tn(total, 'Open {n} comment', 'Open all {n} comments')}
-        className={`flex shrink-0 items-center gap-1.5 rounded-full px-2 ${phone ? 'h-10 text-sm' : 'h-8 text-xs'} text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10`}>
-        <span className="relative grid size-2 place-items-center">
+        className={`flex shrink-0 items-center rounded-full ${phone ? 'size-10 justify-center gap-0.5 text-sm' : 'h-8 gap-1.5 px-2 text-xs'} text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10`}>
+        {/* A phone has no room for the dot: the count itself takes its colour, lined up over the pill's end button. */}
+        {!phone && <span className="relative grid size-2 place-items-center">
           {unread > 0 && !open && <span className="absolute size-2 animate-ping rounded-full" style={{ background: EDGE.reply }} />}
           <span className={`size-2 rounded-full transition-colors duration-500 ${dot ? '' : 'bg-zinc-300 dark:bg-zinc-600'}`} style={dot ? { background: dot } : undefined} />
-        </span>
-        <span className="tabular-nums">{total}</span>
+        </span>}
+        <span className="tabular-nums" style={phone && dot ? { color: dot } : undefined}>{total}</span>
         <span className={`transition-transform duration-300 ${open !== top ? 'rotate-180' : ''}`}><Icon name="caret-up" className="size-3 opacity-60" /></span>
       </button>
     </div>
