@@ -1685,7 +1685,6 @@ const where = e => {
 const ACTIONS = {
   pick: 'done: marked in the page and now the working variant; a reply is only a note',
   unpick: 'done: the pick is off in the page; a reply is only a note',
-  more: 'new variants in this prototype, named after this one',
   'more-variants': 'new variants in this prototype (the route is the prototype; count says how many): continue its letters with proto add <slug> --variants "…", each a new direction, different from the existing variants and from each other',
   build: 'build this variant into the codebase',
   'try-it': 'add useHints for this variant only: useful demo values, steps and scenarios; preserve the working design; reply --done after checking it',
@@ -1810,6 +1809,8 @@ function actionText(dir, c) {
   }
   if (c.action === 'pick' && c.note && !c.done) return 'marked in the page and now the working variant; handle the note, then reply --done' + suffix
   if (c.action === 'build' && c.picked) return 'picked in the page and now the working variant; build this variant into the codebase' + suffix
+  // New variants from one variant nest under it, as their own prototype; never new letters beside it.
+  if (c.action === 'more') return `new variants from this one, nested under it: proto add <new slug> --from ${c.route} --reference-only --title "…" --variants "A:…,B:…"` + suffix
   return (ACTIONS[c.action] || '') + suffix
 }
 

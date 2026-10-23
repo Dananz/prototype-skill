@@ -419,6 +419,18 @@ in the parent. The page puts it in a column after that variant, the switcher's
 second line shows the chain it came from, and the parent's overview links to it. `--from home`
 (no letter) nests it under the prototype as a whole.
 
+**New variants from one variant nest under it.** Whenever new variants start from one existing
+variant, they are a new prototype built `--from` it, never new letters beside it. That holds
+however the ask arrives: More like this in the page, a comment on a variant ("give me more options
+for this", "now how it looks on mobile"), or chat ("B but with a map", "3 more takes on 2"). Use
+`proto add <new slug> --from <slug>/<letter> --reference-only --title "…" --variants "A:…,B:…"`:
+the slug names what is being explored (`island-mobile`), the switcher's chain carries the rest,
+and `--reference-only` because the new designs succeed the variant rather than plug into it (a
+pick in them still picks the parent). Only when the new variants are for one element of it is it
+a slot instead (next paragraph). New letters in the same prototype are only for new directions
+on the prototype's own ask (More variants on the prototype, "two more heroes"), not tied to one
+variant.
+
 When the user wants parts of several variants in one design ("E's layout with B's style", "one
 last design from all my picks"), list them all after `--from`, the one whose structure the new
 design keeps first: `proto add mix --from layout/E,style/B …`. It nests under the first; the
@@ -863,7 +875,7 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
    (use `--as codex`, `--as claude` or `--as agent` to override the detected reply mark). A comment
    you can't act on is left out of that call and gets its own reply without `--done` saying why.
    A comment whose answer is new variants or a new prototype ("more variants for this", a `more`
-   decision) is answered as soon as they are added, not when they are built: `proto add` them,
+   decision; from one variant they nest under it, step 4) is answered as soon as they are added, not when they are built: `proto add` them,
    then `proto reply <batch>/<n> "<where they are, and what they are>" --until <slug>` (or
    `<slug>/<letter>,…`). The page shows that reply under "Agent is on it", and `proto done`
    closes the comment when the last of those variants is built, keeping the reply: write it to
@@ -897,7 +909,7 @@ the text.
 |---|---|---|
 | `pick` | marked and the working variant; a note or `assignment pending` keeps the comment open | finish any assignment repair the line names and verify the choice in its parent, handle the note, then `proto reply <id> --done`. For an intentionally separate design, record `--reference-only`. When the line says it wasn't marked or the working variant didn't move, run the `proto pick` it names |
 | `unpick` | the pick is off, and the comment done | nothing. When the line says nothing changed (that variant wasn't the pick), say so in a reply with `--done`; when it says it wasn't taken off, run the `proto pick … --off` it names |
-| `more` | nothing | new letters in the same prototype, named after it (`proto add <slug> --variants "D:…"`); reply with what you are adding and `--until <slug>/D,<slug>/E…` (step 5) |
+| `more` | nothing | a new prototype nested under that variant (New variants from one variant nest under it, step 4): run the `proto add` the line prints with your slug and variants; reply with what you are adding and `--until <new slug>` (step 5) |
 | `more-variants` | nothing | on the prototype (the route is `<slug>`, no letter), with a `count` the user chose: that many new variants, continuing the letters (`proto add <slug> --variants "<next letters>:…"`), each a new direction, different from the existing ones and from each other; their note, if any, is the direction. Reply with what you are adding and `--until <slug>/<first letter>,…` (step 5) |
 | `build` | picked and the working variant (the line says `picked in the page`) | step 7; reply when it is in. When the line doesn't say it was picked and it isn't the pick, `proto pick` it first |
 | `try-it` | queued only; no content generated yet | check that the request is not withdrawn; add useful `useHints` to this variant only (section 4), preserve its working flow, verify it, then reply `--done`; if it already has useful hints, reuse them |
@@ -918,9 +930,9 @@ When the user wants the prototypes in a doc or artifact to share: read `referenc
 
 | The user asks for | Do |
 |---|---|
-| More takes on an existing prototype ("two more heroes") | `proto add <same slug> --variants "D:…,E:…"` |
+| More takes on an existing prototype's ask, not on one variant ("two more heroes") | `proto add <same slug> --variants "D:…,E:…"` |
 | Something new ("now the pricing page") | `proto add <new slug> …` |
-| Variations of one variant ("B but with a map") | new letters in the same prototype, named after B |
+| Variations of one variant ("B but with a map", "more options for 2", "2 on mobile"), in chat or a comment | `proto add <new slug> --from <slug>/B --reference-only …`, nested under B (step 4) |
 | A part of one variant, explored as a separate study ("explore B's hero on its own") | `proto add <new slug> --from <slug>/B --reference-only …` |
 | Variants of one element that should replace it where it is ("more of this button") | lift it into a `<Slot>`, then `proto add <new slug> --from <slug>/<letter> --slot <id> …` |
 | Parts of several variants together ("E's layout with B's style") | `proto add <new slug> --from <slug>/E,<slug>/B …`, the one whose layout it keeps first |

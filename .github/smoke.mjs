@@ -532,7 +532,7 @@ if (JSON.stringify(pickSent.results) !== '[{"n":1,"action":"pick","done":true}]'
 const unpickSent = await send([{ route: 'hero/B', text: 'Unpicked B', action: 'unpick' }, { route: 'hero/B', text: 'More like B: warmer', action: 'more' }])
 if (readFileSync(heroMeta, 'utf8').includes('"picked"')) fail('taking the pick back in the page left it in hero/meta.ts')
 if (JSON.stringify(unpickSent.results) !== '[{"n":1,"action":"unpick","done":true},{"n":2,"action":"more","done":false}]') fail(`the answer should say the unpick was done and More waits: ${JSON.stringify(unpickSent.results)}`)
-if (!/action: more/.test(await inboxWith(unpickSent.sent))) fail('proto inbox did not print action: more')
+if (!/action: more \(new variants from this one, nested under it: proto add <new slug> --from hero\/B --reference-only /.test(await inboxWith(unpickSent.sent))) fail('proto inbox did not tell More like this to nest under the variant')
 // Taking back a pick that isn't there changes nothing, so it isn't done: it arrives saying so.
 const noop = await send([{ route: 'hero/A', text: 'Unpicked A', action: 'unpick' }])
 if (noop.results?.[0]?.done !== false || !noop.results[0].nothing || noop.inbox.batches.find(b => b.id === noop.sent)?.state === 'done') fail(`an unpick of a variant that wasn't picked arrived done: ${JSON.stringify(noop.results)}`)
