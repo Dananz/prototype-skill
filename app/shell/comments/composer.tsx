@@ -273,12 +273,13 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             onPaste={e => { const f = imageIn(e.clipboardData); if (!f) return; e.preventDefault(); void attach(f) }}
             className="max-h-40 min-h-[52px] overflow-y-auto whitespace-pre-wrap break-words py-1 leading-5 outline-none [@media(pointer:coarse)]:min-h-[60px] [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6" />
           {docked && menu ? createPortal(menu, uiBox()) : menu}
-          {empty && <span className="pointer-events-none absolute start-3 top-2.5 text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">
-            {time
+          {/* The @ hint starts its own line, so it never breaks in the middle. */}
+          {empty && <span className="pointer-events-none absolute start-3 top-2.5 whitespace-pre-line text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">
+            {(time
               ? time.to === undefined
                 ? t('What should change at this moment? @ mentions a variant or element')
                 : t('What should change over this range? @ mentions a variant or element')
-              : t('What should change? @ mentions a variant or element')}
+              : t('What should change? @ mentions a variant or element')).replace('? @', '?\n@')}
           </span>}
 
         </div>

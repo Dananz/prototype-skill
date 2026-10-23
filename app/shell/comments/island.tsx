@@ -252,7 +252,7 @@ export function Island() {
         <Icon name={phone ? (picking ? 'tap-on' : 'tap') : picking ? 'select-on' : 'select'} className={phone ? 'size-5' : 'size-4'} />
       </button>
       <textarea ref={input} data-shoot="whole-input" rows={1} value={text} onChange={e => setText(e.target.value)} dir="auto" autoComplete="off" enterKeyHint="enter"
-        aria-label={t('Comment on the entire variant')} placeholder={picking ? (phone ? t('Tap what to comment on') : t('Click what to comment on')) : (typing || phone) && !sendShown && fits ? t('Comment on the entire variant') : t('Comment…')} title={`${t('Comment on the whole variant')} · ⇧C`}
+        aria-label={t('Comment on the entire variant')} placeholder={picking ? (phone ? t('Tap an element') : t('Click what to comment on')) : (typing || phone) && !sendShown && fits ? t('Comment on the entire variant') : t('Comment…')} title={`${t('Comment on the whole variant')} · ⇧C`}
         onFocus={() => { setFocus(true); act.wholeFocus(true) }} onBlur={() => { setFocus(false); act.wholeFocus(false) }}
         onKeyDown={e => {
           if (e.nativeEvent.isComposing) return

@@ -2,7 +2,7 @@
 // the guard that keeps every press from reaching the design while commenting, and the live boxes
 // pins and outlines are drawn from.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { climb, describe, find, frameOf, inFrame, region, regionAt, seen, spot, spotAt, openerOf, passing, shows, routeOf, seeThrough } from './dom'
+import { climb, whole, describe, find, frameOf, inFrame, region, regionAt, seen, spot, spotAt, openerOf, passing, shows, routeOf, seeThrough } from './dom'
 import { Icon } from './ui'
 import type { Box, Target } from './types'
 import { useCtx } from './ctx'
@@ -155,7 +155,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     }
     // What is picked carries the layout it was picked on, in a device view.
     const onView = (t: Target): Target => { const v = host.view?.(); return v?.size ? { ...t, view: { size: v.size, w: v.w!, h: v.h! } } : t }
-    const part = (t: EventTarget | null) => { const el = inDesign(t); return el && el !== host.mount() ? el : null }
+    const part = (t: EventTarget | null) => { const el = inDesign(t), m = host.mount(); return el && m && el !== m && !whole(m, el) ? el : null }
     const parentOf = (el: HTMLElement) => { const m = host.mount(); return m ? climb(m, el) : null }
     let touching = false
     const show = (el: HTMLElement | null, touch: boolean, keep = false) => {
