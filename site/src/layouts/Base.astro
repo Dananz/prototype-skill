@@ -1,7 +1,7 @@
 ---
 import { Font } from 'astro:assets'
 import '../styles/global.css'
-import { SITE, FAQ } from '../content'
+import { SITE, FAQ, faqText } from '../content'
 
 const canonical = new URL(Astro.url.pathname, Astro.site)
 const ogImage = new URL('/og.png', Astro.site)
@@ -22,7 +22,7 @@ const jsonLd = [
   {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    mainEntity: FAQ.map(f => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })),
+    mainEntity: FAQ.map(f => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: faqText(f.a) } })),
   },
 ]
 ---
