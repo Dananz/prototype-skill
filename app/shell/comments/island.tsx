@@ -27,7 +27,7 @@ const usePhone = () => useSyncExternalStore(l => { const mq = phoneMq(); mq.addE
  * (→ done) or answered (a new reply). The most telling one is shown for a few seconds; a reply
  * also counts as unread until the list is opened.
  */
-function useNews(rows: ReturnType<typeof useRows>['rows'], agent: string, which: IslandPrefs['news']) {
+function useNews(rows: ReturnType<typeof useRows>['rows'], agent: string, which: IslandPrefs['news'], ready: boolean) {
   const last = useRef<Map<string, { state: CState; reply: string }> | null>(null)
   const [news, setNews] = useState<News | null>(null)
   const [unread, setUnread] = useState(0)
@@ -35,6 +35,9 @@ function useNews(rows: ReturnType<typeof useRows>['rows'], agent: string, which:
   const now = rows.map(r => [r.item.id, r.state, [...r.turns].reverse().find(x => x.reply)?.reply?.text ?? ''] as const)
   const sig = JSON.stringify(now)
   useEffect(() => {
+    // Until the server's first word on them, sent comments read as just sent: comparing then would
+    // announce, after a reload, what was finished long ago.
+    if (!ready) return
     const before = last.current
     last.current = new Map(now.map(([id, state, reply]) => [id, { state, reply }]))
     // The first look, and a page that just opened, have nothing new: only what changes after.
@@ -54,7 +57,7 @@ function useNews(rows: ReturnType<typeof useRows>['rows'], agent: string, which:
     if (next.kind === 'reply') setUnread(u => u + 1)
     if (which === 'off' || (which === 'replies' && next.kind !== 'reply')) return
     setNews({ ...next, key: ++n.current })
-  }, [sig])
+  }, [sig, ready])
   useEffect(() => {
     if (!news) return
     const id = window.setTimeout(() => setNews(null), SHOWN_MS)
@@ -86,7 +89,7 @@ export function Island() {
   const { s, rows, drafts, stalled } = useRows()
   const prefs = useIslandPrefs()
   const phone = usePhone()
-  const { news, unread, read } = useNews(rows, agent, prefs.news)
+  const { news, unread, read } = useNews(rows, agent, prefs.news, !!s.inbox)
   const { shown, leaving } = useShown(news)
   const [text, setText] = useState('')
   const [focus, setFocus] = useState(false)
