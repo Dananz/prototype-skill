@@ -29,3 +29,23 @@ export function assignmentNeeded(dir, slug, id) {
   if (slot.use !== `${slug}/${id}`) return repair(`the ${meta.slot} slot is not using the chosen variant yet`)
   return ''
 }
+
+// A pick among a variant's next versions (built --from it with --next) is that variant's new design:
+// the agent builds it into the parent, then on up through parents that are next versions too. Returns what to do, or '' when nothing is to be built up.
+export function buildUpNeeded(dir, slug, id) {
+  const read = name => JSON.parse(readFileSync(join(dir, 'src/protos', name, 'meta.ts'), 'utf8').replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
+  const ref = /^[a-z0-9][a-z0-9-]*\/[A-Z]{1,2}$/
+  let meta
+  try { meta = read(slug) } catch { return '' }
+  if (isCurrent(meta.variants?.[id])) return ''
+  const chain = [], seen = new Set([slug])
+  for (let at = meta; at && !at.slot && at.next && typeof at.from === 'string' && ref.test(at.from);) {
+    const parent = at.from.split('/')[0]
+    if (seen.has(parent)) break
+    seen.add(parent)
+    chain.push(at.from)
+    try { at = read(parent) } catch { break }
+  }
+  if (!chain.length) return ''
+  return `build it into ${chain.join(', then ')}: the pick is ${chain[0]}'s next version. Run proto work ${chain[0]} --ask "build in the pick from ${slug}" and make ${chain[0]} draw what ${slug}/${id} draws (rewrite it, or re-export ${slug}/${id} when they are now the same), keeping its name; update its about line. Then each next one the same way, nearest first. Stop before a parent whose prototype explores a different question than this one answers (compare their asks) and say where you stopped. Shoot what changed, then reply --done naming the variants rebuilt`
+}
