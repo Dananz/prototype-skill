@@ -119,7 +119,7 @@ export async function commentCompareChecks({ proto, app, openPage, fail }) {
       button('Add').click()
       if(!await until(()=>c.store.get().items.length===1))return 'phone save failed'
       c.show()
-      if(!await until(()=>c.store.get().sheet))return 'shared phone Comments sheet missing'
+      if(!await until(()=>c.store.get().island&&document.querySelector('[data-island][data-open]')))return 'shared phone comments list missing'
       return 'ok'
     })()`)
     if (result !== 'ok') fail(`compare comments: ${result}`)

@@ -1368,12 +1368,16 @@ try {
   const fits = await phoneBoth.run(`(() => {
     const bar = document.querySelector('[data-pill-bar]'), r = bar.getBoundingClientRect()
     if (!bar.querySelector('[data-pill-menu]')) return 'the pill should hold the menu'
-    if (bar.querySelectorAll(':scope > button').length !== 3) return 'the pill should hold three buttons (the menu, the arrows), not ' + bar.querySelectorAll(':scope > button').length
-    // The comments island is the pill's top row, as wide as the pill: Select, the box and the count.
+    // The menu, the arrows and its end (here the layouts: the design has no tweaks).
+    const btns = bar.querySelectorAll('button')
+    if (btns.length !== 4 || !bar.querySelector('[data-pill-layout]')) return 'the pill should hold four buttons (the menu, the arrows, the layouts), not ' + btns.length
+    // The comments island is the top row of one bar with the pill, flush with the screen's sides and foot: Select, the box and the count.
     const isl = document.querySelector('[data-island]'), ir = isl?.getBoundingClientRect()
     if (!isl || !isl.querySelector('[data-act="comment:toggle"]') || !isl.querySelector('[data-shoot=island-open]')) return 'the pill should have the comments island as its top row'
-    if (Math.abs(ir.bottom - r.top) > 1 || Math.abs(ir.left - r.left) > 1 || Math.abs(ir.right - r.right) > 1) return 'the island should sit on the pill as one capsule: ' + JSON.stringify([ir.left, ir.right, ir.bottom, r.left, r.right, r.top])
-    if (r.left < 0 || r.right > innerWidth || bar.scrollWidth > bar.clientWidth + 1) return 'the pill overflows 360 px: ' + r.left + '-' + r.right + ', ' + bar.scrollWidth + '/' + bar.clientWidth
+    const sel = isl.querySelector('[data-act="comment:toggle"]').getBoundingClientRect()
+    if (Math.abs(ir.bottom - r.bottom) > 1 || ir.left !== 0 || Math.abs(ir.right - innerWidth) > 1 || r.left !== 0 || Math.abs(r.right - innerWidth) > 1 || sel.bottom > r.top + 1) return 'the island and the pill should be one bar at the foot: ' + JSON.stringify([ir.left, ir.right, ir.bottom, r.left, r.right, r.top, r.bottom, sel.bottom])
+    const line = bar.firstElementChild
+    if (line.scrollWidth > line.clientWidth + 1) return 'the pill overflows 360 px: ' + line.scrollWidth + '/' + line.clientWidth
     if (document.querySelector('[data-pill-handle]').offsetWidth < 100) return 'the pill handle was squeezed to ' + document.querySelector('[data-pill-handle]').offsetWidth + ' px'
     const tight = [...document.querySelectorAll('[data-motion-bar] button')].filter(b => b.offsetParent && b.offsetWidth < 32).map(b => (b.dataset.motion || b.getAttribute('aria-label')) + ' ' + b.offsetWidth)
     if (tight.length) return 'dock buttons squeezed: ' + tight.join(', ')
@@ -1604,7 +1608,7 @@ try {
     if (!await until(m, 8000)) return 'the pill has no menu'
     m().click()
     const card = await until(() => document.querySelector('[data-menu-card]'))
-    if (!card || m().getAttribute('aria-expanded') !== 'true' || !m().classList.contains('!bg-white')) return 'the menu button should open its card and turn white'
+    if (!card || m().getAttribute('aria-expanded') !== 'true' || !m().classList.contains('!bg-zinc-900') || !m().classList.contains('dark:!bg-white')) return 'the menu button should open its card and stand out (dark on the light pill, white on the dark one)'
     const sizes = [...card.querySelectorAll('[data-act^="size:"]')]
     if (sizes.length !== 3 || card.querySelector('[data-act=turn]')) return 'with no view on, the Layout row has the three sizes only'
     if (sizes[0].getAttribute('aria-pressed') !== 'true') return 'the phone, this window\\'s own size, should be the one chosen'

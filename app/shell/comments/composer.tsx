@@ -3,11 +3,14 @@
 // element (all of it, on a moment) and opens the editor, and a region dragged out on the design brings its own picture; an image pasted (Ctrl+V) or dropped on the
 // composer is added beside the screenshots (several per comment); ⌘↩ adds it. Whatever is written is held by
 // the store as it is typed, so putting the composer away any way but Cancel or Add loses nothing.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { Drawer } from '@base-ui/react/drawer'
 import { uiBox } from '../portals'
+import { listen } from '../quiet'
 import { useAgentName, useCtx } from './ctx'
 import { find } from './dom'
+import { useKeyboard } from './keyboard'
 import { capture, ShotEditor } from './shot'
 import type { Box, Draft, Seg, Shot, Target, Time } from './types'
 import { MAX_SHOTS, shotsOf } from './types'
@@ -94,8 +97,10 @@ const TIME_PATH = { at: 'M12 9.5V20M9 4h6l-3 4z', range: 'M5 5v14M19 5v14M8.5 12
 export function Composer({ target, time, docked, n, initial, place, sheet, tagging, editing, id }: Props) {
   const agent = useAgentName()
   const { host, store, act } = useCtx()
-  // The popover over the design closes with its X; the phone's sheet and the motion dock keep Cancel.
+  // The popover over the design closes with its X, the phone's drawer with a swipe down, and the
+  // motion dock keeps Cancel.
   const pop = !docked && !sheet
+  const live = store.get().live
   const [mention, setMention] = useState<{ query: string; index: number } | null>(null)
   const choices = host.variantMentions?.() ?? []
   const query = mention?.query.toLocaleLowerCase() ?? ''
@@ -128,8 +133,14 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const [marking, setMarking] = useState<{ src: string; at: number } | null>(null)
   const range = useRef<Range | null>(null)
 
+  // Filled once its box is there: in the phone's drawer that is a moment after the composer, once
+  // the drawer's portal has mounted.
+  const [edOn, setEdOn] = useState(false)
+  const filled = useRef(false)
   useLayoutEffect(() => {
-    const el = ed.current!
+    const el = ed.current
+    if (!el || filled.current) return
+    filled.current = true
     el.replaceChildren()
     initial?.body.forEach(s => el.append(typeof s === 'string' ? document.createTextNode(s) : chipNode(initial.tags[s.tag], s.tag)))
     el.focus({ preventScroll: true })
@@ -137,7 +148,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     // On a phone the composer is a sheet over the bottom: the element moves up into view above it.
     if (sheet && target) find(host.mount(), target)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [edOn])
 
   const saveRange = () => { const s = getSelection(); if (s?.rangeCount && ed.current?.contains(s.anchorNode)) range.current = s.getRangeAt(0).cloneRange() }
   const insert = (p: Target) => {
@@ -234,14 +245,13 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             <div className="max-h-36 overflow-y-auto">{variants.map((t, i) => <button key={`${t.variantRef?.proto}/${t.variantRef?.variant}/${t.variantRef?.label}`} type="button" role="option" aria-selected={i === Math.min(mention.index, variants.length - 1)} onMouseDown={e => e.preventDefault()} onClick={() => insert(t)} className={`flex min-h-9 w-full items-center gap-2 px-3 py-2 text-start text-xs ${i === Math.min(mention.index, variants.length - 1) ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}><span className="font-semibold">@{t.variantRef?.label}</span><span className="min-w-0 flex-1 truncate">{t.variantRef?.name}</span></button>)}{!variants.length && <p className="px-3 py-2 text-xs text-zinc-400">{t('No matching variants')}</p>}</div>
             <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => { setMention(null); act.tagPick() }} className="flex min-h-9 w-full items-center gap-2 border-t border-black/[.06] px-3 py-2 text-start text-xs text-zinc-500 hover:bg-zinc-900/5 dark:border-white/10 dark:hover:bg-white/5"><Icon name="target" className="size-3.5"/>{t('Pick an element instead')}</button>
           </div>)
-  return (
-    <>
+  const body = (
       <div ref={box} data-composer onKeyDown={keys}
         onDragOver={e => { if (!carriesImage(e.dataTransfer)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDropping(true) }}
         onDragLeave={e => { if (!box.current?.contains(e.relatedTarget as Node)) setDropping(false) }}
         onDrop={e => { setDropping(false); const f = imageIn(e.dataTransfer); if (!f) return; e.preventDefault(); void attach(f) }}
-        className={`pointer-events-auto z-30 flex flex-col text-[13px] text-zinc-900 dark:text-zinc-100 ${docked ? 'relative' : `rounded-2xl border border-black/10 bg-white shadow-2xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900 ${sheet ? 'absolute inset-x-2 bottom-2' : 'absolute'}`} ${tagging ? 'opacity-60' : ''} ${dropping ? 'ring-2 ring-proto-primary-ring' : ''}`} style={style}>
-        <div className="flex items-center gap-2 px-3 pt-2.5">
+        className={`pointer-events-auto z-30 flex flex-col text-[13px] text-zinc-900 dark:text-zinc-100 ${docked || sheet ? 'relative' : 'absolute rounded-2xl border border-black/10 bg-white shadow-2xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900'} ${tagging ? 'opacity-60' : ''} ${dropping ? 'ring-2 ring-proto-primary-ring' : ''}`} style={sheet ? undefined : style}>
+        <div className={`flex items-center gap-1 px-3 ${sheet ? 'pt-1.5' : 'pt-2.5'}`}>
           <PinDot n={n} size="sm" whole={target?.whole} />
           {time
             ? <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-[11px] font-semibold tabular-nums text-proto-primary-soft-fg"><svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={time.to === undefined ? TIME_PATH.at : TIME_PATH.range} /></svg>{time.to === undefined ? t('At {time}', { time: spanOf(time) }) : spanOf(time)}</span>
@@ -250,7 +260,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           {pop && <button onClick={() => act.cancel()} data-shoot="composer-close" aria-label={t('Cancel')} title={`${t('Cancel')} · Esc`} className={`${IB} -me-1.5 h-7 min-w-7 shrink-0 px-1`}><Icon name="x" className="size-3.5" /></button>}
         </div>
         <div className="relative px-3 pt-1.5">
-          <div ref={ed} contentEditable suppressContentEditableWarning role="textbox" aria-label={t('Comment')} aria-multiline="true" dir="auto"
+          <div ref={el => { ed.current = el; if (el) setEdOn(true) }} contentEditable suppressContentEditableWarning role="textbox" aria-label={t('Comment')} aria-multiline="true" dir="auto"
             onInput={() => {
               saveRange(); setEmpty(!ed.current!.innerText.trim()); emit()
               const s = getSelection(), node = s?.anchorNode
@@ -288,15 +298,53 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           <button onClick={shoot} disabled={full} title={full ? t('{n} pictures is the most one comment takes; remove one to add another', { n: MAX_SHOTS }) : t('Add a screenshot of this part of the design, then draw on it (or paste an image: {mod} V, or drop one here; each adds a picture)', { mod: MOD })} aria-label={t('Attach a screenshot')} className={`${IB} h-8 min-w-8 px-1.5 disabled:opacity-40`}><Icon name="camera" /></button>
           {editing && <button onClick={() => id && act.remove(id)} title={t('Delete')} aria-label={t('Delete comment')} className={`${IB} h-8 min-w-8 px-1.5 hover:text-rose-600`}><Icon name="trash" /></button>}
           <span className="ms-auto" />
-          {!pop && <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>}
-          <button onClick={submit} disabled={empty && !tags.length} title={t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={editing ? 'check' : 'plus'} className="size-3.5" />{editing ? t('Save') : t('Add')}</button>
+          {docked && <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>}
+          {/* Sent as it is added (Settings), it says so: Send, with the plane. */}
+          <button data-shoot="composer-add" onClick={submit} disabled={empty && !tags.length} title={live && !editing ? t('Send to {agent}', { agent }) : t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={editing ? 'check' : live ? 'send' : 'plus'} className="size-3.5" />{editing ? t('Save') : live ? t('Send') : t('Add')}</button>
         </div>
       </div>
+  )
+  return (
+    <>
+      {sheet ? <Sheet onClose={() => act.close()} tagging={!!tagging}>{body}</Sheet> : body}
       {marking && <ShotEditor src={marking.src} onCancel={() => { setMarking(null); refocus() }} onDone={url => {
         const at = marking.at
         setShots(s => at < 0 ? (s.length < MAX_SHOTS ? [...s, { src: url }] : s) : s.map((p, j) => j === at ? { src: url, ...(p.pasted ? { pasted: true } : {}) } : p))
         setMarking(null); refocus()
       }} />}
     </>
+  )
+}
+
+// The phone's composer: a drawer from the foot of the screen (Base UI's, like the shell's other
+// sheets) over the bar, riding the keyboard while it is up. It leaves the design free to touch,
+// for tagging another element and for Parent on the outline, so a swipe down or a tap on the page
+// puts it away, keeping what was typed for the next time (as Esc does).
+function Sheet({ children, onClose, tagging }: { children: ReactNode; onClose: () => void; tagging: boolean }) {
+  const kb = useKeyboard(true)
+  const now = useRef({ onClose, tagging })
+  now.current = { onClose, tagging }
+  useEffect(() => {
+    const down = (e: Event) => {
+      const t = e.target as Element
+      if (now.current.tagging || t.closest?.('[data-comments], [data-comment-ui], [data-composer], [data-pill]')) return
+      now.current.onClose()
+    }
+    listen(document, 'pointerdown', down, true)
+    return () => document.removeEventListener('pointerdown', down, true)
+  }, [])
+  return (
+    <Drawer.Root open modal={false} disablePointerDismissal onOpenChange={(open: boolean) => { if (!open) onClose() }}>
+      <Drawer.Portal container={uiBox()}>
+        <Drawer.Viewport data-comment-ui="" className="pointer-events-none fixed inset-x-0 top-0 z-[200] flex items-end justify-center transition-[bottom] duration-300 ease-out" style={{ bottom: kb }}>
+          <Drawer.Popup data-shoot="composer-sheet" className="pointer-events-auto w-full rounded-t-[22px] border-t border-black/10 bg-white pt-2 shadow-[0_-12px_40px_-12px_rgb(0_0_0/.35)] outline-none [transform:translateY(var(--drawer-swipe-movement-y))] transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:select-none data-starting-style:[transform:translateY(100%)] data-ending-style:[transform:translateY(100%)] dark:border-white/10 dark:bg-zinc-900"
+            style={{ paddingBottom: kb ? 0 : 'max(.25rem, env(safe-area-inset-bottom))' }}>
+            <div className="mx-auto h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+            <Drawer.Title className="sr-only">{t('Comment')}</Drawer.Title>
+            <Drawer.Content>{children}</Drawer.Content>
+          </Drawer.Popup>
+        </Drawer.Viewport>
+      </Drawer.Portal>
+    </Drawer.Root>
   )
 }

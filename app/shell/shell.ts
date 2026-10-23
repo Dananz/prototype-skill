@@ -503,10 +503,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div class="flex min-w-0 flex-1 flex-col">
       <header data-bar class="relative z-30 ${framed ? 'hidden' : 'flex'} h-12 shrink-0 items-center gap-1 border-b border-black/[.07] px-2 dark:border-white/10"></header>
       <div data-zone>
-        <div data-layers class="absolute inset-0 overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-view hidden class="absolute inset-0 z-[5]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-layers class="absolute inset-0 overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-view hidden class="absolute inset-0 z-[5]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-island-host class="pointer-events-none absolute inset-0 z-[17]" style="inset-inline-end:var(--hw,0px)"></div>
         <div data-motion-dock class="absolute start-0 z-[18]" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-copy-bar class="absolute start-0 z-[14]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px))"></div>
@@ -1219,8 +1219,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     keepScroll(drawer, st.drawer ? `<div class="fixed inset-0 z-50 lg:hidden"><div data-act="drawer:0" class="absolute inset-0 bg-black/30"></div><div class="absolute inset-y-0 start-0 flex w-[19rem] max-w-[85%] flex-col bg-white shadow-2xl dark:bg-zinc-950">${sideNav(true)}</div></div>` : '')
 
     // Focus mode restyles the zone to cover the page; the mounted design stays put. On a phone
-    // the variant pill takes a strip at the bottom of the stage, so it never covers the design.
-    zone.className = st.focus ? 'fixed inset-0 z-[100] bg-white text-[13px] dark:bg-zinc-950' : `relative min-h-0 flex-1 ${pillOn() ? `max-sm:[--pill-h:calc(4.25rem+var(--isl-h,0px)+env(safe-area-inset-bottom))] ${commentHost() ? 'max-sm:[--isl-h:45px]' : ''}` : ''}`
+    // the variant pill takes a strip at the bottom of the stage, so it never covers the design;
+    // joined with the comment bar, the design runs under it (JOINED_ZONE).
+    zone.className = st.focus ? 'fixed inset-0 z-[100] bg-white text-[13px] dark:bg-zinc-950' : `relative min-h-0 flex-1 ${!pillOn() ? '' : commentHost() ? JOINED_ZONE : 'max-sm:[--pill-h:calc(4.25rem+env(safe-area-inset-bottom))]'}`
     document.documentElement.style.overflow = st.focus ? 'hidden' : ''
 
     const edgeBtn = (side: 'prev' | 'next') => {
@@ -1297,7 +1298,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   let pd: PillDrag | null = null
   let pillKey = ''
-  const pillBtn = 'grid size-10 shrink-0 place-items-center rounded-full text-white/70 active:bg-white/10'
+  // On a phone with comments, the pill is the lower row of one bar with the comment bar: flush
+  // with the screen's sides and foot, round at its top only, solid in the page's light or dark. The
+  // design runs under it, to the comment bar's height (--stage-b), unless the motion dock or the
+  // copy bar sits on the pill (data-dock, data-copy); the pill row folds away while
+  // the design scrolls down, and comes back on a scroll up or a tap on the bar (data-fold).
+  const JOINED_ZONE = 'max-sm:[--isl-h:57px] max-sm:[--pill-h:calc(3.25rem+var(--isl-h)+max(.5rem,env(safe-area-inset-bottom)))] max-sm:[&:not([data-dock],[data-copy])]:[--stage-b:calc(var(--isl-h)+max(.5rem,env(safe-area-inset-bottom)))]'
+  // Both pills, joined or floating, are in the page's light or dark.
+  const ink = { btn: 'text-zinc-600 active:bg-zinc-900/5 dark:text-white/70 dark:active:bg-white/10', sep: 'bg-zinc-900/10 dark:bg-white/15', name: 'text-zinc-500 dark:text-white/70', n: 'text-zinc-400 dark:text-white/40', press: 'active:bg-zinc-900/5 dark:active:bg-white/10' }
+  const pillBtn = `grid size-10 shrink-0 place-items-center rounded-full ${ink.btn}`
 
   function paintPill() {
     const p = cur()
@@ -1306,16 +1315,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const vid = st.place.view === 'variant' ? st.place.variant : ''
     const at = vs.findIndex(v => v.id === vid)
     const tryN = pillOn() && phoneMq.matches ? tryCount(hintList()) : 0
-    const key = pillOn() ? JSON.stringify([p!.id, vid, vs.map(v => [v.id, v.name]), editing(p!.id, vid), st.sheet, pillComments(), copyCounts().on, trySheet, tweakList().length, tweaksOpen, tweakList().filter(isChanged).length]) : ''
+    const joined = !!commentHost()
+    const key = pillOn() ? JSON.stringify([p!.id, vid, vs.map(v => [v.id, v.name]), editing(p!.id, vid), st.sheet, pillComments(), copyCounts().on, trySheet, tweakList().length, tweaksOpen, tweakList().filter(isChanged).length, joined, viewOk() && shownSize(), !!p && favOf(p, vid)]) : ''
     if (key !== pillKey) {
       pillKey = key
       if (!key) { pill.innerHTML = ''; closeCard(true) }
       else {
         const v = vs[at]
-        const sep = '<span class="mx-0.5 h-5 w-px shrink-0 bg-white/15"></span>'
+        const k = ink, btn = pillBtn
+        const sep = `<span class="mx-0.5 h-5 w-px shrink-0 ${k.sep}"></span>`
         const prev = vs[at <= 0 ? vs.length - 1 : at - 1], next = vs[at < 0 || at === vs.length - 1 ? 0 : at + 1]
-        const name = v ? `<b data-pill-id class="shrink-0 text-[15px]">${variantRef(p!, v.id)}</b><span data-pill-name dir="auto" class="min-w-0 truncate text-white/70">${esc(v.name)}</span><span data-pill-n class="shrink-0 text-[11px] tabular-nums text-white/40">${at + 1}/${vs.length}</span>${editing(p!.id, v.id) ? pulse('size-1.5') : ''}`
-          : `<span class="truncate font-medium">${t('All variants')}</span><span class="shrink-0 text-[11px] tabular-nums text-white/40">${vs.length}</span>`
+        const name = v ? `<b data-pill-id class="shrink-0 text-[15px]">${variantRef(p!, v.id)}</b><span data-pill-name dir="auto" class="min-w-0 truncate ${k.name}">${esc(v.name)}</span><span data-pill-n class="shrink-0 text-[11px] tabular-nums ${k.n}">${at + 1}/${vs.length}</span>${editing(p!.id, v.id) ? pulse('size-1.5') : ''}`
+          : `<span class="truncate font-medium">${t('All variants')}</span><span class="shrink-0 text-[11px] tabular-nums ${k.n}">${vs.length}</span>`
         // The pill holds the menu, the variants and Comment, never more: the page's other tools
         // (All variants, copy options, Try it, motion, the layout or the phone scale) are in the
         // menu, so the name keeps its room on a 360 px phone however many a design has. A tool
@@ -1325,18 +1336,30 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           : trySheet === 'open' ? { act: 'try', icon: 'x', label: t('Close Try it') }
           : trySheet === 'away' ? { act: 'try', icon: 'key', label: t('Bring Try it back') } : null
         const menuBtn = mode
-          ? `<button data-pill-menu="mode" data-act="${mode.act}" data-shoot="menu" aria-label="${mode.label}" aria-pressed="true" class="${pillBtn} !bg-proto-primary !text-proto-primary-fg">${ic(mode.icon, 'size-5')}</button>`
-          : `<button data-pill-menu data-shoot="menu" aria-label="${t('Menu')}" aria-haspopup="dialog" aria-expanded="false" class="${pillBtn} transition-colors ${cardBtnCls()}">${ic('menu', 'size-5')}</button>`
-        pill.innerHTML = `<div class="absolute inset-x-0 bottom-0 z-10 flex h-[var(--pill-h,0px)] items-start justify-center pt-[calc(.5rem+var(--isl-h,0px))] sm:hidden">
-          <div data-pill-bar class="relative flex h-12 max-w-[calc(100%-1rem)] items-center gap-0.5 ${commentHost() ? 'w-[calc(100%-1rem)] justify-between rounded-b-3xl' : 'rounded-full'} bg-zinc-900/90 p-1 text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/90">
-            <div data-ruler hidden class="pointer-events-none absolute bottom-full left-1/2 mb-2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-zinc-900/90 shadow-lg ring-1 ring-white/10 [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)] dark:bg-zinc-800/90"></div>
+          ? `<button data-pill-menu="mode" data-act="${mode.act}" data-shoot="menu" aria-label="${mode.label}" aria-pressed="true" class="${btn} !bg-proto-primary !text-proto-primary-fg">${ic(mode.icon, 'size-5')}</button>`
+          : `<button data-pill-menu data-shoot="menu" aria-label="${t('Menu')}" aria-haspopup="dialog" aria-expanded="false" class="${btn} transition-colors ${cardBtnCls()}">${ic('menu', 'size-5')}</button>`
+        // Its end: Tweaks when the variant has any, else the layouts when it has those, else the star.
+        const fav = !!v && favOf(p!, v.id)
+        const end = tweakList().length ? `<button data-act="tweaks" data-shoot="tweaks" aria-label="${t('Tweaks')}" aria-haspopup="dialog" aria-expanded="${tweaksOpen}" class="${btn} relative ${tweaksOpen ? '!bg-sky-700 !text-white' : ''}">${ic('tweaks', 'size-5')}${tweakList().some(isChanged) ? `<span class="absolute end-0 top-0 grid min-w-3.5 rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : ''}</button>`
+          : viewOk() ? `<button data-pill-layout data-shoot="pill-layout" aria-label="${t('Layout')}" aria-haspopup="dialog" aria-expanded="false" class="${btn} transition-colors">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth), st.view.land), 'size-5')}</button>`
+          : v ? `<button data-act="fav:${esc(p!.id)}:${esc(v.id)}" data-shoot="pill-fav" aria-pressed="${fav}" aria-label="${fav ? t('Unfavorite') : t('Favorite')}" class="${btn} ${fav ? '!text-amber-400' : ''}">${ic(fav ? 'star-fill' : 'star', 'size-5')}</button>` : ''
+        const pillRow = (flush: boolean) => `<div data-ruler hidden class="pointer-events-none absolute left-1/2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-white/95 shadow-lg ring-1 ring-black/[.08] dark:bg-zinc-800/95 dark:ring-white/10 ${flush ? 'bottom-[calc(100%+var(--isl-h,0px)+.75rem)]' : 'bottom-full mb-2'} [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)]"></div>
             ${menuBtn}${sep}
-            <button data-act="variant:${prev.id}" aria-label="${t('Previous variant: {label} {name}', { label: variantRef(p!, prev.id), name: prev.name })}" class="${pillBtn}">${ic('left')}</button>
-            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? t('{label} {name}, {current} of {total}. ', { label: variantRef(p!, v.id), name: esc(v.name), current: at + 1, total: vs.length }) : ''}${t('Show all variants')}" class="flex h-10 ${tweakList().length ? 'w-28' : 'w-40'} min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 active:bg-white/10">
+            <button data-act="variant:${prev.id}" aria-label="${t('Previous variant: {label} {name}', { label: variantRef(p!, prev.id), name: prev.name })}" class="${btn}">${ic('left')}</button>
+            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? t('{label} {name}, {current} of {total}. ', { label: variantRef(p!, v.id), name: esc(v.name), current: at + 1, total: vs.length }) : ''}${t('Show all variants')}" class="flex h-10 ${flush ? 'flex-1' : end ? 'w-28' : 'w-40'} min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 ${k.press}">
               ${name}
             </div>
-            <button data-act="variant:${next.id}" aria-label="${t('Next variant: {label} {name}', { label: variantRef(p!, next.id), name: next.name })}" class="${pillBtn}">${ic('right')}</button>
-            ${tweakList().length ? `${sep}<button data-act="tweaks" data-shoot="tweaks" aria-label="${t('Tweaks')}" aria-haspopup="dialog" aria-expanded="${tweaksOpen}" class="${pillBtn} relative ${tweaksOpen ? '!bg-sky-700 !text-white' : ''}">${ic('tweaks', 'size-5')}${tweakList().some(isChanged) ? `<span class="absolute end-0 top-0 grid min-w-3.5 rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : ''}</button>` : ''}
+            <button data-act="variant:${next.id}" aria-label="${t('Next variant: {label} {name}', { label: variantRef(p!, next.id), name: next.name })}" class="${btn}">${ic('right')}</button>
+            ${end ? `${sep}${end}` : ''}`
+        pill.innerHTML = joined
+          ? `<div class="pointer-events-none absolute inset-x-0 bottom-0 z-[17] flex h-[var(--pill-h,0px)] items-end sm:hidden">
+          <div data-pill-bar class="pointer-events-auto relative flex h-[calc(var(--pill-h,0px)-var(--isl-h,0px))] w-full flex-col px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-1 text-zinc-900 transition-[translate,opacity] duration-300 ease-out dark:text-white [[data-fold]_&]:pointer-events-none [[data-fold]_&]:translate-y-4 [[data-fold]_&]:opacity-0 [[data-typing]_&]:invisible">
+            <div class="relative flex h-11 items-center justify-between gap-0.5">${pillRow(true)}</div>
+          </div>
+        </div>`
+          : `<div class="absolute inset-x-0 bottom-0 z-10 flex h-[var(--pill-h,0px)] items-start justify-center pt-2 sm:hidden">
+          <div data-pill-bar class="relative flex h-12 max-w-[calc(100%-1rem)] items-center gap-0.5 rounded-full bg-white/90 p-1 text-zinc-900 shadow-xl shadow-black/10 ring-1 ring-black/[.08] backdrop-blur dark:bg-zinc-800/90 dark:text-white dark:shadow-black/20 dark:ring-white/10">
+            ${pillRow(false)}
           </div>
         </div>`
         raisePill()
@@ -1374,43 +1397,51 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // options, things to try). The card grows out of the button: it starts as the button, same place,
   // size and round corners, opens into the card, and its rows fade in once there is room; choosing
   // anything in it folds it back. Turning it around halfway plays the running animation back from where it is.
-  const DARK_SEG = (on: boolean) => `h-9 min-w-0 flex-1 rounded-full text-xs font-medium tabular-nums ${on ? 'bg-white text-zinc-900' : 'text-white/70 hover:bg-white/10'}`
-  const CARD_CLS = 'absolute z-30 w-[17.5rem] max-w-[calc(100vw-1rem)] space-y-1 rounded-3xl bg-zinc-900/95 p-1.5 text-[14px] text-white shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur dark:bg-zinc-800/95'
+  // The card follows the page's light or dark, like the bar it opens from.
+  const DARK_SEG = (on: boolean) => `h-9 min-w-0 flex-1 rounded-full text-xs font-medium tabular-nums ${on ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-black/[.06] dark:ring-0' : 'text-zinc-600 hover:bg-zinc-900/5 dark:text-white/70 dark:hover:bg-white/10'}`
+  const CARD_CLS = 'absolute z-30 w-[17.5rem] max-w-[calc(100vw-1rem)] space-y-1 rounded-3xl bg-white/95 p-1.5 text-[14px] text-zinc-900 shadow-xl shadow-black/15 ring-1 ring-black/[.08] backdrop-blur dark:bg-zinc-800/95 dark:text-white dark:shadow-black/20 dark:ring-white/10'
   const menuRow = (o: { act: string; shoot: string; icon: string; label: string; detail?: string; on?: boolean; tint?: string }) =>
-    `<button data-act="${o.act}" data-shoot="${o.shoot}" aria-pressed="${!!o.on}" class="flex h-11 w-full items-center gap-3 rounded-[18px] px-3 text-start hover:bg-white/10 active:bg-white/10 ${o.on ? 'bg-white/[.08]' : ''}">
-      <span class="grid size-7 shrink-0 place-items-center rounded-full ${o.on ? 'bg-proto-primary text-proto-primary-fg' : o.tint ?? 'text-white/70'}">${ic(o.icon, 'size-[18px]')}</span>
-      <span class="min-w-0 flex-1 truncate font-medium">${o.label}</span>${o.detail ? `<span class="shrink-0 text-xs tabular-nums text-white/45">${o.detail}</span>` : ''}</button>`
+    `<button data-act="${o.act}" data-shoot="${o.shoot}" aria-pressed="${!!o.on}" class="flex h-11 w-full items-center gap-3 rounded-[18px] px-3 text-start hover:bg-zinc-900/5 active:bg-zinc-900/5 dark:hover:bg-white/10 dark:active:bg-white/10 ${o.on ? 'bg-zinc-900/[.05] dark:bg-white/[.08]' : ''}">
+      <span class="grid size-7 shrink-0 place-items-center rounded-full ${o.on ? 'bg-proto-primary text-proto-primary-fg' : o.tint ?? 'text-zinc-600 dark:text-white/70'}">${ic(o.icon, 'size-[18px]')}</span>
+      <span class="min-w-0 flex-1 truncate font-medium">${o.label}</span>${o.detail ? `<span class="shrink-0 text-xs tabular-nums text-zinc-400 dark:text-white/45">${o.detail}</span>` : ''}</button>`
   const menuSegs = (label: string, segs: string, after = '') =>
-    `<div class="flex items-center gap-1 ps-3"><span class="w-14 shrink-0 text-xs text-white/50">${label}</span><div class="flex min-w-0 flex-1 gap-0.5 rounded-full bg-white/[.06] p-0.5">${segs}</div>${after}</div>`
+    `<div class="flex items-center gap-1 ps-3"><span class="w-14 shrink-0 text-xs text-zinc-500 dark:text-white/50">${label}</span><div class="flex min-w-0 flex-1 gap-0.5 rounded-full bg-zinc-900/[.05] p-0.5 dark:bg-white/[.06]">${segs}</div>${after}</div>`
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
+  // The pill's layout button opens the same card with its layout and zoom only.
+  let cardKind: 'menu' | 'layout' = 'menu'
   function cardHtml() {
     const p = cur()!, c = copyCounts(), n = tryCount(hintList())
-    const rows = [
+    const rows = cardKind === 'layout' ? '' : [
       menuRow({ act: 'lobby:proto', shoot: 'all-variants', icon: 'grid', label: t('All variants'), detail: String(visible(p).length), on: st.place.view === 'proto' }),
       !framed ? menuRow({ act: 'share', shoot: 'share', icon: 'share', label: t('Share screenshots') }) : '',
       c.lines ? menuRow({ act: 'copymode', shoot: 'copy-mode', icon: 'text', label: t('Copy options'), detail: tn(c.lines, '{n} line', '{n} lines') }) : '',
-      n ? menuRow({ act: 'try', shoot: 'try-it', icon: 'key', tint: 'text-amber-300', label: t('Try it'), detail: t('{n} to try', { n }) }) : '',
+      n ? menuRow({ act: 'try', shoot: 'try-it', icon: 'key', tint: 'text-amber-600 dark:text-amber-300', label: t('Try it'), detail: t('{n} to try', { n }) }) : '',
       hasMotion() ? menuRow({ act: 'motion', shoot: 'motion', icon: 'curves', label: st.motion ? t('Hide motion') : t('Motion'), detail: st.motion ? '' : t('Timeline'), on: st.motion }) : '',
       st.place.view === 'variant' ? menuRow({ act: 'focus', shoot: 'focus', icon: 'grow', label: t('Focus mode') }) : '',
     ].join('')
     const layout = viewOk() ? menuSegs(t('Layout'), ORDER.map(s => `<button data-act="size:${s}:card" data-shoot="size-${s}" aria-label="${SIZES[s].name}" aria-pressed="${shownSize() === s}" class="grid place-items-center ${DARK_SEG(shownSize() === s)}">${ic(sizeIcon(s, s === 'tablet' && st.view.land), 'size-[18px]')}</button>`).join(''),
-      viewOn() && st.view.size === 'tablet' ? `<button data-act="turn" data-shoot="turn" aria-label="${st.view.land ? t('Turn upright') : t('Turn on its side')}" class="grid size-10 shrink-0 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white">${ic('rotate', 'size-5')}</button>` : '') : ''
+      viewOn() && st.view.size === 'tablet' ? `<button data-act="turn" data-shoot="turn" aria-label="${st.view.land ? t('Turn upright') : t('Turn on its side')}" class="grid size-10 shrink-0 place-items-center rounded-full text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white">${ic('rotate', 'size-5')}</button>` : '') : ''
     const scale = p.kind === 'phone' || frameOn() ? menuSegs(frameOn() ? t('Zoom') : t('Scale'), SCALES.map(s => `<button data-act="scale:${s}" data-scale-seg="${s}" data-dark aria-pressed="${scaleNow() === s}" class="${DARK_SEG(scaleNow() === s)}">${s ? s + '%' : t('Fit')}</button>`).join('')) : ''
     return `<div data-scale-backdrop class="fixed inset-0 z-20"></div>
-      <div data-card data-menu-card role="dialog" aria-label="${t('Menu')}" class="${CARD_CLS}" style="transform-origin:0 0"><div class="space-y-px">${rows}</div>${layout}${scale}</div>`
+      <div data-card data-menu-card role="dialog" aria-label="${cardKind === 'layout' ? t('Layout') : t('Menu')}" class="${CARD_CLS}" style="transform-origin:0 0">${rows ? `<div class="space-y-px">${rows}</div>` : ''}${layout}${scale}</div>`
   }
   let card: { el: HTMLElement; phase: 'enter' | 'open' | 'exit'; anims: Animation[] } | null = null
-  /** The menu's button: white while its card is open. */
-  const cardBtnCls = () => card && card.phase !== 'exit' ? '!bg-white !text-zinc-900' : ''
+  /** The menu's button: white while its card is open (dark on the light bar). */
+  const OPEN_BTN = ['!bg-white', '!text-zinc-900', '!bg-zinc-900', '!text-white', 'dark:!bg-white', 'dark:!text-zinc-900']
+  const cardBtnCls = (kind = 'menu') => card && card.phase !== 'exit' && cardKind === kind ? '!bg-zinc-900 !text-white dark:!bg-white dark:!text-zinc-900' : ''
   // The menu's button, or the X a tool opened from the menu made of it (which the card folds back into).
   const menuBtn = () => pill.querySelector<HTMLElement>('[data-pill-menu]')
+  const layoutBtn = () => pill.querySelector<HTMLElement>('[data-pill-layout]')
+  /** The button the card grows out of and folds back into. */
+  const cardBtn = () => cardKind === 'layout' ? layoutBtn() : menuBtn()
   function markCardBtn() {
-    const b = menuBtn()
-    if (!b || b.dataset.pillMenu === 'mode') return
-    b.classList.remove('!bg-white', '!text-zinc-900')
-    const c = cardBtnCls()
-    if (c) b.classList.add(...c.split(' '))
-    b.setAttribute('aria-expanded', String(!!card && card.phase !== 'exit'))
+    for (const [b, kind] of [[menuBtn(), 'menu'], [layoutBtn(), 'layout']] as const) {
+      if (!b || b.dataset.pillMenu === 'mode') continue
+      b.classList.remove(...OPEN_BTN)
+      const c = cardBtnCls(kind)
+      if (c) b.classList.add(...c.split(' '))
+      b.setAttribute('aria-expanded', String(!!card && card.phase !== 'exit' && cardKind === kind))
+    }
   }
   const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches
   const CARD_EASE_OUT = 'cubic-bezier(0.32, 0.72, 0, 1)', CARD_EASE_IN = 'cubic-bezier(0.4, 0, 1, 1)'
@@ -1437,16 +1468,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const anims = c.anims
     Promise.all(anims.map(a => a.finished)).then(() => { if (card === c && c.anims === anims && c.phase === phase) done() }, () => {})
   }
-  function openCard() {
-    const btn = menuBtn(), bar = btn?.closest<HTMLElement>('[data-pill-bar]')
+  function openCard(kind: typeof cardKind = 'menu') {
+    if (!card) cardKind = kind
+    const btn = cardBtn(), bar = btn?.closest<HTMLElement>('[data-pill-bar]')
     if (!btn || !bar) return
     if (card?.phase === 'exit') { card.el.style.pointerEvents = ''; cardHost.querySelector<HTMLElement>('[data-scale-backdrop]')!.style.pointerEvents = ''; card.anims.forEach(a => a.reverse()); card.phase = 'enter'; const c = card; settleCard(c, 'enter', () => { c.phase = 'open'; c.anims.forEach(a => a.cancel()); c.anims = [] }); return markCardBtn() }
     if (card) return
     cardHost.innerHTML = cardHtml()
     const el = cardHost.querySelector<HTMLElement>('[data-card]')!
-    // Over the pill, from its start, where the button is.
+    // Over the pill, from its start, where the button is (from its end, for the layout button's).
     const z = zone.getBoundingClientRect(), b = bar.getBoundingClientRect()
-    el.style.left = `${b.left - z.left}px`
+    if (cardKind === 'layout') el.style.right = `${z.right - b.right}px`
+    else el.style.left = `${b.left - z.left}px`
     el.style.bottom = `${z.bottom - b.top + 8}px`
     card = { el, phase: 'open', anims: [] }
     markCardBtn()
@@ -1462,7 +1495,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   function closeCard(now = false) {
     if (!card) return
-    const btn = menuBtn()
+    const btn = cardBtn()
     const drop = () => { cardHost.innerHTML = ''; card = null; markCardBtn() }
     if (now || reduceMotion() || !btn) { card.anims.forEach(a => a.cancel()); return drop() }
     const c = card
@@ -1485,9 +1518,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     settleCard(c, 'exit', drop)
   }
   pill.addEventListener('click', e => {
-    const b = (e.target as Element).closest<HTMLElement>('[data-pill-menu]')
+    const l = (e.target as Element).closest<HTMLElement>('[data-pill-layout]')
+    const b = l ?? (e.target as Element).closest<HTMLElement>('[data-pill-menu]')
     if (!b || b.dataset.pillMenu === 'mode') return
-    card && card.phase !== 'exit' ? closeCard() : openCard()
+    const kind = l ? 'layout' : 'menu'
+    if (card && card.phase !== 'exit') { const same = cardKind === kind; closeCard(!same); if (!same) openCard(kind) }
+    else { if (card) closeCard(true); openCard(kind) }
   })
   // Anything chosen in the card folds it back, once the page has acted on it (the root's handler,
   // after this one): a tool turned on makes the button its X first, and the card folds into that.
@@ -1508,8 +1544,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (!r) return
     r.hidden = false
     r.innerHTML = d.ids.map((id, i) => ({ id, off: i - d.pos })).filter(x => Math.abs(x.off) < 4).map(({ id, off }) =>
-      `<span class="absolute top-0 grid h-9 w-8 place-items-center text-[13px] font-semibold text-white" style="left:${112 - 16 + X * off * 32}px;opacity:${1 - Math.min(1, Math.abs(off)) * 0.55}">${variantLabel(d.proto, id)}</span>`).join('')
-      + '<span class="absolute left-1/2 top-1 h-7 w-8 -translate-x-1/2 rounded-full ring-1 ring-white/40"></span>'
+      `<span class="absolute top-0 grid h-9 w-8 place-items-center text-[13px] font-semibold text-zinc-900 dark:text-white" style="left:${112 - 16 + X * off * 32}px;opacity:${1 - Math.min(1, Math.abs(off)) * 0.55}">${variantLabel(d.proto, id)}</span>`).join('')
+      + '<span class="absolute left-1/2 top-1 h-7 w-8 -translate-x-1/2 rounded-full ring-1 ring-zinc-900/25 dark:ring-white/40"></span>'
     const i = Math.min(d.ids.length - 1, Math.max(0, Math.round(d.pos))), v = d.proto.variants.find(x => x.id === d.ids[i])!
     const set = (sel: string, text: string) => { const el = pill.querySelector(sel); if (el) el.textContent = text }
     set('[data-pill-id]', variantRef(d.proto, v.id)); set('[data-pill-name]', v.name); set('[data-pill-n]', `${i + 1}/${d.ids.length}`)
@@ -2125,8 +2161,80 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const compareHost = () => st.place.view === 'variant' && st.place.tool === 'compare' ? layer?.el.querySelector<HTMLElement>('[data-comment-compare]') ?? null : null
   const commentHost = () => !framed && !st.focus && q.get('hints') !== '0' ? compareHost() ?? hintHost() : null
   // The comments island floats over the stage and opens into the list; a phone has it as the top
-  // row of the pill, and the list as a sheet.
+  // row of the pill's bar, and opens the list in it.
   const islandHost = zone.querySelector<HTMLElement>('[data-island-host]')!
+  // The phone's bar folds to the comment bar while the design scrolls down, and comes back on a
+  // scroll up, at the top, or a tap on the bar.
+  const fold = (on: boolean) => zone.toggleAttribute('data-fold', on)
+  const scrolledTo = new WeakMap<Element, number>()
+  // A zoom moves the scroll too (zoomTo), which is not the design being scrolled.
+  let zoomedAt = 0
+  listen(document, 'scroll', e => {
+    const el = e.target === document ? document.scrollingElement : e.target as Element
+    if (!el || !layers.contains(el) || !phoneMq.matches || !commentHost() || zone.matches('[data-dock], [data-copy]')) return
+    const y = el.scrollTop, was = scrolledTo.get(el) ?? y
+    scrolledTo.set(el, y)
+    if (performance.now() - zoomedAt < 300) return
+    if (y - was > 4 && y > 40) fold(true)
+    else if (was - y > 4 || y <= 0) fold(false)
+  }, { capture: true, passive: true })
+  listen(islandHost, 'pointerdown', () => fold(false))
+  // On a phone the design zooms by itself, never the page: two fingers (or a wheel with Ctrl or ⌘)
+  // scale it in its scroller around the point between them, laid out as it was at Fit, and Fit
+  // puts it back. A device view (a layout chosen) zooms its own way (view/gestures.ts).
+  const ZOOM_MAX = 4
+  let zoom: { mount: HTMLElement; z: number } | null = null
+  const zoomFit = document.createElement('button')
+  zoomFit.type = 'button'
+  zoomFit.hidden = true
+  zoomFit.dataset.shoot = 'fit'
+  zoomFit.className = 'absolute end-3 top-3 z-[17] inline-flex h-8 items-center gap-1.5 rounded-full bg-zinc-900/85 px-3 text-xs font-medium text-white shadow-lg ring-1 ring-white/10 backdrop-blur sm:hidden'
+  zoomFit.innerHTML = `${ic('center', 'size-3.5')}${t('Fit')}`
+  zone.append(zoomFit)
+  const zoomMount = () => phoneMq.matches && !viewOn() && !st.focus && st.place.view === 'variant' ? layer?.el.querySelector<HTMLElement>('[data-mount]') ?? null : null
+  function unzoom() {
+    if (zoom) for (const k of ['zoom', 'width', 'height'] as const) zoom.mount.style[k] = ''
+    zoom = null
+    zoomFit.hidden = true
+  }
+  function zoomTo(to: number, x: number, y: number) {
+    const mount = zoom?.mount ?? zoomMount(), sc = mount?.parentElement
+    if (!mount || !sc) return
+    const was = zoom?.z ?? 1, z = Math.min(ZOOM_MAX, Math.max(1, to))
+    if (z === was) return
+    // Laid out at the size it had at Fit, so zooming scales it and never reflows it.
+    if (!zoom) { mount.style.width = `${sc.clientWidth}px`; mount.style.height = `${sc.clientHeight}px`; zoom = { mount, z: 1 } }
+    const r = sc.getBoundingClientRect(), px = x - r.left, py = y - r.top, k = z / was
+    zoomedAt = performance.now()
+    mount.style.zoom = String(z)
+    sc.scrollLeft = (sc.scrollLeft + px) * k - px
+    sc.scrollTop = (sc.scrollTop + py) * k - py
+    zoom.z = z
+    if (z <= 1.01) unzoom()
+    else zoomFit.hidden = false
+  }
+  zoomFit.addEventListener('click', unzoom)
+  let pinch: { d: number; z: number } | null = null
+  const apart = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)
+  listen(layers, 'touchstart', e => {
+    const te = e as TouchEvent
+    pinch = te.touches.length === 2 && (zoom || zoomMount()) ? { d: apart(te.touches) || 1, z: zoom?.z ?? 1 } : null
+  }, { capture: true, passive: true })
+  listen(layers, 'touchmove', e => {
+    const te = e as TouchEvent
+    if (!pinch || te.touches.length !== 2) return
+    te.preventDefault()
+    zoomTo(pinch.z * apart(te.touches) / pinch.d, (te.touches[0].clientX + te.touches[1].clientX) / 2, (te.touches[0].clientY + te.touches[1].clientY) / 2)
+  }, { capture: true, passive: false })
+  listen(layers, 'touchend', e => { if ((e as TouchEvent).touches.length < 2) pinch = null }, { capture: true, passive: true })
+  // Safari's own pinch would zoom the page.
+  listen(layers, 'gesturestart', e => { if (zoom || zoomMount()) e.preventDefault() }, { capture: true, passive: false })
+  listen(layers, 'wheel', e => {
+    const we = e as WheelEvent
+    if (!(we.ctrlKey || we.metaKey) || !(zoom || zoomMount())) return
+    we.preventDefault()
+    zoomTo((zoom?.z ?? 1) * Math.exp(-we.deltaY / 200), we.clientX, we.clientY)
+  }, { capture: true, passive: false })
   const comments = createComments({
     layer: zone.querySelector<HTMLElement>('[data-comments]')!,
     visible: place => {
@@ -2293,6 +2401,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (st.status?.inbox !== seenInbox) { seenInbox = st.status?.inbox; comments.setInbox(seenInbox); intake.set(seenInbox?.intake, protos.length > 0) }
     zone.toggleAttribute('data-picking', !!host && comments.counts().picking)
     islandHost.hidden = !host || (phoneMq.matches && !pillOn())
+    if (!host || comments.counts().picking) fold(false)
+    if (zoom && zoom.mount !== zoomMount()) unzoom()
   }
   comments.mountSheet(root.querySelector<HTMLElement>('[data-comments-sheet]')!)
   // ---------- the motion dock: under a design that declared its motion (useMotion) ----------
@@ -2356,7 +2466,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // The bar under the stage takes its height from it, so the design is never under the bar.
   const copyBar = zone.querySelector<HTMLElement>('[data-copy-bar]')!
   comments.mountCopy(copyBar, zone.querySelector<HTMLElement>('[data-copy-sheet]')!)
-  new ResizeObserver(() => { zone.style.setProperty('--copy-h', `${copyBar.offsetHeight}px`); fit() }).observe(copyBar)
+  new ResizeObserver(() => { zone.style.setProperty('--copy-h', `${copyBar.offsetHeight}px`); zone.toggleAttribute('data-copy', copyBar.offsetHeight > 0); fit() }).observe(copyBar)
 
   // ---------- deciding: Pick, More like this, Build it ----------
   // The variant on screen can be picked, or followed by more like it, or built, from the page

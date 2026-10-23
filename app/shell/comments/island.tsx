@@ -3,7 +3,7 @@
 // opens the list above the same bar. When the agent starts on a comment, finishes it or replies,
 // the island grows for a moment to say so, like a system notification, and its edge takes the
 // colour of the news. A wide screen can drag it anywhere on the stage; a phone has it as the top
-// row of the pill, and its count opens the list as a sheet (rail.tsx).
+// row of one bar with the pill, flush with the screen's foot, and its count opens the list in it.
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import { t, tn } from '../i18n'
 import { useAgentName, useCtx } from './ctx'
@@ -11,6 +11,7 @@ import { listen } from '../quiet'
 import { islandPrefs, useIslandPrefs, type IslandPrefs } from './island-prefs'
 import { CommentList, Notices, useRows } from './list'
 import { Icon, Listening, MOD, plain } from './ui'
+import { useKeyboard } from './keyboard'
 import type { CState } from './types'
 
 type Kind = 'working' | 'done' | 'reply'
@@ -95,7 +96,15 @@ export function Island() {
   const [focus, setFocus] = useState(false)
   const input = useRef<HTMLTextAreaElement>(null)
   const card = useRef<HTMLDivElement>(null)
+  const cap = useRef<HTMLDivElement>(null)
   const open = s.island
+  // Typing on a phone, the bar rides the keyboard and the pill row under it steps aside (shell.ts).
+  const kb = useKeyboard(phone && focus)
+  useEffect(() => {
+    const zone = cap.current?.closest('[data-zone]')
+    zone?.toggleAttribute('data-typing', phone && focus)
+    return () => zone?.removeAttribute('data-typing')
+  }, [phone, focus])
   const picking = s.mode.kind === 'pick'
 
   useLayoutEffect(() => {
@@ -193,7 +202,7 @@ export function Island() {
             <span key={`i${shown.key}`} className={`grid size-7 shrink-0 place-items-center rounded-full text-white ${leaving ? 'animate-[proto-isl-out_.3s_ease-in_forwards]' : 'animate-[proto-isl-pop_.5s_cubic-bezier(.3,1.6,.5,1)]'}`} style={{ background: EDGE[shown.kind] }}><Icon name={NEWS_ICON[shown.kind]} className={`size-3.5 ${shown.kind === 'working' ? 'animate-spin' : ''}`} /></span>
             <span key={`t${shown.key}`} className={`min-w-0 flex-1 ${leaving ? 'animate-[proto-isl-out_.3s_ease-in_forwards]' : 'animate-[proto-isl-rise_.45s_cubic-bezier(.2,.9,.3,1)_both]'}`}>
               <span className="block truncate text-[13px] font-medium">{shown.title}</span>
-              <span dir="auto" className={`block truncate text-xs ${phone ? 'text-white/60' : 'text-zinc-500 dark:text-zinc-400'}`}>{shown.text}</span>
+              <span dir="auto" className="block truncate text-xs text-zinc-500 dark:text-zinc-400">{shown.text}</span>
             </span>
           </button>
         )}
@@ -218,12 +227,12 @@ export function Island() {
   )
 
   const bar = (
-    <div className={`relative flex shrink-0 items-end gap-1.5 p-1.5 ${phone ? 'border-b border-white/[.06]' : ''}`}>
+    <div className={`relative flex shrink-0 items-end ${phone ? 'gap-2 p-2' : 'gap-1.5 p-1.5'}`}>
       {open && <span aria-hidden className={`pointer-events-none absolute inset-x-0 h-5 ${top ? 'top-full bg-gradient-to-b' : 'bottom-full bg-gradient-to-t'} from-white to-transparent dark:from-zinc-900`} />}
       <button type="button" data-act="comment:toggle" data-shoot="comment" aria-pressed={picking} aria-label={t('Select an element to comment on')}
         title={picking ? t('Stop selecting · Esc') : `${t('Select an element to comment on')} · C`}
-        className={`grid size-8 shrink-0 place-items-center rounded-full transition-colors ${picking ? 'bg-proto-primary text-proto-primary-fg' : phone ? 'bg-white/10 text-white/80' : 'bg-zinc-900/[.05] text-zinc-600 hover:bg-zinc-900/10 hover:text-zinc-900 dark:bg-white/[.08] dark:text-zinc-300 dark:hover:bg-white/15 dark:hover:text-white'}`}>
-        <Icon name={picking ? 'select-on' : 'select'} className="size-4" />
+        className={`grid shrink-0 place-items-center rounded-full transition-colors ${phone ? 'size-10' : 'size-8'} ${picking ? 'bg-proto-primary text-proto-primary-fg' : 'bg-zinc-900/[.05] text-zinc-600 hover:bg-zinc-900/10 hover:text-zinc-900 dark:bg-white/[.08] dark:text-zinc-300 dark:hover:bg-white/15 dark:hover:text-white'}`}>
+        <Icon name={picking ? 'select-on' : 'select'} className={phone ? 'size-5' : 'size-4'} />
       </button>
       <textarea ref={input} data-shoot="whole-input" rows={1} value={text} onChange={e => setText(e.target.value)} dir="auto" autoComplete="off" enterKeyHint="enter"
         aria-label={t('Comment on the entire variant')} placeholder={picking ? t('Click what to comment on') : typing || phone ? t('Comment on the entire variant') : t('Comment…')} title={`${t('Comment on the whole variant')} · ⇧C`}
@@ -233,16 +242,16 @@ export function Island() {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); add() }
           else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); input.current?.blur() }
         }}
-        className={`max-h-[116px] min-h-8 min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl px-3 py-1.5 text-[13px] leading-5 outline-none [@media(pointer:coarse)]:text-base ${phone ? 'bg-white/10 text-white placeholder:text-white/45' : 'bg-zinc-900/[.05] placeholder:text-zinc-400 focus:ring-2 focus:ring-proto-primary-ring dark:bg-white/[.08]'}`} />
+        className={`max-h-[116px] min-w-0 flex-1 resize-none overflow-y-auto outline-none ${phone ? 'min-h-10 rounded-[20px] px-4 py-2 text-base leading-6' : 'min-h-8 rounded-2xl px-3 py-1.5 text-[13px] leading-5 [@media(pointer:coarse)]:text-base'} bg-zinc-900/[.05] placeholder:text-zinc-400 dark:bg-white/[.08] ${phone ? '' : 'focus:ring-2 focus:ring-proto-primary-ring'}`} />
       {text.trim()
         ? <button type="button" data-shoot="whole-add" onClick={add} aria-label={t('Add the comment')} title={`${t('Add the comment')} · ${MOD} Enter`}
-            className="grid size-8 shrink-0 place-items-center rounded-full bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover"><Icon name="send" className="size-4" /></button>
+            className={`grid shrink-0 place-items-center rounded-full bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover ${phone ? 'size-10' : 'size-8'}`}><Icon name="send" className={phone ? 'size-5' : 'size-4'} /></button>
         : drafts > 0 && !s.live && <button type="button" data-shoot="send" onClick={act.send} disabled={s.sending} title={`${tn(drafts, 'Send {n} to {agent}', 'Send {n} to {agent}', { agent })} · ${MOD} Enter`}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-proto-primary px-3 text-xs font-semibold text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-60">
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full bg-proto-primary px-3 font-semibold ${phone ? 'h-10 text-sm' : 'h-8 text-xs'} text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-60`}>
             <Icon name="send" className="size-3.5" />{s.sending ? t('Sending…') : tn(drafts, 'Send {n}', 'Send {n}')}
           </button>}
       <button type="button" data-shoot="island-open" onClick={() => { read(); openList() }} aria-expanded={open} aria-label={open ? t('Collapse the comments') : tn(total, 'Open {n} comment', 'Open all {n} comments')}
-        className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-xs ${phone ? 'text-white/80' : 'text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10'}`}>
+        className={`flex shrink-0 items-center gap-1.5 rounded-full px-2 ${phone ? 'h-10 text-sm' : 'h-8 text-xs'} text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10`}>
         <span className="relative grid size-2 place-items-center">
           {unread > 0 && !open && <span className="absolute size-2 animate-ping rounded-full" style={{ background: EDGE.reply }} />}
           <span className={`size-2 rounded-full transition-colors duration-500 ${dot ? '' : 'bg-zinc-300 dark:bg-zinc-600'}`} style={dot ? { background: dot } : undefined} />
@@ -253,12 +262,15 @@ export function Island() {
     </div>
   )
 
-  // A phone opens the list in the capsule itself, above the same bar, over a dimmed page; a tap
-  // on the page folds it again. The capsule is dark like the pill, so its list is drawn dark too.
+  // A phone opens the list in the bar itself, above the same row, over a dimmed page; a tap on the
+  // page folds it again. The bar is solid, in the page's light or dark, flush with the screen's
+  // sides and foot: its padding is the pill row's room (the pill draws over it, shell.ts), only
+  // the foot's while folded, and none while it rides the keyboard.
   if (phone) return (<>
     {open && <button type="button" aria-label={t('Collapse the comments')} onClick={() => act.openIsland(false)} className="pointer-events-auto absolute inset-0 bg-black/30" />}
-    <div data-island data-comment-ui="" data-open={open || undefined} className="dark pointer-events-auto absolute inset-x-2 flex flex-col overflow-hidden rounded-t-3xl bg-zinc-900/95 text-white backdrop-blur dark:bg-zinc-800/95"
-      style={{ bottom: 'calc(var(--pill-h, 0px) - .5rem - var(--isl-h, 0px))', boxShadow: edge ? `inset 0 2px ${edge}, inset 2px 0 ${edge}, inset -2px 0 ${edge}` : undefined }}>
+    <div ref={cap} data-island data-comment-ui="" data-open={open || undefined}
+      className="pointer-events-auto absolute inset-x-0 bottom-0 flex flex-col overflow-hidden rounded-t-[22px] border-t border-black/10 bg-white pb-[calc(var(--pill-h,0px)-var(--isl-h,0px))] text-zinc-900 shadow-[0_-10px_30px_-18px_rgb(0_0_0/.35)] transition-[padding-bottom,bottom] duration-300 ease-out dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 [[data-fold]_&]:pb-[max(.5rem,env(safe-area-inset-bottom))]"
+      style={{ ...(kb || focus ? { bottom: kb, paddingBottom: 4 } : {}), ...(edge ? { boxShadow: `inset 0 2px ${edge}, inset 2px 0 ${edge}, inset -2px 0 ${edge}` } : {}) }}>
       {list}
       {newsRow}
       {bar}
