@@ -1504,7 +1504,8 @@ try {
     const tabs = document.querySelector('[data-size-tabs]')
     if (!tabs) return 'the layout menu has no sizes'
     // At rest the design is on the stage's own artboard, laid out for the stage's width: that layout is selected.
-    const own = (w => w < 640 ? 'phone' : w < 1024 ? 'tablet' : 'desktop')(document.querySelector('[data-layers]').clientWidth)
+    // A desktop window keeps the desktop layout however much the panels and the desk narrow the stage (FILL_MIN_W).
+    const own = innerWidth >= 1024 ? 'desktop' : (w => w < 640 ? 'phone' : w < 1024 ? 'tablet' : 'desktop')(document.querySelector('[data-layers]').clientWidth)
     const sizes = [...tabs.querySelectorAll('[role=radio]')].map(b => b.dataset.act + '=' + b.getAttribute('aria-checked'))
     if (sizes.join() !== ['phone', 'tablet', 'desktop'].map(x => 'size:' + x + '=' + (x === own)).join()) return 'the bar should have phone, tablet and desktop, ' + own + ' (the stage\\'s) selected: ' + sizes.join()
     if (tabs.querySelector('[data-act="size:desktop"]').title !== 'Desktop · 1440 × 900') return 'the desktop size says ' + tabs.querySelector('[data-act="size:desktop"]').title
@@ -1566,7 +1567,7 @@ try {
     const pins = () => [...document.querySelectorAll('[data-comments] button')].filter(b => /^\\d+$/.test(b.textContent.trim())).length
     if (!await until(() => pins() === 1)) return 'the comment should have its pin over the phone, has ' + pins()
     // Another size than the phone and the stage's own (which is the artboard, with no line for a chip).
-    const own = (w => w < 640 ? 'phone' : w < 1024 ? 'tablet' : 'desktop')(document.querySelector('[data-layers]').clientWidth)
+    const own = innerWidth >= 1024 ? 'desktop' : (w => w < 640 ? 'phone' : w < 1024 ? 'tablet' : 'desktop')(document.querySelector('[data-layers]').clientWidth)
     document.querySelector('[data-bar] [data-act="open:device"][aria-expanded="false"]')?.click()
     document.querySelector('[data-size-tabs] [data-act="size:' + (own === 'tablet' ? 'desktop' : 'tablet') + '"]').click()
     const chip = await until(() => document.querySelector('[data-view-other=phone]'))
