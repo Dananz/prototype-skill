@@ -31,7 +31,7 @@ export default function Variant() {
   }
   const click = (page, selector) => page.run(`document.querySelector(${JSON.stringify(selector)})?.click()`)
   const design = key => `window.__protoDesign()?.querySelector('[data-tweak-demo]')?.getAttribute('data-${key}')`
-  const page = await openPage(`${local}#/tweaks-check/A`)
+  const page = await openPage(`${local}tweaks-check/A`)
   try {
     await until(page, `document.querySelector('[data-hint="tab:tweaks"]')?.getAttribute('aria-pressed') === 'true'`, 'desktop inspector did not open for declared controls')
     assert(await page.run(`(async()=>{const {tweaks}=await import('/shell/tweaks.ts');const {hints}=await import('/shell/hints.ts');const host=window.__protoDesign();if(!host || host.ownerDocument===document)return false;window.__pendingTweaks={host,fields:tweaks.of(host),hints:hints.of(host)};tweaks.drop(host);hints.drop(host);return true})()`), 'delayed registry check needs an active device frame')
@@ -63,7 +63,7 @@ export default function Variant() {
     await page.run(`location.hash='/tweaks-check'`)
     await until(page, '!document.querySelector("[data-bar] [data-act=tweaks]")', 'overview still exposes one variant’s controls')
   } finally { page.close() }
-  const phone = await openPage(`${local}#/tweaks-check/A`, { width: 360, height: 800, phone: true })
+  const phone = await openPage(`${local}tweaks-check/A`, { width: 360, height: 800, phone: true })
   try {
     await until(phone, '!!document.querySelector("[data-pill-bar] [data-act=tweaks]")', 'mobile dock has no Tweaks button')
     assert(await phone.run('document.querySelector("[data-pill-bar]").getBoundingClientRect().right <= innerWidth'), 'dock overflows a 360px phone')
@@ -78,7 +78,7 @@ export default function Variant() {
     assert(await phone.run(`${design('state')} === 'Empty'`), 'closing the drawer lost values')
     await phone.run(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`)
     await until(phone, '!document.querySelector("[data-tweaks-drawer]")', 'Escape did not dismiss')
-    assert(await phone.run(`location.hash === '#/tweaks-check/A'`), 'Escape navigated away')
+    assert(await phone.run(`location.pathname === '/tweaks-check/A'`), 'Escape navigated away')
     await click(phone, '[data-pill-bar] [data-act=tweaks]')
     await until(phone, '!!document.querySelector("[data-tweaks-drawer]")', 'drawer did not reopen before navigation')
     await phone.run(`location.hash='/tweaks-check/B'`)
@@ -88,7 +88,7 @@ export default function Variant() {
   } finally { phone.close() }
   proto(['add', 'tweaks-phone-check', '--title', 'Phone Tweaks checks', '--kind', 'phone', '--variants', 'A:Editor,B:Other variant'])
   for (const id of ['A', 'B']) writeFileSync(join(app, 'src/protos/tweaks-phone-check', `${id}.tsx`), readFileSync(join(app, 'src/protos/tweaks-check', `${id}.tsx`)))
-  const phoneKind = await openPage(`${local}#/tweaks-phone-check/A`)
+  const phoneKind = await openPage(`${local}tweaks-phone-check/A`)
   try {
     await until(phoneKind, `document.querySelector('[data-hint="tab:tweaks"]')?.getAttribute('aria-pressed') === 'true'`, 'phone-kind desktop inspector did not open')
     for (const [tab, variant] of [['comments', 'B'], ['try', 'A']]) {

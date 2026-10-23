@@ -12,12 +12,12 @@ export async function splitChecks({ proto, app, local, openPage, fail, keepShots
   const until = async (f, why) => { for (const end = Date.now() + 5000; Date.now() < end; await wait(50)) { const v = await f(); if (v) return v } fail(`column separator: ${typeof why === 'function' ? await why() : why}`) }
   // Open the page with the sidebar's two columns showing, in the sidebar or (host = drawer) the tablet's drawer.
   const open = async (theme, host = 'side', size = {}) => {
-    const page = await openPage(`${local}?theme=${theme}#/split/B`, size)
+    const page = await openPage(`${local}split/B?theme=${theme}`, size)
     const lists = `document.querySelectorAll('[data-${host}] [data-vlist]')`
     const widths = async () => JSON.parse(await page.run(`JSON.stringify([...${lists}].map(e => Math.round(e.getBoundingClientRect().width)))`))
     if (host === 'drawer') await page.run(`document.querySelector('[data-act="side:1"]').click()`)
     // What the page showed instead, so a failure says why.
-    const showed = async () => `the ${host === 'side' ? 'sidebar' : host} did not show two columns (${JSON.stringify(await page.run(`(() => ({ hash: location.hash, ready: document.documentElement?.dataset.ready, host: !!document.querySelector('[data-${host}]'), lists: [...${lists}].map(e => e.dataset.k), size: [innerWidth, innerHeight] }))()`).catch(e => String(e)))})`
+    const showed = async () => `the ${host === 'side' ? 'sidebar' : host} did not show two columns (${JSON.stringify(await page.run(`(() => ({ path: location.pathname, ready: document.documentElement?.dataset.ready, host: !!document.querySelector('[data-${host}]'), lists: [...${lists}].map(e => e.dataset.k), size: [innerWidth, innerHeight] }))()`).catch(e => String(e)))})`
     await until(async () => (await widths()).length === 2, showed)
     // Where the columns meet: the first column's right edge, a little down the list.
     const seam = async () => JSON.parse(await page.run(`(() => { const r = ${lists}[0].getBoundingClientRect(); return JSON.stringify([r.right, r.top + 120]) })()`))
@@ -65,7 +65,7 @@ export async function splitChecks({ proto, app, local, openPage, fail, keepShots
 
     // It survives the chrome redrawing (another variant opening) and a reload.
     await page.run(`document.querySelector('[data-side] [data-act="mv:split:C"]').click()`)
-    await until(async () => await page.run(`location.hash.endsWith('/C')`), 'another variant did not open')
+    await until(async () => await page.run(`location.pathname.endsWith('/C')`), 'another variant did not open')
     assert(Math.abs((await widths())[0] - wide[0]) <= 2, 'a redraw of the sidebar reset the split')
     await page.run(`location.reload()`)
     await until(async () => (await widths()).length === 2 && Math.abs((await widths())[0] - wide[0]) <= 2, 'a reload did not keep the split')

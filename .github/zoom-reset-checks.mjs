@@ -15,7 +15,7 @@ export default function A() {
 }
 `)
   proto(['done', 'zoom-reset'])
-  const page = await openPage(`${local}?theme=light#/zoom-reset/A`)
+  const page = await openPage(`${local}zoom-reset/A?theme=light`)
   const doc = `document.querySelector('[data-view] iframe').contentDocument`
   const geo = `(() => {
     const a = document.querySelector('[data-view-area]')?.getBoundingClientRect(), f = document.querySelector('[data-view] iframe')?.getBoundingClientRect()

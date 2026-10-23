@@ -10,7 +10,7 @@ import { useTweaks } from '../../tweaks'
 import { useCopy } from '../../copy'
 export default function Shot(){ const words=useCopy([{id:'title',label:'Title',options:['Original caption','Alternate caption']}]); const [accent,setAccent]=useState('${color}');useTweaks([{id:'accent',label:'Accent',kind:'color',value:accent,defaultValue:'${color}',set:setAccent}]);return <main style={{position:'relative',height:'100%',background:innerWidth < 600 ? '#10b981' : accent}}><h1 data-copy="title">{words.title}</h1><div style={{position:'absolute',right:0,top:0,width:'50%',height:'100%',background:words.title==='Alternate caption'?'#8b5cf6':'transparent'}} /></main> }
 `)
-  const page = await openPage(`${local}#/share-check/A`)
+  const page = await openPage(`${local}share-check/A`)
   const assert = (ok, why) => { if (!ok) fail(`share: ${why}`) }
   const until = async (expression, why) => {
     for (const end = Date.now() + 20000; Date.now() < end; await new Promise(r => setTimeout(r, 100))) if (await page.run(expression)) return
@@ -41,10 +41,10 @@ export default function Shot(){ const words=useCopy([{id:'title',label:'Title',o
     await until(`document.querySelector('[data-share-look=both]').checked && document.querySelectorAll('[data-share-tile] canvas').length===4`, 'radio keyboard navigation did not select Both')
     await page.run(`window.__captionBefore=document.querySelectorAll('[data-share-tile] canvas')[1].toDataURL();const e=document.querySelector('[aria-label="Screenshot name for #1"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Edited caption');e.dispatchEvent(new Event('input',{bubbles:true}))`)
     await until(`document.querySelectorAll('[data-share-tile] canvas')[1].toDataURL() !== window.__captionBefore`, 'caption edit did not change preview pixels')
-    const route = await page.run('location.hash')
+    const route = await page.run('location.pathname')
     await page.run(`document.querySelector('[data-share-close]').focus()`)
     await page.key('ArrowRight')
-    assert(await page.run('location.hash') === route, 'shell shortcut navigated behind the board')
+    assert(await page.run('location.pathname') === route, 'shell shortcut navigated behind the board')
     await click('[aria-label="Include variant #2"]')
     await until('document.querySelectorAll("[data-share-tile] canvas").length === 4', 'unmounted variant was not captured')
     await page.run(`window.__shots=[];window.__shotClick=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){if(this.download){window.__shots.push({name:this.download,blob:fetch(this.href).then(r=>r.blob())})}else window.__shotClick.call(this)}`)
@@ -77,10 +77,10 @@ export default function Shot(){ const words=useCopy([{id:'title',label:'Title',o
     await until(`document.activeElement.dataset.act === 'vm:share-check:A' && !document.querySelector('iframe[title="Screenshot capture"]')`, 'close did not restore focus and remove capture frames')
     assert(await openShare(page, 'share-check', 'B', true), 'right-click menu has no Share entry')
     await until(`document.querySelectorAll('[data-share-tile] canvas').length === 4 && document.querySelectorAll('[data-share-tile][aria-pressed=true]').length === 2 && [...document.querySelectorAll('[data-share-tile][aria-pressed=true]')].every(t=>t.dataset.shareTile.startsWith('B|'))`, 'context menu did not select the clicked variant')
-    assert(await page.run('location.hash') === route, 'sharing another variant changed the current view')
+    assert(await page.run('location.pathname') === route, 'sharing another variant changed the current view')
     await click('[data-share-close]')
   } finally { page.close() }
-  const phone = await openPage(`${local}?theme=light#/share-check/A`, { width: 390, height: 844, phone: true })
+  const phone = await openPage(`${local}share-check/A?theme=light`, { width: 390, height: 844, phone: true })
   try {
     await phone.run(`document.querySelector('[data-pill-menu]').click()`)
     for (const end = Date.now() + 5000; Date.now() < end && !await phone.run(`!!document.querySelector('[data-menu-card] [data-act=share]')`); await new Promise(r => setTimeout(r, 50))) {}
@@ -94,7 +94,7 @@ export default function Shot(){ const words=useCopy([{id:'title',label:'Title',o
   // Phone-kind prototypes normally live inside a scaled shell bezel. Exports use the
   // requested viewport directly, with the design reaching its edges.
   proto(['add', 'share-check', '--kind', 'phone'])
-  const framed = await openPage(`${local}?theme=light#/share-check/A`)
+  const framed = await openPage(`${local}share-check/A?theme=light`)
   try {
     assert(await openShare(framed, 'share-check', 'A'), 'phone-kind variant context menu has no Share entry')
     for (const end = Date.now() + 20000; Date.now() < end && !await framed.run(`!!document.querySelector('[data-share-tile] canvas')`); await new Promise(r => setTimeout(r, 100))) {}
@@ -106,7 +106,7 @@ export default function Shot(){ const words=useCopy([{id:'title',label:'Title',o
 if(new URLSearchParams(location.search).has('shot')) {const decode=HTMLImageElement.prototype.decode;HTMLImageElement.prototype.decode=function(){return this.alt==='Wait for image'?new Promise(()=>{}):decode.call(this)}}
 export default function Slow(){return <main><img alt="Wait for image" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" /></main>}`)
   writeFileSync(join(app, 'src/protos/share-slow/B.tsx'), `export default function Ready(){return <main style={{height:'100%',background:'#2563eb'}}>Ready</main>}`)
-  const slow = await openPage(`${local}?theme=light#/share-slow`)
+  const slow = await openPage(`${local}share-slow?theme=light`)
   try {
     assert(await openShare(slow, 'share-slow', 'B'), 'ready variant context menu has no Share entry')
     for (const end = Date.now() + 5000; Date.now() < end && !await slow.run(`!document.querySelector('[data-share-download]').disabled`); await new Promise(r => setTimeout(r, 100))) {}

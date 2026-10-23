@@ -33,11 +33,11 @@ export type ViewProps = {
   /** The view on, or null. zoom: 0 is Fit, else a percentage. */
   view: View | null
   /** The page's place; the frame follows it. */
-  hash: string
+  path: string
   dark: boolean
   set: (patch: Partial<View>) => void
   /** The page in the frame moved there. */
-  route: (hash: string) => void
+  route: (path: string) => void
   /** A key pressed in the page in the frame (C comments on it, as out here). */
   onKey: (e: KeyboardEvent) => void
 }
@@ -47,22 +47,22 @@ let live: Frame | null = null
 
 /** The page in a frame, `w` × `h` CSS px, drawn at `scale` in a box of the scaled size. Made once
  *  and kept while the size, the scale or the place change, so the page in it keeps its state. */
-function LiveFrame({ hash, dark, w, h, scale, route, bind, ring, children }: {
-  hash: string; dark: boolean; w: number; h: number; scale: number; route: (hash: string) => void; bind: (d: Document) => () => void; ring: string; children?: ReactElement | false
+function LiveFrame({ path, dark, w, h, scale, route, bind, ring, children }: {
+  path: string; dark: boolean; w: number; h: number; scale: number; route: (path: string) => void; bind: (d: Document) => () => void; ring: string; children?: ReactElement | false
 }) {
   const box = useRef<HTMLDivElement>(null)
   const ctl = useRef<Frame | null>(null)
-  const now = useRef({ hash, dark, route, bind })
-  now.current = { hash, dark, route, bind }
+  const now = useRef({ path, dark, route, bind })
+  now.current = { path, dark, route, bind }
   useLayoutEffect(() => {
-    const f = openFrame(box.current!, frameUrl(now.current.hash, now.current.dark), {
-      route: h => now.current.route(h), bind: d => now.current.bind(d), bound: () => f.go(now.current.hash),
+    const f = openFrame(box.current!, frameUrl(now.current.path, now.current.dark), {
+      route: h => now.current.route(h), bind: d => now.current.bind(d), bound: () => f.go(now.current.path),
     })
     ctl.current = live = f
     return () => { f.close(); ctl.current = null; if (live === f) live = null }
   }, [])
   // The page moved: the frame goes there too, the same page, no reload.
-  useEffect(() => { ctl.current?.go(hash) }, [hash])
+  useEffect(() => { ctl.current?.go(path) }, [path])
   // The theme changes in place, keeping the design's inputs, menus and scroll.
   const was = useRef(dark)
   useEffect(() => {
@@ -176,7 +176,7 @@ function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>;
 
 const coarse = matchMedia('(pointer: coarse)')
 
-function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: View }) {
+function ViewStage({ view, path, dark, set, route, onKey }: ViewProps & { view: View }) {
   const { act } = useCtx()
   const { s, rows } = useRows()
   const [area, box] = useBox<HTMLDivElement>()
@@ -248,7 +248,7 @@ function ViewStage({ view, hash, dark, set, route, onKey }: ViewProps & { view: 
           brings it back (the zoom flickered between two values). It moves by drag, wheel and fingers. */}
       <div ref={area} data-view-area className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ touchAction: 'pan-x pan-y' }}>
         <div ref={wrap} className="flex h-max min-h-full w-max min-w-full items-start justify-start">
-          <LiveFrame hash={hash} dark={dark} w={d.w} h={d.h} scale={scale} route={route} bind={bind}
+          <LiveFrame path={path} dark={dark} w={d.w} h={d.h} scale={scale} route={route} bind={bind}
             ring={!view.size ? `bg-white dark:bg-zinc-950 ${desk ? 'rounded-[10px] ring-1 ring-black/[.08] shadow-[0_18px_44px_-18px_rgb(0_0_0/.35)] dark:ring-white/[.12]' : ''}` : `bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${pad ? 'rounded-[10px]' : ''}`}>
             {picking && <Pick area={area} scale={scale} zoomed={zoomed} />}
           </LiveFrame>

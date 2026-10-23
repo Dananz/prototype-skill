@@ -104,10 +104,10 @@ export async function settingsChecks({ proto, app, local, openPage, fail }) {
     }
     await click('[data-settings-category=shortcuts]')
     await until('document.querySelector("[data-settings-dialog]").textContent.includes("Send draft comments")', 'shortcuts tab is empty')
-    const hash = await page.run('location.hash')
+    const hash = await page.run('location.pathname')
     await page.key('Escape')
     await until('!document.querySelector("[data-settings-dialog]")', 'Escape did not close Settings')
-    assert(await page.run('location.hash') === hash, 'Escape navigated away from the current place')
+    assert(await page.run('location.pathname') === hash, 'Escape navigated away from the current place')
     assert(await page.run('document.activeElement?.dataset.act === "open:more"'), 'closing did not restore focus to the menu that opened Settings')
     await page.run('location.reload()')
     await until('!!document.querySelector("[data-bar] [data-act=\\"open:more\\"]")', 'reload did not finish')
@@ -130,7 +130,7 @@ export async function settingsChecks({ proto, app, local, openPage, fail }) {
   proto(['add', 'settingsfx', '--title', 'Settings focus', '--variants', 'A:Page'])
   writeFileSync(join(app, 'src/protos/settingsfx/A.tsx'), 'export default function Page() { return <main><input aria-label="Keep these words" defaultValue="Initial" /></main> }')
   proto(['done', 'settingsfx'])
-  const focus = await openPage(`${local}#/settingsfx/A`)
+  const focus = await openPage(`${local}settingsfx/A`)
   try {
     await focus.run(`document.querySelector('[data-bar] [data-act="open:more"]').click(); document.querySelector('[data-act=focus]').click()`)
     await wait(300)
@@ -178,14 +178,14 @@ export async function settingsChecks({ proto, app, local, openPage, fail }) {
     await phone.run('document.querySelector("[data-settings-category=session]").click()')
     await wait(400)
     assert(await phone.run('(() => { const r = document.querySelector("[data-settings-dialog]").getBoundingClientRect(); return r.width === innerWidth && Math.abs(r.bottom - innerHeight) < 2 })()'), 'phone drawer is not anchored to the screen bottom')
-    const hash = await phone.run('location.hash')
+    const hash = await phone.run('location.pathname')
     const [x, y] = await phone.run('(() => { const r = document.querySelector("[data-settings-handle]").getBoundingClientRect(); return [r.x+r.width/2,r.y+r.height/2] })()')
     await phone.touch('touchStart', [[x, y]])
     for (let i = 1; i <= 8; i++) { await phone.touch('touchMove', [[x, y + Math.min(480, 844-y-15) * i/8]]); await wait(40) }
     await phone.touch('touchEnd', [])
     await wait(600)
     assert(await phone.run('!document.querySelector("[data-settings-dialog]")'), 'native touch swipe did not dismiss the drawer')
-    assert(await phone.run('location.hash') === hash, 'drawer swipe navigated away')
+    assert(await phone.run('location.pathname') === hash, 'drawer swipe navigated away')
   } finally { phone.close() }
   console.log('Settings categories, session controls, keyboard focus, persistent preferences and native phone swipe passed')
 }

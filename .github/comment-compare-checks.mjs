@@ -17,7 +17,7 @@ export async function commentCompareChecks({ proto, app, openPage, fail }) {
     const type = text => { const e=editor(); e.textContent=text; e.focus(); const r=document.createRange(); r.setStart(e.firstChild,text.length);r.collapse(true);getSelection().removeAllRanges();getSelection().addRange(r);e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text})) }
     const button = text => [...document.querySelectorAll('[data-composer] button')].find(b=>b.textContent.trim()===text)
   `
-  const page = await openPage(`${local}?theme=light#/comparefx/A`, { width: 1440, height: 1000 })
+  const page = await openPage(`${local}comparefx/A?theme=light`, { width: 1440, height: 1000 })
   try {
     const ready = await page.run(`(async()=>{${helpers}
       if(!await until(()=>c?.store.get().place?.variant==='A'))return 'single A did not become ready'
@@ -94,7 +94,7 @@ export async function commentCompareChecks({ proto, app, openPage, fail }) {
       if(c.store.get().place?.compare)return 'leaving Compare kept compare enabled'
       if(c.store.get().items.find(i=>i.variant==='B').tags[0].variantRef.variant!=='A')return 'navigation lost mention metadata'
       c.act.revealTarget({label:'Element',selector:'[data-shoot=detail]',shoot:'detail',tag:'button',text:'Hidden details A',rect:{x:0,y:0,w:1,h:1},source:{proto:'comparefx',variant:'A',state:'details'},route:['[data-shoot=detail-opener]']})
-      if(!await until(()=>location.hash==='#/comparefx/A/details'&&document.querySelector('[data-view] iframe')?.contentDocument.querySelector('[data-shoot=detail]')))return 'reference dropped its state or did not reveal the hidden destination'
+      if(!await until(()=>location.pathname === '/comparefx/A/details'&&document.querySelector('[data-view] iframe')?.contentDocument.querySelector('[data-shoot=detail]')))return 'reference dropped its state or did not reveal the hidden destination'
       location.hash='#/comparefx/A/~compare/details'
       if(!await until(()=>c.store.get().place?.compare&&document.querySelector('[data-comment-compare] [data-route="comparefx/A"]')?.dataset.commentState==='details'))return 'state did not return to Compare'
       document.querySelector('[data-act="compare-comment:A"]').click()
@@ -103,7 +103,7 @@ export async function commentCompareChecks({ proto, app, openPage, fail }) {
     })()`)
     if (replied !== 'ok') fail(`compare comments: ${replied}`)
   } finally { page.close() }
-  const phone = await openPage(`${local}?theme=light#/comparefx/A/~compare`, { width:390, height:844, phone:true })
+  const phone = await openPage(`${local}comparefx/A/~compare?theme=light`, { width:390, height:844, phone:true })
   try {
     const result = await phone.run(`(async()=>{${helpers}
       if(!await until(()=>c?.store.get().place?.compare&&document.querySelector('[data-act="compare-comment:B"]')))return 'phone Compare unavailable'

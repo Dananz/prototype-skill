@@ -75,7 +75,7 @@ try {
   const open = async scale => {
     const t = await tab(scale)
     const url = new URL(rawUrl)
-    url.hash = '/' + route.replace(/^\/+/, '')
+    url.pathname = '/' + route.replace(/^\/+/, '')
     // As proto shoot: no artboard frame (the page's design in its own iframe since the stage's
     // artboard), so --click, --drag and the measured element are the design that shows.
     url.searchParams.set('hints', '0')

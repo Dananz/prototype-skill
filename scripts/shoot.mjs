@@ -412,7 +412,7 @@ try {
       await send('Emulation.setDeviceMetricsOverride', { width: size.width, height: size.height, deviceScaleFactor: size.deviceScaleFactor, mobile: size.mobile }, sessionId)
       if (size.mobile) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
       const url = new URL(base)
-      url.hash = '/' + route.replace(/^\/+/, '')
+      url.pathname = '/' + route.replace(/^\/+/, '')
       await send('Page.navigate', { url: url.href }, sessionId)
       await waitReady(inPage(sessionId))
       // With --copy, as any shot: copy mode on once its bar is in, or named as one at rest, saying so.
@@ -532,7 +532,7 @@ try {
         const url = new URL(base)
         url.searchParams.set('theme', p.theme === 'dark' ? 'dark' : 'light')
         if (p.framed) url.searchParams.set('dv', '1')
-        url.hash = '/' + p.route
+        url.pathname = '/' + p.route
         await send('Page.navigate', { url: url.href }, sessionId)
         if (!await waitReady(inPage(sessionId))) missed.push('the page never said it was ready')
         if (!await until(`(window.__pin ?? (${PIN_PAGE})).ready()`, 15000)) missed.push('the design never drew')
@@ -730,7 +730,7 @@ try {
     }, sessionId)
     if (size.mobile) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
     const url = new URL(base)
-    url.hash = '/' + route.replace(/^\/+/, '')
+    url.pathname = '/' + route.replace(/^\/+/, '')
     at.push(performance.now())
     await send('Page.navigate', { url: url.href }, sessionId)
     const ready = await waitReady(inPage(sessionId))
@@ -794,7 +794,7 @@ try {
       // Tall enough that the shell shows the phone at 100%; 3x is an iPhone screenshot's scale.
       await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1400, deviceScaleFactor: 3, mobile: false }, sessionId)
       const url = new URL(base)
-      url.hash = '/' + route.replace(/^\/+/, '')
+      url.pathname = '/' + route.replace(/^\/+/, '')
       await send('Page.navigate', { url: url.href }, sessionId)
       await waitReady(inPage(sessionId))
       await copied(sessionId, route)

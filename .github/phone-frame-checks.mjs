@@ -11,7 +11,7 @@ export default function A() {
   </main>
 }`)
   proto(['done', 'phoneframe'])
-  const page = await openPage(`${local}?theme=light#/phoneframe/A`, { width: 1440, height: 1100 })
+  const page = await openPage(`${local}phoneframe/A?theme=light`, { width: 1440, height: 1100 })
   const mount = '[data-layers] > :not([inert]) [data-phone] [data-mount]'
   const wait = ms => new Promise(r => setTimeout(r, ms))
   const until = async expression => {

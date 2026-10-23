@@ -10,7 +10,7 @@ import { variantLabel, variantRef } from './variants'
 import { captureRoute, compose, download, filePart, LOOKS, png, SIZES, type Look, type ShotSize, type Tone } from './share-capture'
 import { t, tn } from './i18n'
 
-type Subject = { id: string; name: string; hash: string; tweaks?: Record<string, string | boolean> }
+type Subject = { id: string; name: string; path: string; tweaks?: Record<string, string | boolean> }
 type Props = { title: string; slug: string; variants: Subject[]; current: string | null; size: { w: number; h: number }; dark: boolean; onClose: () => void; returnFocus: () => HTMLElement | null }
 const icon = (name: string) => h('span', { className: 'inline-flex', dangerouslySetInnerHTML: { __html: ic(name) } })
 const small = 'text-xs text-zinc-500 dark:text-zinc-400'
@@ -60,7 +60,7 @@ function Board(p: Props) {
   const labelOf = (v: Subject) => variantRef(p, v.id)
   const nameOf = (v: Subject) => names[v.id] ?? `${labelOf(v)} · ${v.name}`
   const keyOf = (v: Subject, s: ShotSize) => `${v.id}|${s.id}`
-  const captureKey = `${variants.map(v => v.hash).join()}|${chosen.map(s => `${s.id}:${s.w}x${s.h}`).join()}|${p.dark}|${retry}`
+  const captureKey = `${variants.map(v => v.path).join()}|${chosen.map(s => `${s.id}:${s.w}x${s.h}`).join()}|${p.dark}|${retry}`
   const visibleKey = large ? visible.join('|') : ''
   const prunePreviewCache = (active: Set<string>) => {
     const keys = Object.keys(cache.current), limit = Math.max(8, active.size)
@@ -72,7 +72,7 @@ function Board(p: Props) {
     const controller = new AbortController(); previewController.current = controller
     const subjects = large ? variants.filter(v => visible.includes(v.id)) : variants
     const allowed = new Set(subjects.flatMap(v => chosen.map(s => keyOf(v, s))))
-    const captureKeys = new Set(subjects.flatMap(v => chosen.map(s => `${v.hash}|${s.w}x${s.h}|${p.dark}|${retry}`)))
+    const captureKeys = new Set(subjects.flatMap(v => chosen.map(s => `${v.path}|${s.w}x${s.h}|${p.dark}|${retry}`)))
     if (large) {
       // Drop every owning reference, including React state, when a preview leaves the window.
       const retained = prunePreviewCache(captureKeys)
@@ -85,9 +85,9 @@ function Board(p: Props) {
       const order = [...subjects].sort((a, b) => Number(b.id === p.current) - Number(a.id === p.current))
       for (const v of order) for (const s of chosen) {
         if (controller.signal.aborted) return
-        const k = keyOf(v, s), ck = `${v.hash}|${s.w}x${s.h}|${p.dark}|${retry}`
+        const k = keyOf(v, s), ck = `${v.path}|${s.w}x${s.h}|${p.dark}|${retry}`
         try {
-          const raw = cache.current[ck] ?? await captureRoute(v.hash, s, p.dark, controller.signal, v.tweaks)
+          const raw = cache.current[ck] ?? await captureRoute(v.path, s, p.dark, controller.signal, v.tweaks)
           if (controller.signal.aborted) return
           delete cache.current[ck]; cache.current[ck] = raw
           const retained = large ? prunePreviewCache(captureKeys) : new Set(Object.values(cache.current))
@@ -138,9 +138,9 @@ function Board(p: Props) {
   // export-only canvases to preview state or to the persistent preview cache.
   const fileFor = async (t: typeof tiles[number], signal: AbortSignal, last: { key: string; raw: HTMLCanvasElement | null }) => {
     signal.throwIfAborted()
-    const key = `${t.v.hash}|${t.s.w}x${t.s.h}|${p.dark}|${retry}`
+    const key = `${t.v.path}|${t.s.w}x${t.s.h}|${p.dark}|${retry}`
     const raw = t.canvas ? null : (last.key === key ? last.raw : null) ?? cache.current[key]
-      ?? await captureRoute(t.v.hash, t.s, p.dark, signal, t.v.tweaks)
+      ?? await captureRoute(t.v.path, t.s, p.dark, signal, t.v.tweaks)
     if (raw) { last.key = key; last.raw = raw }
     signal.throwIfAborted()
     const canvas = t.canvas ?? compose(raw!, t.look, { name: nameOf(t.v), title: p.title, dark: p.dark, tone })

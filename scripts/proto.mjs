@@ -607,7 +607,7 @@ function add() {
     patchSession(dir, now => ({ building: { ...now.building, ...Object.fromEntries(fresh.map(id => [`${slug}/${id}`, at])) } }))
   }
   console.log(`${pdir}: ${Object.keys(meta.variants).map(id => `${id}.${kit.ext}`).join(' ') || 'no variants'}`)
-  if (s.url) console.log(`${s.url}#/${slug}`)
+  if (s.url) console.log(`${s.url}${slug}`)
   if (kit.slot && typeof meta.from === 'string' && meta.from.includes('/') && !meta.slot && !meta.referenceOnly) console.log(`assignment needed: if these variants replace part of ${meta.from}, wrap that element in <Slot> and connect ${slug} with --from ${meta.from} --slot <id> before presenting them. Use --reference-only only for a separate design that uses the parent as a reference.`)
 }
 

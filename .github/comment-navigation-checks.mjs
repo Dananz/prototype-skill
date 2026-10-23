@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 export async function commentNavigationChecks({ app, openPage, fail }) {
   const local = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8')).localUrl
-  const page = await openPage(`${local}?theme=light#/routefx/A`)
+  const page = await openPage(`${local}routefx/A?theme=light`)
   try {
     const result = await page.run(`(async () => {
       const { createActions } = await import('/shell/comments/actions.ts')

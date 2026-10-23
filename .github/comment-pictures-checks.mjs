@@ -10,7 +10,7 @@ export async function commentPicturesChecks({ proto, app, openPage, fail }) {
 }
 `)
   const local = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8')).localUrl
-  const page = await openPage(`${local}?theme=light#/picsfx/A`)
+  const page = await openPage(`${local}picsfx/A?theme=light`)
   const helpers = `
     const until = async (f, ms = 5000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
     const editor = () => document.querySelector('[data-composer] [role=textbox]')

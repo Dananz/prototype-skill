@@ -22,7 +22,7 @@ export default function Menu() {
 }
 `)
   const local = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8')).localUrl
-  const page = await openPage(`${local}?theme=light#/${slug}/A`)
+  const page = await openPage(`${local}${slug}/A?theme=light`)
   const helpers = `
     const until = async (f, ms = 5000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
     const design = () => document.querySelector('[data-view] iframe')?.contentDocument ?? document

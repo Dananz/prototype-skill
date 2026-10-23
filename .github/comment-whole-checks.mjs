@@ -11,7 +11,7 @@ export async function commentWholeChecks({ proto, app, openPage, fail }) {
   }
 `)
   const local = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8')).localUrl
-  const page = await openPage(`${local}?theme=light#/wholefx/A`)
+  const page = await openPage(`${local}wholefx/A?theme=light`)
   const helpers = `
     const until = async f => { for (const end = Date.now() + 5000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
     const box = () => document.querySelector('[data-shoot=whole-input]')
@@ -75,7 +75,7 @@ export async function commentWholeChecks({ proto, app, openPage, fail }) {
       if (!items.some(t => t === 'Pick' || t.startsWith('Picked') || t.startsWith('Pick '))) return 'the row menu has no Pick for its own variant: ' + JSON.stringify(items)
       if (!document.querySelector('[role=menu] textarea[aria-label="Note for Pick #2"]')) return 'the row menu card does not take a pick for B'
       document.querySelector('[data-shoot=vm-comment]').click()
-      if (!await until(() => location.hash === '#/wholefx/B')) return 'Comment on this did not go to the variant'
+      if (!await until(() => location.pathname === '/wholefx/B')) return 'Comment on this did not go to the variant'
       if (!await until(() => box() && document.activeElement === box())) return 'Comment on this did not put the cursor in the box'
       return 'ok'
     })()`)

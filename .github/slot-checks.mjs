@@ -117,7 +117,7 @@ export default function B() { return <main><h1>Home B</h1><Slot proto="slothome"
   }
   const unchanged = (run, why) => { const was = JSON.stringify(session().asks); run(); assert(JSON.stringify(session().asks) === was, `${why}: the history changed`) }
 
-  const page = await openPage(`${local}#/slothome/B`)
+  const page = await openPage(`${local}slothome/B`)
   const until = async (words, why) => {
     const seen = await page.run(`(async () => { for (const end = Date.now() + 10000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { if (document.body.innerText.includes(${JSON.stringify(words)})) return 'ok' } return document.body.innerText.slice(-300) })()`)
     assert(seen === 'ok', `${why}: the page shows "${seen}"`)

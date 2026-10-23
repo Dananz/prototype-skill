@@ -9,7 +9,7 @@ export async function hostLabelChecks({ proto, app, local, openPage, fail }) {
   try {
     for (const phone of [false, true]) {
       as('agent')
-      const page = await openPage(`${local}?theme=light#/hostfx/A`, phone ? { width: 390, height: 844, phone: true } : {})
+      const page = await openPage(`${local}hostfx/A?theme=light`, phone ? { width: 390, height: 844, phone: true } : {})
       try {
         const batch = await page.run(`(async () => {
           const res = await fetch('/__proto/comments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: 'light', viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 }, comments: [{ route: 'hostfx/A', text: 'Pending feedback' }] }) })
