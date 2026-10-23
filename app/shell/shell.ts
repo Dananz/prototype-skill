@@ -2159,8 +2159,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       }))
     },
     show: () => {
-      if (phoneMq.matches) comments.act.openSheet(true)
-      else comments.act.openIsland(true)
+      comments.act.openIsland(true)
     },
     // While a device view is on, comments are on the design in its frame, about that layout.
     // The stage's own artboard is the stage's layout: what is written there carries no other.

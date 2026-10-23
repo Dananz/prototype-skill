@@ -95,7 +95,7 @@ export function Island() {
   const [focus, setFocus] = useState(false)
   const input = useRef<HTMLTextAreaElement>(null)
   const card = useRef<HTMLDivElement>(null)
-  const open = s.island && !phone
+  const open = s.island
   const picking = s.mode.kind === 'pick'
 
   useLayoutEffect(() => {
@@ -182,7 +182,7 @@ export function Island() {
   const dot = unread && !open ? EDGE.reply : working ? EDGE.working : total ? EDGE.done : ''
   const width = phone ? '100%' : open ? 440 : typing ? 400 : shown && !open ? 360 : 300
   const showNews = !!shown && !open
-  const openList = () => { if (phone) act.openSheet(true); else act.openIsland(!s.island) }
+  const openList = () => act.openIsland(!s.island)
 
   const newsRow = (
     <div className="grid transition-[grid-template-rows] duration-500 ease-[cubic-bezier(.2,.9,.25,1)]" style={{ gridTemplateRows: showNews ? '1fr' : '0fr' }}>
@@ -201,7 +201,7 @@ export function Island() {
     </div>
   )
 
-  const list = !phone && (
+  const list = (
     <div data-island-list className="grid transition-[grid-template-rows] duration-500 ease-[cubic-bezier(.2,.9,.25,1)]" style={{ gridTemplateRows: open ? '1fr' : '0fr' }} inert={!open}>
       <div className="min-h-0 overflow-hidden">
         <div data-shoot="comments" className="flex max-h-[min(30rem,calc(100dvh-12rem))] flex-col">
@@ -241,7 +241,7 @@ export function Island() {
             className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-proto-primary px-3 text-xs font-semibold text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-60">
             <Icon name="send" className="size-3.5" />{s.sending ? t('Sending…') : tn(drafts, 'Send {n}', 'Send {n}')}
           </button>}
-      <button type="button" data-shoot="island-open" onClick={() => { read(); openList() }} aria-expanded={phone ? s.sheet : open} aria-label={open ? t('Collapse the comments') : tn(total, 'Open {n} comment', 'Open all {n} comments')}
+      <button type="button" data-shoot="island-open" onClick={() => { read(); openList() }} aria-expanded={open} aria-label={open ? t('Collapse the comments') : tn(total, 'Open {n} comment', 'Open all {n} comments')}
         className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-xs ${phone ? 'text-white/80' : 'text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10'}`}>
         <span className="relative grid size-2 place-items-center">
           {unread > 0 && !open && <span className="absolute size-2 animate-ping rounded-full" style={{ background: EDGE.reply }} />}
@@ -253,13 +253,17 @@ export function Island() {
     </div>
   )
 
-  if (phone) return (
-    <div data-island data-comment-ui="" className="pointer-events-auto absolute inset-x-2 flex flex-col overflow-hidden rounded-t-3xl bg-zinc-900/90 text-white backdrop-blur dark:bg-zinc-800/90"
+  // A phone opens the list in the capsule itself, above the same bar, over a dimmed page; a tap
+  // on the page folds it again. The capsule is dark like the pill, so its list is drawn dark too.
+  if (phone) return (<>
+    {open && <button type="button" aria-label={t('Collapse the comments')} onClick={() => act.openIsland(false)} className="pointer-events-auto absolute inset-0 bg-black/30" />}
+    <div data-island data-comment-ui="" data-open={open || undefined} className="dark pointer-events-auto absolute inset-x-2 flex flex-col overflow-hidden rounded-t-3xl bg-zinc-900/95 text-white backdrop-blur dark:bg-zinc-800/95"
       style={{ bottom: 'calc(var(--pill-h, 0px) - .5rem - var(--isl-h, 0px))', boxShadow: edge ? `inset 0 2px ${edge}, inset 2px 0 ${edge}, inset -2px 0 ${edge}` : undefined }}>
+      {list}
       {newsRow}
       {bar}
     </div>
-  )
+  </>)
   return (
     <div className={`pointer-events-none absolute inset-x-0 flex justify-center px-4 ${top ? 'top-4' : ''}`} style={top ? undefined : { bottom: 'calc(var(--pill-h, 0px) + var(--dock-h, 0px) + var(--copy-h, 0px) + 1rem)' }}>
       <div ref={card} data-island data-comment-ui="" data-open={open || undefined} onPointerDown={grab}
