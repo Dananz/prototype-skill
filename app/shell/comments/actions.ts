@@ -85,7 +85,7 @@ export function createActions(store: Store, host: Host) {
     stop() { opening++; set({ mode: { kind: 'idle' } }) },
     close() { opening++; set({ mode: { kind: 'idle' }, active: null, pendingTag: null }) },
     /** `quote`: the words highlighted on the design, which start the comment as a quote. */
-    begin(target: Target, quote?: string) { opening++; set({ mode: { kind: 'compose', target, ...(quote ? { quote } : {}) }, active: null }) },
+    begin(target: Target, quote?: string, trail?: Target[]) { opening++; set({ mode: { kind: 'compose', target, ...(quote ? { quote } : {}), ...(trail?.length ? { trail } : {}) }, active: null }) },
     /**
      * Moves the new comment being written up to the element around the one it is on, keeping what
      * was typed; `down` steps back to the element it came up from. A saved comment, or one on a

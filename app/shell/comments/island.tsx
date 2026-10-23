@@ -191,6 +191,8 @@ export function Island() {
   const dot = unread && !open ? EDGE.reply : working ? EDGE.working : total ? EDGE.done : ''
   const width = phone ? '100%' : open ? 440 : typing ? 400 : shown && !open ? 360 : 300
   const showNews = !!shown && !open
+  // Send n takes the field's room: then the short placeholder, so it stays on one line.
+  const sendShown = !text.trim() && drafts > 0 && !s.live
   const openList = () => act.openIsland(!s.island)
 
   const newsRow = (
@@ -216,7 +218,6 @@ export function Island() {
         <div data-shoot="comments" className="flex max-h-[min(30rem,calc(100dvh-12rem))] flex-col">
           <div className="flex shrink-0 items-center gap-2 px-3.5 pb-1 pt-3">
             <h2 className="text-[13px] font-semibold">{t('Comments')}</h2>
-            {total > 0 && <span className="rounded-full bg-zinc-900/[.06] px-1.5 text-[11px] font-medium tabular-nums text-zinc-500 dark:bg-white/10">{total}</span>}
             <Listening on={!!s.inbox?.listening} stalled={stalled > 0} className="ms-auto" />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4"><CommentList /></div>
@@ -232,10 +233,10 @@ export function Island() {
       <button type="button" data-act="comment:toggle" data-shoot="comment" aria-pressed={picking} aria-label={t('Select an element to comment on')}
         title={picking ? t('Stop selecting · Esc') : `${t('Select an element to comment on')} · C`}
         className={`grid shrink-0 place-items-center rounded-full transition-colors ${phone ? 'size-10' : 'size-8'} ${picking ? 'bg-proto-primary text-proto-primary-fg' : 'bg-zinc-900/[.05] text-zinc-600 hover:bg-zinc-900/10 hover:text-zinc-900 dark:bg-white/[.08] dark:text-zinc-300 dark:hover:bg-white/15 dark:hover:text-white'}`}>
-        <Icon name={picking ? 'select-on' : 'select'} className={phone ? 'size-5' : 'size-4'} />
+        <Icon name={phone ? (picking ? 'tap-on' : 'tap') : picking ? 'select-on' : 'select'} className={phone ? 'size-5' : 'size-4'} />
       </button>
       <textarea ref={input} data-shoot="whole-input" rows={1} value={text} onChange={e => setText(e.target.value)} dir="auto" autoComplete="off" enterKeyHint="enter"
-        aria-label={t('Comment on the entire variant')} placeholder={picking ? t('Click what to comment on') : typing || phone ? t('Comment on the entire variant') : t('Comment…')} title={`${t('Comment on the whole variant')} · ⇧C`}
+        aria-label={t('Comment on the entire variant')} placeholder={picking ? (phone ? t('Tap what to comment on') : t('Click what to comment on')) : (typing || phone) && !sendShown ? t('Comment on the entire variant') : t('Comment…')} title={`${t('Comment on the whole variant')} · ⇧C`}
         onFocus={() => { setFocus(true); act.wholeFocus(true) }} onBlur={() => { setFocus(false); act.wholeFocus(false) }}
         onKeyDown={e => {
           if (e.nativeEvent.isComposing) return

@@ -100,7 +100,7 @@ export type Inspect = { box: Box; touch: boolean; parent: boolean; down: boolean
  * stays on what it was started on, and a press on an element only calls `onGuard`. `hold` is a
  * finger holding, from the layer's corner; `drag` the region being dragged out, from there too.
  */
-export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Target) => void; onCancel: () => void; onGuard: (el?: HTMLElement) => void }) {
+export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Target, trail?: Target[]) => void; onCancel: () => void; onGuard: (el?: HTMLElement) => void }) {
   const { host } = useCtx()
   const [hover, setHover] = useState<Inspect>(null)
   const [hold, setHold] = useState<{ x: number; y: number } | null>(null)
@@ -182,8 +182,10 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       raised.current = trail.current.length > 0
     }
     act.current = el => {
+      // Picked after Parent, the comment keeps the way back down (Climb, layer.tsx).
+      const from = el === cur.current ? trail.current.map(e => onView(describe(host.mount()!, e))) : []
       show(null, false)
-      cb.current.onPick(onView(describe(host.mount()!, el)))
+      cb.current.onPick(onView(describe(host.mount()!, el)), from)
     }
     // Moving between elements is debounced: the outline waits for the pointer to settle, so
     // sweeping across the design doesn't make it flicker through everything on the way.
@@ -406,11 +408,11 @@ export function HoldRing({ at }: { at: { x: number; y: number } | null }) {
  */
 export function HoverBox({ hover, verb, onConfirm, onUp, onDown }: { hover: Inspect; verb: string; onConfirm: () => void; onUp: () => void; onDown: () => void }) {
   const { host } = useCtx()
-  // A finger's buttons are a tab on the outline, in its colour, like the composer's Parent tab:
+  // A finger's buttons are a small tab on the outline, in its colour, the same as the composer's Parent tab:
   // on its top edge, else under its bottom edge, else just inside its visible top (an outline
   // taller than the screen has neither end in view). Offsets are from the outline's own corner,
   // past its padding and border.
-  const TAB = 36
+  const TAB = 20
   const spot = (box: Box, w: number): { style: CSSProperties; side: 'above' | 'below' | 'inside' } => {
     const H = host.layer.clientHeight, W = host.layer.clientWidth
     const x = Math.min(Math.max(box.x + box.w / 2 - w / 2, 8), Math.max(8, W - w - 8)) - (box.x - 5)
@@ -423,14 +425,14 @@ export function HoverBox({ hover, verb, onConfirm, onUp, onDown }: { hover: Insp
     <Glide item={hover} pad={3} className={`rounded-md border-2 border-proto-primary-ring ${hover?.touch ? 'bg-proto-primary/[.10]' : 'bg-proto-primary/[.06]'}`}>
       {h => {
         if (!h.touch) return null
-        const at = spot(h.box, (h.parent ? 92 : 0) + (h.down ? 40 : 0) + 112)
-        const round = at.side === 'above' ? 'rounded-t-lg' : 'rounded-b-lg'
-        const sep = <span className="my-2 w-px bg-white/30" />
+        const at = spot(h.box, (h.parent ? 64 : 0) + (h.down ? 26 : 0) + 84)
+        const round = at.side === 'above' ? 'rounded-t' : 'rounded-b'
+        const sep = <span className="my-1 w-px bg-white/30" />
         return (
-          <div data-inspect-ui style={at.style} className={`absolute flex h-9 items-stretch overflow-hidden whitespace-nowrap bg-proto-primary-ring text-xs font-semibold text-proto-primary-fg ${round} ${hover ? 'pointer-events-auto' : ''}`}>
-            {h.parent && <><button data-shoot="pick-parent" aria-label={t('Select the parent')} {...tap(onUp)} className="inline-flex items-center gap-1 ps-2.5 pe-2 active:bg-white/15"><Icon name="up" className="size-3.5" />{t('Parent')}</button>{sep}</>}
-            {h.down && <><button data-shoot="pick-down" aria-label={t('Back to the element inside')} title={t('Back to the element inside')} {...tap(onDown)} className="grid w-10 place-items-center active:bg-white/15"><Icon name="child" className="size-3.5" /></button>{sep}</>}
-            <button data-shoot="pick-comment" {...tap(onConfirm)} className="inline-flex items-center gap-1.5 ps-2.5 pe-3 active:bg-white/15"><Icon name="comment" className="size-3.5" />{verb}</button>
+          <div data-inspect-ui style={at.style} className={`absolute flex h-5 items-stretch overflow-hidden whitespace-nowrap bg-proto-primary-ring text-[11px] font-semibold text-proto-primary-fg ${round} ${hover ? 'pointer-events-auto' : ''}`}>
+            {h.parent && <><button data-shoot="pick-parent" aria-label={t('Select the parent')} {...tap(onUp)} className="inline-flex items-center gap-1 px-1.5 active:bg-white/15"><Icon name="up" className="size-3" />{t('Parent')}</button>{sep}</>}
+            {h.down && <><button data-shoot="pick-down" aria-label={t('Back to the element inside')} title={t('Back to the element inside')} {...tap(onDown)} className="grid place-items-center px-1.5 active:bg-white/15"><Icon name="child" className="size-3" /></button>{sep}</>}
+            <button data-shoot="pick-comment" {...tap(onConfirm)} className="inline-flex items-center gap-1 px-1.5 active:bg-white/15"><Icon name="comment" className="size-3" />{verb}</button>
           </div>
         )
       }}

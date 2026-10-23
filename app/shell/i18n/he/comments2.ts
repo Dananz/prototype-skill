@@ -118,6 +118,7 @@ export default {
   'Select an element to comment on': 'בחר רכיב כדי להוסיף הערה',
   'Stop selecting · Esc': 'הפסק לבחור · Esc',
   'Click what to comment on': 'לחץ על מה שתרצה להעיר עליו',
+  'Tap what to comment on': 'הקש על מה שתרצה להעיר עליו',
   'Comment…': 'הערה…',
   'Send {n}': 'שלח {n}',
   'Collapse the comments': 'כווץ את ההערות',

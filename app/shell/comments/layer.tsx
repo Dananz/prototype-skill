@@ -74,7 +74,7 @@ export function Layer() {
   const editedItem = editing?.id ? s.items.find(x => x.id === editing.id) : undefined
 
   const { hover, hold, drag, confirm, up, down } = usePick(picking && !!s.place, m.kind === 'compose' && !!s.place, {
-    onPick: t => (tagging ? act.tagDone(t) : act.begin(t)),
+    onPick: (t, trail) => (tagging ? act.tagDone(t) : act.begin(t, undefined, trail)),
     onCancel: () => (tagging ? act.tagDone(null) : act.stop()),
     onGuard: act.guard,
   })
