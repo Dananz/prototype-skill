@@ -6,6 +6,7 @@
 //   proto add <slug> --title "…" --variants "A:Name,B:Name" [--ask "…"] [--kind phone] [--screen 402x874]
 //             [--from <slug>/<letter>[,<slug>/<letter>…]]   built from those variants: nested under the first
 //             [--from-picks]   built from every variant the user picked in this session
+//             [--next]   the first parent's next versions: a pick among them is built into it
 //             [--kit[=<name>]] [--current <screen>]   on the project's design kit: its theme, parts and
 //             packages, and with --current that screen's saved Current as A (with its references)
 //   proto done <slug>/<letter>[ …] | <slug>   that variant is built: the page drops its Building mark, and a comment
@@ -70,7 +71,7 @@ import { createServer } from 'node:net'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assignmentNeeded, isCurrent } from '../app/assignment.mjs'
+import { assignmentNeeded, buildUpNeeded, isCurrent } from '../app/assignment.mjs'
 import { idOf, letterOf, numberOf } from '../app/numbers.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -111,7 +112,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -534,7 +535,7 @@ function add() {
     }
     set.from = refs[0]
     if ((flags['from-picks'] || refs.length > 1) && flags.slot === undefined && !current().slot) set.referenceOnly = true
-    else if (flags['reference-only'] !== true) drop.push('referenceOnly')
+    else if (flags['reference-only'] !== true && !flags.next) drop.push('referenceOnly')
     if (refs.length > 1) set.also = refs.slice(1)
     else drop.push('also')
     if (flags['from-picks']) console.log(`from ${refs.join(', ')}`)
@@ -548,6 +549,15 @@ function add() {
     if (!set.from && !current().from) die('--reference-only needs a parent (--from)')
     set.referenceOnly = true
   }
+  // The variant's next versions: separate designs that succeed it, so a pick among them is built
+  // into it (and on up, through parents that are next versions too).
+  if (flags.next) {
+    if (flags.slot !== undefined) die('--next and --slot cannot be used together')
+    if (current().slot) die('this prototype already fills a slot; keep its connection with --slot')
+    if (!set.from && !current().from) die('--next needs a parent (--from)')
+    set.referenceOnly = true
+    set.next = true
+  } else if (flags.from !== undefined || flags['from-picks'] || flags['reference-only'] || flags.slot !== undefined) drop.push('next')
   if (flags.slot !== undefined) {
     if (!kit.slot) die('--slot needs the React stack for now')
     if (flags.slot === true || !/^[a-z][a-z0-9-]*$/.test(flags.slot)) die('--slot takes the slot\'s id, like cta')
@@ -820,7 +830,7 @@ function pick() {
   const back = flags.off || isCurrent(meta.variants?.[letter])
   console.log((flags.off ? `${slug}: no pick` : `${slug}: picked ${shown(id)} · ${meta.variants[id]}`) + (plugged ? ` · ${back ? 'original back in' : 'plugged into'} ${plugged.where}` : '') + (parents.length ? ` · also picked ${parents.join(', ')}` : ''))
   if (!flags.off) {
-    const pending = assignmentNeeded(dir, slug, id)
+    const pending = assignmentNeeded(dir, slug, id) || buildUpNeeded(dir, slug, id)
     if (pending) console.log(pending)
   }
 }
@@ -1647,7 +1657,7 @@ function orphans(dir) {
     const file = join(inboxDir(dir), 'taken', id, 'batch.json')
     const b = readJson(file, null)
     if (!b?.takenBy?.pid || b.done || alive(b.takenBy.pid)) continue
-    const open = b.comments.filter(c => !c.done && !c.withdrawn && ((!c.reply && !c.until) || c.assignment))
+    const open = b.comments.filter(c => !c.done && !c.withdrawn && ((!c.reply && !c.until) || c.assignment || c.buildUp))
     if (!open.length) continue
     const now = agentPid()
     locked(dir, () => {
@@ -1807,10 +1817,15 @@ function actionText(dir, c) {
     if (readMeta(dir, slug)?.picked !== id) return 'the selection has changed; do not apply this earlier pick. Handle any note, then reply --done'
     return `marked in the page; ${pendingAssignment(dir, c) || 'assignment is resolved or superseded by another choice; handle any note, then reply --done'}`
   }
+  if (c.action === 'pick' && c.buildUp && !c.done) {
+    const [slug, id] = c.route.split('/')
+    if (readMeta(dir, slug)?.picked !== id) return 'the selection has changed; do not build this earlier pick in. Handle any note, then reply --done'
+    return `marked in the page and now the working variant; ${c.buildUp}${c.note ? '. Handle the note too' : ''}` + suffix
+  }
   if (c.action === 'pick' && c.note && !c.done) return 'marked in the page and now the working variant; handle the note, then reply --done' + suffix
   if (c.action === 'build' && c.picked) return 'picked in the page and now the working variant; build this variant into the codebase' + suffix
   // New variants from one variant nest under it, as their own prototype; never new letters beside it.
-  if (c.action === 'more') return `new variants from this one, nested under it: proto add <new slug> --from ${c.route} --reference-only --title "…" --variants "A:…,B:…"` + suffix
+  if (c.action === 'more') return `new variants from this one, nested under it: proto add <new slug> --from ${c.route} --next --title "…" --variants "A:…,B:…"` + suffix
   return (ACTIONS[c.action] || '') + suffix
 }
 
@@ -2089,7 +2104,7 @@ function stillOpen(dir, skip) {
     for (const c of readJson(join(inboxDir(dir), 'taken', id, 'batch.json'), null)?.comments || []) {
       if (c.done || c.withdrawn) continue
       const left = c.until ? marksOf(building, c.until).length : 0
-      lines.push(`  ${id}/${c.n} "${clip(c.text, 50)}": ${c.assignment ? actionText(dir, c) : c.until ? `closes itself when ${c.until.join(', ')} is built (${left} building)` : c.reply ? `replied "${clip(c.reply.text, 50)}", never closed` : 'not answered'}`)
+      lines.push(`  ${id}/${c.n} "${clip(c.text, 50)}": ${c.assignment || c.buildUp ? actionText(dir, c) : c.until ? `closes itself when ${c.until.join(', ')} is built (${left} building)` : c.reply ? `replied "${clip(c.reply.text, 50)}", never closed` : 'not answered'}`)
     }
   }
   if (lines.length) console.log(`Still open from earlier (the page says "Agent is on it"); once each one's work is in: proto reply <batch>/<n> "…" --done\n${lines.join('\n')}\n`)
