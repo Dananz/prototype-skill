@@ -63,6 +63,9 @@ export async function commentWholeChecks({ proto, app, openPage, fail }) {
     await page.key('Enter', ['Meta'])
     const added = await page.run(`(async () => { ${helpers}; return await until(() => saved().length === 2 && box().value === '' && saved()[1].body.join('').includes('Line 0\\nLine 1')) })()`)
     if (!added) fail('comment whole: Cmd+Enter did not add the multiline comment intact')
+    // Cmd+Enter adds and sends, as in the element composer: both drafts go, with no Send to click.
+    const sent = await page.run(`(async () => { ${helpers}; return await until(() => saved().every(i => i.sent)) })()`)
+    if (!sent) fail('comment whole: Cmd+Enter added the comment but did not send the drafts')
 
     const row = await page.run(`(async () => {
       ${helpers}
@@ -81,12 +84,6 @@ export async function commentWholeChecks({ proto, app, openPage, fail }) {
     })()`)
     if (row !== 'ok') fail(`comment whole: ${row}`)
 
-    const sent = await page.run(`(async () => {
-      ${helpers}
-      document.querySelector('[data-shoot=send]').click()
-      return await until(() => saved().every(i => i.sent)) ? 'ok' : 'the draft never went'
-    })()`)
-    if (sent !== 'ok') fail(`comment whole: ${sent}`)
     let heard = ''
     for (let i = 0; i < 40 && !/the whole variant/.test(heard); i++) { heard += proto(['inbox'], { stdout: true }); if (!/the whole variant/.test(heard)) await new Promise(r => setTimeout(r, 250)) }
     if (!/Give the whole page more air/.test(heard) || !/on: the whole variant \(its root </.test(heard)) fail(`comment whole: the inbox did not say it is on the whole variant:\n${heard}`)

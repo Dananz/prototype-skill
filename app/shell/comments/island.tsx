@@ -365,7 +365,8 @@ export function Island() {
           }
           // Backspace in an empty box takes off the last tag.
           if (e.key === 'Backspace' && !text && tags.length) { e.preventDefault(); setTags(ts => ts.slice(0, -1)); return }
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); add() }
+          // Mod Enter adds and sends, as in the element composer; with nothing typed it sends the drafts.
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); if (act1 === 'add') { add(); if (!s.live) void act.send() } else if (act1 === 'send' && !s.sending) void act.send() }
           else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); input.current?.blur() }
         }}
         className={`max-h-[116px] min-w-0 flex-1 resize-none overflow-y-auto outline-none ${phone ? 'min-h-10 rounded-[20px] px-4 py-2 text-base leading-6' : 'min-h-8 rounded-2xl px-3 py-1.5 text-[13px] leading-5 [@media(pointer:coarse)]:text-base'} bg-zinc-900/[.05] placeholder:text-zinc-400 dark:bg-white/[.08] ${phone ? '' : 'focus:ring-2 focus:ring-proto-primary-ring'}`} />
@@ -374,7 +375,7 @@ export function Island() {
         <span ref={pillRef} aria-hidden className={`invisible absolute flex items-center gap-1.5 whitespace-nowrap px-3 font-semibold ${phone ? 'text-sm' : 'text-xs'}`}><Icon name="send" className="size-3.5" />{sendLabel}</span>
         <button type="button" data-shoot={shownAct === 'send' ? 'send' : 'whole-add'} onClick={shownAct === 'send' ? act.send : add} disabled={shownAct === 'send' && s.sending}
           aria-label={shownAct === 'send' ? undefined : t('Add the comment')}
-          title={shownAct === 'send' ? `${tn(drafts, 'Send {n} to {agent}', 'Send {n} to {agent}', { agent })} · ${MOD} Enter` : `${t('Add the comment')} · ${MOD} Enter`}
+          title={shownAct === 'send' ? `${tn(drafts, 'Send {n} to {agent}', 'Send {n} to {agent}', { agent })} · ${MOD} Enter` : s.live ? `${t('Add the comment')} · ${MOD} Enter` : t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })}
           className={`flex w-full items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full bg-proto-primary font-semibold text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-60 ${phone ? 'h-10 text-sm' : 'h-8 text-xs'}`}
           style={act1
             // In, it pops a little past its size as its room opens; out, it shrinks and fades a beat ahead of the room closing.
