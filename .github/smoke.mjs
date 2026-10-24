@@ -202,6 +202,13 @@ if (process.argv.includes('--zoom-reset-only')) {
   console.log('OK: focused zoom reset checks')
   process.exit(0)
 }
+if (process.argv.includes('--comment-whole-only')) {
+  await commentWholeChecks({ proto, app, openPage, fail })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused whole-variant comment checks')
+  process.exit(0)
+}
 if (process.argv.includes('--compare-comments-only')) {
   await commentCompareChecks({ proto, app, openPage, fail })
   proto(['rm'])
