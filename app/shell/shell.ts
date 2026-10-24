@@ -502,7 +502,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   root.innerHTML = `<div ${framed ? '' : 'data-desk '}class="flex h-dvh bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
     <aside data-side></aside>
     <div data-grip role="separator" aria-orientation="vertical" aria-label="${t('Resize sidebar')}" tabindex="0" title="${t('Drag to resize · double-click to reset')}" class="group relative z-40 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none outline-none">
-      <span class="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-transparent transition-colors group-hover:bg-sky-500/50 group-focus-visible:bg-sky-500 group-data-[dragging]:bg-sky-500"></span>
+      <span class="absolute left-1/2 top-1/2 h-10 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-400/0 transition-colors duration-150 group-hover:bg-zinc-400/70 group-focus-visible:bg-zinc-400/70 group-data-[dragging]:bg-zinc-400/70"></span>
     </div>
     <div class="flex min-w-0 flex-1 flex-col">
       <header data-bar class="relative z-30 ${framed ? 'hidden' : 'flex'} h-12 shrink-0 items-center gap-1 border-b border-black/[.07] px-2 dark:border-white/10"></header>
