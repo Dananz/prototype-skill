@@ -42,7 +42,8 @@ async function renderRoute(path: string, size: ShotSize, dark: boolean, signal: 
     await Promise.all([...d.images].map(image => image.decode().catch(() => {})))
     signal.throwIfAborted()
     // The whole viewport is the design in ?dv, so portals (drawers, dialogs) are included too.
-    const canvas = await domToCanvas(d.body, { scale: 2, width: size.w, height: size.h, backgroundColor: dark ? '#09090b' : '#ffffff', filter: node => !(node.nodeType === 1 && (node as Element).matches('[data-proto-ui], vite-error-overlay')) })
+    // drawImageInterval: Safari's redraws, one per image, run back to back instead of 100ms apart (see comments/shot.tsx).
+    const canvas = await domToCanvas(d.body, { scale: 2, width: size.w, height: size.h, backgroundColor: dark ? '#09090b' : '#ffffff', drawImageInterval: 0, filter: node => !(node.nodeType === 1 && (node as Element).matches('[data-proto-ui], vite-error-overlay')) })
     signal.throwIfAborted()
     // modern-screenshot creates its canvas in the frame's document. Move the pixels to
     // a live document before removing that frame, so toBlob can finish afterwards.

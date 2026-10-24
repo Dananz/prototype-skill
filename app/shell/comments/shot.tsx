@@ -17,7 +17,8 @@ export async function capture(mount: HTMLElement | null, target: Target, dark: b
   const r = el.getBoundingClientRect(), o = root.getBoundingClientRect()
   const ow = o.width / z, oh = o.height / z
   // Sized explicitly: left to measure the root, it takes its zoomed screen size and draws only that much of the design.
-  const full = await domToCanvas(root, { scale, width: ow, height: oh, backgroundColor: dark ? '#09090b' : '#ffffff' })
+  // Safari and Firefox redraw once per image to fill in images left blank; without a wait between redraws, not 100ms each.
+  const full = await domToCanvas(root, { scale, width: ow, height: oh, backgroundColor: dark ? '#09090b' : '#ffffff', drawImageInterval: 0 })
   // A region is kept where it is in its element, which may have moved since it was dragged out.
   const g = target.region
   const ex = (r.left - o.left) / z, ey = (r.top - o.top) / z
