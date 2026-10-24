@@ -505,6 +505,12 @@ so the user sees them land:
   stage, so a drawer's backdrop covers the whole page, the motion dock too. Give each `Portal` a
   `container` in the variant (`<Drawer.Portal container={rootRef}>`, a ref to the variant's
   root; Vue: a `<Teleport>` to it) so it stays on the stage.
+- A screen of a fixed size shown smaller (a 1920×1080 TV, a kiosk, a desktop on a phone) is
+  shrunk with CSS `zoom`, never `transform: scale()`. Safari on a phone paints every layer under
+  a scale at its full size times the screen's 3x, so a scaled TV of photos and blurs runs out of
+  memory and the page reloads; `zoom` lays it out at the size it is shown. Keep only what can be
+  seen on the page (the photo showing, not every one it can fade to), and release WebGL on unmount
+  (`renderer.forceContextLoss()`, or `WEBGL_lose_context`).
 - Make it real: realistic content (never lorem ipsum), working hover, focus, open and close,
   typing, empty and loading states where they matter. Local state is fine.
 - Esc on a variant page goes back to the prototype's variants. A design that closes its own

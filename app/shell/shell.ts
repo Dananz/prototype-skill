@@ -863,6 +863,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const scrollerOf = (l: Layer) => l.el.firstElementChild as HTMLElement | null
   function show(fade: boolean) {
     if (layer && lobbyKey) lobbyScroll.set(lobbyKey, scrollerOf(layer)?.scrollTop ?? 0)
+    // On a phone the design leaving goes before the next one mounts, with no crossfade: Safari
+    // there kills a page that holds two heavy designs at once (3D, big photos), and reloads it.
+    if (layer && phoneMq.matches) { const old = layer; layer = null; old.el.remove(); old.dispose() }
     const next = buildLayer(st.place)
     const prev = layer
     layer = next

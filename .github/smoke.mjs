@@ -46,6 +46,7 @@ import { variantLabelsChecks } from './variant-labels-checks.mjs'
 import { favoritesChecks } from './favorites-checks.mjs'
 import { headerChecks } from './header-checks.mjs'
 import { phoneFrameChecks } from './phone-frame-checks.mjs'
+import { phoneOneDesignChecks } from './phone-one-design-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // Each run has a folder of its own (under RUNNER_TEMP when set), so two runs on one machine never
@@ -209,6 +210,13 @@ if (process.argv.includes('--comment-whole-only')) {
   console.log('OK: focused whole-variant comment checks')
   process.exit(0)
 }
+if (process.argv.includes('--phone-one-design-only')) {
+  await phoneOneDesignChecks({ proto, app, local, openPage, fail })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused phone one-design checks')
+  process.exit(0)
+}
 if (process.argv.includes('--compare-comments-only')) {
   await commentCompareChecks({ proto, app, openPage, fail })
   proto(['rm'])
@@ -258,6 +266,7 @@ await variantLabelsChecks({ proto, app, local, openPage, fail })
 await favoritesChecks({ proto, app, local, openPage, fail })
 await headerChecks({ proto, app, local, openPage, fail })
 await phoneFrameChecks({ proto, app, local, openPage, fail })
+await phoneOneDesignChecks({ proto, app, local, openPage, fail })
 
 proto(['add', 'home', '--title', 'Home page', '--ask', 'Two takes on the home page', '--variants', 'A:Classic,B:Big price'])
 proto(['add', 'hero', '--title', 'Hero section', '--ask', 'The hero from B, further', '--from', 'home/B', '--next', '--variants', 'A:Price only,B:Fuel tabs'])
