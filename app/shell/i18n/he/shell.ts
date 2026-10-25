@@ -75,6 +75,7 @@ export default {
   'The design is at its full size here. Choose a layout to zoom it.': 'העיצוב מוצג כאן בגודלו המלא. בחר פריסה כדי לשנות זום.',
   'Layout and zoom': 'פריסה וזום',
   'Focus mode': 'מצב פוקוס',
+  'Replay: load the design again · R': 'הפעל מחדש: טען את העיצוב שוב · R',
   'Share screenshots…': 'שתף צילומי מסך…',
   'Keyboard shortcuts': 'קיצורי מקלדת',
   'Settings': 'הגדרות',
