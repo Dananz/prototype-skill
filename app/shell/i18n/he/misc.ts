@@ -18,6 +18,7 @@ export default {
   'Send draft comments': 'שלח טיוטות של הערות',
   'Toggle sidebar': 'הצג או הסתר את סרגל הצד',
   'Toggle focus mode': 'הצג או הסתר מצב מיקוד',
+  'Replay the variant': 'הפעל את הוריאנט מחדש',
   'Fit and center canvas': 'התאם ומרכז את משטח העבודה',
   'Go to the working variant': 'עבור לווריאנט העבודה',
   'Design actions (desktop)': 'פעולות עיצוב (מחשב)',

@@ -1151,6 +1151,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       return `<div class="relative flex shrink-0 items-center ${joined ? 'rounded-md ring-1 ring-inset ring-black/[.08] dark:ring-white/10' : ''}"><button data-act="open:device" data-shoot="device" aria-haspopup="menu" aria-expanded="${on}" aria-label="${t('Layout and zoom')}" title="${fits ? `${frameOn() ? t('Layout and zoom') : t('Phone scale')}` : t('Layout')}" class="${IB} text-xs tabular-nums ${joined ? 'rounded-e-none' : ''} ${on ? ON : ''}">${ic(icon)}<span data-scale-label${fits ? '' : ' class="opacity-60"'}>${label}</span>${ic('chev', 'size-3 opacity-60')}</button>${joined ? centerBtn : ''}${pop(on, `${sizes}${zoom}`, 'end-0 top-11 w-72')}</div>`
     }
 
+    const replayBtn = () => canReplay() ? `<button data-act="replay" data-shoot="replay" aria-label="${t('Replay')}" title="${t('Replay: load the design again · R')}" class="${IB} shrink-0">${ic('replay')}</button>` : ''
+
     // Everything that is not the work of the moment: Focus, Share, the shortcuts, Settings.
     const moreBtn = () => {
       const on = st.open === 'more'
@@ -1215,7 +1217,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ${switcher}
       <div class="ms-auto flex shrink-0 items-center gap-1">
         ${stepper}${stepper && (view === 'variant' || viewOk() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${deviceBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${moreBtn()}
+        ${replayBtn()}${deviceBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${moreBtn()}
       </div></div>`)
     menus = { protos: drill(), session: '' }
 
@@ -1453,6 +1455,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       c.lines ? menuRow({ act: 'copymode', shoot: 'copy-mode', icon: 'text', label: t('Copy options'), detail: tn(c.lines, '{n} line', '{n} lines') }) : '',
       n ? menuRow({ act: 'try', shoot: 'try-it', icon: 'key', tint: 'text-amber-600 dark:text-amber-300', label: t('Try it'), detail: t('{n} to try', { n }) }) : '',
       hasMotion() ? menuRow({ act: 'motion', shoot: 'motion', icon: 'curves', label: st.motion ? t('Hide motion') : t('Motion'), detail: st.motion ? '' : t('Timeline'), on: st.motion }) : '',
+      canReplay() ? menuRow({ act: 'replay', shoot: 'replay', icon: 'replay', label: t('Replay') }) : '',
       st.place.view === 'variant' ? menuRow({ act: 'focus', shoot: 'focus', icon: 'grow', label: t('Focus mode') }) : '',
     ].join('')
     const layout = viewOk() ? menuSegs(t('Layout'), ORDER.map(s => `<button data-act="size:${s}:card" data-shoot="size-${s}" aria-label="${SIZES[s].name}" aria-pressed="${shownSize() === s}" class="grid place-items-center ${DARK_SEG(shownSize() === s)}">${ic(sizeIcon(s, s === 'tablet' && st.view.land), 'size-[18px]')}</button>`).join(''),
@@ -1900,6 +1903,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'size': if (st.open === 'device') st.open = null; return pickSize(arg as Size)
       case 'turn': return patchView({ land: !st.view.land, zoom: 0 })
       case 'center': return setScale(0)
+      case 'replay': return replay()
       case 'scalestep': { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || 50) + Number(arg)) / 5) * 5))) }
       case 'theme': return setTheme(arg === 'dark')
       case 'focus': if (st.place.view !== 'variant') return; st.focus = true; st.open = null; dock.hold = performance.now() + 1600; edge.hover = {}; render(); return fit()
@@ -2082,6 +2086,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
     else if (e.key === 'C' && commentHost() && st.place.view === 'variant') { e.preventDefault(); commentWhole() }
     // Focus mode and the design's actions are the page outside's, when this page is in its view (viewKey).
+    else if (e.key === 'r' && canReplay() && !framed) act('replay', '', '')
     else if (e.key === 'f' && st.place.view === 'variant' && !framed) act(st.focus ? 'unfocus' : 'focus', '', '')
     else if (e.key === 'w' && workOf()) act('work', 'go', '')
     else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches && !framed) act('open', 'decide', '')
@@ -2442,17 +2447,27 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (zoom && zoom.mount !== zoomMount()) unzoom()
   }
   comments.mountSheet(root.querySelector<HTMLElement>('[data-comments-sheet]')!)
+  /** Mounts the design shown again, so what plays on load plays again: in a device view, the frame's. */
+  function remountDesign() {
+    if (!frameOn()) return layer?.remount?.() ?? Promise.resolve()
+    const w = deviceView.mount()?.ownerDocument.defaultView as unknown as { __protoRemount?: () => Promise<unknown> } | null
+    return w?.__protoRemount?.() ?? Promise.resolve()
+  }
+  /** A variant shown on its own (not through a tool) can be loaded again: its entrance plays again. */
+  function canReplay() { return st.place.view === 'variant' && !st.place.tool }
+  function replay() {
+    if (!canReplay()) return
+    if (card && card.phase !== 'exit') closeCard()
+    bar.querySelector('[data-act="replay"] svg')?.animate([{ transform: 'rotate(0)' }, { transform: 'rotate(360deg)' }], { duration: 450, easing: 'cubic-bezier(.2,0,0,1)' })
+    void remountDesign()
+  }
   // ---------- the motion dock: under a design that declared its motion (useMotion) ----------
   // On the design the tools work on: in a device view, the frame's, which the page in the frame
   // mounts again when a take needs its entrance (its __protoRemount, below). The page in a view
   // records nothing itself: the page outside does.
   const motionDock = createMotion({
     el: zone.querySelector<HTMLElement>('[data-motion-dock]')!, zone, stage: () => framed ? null : toolHost(), show: () => !!commentHost(), on: () => st.motion, focused: () => st.focus,
-    remount: () => {
-      if (!frameOn()) return layer?.remount?.() ?? Promise.resolve()
-      const w = deviceView.mount()?.ownerDocument.defaultView as unknown as { __protoRemount?: () => Promise<unknown> } | null
-      return w?.__protoRemount?.() ?? Promise.resolve()
-    },
+    remount: remountDesign,
     comments,
   })
   ;(window as unknown as { __protoRemount: () => Promise<unknown> }).__protoRemount = () => layer?.remount?.() ?? Promise.resolve()
