@@ -6,7 +6,7 @@ import { Drawer } from '@base-ui/react/drawer'
 import { ago, ic, IB } from './ui'
 import { uiBox } from './portals'
 import { islandPrefs, useIslandPrefs } from './comments/island-prefs'
-import { LANG_NAMES, LANGS, langChoice, sessionLang, setLangChoice, t } from './i18n'
+import { LANG_NAMES, LANGS, langChoice, rtl, sessionLang, setLangChoice, t } from './i18n'
 
 export type Appearance = 'system' | 'light' | 'dark'
 export type Category = 'appearance' | 'feedback' | 'browsing' | 'session' | 'shortcuts'
@@ -126,7 +126,7 @@ function Settings(p: Props) {
       // The comments island (comments/island.tsx): where it rests on a wide screen, and which news grows it.
       h('div', { 'data-setting-island': '', className: 'space-y-3 border-t border-black/[.06] pt-5 dark:border-white/10' },
         h('div', null, h('p', { className: 'text-[13px] font-medium' }, t('Comments island')), h('p', { className: muted }, t('Which edge of the stage it rests on, on a wide screen. Drag it to another edge to move it; on a side it stands upright. Double-click its edge to bring it back to the foot.'))),
-        choices(t('Comments island'), (['bottom', 'top', 'right'] as const).map(value => choice('island', value, { bottom: t('Bottom'), top: t('Top'), right: t('Right') }[value], island.place === value, () => islandPrefs.set({ place: value, along: 0 }), { bottom: 'chev', top: 'caret-up', right: 'right' }[value]))),
+        choices(t('Comments island'), (['bottom', 'top', 'right'] as const).map(value => choice('island', value, { bottom: t('Bottom'), top: t('Top'), right: rtl ? t('Left') : t('Right') }[value], island.place === value, () => islandPrefs.set({ place: value, along: 0 }), { bottom: 'chev', top: 'caret-up', right: 'right' }[value]))),
         h('div', { className: 'pt-2' }, h('p', { className: 'text-[13px] font-medium' }, t('Notifications')), h('p', { className: muted }, t('Which news from the agent grows the island for a moment.'))),
         choices(t('Notifications'), (['all', 'replies', 'off'] as const).map(value => choice('island-news', value, value === 'all' ? t('All') : value === 'replies' ? t('Replies') : t('Off'), island.news === value, () => islandPrefs.set({ news: value }), value === 'off' ? 'x' : value === 'replies' ? 'comment' : 'check')))))
     : category === 'browsing' ? h('div', { className: 'space-y-5' },

@@ -3,13 +3,13 @@
 // opens the list above the same bar. When the agent starts on a comment, finishes it or replies,
 // the island grows for a moment to say so, like a system notification, and its edge takes the
 // colour of the news. A wide screen keeps it on an edge of the stage (island-drag.ts): flat on the
-// foot or the top, or upright on the right, where it rests as a small tab, widens into a rail under the
+// foot or the top, or upright on the side (the right, the left in Hebrew), where it rests as a small tab, widens into a rail under the
 // pointer and opens as the full-height panel. A phone has it as the top row of one bar with the
 // pill, flush with the screen's foot, and its count opens the list in it.
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { uiBox } from '../portals'
-import { t, tn } from '../i18n'
+import { rtl, t, tn } from '../i18n'
 import { useAgentName, useCtx } from './ctx'
 import { islandPrefs, useIslandPrefs, type IslandPrefs } from './island-prefs'
 import { useEdgeDrag, type Side } from './island-drag'
@@ -413,12 +413,12 @@ export function Island() {
     {menu}
   </>)
   // An edge of the open list (its far edge for the height, its sides for the width, growing both ways
-  // from its centre) or of the panel on the right (its left edge): dragged, it resizes; double-clicked,
+  // from its centre) or of the panel on the side (its inner edge): dragged, it resizes; double-clicked,
   // it goes back to its own size. It holds the pointer, so the drag goes on over the design's iframe.
   const edgeHandle = (k: 'listH' | 'listW' | 'sideW', at: 'top' | 'bottom' | 'start' | 'end') => {
     const across = at === 'top' || at === 'bottom'
     return (
-      <div aria-hidden data-island-resize className={`group absolute z-10 ${across ? `inset-x-8 h-2 cursor-ns-resize ${at === 'top' ? 'top-0' : 'bottom-0'}` : `inset-y-8 w-2 cursor-ew-resize ${at === 'start' ? 'left-0' : 'right-0'}`}`}
+      <div aria-hidden data-island-resize className={`group absolute z-10 ${across ? `inset-x-8 h-2 cursor-ns-resize ${at === 'top' ? 'top-0' : 'bottom-0'}` : `inset-y-8 w-2 cursor-ew-resize ${k === 'sideW' ? 'start-0' : at === 'start' ? 'left-0' : 'right-0'}`}`}
         onPointerDown={e => {
           const c = card.current, handle = e.currentTarget
           if (e.button !== 0 || !c) return
@@ -434,7 +434,7 @@ export function Island() {
             const dx = ev.clientX - x0, dy = ev.clientY - y0, W = stage?.clientWidth ?? innerWidth, H = stage?.clientHeight ?? innerHeight
             last = k === 'listH' ? within(from + (at === 'top' ? -dy : dy), 160, H - 160)
               : k === 'listW' ? within(from + 2 * (at === 'start' ? -dx : dx), 320, W - 32)
-              : within(from - dx, 280, Math.min(720, W - 120))
+              : within(from + (rtl ? dx : -dx), 280, Math.min(720, W - 120))
             setSize(z => ({ ...z, [k]: last }))
           }
           const end = () => {
@@ -453,21 +453,21 @@ export function Island() {
   }
   const home = (e: ReactMouseEvent) => { if (!(e.target as Element).closest('button, textarea, [data-island-list]')) islandPrefs.set({ place: 'bottom', along: 0 }) }
   const ring = edge ? { boxShadow: `0 0 0 2px ${edge}, 0 18px 44px -14px rgb(0 0 0 / .35)` } : {}
-  const surface = 'pointer-events-auto absolute left-0 top-0 data-[held]:!transition-none bg-white text-zinc-900 shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.08] will-change-transform dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10 data-[held]:cursor-grabbing data-[held]:select-none'
+  const surface = 'pointer-events-auto absolute start-0 top-0 data-[held]:!transition-none bg-white text-zinc-900 shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.08] will-change-transform dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10 data-[held]:cursor-grabbing data-[held]:select-none'
   if (side) {
     const toPanel = () => { read(); act.openIsland(true) }
     const toWrite = () => { toPanel(); window.setTimeout(() => input.current?.focus({ preventScroll: true }), 140) }
-    // No ring of the news colour on the right edge: the count's badge carries it.
+    // No ring of the news colour on the side: the count's badge carries it.
     const shape = open ? 'panel' : rail ? 'rail' : 'tab'
     return (
       <div ref={card} data-island data-comment-ui="" data-open={open || undefined} data-edge-side={side} data-shape={shape} onDoubleClick={home}
-        className={`${surface} cursor-grab ${resizing ? '' : 'transition-[width,height,border-radius] duration-[360ms] ease-[cubic-bezier(.32,.72,0,1)]'} rounded-l-[22px] ${folding ? 'overflow-hidden' : ''}`}
+        className={`${surface} cursor-grab ${resizing ? '' : 'transition-[width,height,border-radius] duration-[360ms] ease-[cubic-bezier(.32,.72,0,1)]'} rounded-s-[22px] ${folding ? 'overflow-hidden' : ''}`}
         style={{ width: open ? size.sideW ?? 340 : rail ? 48 : 40, height: open ? 'calc(100% - 32px - var(--pill-h, 0px) - var(--dock-h, 0px) - var(--copy-h, 0px))' : rail ? 153 : 56, visibility: 'hidden' }}>
         {open || folding
           // The panel: its header, the comments and the bar arrive one after another as it grows.
           ? <div data-island-list data-shoot="comments" inert={folding} style={folding ? { width: size.sideW ?? 340, height: lastPanel.current || undefined } : undefined}
               ref={el => { if (el && !folding) lastPanel.current = el.offsetHeight }}
-              className={`flex flex-col overflow-hidden ${folding ? `absolute left-0 top-0 opacity-0 transition-opacity duration-[80ms] ease-linear` : 'size-full'} rounded-l-[22px] [&>*]:animate-[proto-isl-rise_.45s_cubic-bezier(.2,.9,.25,1)_both] [&>*:nth-child(2)]:[animation-delay:60ms] [&>*:nth-child(3)]:[animation-delay:100ms] [&>*:nth-child(4)]:[animation-delay:130ms] [&>*:nth-child(5)]:[animation-delay:160ms]`}>
+              className={`flex flex-col overflow-hidden ${folding ? `absolute start-0 top-0 opacity-0 transition-opacity duration-[80ms] ease-linear` : 'size-full'} rounded-s-[22px] [&>*]:animate-[proto-isl-rise_.45s_cubic-bezier(.2,.9,.25,1)_both] [&>*:nth-child(2)]:[animation-delay:60ms] [&>*:nth-child(3)]:[animation-delay:100ms] [&>*:nth-child(4)]:[animation-delay:130ms] [&>*:nth-child(5)]:[animation-delay:160ms]`}>
               {listBody(<button type="button" data-shoot="island-fold" onClick={() => act.openIsland(false)} aria-label={t('Fold the comments')} title={t('Fold the comments')}
                 className="-me-1.5 grid size-7 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"><Icon name="fold-right" className="size-3.5" /></button>)}
               {newsRow}
