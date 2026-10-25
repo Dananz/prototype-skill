@@ -11,6 +11,8 @@ export function font(...families: string[]) {
   for (const f of want) added.add(f)
   const link = document.createElement('link')
   link.rel = 'stylesheet'
+  // CORS lets screenshots (modern-screenshot) read the @font-face rules; Google serves them with ACAO: *.
+  link.crossOrigin = 'anonymous'
   link.href = `https://fonts.googleapis.com/css2?${want.map(f => `family=${f.trim().replace(/ /g, '+')}`).join('&')}&display=swap`
   document.head.append(link)
 }
