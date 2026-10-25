@@ -42,6 +42,10 @@ body { font-weight: 450; }
    text-center or text-end on the element still wins, and centered blocks are left alone. */
 :where(html[dir="ltr"] [dir="auto"]:not(input, textarea, [contenteditable], [data-own-side], [data-mount] *, .text-center, .text-center *)) { text-align: left; }
 :where(html[dir="rtl"] [dir="auto"]:not(input, textarea, [contenteditable], [data-own-side], [data-mount] *, .text-center, .text-center *)) { text-align: right; }
+/* An empty field has no text to take a direction from, so the browser makes it left to right: in the
+   Hebrew page its placeholder and caret would sit on the left. Empty, it takes the page's; typed
+   in, its own again. */
+html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mount] *) { direction: rtl; }
 
 /* Keep the switcher's description scrollbar visible on systems with overlay scrollbars. */
 [data-switch-description]::-webkit-scrollbar { width: 6px; }
