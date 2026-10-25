@@ -120,6 +120,12 @@ const TOOLS: Record<Tool, { name: string; icon: string; hint: string }> = {
   compare: { name: t('Compare'), icon: 'diff', hint: t('Side by side, in the same state') },
 }
 
+// A design can override a window size the shell reads (to fit a library to its card) and then
+// delete it, which removes it for good: they are the window's own properties. Every layout read
+// then threw, and a design moved away from stayed on the stage. The shell puts them back.
+const sizes = (['innerWidth', 'innerHeight'] as const).map(k => [k, Object.getOwnPropertyDescriptor(window, k)] as const)
+const healSizes = () => { for (const [k, d] of sizes) if (d && !(k in window)) Object.defineProperty(window, k, d) }
+
 // ---------- reaching a state: click its selectors inside the design, in order ----------
 const frame = () => new Promise(r => requestAnimationFrame(r))
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -862,6 +868,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let lobbyKey = ''
   const scrollerOf = (l: Layer) => l.el.firstElementChild as HTMLElement | null
   function show(fade: boolean) {
+    healSizes()
     if (layer && lobbyKey) lobbyScroll.set(lobbyKey, scrollerOf(layer)?.scrollTop ?? 0)
     // On a phone the design leaving goes before the next one mounts, with no crossfade: Safari
     // there kills a page that holds two heavy designs at once (3D, big photos), and reloads it.
@@ -871,6 +878,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     layer = next
     lobbyKey = st.place.view === 'variant' ? '' : pathOf(st.place) + (st.stack ? ':stack' : '')
     layers.prepend(next.el)
+    // The new design reaches its state under the old one, which then fades out on top. Set up
+    // before the new one is settled, so the old one still goes when that throws.
+    if (prev) {
+      prev.el.inert = true
+      const drop = () => { prev.el.remove(); prev.dispose() }
+      Promise.race([next.ready, wait(1500)]).then(() => (fade ? fadeOut(prev.el, drop) : drop()))
+    }
     next.refresh?.()
     fit()
     const at = lobbyKey ? lobbyScroll.get(lobbyKey) ?? 0 : 0
@@ -886,14 +900,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       requestAnimationFrame(put)
       Promise.race([next.ready, wait(1500)]).then(put)
     }
-    if (!prev) return
-    // The new design reaches its state under the old one, which then fades out on top.
-    prev.el.inert = true
-    const drop = () => { prev.el.remove(); prev.dispose() }
-    Promise.race([next.ready, wait(1500)]).then(() => (fade ? fadeOut(prev.el, drop) : drop()))
   }
 
   function fit() {
+    healSizes()
     // At Fit a phone card stays 16:10 with the phone as it would sit in a 1200px-wide frame. At a
     // set scale the card grows to the phone at that size, kept within the card's width.
     const scale = st.place.view === 'session' ? 0 : st.scale
