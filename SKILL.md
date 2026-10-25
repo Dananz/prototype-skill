@@ -511,6 +511,10 @@ so the user sees them land:
   memory and the page reloads; `zoom` lays it out at the size it is shown. Keep only what can be
   seen on the page (the photo showing, not every one it can fade to), and release WebGL on unmount
   (`renderer.forceContextLoss()`, or `WEBGL_lose_context`).
+- A library that sizes itself from the window (`innerWidth`, `innerHeight`) and has to fit a
+  card instead: save `Object.getOwnPropertyDescriptor(window, k)` before overriding and define it
+  back after. Never `delete` it: they are the window's own properties, so a delete removes them
+  for the whole page.
 - Make it real: realistic content (never lorem ipsum), working hover, focus, open and close,
   typing, empty and loading states where they matter. Local state is fine.
 - Esc on a variant page goes back to the prototype's variants. A design that closes its own
