@@ -1,7 +1,8 @@
 // The comments island's preferences, kept per browser like the other reviewer choices: the edge it
 // rests on, where along that edge, and which news grows it. It always rests on an edge of the stage:
 // flat on the foot or the top (`along` is its centre's offset from the stage's middle), or upright
-// on the right (`along` is its top, from the stage's top). Comments never stand on the left.
+// on the side (`along` is its top, from the stage's top). `right` is the stage's end, beside the side
+// panel: the left in Hebrew. Comments never stand on the other side.
 import { useSyncExternalStore } from 'react'
 
 export type Edge = 'bottom' | 'top' | 'right'

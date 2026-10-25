@@ -130,6 +130,7 @@ export default {
   'Bottom': 'למטה',
   'Fold the comments': 'קפל את ההערות',
   'Right': 'ימין',
+  'Left': 'שמאל',
   'Top': 'למעלה',
   'Notifications': 'התראות',
   'Which news from the agent grows the island for a moment.': 'אילו עדכונים מהסוכן מגדילים את האי לרגע.',

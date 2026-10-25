@@ -1,5 +1,7 @@
 // Where the comments island is on a wide stage, and how it is dragged there. It always rests on an
-// edge: flat on the foot or the top, or upright on the right, flush with it (never the left). The
+// edge: flat on the foot or the top, or upright on the side, flush with it. The side is the stage's
+// end, beside the side panel: the right in English, the left in Hebrew (the engine's x runs from the
+// stage's start, and is turned around only where it meets the page: the pointer and the card). The
 // engine draws straight to the card's transform every frame, never through a React render: held, the
 // card chases the finger on a stiff spring and stretches past the stage's edges; let go, it springs
 // to the nearest edge at the speed it was thrown. Near a side it turns upright while still held, and
@@ -10,6 +12,7 @@
 // leave it stuck halfway (a full-height panel hanging off the stage's foot).
 import { useEffect, useRef, type RefObject } from 'react'
 import { listen } from '../quiet'
+import { rtl } from '../i18n'
 import type { Edge } from './island-prefs'
 
 export type Side = 'right'
@@ -82,12 +85,13 @@ export function useEdgeDrag(o: {
     let pointer: Pt = { x: 0, y: 0 }
 
     // The stage's box, less what covers its foot (the phone pill, the motion dock, the copy bar).
-    // `out` is how far past the stage's right the screen goes on: on the desk the stage ends a gap
+    // `out` is how far past the stage's end the screen goes on: on the desk the stage ends a gap
     // short of the window (or of the side panel), and upright the island stands flush with that edge.
     const dims = () => {
-      const zone = host.closest<HTMLElement>('[data-zone]'), hw = zone ? px(zone, '--hw') : 0
-      const end = hw && zone ? zone.getBoundingClientRect().right - hw : document.documentElement.clientWidth
-      return { W: host.clientWidth, H: host.clientHeight, w: el.offsetWidth, h: el.offsetHeight, out: Math.max(0, end - host.getBoundingClientRect().right), foot: INSET + px(host, '--pill-h') + px(host, '--dock-h') + px(host, '--copy-h') }
+      const zone = host.closest<HTMLElement>('[data-zone]'), hw = zone ? px(zone, '--hw') : 0, r = host.getBoundingClientRect()
+      const z = hw && zone ? zone.getBoundingClientRect() : null
+      const out = rtl ? r.left - (z ? z.left + hw : 0) : (z ? z.right - hw : document.documentElement.clientWidth) - r.right
+      return { W: host.clientWidth, H: host.clientHeight, w: el.offsetWidth, h: el.offsetHeight, out: Math.max(0, out), foot: INSET + px(host, '--pill-h') + px(host, '--dock-h') + px(host, '--copy-h') }
     }
     const full = () => !!side && opts.current.full
     const edgeX = (d = dims()) => d.W - d.w + d.out
@@ -101,7 +105,8 @@ export function useEdgeDrag(o: {
       if (place === 'right') return { x: 0, y: along }
       return { x: (d.W - d.w) / 2 + along, y: 0 }
     }
-    const draw = () => { el.style.transform = `translate3d(${Math.round(pos.x * 2) / 2}px, ${Math.round(pos.y * 2) / 2}px, 0)` }
+    // In Hebrew the card stands at the stage's right (start-0) and moves left.
+    const draw = () => { el.style.transform = `translate3d(${Math.round((rtl ? -pos.x : pos.x) * 2) / 2}px, ${Math.round(pos.y * 2) / 2}px, 0)` }
     const step = (dt: number, sp: Spring) => {
       const c = 2 * sp.zeta * Math.sqrt(sp.k)
       for (let left = dt; left > 0; left -= 1 / 480) {
@@ -121,7 +126,7 @@ export function useEdgeDrag(o: {
     const heldGoal = (): Pt => {
       const d = dims()
       if (!drag) return goal
-      // Upright, it slides up and down the right edge; pulled off it, it drops onto the foot and slides
+      // Upright, it slides up and down the side edge; pulled off it, it drops onto the foot and slides
       // only sideways along it, until it is pulled to the right edge again.
       if (side) return { x: edgeX(d), y: full() ? INSET : rubber(pointer.y - drag.fy * d.h, INSET, d.H - d.h - d.foot) }
       return { x: rubber(pointer.x - drag.fx * d.w, INSET, d.W - d.w - INSET), y: d.H - d.h - d.foot }
@@ -202,7 +207,7 @@ export function useEdgeDrag(o: {
     }
     api.current.toPrefs()
 
-    const toHost = (ev: PointerEvent): Pt => { const r = host.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top } }
+    const toHost = (ev: PointerEvent): Pt => { const r = host.getBoundingClientRect(); return { x: rtl ? r.right - ev.clientX : ev.clientX - r.left, y: ev.clientY - r.top } }
     // Anywhere on the island but its list (and the box while it is being typed in): a press that moves
     // is a drag, one that does not is a click. The box is most of the bar, so it is a handle too until
     // it has the cursor. The move and the release are heard on the window, so the drag goes on outside.
@@ -211,7 +216,7 @@ export function useEdgeDrag(o: {
       // The open list's header is a handle too (the rest of the list scrolls and selects).
       if (ev.button !== 0 || at.closest('input, [data-island-resize]') || (at.closest('[data-island-list]') && !at.closest('[data-island-grip]')) || (box && document.activeElement === box)) return
       const r = el.getBoundingClientRect()
-      drag = { x: ev.clientX, y: ev.clientY, fx: (ev.clientX - r.left) / r.width, fy: (ev.clientY - r.top) / r.height, moved: false, id: ev.pointerId, samples: [] }
+      drag = { x: ev.clientX, y: ev.clientY, fx: (rtl ? r.right - ev.clientX : ev.clientX - r.left) / r.width, fy: (ev.clientY - r.top) / r.height, moved: false, id: ev.pointerId, samples: [] }
     }
     const move = (ev: PointerEvent) => {
       if (!drag || ev.pointerId !== drag.id) return
@@ -240,7 +245,7 @@ export function useEdgeDrag(o: {
       const next: Side | null = side ? (pointer.x < W - UNDOCK_AT ? null : 'right') : pointer.x > W - DOCK_AT ? 'right' : null
       if (next !== side) {
         side = next
-        // It turns (the tab on the right, the bar on the foot) at once, held by its middle, and
+        // It turns (the tab on the side, the bar on the foot) at once, held by its middle, and
         // glides to the new edge.
         drag.fx = drag.fy = 0.5
         glideUntil = performance.now() + GLIDE_MS
@@ -256,7 +261,7 @@ export function useEdgeDrag(o: {
       drag = null
       if (!d.moved) return
       delete el.dataset.held
-      // Let go, it stays on the edge it is held to: upright on the right, or flat on the foot.
+      // Let go, it stays on the edge it is held to: upright on the side, or flat on the foot.
       // Flat, it opens out around the puck's middle.
       const m = dims()
       const place: Edge = side ? 'right' : 'bottom'
