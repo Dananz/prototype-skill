@@ -4,13 +4,13 @@ const MiB = 2 ** 20
 
 // A JWT segment is base64url, so the same alphabet as the body of a data URL plus `-_`. The
 // lookbehind keeps a match from starting in the middle of a base64 run (an image's bytes contain
-// `eyJ` now and then), and the two literal dots can never occur inside one data URL's payload.
+// `eyJ` now and then; its `=` padding only ends a payload, so `token=eyJ…` still matches), and the two literal dots can never occur inside one data URL's payload.
 const SECRETS = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/g,
   /\bsk-[A-Za-z0-9_-]{20,}/g,
   /\bgh[pousr]_[A-Za-z0-9]{36,}/g,
   /\bAKIA[0-9A-Z]{16}\b/g,
-  /(?<![A-Za-z0-9+/=_-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+  /(?<![A-Za-z0-9+/_-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
   /\bBearer [A-Za-z0-9._-]{20,}/g,
   /\bdp\.(?:st|sa|ct|pt)\.[A-Za-z0-9]{20,}/g,
   /\b(?:sk|rk)_live_[A-Za-z0-9]{20,}/g,
@@ -36,18 +36,24 @@ export function review({ html, gzBytes, projectPath, home, projectImports, curre
   if (gzBytes > 20 * MiB) block.push({ code: 'too-big', message: `This share is ${(gzBytes / MiB).toFixed(1)} MiB gzipped, over the 20 MiB limit. Share fewer variants or use smaller images.` })
   else if (gzBytes > 5 * MiB) warn.push({ code: 'heavy', message: `This share is ${(gzBytes / MiB).toFixed(1)} MiB gzipped, so it will open slowly on a phone. Fewer variants or smaller images would help.` })
 
-  for (const re of SECRETS) {
-    for (const m of html.matchAll(re)) {
-      block.push({ code: 'secret', message: 'The share contains what looks like a secret (key or token). Remove it from the prototype and share again.', where: maskedAround(html, m) })
-    }
+  // `Bearer eyJ…` matches two rules for one token, so the ranges are merged and each is reported once.
+  const hits = SECRETS.flatMap(re => [...html.matchAll(re)]).sort((a, b) => a.index - b.index)
+  let end = -1
+  for (const m of hits) {
+    if (m.index < end) continue
+    end = m.index + m[0].length
+    block.push({ code: 'secret', message: 'The share contains what looks like a secret (key or token). Remove it from the prototype and share again.', where: maskedAround(html, m) })
   }
 
-  for (const [label, dir] of [['project folder', projectPath], ['home folder', home]]) {
-    if (!dir) continue
-    const forms = [dir, dir.replaceAll('/', '\\'), dir.replaceAll('/', '\\\\')]
-    if (forms.some(f => html.includes(f))) block.push({ code: 'abs-path', message: `The share contains your ${label} path (${dir}), which would show your machine's layout. Remove it from the prototype and share again.`, where: dir })
+  // A project under the home folder is one cause, not two: home only counts for what is outside it.
+  const forms = dir => [dir, dir.replaceAll('/', '\\'), dir.replaceAll('/', '\\\\')]
+  const hasPath = (text, dir) => forms(dir).some(f => text.includes(f))
+  const inProject = projectPath && hasPath(html, projectPath)
+  if (inProject) block.push({ code: 'abs-path', message: `The share contains your project folder path (${projectPath}), which would show your machine's layout. Remove it from the prototype and share again.`, where: projectPath })
+  if (home) {
+    const rest = inProject && projectPath.startsWith(home) ? forms(projectPath).reduce((t, f) => t.replaceAll(f, ''), html) : html
+    if (hasPath(rest, home)) block.push({ code: 'abs-path', message: `The share contains your home folder path (${home}), which would show your machine's layout. Remove it from the prototype and share again.`, where: home })
   }
-
   if (projectImports.length) {
     const names = projectImports.map(p => p.split(/[\\/]/).pop())
     warn.push({ code: 'project-code', message: `The share includes code copied from your project (${names.join(', ')}). Anyone with the link can read it.` })
@@ -55,14 +61,15 @@ export function review({ html, gzBytes, projectPath, home, projectImports, curre
   if (currents.length) warn.push({ code: 'real-screens', message: `The share includes real screens of your product (${currents.join(', ')}). Anyone with the link will see them.` })
 
   const origins = new Set()
-  const privates = new Set()
+  const privates = new Map()
   for (const m of html.matchAll(URL_RE)) {
     const host = m[1].toLowerCase()
-    if (PRIVATE_HOST.test(host)) privates.add(m[0])
-    if (!FONT_HOSTS.has(host)) origins.add(m[0].match(/^https?:\/\/[^\s/"'<>()\\?#]+/)[0])
+    const origin = m[0].match(/^https?:\/\/[^\s/"'<>()\\?#]+/)[0]
+    if (PRIVATE_HOST.test(host)) privates.set(origin, (privates.get(origin) ?? 0) + 1)
+    else if (!FONT_HOSTS.has(host)) origins.add(origin)
   }
   for (const origin of origins) warn.push({ code: 'outside-url', message: `The share loads something from ${origin}. It will only work while that address is up and reachable by viewers.`, where: origin })
-  for (const url of privates) warn.push({ code: 'private-url', message: `The share points at ${url}, an address only your machine or network can open. Viewers will see it broken.`, where: url })
+  for (const [origin, n] of privates) warn.push({ code: 'private-url', message: `The share points at ${origin} (${n} ${n === 1 ? 'time' : 'times'}), an address only your machine or network can open. Viewers will see it broken.`, where: origin })
   for (const path of new Set([...html.matchAll(ABS_PATH_RE)].map(m => m[1] ?? m[2]))) {
     warn.push({ code: 'private-url', message: `The share loads ${path} by absolute path, which will not exist at the share link. Inline it or use a relative path.`, where: path })
   }

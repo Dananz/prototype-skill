@@ -78,13 +78,21 @@ test('secret reports one finding per match', () => {
   const k = 'AKIA' + 'ABCD1234EFGH5678'
   assert.equal(run({ html: `${k} and ${k.replace('A', 'B')} and ${k}` }).block.length, 2)
 })
+test('a bearer jwt is one secret, not two', () => {
+  const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3.SflKxwRJSMeKKF2QT4fw'
+  assert.equal(run({ html: `Authorization: Bearer ${jwt}` }).block.length, 1)
+})
+test('a jwt after = is a secret', () => {
+  assert.deepEqual(codes(run({ html: 'fetch("/api?apikey=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3.SflKxwRJSMeKKF2QT4fw")' }).block), ['secret'])
+})
 test('jwt in a data url is not a secret', () => {
   const body = 'AAAA/eyJhbGciOiJIUzI1NiJ9+eyJzdWIiOiIxMjM0NTY3-abcdefghijklmnop'
   assert.deepEqual(run({ html: `<img src="data:image/webp;base64,${body}">` }).block, [])
   assert.deepEqual(run({ html: 'x/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3.SflKxwRJSMeKKF2QT4fw' }).block, [])
 })
 test('abs path blocks', () => {
-  assert.deepEqual(codes(run({ html: 'at /Users/x/proj/src/a.tsx' }).block), ['abs-path', 'abs-path'])
+  assert.deepEqual(codes(run({ html: 'at /Users/x/proj/src/a.tsx' }).block), ['abs-path'])
+  assert.deepEqual(run({ html: 'at /Users/x/proj/src/a.tsx and /Users/x/other' }).block.map(f => f.where), ['/Users/x/proj', '/Users/x'])
   assert.deepEqual(codes(run({ html: 'at /Users/x/other' }).block), ['abs-path'])
   assert.deepEqual(codes(run({ html: 'C:\\Users\\x\\proj', projectPath: 'C:/Users/x/proj', home: '/nowhere' }).block), ['abs-path'])
   assert.deepEqual(run({ html: 'nothing here' }).block, [])
@@ -116,6 +124,12 @@ test('private urls warn', () => {
     assert.ok(codes(run({ html: `<img src="${url}">` }).warn).includes('private-url'), url)
   }
   assert.ok(!codes(run({ html: '<img src="http://172.32.0.1/a">' }).warn).includes('private-url'))
+})
+test('a private origin is one private-url and never an outside-url', () => {
+  const html = Array.from({ length: 30 }, (_, i) => `<img src="http://localhost:5173/p${i}.png">`).join('')
+  const r = run({ html })
+  assert.deepEqual(r.warn.map(f => [f.code, f.where]), [['private-url', 'http://localhost:5173']])
+  assert.ok(r.warn[0].message.includes('30'))
 })
 test('absolute asset path is reported', () => {
   assert.deepEqual(run({ html: '<img src="/assets/a.png">' }).warn.map(f => [f.code, f.where]), [['private-url', '/assets/a.png']])
