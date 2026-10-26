@@ -4,7 +4,7 @@ import { namesOf, route } from './lib/routes.mjs'
 import { page, ogPage } from './lib/pages.mjs'
 import { json, fail } from './lib/http.mjs'
 import { upgraded } from './lib/upgrade.mjs'
-import { authCallback, authStart, ticketIn } from './lib/github.mjs'
+import { authCallback, authStart, startIn, ticketIn } from './lib/github.mjs'
 import { ownerComments, viewerApi } from './lib/comments.mjs'
 
 const MAX_BYTES = 20 * 1024 * 1024
@@ -26,7 +26,7 @@ export default {
       const url = new URL(req.url)
       const r = route(url, namesOf(env.BASE).names)
       if (r.at === 'health') return new Response('ok', { headers: { 'content-type': 'text/plain', 'cache-control': 'no-store' } })
-      await upgraded(env.DB)
+      await upgraded(env)
       if (r.at === 'api') return await api(req, env, url, r.path)
       if (r.at === 'auth') {
         if (req.method !== 'GET') return new Response(null, { status: 405, headers: { allow: 'GET' } })
@@ -44,7 +44,7 @@ export default {
 
 async function api(req, env, url, path) {
   const owner = await ownerOf(req, env)
-  if (!owner) return fail(401, 'A valid owner token is needed.')
+  if (!owner) return fail(401, 'A valid owner token is needed.', { code: 'token' })
   const parts = path.split('/').filter(Boolean) // ['api', 'shares', id?] or ['api', 'owner', 'comments', id?]
   if (parts[1] === 'owner' && parts[2] === 'comments' && parts.length <= 4) return ownerComments(req, env, owner, url, parts[3])
   if (parts[1] !== 'shares' || parts.length > 3) return fail(404, 'No such route.')
@@ -94,11 +94,11 @@ async function putShare(req, env, owner, id) {
   const reserved = await env.DB.prepare("SELECT 1 AS ok FROM ids WHERE id = ? AND kind = 'share'").bind(id).first()
   const old = await getShare(env, id)
   if (!reserved || (old && (old.owner_id !== owner.id || old.deleted_at))) return fail(404, 'No such share.')
-  if (Number(req.headers.get('content-length')) > MAX_BYTES) return fail(413, 'A share is at most 20 MiB gzipped.')
+  if (Number(req.headers.get('content-length')) > MAX_BYTES) return fail(413, 'A share is at most 20 MiB gzipped.', { code: 'too_big' })
   const meta = readMeta(req.headers.get('x-share-meta'))
   if (!meta) return fail(400, 'x-share-meta must be base64url JSON with title, session, projectLabel, scope and lang.')
   const body = await req.arrayBuffer()
-  if (body.byteLength > MAX_BYTES) return fail(413, 'A share is at most 20 MiB gzipped.')
+  if (body.byteLength > MAX_BYTES) return fail(413, 'A share is at most 20 MiB gzipped.', { code: 'too_big' })
   const magic = new Uint8Array(body, 0, Math.min(2, body.byteLength))
   if (magic[0] !== 0x1f || magic[1] !== 0x8b) return fail(400, 'The body must be gzip.')
 
@@ -164,7 +164,8 @@ async function share(req, env, url, r) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return new Response(null, { status: 405, headers: { allow: 'GET, HEAD' } })
   if (pathForm && r.path === '') return new Response(null, { status: 301, headers: { location: `${url.origin}/s/${r.shareId}/` } })
   const row = await getShare(env, r.shareId)
-  if (r.path === '/_in/auth') return unavailable(row) || ticketIn(env, url, row, pathForm)
+  if (r.path === '/_in/auth') return unavailable(row) || ticketIn(req, env, url, row, pathForm)
+  if (r.path === '/_in/start') return unavailable(row) || startIn(env, url, row, pathForm)
   if (r.path !== '/') return page('notfound', { lang: row?.lang })
   const gone = unavailable(row)
   if (gone) return gone

@@ -57,6 +57,13 @@ export function viewerCookie(url, shareId, pathForm) {
   return { name: secure && !pathForm ? '__Host-v' : 'v', path: pathForm ? `/s/${shareId}/` : '/', secure }
 }
 
+// The sign-in nonce, set by the share origin's /_in/start and checked by its /_in/auth: the ticket
+// only works in the browser that started the sign-in. Same name and path rules as the viewer's.
+export function nonceCookie(url, shareId, pathForm) {
+  const v = viewerCookie(url, shareId, pathForm)
+  return { ...v, name: v.name === '__Host-v' ? '__Host-vn' : 'vn' }
+}
+
 // The apex's OAuth state cookie: 10 minutes, only for /auth/github. Its name differs from the
 // viewer's because in path mode the apex and the shares are one origin.
 export function stateCookie(url) {

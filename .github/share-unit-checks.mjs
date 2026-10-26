@@ -586,6 +586,9 @@ test('the host stops only its own wrangler', () => {
 import { before, after } from 'node:test'
 import { startFakeGitHub } from './fake-github.mjs'
 import { sign } from '../host/lib/cookies.mjs'
+import { upgrade } from '../host/lib/upgrade.mjs'
+import { viewerFrom } from '../host/lib/github.mjs'
+import { pruneCaps } from '../host/lib/comments.mjs'
 
 const KEY = 'viewer-key-for-tests'
 let gh
@@ -596,10 +599,14 @@ const XP = { 'x-proto': '1' }
 const setCookies = res => res.headers.getSetCookie()
 const pair = c => c.split(';')[0]
 const attrs = c => c.split(';').slice(1).map(s => s.trim().toLowerCase())
-// The full flow, as a browser would walk it: share origin → apex → GitHub → callback → share origin.
-async function signIn(env, id, { from = `http://${BASE}`, back = '/' } = {}) {
-  let res = await call(env, `${from}/auth/github?share=${id}&back=${encodeURIComponent(back)}`, { redirect: 'manual' })
-  if (res.headers.get('location')?.startsWith(`http://${env.BASE}/auth/github?`)) res = await call(env, res.headers.get('location'), { redirect: 'manual' })
+// The full flow, as a browser would walk it: share origin's /_in/start (the nonce cookie) → apex →
+// GitHub → callback → the share origin's /_in/auth, which needs that nonce cookie.
+const NONCE = 'AAAAAAAAAAAAAAAAAAAAAA'
+async function signIn(env, id, { start = `http://${id}.${BASE}/_in/start`, back = '/' } = {}) {
+  const begin = await call(env, `${start}?back=${encodeURIComponent(back)}`, { redirect: 'manual' })
+  assert.equal(begin.status, 302)
+  const nonceCookie = setCookies(begin).find(c => /^(__Host-)?vn=/.test(c))
+  let res = await call(env, begin.headers.get('location'), { redirect: 'manual' })
   assert.equal(res.status, 302)
   const state = setCookies(res)[0]
   const authorize = res.headers.get('location')
@@ -607,9 +614,9 @@ async function signIn(env, id, { from = `http://${BASE}`, back = '/' } = {}) {
   const callback = fromGh.headers.get('location')
   const cb = await call(env, callback, { redirect: 'manual', headers: { cookie: pair(state) } })
   const ticketUrl = cb.headers.get('location')
-  const landed = await call(env, ticketUrl, { redirect: 'manual' })
+  const landed = await call(env, ticketUrl, { redirect: 'manual', headers: { cookie: pair(nonceCookie) } })
   const cookie = setCookies(landed).find(c => /^(__Host-)?v=/.test(c))
-  return { state, authorize, callback, cb, ticketUrl, landed, cookie, jar: cookie && pair(cookie) }
+  return { begin, nonceCookie, apex: begin.headers.get('location'), state, authorize, callback, cb, ticketUrl, landed, cookie, jar: cookie && pair(cookie) }
 }
 const mint = async (id, gh_id = 4242, o = {}) => `v=${await sign(KEY, 'v', { gh: gh_id, share: id, exp: Date.now() + 60_000, ...o })}`
 const addViewer = (env, gh_id, login) => env.DB.sql.prepare('INSERT OR REPLACE INTO viewers (gh_id, login, name, avatar, seen_at) VALUES (?, ?, ?, ?, ?)').run(gh_id, login, login.toUpperCase(), `https://avatars.example/${gh_id}`, 1)
@@ -626,7 +633,7 @@ test('a phase-0 database takes the phase-1 schema, and schema.sql runs on it aga
   const fresh = await makeEnv()
   const env = await makeEnv()
   // Rebuild comments as phase 0 made it, then run schema.sql over it as startLocal does.
-  env.DB.sql.exec(`DROP TABLE comments; DROP TABLE viewers; DROP TABLE caps;
+  env.DB.sql.exec(`DROP TABLE comments; DROP TABLE viewers; DROP TABLE caps; DROP TABLE tickets;
     CREATE TABLE comments (id TEXT NOT NULL, share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
       link_id TEXT NOT NULL, viewer TEXT NOT NULL, verified INTEGER NOT NULL, version INTEGER NOT NULL, route TEXT NOT NULL,
       body TEXT NOT NULL, re TEXT, status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','sent','working','done','dismissed')),
@@ -635,14 +642,16 @@ test('a phase-0 database takes the phase-1 schema, and schema.sql runs on it aga
   env.DB.sql.exec(readFileSync(new URL('../host/schema.sql', import.meta.url), 'utf8'))
   const cols = (e, t) => e.DB.sql.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name).sort()
   assert.notDeepEqual(cols(env, 'comments'), cols(fresh, 'comments'))
+  await upgrade(env.DB)
+  await upgrade(env.DB)
+  for (const t of ['comments', 'viewers', 'caps', 'tickets']) assert.deepEqual(cols(env, t), cols(fresh, t), t)
   const { id } = await publish(env)
   assert.equal((await call(env, shareApi(id, 'config'), { headers: XP })).status, 200)
-  for (const t of ['comments', 'viewers', 'caps']) assert.deepEqual(cols(env, t), cols(fresh, t), t)
   // A database missing the new tables entirely (the running host before its next start) gets them too.
   const bare = await makeEnv()
-  bare.DB.sql.exec('DROP TABLE viewers; DROP TABLE caps;')
-  await call(bare, `http://${BASE}/api/shares`, { headers: auth })
-  for (const t of ['viewers', 'caps']) assert.deepEqual(cols(bare, t), cols(fresh, t), t)
+  bare.DB.sql.exec('DROP TABLE viewers; DROP TABLE caps; DROP TABLE tickets;')
+  await upgrade(bare.DB)
+  for (const t of ['viewers', 'caps', 'tickets']) assert.deepEqual(cols(bare, t), cols(fresh, t), t)
 })
 
 test('config and me without GitHub set up: comments off, nobody signed in, never a 500', async () => {
@@ -652,9 +661,10 @@ test('config and me without GitHub set up: comments off, nobody signed in, never
   assert.deepEqual(await config.json(), { comments: false, owner: 'Dananz' })
   noCors(config)
   assert.equal(await (await call(env, shareApi(id, 'me'), { headers: { ...XP, cookie: await mint(id) } })).json(), null)
-  const start = await call(env, `http://${BASE}/auth/github?share=${id}&back=/`, { redirect: 'manual' })
+  const start = await call(env, `http://${BASE}/auth/github?share=${id}&back=/&nonce=${NONCE}`, { redirect: 'manual' })
   assert.equal(start.status, 400)
   assert.match(start.headers.get('content-type'), /text\/html/)
+  assert.equal((await call(env, `http://${id}.${BASE}/_in/start?back=/`, { redirect: 'manual' })).status, 400)
   const signedOut = await post(env, id, await mint(id), { id: uuid(), variant: 'pricing/A', body: 'hi', target: null })
   assert.equal(signedOut.status, 401)
 })
@@ -690,7 +700,15 @@ test('every viewer api route needs X-Proto, answers JSON, and sends no CORS head
 test('sign in with GitHub: apex state, PKCE, the 60 s ticket, then the viewer cookie', async () => {
   const env = await ghEnv()
   const { id } = await publish(env)
-  const s = await signIn(env, id, { from: `http://${BASE}`, back: '/#/pricing/C' })
+  const s = await signIn(env, id, { back: '/#/pricing/C' })
+  // The share origin's start sets the nonce cookie and sends the browser to the apex with it.
+  const nonce = new URL(s.apex).searchParams.get('nonce')
+  assert.match(nonce, /^[\w-]{22}$/)
+  assert.equal(pair(s.nonceCookie), `vn=${nonce}`)
+  assert.ok(attrs(s.nonceCookie).includes('httponly') && attrs(s.nonceCookie).includes('samesite=lax') && attrs(s.nonceCookie).includes('path=/') && attrs(s.nonceCookie).includes('max-age=600'))
+  assert.ok(s.apex.startsWith(`http://${BASE}/auth/github?`), s.apex)
+  assert.equal(new URL(s.apex).searchParams.get('share'), id)
+  assert.ok(setCookies(s.landed).some(c => /^vn=;/.test(c) && /max-age=0/i.test(c)), 'the landing clears the nonce cookie')
   const authorize = new URL(s.authorize)
   assert.equal(authorize.origin + authorize.pathname, `${gh.url}/login/oauth/authorize`)
   assert.equal(authorize.searchParams.get('client_id'), gh.clientId)
@@ -728,19 +746,21 @@ test('sign in with GitHub: apex state, PKCE, the 60 s ticket, then the viewer co
 test('sign in from the path form on 127.0.0.1 goes through the canonical apex and comes back to the path form', async () => {
   const env = await ghEnv()
   const { id } = await publish(env)
-  const first = await call(env, `http://127.0.0.1:8787/auth/github?share=${id}&back=${encodeURIComponent(`/s/${id}/#/home/B`)}`, { redirect: 'manual' })
+  const first = await call(env, `http://127.0.0.1:8787/auth/github?share=${id}&back=${encodeURIComponent(`/s/${id}/#/home/B`)}&nonce=${NONCE}`, { redirect: 'manual' })
   assert.equal(first.status, 302)
   assert.match(first.headers.get('location'), new RegExp(`^http://${BASE}/auth/github\\?`))
-  const s = await signIn(env, id, { from: 'http://127.0.0.1:8787', back: `/s/${id}/#/home/B` })
+  const s = await signIn(env, id, { start: `http://127.0.0.1:8787/s/${id}/_in/start`, back: `/s/${id}/#/home/B` })
+  assert.ok(attrs(s.nonceCookie).includes(`path=/s/${id}/`), s.nonceCookie)
+  assert.equal(new URL(s.apex).searchParams.get('via'), '127.0.0.1:8787')
   assert.ok(s.ticketUrl.startsWith(`http://127.0.0.1:8787/s/${id}/_in/auth?t=`), s.ticketUrl)
   assert.equal(s.landed.headers.get('location'), `http://127.0.0.1:8787/s/${id}/#/home/B`)
   assert.ok(attrs(s.cookie).includes(`path=/s/${id}/`), s.cookie)
   const me = await call(env, `http://127.0.0.1:8787/s/${id}/api/me`, { headers: { ...XP, cookie: s.jar } })
   assert.equal((await me.json()).login, 'dana-test')
   // A via that isn't one of the host's names is ignored; a back that leaves the share falls back to its start.
-  const evil = await signIn(env, id, { from: `http://${BASE}`, back: '//evil.example/x' })
+  const evil = await signIn(env, id, { back: '//evil.example/x' })
   assert.equal(evil.landed.headers.get('location'), `http://${id}.${BASE}/`)
-  const via = await call(env, `http://${BASE}/auth/github?share=${id}&back=/&via=evil.example`, { redirect: 'manual' })
+  const via = await call(env, `http://${BASE}/auth/github?share=${id}&back=/&via=evil.example&nonce=${NONCE}`, { redirect: 'manual' })
   const st = await fetch(via.headers.get('location'), { redirect: 'manual' })
   const cb = await call(env, st.headers.get('location'), { redirect: 'manual', headers: { cookie: pair(setCookies(via)[0]) } })
   assert.ok(cb.headers.get('location').startsWith(`http://${id}.${BASE}/_in/auth?t=`))
@@ -749,7 +769,9 @@ test('sign in from the path form on 127.0.0.1 goes through the canonical apex an
 test('over https the cookies are __Host- and Secure; path mode keeps v with the share path', async () => {
   const env = await ghEnv({ BASE: 'prtype.dev' })
   const { id } = await publish(env)
-  const s = await signIn(env, id, { from: 'https://prtype.dev', back: '/' })
+  const s = await signIn(env, id, { start: `https://${id}.prtype.dev/_in/start`, back: '/' })
+  assert.match(s.nonceCookie, /^__Host-vn=/)
+  assert.ok(attrs(s.nonceCookie).includes('secure'))
   assert.match(s.state, /^__Host-gh=/)
   assert.ok(attrs(s.state).includes('secure') && attrs(s.state).includes('path=/'))
   assert.ok(s.ticketUrl.startsWith(`https://${id}.prtype.dev/_in/auth?t=`))
@@ -760,7 +782,9 @@ test('over https the cookies are __Host- and Secure; path mode keeps v with the 
   assert.equal((await (await call(env, `https://${id}.prtype.dev/api/me`, { headers: { ...XP, cookie: s.jar } })).json()).login, 'dana-test')
   const paths = await ghEnv({ BASE: 'prtype.dev', PATH_MODE: '1' })
   const p = await publish(paths)
-  const ps = await signIn(paths, p.id, { from: 'https://prtype.dev', back: `/s/${p.id}/` })
+  const ps = await signIn(paths, p.id, { start: `https://prtype.dev/s/${p.id}/_in/start`, back: `/s/${p.id}/` })
+  assert.match(ps.nonceCookie, /^vn=/)
+  assert.ok(attrs(ps.nonceCookie).includes('secure') && attrs(ps.nonceCookie).includes(`path=/s/${p.id}/`))
   assert.match(ps.cookie, /^v=/)
   assert.ok(attrs(ps.cookie).includes('secure') && attrs(ps.cookie).includes(`path=/s/${p.id}/`))
 })
@@ -768,7 +792,8 @@ test('over https the cookies are __Host- and Secure; path mode keeps v with the 
 test('the callback refuses a missing or wrong state, and a GitHub refusal goes back unsigned', async () => {
   const env = await ghEnv()
   const { id } = await publish(env)
-  const start = await call(env, `http://${BASE}/auth/github?share=${id}&back=/x`, { redirect: 'manual' })
+  assert.equal((await call(env, `http://${BASE}/auth/github?share=${id}&back=/x`, { redirect: 'manual' })).status, 400, 'no nonce')
+  const start = await call(env, `http://${BASE}/auth/github?share=${id}&back=/x&nonce=${NONCE}`, { redirect: 'manual' })
   const jar = pair(setCookies(start)[0])
   const state = new URL(start.headers.get('location')).searchParams.get('state')
   const cb = q => call(env, `http://${BASE}/auth/github/callback?${q}`, { redirect: 'manual', headers: { cookie: jar } })
@@ -780,26 +805,38 @@ test('the callback refuses a missing or wrong state, and a GitHub refusal goes b
   assert.equal((await cb(`code=not-a-code&state=${state}`)).status, 400, 'a code GitHub refuses')
   const expired = `gh=${await sign(KEY, 'state', { n: state, share: id, exp: Date.now() - 1 })}`
   assert.equal((await call(env, `http://${BASE}/auth/github/callback?code=x&state=${state}`, { redirect: 'manual', headers: { cookie: expired } })).status, 400)
-  for (const q of ['share=nope&back=/', `share=k3x9p2abcd&back=/`]) assert.equal((await call(env, `http://${BASE}/auth/github?${q}`, { redirect: 'manual' })).status, 404, q)
+  for (const q of [`share=nope&back=/&nonce=${NONCE}`, `share=k3x9p2abcd&back=/&nonce=${NONCE}`]) assert.equal((await call(env, `http://${BASE}/auth/github?${q}`, { redirect: 'manual' })).status, 404, q)
 })
 
-test('tickets: 60 s, signed, for one share, and only as tickets', async () => {
+test('tickets: 60 s, signed, for one share, only as tickets, bound to the browser by its nonce, used once', async () => {
   const env = await ghEnv()
   const { id } = await publish(env)
   const other = (await publish(env)).id
   addViewer(env, 4242, 'dana-test')
-  const land = t => call(env, `http://${id}.${BASE}/_in/auth?t=${encodeURIComponent(t)}`, { redirect: 'manual' })
-  const good = await sign(KEY, 'ticket', { gh: 4242, share: id, to: '/', exp: Date.now() + 60_000 })
-  assert.equal((await land(good)).status, 302)
-  assert.equal((await land(await sign(KEY, 'ticket', { gh: 4242, share: id, to: '/', exp: Date.now() - 1 }))).status, 400, 'expired')
-  assert.equal((await land(good.slice(0, -2) + (good.endsWith('AA') ? 'BB' : 'AA'))).status, 400, 'tampered')
-  assert.equal((await land(await sign(KEY, 'ticket', { gh: 4242, share: other, to: '/', exp: Date.now() + 60_000 }))).status, 400, 'another share')
-  assert.equal((await land(await sign(KEY, 'v', { gh: 4242, share: id, exp: Date.now() + 60_000 }))).status, 400, 'a cookie is not a ticket')
-  assert.equal((await land(await sign('another key', 'ticket', { gh: 4242, share: id, to: '/', exp: Date.now() + 60_000 }))).status, 400, 'another key')
-  const t = await sign(KEY, 'ticket', { gh: 4242, share: id, to: '/', exp: Date.now() + 60_000 })
-  assert.equal((await land(t)).headers.get('location'), `http://${id}.${BASE}/`)
-  const sneaky = await sign(KEY, 'ticket', { gh: 4242, share: id, to: '//evil.example/', exp: Date.now() + 60_000 })
-  assert.equal((await land(sneaky)).headers.get('location'), `http://${id}.${BASE}/`)
+  let k = 0
+  const fresh = () => `nonce-${String(++k).padStart(16, '0')}`
+  const tk = (nn, o = {}, key = KEY, purpose = 'ticket') => sign(key, purpose, { gh: 4242, share: id, to: '/', nn, exp: Date.now() + 60_000, ...o })
+  const land = (t, nn) => call(env, `http://${id}.${BASE}/_in/auth?t=${encodeURIComponent(t)}`, { redirect: 'manual', headers: nn ? { cookie: `vn=${nn}` } : {} })
+  let n = fresh()
+  const good = await tk(n)
+  const ok = await land(good, n)
+  assert.equal(ok.status, 302)
+  assert.equal(ok.headers.get('location'), `http://${id}.${BASE}/`)
+  assert.equal((await land(good, n)).status, 400, 'used once')
+  n = fresh()
+  const replay = await tk(n)
+  assert.equal((await land(replay)).status, 400, 'replayed in a browser without the nonce cookie')
+  assert.equal((await land(replay, fresh())).status, 400, 'another browser\'s nonce (login CSRF)')
+  assert.equal((await land(replay, n)).status, 302, 'the refusals did not use it up')
+  n = fresh()
+  assert.equal((await land(await tk(n, { exp: Date.now() - 1 }), n)).status, 400, 'expired')
+  const t2 = await tk(n)
+  assert.equal((await land(t2.slice(0, -2) + (t2.endsWith('AA') ? 'BB' : 'AA'), n)).status, 400, 'tampered')
+  assert.equal((await land(await tk(n, { share: other }), n)).status, 400, 'another share')
+  assert.equal((await land(await tk(n, {}, KEY, 'v'), n)).status, 400, 'a cookie is not a ticket')
+  assert.equal((await land(await tk(n, {}, 'another key'), n)).status, 400, 'another key')
+  assert.equal((await land(await tk(n, { nn: undefined }), n)).status, 400, 'a ticket without a nonce')
+  assert.equal((await land(await tk(n, { to: '//evil.example/' }), n)).headers.get('location'), `http://${id}.${BASE}/`)
 })
 
 test('viewer cookies: tampered, expired, another share, another purpose, an unknown viewer are all nobody', async () => {
@@ -860,7 +897,11 @@ test('viewer comments: post, list, idempotent retry, validation', async () => {
   const extra = await (await post(env, id, dana, { id: uuid(), variant: 'pricing/A', body: 'x', target: { x: 1, y: 2, view: { size: 'desktop', w: 1280, h: 800 }, html: '<b>' } })).json()
   assert.deepEqual(extra.target, { x: 1, y: 2, view: { size: 'desktop', w: 1280, h: 800 } })
   env.DB.sql.prepare('UPDATE shares SET comments = 0').run()
-  assert.equal((await post(env, id, dana, { id: uuid(), variant: 'pricing/A', body: 'x', target: null })).status, 403)
+  const off = await post(env, id, dana, { id: uuid(), variant: 'pricing/A', body: 'x', target: null })
+  assert.equal(off.status, 403)
+  assert.equal((await off.json()).code, 'comments_off')
+  const out = await post(env, id, 'v=nobody', { id: uuid(), variant: 'pricing/A', body: 'x', target: null })
+  assert.deepEqual([out.status, (await out.json()).code], [401, 'signin'])
 })
 
 test('since returns changes by update time, removed ids, and private comments when the share says so', async () => {
@@ -907,9 +948,17 @@ test('a viewer deletes their own comment while it is new; after that it only hid
   const row = env.DB.sql.prepare('SELECT body, target, deleted FROM comments WHERE id = ?').get(a)
   assert.deepEqual({ ...row }, { body: '', target: null, deleted: 1 })
   assert.equal((await patch(env, b, { status: 'sent' })).status, 200)
-  assert.deepEqual(await (await del(b, dana)).json(), { id: b, hidden: true })
+  assert.deepEqual(await (await del(b, dana)).json(), { id: b, withdrawn: true })
   assert.deepEqual((await list(env, id, dana)).comments, [])
   assert.equal((await del(a, dana)).status, 404)
+  // Withdrawn is the viewer's own flag: the owner's unhide doesn't put it back on the link.
+  const unhid = await (await patch(env, b, { hidden: false })).json()
+  assert.deepEqual([unhid.hidden, unhid.withdrawn], [false, true])
+  assert.deepEqual((await list(env, id, dana)).comments, [])
+  // A deleted comment can't be sent, or moved on at all.
+  const sent = await patch(env, a, { status: 'sent' })
+  assert.equal(sent.status, 410)
+  assert.equal((await sent.json()).code, 'deleted')
 })
 
 test('caps: 4000 characters, 30 an hour per viewer, 300 a day per share, each a 429 with words', async () => {
@@ -919,20 +968,33 @@ test('caps: 4000 characters, 30 an hour per viewer, 300 a day per share, each a 
   const dana = await mint(id)
   const long = await post(env, id, dana, { id: uuid(), variant: 'pricing/A', body: 'x'.repeat(4001), target: null })
   assert.equal(long.status, 429)
-  assert.ok((await long.json()).error)
+  const tooLong = await long.json()
+  assert.ok(tooLong.error)
+  assert.equal(tooLong.code, 'too_long')
   assert.equal((await post(env, id, dana, { id: uuid(), variant: 'pricing/A', body: 'x'.repeat(4000), target: null })).status, 201)
   for (let i = 1; i < 30; i++) assert.equal((await post(env, id, dana, { id: uuid(), variant: 'pricing/A', body: `n${i}`, target: null })).status, 201, `comment ${i}`)
   const hour = await post(env, id, dana, { id: uuid(), variant: 'pricing/A', body: 'one too many', target: null })
   assert.equal(hour.status, 429)
-  assert.match((await hour.json()).error, /hour/)
+  const perHour = await hour.json()
+  assert.match(perHour.error, /hour/)
+  assert.equal(perHour.code, 'hour')
   noCors(hour)
+  // A viewer at the cap is turned away before anything is written.
+  let writes = 0
+  const prepare = env.DB.prepare
+  env.DB.prepare = q => { const st = prepare(q); const bind = st.bind; return { ...st, run: () => { writes++; return st.run() }, bind: (...a) => { const b = bind(...a); return { ...b, run: () => { writes++; return b.run() } } } } }
+  assert.equal((await post(env, id, dana, { id: uuid(), variant: 'pricing/A', body: 'again', target: null })).status, 429)
+  env.DB.prepare = prepare
+  assert.equal(writes, 0)
   // The share's day: a fresh viewer, the share already at 300.
   addViewer(env, 7, 'noa')
   const day = Math.floor(Date.now() / 86_400_000)
   env.DB.sql.prepare('UPDATE caps SET n = 300 WHERE what = ? AND slot = ?').run(`share:${id}`, day)
   const full = await post(env, id, await mint(id, 7), { id: uuid(), variant: 'pricing/A', body: 'late', target: null })
   assert.equal(full.status, 429)
-  assert.match((await full.json()).error, /today/)
+  const perDay = await full.json()
+  assert.match(perDay.error, /today/)
+  assert.equal(perDay.code, 'day')
   assert.equal(env.DB.sql.prepare("SELECT COUNT(*) AS n FROM caps WHERE what = 'gh:7'").get().n, 0, 'a refused comment costs the viewer nothing')
   // An idempotent retry of a stored comment is not counted again.
   const kept = env.DB.sql.prepare('SELECT id FROM comments LIMIT 1').get().id
@@ -954,7 +1016,7 @@ test('owner comments: across the owner\'s shares, since, token required', async 
   const got = await res.json()
   assert.equal(typeof got.now, 'number')
   assert.deepEqual(got.comments.map(c => [c.id, c.share.id, c.share.title]), [[a, s1.id, 'Pricing'], [b, s2.id, 'Home']])
-  assert.deepEqual(Object.keys(got.comments[1]).sort(), ['author', 'body', 'created_at', 'deleted', 'done_in', 'hidden', 'id', 'owner_reply', 'owner_reply_at', 'share', 'status', 'target', 'updated_at', 'variant', 'version'])
+  assert.deepEqual(Object.keys(got.comments[1]).sort(), ['author', 'body', 'created_at', 'deleted', 'done_in', 'hidden', 'id', 'owner_reply', 'owner_reply_at', 'share', 'status', 'target', 'updated_at', 'variant', 'version', 'withdrawn'])
   assert.deepEqual(got.comments[1].author, { gh_id: 4242, login: 'dana-test', name: 'DANA-TEST', avatar: 'https://avatars.example/4242' })
   assert.deepEqual(got.comments[1].share, { id: s2.id, title: 'Home', version: 1 })
   assert.deepEqual(got.comments[1].target, { x: 5, y: 6, view: { size: 'tablet', w: 820, h: 1180 } })
@@ -977,7 +1039,9 @@ test('owner PATCH: sent only from new (a lost race is 409), statuses only forwar
   assert.deepEqual([x.status, y.status].sort(), [200, 409])
   const lost = [x, y].find(r => r.status === 409)
   noCors(lost)
-  assert.ok((await lost.json()).error)
+  const why = await lost.json()
+  assert.ok(why.error)
+  assert.equal(why.code, 'already_sent')
   assert.equal((await patch(env, a, { status: 'working' })).status, 200)
   assert.equal((await patch(env, a, { status: 'working' })).status, 200, 'the same status again is harmless')
   assert.equal((await patch(env, a, { status: 'sent' })).status, 409, 'backwards')
@@ -1011,4 +1075,27 @@ test('an update marks done comments done_in the new version; removing a share de
   assert.equal(Object.fromEntries((await list(env, id)).comments.map(c => [c.id, c]))[a].done_in, 2, 'kept from the first version it was in')
   await call(env, `http://${BASE}/api/shares/${id}`, { method: 'DELETE', headers: auth })
   assert.equal(env.DB.sql.prepare('SELECT COUNT(*) AS n FROM comments').get().n, 0)
+})
+
+test('pruning the caps keeps only the current hour and day', async () => {
+  const env = await makeEnv()
+  const now = Date.now(), hour = Math.floor(now / 3_600_000), day = Math.floor(now / 86_400_000)
+  const put = env.DB.sql.prepare('INSERT INTO caps (what, slot, n) VALUES (?, ?, ?)')
+  for (const [what, slot] of [['gh:1', hour], ['gh:1', hour - 1], ['gh:1', hour - 30], ['share:a', day], ['share:a', day - 1], ['share:a', day - 9]]) put.run(what, slot, 3)
+  await pruneCaps(env, now)
+  assert.deepEqual(env.DB.sql.prepare('SELECT what, slot FROM caps ORDER BY what, slot').all().map(r => `${r.what}@${r.slot}`), [`gh:1@${hour}`, `share:a@${day}`])
+})
+
+test('what the host keeps of a GitHub user: login checked, name capped, avatar only from GitHub', () => {
+  const real = {}
+  const u = o => ({ id: 1, login: 'dana', name: 'Dana', avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4', ...o })
+  assert.deepEqual(viewerFrom(u(), real), { gh_id: 1, login: 'dana', name: 'Dana', avatar: 'https://avatars.githubusercontent.com/u/1?v=4' })
+  assert.equal(viewerFrom(u({ avatar_url: 'https://evil.example/a.png' }), real).avatar, null)
+  assert.equal(viewerFrom(u({ avatar_url: 'https://avatars.githubusercontent.com.evil.example/a.png' }), real).avatar, null)
+  assert.equal(viewerFrom(u({ avatar_url: 'http://avatars.githubusercontent.com/u/1' }), real).avatar, null)
+  // A test GitHub (GITHUB_API overridden) may serve avatars from anywhere over https.
+  assert.equal(viewerFrom(u({ avatar_url: 'https://avatars.example/1' }), { GITHUB_API: 'http://127.0.0.1:9' }).avatar, 'https://avatars.example/1')
+  assert.equal(viewerFrom(u({ name: 'x'.repeat(200) }), real).name.length, 80)
+  assert.equal(viewerFrom(u({ login: 'bad login' }), real), null)
+  assert.equal(viewerFrom(u({ id: -1 }), real), null)
 })

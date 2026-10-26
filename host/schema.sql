@@ -40,8 +40,9 @@ CREATE TABLE IF NOT EXISTS comments (id TEXT NOT NULL,               -- the view
                        taken_by TEXT,                  -- session that sent it to Claude
                        owner_reply TEXT,               -- the owner's own words; Claude's replies never come here
                        owner_reply_at INTEGER,
-                       hidden INTEGER NOT NULL DEFAULT 0, -- hidden from viewers by the owner, or by its author once sent
+                       hidden INTEGER NOT NULL DEFAULT 0, -- hidden from viewers by the owner
                        deleted INTEGER NOT NULL DEFAULT 0, -- deleted by its author while new: body and target are emptied
+                       withdrawn INTEGER NOT NULL DEFAULT 0, -- taken off the link by its author once sent; the owner's unhide leaves it off
                        done_in INTEGER,
                        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
                        PRIMARY KEY (share_id, id));
@@ -51,6 +52,8 @@ CREATE TABLE IF NOT EXISTS viewers  (gh_id INTEGER PRIMARY KEY,   -- GitHub's us
 CREATE TABLE IF NOT EXISTS caps     (what TEXT NOT NULL,            -- 'gh:<id>' (per hour) or 'share:<id>' (per day)
                        slot INTEGER NOT NULL,          -- the hour or day number since the epoch
                        n INTEGER NOT NULL, PRIMARY KEY (what, slot));
+CREATE TABLE IF NOT EXISTS tickets  (nonce TEXT PRIMARY KEY,         -- a sign-in ticket's nonce, once used: a ticket works once
+                       exp INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS votes    (share_id TEXT NOT NULL, link_id TEXT NOT NULL, viewer TEXT NOT NULL,
                        route TEXT NOT NULL, created_at INTEGER NOT NULL,
                        PRIMARY KEY (share_id, link_id, viewer));

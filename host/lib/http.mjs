@@ -17,10 +17,10 @@ export const redirect = (location, cookies = []) => {
 
 /** The request's JSON body, or a Response refusing it (JSON bodies only, as the spec's Security says). */
 export async function bodyOf(req) {
-  if (!/^application\/json\b/i.test(req.headers.get('content-type') || '')) return fail(415, 'The body must be JSON.')
+  if (!/^application\/json\b/i.test(req.headers.get('content-type') || '')) return fail(415, 'The body must be JSON.', { code: 'not_json' })
   try {
     const b = await req.json()
-    if (!b || typeof b !== 'object' || Array.isArray(b)) return fail(400, 'The body must be a JSON object.')
+    if (!b || typeof b !== 'object' || Array.isArray(b)) return fail(400, 'The body must be a JSON object.', { code: 'invalid' })
     return b
-  } catch { return fail(400, 'The body must be JSON.') }
+  } catch { return fail(400, 'The body must be JSON.', { code: 'invalid' }) }
 }
