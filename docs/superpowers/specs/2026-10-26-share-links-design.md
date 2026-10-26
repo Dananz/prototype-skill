@@ -41,7 +41,8 @@ Non-goals (this spec):
   reach the agent directly.
 - A public, multi-tenant host for every skill user. It is phase 5 below; the schema leaves room
   for it (an owner id on every row), and nothing here depends on it.
-- Accounts for viewers. Nobody signs up to look at a link.
+- Accounts for viewers. Nobody signs up to look at a link. Commenting needs a GitHub sign-in
+  (decision 20); viewing never does.
 
 ## Decisions
 
@@ -112,6 +113,16 @@ Non-goals (this spec):
     keep the gesture), and a switcher above the bar. On the desk the designs are previews (inert,
     one fixed frame each, so the rows line up); a click opens one full size and live (Tomer,
     2026-10-26, after the first real share). See Design › Viewer.
+20. **Commenting is behind "Sign in with GitHub"** (Tomer, 2026-10-26). Anyone with the link views
+    without signing in. To comment, a viewer signs in with GitHub (OAuth web flow, a free OAuth App
+    the owner registers once); their GitHub login and avatar are their name and face on every
+    comment, and the signed-in viewer shows at the top right of the viewer. This replaces the
+    self-claimed "Your name" step and the verified/unverified split: every commenter is verified.
+    The host never keeps the GitHub access token: it reads `/user` once at sign-in and drops it.
+    Person links (phase 2) still work; on them the GitHub login is shown beside the person's name.
+21. **The full view has the device sizes and its own zoom** (Tomer, 2026-10-26): Phone, Tablet
+    (turnable) and Desktop as in the owner's device view, plus Fit and a zoom that scales the design
+    only, never the page; Esc goes back to the desk of all shared designs.
 
 
 ## Prior art (how comparable products do this)
@@ -438,6 +449,31 @@ shows today's usage.
   subdomains are the same *site*, so a SameSite cookie would still be sent between them. The API
   answers only same-origin requests: no CORS headers, a required `X-Proto: 1` header (which a
   cross-origin page can't send without a preflight the API refuses), and JSON bodies only.
+
+### Signing in with GitHub (decision 20)
+
+- The share origin's "Sign in with GitHub" goes to the apex `/auth/github?share=<id>&back=<path>`.
+  The apex makes a `state` (random 128 bits, kept 10 minutes in a short-lived HMAC-signed cookie
+  on the apex, `SameSite=Lax`) and redirects to `https://github.com/login/oauth/authorize` with
+  `client_id`, `redirect_uri=<apex>/auth/github/callback`, `scope=` (empty: public profile only),
+  `allow_signup=true`.
+- The callback checks `state`, exchanges `code` for a token at
+  `https://github.com/login/oauth/access_token`, reads `https://api.github.com/user` (`id`,
+  `login`, `avatar_url`, `name`), forgets the token, upserts `viewers(gh_id, login, name, avatar,
+  seen_at)`, and redirects to `https://<share origin>/_in/auth?t=<ticket>` where the ticket is an
+  HMAC-signed `{ gh_id, share, exp: now+60s }`. The share origin turns it into the viewer cookie
+  (`__Host-v` over HTTPS, `v` on `http://localhost` where Safari refuses `Secure`; HttpOnly,
+  SameSite=Lax, 30 days, signed with `VIEWER_KEY`) and redirects to `back`.
+- `GET api/me` (with `X-Proto: 1`) answers `{ login, name, avatar } | null`. "Sign out" is
+  `POST api/signout`, which clears the cookie.
+- Secrets: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` and `VIEWER_KEY` are Worker secrets
+  (`.dev.vars` in `~/.prototypes/host/`, mode 600, locally). The GitHub base URLs are overridable
+  for tests (`GITHUB_OAUTH`, `GITHUB_API`).
+- Without the OAuth App set up, the viewer shows comments read-only and the sign-in button says
+  "Comments aren't set up for this link yet" in its tooltip (disabled); `proto share setup
+  --github` explains the two-minute registration and stores the two values.
+- GitHub's limits: the OAuth web flow and one `/user` call per sign-in are free and far below
+  GitHub's rate limits.
 
 ### Password
 
