@@ -18,7 +18,7 @@ proto share setup --local [--name <owner name>]
 
 It installs the share tools the first time (`wrangler@4.149.0` and `sharp@0.35.5`, into
 `~/.prototypes/share-tools`, never into a session), writes the host's config, makes its database,
-creates the owner (named by `gh api user`, else `--name`) and this machine's owner token, starts the
+creates the owner (named by `--name`, else your `gh` login) and this machine's owner token, starts the
 host in the background and prints its address. Nothing logs in to Cloudflare: the only wrangler
 commands are `wrangler dev` and `wrangler d1 execute --local`.
 
@@ -66,8 +66,9 @@ sessions.
 - A share is at most 20 MiB gzipped (blocked above); over 5 MiB it warns, since a phone opens it
   slowly. Pictures are WebP at quality 82, at most 2560 px wide.
 - Links: `http://<id>.localhost:<port>/`, one origin per share. Where `*.localhost` doesn't resolve,
-  setup notices and links take the path form `http://127.0.0.1:<port>/s/<id>/`. The host answers
-  both forms on both `localhost` and `127.0.0.1` whichever setup chose.
+  setup notices and links take the path form `http://127.0.0.1:<port>/s/<id>/`. The path form
+  (`/s/<id>/`) works on both `localhost:<port>` and `127.0.0.1:<port>` whichever setup chose; the
+  subdomain form exists only on `*.localhost`.
 - Phase 0 has no passwords, person links, comments from viewers or updates of a published share;
   sharing again makes a new link.
 
@@ -80,5 +81,6 @@ sessions.
 | The host does not start | Read `~/.prototypes/host/host.log`. `proto share stop`, then share again. |
 | "Pass --name: gh is not logged in" | `proto share setup --local --name "<your name>"`, or `gh auth login` first. The name is what viewers see as "shared by". |
 | A link opens in Chrome but not in Safari | Safari may not resolve `*.localhost` (not yet checked by hand). Open the path form instead, `http://127.0.0.1:<port>/s/<id>/`, which the host always serves. |
-| "No owner token for the host" | The token was lost (Keychain item deleted). `proto share setup --local` makes a new one. |
+| "No owner token for the host" | The token was lost (Keychain item deleted). `proto share setup --local` makes a new one, restarting the host if it runs. |
+| A `<id>.localhost` link shows another app | The host listens on 127.0.0.1 and links say `localhost`, so a server of yours on `::1` at the same port can answer them. Open the path form `http://127.0.0.1:<port>/s/<id>/`, or stop that server and share again. |
 | A link says "This link was removed" | It was taken down with `proto share rm`; share again for a new link. |

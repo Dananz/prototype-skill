@@ -4,8 +4,8 @@
 // can change the session, so the other calls refuse at once. Comments to the host come in phase 1.
 import { SHARE } from './mode'
 
-/** A share's state on its host: a version above the page's means the owner updated the link. */
-export type ShareState = { version: number; updatedAt: string }
+/** A share's state on its host: a version above the page's means the owner updated the link. updatedAt is ms since the epoch, as the host's D1 row keeps it. */
+export type ShareState = { version: number; updatedAt: number }
 
 const JSON_TYPE = { 'content-type': 'application/json' }
 const readOnly = () => Promise.reject(new Error('read-only'))

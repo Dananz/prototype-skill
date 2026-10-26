@@ -40,7 +40,8 @@ function Protos({ protos, cur, choose, compact, owner, updated, root }: {
 }) {
   const [open, setOpen] = useState(false)
   const many = protos.length > 1
-  const line = `${t('by {owner} · read-only', { owner })} · ${many ? tn(protos.length, '{n} prototype', '{n} prototypes') : tn(cur.variants.length, '{n} design', '{n} designs')}`
+  // A share written to a file before any host is set up has no owner name: then no "by" at all.
+  const line = `${owner ? t('by {owner} · read-only', { owner }) : t('Read-only')} · ${many ? tn(protos.length, '{n} prototype', '{n} prototypes') : tn(cur.variants.length, '{n} design', '{n} designs')}`
   const title = (
     <>
       <Mark protos={protos} p={cur} small={compact} />
@@ -63,7 +64,7 @@ function Protos({ protos, cur, choose, compact, owner, updated, root }: {
       <Popover.Portal container={root}>
         <Popover.Positioner side="bottom" align={rtl ? 'end' : 'start'} sideOffset={6} className="z-50">
           <Popover.Popup dir={dir} className={`${popup} w-[min(320px,calc(100vw-24px))]`}>
-            <Popover.Title className="px-2.5 pt-2 pb-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{t('Shared with you by {owner}', { owner })}</Popover.Title>
+            <Popover.Title className="px-2.5 pt-2 pb-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{owner ? t('Shared with you by {owner}', { owner }) : t('Shared with you')}</Popover.Title>
             {protos.map(p => {
               const on = p.id === cur.id
               return (
@@ -89,7 +90,7 @@ function Protos({ protos, cur, choose, compact, owner, updated, root }: {
 function About({ facts, appearance, setAppearance, root }: { facts: Facts; appearance: Appearance; setAppearance: (a: Appearance) => void; root: RefObject<HTMLDivElement | null> }) {
   const [open, setOpen] = useState(false)
   const rows: [string, string][] = [
-    [t('Shared by'), facts.owner],
+    ...(facts.owner ? [[t('Shared by'), facts.owner] as [string, string]] : []),
     [t('Updated'), `${ago(Date.parse(facts.updatedAt))} · ${t('version {n}', { n: facts.version })}`],
   ]
   const themes: [Appearance, string][] = [['system', t('System')], ['light', t('Light')], ['dark', t('Dark')]]
@@ -109,7 +110,7 @@ function About({ facts, appearance, setAppearance, root }: { facts: Facts; appea
               ))}
             </dl>
             <p className="mt-3 rounded-lg bg-zinc-900/[.04] p-2.5 text-[12px] leading-snug text-zinc-600 dark:bg-white/[.05] dark:text-zinc-400">
-              {t('This is a read-only copy that {owner} shared. Nothing you do here changes it.', { owner: facts.owner })}
+              {facts.owner ? t('This is a read-only copy that {owner} shared. Nothing you do here changes it.', { owner: facts.owner }) : t('This is a read-only copy. Nothing you do here changes it.')}
             </p>
             <div className="mt-3 flex items-center justify-between gap-3 text-[13px]">
               <span className="text-zinc-500">{t('Theme')}</span>

@@ -120,7 +120,8 @@ async function file(args, flags, { sessionDir, session }) {
   const protos = protosOf(sessionDir)
   const scope = parseScope(args, flags.all === true, protos)
   const title = typeof flags.title === 'string' ? flags.title : titleOf(scope, protos, session)
-  const built = await buildShare({ sessionDir, scope, info: { title, owner: '', version: 1, comments: false } })
+  // The owner's name from the host when one is set up; with none the viewer leaves the "by" out.
+  const built = await buildShare({ sessionDir, scope, info: { title, owner: defaultHost()?.owner || '', version: 1, comments: false } })
   report(built, { yes: true, needYes: false })
   const out = typeof flags.out === 'string' ? resolve(flags.out) : join(sessionDir, '.proto', 'shares', `${scope.protos[0].id}.html`)
   mkdirSync(dirname(out), { recursive: true })

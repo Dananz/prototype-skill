@@ -790,7 +790,8 @@ the viewer."
 ### CLI
 
 ```
-proto share setup [--local | --domain <name>] [--name <host name>]   set up a host (default: free workers.dev)
+proto share setup [--local | --domain <name>] [--name <owner name>]   set up a host (default: free workers.dev);
+            the owner's name is --name, else the gh login
 proto share <slug>[/<n>…] | --all [--password] [--person "Dana"]… [--no-comments] [--votes] [--blind]
             [--expires 7d|30d] [--note "…"] [--start <slug>/<n>] [--yes]       build, review, publish, print the link
 proto share ls [--all]                    links of this session (or every session), changed-since, new comments, today's usage
@@ -852,7 +853,7 @@ Each is a test or a five-minute check, done before the code that depends on it:
       (no `Secure` over http, or `wrangler dev --local-protocol https`).
 - [ ] Stored gzip served with `Content-Encoding: gzip` and `encodeBody: "manual"` arrives encoded once.
 - [ ] The Workers Rate Limiting binding exists on Free (else the D1 counter).
-- [ ] Hot paths (document, state, comment POST, unlock) stay under 5 ms CPU.
+- [ ] Hot paths (document, state, comment POST, unlock) stay under 5 ms CPU (checked in phase 2, on Cloudflare).
 - [ ] A real session's share build size, gzipped (fills the Limits table).
 - [ ] The compile-time stamp pass works through `@vitejs/plugin-react`'s `babel` option with the
       session's plugin version, and the Vue rewrite with `nodeTransforms`.
@@ -872,9 +873,9 @@ Each phase is its own PR, with screenshots per AGENTS.md.
 
 | Phase | Ships | Done when |
 |---|---|---|
-| **0. Local host and share builds** | `host/` Worker under `wrangler dev`; `share-build.mjs`; `proto share setup --local`, `proto share <scope>`, `ls`, `rm`, `file`; the review checks; the viewer (decision 19) without comments | A share of 2 of 5 variants opens at `k3x9p2.localhost:8787` in Chrome and Safari, the other 3 are absent from the file, stamps present, a planted fake key blocks publishing, under 5 ms CPU per request in `wrangler dev` |
+| **0. Local host and share builds** | `host/` Worker under `wrangler dev`; `share-build.mjs`; `proto share setup --local`, `proto share <scope>`, `ls`, `rm`, `file`; the review checks; the viewer (decision 19) without comments | A share of 2 of 5 variants opens at `k3x9p2.localhost:8787` in Chrome and Safari, the other 3 are absent from the file, stamps present, a planted fake key blocks publishing |
 | **1. Comments round trip** | The Share link sheet in the page (New link, Your links), viewer comments, the tray, Send to Claude, statuses back, follow-ups, `comments` and `take`, injection framing | A comment from a second browser profile reaches the tray within 30 s, Send to Claude lands in `proto inbox` framed, the reply's status shows in the viewer |
-| **2. On Cloudflare (workers.dev)** | `proto share setup` for a free account, owner token in Keychain, password gate, person links, update and changed-since, budget counters, notify | A friend opens a workers.dev link on their phone, enters the password, comments; Tomer gets a Discord ping |
+| **2. On Cloudflare (workers.dev)** | `proto share setup` for a free account, owner token in Keychain, password gate, person links, update and changed-since, budget counters, notify | A friend opens a workers.dev link on their phone, enters the password, comments; Tomer gets a Discord ping; the hot paths stay under 5 ms CPU per request, measured on Cloudflare (moved from phase 0: `wrangler dev` runs workerd on the Mac, whose timings say nothing about the Free plan's 10 ms limit) |
 | **3. Own domain** | `--domain`, wildcard per-share origins, short apex links, preview images, owner view | `prtype.dev/k3x9p2` redirects to its own subdomain over TLS; two shares can't read each other's storage (tested) |
 | **4. Extras** | votes, blind review, "What's new" banner, QR, expiry, view counts | each behind its switch, off by default except the banner |
 | **5. Later: hosting for other skill users** | GitHub sign-in (free OAuth app) to get an owner token, per-owner caps (10 live shares, 20 MiB each), 30-day expiry, "Shared by @user · Report" bar, report and ban tools | separate spec |

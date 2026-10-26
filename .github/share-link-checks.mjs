@@ -170,7 +170,7 @@ async function host(html) {
     state.paths.push(req.url)
     if (req.url.split('?')[0] === '/api/state') {
       res.writeHead(200, { 'content-type': 'application/json' })
-      return res.end(JSON.stringify({ version: state.version, updatedAt: new Date().toISOString() }))
+      return res.end(JSON.stringify({ version: state.version, updatedAt: Date.now() }))
     }
     if (req.url === '/' || req.url.startsWith('/?')) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html) }
     res.writeHead(404); res.end()
@@ -418,6 +418,19 @@ async function hostChecks({ app, openPage, fail }) {
   const sharesFile = join(app, '.proto', 'shares.json')
   const entries = () => existsSync(sharesFile) ? JSON.parse(readFileSync(sharesFile, 'utf8')) : []
 
+  // A file before any host exists: no owner name, so the viewer says no "by" at all.
+  const header = () => `[...document.querySelectorAll('[data-viewer-header] *')].map(e => e.textContent).join('|')`
+  const bare = join(home, 'no-owner.html')
+  const plain = share(['file', 'share-link/2', '--out', bare])
+  assert(plain.status === 0 && existsSync(bare), `file without a host: exited ${plain.status}`)
+  const noOwner = await openPage(pathToFileURL(bare).href)
+  try {
+    await until(async () => (await noOwner.run('document.body.innerText'))?.includes('MARK-B'))
+    const text = await noOwner.run(header())
+    assert(text.includes('Read-only') && !/\bby\b/.test(text), `file without a host: the header reads ${JSON.stringify(text.slice(0, 200))}`)
+  } finally { noOwner.close() }
+  assert(/<noscript>[^]*needs JavaScript[^]*<\/noscript>/.test(readFileSync(bare, 'utf8')), 'noscript: the share does not say it needs JavaScript')
+
   const setup = share(['setup', '--local', '--name', 'Smoke'])
   assert(setup.status === 0, `setup --local exited ${setup.status}`)
   const hosts = JSON.parse(readFileSync(join(home, '.config', 'prototype', 'hosts.json'), 'utf8'))
@@ -437,6 +450,26 @@ async function hostChecks({ app, openPage, fail }) {
   assert(existsSync(join(app, '.proto', 'shares', id, 'v1', 'share-link', 'B.tsx')), 'publish: the snapshot of share-link is missing')
   const port = portOf(link)
 
+  // The served link in Chrome: the viewer boots, nothing errs, and nothing reaches for a session server.
+  const viewer = await openPage(link, { errors: true })
+  try {
+    assert(await until(async () => (await viewer.run('document.body.innerText'))?.includes('MARK-B')), `served link: MARK-B is not on ${link} in Chrome`)
+    await sleep(1500)
+    const asked = await viewer.run(`performance.getEntriesByType('resource').map(e => new URL(e.name).pathname)`)
+    assert(!asked.some(p => p.startsWith('/__proto')), `served link: the page asked for ${asked.filter(p => p.startsWith('/__proto')).join(', ')}`)
+    assert(!viewer.errors().length, `served link: the page reported ${JSON.stringify(viewer.errors())}`)
+  } finally { viewer.close() }
+
+  // A planted fake key blocks the publish: exit 1, the review says why, nothing uploaded or written.
+  const bFile = join(app, 'src', 'protos', 'share-link', 'B.tsx'), bSource = readFileSync(bFile, 'utf8')
+  const listed = () => share(['ls', '--all']).out.split('\n').filter(l => /^[0-9a-z]{10} /.test(l)).sort().join('\n')
+  const hostBefore = listed(), entriesBefore = entries().length
+  writeFileSync(bFile, bSource.replace('<h1>MARK-B</h1>', '<h1>MARK-B</h1><span hidden>AKIAABCDEFGHIJ234567</span>'))
+  let blocked
+  try { blocked = share(['share-link/2', '--yes']) } finally { writeFileSync(bFile, bSource) }
+  assert(blocked.status === 1 && /looks like a secret/.test(blocked.out), `planted key: exited ${blocked.status} without the review's message`)
+  assert(entries().length === entriesBefore && listed() === hostBefore, 'planted key: something was uploaded or written to .proto/shares.json')
+
   const ls = share(['ls'])
   assert(ls.status === 0 && ls.out.includes(id), `ls: ${id} is not listed`)
   // The apex /<id> is the page link previews read; it sends a browser on to the link.
@@ -448,7 +481,15 @@ async function hostChecks({ app, openPage, fail }) {
   const file = share(['file', 'share-link/2', '--out', out])
   assert(file.status === 0 && existsSync(out), `file: exited ${file.status}, ${out} not written`)
   const opened = await openPage(pathToFileURL(out).href)
-  try { assert(await until(async () => (await opened.run('document.body.innerText'))?.includes('MARK-B')), 'file: MARK-B is not on the page') } finally { opened.close() }
+  try {
+    assert(await until(async () => (await opened.run('document.body.innerText'))?.includes('MARK-B')), 'file: MARK-B is not on the page')
+    assert((await opened.run(header())).includes('by Smoke'), 'file: the owner from the host is not in the header')
+  } finally { opened.close() }
+
+  // A lost token while the host runs: setup makes a new one rather than saying everything is fine.
+  rmSync(join(home, '.config', 'prototype', 'token-local'))
+  assert(share(['setup', '--local']).status === 0 && existsSync(join(home, '.config', 'prototype', 'token-local')), 'lost token: setup did not make a new one')
+  assert(share(['ls']).status === 0, 'lost token: the new token does not open the host')
 
   const rm = share(['rm', id])
   assert(rm.status === 0, `rm exited ${rm.status}`)

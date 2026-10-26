@@ -131,6 +131,13 @@ export async function portFree(port) {
   return await unanswered('127.0.0.1', port) && await unanswered('::1', port) && await binds(port)
 }
 
+// Whether this machine's token is in the store and the host accepts it.
+async function tokenWorks(host) {
+  const token = getToken(host.name)
+  if (!token) return false
+  try { return (await fetch(`http://127.0.0.1:${portOf(host)}/api/shares`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) })).ok } catch { return false }
+}
+
 /** Whether the local host this Mac knows is up and answering. */
 export async function localRunning(host = readHosts().find(h => h.name === LOCAL)) {
   return !!host && ours(Number(readJson(pidFile(), 0))) && healthy(portOf(host))
@@ -174,7 +181,9 @@ function ownerName(given) {
  */
 export async function startLocal({ name } = {}) {
   const known = readHosts().find(h => h.name === LOCAL)
-  if (await localRunning(known)) return known
+  // A running host is kept only if this machine's token still opens it; else it is restarted below,
+  // which makes the token (and the owner row) again, so setup repairs a lost token.
+  if (await localRunning(known) && await tokenWorks(known)) return known
   await stopLocal()
   const tools = await ensureTools()
   let port = 0

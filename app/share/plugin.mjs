@@ -256,5 +256,13 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
     },
   }
 
-  return [swap, tailwindSources, fileNames, icon, options, stampsPlugin({ protosDir }), imagesPlugin({ sharp, root })]
+  // A share needs JavaScript; without it the page says so, in the session's language.
+  const noscript = {
+    name: 'proto-share-noscript',
+    transformIndexHtml: html => html.replace('<body>', `<body>\n    <noscript>${session.lang === 'he'
+      ? '<p dir="rtl" lang="he" style="font:16px/1.5 system-ui,sans-serif;padding:24px">כדי לראות את אב הטיפוס הזה צריך להפעיל JavaScript.</p>'
+      : '<p style="font:16px/1.5 system-ui,sans-serif;padding:24px">This prototype needs JavaScript to open. Turn it on and reload.</p>'}</noscript>`),
+  }
+
+  return [swap, tailwindSources, fileNames, icon, noscript, options, stampsPlugin({ protosDir }), imagesPlugin({ sharp, root })]
 }
