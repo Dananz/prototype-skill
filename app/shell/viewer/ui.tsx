@@ -10,6 +10,7 @@ import minus from '@phosphor-icons/core/assets/bold/minus-bold.svg?raw'
 import plus from '@phosphor-icons/core/assets/bold/plus-bold.svg?raw'
 import info from '@phosphor-icons/core/assets/bold/info-bold.svg?raw'
 import reload from '@phosphor-icons/core/assets/bold/arrow-clockwise-bold.svg?raw'
+import grid from '@phosphor-icons/core/assets/bold/squares-four-bold.svg?raw'
 import eye from '@phosphor-icons/core/assets/regular/eye.svg?raw'
 import x from '@phosphor-icons/core/assets/regular/x.svg?raw'
 import type { Variant } from '../shell'
@@ -23,7 +24,7 @@ export const iconBtn = 'inline-grid size-8 place-items-center rounded-lg text-zi
 /** A popup that opens from its anchor: scales and fades in 150 ms. */
 export const popup = `${card} origin-[var(--transform-origin)] p-1 shadow-2xl outline-none transition-[opacity,scale] duration-150 data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 motion-reduce:transition-none`
 
-const ICONS = { 'caret-down': caretDown, 'caret-left': caretLeft, 'caret-right': caretRight, check, minus, plus, info, reload, eye, x }
+const ICONS = { grid, 'caret-down': caretDown, 'caret-left': caretLeft, 'caret-right': caretRight, check, minus, plus, info, reload, eye, x }
 export type IconName = keyof typeof ICONS
 /** One of Phosphor's own files, at the size the class gives. Carets along the line mirror in a right-to-left page. */
 export function Icon({ name, className = 'size-4' }: { name: IconName; className?: string }) {
@@ -59,43 +60,29 @@ export const MountsCtx = createContext<Mounts | null>(null)
 /**
  * A design, mounted with the stack's own mount while `live`, else nothing. Each mount gets a box of
  * its own, so a root on its way out (unmounted after React's commit, never during it) and the next
- * one never share an element. `grown` hears the design's height when it is taller than its box.
+ * one never share an element. inert: a preview on the desk, which nothing inside reacts in.
  */
-export function Mounted({ v, live, grown, className = 'h-full' }: { v: Variant; live: boolean; grown?: (h: number) => void; className?: string }) {
+export function Mounted({ v, live, inert = false, className = 'h-full' }: { v: Variant; live: boolean; inert?: boolean; className?: string }) {
   const host = useRef<HTMLDivElement>(null)
   const ctx = useContext(MountsCtx)!
-  const grownRef = useRef(grown)
-  grownRef.current = grown
   useEffect(() => {
     if (!live) return
     const box = document.createElement('div')
     box.dataset.mount = ''
     box.dataset.live = ''
+    if (inert) { box.inert = true; box.dataset.preview = '' }
     box.dir = 'ltr'
     box.className = className
     host.current!.append(box)
-    let off: (() => void) | null = null, gone = false, ro: ResizeObserver | null = null
-    const measure = () => { if (box.scrollHeight > box.clientHeight + 1) grownRef.current?.(box.scrollHeight) }
+    let off: (() => void) | null = null, gone = false
     ctx.load(v).then(
-      c => {
-        if (gone) return
-        off = ctx.mount(box, c)
-        ctx.mounted()
-        if (!grownRef.current) return
-        ro = new ResizeObserver(measure)
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          if (gone) return
-          measure()
-          for (const child of box.children) ro!.observe(child)
-        }))
-      },
+      c => { if (!gone) { off = ctx.mount(box, c); ctx.mounted() } },
       e => { if (!gone) { const pre = document.createElement('pre'); pre.className = ERROR_CLASS; pre.textContent = String(e?.stack || e); box.replaceChildren(pre); ctx.mounted() } })
     return () => {
       gone = true
-      ro?.disconnect()
       box.remove()
       if (off) { const o = off; setTimeout(() => { try { o() } catch { /* already gone */ } }) }
     }
-  }, [v, live, ctx, className])
+  }, [v, live, inert, ctx, className])
   return <div ref={host} data-host className="contents" />
 }

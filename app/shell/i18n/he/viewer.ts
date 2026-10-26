@@ -35,4 +35,7 @@ export default {
   'There is a newer version': 'יש גרסה חדשה יותר',
   'Reload': 'טען מחדש',
   'Nothing was shared here.': 'לא שותף כאן דבר.',
+  'Open #{n} {name}': 'פתח את #{n} {name}',
+  'All designs': 'כל העיצובים',
+  'All designs (Esc)': 'כל העיצובים (Esc)',
 } satisfies Record<string, string>

@@ -5,10 +5,13 @@
 // view is the selected one: the bar names it.
 //
 // A design runs only while its artboard is within one viewport of the view, or is the selected
-// one, and at most 8 at once, the nearest first; the others are a light card with their name. A web
-// design is drawn 1200 px wide on a 750 px artboard (the shell's own desktop card) that grows to
-// the design's height once it has run, and keeps that height as a card; a phone prototype's
-// artboard is its screen, and the design scrolls inside it as on the phone.
+// one, and at most 8 at once, the nearest first; the others are a light card with their name.
+//
+// Every artboard is a preview: the design in a fixed frame (a web design's is a 1200x750 desktop
+// window, top of the page; a phone prototype's its screen), inert, its animations paused, so every
+// row of the desk lines up and nothing in it reacts. The desk is for looking across designs: a drag
+// anywhere or a plain wheel moves it, ⌘/Ctrl+wheel and a pinch zoom it. A click on a preview or its
+// label (or Enter on a focused one) opens that design full size and live (full.tsx).
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react'
 import { t } from '../i18n'
 import { Mounted, type Api, type Screen, type Store } from './ui'
@@ -18,14 +21,17 @@ const LABEL = 34 // the label above an artboard, in screen pixels at any zoom
 const PAD = { x: 72, top: 40, bottom: 150 } // room around the board, in screen pixels (the bar sits in the bottom)
 const MAX_Z = 2
 const MAX_LIVE = 8
-const TALLEST = 8000
+// A preview shows the top of the design, cropped to its frame; nothing in it takes a pointer.
+const PREVIEW = 'pointer-events-none h-full overflow-hidden'
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
-// A web design's height once it ran, by route, kept while the page is open so its card keeps it.
-const heights = new Map<string, number>()
 
-export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
-  screens: Screen[]; size: [number, number]; grows: boolean; sel: string; store: Store; api: MutableRefObject<Api | null>; onCentre: (key: string) => void
+export function Desk({ screens, size, phone, sel, store, api, onCentre, open, hidden }: {
+  screens: Screen[]; size: [number, number]; phone: boolean; sel: string; store: Store; api: MutableRefObject<Api | null>; onCentre: (key: string) => void
+  /** Opens a design full size. */
+  open: (key: string) => void
+  /** A design is open full size over the desk: the desk keeps its place and takes no keys. */
+  hidden: boolean
 }) {
   const [W, H] = size
   const cols = Math.min(screens.length, 5), rows = Math.ceil(screens.length / cols)
@@ -35,10 +41,11 @@ export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
   centreRef.current = onCentre
   const selRef = useRef(sel)
   selRef.current = sel
-  const [, setGrown] = useState(0)
+  const hiddenRef = useRef(hidden)
+  hiddenRef.current = hidden
   const [live, setLive] = useState<Set<string>>(() => new Set([sel]))
-  // The desk's own calls the policy and the refit make from outside its effect.
-  const hooks = useRef({ policy: () => {}, refit: () => {} })
+  // The policy, called from outside the desk's effect when the selection changes.
+  const hooks = useRef({ policy: () => {} })
 
   useLayoutEffect(() => {
     const s = scroller.current!, w = world.current!
@@ -140,7 +147,7 @@ export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
       policy()
     }, { root: s, rootMargin: '100%' })
     w.querySelectorAll('[data-board]').forEach(el => io.observe(el))
-    hooks.current = { policy, refit: () => { if (fitting && !anim) fitAll(false) } }
+    hooks.current = { policy }
 
     /* The artboard nearest the centre of the view is the one the bar is on. At Fit every design is
        in view, so the one chosen last (the link's own first, as it opens) stays chosen. */
@@ -195,38 +202,15 @@ export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
     }
     const onTouchEnd = (e: TouchEvent) => { if (e.touches.length < 2) { t0 = null; touching = e.touches.length > 0 } }
 
-    /* Drag with the mouse to move the desk: on the desk itself (gaps, padding, a card that isn't
-       running) with the left button, anywhere with the middle one or with Space held, as in design
-       tools. A press on a running design is the design's own: it selects text, drags its sliders
-       and its drag-and-drop, so it never starts a pan, and neither does a press the design handled
-       (defaultPrevented) or one on a control or a field. */
+    /* Drag with the mouse anywhere but a control to move the desk; the previews are inert, so a
+       drag on one moves the desk too, and a press that doesn't move is a click that opens it. */
     let drag: { x: number; y: number; l: number; t: number; id: number; moved: boolean } | null = null
-    let space = false
-    // Whether the last press was on a running design: the page's focus then rests on the body
-    // while the design has it, so the desk's keys leave its keystrokes alone (onKey).
-    let inDesign = false
-    const CONTROL = 'button, a, input, textarea, select, label, [contenteditable]:not([contenteditable="false"]), [draggable="true"], [role="slider"], [data-label]'
-    const onPress = (e: PointerEvent) => { inDesign = !!(e.target as Element).closest?.('[data-mount]') }
-    // A press on a design's plain text focuses the desk (the nearest focusable box); only the
-    // keyboard's own way back to the desk (Tab, focus-visible) gives the keys to the desk again.
-    const onFocus = () => { if (s.matches(':focus-visible')) inDesign = false }
     const onDown = (e: PointerEvent) => {
-      if (e.pointerType !== 'mouse' || (e.button !== 0 && e.button !== 1) || e.defaultPrevented) return
-      const at = e.target as HTMLElement
-      if (e.button === 0 && !space && (at.closest(CONTROL) || at.closest('[data-mount]'))) return
+      if (e.pointerType !== 'mouse' || (e.button !== 0 && e.button !== 1)) return
+      if (e.button === 0 && (e.target as HTMLElement).closest('button, a, input, [data-label]')) return
       drag = { x: e.clientX, y: e.clientY, l: s.scrollLeft, t: s.scrollTop, id: e.pointerId, moved: false }
-      if (e.button === 1 || space) e.preventDefault()
+      if (e.button === 1) e.preventDefault()
     }
-    const onSpace = (e: KeyboardEvent) => {
-      if (e.key !== ' ' || e.repeat) return
-      const at = e.target as HTMLElement
-      if (e.type === 'keyup') { space = false; delete s.dataset.space; return }
-      if ((at !== s && at !== document.body && at !== document.documentElement) || inDesign) return
-      space = true
-      s.dataset.space = ''
-      e.preventDefault()
-    }
-    const onBlur = () => { space = false; delete s.dataset.space }
     const onMove = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y
@@ -251,11 +235,10 @@ export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
       drag = null
     }
     // The keys work on the desk, and on the page when nothing else has the focus (as when it opens),
-    // unless the last press was on a design: its own shortcuts on window are then its own.
+    // never while a design is open full size: its keys are its own then.
     const onKey = (e: KeyboardEvent) => {
       const at = e.target as HTMLElement
-      if (at !== s && at !== document.body && at !== document.documentElement) return
-      if (inDesign) return
+      if (hiddenRef.current || (at !== s && at !== document.body && at !== document.documentElement)) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const { cx, cy } = view()
       if (e.key === '+' || e.key === '=') { manual(); zoomAt(z * 1.25, cx, cy) }
@@ -290,11 +273,6 @@ export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
     s.addEventListener('pointerup', onUp)
     s.addEventListener('pointercancel', onUp)
     window.addEventListener('keydown', onKey)
-    window.addEventListener('keydown', onSpace)
-    window.addEventListener('keyup', onSpace)
-    window.addEventListener('blur', onBlur)
-    window.addEventListener('pointerdown', onPress, true)
-    s.addEventListener('focus', onFocus)
     return () => {
       stop(); cancelAnimationFrame(ticking); ro.disconnect(); io.disconnect()
       s.removeEventListener('scroll', onScroll)
@@ -310,11 +288,6 @@ export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
       s.removeEventListener('pointerup', onUp)
       s.removeEventListener('pointercancel', onUp)
       window.removeEventListener('keydown', onKey)
-      window.removeEventListener('keydown', onSpace)
-      window.removeEventListener('keyup', onSpace)
-      window.removeEventListener('blur', onBlur)
-      window.removeEventListener('pointerdown', onPress, true)
-      s.removeEventListener('focus', onFocus)
       api.current = null
     }
   }, [api, store, rows])
@@ -322,39 +295,33 @@ export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
   // The selected design always runs.
   useEffect(() => { hooks.current.policy() }, [sel])
 
-  const grow = (key: string) => (h: number) => {
-    const next = Math.min(TALLEST, Math.ceil(h))
-    if (next <= (heights.get(key) ?? H)) return
-    heights.set(key, next)
-    setGrown(n => n + 1)
-    requestAnimationFrame(() => hooks.current.refit())
-  }
 
   return (
-    <div ref={scroller} data-viewer-desk tabIndex={0} role="region" aria-label={t('Every shared design on one desk. Drag to move, pinch or Ctrl+scroll to zoom, 0 fits, 1 is actual size.')}
-      className="absolute inset-0 cursor-grab touch-pan-x touch-pan-y overflow-auto overscroll-contain select-none [scrollbar-width:none] data-[drag]:cursor-grabbing data-[space]:[&_[data-mount]]:cursor-grab [&::-webkit-scrollbar]:hidden [&_[data-mount]]:cursor-auto [&_[data-mount]]:select-text">
+    <div ref={scroller} data-viewer-desk tabIndex={0} role="region" inert={hidden} aria-hidden={hidden || undefined} aria-label={t('Every shared design on one desk. Drag to move, pinch or Ctrl+scroll to zoom, 0 fits, 1 is actual size.')}
+      className={`absolute inset-0 isolate cursor-grab touch-pan-x touch-pan-y overflow-auto overscroll-contain select-none [scrollbar-width:none] data-[drag]:cursor-grabbing [&::-webkit-scrollbar]:hidden`}>
       <div className="grid min-h-full w-max min-w-full place-items-center" style={{ padding: `${PAD.top}px ${PAD.x}px ${PAD.bottom}px` }}>
         <div ref={world} data-world className="grid items-start [--edge:rgba(0,0,0,.12)] dark:[--edge:rgba(255,255,255,.12)]"
           style={{ gridTemplateColumns: `repeat(${cols}, ${W}px)`, columnGap: GAP, rowGap: GAP * 1.5 }}>
           {screens.map(s => {
             const on = s.key === sel, running = live.has(s.key)
-            const h = grows ? heights.get(s.key) ?? H : H
             return (
               <section key={s.key} data-board={s.key} aria-label={`#${s.n} ${s.name}`} className="shrink-0" style={{ width: W }}>
                 {/* The label, as on a design canvas. It stays the same size on screen at any zoom. */}
                 <div data-label className="flex items-center gap-2 pb-2 text-[13px]" style={{ zoom: 'var(--inv, 1)', width: `calc(${W}px * var(--z, 1))`, height: LABEL }}>
-                  <button onClick={() => api.current?.show(s.key)} className="flex min-w-0 items-center gap-1.5 rounded-md text-left">
+                  <button onClick={() => open(s.key)} className="flex min-w-0 items-center gap-1.5 rounded-md text-left">
                     <span className={`font-semibold tabular-nums transition-colors motion-reduce:transition-none ${on ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400 dark:text-zinc-500'}`}>#{s.n}</span>
                     <span className={`truncate transition-colors motion-reduce:transition-none ${on ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'}`}>{s.name}</span>
                   </button>
                 </div>
-                <div data-frame className={`relative bg-white transition-shadow duration-300 motion-reduce:transition-none dark:bg-zinc-950 ${grows ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}
+                <div data-frame role="button" tabIndex={0} aria-label={t('Open #{n} {name}', { n: s.n, name: s.name })}
+                  onClick={() => open(s.key)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(s.key) } }}
+                  className={`relative cursor-pointer overflow-hidden bg-white [contain:layout_paint] transition-shadow duration-300 motion-reduce:transition-none dark:bg-zinc-950 [&_*]:![animation-delay:-60s] [&_*]:![animation-play-state:paused] ${on ? '' : '[--ring:var(--edge)] hover:[--ring:rgba(14,165,233,.55)]'}`}
                   style={{
-                    height: h,
-                    borderRadius: grows ? 'calc(12px * var(--inv, 1))' : 'max(28px, calc(12px * var(--inv, 1)))',
-                    boxShadow: `0 0 0 calc(${on ? 2 : 1}px * var(--inv, 1)) ${on ? '#0ea5e9' : 'var(--edge)'}, 0 calc(24px * var(--inv, 1)) calc(60px * var(--inv, 1)) calc(-24px * var(--inv, 1)) rgba(0,0,0,.45)`,
+                    height: H,
+                    borderRadius: phone ? 'max(28px, calc(12px * var(--inv, 1)))' : 'calc(12px * var(--inv, 1))',
+                    boxShadow: `0 0 0 calc(${on ? 2 : 1}px * var(--inv, 1)) ${on ? '#0ea5e9' : 'var(--ring)'}, 0 calc(24px * var(--inv, 1)) calc(60px * var(--inv, 1)) calc(-24px * var(--inv, 1)) rgba(0,0,0,.45)`,
                   }}>
-                  <Mounted v={s.v} live={running} grown={grows ? grow(s.key) : undefined} />
+                  <Mounted v={s.v} live={running} inert className={PREVIEW} />
                   {!running && (
                     <div aria-hidden="true" className="absolute inset-0 grid place-items-center bg-zinc-50 text-[40px] text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500">
                       <span><span className="tabular-nums">#{s.n}</span> <span className="font-semibold text-zinc-500 dark:text-zinc-400">{s.name}</span></span>

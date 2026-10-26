@@ -12,6 +12,7 @@ import { t } from '../i18n'
 import { numberOf } from '../variants'
 import { Bar } from './bar'
 import { Desk } from './desk'
+import { Full } from './full'
 import { Header, type Appearance } from './header'
 import { Phone } from './phone'
 import { Icon, MountsCtx, face, makeStore, surface, type Api, type Mounts, type Screen } from './ui'
@@ -78,13 +79,39 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   const [sel, setSel] = useState(() => `${start[0]}/${start[1]}`)
   const i = Math.max(0, screens.findIndex(s => s.key === sel))
   const cur = screens[i]
+  const size: [number, number] = proto.kind === 'phone' ? proto.screen : [1200, 750]
   // A prototype chosen in the header starts on its first design.
   useEffect(() => { if (!screens.some(s => s.key === sel)) setSel(screens[0].key) })
   const isNewer = useSyncExternalStore(newer.sub, newer.get)
   const facts = { owner: shareInfo?.owner ?? '', version: shareInfo?.version ?? 1, updatedAt: shareInfo?.updatedAt ?? new Date().toISOString() }
 
+  // A design opened full size from the desk, and whether it is on its way back into its preview.
+  const [open, setOpen] = useState<string | null>(null)
+  const [closing, setClosing] = useState(false)
+  const full = wide && open !== null
+  const openDesign = (key: string) => { setSel(key); setOpen(key); setClosing(false) }
+  const back = () => { if (open && !closing) setClosing(true) }
+  const closed = () => {
+    const key = open
+    setOpen(null); setClosing(false)
+    if (key) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-board="${CSS.escape(key)}"] [data-frame]`)?.focus({ preventScroll: true }))
+  }
+  // Esc goes back to the desk, unless the design used it (a menu of its own closing).
+  useEffect(() => {
+    if (!full) return
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) back() }
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  })
+  // Another prototype chosen in the header goes back to its desk.
+  useEffect(() => { setOpen(null); setClosing(false) }, [protoId])
+
   const go = (key: string) => { setSel(key); api.current?.show(key) }
-  const step = (d: number) => { const n = i + d; if (n >= 0 && n < screens.length) go(screens[n].key) }
+  const step = (d: number) => {
+    const n = i + d
+    if (n < 0 || n >= screens.length) return
+    if (full) { setSel(screens[n].key); setOpen(screens[n].key) } else go(screens[n].key)
+  }
 
   return (
     <div ref={root} data-viewer dir="ltr" className={`${face} ${surface} relative flex h-full flex-col overflow-hidden text-zinc-900 antialiased dark:text-zinc-100`}>
@@ -99,10 +126,14 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
       )}
       <div className="relative min-h-0 flex-1">
         {wide
-          ? <Desk key={proto.id} screens={screens} size={proto.kind === 'phone' ? proto.screen : [1200, 750]} grows={proto.kind !== 'phone'} sel={cur.key} store={store} api={api} onCentre={key => { if (key !== cur.key) setSel(key) }} />
+          ? <>
+            <Desk key={proto.id} screens={screens} size={size} phone={proto.kind === 'phone'} sel={cur.key} store={store} api={api}
+              onCentre={key => { if (!full && key !== cur.key) setSel(key) }} open={openDesign} hidden={full} />
+            {full && <Full screen={cur} size={size} phone={proto.kind === 'phone'} closing={closing} onClosed={closed} />}
+          </>
           : <Phone screens={screens} i={i} go={go} step={step} root={root} />}
       </div>
-      {wide && <Bar screens={screens} i={i} go={go} step={step} store={store} api={api} root={root} />}
+      {wide && <Bar screens={screens} i={i} go={go} step={step} store={store} api={api} root={root} full={full} back={back} />}
     </div>
   )
 }

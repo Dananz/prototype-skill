@@ -109,7 +109,9 @@ Non-goals (this spec):
     header whose title switches between the prototypes on the link, and one bar in thumb reach that
     names the design in view, carries the zoom, and grows into that design's comments. On a phone
     it is one design at a time with no sideways swipe (the design's own carousels and wide tables
-    keep the gesture), and a switcher above the bar. See Design › Viewer.
+    keep the gesture), and a switcher above the bar. On the desk the designs are previews (inert,
+    one fixed frame each, so the rows line up); a click opens one full size and live (Tomer,
+    2026-10-26, after the first real share). See Design › Viewer.
 
 
 ## Prior art (how comparable products do this)
@@ -657,24 +659,41 @@ right, a quiet hint on wide screens ("Drag to move · pinch or ⌘ scroll to zoo
 Dananz, not to an AI directly", and the theme (System, Light, Dark; per viewer, in localStorage).
 A share with one prototype shows the title without the caret.
 
-**The desk, wide screens (≥ 640 px).** Every design of the chosen prototype is an artboard drawn
-at 1200 px wide on the dotted desk, in rows of at most five, ordered by number, 160 px apart
-(240 px between rows). Above each, a label that stays the same size at any zoom: `#n` and the
-name (sky and bold on the selected one), and a comment-count badge (phase 1). The selected
-artboard has a 2 px sky ring, the others a 1 px line. Drag or scroll pans; pinch, ⌘/Ctrl+scroll,
-`+` and `-` zoom about the pointer, from Fit down to 0.05 and up to 200 %; `0` fits, `1` is
-100 %. Artboards shrink with CSS `zoom`, never `transform: scale` (Safari keeps one real layout
-per design). Whichever artboard is nearest the middle of the view is the selected one; the bar
-names it and comments go to it. Clicking a label flies to that artboard.
+**The desk, wide screens (≥ 640 px).** Every design of the chosen prototype is a preview on the
+dotted desk: the design drawn in a fixed frame, 1200 × 750 (a desktop window, the top of the
+page, cropped) or, for a phone prototype, its screen size, in rows of at most five, ordered by
+number, 160 px apart (240 px between rows). Every frame of a prototype is the same size, so the
+rows line up at any window width. A preview is `inert` with pointer events off and its
+animations paused: nothing in it reacts. Above each, a label that stays the same size at any
+zoom: `#n` and the name (sky and bold on the selected one, truncated with an ellipsis), and a
+comment-count badge (phase 1). The selected frame has a 2 px sky ring, the others a 1 px line
+that turns sky on hover (the frame is clickable). A drag anywhere or a plain wheel pans; pinch,
+⌘/Ctrl+scroll, `+` and `-` zoom about the pointer, from Fit down to 0.05 and up to 200 %; `0`
+fits, `1` is 100 %. Frames shrink with CSS `zoom`, never `transform: scale` (Safari keeps one
+real layout per design). At Fit the selection stays where it was (the link's start design when
+it opens); once the viewer moves, whichever frame is nearest the middle of the view is the
+selected one; the bar names it and comments go to it.
 
-**Mount policy.** Each artboard mounts its design live only while it is within one viewport of
+**Full view.** A click on a preview or its label (or Enter on a focused one) opens that design
+full size: live and interactive, filling the space between the header and the bar, scrolling
+inside itself like the owner's stage, at its real 1200 px width when the window has room, else
+shrunk to the width (a phone prototype: its screen, shrunk to fit). It grows out of its preview
+(240 ms, `cubic-bezier(.2,.8,.2,1)`; none with reduced motion) and shrinks back into it. The bar
+then names it, steps to its neighbours in full view (`‹ i of N ›`) and leads back with "All
+designs" (grid icon); Esc does the same unless the design used it. The desk stays underneath, so
+going back finds it at the same zoom and position. The desk's keys don't act while a design is
+open.
+
+**Mount policy.** Each preview mounts its design only while it is within one viewport of
 the view, or is the selected one; the others are a light card with `#n Name` until they come
 near, and unmount when they leave (an `IntersectionObserver` with a one-viewport margin). At most
-8 live at once on a wide screen, the nearest first. A phone mounts exactly one design (#136).
+8 previews at once on a wide screen, the nearest first, plus the one open full size. A phone
+mounts exactly one design (#136).
 
 **The bar** (bottom, centred, 540 px wide; 440 px on a phone). Row one, wide screens only: `#n
 Name`, then page dots (or, past 7 designs, `‹ n of N ⌄ ›` with a list of every design and its
-comment count), then the zoom: `−`, the percentage, `+`, Fit, 100 %. Row two (phase 1): the
+comment count), then the zoom: `−`, the percentage, `+`, Fit, 100 %. With a design open full
+size: `#n Name`, `‹ i of N ›` and "All designs" instead of the dots and the zoom. Row two (phase 1): the
 comment field ("Comment on #n…", one field that looks the same folded and grown) and the
 commenters' faces with the count. Phase 0 has no row two; the bar is row one only.
 
