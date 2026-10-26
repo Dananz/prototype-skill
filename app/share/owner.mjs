@@ -6,11 +6,11 @@
 // local host). Only statuses and the owner's own replies ever go to the host; Claude's replies stay here.
 import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { ShareError } from './scope.mjs'
-import { fromComment } from './viewer-text.mjs'
+import { fromComment, trayRow } from './viewer-text.mjs'
 
 const readJson = (f, fallback) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return fallback } }
 // Written whole: into a scratch name beside it, then renamed over it.
@@ -99,16 +99,18 @@ export function client(host, token, { fetch = globalThis.fetch, timeout = 60_000
 
 // One client per host name for a process, its token read once: the Keychain is a process spawn.
 // `forget` drops it, after the host refused the token.
-const clients = new Map()
+// A host with no token is remembered for a minute, so a poll doesn't ask the Keychain every time.
+const clients = new Map(), missing = new Map()
 export function clientFor(name, options) {
   if (!clients.has(name)) {
+    if (Date.now() - (missing.get(name) || 0) < 60e3) return null
     const host = hostNamed(name), token = host && getToken(name)
-    if (!host || !token) return null
+    if (!host || !token) { missing.set(name, Date.now()); return null }
     clients.set(name, client(host, token, { timeout: 15_000, ...options }))
   }
   return clients.get(name)
 }
-export const forget = name => clients.delete(name)
+export const forget = name => { clients.delete(name); missing.delete(name) }
 
 // ---------- this session's shares ----------
 
@@ -145,13 +147,21 @@ const keep = e => !e?.status || e.status === 401 || e.status === 408 || e.status
 export async function flush(dir, { clientFor: get = clientFor } = {}) {
   const file = outboxFile(dir), folder = dirname(file)
   const taken = []
+  // A claimed file is touched: a rename keeps the old time, and an old one would look abandoned.
   const claim = from => {
     const to = join(folder, `outbox.${process.pid}.${randomBytes(4).toString('hex')}.sending`)
-    try { renameSync(from, to); taken.push(to) } catch { /* another flush took it */ }
+    try { renameSync(from, to) } catch { return /* another flush took it */ }
+    taken.push(to)
+    try { const now = new Date(); utimesSync(to, now, now) } catch { /* still ours to read */ }
   }
   try { if (statSync(file).size > 0) claim(file) } catch { /* nothing queued */ }
   // A flush that died halfway left its file: anyone takes it over after two minutes.
-  try { for (const f of readdirSync(folder)) if (/^outbox\..+\.sending$/.test(f) && Date.now() - statSync(join(folder, f)).mtimeMs > 120e3) claim(join(folder, f)) } catch { /* no folder */ }
+  try {
+    for (const f of readdirSync(folder)) {
+      const at = join(folder, f)
+      if (/^outbox\..+\.sending$/.test(f) && !taken.includes(at) && Date.now() - statSync(at).mtimeMs > 120e3) claim(at)
+    }
+  } catch { /* no folder, or a file another flush just took */ }
   if (!taken.length) return { delivered: 0, kept: 0 }
 
   const entries = taken.flatMap(f => readFileSync(f, 'utf8').split('\n').filter(Boolean).flatMap(l => { try { return [JSON.parse(l)] } catch { return [] } }))
@@ -203,9 +213,11 @@ export function mergeTray(dir, hostName, rows, now) {
   const mine = new Set(readShares(dir).map(e => e.id))
   let changed = false
   for (const k of Object.keys(tray.items)) if (!mine.has(k.split('/')[0])) { delete tray.items[k]; changed = true }
-  for (const row of rows) {
+  for (const raw of rows) {
+    // Only what passes the same checks as a batch's comments, with only the host's fields.
+    const row = trayRow(raw)
     const share = row?.share?.id
-    if (!mine.has(share) || typeof row.id !== 'string') continue
+    if (!row || !mine.has(share)) continue
     const k = keyOf(share, row.id), prev = tray.items[k]
     if (row.deleted) { if (prev) { delete tray.items[k]; changed = true } continue }
     const next = { ...row, dismissed: !!prev?.dismissed }
@@ -302,7 +314,9 @@ export async function sendComments({ sessionDir, rows, receive, clientFor: get =
   for (const row of rows) {
     const id = row?.id
     let c
-    try { c = fromComment(row, sessionDir) } catch (e) { results.push({ id, result: 'error', error: String(e?.message || e) }); continue }
+    // Made and checked as the inbox will take it before anything is marked sent on the host, so a
+    // comment is never sent there and missing here.
+    try { c = fromComment(row, sessionDir); receive({ comments: [c] }, sessionDir, { check: true }) } catch (e) { results.push({ id, result: 'error', error: String(e?.message || e) }); continue }
     const name = shares.find(e => e.id === row.share.id)?.host || host || defaultHost()?.name
     const api = name && get(name)
     if (!api) { results.push({ id, result: 'error', error: 'No share host with an owner token on this machine: run proto share setup --local' }); continue }
@@ -315,6 +329,7 @@ export async function sendComments({ sessionDir, rows, receive, clientFor: get =
       const result = e?.code === 'already_sent' ? 'already_sent' : e?.status === 410 ? 'deleted' : e?.status === 404 ? 'unknown' : 'error'
       results.push({ id, result, ...(result === 'error' ? { error: String(e?.message || e) } : {}) })
       if (result === 'already_sent' && e.data?.status) flipped.push([name, { ...row, status: e.data.status }])
+      if (e?.status === 401) forget(name)
     }
   }
   let batch = null

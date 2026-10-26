@@ -3,7 +3,8 @@
 // its owner token; nothing here starts a host, prints or exits. A share is reviewed before it goes:
 // anything blocked stops it, and warnings stop it until the person says yes.
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, readFileSync, readdirSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { metaOf } from '../server.mjs'
 import { buildShare } from './build.mjs'
@@ -55,10 +56,23 @@ export function hashOf(sessionDir, scope) {
 /** Whether the shared prototypes changed since that version was published ("Changed since shared"). */
 export const changedSince = (sessionDir, entry) => !!entry?.sourceHash && !!entry.scope?.protos && hashOf(sessionDir, entry.scope) !== entry.sourceHash
 
-// What this version was built from, so what a viewer saw can be compared with the session later.
-function snapshot(sessionDir, id, version, scope) {
-  const to = join(sessionDir, '.proto', 'shares', id, `v${version}`)
-  for (const p of scope.protos) cpSync(join(sessionDir, 'src', 'protos', p.id), join(to, p.id), { recursive: true })
+// What a version is built from, so what a viewer saw can be compared with the session later: the
+// shared prototypes' files and their hash, taken just before the build (an edit during the build
+// is then a change since shared, never folded into the snapshot), and kept as v<N> once published.
+function sources(sessionDir, scope) {
+  const hash = hashOf(sessionDir, scope)
+  const stage = join(sessionDir, '.proto', 'shares', `.staging-${process.pid}-${randomBytes(4).toString('hex')}`)
+  for (const p of scope.protos) cpSync(join(sessionDir, 'src', 'protos', p.id), join(stage, p.id), { recursive: true })
+  return {
+    hash,
+    keep(id, version) {
+      const to = join(sessionDir, '.proto', 'shares', id, `v${version}`)
+      mkdirSync(join(to, '..'), { recursive: true })
+      rmSync(to, { recursive: true, force: true })
+      renameSync(stage, to)
+    },
+    drop() { rmSync(stage, { recursive: true, force: true }) },
+  }
 }
 
 const metaFor = (session, sessionDir, scope, title, extra = {}) => ({
@@ -67,11 +81,13 @@ const metaFor = (session, sessionDir, scope, title, extra = {}) => ({
 
 // Built and reviewed; null when it may go out, else what stops it.
 async function built({ sessionDir, scope, info, yes }) {
-  const b = await buildShare({ sessionDir, scope, info })
+  const src = sources(sessionDir, scope)
+  let b
+  try { b = await buildShare({ sessionDir, scope, info }) } catch (e) { src.drop(); throw e }
   const review = reviewOf(b)
-  if (review.block.length) return { b, review, stop: { ok: false, blocked: true, review } }
-  if (review.notes.length && !yes) return { b, review, stop: { ok: false, needsYes: true, review } }
-  return { b, review, stop: null }
+  const stop = review.block.length ? { ok: false, blocked: true, review } : review.notes.length && !yes ? { ok: false, needsYes: true, review } : null
+  if (stop) src.drop()
+  return { b, review, stop, src }
 }
 
 /**
@@ -80,13 +96,16 @@ async function built({ sessionDir, scope, info, yes }) {
  * with nothing sent. Nothing is written on this Mac until the host has the page.
  */
 export async function publishShare({ sessionDir, session, host, token, scope, title, yes, fetch }) {
-  const { b, review, stop } = await built({ sessionDir, scope, info: { title, owner: host.owner || '', version: 1 }, yes })
+  const { b, review, stop, src } = await built({ sessionDir, scope, info: { title, owner: host.owner || '', version: 1 }, yes })
   if (stop) return stop
-  const api = client(host, token, fetch ? { fetch } : {})
-  const id = await api.create()
-  const { version } = await api.put(id, b.gz, metaFor(session, sessionDir, scope, title))
-  snapshot(sessionDir, id, version, scope)
-  const entry = { id, host: host.name, title, scope, version, publishedAt: new Date().toISOString(), sourceHash: hashOf(sessionDir, scope) }
+  let id, version
+  try {
+    const api = client(host, token, fetch ? { fetch } : {})
+    id = await api.create()
+    ;({ version } = await api.put(id, b.gz, metaFor(session, sessionDir, scope, title)))
+  } catch (e) { src.drop(); throw e }
+  src.keep(id, version)
+  const entry = { id, host: host.name, title, scope, version, publishedAt: new Date().toISOString(), sourceHash: src.hash }
   writeShares(sessionDir, [...readShares(sessionDir).filter(e => e.id !== id), entry])
   return { ok: true, entry, link: linkOf(host, id), review }
 }
@@ -101,11 +120,14 @@ export async function updateShare({ sessionDir, session, host, token, id, note, 
   if (!entry) throw new ShareError(`No share ${id} in this session: proto share ls lists them`)
   if (entry.host !== host.name) throw new ShareError(`${id} is on the host "${entry.host}", not "${host.name}"`)
   const text = typeof note === 'string' ? note.trim().slice(0, 300) : ''
-  const { b, review, stop } = await built({ sessionDir, scope: entry.scope, info: { title: entry.title, owner: host.owner || '', version: (entry.version || 1) + 1 }, yes })
+  const { b, review, stop, src } = await built({ sessionDir, scope: entry.scope, info: { title: entry.title, owner: host.owner || '', version: (entry.version || 1) + 1 }, yes })
   if (stop) return stop
-  const { version } = await client(host, token, fetch ? { fetch } : {}).put(id, b.gz, metaFor(session, sessionDir, entry.scope, entry.title, text ? { note: text } : {}))
-  snapshot(sessionDir, id, version, entry.scope)
-  const next = { ...entry, version, publishedAt: new Date().toISOString(), sourceHash: hashOf(sessionDir, entry.scope), ...(text ? { note: text } : {}) }
+  let version
+  try {
+    ;({ version } = await client(host, token, fetch ? { fetch } : {}).put(id, b.gz, metaFor(session, sessionDir, entry.scope, entry.title, text ? { note: text } : {})))
+  } catch (e) { src.drop(); throw e }
+  src.keep(id, version)
+  const next = { ...entry, version, publishedAt: new Date().toISOString(), sourceHash: src.hash, ...(text ? { note: text } : {}) }
   if (!text) delete next.note
   writeShares(sessionDir, readShares(sessionDir).map(e => e.id === id ? next : e))
   return { ok: true, entry: next, link: linkOf(host, id), review }

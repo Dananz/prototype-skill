@@ -20,18 +20,30 @@ const IDENT = /^[A-Za-z_$][\w$]{0,99}$/
  */
 export function clean(s, max = MAX_TEXT) {
   if (typeof s !== 'string') return ''
-  return s
+  return cut(s
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g, '') // OSC: ESC ] … BEL or ESC \
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '') // CSI: ESC [ … final byte
     .replace(/\x1b[@-_]?/g, '') // any other escape
     .replace(/\r\n?|[\u2028\u2029\u0085]/g, '\n')
     .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '')
     .replace(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/g, '')
-    .slice(0, max)
+    .replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '')
+    , max)
+}
+
+/** At most n UTF-16 units, never half of a character made of two. */
+export function cut(s, n) {
+  if (s.length <= n) return s
+  const out = s.slice(0, n)
+  return /[\ud800-\udbff]$/.test(out) ? out.slice(0, -1) : out
 }
 
 /** A viewer's display name: at most 40 letters, digits, spaces, dots, apostrophes and dashes. */
-export const nameOf = s => clean(String(s ?? ''), 400).replace(/[^\p{L}\p{N} .'\-\s]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40).trim()
+// Counted in characters (code points), as app/server.mjs checks it.
+export const nameOf = s => [...clean(String(s ?? ''), 400).replace(/[^\p{L}\p{N} .'\-\s]/gu, '').replace(/\s+/g, ' ').trim()].slice(0, 40).join('').trim()
+
+/** A share's title as a batch keeps it: one line, no tabs or controls, at most 120 units. */
+export const titleOf = s => cut(clean(String(s ?? ''), 400).replace(/\s+/g, ' ').trim(), 120).trim()
 
 /** A GitHub login as GitHub allows it, else null. */
 export const loginOf = s => typeof s === 'string' && LOGIN.test(s) ? s : null
@@ -92,7 +104,7 @@ export function fromComment(row, sessionDir) {
     text: clean(row.body).trim() || '(no words)',
     from: {
       share, version, viewer: loginOf(row.author?.login) || 'unknown', name: nameOf(row.author?.name), verified: true, link: share,
-      comment: row.id, title: clean(row.share?.title, 120).replace(/\n/g, ' '),
+      comment: row.id, title: titleOf(row.share?.title),
     },
     ...(Object.keys(target).length ? { target } : {}),
     ...(view ? { view } : {}),
@@ -125,6 +137,43 @@ export function sharedLines(c) {
   ]
 }
 
+const STATUSES = ['new', 'sent', 'working', 'done']
+const VARIANT = /^[a-z0-9][a-z0-9_-]{0,63}\/[A-Z]{1,3}$/
+const int = (v, lo = 0) => Number.isInteger(v) && v >= lo
+const time = v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 8.64e15
+const num = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi
+const AVATAR = 'https://avatars.githubusercontent.com/'
+
+/**
+ * A comment from the host, checked before anything on this Mac keeps or prints it: the host is
+ * trusted for the owner's token, not for what viewers wrote. Only the known fields, each of its type;
+ * text cleaned and capped. null when the row isn't one (it is then dropped).
+ */
+export function trayRow(r) {
+  if (!r || typeof r !== 'object' || !UUID.test(String(r.id)) || !SHARE_ID.test(String(r.share?.id))) return null
+  if (!int(r.share.version, 1) || !int(r.version, 1) || !VARIANT.test(String(r.variant)) || !STATUSES.includes(r.status)) return null
+  if (!time(r.created_at) || !time(r.updated_at)) return null
+  const login = loginOf(r.author?.login)
+  if (!login || (typeof r.body !== 'string')) return null
+  const t = r.target
+  let target = null
+  if (t && typeof t === 'object' && num(t.x, 0, 100) && num(t.y, 0, 100) && t.view && /^[a-z]{1,20}$/.test(String(t.view.size)) && num(t.view.w, 1, 20000) && num(t.view.h, 1, 20000)) {
+    target = { x: t.x, y: t.y, view: { size: t.view.size, w: t.view.w, h: t.view.h } }
+    if (typeof t.src === 'string' && t.src.length <= 300) target.src = clean(t.src, 300).replace(/\s/g, '')
+    if (typeof t.component === 'string' && IDENT.test(t.component)) target.component = t.component
+    if (typeof t.path === 'string') target.path = clean(t.path, 1000).replace(/\n/g, ' ')
+  }
+  const avatar = typeof r.author?.avatar === 'string' && r.author.avatar.startsWith(AVATAR) && r.author.avatar.length <= 300 ? r.author.avatar : null
+  return {
+    id: r.id, share: { id: r.share.id, title: titleOf(r.share.title) || r.share.id, version: r.share.version },
+    variant: r.variant, version: r.version, body: clean(r.body), target, status: r.status,
+    owner_reply: typeof r.owner_reply === 'string' ? clean(r.owner_reply) : null, owner_reply_at: time(r.owner_reply_at) ? r.owner_reply_at : null,
+    hidden: !!r.hidden, deleted: !!r.deleted, withdrawn: !!r.withdrawn, done_in: int(r.done_in, 1) ? r.done_in : null,
+    author: { gh_id: int(r.author.gh_id, 1) ? r.author.gh_id : null, login, name: nameOf(r.author.name) || null, avatar },
+    created_at: r.created_at, updated_at: r.updated_at,
+  }
+}
+
 /** A comment as the host has it, for `proto share comments`: id, status, where, then the fence. */
 export function hostCommentLines(row) {
   const login = loginOf(row.author?.login) || 'unknown'
@@ -136,7 +185,7 @@ export function hostCommentLines(row) {
   if (path) inside.push(`on the element at: ${path}`)
   const flags = [row.hidden && 'hidden from the link', row.withdrawn && 'withdrawn by the viewer', row.owner_reply && 'you replied'].filter(Boolean)
   return [
-    `${row.id}  ${row.status}  ${variant} on v${row.version}  by @${login}  ${new Date(row.created_at).toISOString()}${flags.length ? `  (${flags.join(', ')})` : ''}`,
+    `${row.id}  ${row.status}  ${variant} on v${row.version}  by @${login}  ${time(row.created_at) ? new Date(row.created_at).toISOString() : '?'}${flags.length ? `  (${flags.join(', ')})` : ''}`,
     ...fence(inside).map(l => `   ${l}`),
   ]
 }

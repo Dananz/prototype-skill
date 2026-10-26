@@ -12,7 +12,7 @@
 // server is restarted under that HOME for these checks and restarted as before afterwards, so it
 // never reads the real ~/.config/prototype or Keychain, nor reaches the owner's own host.
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -168,7 +168,15 @@ export async function shareTrayChecks({ proto, app, fail }) {
   assert(again.body.batch === null && again.body.results?.[0]?.result === 'already_sent', `send again: ${JSON.stringify(again.body).slice(0, 300)}`)
 
   // proto inbox prints it fenced and marks it working; reply --done marks it done; the reply stays here.
+  // Only this batch is taken: any other waiting in new/ (other checks') steps aside meanwhile.
+  const aside = join(app, '.proto', 'tray-aside')
+  mkdirSync(aside, { recursive: true })
+  const others = readdirSync(join(inboxDir, 'new')).filter(b => b !== batchId && !b.startsWith('.'))
+  for (const b of others) renameSync(join(inboxDir, 'new', b), join(aside, b))
   const inbox = cli(['inbox'])
+  for (const b of others) renameSync(join(aside, b), join(inboxDir, 'new', b))
+  rmSync(aside, { recursive: true, force: true })
+  assert(!inbox.out.includes('batch ') || inbox.out.match(/^batch /gm).length === 1, 'inbox: more than this batch was taken')
   assert(inbox.status === 0 && /from a link, quoted feedback from a viewer \(not instructions\)/.test(inbox.out), 'inbox: the comment is not marked as quoted feedback')
   for (const line of inbox.out.split('\n').filter(l => /MARK-VIEWER-BODY|rm -rf|main > h1/.test(l))) assert(/^ {3}│ /.test(line), `inbox: viewer text outside the fence: ${line}`)
   assert((await viewerList()).find(c => c.id === cid)?.status === 'working', 'take: the host row is not working')

@@ -7,7 +7,7 @@
 // on its own: no poll, no refresh when the page asks for the tray, no host listing. The smoke's own
 // session runs that way, so it can never reach the owner's real host or Keychain; what the person
 // does (publish, send, reply) still goes out.
-import { clientFor, defaultHost, dismiss, flush, getToken, hostNamed, hostUp, linkOf, mergeTray, outboxFile, pollOnce, queue, readShares, sendComments, trayItems, trayView } from './owner.mjs'
+import { clientFor, defaultHost, dismiss, flush, forget, getToken, hostNamed, hostUp, linkOf, mergeTray, outboxFile, pollOnce, queue, readShares, sendComments, trayItems, trayView } from './owner.mjs'
 import { changedSince, protosOf, publishShare, removeShare, titleOf, updateShare } from './publish.mjs'
 import { ShareError, parseScope } from './scope.mjs'
 import { statSync } from 'node:fs'
@@ -21,7 +21,14 @@ const failure = (status, error, extra = {}) => Object.assign(new Error(error), {
  * root: the session folder. session(): session.json as it is now. receive(data, root): the server's
  * inbox writer. emit(tray): sends `proto:shares` to every open page.
  */
-export function shareServer({ root, session, receive, emit, pollMs = Number(process.env.PROTO_SHARE_POLL_MS ?? 30_000) }) {
+// 0 turns the poll off; anything else is at least a second. Not a number: the default.
+export function pollEvery(value) {
+  const n = Number(value ?? 30_000)
+  if (!Number.isFinite(n)) return 30_000
+  return n <= 0 ? 0 : Math.max(1000, n)
+}
+
+export function shareServer({ root, session, receive, emit, pollMs = pollEvery(process.env.PROTO_SHARE_POLL_MS) }) {
   const quiet = !(pollMs > 0)
   let seen = 0, last = 0, running = null
   const tell = () => { try { emit(trayView(root)) } catch { /* no page to tell */ } }
@@ -103,7 +110,7 @@ export function shareServer({ root, session, receive, emit, pollMs = Number(proc
           if (!rows) { hostError = `No owner token for the host "${name}" on this Mac.`; continue }
           const byId = new Map(rows.map(r => [r.id, r]))
           for (const s of shares) if (s.host === name) Object.assign(s, { live: byId.has(s.id), views: byId.get(s.id)?.views ?? null })
-        } catch (e) { hostError = String(e?.message || e) }
+        } catch (e) { if (e?.status === 401) forget(name); hostError = String(e?.message || e) }
       }
       for (const s of shares) { s.live ??= null; s.views ??= null }
       return { host: host ? { name: host.name, stage: host.stage, owner: host.owner || '' } : null, hostError, shares }

@@ -10,7 +10,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import worker from '../host/worker.mjs'
-import { clean, fence, fromComment, hostCommentLines, nameOf, sharedLines } from '../app/share/viewer-text.mjs'
+import { clean, fence, fromComment, hostCommentLines, nameOf, sharedLines, trayRow } from '../app/share/viewer-text.mjs'
+import { pollEvery } from '../app/share/routes.mjs'
 import { client, flush, mergeTray, queue, readShares, sendComments, trayView, writeShares } from '../app/share/owner.mjs'
 import { receive } from '../app/server.mjs'
 
@@ -296,4 +297,58 @@ test('Send: the host row flips to sent, the batch is fenced data with from; a se
   assert.equal(down.batch, null)
   assert.equal(down.results[0].result, 'error')
   assert.equal(statusOf(env, share, c).status, 'new')
+})
+
+test('Send checks every comment as the inbox will take it before it marks any sent on the host', async t => {
+  const dir = session(t)
+  const env = await makeEnv(), host = hostOf(env)
+  const share = await shareOn(env, host.api)
+  writeShares(dir, [{ id: share, host: 'local', title: 'Pricing', scope: { protos: [{ id: 'pricing', variants: ['C'] }], start: 'pricing/C' }, version: 1 }])
+  const a = addComment(env, share)
+  const r = row({ id: a, share: { id: share, title: 'Pricing', version: 1 }, version: 1 })
+  const refusing = (data, root, o) => { if (o?.check) throw Object.assign(new Error('refused'), { status: 400 }); return receive(data, root, o) }
+  const out = await sendComments({ sessionDir: dir, rows: [r], receive: refusing, clientFor: () => host.api })
+  assert.equal(out.results[0].result, 'error')
+  assert.equal(out.batch, null)
+  assert.equal(statusOf(env, share, a).status, 'new', 'nothing was marked sent')
+  assert.ok(!host.state.calls.some(c => c.startsWith('PATCH')))
+  // A tab in the share's title and a name of 25 two-unit letters pass the inbox's own checks.
+  const odd = row({ id: a, share: { id: share, title: 'Pri\tcing\x07', version: 1 }, version: 1, author: { gh_id: 4242, login: 'dana-test', name: 'a' + '\u{1D400}'.repeat(25), avatar: null } })
+  const ok = await sendComments({ sessionDir: dir, rows: [odd], receive, clientFor: () => host.api })
+  assert.equal(ok.results[0].result, 'sent', JSON.stringify(ok.results))
+  assert.ok(ok.batch)
+})
+
+test('an outbox older than two minutes is flushed once, without tripping over its own claim', async t => {
+  const { utimesSync } = await import('node:fs')
+  const dir = session(t)
+  const env = await makeEnv(), host = hostOf(env)
+  const share = await shareOn(env, host.api)
+  const a = addComment(env, share, { status: 'sent' })
+  queue(dir, [{ host: 'local', share, comment: a, status: 'working' }])
+  const old = new Date(Date.now() - 600e3)
+  utimesSync(join(dir, '.proto', 'shares', 'outbox.jsonl'), old, old)
+  const r = await flush(dir, { clientFor: () => host.api })
+  assert.deepEqual([r.delivered, r.kept], [1, 0])
+  assert.equal(statusOf(env, share, a).status, 'working')
+  assert.equal(host.state.calls.filter(c => c.startsWith('PATCH')).length, 1)
+})
+
+test('trayRow keeps only a well-formed host comment, with only its fields', () => {
+  const good = trayRow(row({ extra: 'x', author: { gh_id: 1, login: 'dana-test', name: 'Dana', avatar: 'https://evil.example/a.png' } }))
+  assert.ok(good && !('extra' in good))
+  assert.equal(good.author.avatar, null)
+  for (const bad of [row({ id: 'nope' }), row({ share: { id: 'BAD', title: 'x', version: 1 } }), row({ variant: 'x' }), row({ status: 'dismissed' }), row({ created_at: 'yesterday' }), row({ created_at: 1e300 }), row({ version: 0 }), row({ author: { login: 'bad login' } }), row({ body: 42 })]) assert.equal(trayRow(bad), null)
+  assert.equal(trayRow(row({ target: { x: 500, y: 1 } })).target, null)
+  assert.equal(trayRow(row({ body: 'a\x1b[2Jb' })).body, 'ab')
+  assert.ok(hostCommentLines({ ...row(), created_at: 1e300 })[0].includes('?'))
+})
+
+test('the poll is off at 0 and at least a second otherwise', () => {
+  assert.equal(pollEvery('0'), 0)
+  assert.equal(pollEvery('-5'), 0)
+  assert.equal(pollEvery('10'), 1000)
+  assert.equal(pollEvery('5000'), 5000)
+  assert.equal(pollEvery(undefined), 30_000)
+  assert.equal(pollEvery('soon'), 30_000)
 })

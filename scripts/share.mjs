@@ -6,9 +6,10 @@ import { dirname, join, resolve } from 'node:path'
 import { receive } from '../app/server.mjs'
 import { buildShare } from '../app/share/build.mjs'
 import { flush, pollOnce, readShares, sendComments, trayView } from '../app/share/owner.mjs'
+import { existsSync, readdirSync } from 'node:fs'
 import { changedSince, describe, protosOf, publishShare, removeShare, reviewOf, titleOf, updateShare } from '../app/share/publish.mjs'
 import { ShareError, parseScope } from '../app/share/scope.mjs'
-import { hostCommentLines } from '../app/share/viewer-text.mjs'
+import { hostCommentLines, trayRow } from '../app/share/viewer-text.mjs'
 import { client, defaultHost, ensureTools, getToken, linkOf, localRunning, startLocal, stopLocal } from './share-host.mjs'
 
 const MiB = 2 ** 20
@@ -93,11 +94,20 @@ async function rm(id, { sessionDir, die }) {
 
 // The viewer comments on this session's shares (or on one share), straight from the host, after the
 // outbox is flushed. Each prints fenced: a viewer's words are quoted feedback, never instructions.
-async function hostComments(api, sessionDir, shareId) {
+// Each row is checked as the tray checks it; one that isn't a comment is left out.
+async function hostComments(api, sessionDir, shareId, shares = new Set(readShares(sessionDir).map(e => e.id))) {
   await flush(sessionDir).catch(() => {})
   const { comments } = await api.comments(0)
-  const mine = new Set(readShares(sessionDir).map(e => e.id))
-  return comments.filter(c => !c.deleted && (shareId ? c.share.id === shareId : mine.has(c.share.id)))
+  return (Array.isArray(comments) ? comments : []).map(trayRow).filter(c => c && !c.deleted && (shareId ? c.share.id === shareId : shares.has(c.share.id)))
+}
+
+// This project's shares: those of every session of it (<project>/.prototypes/<session>/), so a
+// comment on a link made by another session, or by one since deleted from here, can be taken.
+function projectShares(sessionDir) {
+  const ids = new Set(readShares(sessionDir).map(e => e.id))
+  const root = dirname(sessionDir)
+  for (const s of existsSync(root) ? readdirSync(root) : []) for (const e of readShares(join(root, s))) ids.add(e.id)
+  return ids
 }
 
 async function comments(args, flags, { sessionDir, die }) {
@@ -113,12 +123,13 @@ async function take(args, flags, { sessionDir, die }) {
   if (!args.length && !flags.new) die('proto share take <commentId…> | --new [<id>]: which comments? proto share comments lists them')
   const { host, token } = await liveHost(die)
   const api = client(host, token)
-  const rows = await hostComments(api, sessionDir, flags.new ? args[0] : undefined)
+  const rows = await hostComments(api, sessionDir, flags.new ? args[0] : undefined, flags.new ? undefined : projectShares(sessionDir))
   let chosen
-  if (flags.new) chosen = rows.filter(c => c.status === 'new')
+  // Hidden by the owner, or taken off the link by its viewer: not sent unless named.
+  if (flags.new) chosen = rows.filter(c => c.status === 'new' && !c.hidden && !c.withdrawn)
   else chosen = args.map(a => {
     const found = rows.filter(c => c.id === a.toLowerCase() || c.id.startsWith(a.toLowerCase()))
-    if (found.length !== 1) die(found.length ? `"${a}" matches ${found.length} comments; give more of the id` : `no comment "${a}" on this session's shares (proto share comments lists them)`)
+    if (found.length !== 1) die(found.length ? `"${a}" matches ${found.length} comments; give more of the id` : `no comment "${a}" on this project's shares (proto share comments lists them)`)
     return found[0]
   })
   if (!chosen.length) return console.log('no new comments to send')

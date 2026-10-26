@@ -341,7 +341,7 @@ const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'co
  * each on its own, so one that fails says why in its comment and never keeps the batch from
  * arriving. Returns the batch, and whether the working variant moved.
  */
-export function receive(data, root = dir) {
+export function receive(data, root = dir, { check = false } = {}) {
   const inbox = join(root, '.proto', 'inbox')
   const comments = Array.isArray(data.comments) ? data.comments : []
   if (!comments.length) throw Object.assign(new Error('no comments'), { status: 400 })
@@ -409,6 +409,9 @@ export function receive(data, root = dir) {
       images,
     }
   })
+  // check: only whether the batch would be taken, with nothing written (Send checks before it marks
+  // comments sent on the host).
+  if (check) return { batch: null, comments: list }
   // Optional generation is one request per variant/capability until answered or withdrawn.
   // Read disk (not the UI's cached status): retries, reloads and two tabs cannot enqueue it twice.
   const optional = list.filter(c => ['try-it', 'copy-options'].includes(c.action))
@@ -618,7 +621,7 @@ export function prototypeServer(session) {
       let shares = null
       const sharesReady = import('./share/routes.mjs').then(({ shareServer }) => {
         shares = shareServer({
-          root: dir, session: () => read(), receive: (data, root) => receive(data, root),
+          root: dir, session: () => read(), receive: (data, root, options) => receive(data, root, options),
           emit: tray => server.ws.send({ type: 'custom', event: 'proto:shares', data: tray }),
         })
         server.httpServer?.once('close', () => shares.close())
