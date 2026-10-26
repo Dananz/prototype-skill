@@ -108,7 +108,8 @@ export function DeviceMenu({ device, set, shown, phone, open, setOpen, root }: {
                     </button>
                   ))}
                 </div>
-                <div className="flex items-center">
+                {/* Smaller to bigger runs left to right in either language, as the slider does. */}
+                <div dir="ltr" className="flex items-center">
                   <button type="button" onClick={() => step(-5)} aria-label={t('Smaller')} title={t('Smaller')} className={STEP}><Icon name="minus" className="size-4" /></button>
                   <input type="range" dir="ltr" min={ZOOM_MIN} max={ZOOM_MAX} step={1} value={at} aria-label={t('Zoom')}
                     onChange={e => { const v = Number(e.target.value), snap = SCALES.find(s => s && Math.abs(s - v) <= 2) ?? v; setSlide(snap); set({ zoom: snap }) }}
