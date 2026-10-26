@@ -1,7 +1,8 @@
-// Unit checks for the share-link pieces that need no browser: scope parsing and trimming.
+// Unit checks for the share-link pieces that need no browser: scope parsing, trimming and the pre-publish review.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ShareError, parseScope, trimMeta, trimSession } from '../app/share/scope.mjs'
+import { review } from '../app/share/review.mjs'
 
 const pricing = { id: 'pricing', variants: ['A', 'B', 'C', 'D', 'E'], archived: false }
 const old = { id: 'old', variants: ['A'], archived: true }
@@ -44,4 +45,80 @@ test('trimMeta keeps lineage inside the share', () => {
 test('trimSession keeps lang', () => {
   assert.deepEqual(trimSession({ name: 'X', stack: 'react', lang: 'he', project: '/Users/x', url: 'https://m.ts.net', port: 5173, asks: [1] }), { name: 'X', stack: 'react', lang: 'he' })
   assert.equal(trimSession({ name: 'X', stack: 'react' }).lang, 'en')
+})
+
+const clean = { html: '<p>hello</p>', gzBytes: 1000, projectPath: '/Users/x/proj', home: '/Users/x', projectImports: [], currents: [] }
+const run = over => review({ ...clean, ...over })
+const codes = list => list.map(f => f.code)
+
+test('review passes a clean share', () => {
+  assert.deepEqual(run({}), { block: [], warn: [] })
+})
+test('secret blocks, one pattern each', () => {
+  const fakes = {
+    'private key': '-----BEGIN RSA PRIVATE KEY-----',
+    'sk-': 'sk-' + 'a1B2'.repeat(6),
+    'github': 'ghp_' + 'a1B2c3'.repeat(6),
+    'aws': 'AKIA' + 'ABCD1234EFGH5678',
+    'jwt': 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3.SflKxwRJSMeKKF2QT4fw',
+    'bearer': 'Bearer abcdefghij0123456789.xyz',
+    'doppler': 'dp.st.' + 'abcDEF1234'.repeat(2),
+    'stripe live': 'sk_live_' + 'abcDEF1234'.repeat(2),
+    'stripe restricted': 'rk_live_' + 'abcDEF1234'.repeat(2),
+    'supabase': 'sb_secret_' + 'abcDEF_123-'.repeat(2),
+  }
+  for (const [name, value] of Object.entries(fakes)) {
+    const r = run({ html: `<script>const k = "${value}"</script>` })
+    assert.deepEqual(codes(r.block), ['secret'], name)
+    assert.ok(!r.block[0].where.includes(value), `${name} is masked`)
+    assert.ok(r.block[0].where.includes(value.slice(0, 4) + '…'), `${name} keeps its first four characters`)
+  }
+})
+test('secret reports one finding per match', () => {
+  const k = 'AKIA' + 'ABCD1234EFGH5678'
+  assert.equal(run({ html: `${k} and ${k.replace('A', 'B')} and ${k}` }).block.length, 2)
+})
+test('jwt in a data url is not a secret', () => {
+  const body = 'AAAA/eyJhbGciOiJIUzI1NiJ9+eyJzdWIiOiIxMjM0NTY3-abcdefghijklmnop'
+  assert.deepEqual(run({ html: `<img src="data:image/webp;base64,${body}">` }).block, [])
+  assert.deepEqual(run({ html: 'x/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3.SflKxwRJSMeKKF2QT4fw' }).block, [])
+})
+test('abs path blocks', () => {
+  assert.deepEqual(codes(run({ html: 'at /Users/x/proj/src/a.tsx' }).block), ['abs-path', 'abs-path'])
+  assert.deepEqual(codes(run({ html: 'at /Users/x/other' }).block), ['abs-path'])
+  assert.deepEqual(codes(run({ html: 'C:\\Users\\x\\proj', projectPath: 'C:/Users/x/proj', home: '/nowhere' }).block), ['abs-path'])
+  assert.deepEqual(run({ html: 'nothing here' }).block, [])
+})
+test('size thresholds', () => {
+  const mib = 2 ** 20
+  assert.deepEqual(run({ gzBytes: 5 * mib }), { block: [], warn: [] })
+  assert.deepEqual(codes(run({ gzBytes: 5 * mib + 1 }).warn), ['heavy'])
+  assert.deepEqual(codes(run({ gzBytes: 20 * mib }).block), [])
+  const big = run({ gzBytes: 20 * mib + 1 })
+  assert.deepEqual(codes(big.block), ['too-big'])
+  assert.deepEqual(codes(big.warn), [])
+})
+test('project code and real screens warn', () => {
+  const r = run({ projectImports: ['/p/src/Button.tsx', '/p/src/ui/Card.tsx'], currents: ['home/A'] })
+  assert.deepEqual(codes(r.warn), ['project-code', 'real-screens'])
+  assert.ok(r.warn[0].message.includes('Button.tsx') && r.warn[0].message.includes('Card.tsx'))
+})
+test('outside urls warn once per origin', () => {
+  const r = run({ html: '<img src="https://cdn.example.com/a.png"><img src="https://cdn.example.com/b.png"><a href="http://other.io/x">' })
+  assert.deepEqual(r.warn.map(f => f.where), ['https://cdn.example.com', 'http://other.io'])
+})
+test('google fonts are not outside', () => {
+  const html = '<link href="https://fonts.googleapis.com/css2?family=Inter"><link href="https://fonts.gstatic.com/s/inter.woff2">'
+  assert.deepEqual(run({ html }), { block: [], warn: [] })
+})
+test('private urls warn', () => {
+  for (const url of ['http://localhost:5173/a', 'http://127.0.0.1:3000', 'https://mac.tail1234.ts.net/x', 'http://10.0.0.5/a', 'http://192.168.1.2/a', 'http://172.16.0.1/a', 'http://172.31.9.9/a']) {
+    assert.ok(codes(run({ html: `<img src="${url}">` }).warn).includes('private-url'), url)
+  }
+  assert.ok(!codes(run({ html: '<img src="http://172.32.0.1/a">' }).warn).includes('private-url'))
+})
+test('absolute asset path is reported', () => {
+  assert.deepEqual(run({ html: '<img src="/assets/a.png">' }).warn.map(f => [f.code, f.where]), [['private-url', '/assets/a.png']])
+  assert.deepEqual(run({ html: '.a{background:url(/img/b.png)} .b{background:url("/img/c.png")}' }).warn.map(f => f.where), ['/img/b.png', '/img/c.png'])
+  assert.deepEqual(run({ html: '<img src="//cdn.example.com/a.png"><img src="data:image/png;base64,AAAA"><img src="a.png">' }).warn, [])
 })
