@@ -84,7 +84,7 @@ function note(key, text) {
 
 // meta.ts is `export default` and plain JSON, which is how `proto` reads and rewrites it too.
 function metaFile(slug) { return join(dir, 'src', 'protos', slug, 'meta.ts') }
-function metaOf(text) { return JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, '')) }
+export function metaOf(text) { return JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, '')) }
 // Through a function: a replacement string would read `$&` or `$$` in a variant's name as a pattern.
 const withMeta = (text, meta) => text.replace(/export default[\s\S]*$/, () => `export default ${JSON.stringify(meta, null, 2)}\n`)
 // A variant is its file, as the page finds it (registry.ts): <letter>.tsx, .jsx, .vue or .svelte.
