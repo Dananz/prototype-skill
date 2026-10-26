@@ -22,9 +22,13 @@ export function imagesPlugin({ sharp, root }) {
         imagesPlugin.warnings.push(`${rel} stays as it is: sharp is not installed, so it was not converted to WebP`)
         return null
       }
-      const image = sharp(file)
-      const { width } = await image.metadata()
-      const webp = await image.resize({ width: Math.min(width ?? MAX_WIDTH, MAX_WIDTH) }).webp({ quality: 82 }).toBuffer()
+      // Browsers turn a photo upright by its EXIF orientation; WebP output carries none, so the turn
+      // is made here (rotate() with no angle), and the width that is capped is the upright one:
+      // metadata() reports the stored size, whose sides swap for orientations 5 to 8.
+      const image = sharp(file).rotate()
+      const { width, height, orientation } = await image.metadata()
+      const upright = (orientation ?? 1) >= 5 ? height : width
+      const webp = await image.resize({ width: Math.min(upright ?? MAX_WIDTH, MAX_WIDTH) }).webp({ quality: 82 }).toBuffer()
       return `export default "data:image/webp;base64,${webp.toString('base64')}"`
     },
   }

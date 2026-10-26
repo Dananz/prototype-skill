@@ -210,14 +210,24 @@ test('imagesPlugin without sharp leaves the file and says so', async () => {
 })
 test('imagesPlugin turns a picture into a capped WebP', async () => {
   const calls = []
-  const fake = file => {
-    const img = { metadata: async () => ({ width: 4000 }), resize: o => (calls.push(['resize', o.width]), img), webp: o => (calls.push(['webp', o.quality]), img), toBuffer: async () => Buffer.from('WEBP') }
+  const fake = (meta = { width: 4000, height: 3000 }) => file => {
+    const img = { rotate: () => (calls.push(['rotate']), img), metadata: async () => (calls.push(['metadata']), meta), resize: o => (calls.push(['resize', o.width]), img), webp: o => (calls.push(['webp', o.quality]), img), toBuffer: async () => Buffer.from('WEBP') }
     calls.push(['input', file])
     return img
   }
-  const plugin = imagesPlugin({ sharp: fake, root: '/s' })
+  const plugin = imagesPlugin({ sharp: fake(), root: '/s' })
   assert.equal(await plugin.load('/elsewhere/a.png'), null)
   assert.equal(await plugin.load('/s/a.png'), `export default "data:image/webp;base64,${Buffer.from('WEBP').toString('base64')}"`)
-  assert.deepEqual(calls, [['input', '/s/a.png'], ['resize', 2560], ['webp', 82]])
+  assert.deepEqual(calls, [['input', '/s/a.png'], ['rotate'], ['metadata'], ['resize', 2560], ['webp', 82]])
   assert.ok((await plugin.load('/s/b.jpeg?url')).startsWith('export default "data:image/webp'))
+})
+test('imagesPlugin turns a photo upright before it measures it', async () => {
+  const calls = []
+  const sharp = () => {
+    const img = { rotate: () => (calls.push('rotate'), img), metadata: async () => (calls.push('metadata'), { width: 3000, height: 1800, orientation: 6 }), resize: o => (calls.push(`resize ${o.width}`), img), webp: () => img, toBuffer: async () => Buffer.from('W') }
+    return img
+  }
+  await imagesPlugin({ sharp, root: '/s' }).load('/s/phone.jpg')
+  // Stored 3000 wide but shown 1800 wide (a quarter turn), so 1800 is the width and it is not enlarged.
+  assert.deepEqual(calls, ['rotate', 'metadata', 'resize 1800'])
 })
