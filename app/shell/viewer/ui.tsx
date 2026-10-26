@@ -13,8 +13,12 @@ import reload from '@phosphor-icons/core/assets/bold/arrow-clockwise-bold.svg?ra
 import grid from '@phosphor-icons/core/assets/bold/squares-four-bold.svg?raw'
 import eye from '@phosphor-icons/core/assets/regular/eye.svg?raw'
 import x from '@phosphor-icons/core/assets/regular/x.svg?raw'
+import github from '@phosphor-icons/core/assets/regular/github-logo.svg?raw'
+import signOut from '@phosphor-icons/core/assets/regular/sign-out.svg?raw'
+import center from '@phosphor-icons/core/assets/regular/frame-corners.svg?raw'
 import type { Variant } from '../shell'
 import { ERROR_CLASS } from '../building'
+import { SIZE_PATHS } from '../view/sizes'
 
 export const face = "font-['Google_Sans','Google_Sans_Variable',ui-sans-serif,system-ui,sans-serif] font-[450]"
 /** The desk: zinc with a quiet 16 px dot grid, in both themes. */
@@ -24,12 +28,21 @@ export const iconBtn = 'inline-grid size-8 place-items-center rounded-lg text-zi
 /** A popup that opens from its anchor: scales and fades in 150 ms. */
 export const popup = `${card} origin-[var(--transform-origin)] p-1 shadow-2xl outline-none transition-[opacity,scale] duration-150 data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 motion-reduce:transition-none`
 
-const ICONS = { grid, 'caret-down': caretDown, 'caret-left': caretLeft, 'caret-right': caretRight, check, minus, plus, info, reload, eye, x }
+const ICONS = { grid, 'caret-down': caretDown, 'caret-left': caretLeft, 'caret-right': caretRight, check, minus, plus, info, reload, eye, x, github, 'sign-out': signOut, center }
 export type IconName = keyof typeof ICONS
 /** One of Phosphor's own files, at the size the class gives. Carets along the line mirror in a right-to-left page. */
 export function Icon({ name, className = 'size-4' }: { name: IconName; className?: string }) {
   const along = name === 'caret-left' || name === 'caret-right' ? ' rtl:-scale-x-100' : ''
   return <span aria-hidden="true" className={`inline-grid shrink-0 place-items-center [&>svg]:size-full ${className}${along}`} dangerouslySetInnerHTML={{ __html: ICONS[name] }} />
+}
+
+/** A device of the owner's device view (view/sizes.ts), drawn as the owner's layout menu draws it. */
+export function SizeIcon({ name, className = 'size-4' }: { name: keyof typeof SIZE_PATHS; className?: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${className}`}>
+      <path d={SIZE_PATHS[name]} />
+    </svg>
+  )
 }
 
 /** One shared design: its route (`pricing/B`), its number and name, and its module. */

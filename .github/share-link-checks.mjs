@@ -161,18 +161,25 @@ async function until(get, ms = 10_000) {
 }
 
 /**
- * The share as a host serves it, on a throwaway server: the page at /, its state at /api/state.
- * Every path asked for is kept, so a check can tell that nothing reached for the session's server.
+ * The share as a host serves it, on a throwaway server: the page at / and, as in path mode, at
+ * /s/<id>/, its state at api/state, and the viewer's sign-in routes as the host answers them
+ * (api/config, api/me, api/signout; a cookie `v=<login>` is a signed-in viewer). Every path asked
+ * for is kept, so a check can tell that nothing reached for the session's server.
  */
 async function host(html) {
-  const state = { version: 1, paths: [] }
+  const state = { version: 1, paths: [], comments: true }
+  const json = (res, body, headers = {}) => { res.writeHead(200, { 'content-type': 'application/json', ...headers }); res.end(JSON.stringify(body)) }
   const server = createServer((req, res) => {
-    state.paths.push(req.url)
-    if (req.url.split('?')[0] === '/api/state') {
-      res.writeHead(200, { 'content-type': 'application/json' })
-      return res.end(JSON.stringify({ version: state.version, updatedAt: Date.now() }))
-    }
-    if (req.url === '/' || req.url.startsWith('/?')) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html) }
+    state.paths.push(`${req.method} ${req.url}`)
+    const path = req.url.split('?')[0]
+    const at = path.replace(/^\/s\/[a-z0-9]+(?=\/)/, '')
+    const login = (req.headers.cookie || '').match(/(?:^|;\s*)v=([\w-]+)/)?.[1]
+    if (at.startsWith('/api/') && req.headers['x-proto'] !== '1') { res.writeHead(400); return res.end() }
+    if (at === '/api/state') return json(res, { version: state.version, updatedAt: Date.now() })
+    if (at === '/api/config') return json(res, { comments: state.comments, owner: 'Smoke' })
+    if (at === '/api/me') return json(res, login ? { login, name: 'Octo Smoke', avatar: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#0ea5e9"/></svg>')}` } : null)
+    if (at === '/api/signout' && req.method === 'POST') return json(res, { ok: true }, { 'set-cookie': `v=; Path=${path.replace(/api\/signout$/, '')}; Max-Age=0` })
+    if (at === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html) }
     res.writeHead(404); res.end()
   })
   await new Promise(ok => server.listen(0, '127.0.0.1', ok))
@@ -196,8 +203,10 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
     .replace('<h1>MARK-C</h1>', '<h1>MARK-C</h1><p data-plain style={{ fontSize: 64 }}>PLAIN-TEXT-LINE in the design</p><textarea data-field defaultValue="SELECT-ME some words to select here" style={{ width: 900, height: 160, fontSize: 48 }} /><div style={{ height: 3000 }} />'))
   const html = await build(pairScope)
   const site = await host(html)
+  // Served as path mode serves a share (/s/<id>/), whose apex is the same origin.
+  const shareUrl = `${site.url}s/smk123/`
   try {
-    const page = await openPage(site.url)
+    const page = await openPage(shareUrl)
     try {
       const boards = () => page.run(`[...document.querySelectorAll('[data-board]')].map(b => b.dataset.board).join(' ')`)
       const text = () => page.run('document.body.innerText')
@@ -256,35 +265,98 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       await sleep(400)
       assert(await scroll() !== was, 'previews: a wheel over #3 did not move the desk')
 
-      // A click opens the design full size, live: its field selects, a wheel scrolls it and not the
-      // desk, and the desk's keys stay off. Esc goes back to the desk where it was.
+      // A click opens the design full size, live, in a frame of this same page at a device's size
+      // (decision 21): its field selects, a wheel scrolls it and not the desk, and the desk's keys
+      // stay off. Esc, pressed in the design, goes back to the desk where it was.
       const desk = await scroll(), zoomBefore = await readout()
+      const inFrame = expr => page.run(`(() => { const d = document.querySelector('[data-full] iframe')?.contentDocument; return d && d.documentElement.dataset.ready === '1' ? (${expr}) : null })()`)
+      const frameText = () => inFrame(`d.body.innerText`)
       await page.press(...await at('[data-board="share-link/C"] [data-frame]'))
-      assert(await until(async () => await page.run(`!!document.querySelector('[data-full] [data-live]') && !document.querySelector('[data-full] [data-live]').inert && document.querySelector('[data-full]').innerText.includes('MARK-C')`), 3000), 'full view: a click on #3 did not open it live')
+      assert(await until(async () => (await frameText())?.includes('MARK-C') && await inFrame(`!!d.querySelector('[data-live]') && !d.querySelector('[data-live]').inert`), 5000), 'full view: a click on #3 did not open it live in a frame')
       await sleep(500)
-      assert(await page.run(`!!document.querySelector('[data-viewer-bar] [data-back]') && !document.querySelector('[data-zoom-readout]')`), 'full view: the bar has no way back to the desk, or still shows the zoom')
-      const full = await page.run(`(() => { const r = document.querySelector('[data-full] [data-field]').getBoundingClientRect(); return [r.left, r.top, r.width, r.height] })()`)
+      assert(await page.run(`!!document.querySelector('[data-viewer-bar] [data-back]') && !!document.querySelector('[data-viewer-bar] [data-device]')`), 'full view: the bar has no way back to the desk, or no device control')
+      const full = await inFrame(`(() => { const f = document.querySelector('[data-full] iframe').getBoundingClientRect(), z = document.querySelector('[data-full] iframe').currentCSSZoom, r = d.querySelector('[data-field]').getBoundingClientRect(); return [f.left + r.left * z, f.top + r.top * z, r.width * z, r.height * z] })()`)
       await page.drag([full[0] + 12, full[1] + full[3] / 3], [full[0] + full[2] - 12, full[1] + full[3] / 3], 10)
       await sleep(300)
-      assert(await page.run(`(() => { const t = document.querySelector('[data-full] [data-field]'); return t.selectionEnd - t.selectionStart })()`) > 0, 'full view: a drag in the design\'s textarea selected nothing')
-      const inner = () => page.run(`document.querySelector('[data-full] [data-live]').scrollTop`)
+      assert(await inFrame(`(() => { const t = d.querySelector('[data-field]'); return t.selectionEnd - t.selectionStart })()`) > 0, 'full view: a drag in the design\'s textarea selected nothing')
+      const inner = () => inFrame(`d.querySelector('[data-live]').scrollTop`)
       const card = await at('[data-full-card]')
       await page.mouse('mouseWheel', card[0], card[1] + 120, { button: 'none', deltaX: 0, deltaY: 600 })
       await sleep(500)
       assert(await inner() > 0 && await scroll() === desk, `full view: a wheel over the design scrolled it to ${await inner()} and the desk to ${await scroll()} (was ${desk})`)
+
+      // The device sizes: Phone, Tablet (turned), Desktop, each the frame's own width (its
+      // breakpoints see the device, not the window).
+      const frameW = () => inFrame(`d.defaultView.innerWidth`)
+      const pick = async size => {
+        await page.press(...await at('[data-viewer-bar] [data-device]'))
+        const row = await until(() => at(`[data-size="${size}"]`), 3000)
+        assert(row, `devices: the menu has no ${size} row`)
+        await page.press(...row)
+        await sleep(400)
+      }
+      await pick('phone')
+      assert(await until(async () => await frameW() === 390, 3000), `devices: Phone left the frame ${await frameW()} wide`)
+      assert(await page.run(`!!document.querySelector('[data-full] [data-device-frame="phone"]')`), 'devices: Phone is not drawn as a phone')
+      await pick('tablet')
+      assert(await until(async () => await frameW() === 834, 3000), `devices: Tablet left the frame ${await frameW()} wide`)
+      await page.press(...await at('[data-viewer-bar] [data-device]'))
+      const turn = await until(() => at('[data-turn]'), 3000)
+      assert(turn, 'devices: no Turn for the tablet')
+      await page.press(...turn)
+      assert(await until(async () => await frameW() === 1194, 3000), `devices: the turned tablet is ${await frameW()} wide`)
+      // Esc closes the menu first, and the design stays open.
+      await page.key('Escape')
+      await sleep(400)
+      assert(await isOpen() && !await page.run(`!!document.querySelector('[data-size="tablet"]')`), 'devices: Esc with the menu open did not close only the menu')
+
+      // Zoom: the frame's own CSS zoom, never the page's. +, 0 Fit, 1 100 %, and Ctrl+wheel over the design.
+      const fz = () => page.run(`document.querySelector('[data-full] iframe')?.currentCSSZoom ?? 0`)
+      const pageZoom = () => page.run(`[visualViewport.scale, devicePixelRatio, document.documentElement.currentCSSZoom].join()`)
+      await page.run(`document.activeElement?.blur(); document.body.focus()`)
+      await page.key('0')
+      await sleep(300)
+      const fit = await fz()
+      await page.key('1')
+      await sleep(300)
+      assert(Math.abs(await fz() - 1) < 0.01, `zoom: 1 left the frame at ${await fz()}`)
+      await page.key('+')
+      await sleep(300)
+      assert(await fz() > 1.01, `zoom: + left the frame at ${await fz()}`)
+      await page.key('0')
+      await sleep(300)
+      assert(Math.abs(await fz() - fit) < 0.01, `zoom: 0 did not fit the frame again (${await fz()}, Fit ${fit})`)
+      const mid = await at('[data-full-card]')
+      for (let i = 0; i < 6; i++) await page.mouse('mouseWheel', mid[0], mid[1], { button: 'none', deltaX: 0, deltaY: -40, modifiers: 2 })
+      await sleep(400)
+      assert(await fz() > fit + 0.01, `zoom: Ctrl+wheel over the design left the frame at ${await fz()} (Fit ${fit})`)
+      assert(await pageZoom() === '1,1,1', `zoom: the page itself zoomed (scale, dpr, zoom: ${await pageZoom()})`)
+      assert(await page.run(`getComputedStyle(document.querySelector('[data-full-card]')).transform === 'none'`), 'zoom: the device is scaled with a transform')
+      const kept = await page.run(`localStorage.getItem('proto-viewer-device')`)
+      assert(/"size":"tablet"/.test(kept || '') && /"land":true/.test(kept || ''), `devices: the choice is not kept in this browser (${kept})`)
+
+      // Esc from inside the design (its field focused) goes back to the desk where it was.
+      await inFrame(`d.querySelector('[data-field]').focus()`)
       await page.key('+')
       await page.key('Escape')
-      assert(await until(async () => !await isOpen(), 3000), 'full view: Esc did not go back to the desk')
+      assert(await until(async () => !await isOpen(), 3000), 'full view: Esc in the design did not go back to the desk')
       await sleep(300)
       assert(await scroll() === desk && await readout() === zoomBefore, `full view: back on the desk at ${await scroll()} ${await readout()}, not where it was (${desk} ${zoomBefore})`)
-      // Its label opens it too, and All designs in the bar goes back.
+      // Its label opens it too, at the size chosen before, and All designs in the bar goes back.
       await page.run(`document.querySelector('[data-board="share-link/C"] [data-label] button').scrollIntoView({ block: 'center', inline: 'center' })`)
       await sleep(200)
       await page.press(...await at('[data-board="share-link/C"] [data-label] button'))
       assert(await until(isOpen, 3000), 'full view: the label of #3 did not open it')
-      await sleep(400)
+      assert(await until(async () => await frameW() === 1194, 3000), `devices: reopened, the frame is ${await frameW()} wide, not the turned tablet`)
+      await pick('desktop')
+      assert(await until(async () => await frameW() === 1440, 3000), `devices: Desktop left the frame ${await frameW()} wide`)
       await page.press(...await at('[data-viewer-bar] [data-back]'))
       assert(await until(async () => !await isOpen(), 3000), 'full view: All designs did not go back to the desk')
+
+      // Signed out, with comments on: Sign in with GitHub, to the apex with this share and the way back.
+      const signin = await until(() => page.run(`document.querySelector('[data-viewer-header] [data-signin]')?.href ?? ''`), 3000)
+      const apex = new URL(site.url).origin
+      assert(signin === `${apex}/auth/github?share=smk123&back=${encodeURIComponent('/s/smk123/')}`, `sign in: the button goes to ${JSON.stringify(signin)}`)
 
       // The prototypes of the share, in the header's list.
       assert(await page.run(`!!document.querySelector('[data-proto-switch] [data-caret]')`), 'prototype list: the title has no caret')
@@ -299,7 +371,7 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       assert(await until(async () => (await text())?.includes('MARK-LINEAGE-A'), 5000), 'prototype list: lineage-src/A is not mounted')
 
       await sleep(5000)
-      const asked = [...site.state.paths, ...await page.run(`performance.getEntriesByType('resource').map(e => new URL(e.name).pathname)`)]
+      const asked = [...site.state.paths.map(p => p.split(' ')[1]), ...await page.run(`performance.getEntriesByType('resource').map(e => new URL(e.name).pathname)`)]
       assert(!asked.some(p => p.startsWith('/__proto')), `no session calls: the page asked for ${asked.filter(p => p.startsWith('/__proto')).join(', ')}`)
 
       // A newer version on the host: the next look (focus) says so.
@@ -309,6 +381,25 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       assert(banner.includes('There is a newer version') && banner.includes('Reload'), `newer version banner: ${JSON.stringify(banner)}`)
       site.state.version = 1
     } finally { page.close() }
+
+    // Signed in (the host's cookie): the viewer's face and login at the top right, a menu with their
+    // name and Sign out, which clears the cookie and brings Sign in back.
+    const signedIn = await openPage(shareUrl)
+    try {
+      await signedIn.run(`document.cookie = 'v=octo-smoke; path=/s/smk123/'; location.reload()`)
+      await sleep(500)
+      await until(() => signedIn.run(`document.documentElement.dataset.ready === '1'`), 10_000)
+      const who = await until(() => signedIn.run(`document.querySelector('[data-viewer-header] [data-account]')?.textContent ?? ''`), 5000)
+      assert(who?.includes('octo-smoke') && await signedIn.run(`(() => { const i = document.querySelector('[data-account] img'); return !!i && Math.round(i.getBoundingClientRect().width) === 28 })()`), `signed in: the header shows ${JSON.stringify(who)}`)
+      const spot = sel => signedIn.run(`(() => { const r = document.querySelector(${JSON.stringify(sel)})?.getBoundingClientRect(); return r ? [r.left + r.width / 2, r.top + r.height / 2] : null })()`)
+      await signedIn.press(...await spot('[data-account]'))
+      const out = await until(() => spot('[data-signout]'), 3000)
+      const menu = await signedIn.run(`document.querySelector('[data-account-menu]')?.textContent ?? ''`)
+      assert(out && menu.includes('Octo Smoke') && menu.includes('Signed in with GitHub'), `signed in: the menu reads ${JSON.stringify(menu)}`)
+      await signedIn.press(...out)
+      assert(await until(() => signedIn.run(`!!document.querySelector('[data-viewer-header] [data-signin]') && !document.querySelector('[data-account]')`), 3000), 'signed in: Sign out did not bring back Sign in')
+      assert(!await signedIn.run(`document.cookie.includes('v=octo')`) && site.state.paths.includes('POST /s/smk123/api/signout'), 'signed in: Sign out did not clear the cookie on the host')
+    } finally { signedIn.close() }
 
     // A phone: one design, the switcher, and no sideways gesture changes it.
     const phone = await openPage(site.url, { width: 390, height: 844, phone: true })
@@ -333,7 +424,7 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       await sleep(600)
       assert((await text()).includes('MARK-C') && /·\s*2\/2/.test(await label()), `phone: a sideways wheel, drag or swipe changed the design (${JSON.stringify(await label())})`)
     } finally { phone.close() }
-    const asked = site.state.paths.filter(p => p.startsWith('/__proto'))
+    const asked = site.state.paths.map(p => p.split(' ')[1]).filter(p => p.startsWith('/__proto'))
     assert(!asked.length, `no session calls: the host was asked for ${asked.join(', ')}`)
   } finally { site.close() }
 

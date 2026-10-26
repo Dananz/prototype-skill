@@ -1,17 +1,22 @@
 // The bar at the bottom of a wide screen: which design is selected, the way to the others (page
-// dots, or past seven designs a counter with a list of all of them), and the zoom. Phase 1 adds
-// a second row under it for comments. On a phone the same list is the switcher (named).
+// dots, or past seven designs a counter with a list of all of them), and the zoom. With a design
+// open full size: the steps between designs, its device and zoom (device.tsx), and the way back.
+// Phase 1 adds a second row under it for comments. On a phone the same list is the switcher (named).
 import { useEffect, useRef, useState, useSyncExternalStore, type MutableRefObject, type RefObject } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { rtl, t, tn } from '../i18n'
 import { Icon, card, iconBtn, popup, type Api, type Screen, type Store } from './ui'
+import { DeviceMenu, type Device } from './device'
 
 const dir = rtl ? 'rtl' : 'ltr'
 
-/** full: a design is open full size; the bar then steps between designs in full view and leads back to the desk. */
+/** What the bar needs of a design open full size: its device and zoom, and the menu for them. */
+export type FullCtl = { device: Device; set: (d: Partial<Device>) => void; shown: number; phone: boolean; menu: boolean; setMenu: (o: boolean) => void }
+
+/** full: a design is open full size; the bar then steps between designs in full view, holds its device and zoom, and leads back to the desk. */
 export function Bar({ screens, i, go, step, store, api, root, full, back }: {
   screens: Screen[]; i: number; go: (key: string) => void; step: (d: number) => void; store: Store; api: MutableRefObject<Api | null>; root: RefObject<HTMLDivElement | null>
-  full: boolean; back: () => void
+  full: FullCtl | null; back: () => void
 }) {
   const cur = screens[i]
   return (
@@ -28,7 +33,8 @@ export function Bar({ screens, i, go, step, store, api, root, full, back }: {
                 <span className="px-1 text-[12px] text-zinc-500 tabular-nums dark:text-zinc-400">{t('{i} of {n}', { i: i + 1, n: screens.length })}</span>
                 <button data-next onClick={() => step(1)} disabled={i === screens.length - 1} className={`${iconBtn} size-7 disabled:opacity-30`} aria-label={t('Next design')}><Icon name="caret-right" className="size-4" /></button>
               </div>
-              <div className="ms-1 flex shrink-0 items-center border-s border-zinc-200 ps-1.5 dark:border-white/10">
+              <DeviceMenu device={full.device} set={full.set} shown={full.shown} phone={full.phone} open={full.menu} setOpen={full.setMenu} root={root} />
+              <div className="ms-1.5 flex shrink-0 items-center border-s border-zinc-200 ps-1.5 dark:border-white/10">
                 <button data-back onClick={back} title={t('All designs (Esc)')}
                   className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100">
                   <Icon name="grid" className="size-3.5" />{t('All designs')}

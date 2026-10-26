@@ -1,22 +1,28 @@
 // The viewer's header: whose link this is and which prototype of it is shown (its title opens the
-// list of the share's prototypes), a quiet hint on a wide screen, and About. Nothing to do up here,
-// so it stays small: 56 px, 48 px on a phone.
+// list of the share's prototypes), a quiet hint on a wide screen, About, and who is looking: Sign
+// in with GitHub (comments need it, decision 20), or the signed-in viewer's face and login with a
+// menu to sign out. Little to do up here, so it stays small: 56 px, 48 px on a phone.
 import { useState, type RefObject } from 'react'
 import { Popover } from '@base-ui/react/popover'
+import { Menu } from '@base-ui/react/menu'
 import { rtl, t, tn } from '../i18n'
 import { ago } from '../ui'
 import type { Proto } from '../shell'
 import { Icon, card, iconBtn, popup } from './ui'
 
 export type Appearance = 'system' | 'light' | 'dark'
+/** The viewer signed in with GitHub, as the host's api/me answers. */
+export type Me = { login: string; name: string | null; avatar: string }
+/** Who is looking. me: undefined until the host answers. signIn: where Sign in goes, or null when there is no host to sign in to. */
+export type Account = { me: Me | null | undefined; comments: boolean; signIn: string | null; signOut: () => void }
 type Facts = { owner: string; version: number; updatedAt: string }
 const dir = rtl ? 'rtl' : 'ltr'
 const TINTS = ['bg-zinc-900 text-white dark:bg-white dark:text-zinc-900', 'bg-amber-500 text-white', 'bg-violet-500 text-white', 'bg-teal-500 text-white', 'bg-sky-500 text-white', 'bg-rose-500 text-white']
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
 
-export function Header({ protos, cur, choose, wide, facts, appearance, setAppearance, root }: {
+export function Header({ protos, cur, choose, wide, facts, appearance, setAppearance, account, root }: {
   protos: Proto[]; cur: Proto; choose: (id: string) => void; wide: boolean; facts: Facts
-  appearance: Appearance; setAppearance: (a: Appearance) => void; root: RefObject<HTMLDivElement | null>
+  appearance: Appearance; setAppearance: (a: Appearance) => void; account: Account; root: RefObject<HTMLDivElement | null>
 }) {
   return (
     <header data-viewer-header dir={dir} className={`relative z-30 flex shrink-0 items-center gap-2.5 px-4 ${wide ? 'h-14' : 'h-12'}`}>
@@ -24,6 +30,7 @@ export function Header({ protos, cur, choose, wide, facts, appearance, setAppear
       <div className="flex-1" />
       {wide && <p className="hidden text-[12px] text-zinc-500 md:block dark:text-zinc-400">{t('Drag to move · pinch or {key} scroll to zoom', { key: isMac ? '⌘' : 'Ctrl' })}</p>}
       <About facts={facts} appearance={appearance} setAppearance={setAppearance} root={root} />
+      <Who account={account} wide={wide} root={root} />
     </header>
   )
 }
@@ -125,5 +132,47 @@ function About({ facts, appearance, setAppearance, root }: { facts: Facts; appea
         </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
+  )
+}
+
+/** Signed out, with comments on: Sign in with GitHub. Signed in: their face and login, and a menu to sign out. */
+function Who({ account, wide, root }: { account: Account; wide: boolean; root: RefObject<HTMLDivElement | null> }) {
+  const { me, comments, signIn, signOut } = account
+  if (me === undefined) return null
+  if (!me) {
+    if (!comments || !signIn) return null
+    return (
+      <a data-signin href={signIn} aria-label={t('Sign in with GitHub')} title={t('Sign in with GitHub to comment')}
+        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-zinc-700 ring-1 ring-inset ring-black/[.08] hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-200 dark:ring-white/10 dark:hover:bg-white/10 dark:hover:text-white">
+        <Icon name="github" className="size-4" />{wide && <span>{t('Sign in with GitHub')}</span>}
+      </a>
+    )
+  }
+  const row = 'flex h-9 w-full cursor-default items-center gap-2.5 rounded-lg px-2.5 text-start text-[13px] text-zinc-700 outline-none data-[highlighted]:bg-zinc-900/[.05] dark:text-zinc-300 dark:data-[highlighted]:bg-white/[.07]'
+  return (
+    <Menu.Root modal={false}>
+      <Menu.Trigger data-account aria-label={t('Signed in as {login}', { login: me.login })}
+        className="-me-1.5 flex h-9 shrink-0 items-center gap-2 rounded-full py-1 ps-1 pe-1 text-[13px] font-medium hover:bg-zinc-900/5 data-[popup-open]:bg-zinc-900/5 sm:pe-2.5 dark:hover:bg-white/[.07] dark:data-[popup-open]:bg-white/[.07]">
+        <img src={me.avatar} alt="" width={28} height={28} className="size-7 shrink-0 rounded-full bg-zinc-200 ring-1 ring-black/[.06] dark:bg-zinc-800 dark:ring-white/10" />
+        <span dir="ltr" className={wide ? 'max-w-[140px] truncate' : 'sr-only'}>{me.login}</span>
+      </Menu.Trigger>
+      <Menu.Portal container={root}>
+        <Menu.Positioner side="bottom" align={rtl ? 'start' : 'end'} sideOffset={6} collisionPadding={8} className="z-50 outline-none">
+          <Menu.Popup data-account-menu dir={dir} className={`${popup} w-64`} finalFocus={type => type === 'keyboard'}>
+            <div className="flex items-center gap-2.5 px-2.5 pt-2 pb-2.5">
+              <img src={me.avatar} alt="" width={36} height={36} className="size-9 shrink-0 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+              <span className="min-w-0 leading-tight">
+                <span dir="auto" className="block truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">{me.name || me.login}</span>
+                <span className="mt-0.5 flex items-center gap-1 text-[12px] text-zinc-500 dark:text-zinc-400"><Icon name="github" className="size-3.5" />{t('Signed in with GitHub')}</span>
+              </span>
+            </div>
+            <Menu.Separator className="mx-2 my-1 h-px bg-black/[.06] dark:bg-white/10" />
+            <Menu.Item data-signout onClick={signOut} className={row}>
+              <Icon name="sign-out" className="size-4 text-zinc-500 rtl:-scale-x-100 dark:text-zinc-400" />{t('Sign out')}
+            </Menu.Item>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   )
 }

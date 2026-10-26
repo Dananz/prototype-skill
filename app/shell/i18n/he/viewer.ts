@@ -38,4 +38,9 @@ export default {
   'Open #{n} {name}': 'פתח את #{n} {name}',
   'All designs': 'כל העיצובים',
   'All designs (Esc)': 'כל העיצובים (Esc)',
+  'Sign in with GitHub': 'התחבר עם GitHub',
+  'Sign in with GitHub to comment': 'התחבר עם GitHub כדי להגיב',
+  'Signed in as {login}': 'מחובר בתור {login}',
+  'Signed in with GitHub': 'מחובר עם GitHub',
+  'Sign out': 'התנתק',
 } satisfies Record<string, string>
