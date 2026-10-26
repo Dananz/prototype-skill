@@ -80,8 +80,12 @@ Non-goals (this spec):
 13. **Viewers never see Claude's reply text.** The reply stays on the Mac and never goes to the
     host. Viewers see a status (Sent, In progress, Done, In the latest version) and any reply the
     owner writes himself.
-14. **The domain is `prto.fyi`** (quoted $5.20 a year, first year and renewal, on 2026-10-19;
-    recheck the renewal price at the registrar before buying; WHOIS privacy included).
+14. **The domain is `prtype.dev`** (Tomer bought it on Vercel, 2026-10-26; it replaces the
+    `prtype.dev` that was quoted on 2026-10-19). Vercel stays the registrar; its DNS moves to a free
+    Cloudflare zone by setting Cloudflare's two nameservers on Vercel's Domains page (Vercel allows
+    custom nameservers on domains it sold; up to 48 h to propagate). `.dev` is on the HSTS preload
+    list, so every link is HTTPS, which Cloudflare's Universal SSL gives for free. Stage 0 stays on
+    `http://*.localhost`, which the preload list doesn't touch.
 15. **The owner's name on links is their GitHub login** (`gh api user --jq .login`, read at setup,
     so "Dananz"). Without `gh`, or not logged in, setup asks for a name. It matches the GitHub
     sign-in of phase 5.
@@ -92,11 +96,12 @@ Non-goals (this spec):
     down: it is HeyRan's production server with real users' data and the WhatsApp bridge, all its
     public ports are closed on purpose, and a share host would mix abuse and load risk into it.
     1 GB of KV (plus D1's 5 GB) is enough for one owner.
-18. **Until `prto.fyi` is bought, links live on dananz.com** (Tomer, 2026-10-26): the interim
+18. **Superseded by 14 on the same day: `prtype.dev` is bought, so stage 1b is not used.** Kept for
+    the record: until the domain was bought, links were to live on dananz.com (Tomer, 2026-10-26): the interim
     stage 1b below, `p.dananz.com/<id>`, on the Cloudflare account that already holds the
     dananz.com zone. This knowingly bends decision 5 for a while. It is acceptable because only the
-    owner publishes in phases 0 to 4 (it is his own code), and it is bounded: the move to `prto.fyi`
-    keeps every id, and `p.dananz.com/<id>` becomes a redirect to `prto.fyi/<id>`. Nothing is
+    owner publishes in phases 0 to 4 (it is his own code), and it is bounded: the move to `prtype.dev`
+    keeps every id, and `p.dananz.com/<id>` becomes a redirect to `prtype.dev/<id>`. Nothing is
     connected or deployed until Tomer says so.
 19. **The viewer is the zoom desk, not the reduced shell** (Tomer picked #3 "Zoom desk" of the
     viewer-board prototype, 2026-10-26, session `f64ced15`, `src/protos/viewer-board/C.tsx`). A
@@ -133,9 +138,9 @@ or storage, and no owner credential ever reaches a browser.
                      │ 2. one self-contained HTML file, gzip, scanned for secrets
                      └─ 3. PUT /api/shares/<id>  (owner token) ──►  KV: the HTML
                                                                     D1: share row, links
-                        4. link printed / copied: prto.fyi/k3x9p2
+                        4. link printed / copied: prtype.dev/k3x9p2
 
-                                                  prto.fyi/k3x9p2  ──OG page + redirect──►  k3x9p2.prto.fyi/
+                                                  prtype.dev/k3x9p2  ──OG page + redirect──►  k3x9p2.prtype.dev/
                                                   (password gate there, if set)  ◄── viewer opens
                                                                              browses, comments
                                                   POST /api/comments  ◄──────  (cookie, same origin)
@@ -252,10 +257,10 @@ and how links are spelled change.
 |---|---|---|---|---|---|
 | **0. Local** | `wrangler dev` on the Mac, state in `~/.prototypes/host/` | none | `http://k3x9p2.localhost:8787/` (path fallback `http://127.0.0.1:8787/s/k3x9p2/`) | yes with `*.localhost`, else no | the Mac (and a free `cloudflared` quick tunnel for a one-off test with a friend while the Mac is on) |
 | **1. workers.dev** | Cloudflare, free account | free, separate | `https://proto-share.<acct>.workers.dev/s/k3x9p2/` | no (one origin) | anyone with the link |
-| **1b. dananz.com (interim)** | same Worker, custom domain `p.dananz.com` on the account that holds the dananz.com zone | Tomer's existing account (its Workers plan checked at setup, verify) | `https://p.dananz.com/k3x9p2` | no (path mode: one origin, per-share cookies) | anyone with the link |
-| **2. Own domain** | same Worker, custom domain + wildcard route | same | `https://prto.fyi/k3x9p2` → `https://k3x9p2.prto.fyi/` | yes | anyone with the link |
+| **1b. dananz.com (interim, not used: decision 18)** | same Worker, custom domain `p.dananz.com` on the account that holds the dananz.com zone | Tomer's existing account (its Workers plan checked at setup, verify) | `https://p.dananz.com/k3x9p2` | no (path mode: one origin, per-share cookies) | anyone with the link |
+| **2. Own domain** | same Worker, custom domain + wildcard route | same | `https://prtype.dev/k3x9p2` → `https://k3x9p2.prtype.dev/` | yes | anyone with the link |
 
-Why path mode on dananz.com: per-share subdomains would need either a wildcard on the dananz.com
+Why path mode on dananz.com (moot since decision 14, kept for the record): per-share subdomains would need either a wildcard on the dananz.com
 apex (which would also catch every mistyped subdomain of Tomer's other sites) or a two-level
 wildcard like `*.p.dananz.com`, which free Universal SSL doesn't cover. The single-label custom
 domain `p.dananz.com` needs neither. Path mode's weaker isolation between shares is allowed while
@@ -268,20 +273,21 @@ only the owner publishes; the host refuses third-party uploads on it.
   like the session server. Nothing to log in to.
 - (no flag): `wrangler login` (free account), creates the KV namespace and the D1 database,
   applies `host/schema.sql`, deploys, sets the owner token secret, prints the workers.dev URL.
-- `--domain p.dananz.com --path`: the interim stage 1b. Adds the Worker as a custom domain on
+- `--domain p.dananz.com --path`: the interim stage 1b (not built, decision 18). Adds the Worker as a custom domain on
   that one hostname (the zone is already on the account), no wildcard.
-- `--domain prto.fyi`: adds the zone's custom domain on the apex, a proxied wildcard DNS record
-  `*` and the Worker route `*.prto.fyi/*`, then checks that `https://test.prto.fyi/_health`
+- `--domain prtype.dev`: adds the zone's custom domain on the apex, a proxied wildcard DNS record
+  `*` and the Worker route `*.prtype.dev/*`, then checks that `https://test.prtype.dev/_health`
   answers over TLS.
 
 Setup refuses to continue if the account's Workers plan is not Free, and it never creates an R2
-bucket. If the domain was bought through Cloudflare Registrar (which needs a card on that
-account), that rule is what keeps the account free; buying it elsewhere and pointing nameservers
-at the free account keeps the account card-free.
+bucket. `prtype.dev` is registered at Vercel and only its nameservers point at the free
+Cloudflare account, so that account never holds a card. Before switching nameservers, copy any
+DNS records Vercel holds for the domain into the Cloudflare zone (none are expected for a new
+domain); after it, records are managed in Cloudflare, not with `vercel dns`.
 
 **Verify at setup (not assumed):** a proxied wildcard record and a wildcard Worker route on a
-Free zone; Universal SSL covering `*.prto.fyi` (one level only, which is why share ids are one
-label, never `id.u.prto.fyi`); `*.localhost` resolving in Safari on macOS for stage 0 (Chrome and
+Free zone; Universal SSL covering `*.prtype.dev` (one level only, which is why share ids are one
+label, never `id.u.prtype.dev`); `*.localhost` resolving in Safari on macOS for stage 0 (Chrome and
 Firefox do; if Safari doesn't, local uses the path form).
 
 ### Where everything is stored
@@ -400,7 +406,7 @@ shows today's usage.
 
 ### Links
 
-- **The apex never redirects with a bare 302.** `prto.fyi/<id>` answers a tiny HTML page with the
+- **The apex never redirects with a bare 302.** `prtype.dev/<id>` answers a tiny HTML page with the
   share's Open Graph tags (title, preview image; title only for password shares) and an immediate
   `location.replace` plus `<meta http-equiv="refresh" content="0">` to the share's origin. Link
   unfurlers (WhatsApp, Discord, Slack, iMessage) read the tags and stop there; browsers move on at
@@ -409,24 +415,24 @@ shows today's usage.
   redirects to the share origin with `location.hash` appended; the meta refresh (no script) lands on
   the start route. `/_in/<linkId>` answers a 302 without a fragment, which keeps the original one.
   The owner's Copy link copies the variant being viewed when the sheet was opened from one.
-- **Open link**: `prto.fyi/<shareId>`. Anyone with it can view (after the password, if set). On the
+- **Open link**: `prtype.dev/<shareId>`. Anyone with it can view (after the password, if set). On the
   first comment they are asked for a name, kept in that share origin's localStorage. Their comments
   show as "Dana (unverified)" to the owner.
-- **Person link**: `prto.fyi/<linkId>`, made by adding a person to the share. It carries their name
+- **Person link**: `prtype.dev/<linkId>`, made by adding a person to the share. It carries their name
   ("Dana") and marks their comments verified. Revoking it stops that link and that cookie without
   touching anyone else's.
-- Both redirect to `https://<shareId>.prto.fyi/_in/<linkId>`, which sets the viewer cookie and
+- Both redirect to `https://<shareId>.prtype.dev/_in/<linkId>`, which sets the viewer cookie and
   redirects to `/`. The viewer cookie is `__Host-v`, HttpOnly, Secure, SameSite=Lax, 30 days,
   signed with HMAC-SHA256 (`VIEWER_KEY` secret): `{ share, link, name?, pwEpoch, exp }`. Each
   request checks the link isn't revoked (one indexed D1 read).
-- **Cookies by stage.** Stage 2 (own domain): `__Host-v` on `<id>.prto.fyi`, as above. Path mode
+- **Cookies by stage.** Stage 2 (own domain): `__Host-v` on `<id>.prtype.dev`, as above. Path mode
   (stage 1, a `cloudflared` quick tunnel, which has no wildcard hostnames, and the local fallback):
   one origin holds every share, so each share gets its own cookie, `v_<shareId>` with
   `Path=/s/<shareId>/` (a `__Host-` cookie must have `Path=/`, so path mode can't use the prefix).
   Stage 0 on `http://*.localhost`: the cookie drops `Secure` only when the host is loopback, or the
   local host runs with `wrangler dev --local-protocol https`; which of the two Safari accepts is a
   phase 0 test.
-- **What isolates shares from each other** is the origin, not SameSite: all `<id>.prto.fyi`
+- **What isolates shares from each other** is the origin, not SameSite: all `<id>.prtype.dev`
   subdomains are the same *site*, so a SameSite cookie would still be sent between them. The API
   answers only same-origin requests: no CORS headers, a required `X-Proto: 1` header (which a
   cross-origin page can't send without a preflight the API refuses), and JSON bodies only.
@@ -447,7 +453,7 @@ stretching runs in the viewer's browser:
    the D1 writes, verify), and the zone's free rate-limiting rule (Free: one rule, 10 s period, by
    IP, Block) on `/api/unlock` as a second wall.
 5. Changing or removing the password bumps `pw_epoch`, which signs every existing viewer out.
-6. The gate runs on the share's own origin (`<id>.prto.fyi`), where the viewer cookie is set, never
+6. The gate runs on the share's own origin (`<id>.prtype.dev`), where the viewer cookie is set, never
    on the apex.
 
 Link-preview bots never get past the gate, so a password share's preview shows only "A prototype
@@ -704,7 +710,7 @@ line, one field or none, the same type and colors as the shell, dark by `prefers
 
 | Threat | Answer |
 |---|---|
-| A share's scripts read another share's data or the viewer's other cookies | Each share is its own origin (`<id>.prto.fyi`); cookies are `__Host-` (host-only); no API answers cross-origin (no CORS headers; JSON only with a custom header) |
+| A share's scripts read another share's data or the viewer's other cookies | Each share is its own origin (`<id>.prtype.dev`); cookies are `__Host-` (host-only); no API answers cross-origin (no CORS headers; JSON only with a custom header) |
 | A share's scripts act as the viewer | They can, on that share only, which is what the viewer can do anyway: comment. Owner credentials never reach a browser. |
 | Path mode (stage 1, local fallback) has one origin for all shares | Acceptable while only the owner publishes (it's their own code). Phase 5 (other people's uploads) requires stage 2. The host refuses third-party uploads in path mode. |
 | Guessing links | 50-bit random ids, rate-limited, `noindex`, no listing endpoint without the owner token |
@@ -840,8 +846,8 @@ Variants take numbers like every other command (`pricing/3`).
 
 Each is a test or a five-minute check, done before the code that depends on it:
 
-- [ ] A proxied wildcard DNS record and a wildcard Worker route (`*.prto.fyi/*`) on a Free zone.
-- [ ] Universal SSL serves `https://<id>.prto.fyi` (one level).
+- [ ] A proxied wildcard DNS record and a wildcard Worker route (`*.prtype.dev/*`) on a Free zone.
+- [ ] Universal SSL serves `https://<id>.prtype.dev` (one level).
 - [ ] `*.localhost` resolves in Safari on macOS; which cookie setup Safari accepts on loopback
       (no `Secure` over http, or `wrangler dev --local-protocol https`).
 - [ ] Stored gzip served with `Content-Encoding: gzip` and `encodeBody: "manual"` arrives encoded once.
@@ -852,7 +858,8 @@ Each is a test or a five-minute check, done before the code that depends on it:
       session's plugin version, and the Vue rewrite with `nodeTransforms`.
 - [ ] The single-file inliner handles the shell's dynamic imports and its CSS, and the device-view
       frames load the cached document.
-- [ ] `.fyi` renewal price at the registrar, before buying.
+- [ ] `prtype.dev`'s renewal price and auto-renew on Vercel.
+- [ ] Cloudflare's nameservers accepted by Vercel for `prtype.dev`, and the zone active on the free plan.
 
 Two build rules that need no check: a publish runs `vite build --mode share` as a child process into
 a temporary outDir, so the live dev server is untouched, and publishes are serialized per session
@@ -868,7 +875,7 @@ Each phase is its own PR, with screenshots per AGENTS.md.
 | **0. Local host and share builds** | `host/` Worker under `wrangler dev`; `share-build.mjs`; `proto share setup --local`, `proto share <scope>`, `ls`, `rm`, `file`; the review checks; the viewer (decision 19) without comments | A share of 2 of 5 variants opens at `k3x9p2.localhost:8787` in Chrome and Safari, the other 3 are absent from the file, stamps present, a planted fake key blocks publishing, under 5 ms CPU per request in `wrangler dev` |
 | **1. Comments round trip** | The Share link sheet in the page (New link, Your links), viewer comments, the tray, Send to Claude, statuses back, follow-ups, `comments` and `take`, injection framing | A comment from a second browser profile reaches the tray within 30 s, Send to Claude lands in `proto inbox` framed, the reply's status shows in the viewer |
 | **2. On Cloudflare (workers.dev)** | `proto share setup` for a free account, owner token in Keychain, password gate, person links, update and changed-since, budget counters, notify | A friend opens a workers.dev link on their phone, enters the password, comments; Tomer gets a Discord ping |
-| **3. Own domain** | `--domain`, wildcard per-share origins, short apex links, preview images, owner view | `prto.fyi/k3x9p2` redirects to its own subdomain over TLS; two shares can't read each other's storage (tested) |
+| **3. Own domain** | `--domain`, wildcard per-share origins, short apex links, preview images, owner view | `prtype.dev/k3x9p2` redirects to its own subdomain over TLS; two shares can't read each other's storage (tested) |
 | **4. Extras** | votes, blind review, "What's new" banner, QR, expiry, view counts | each behind its switch, off by default except the banner |
 | **5. Later: hosting for other skill users** | GitHub sign-in (free OAuth app) to get an owner token, per-owner caps (10 live shares, 20 MiB each), 30-day expiry, "Shared by @user · Report" bar, report and ban tools | separate spec |
 
@@ -899,5 +906,5 @@ so the budget table above gets real numbers.
 | `wrangler`, `cloudflared` quick tunnels, `@cloudflare/vitest-pool-workers`, the single-file inliner | $0, open source |
 | Discord webhooks, ntfy.sh | $0 |
 | GitHub OAuth app (phase 5) | $0 |
-| The domain | the one purchase (about $5 a year for a `.fyi`) |
+| The domain | the one purchase: `prtype.dev`, on Vercel |
 | Not used, because they bill or need a paid plan | R2, Workers Paid, Vercel password protection, Cloudflare Access beyond its free seats |

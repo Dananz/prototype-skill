@@ -248,7 +248,7 @@ About). Read it and the spec's Design › Viewer before starting; run
 - Produces:
   - `newId() -> string`, `isId(s) -> boolean` (the alphabet and length in Global Constraints).
   - `sha256hex(s: string) -> Promise<string>`, `same(a: string, b: string) -> boolean` (constant time), `ownerOf(req: Request, env) -> Promise<{ id: string, name: string } | null>` (bearer token, hashed, looked up in `owner_tokens` where `revoked_at IS NULL`).
-  - `route(url: URL, base: string) -> { at: 'apex' | 'share' | 'api' | 'health' | 'none', shareId?: string, path: string }`. `base` is the host's own name (`localhost:8787`, `p.dananz.com`). Share origin forms: `<id>.<base>` (subdomain mode, `<id>.localhost:8787` locally) and `<base>/s/<id>/…` (path mode). Apex: `<base>/<id>`. Owner API: `<base>/api/…`. `/_health` anywhere.
+  - `route(url: URL, base: string) -> { at: 'apex' | 'share' | 'api' | 'health' | 'none', shareId?: string, path: string }`. `base` is the host's own name (`localhost:8787`, `prtype.dev`). Share origin forms: `<id>.<base>` (subdomain mode, `<id>.localhost:8787` locally) and `<base>/s/<id>/…` (path mode). Apex: `<base>/<id>`. Owner API: `<base>/api/…`. `/_health` anywhere.
   - `page(kind: 'removed' | 'notfound' | 'expired' | 'error', { lang: 'en' | 'he', title?: string }) -> Response`: one small template, en and he copy, dark by `prefers-color-scheme`, `noindex`.
   - `ogPage({ title, owner, target }) -> Response`: Open Graph title and `A prototype shared by <owner>`, `<meta http-equiv="refresh" content="0;url=…">` and `location.replace(target + location.hash)`.
   - `worker.mjs` endpoints (env: `KV`, `DB`, `BASE`, `PATH_MODE` `"1"|"0"`):
@@ -305,6 +305,5 @@ About). Read it and the spec's Design › Viewer before starting; run
 
 ## Out of scope for phase 0 (later phases, per the spec)
 
-The Share link sheet in the page, viewer comments and the tray (phase 1); workers.dev and
-`p.dananz.com`, passwords, person links, update and changed-since, budget counters, notifications
-(phase 2); `prto.fyi` and per-share subdomains in production (phase 3); extras (phase 4).
+The Share link sheet in the page, viewer comments and the tray (phase 1); workers.dev, passwords, person links, update and changed-since, budget counters, notifications
+(phase 2); `prtype.dev` and per-share subdomains in production (phase 3); extras (phase 4).
