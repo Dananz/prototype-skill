@@ -12,6 +12,11 @@ import { homedir, hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ShareError } from '../app/share/scope.mjs'
+import { client, defaultHost, getToken, inKeychain, linkOf, readHosts, service, tokenFile } from '../app/share/owner.mjs'
+
+// The owner side (hosts, the token, the owner API, links) is in app/share/owner.mjs, where a
+// session's server reaches it too.
+export { client, defaultHost, getToken, linkOf, readHosts }
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 const PINS = { wrangler: '4.149.0', sharp: '0.35.5' }
@@ -51,9 +56,6 @@ export async function ensureTools() {
 
 // ---------- hosts ----------
 
-/** Host = { name, url, stage: 'local', base, pathMode, default, owner } */
-export const readHosts = () => readJson(join(configDir(), 'hosts.json'), []).filter(h => h && typeof h.name === 'string')
-
 /** Adds or replaces the host by name. One host is the default: this one when it says so, or when it is alone. */
 export function saveHost(host) {
   let hosts = readHosts().filter(h => h.name !== host.name)
@@ -63,23 +65,7 @@ export function saveHost(host) {
   writeFileSync(join(configDir(), 'hosts.json'), JSON.stringify(hosts, null, 2) + '\n')
 }
 
-export const defaultHost = () => { const hosts = readHosts(); return hosts.find(h => h.default) || hosts[0] || null }
-
 // ---------- the owner token ----------
-
-// The Keychain on macOS. PROTO_SHARE_TOKEN_STORE=file sends tokens to the file store instead: the
-// tests set it, since `security` writes to the login keychain whatever HOME says.
-const inKeychain = () => process.platform === 'darwin' && process.env.PROTO_SHARE_TOKEN_STORE !== 'file'
-const service = name => `prototype-share-${name}`
-const tokenFile = name => join(configDir(), `token-${name}`)
-
-export function getToken(name) {
-  if (inKeychain()) {
-    const r = spawnSync('security', ['find-generic-password', '-s', service(name), '-w'], { encoding: 'utf8' })
-    return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : null
-  }
-  try { return readFileSync(tokenFile(name), 'utf8').trim() || null } catch { return null }
-}
 
 /**
  * The `security` call that stores a token: the command goes in on stdin (`security -i`), so the
@@ -249,42 +235,4 @@ export async function stopLocal() {
   for (let i = 0; i < 50 && alive(pid); i++) await sleep(100)
   if (alive(pid)) signal('SIGKILL')
   return true
-}
-
-// ---------- the owner API ----------
-
-/** Where the owner API is reached: on this Mac by 127.0.0.1, which the host answers on as well as localhost. */
-const apiOrigin = host => host.stage === 'local' ? `http://127.0.0.1:${portOf(host)}` : host.url.replace(/\/$/, '')
-
-export function client(host, token) {
-  const origin = apiOrigin(host)
-  const call = async (method, path, { body, headers = {} } = {}) => {
-    let res
-    try {
-      res = await fetch(origin + path, { method, body, headers: { authorization: `Bearer ${token}`, ...headers }, signal: AbortSignal.timeout(60_000) })
-    } catch (e) {
-      throw new ShareError(`Could not reach the share host "${host.name}" at ${origin}: ${e?.cause?.code || e?.message || e}`)
-    }
-    const text = await res.text()
-    let data = null
-    try { data = JSON.parse(text) } catch { /* an HTML error page */ }
-    if (!res.ok) throw new ShareError(`The share host "${host.name}" answered ${res.status}${data?.error ? `: ${data.error}` : ''}`)
-    return data
-  }
-  return {
-    create: async () => (await call('POST', '/api/shares')).id,
-    put: async (id, gz, meta) => {
-      const header = Buffer.from(JSON.stringify(meta)).toString('base64url')
-      const { version } = await call('PUT', `/api/shares/${id}`, { body: gz, headers: { 'content-type': 'application/gzip', 'x-share-meta': header } })
-      return { version }
-    },
-    list: () => call('GET', '/api/shares'),
-    remove: async id => { await call('DELETE', `/api/shares/${id}`) },
-  }
-}
-
-/** The link people open: one origin per share where *.localhost resolves, else the path form on 127.0.0.1. */
-export function linkOf(host, id) {
-  const port = portOf(host)
-  return host.pathMode ? `http://127.0.0.1:${port}/s/${id}/` : `http://${id}.localhost:${port}/`
 }

@@ -85,7 +85,47 @@ export type Item = Draft & {
    * `proto inbox` walks back to print what was said before it.
    */
   re?: { id: string; batch: string; i: number }
+  /**
+   * A viewer's comment from a share link, sent to Claude from the "From links" tray: the share, the
+   * version the viewer saw, their GitHub login and display name, the link, and the host's comment id.
+   * Only the server sets it (/__proto/share/send), from the host's own copy of the comment.
+   */
+  from?: From
 }
+
+/** Where a comment from a share link came from (app/share/viewer-text.mjs fromComment). */
+export type From = { share: string; version: number; viewer: string; name?: string; verified: boolean; link: string; comment: string; title?: string }
+
+/** A viewer comment as the host keeps it (the owner API), with what the tray adds on this Mac. */
+export type LinkComment = {
+  id: string
+  share: { id: string; title: string; version: number }
+  /** slug/LETTER, one of the share's variants. */
+  variant: string
+  /** The share version the viewer commented on. */
+  version: number
+  /** The viewer's words, plain text. Render as text only, never as HTML. */
+  body: string
+  target: { src?: string; component?: string; path?: string; x: number; y: number; view: { size: string; w: number; h: number } } | null
+  status: 'new' | 'sent' | 'working' | 'done'
+  owner_reply: string | null
+  owner_reply_at: number | null
+  hidden: boolean
+  deleted: boolean
+  withdrawn: boolean
+  done_in: number | null
+  author: { gh_id: number; login: string; name: string | null; avatar: string | null }
+  created_at: number
+  updated_at: number
+  /** Taken out of the tray by the owner, on this Mac only. */
+  dismissed: boolean
+  /** Made on an earlier version than the share has now ("On v2. It has changed since"). */
+  changed: boolean
+  /** Its variant is no longer in the session. */
+  gone: boolean
+}
+/** /__proto/share/comments, and the `proto:shares` event: the tray. */
+export type LinkTray = { comments: LinkComment[]; new: number; dismissed: number; checkedAt: number | null; error: string | null }
 
 export type CState = 'draft' | 'sent' | 'seen' | 'done'
 export type Mode =

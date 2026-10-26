@@ -36,6 +36,7 @@ import { slotChecks } from './slot-checks.mjs'
 import { settingsChecks } from './settings-checks.mjs'
 import { shareChecks } from './share-checks.mjs'
 import { shareLinkChecks } from './share-link-checks.mjs'
+import { shareTrayChecks } from './share-tray-checks.mjs'
 import { tweaksChecks } from './tweaks-checks.mjs'
 import { tweaksRegistryChecks } from './tweaks-registry-checks.mjs'
 import { middleDragChecks } from './middle-drag-checks.mjs'
@@ -86,6 +87,9 @@ process.on('uncaughtException', e => fail(`uncaught: ${e?.stack || e}`))
 // proto up's sweep of idle sessions would reach this machine's real ones (and their tailnet
 // rules); the run's own session is all it should touch.
 process.env.PROTO_NO_GC ??= '1'
+// The run's session never asks a share host anything on its own (it could reach the owner's real
+// host and Keychain); share-tray-checks runs its own server under a temporary HOME for that.
+process.env.PROTO_SHARE_POLL_MS ??= '0'
 const proto = (args, { ok = true, stdout = false } = {}) => {
   console.log(`\n$ proto ${args.join(' ')}`)
   const r = spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), ...args, '--project', project, '--session', 'smoke'], { encoding: 'utf8', timeout: 600_000 })
@@ -236,8 +240,19 @@ if (process.argv.includes('--broken-global-only')) {
   console.log('OK: focused broken-global checks')
   process.exit(0)
 }
+// The owner's side of share links alone, on a prototype of its own (the full share-link run is above).
+if (process.argv.includes('--share-tray-only')) {
+  proto(['add', 'share-link', '--title', 'Share link', '--variants', 'A:One,B:Two,C:Three'])
+  for (const id of ['A', 'B', 'C']) writeFileSync(join(app, 'src/protos/share-link', `${id}.tsx`), `export default function ${id}() { return <main><h1>MARK-${id}</h1></main> }\n`)
+  await shareTrayChecks({ proto, app, fail })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused share tray checks')
+  process.exit(0)
+}
 if (process.argv.includes('--share-link-only')) {
   await shareLinkChecks({ proto, app, local, openPage, fail })
+  await shareTrayChecks({ proto, app, fail })
   proto(['rm'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused share link checks')
@@ -268,6 +283,7 @@ await virtualReactChecks({ proto, app, local, openPage, fail })
 await virtualVariantsChecks({ proto, app, local, openPage, fail })
 await shareChecks({ proto, app, local, openPage, fail })
 await shareLinkChecks({ proto, app, local, openPage, fail })
+await shareTrayChecks({ proto, app, fail })
 await settingsChecks({ proto, app, local, openPage, fail })
 await tweaksRegistryChecks({ local, openPage, fail })
 await tweaksChecks({ proto, app, local, openPage, fail })

@@ -55,7 +55,11 @@
 //   proto share setup --local [--name <owner>]   a share host on this Mac (wrangler dev); links open only here
 //   proto share <slug>[/<n>…] | --all [--title "…"] [--yes]   build, review, publish, print the link
 //             (only when the user asks; read the review's warnings to them before --yes)
-//   proto share ls [--all]   this session's links (or every share on the host)
+//   proto share ls [--all]   this session's links (or every share on the host), changed since shared, new comments
+//   proto share update <id> [--note "…"] [--yes]   the same link at a new version, its comments kept
+//   proto share comments [<id>] [--new]   viewer comments on this session's links, fenced as quoted feedback
+//   proto share take <commentId…> | --new [<id>]   send viewer comments to the inbox, as the page's Send to Claude
+//             does (only when the user asks for it in chat)
 //   proto share rm <id>      take a link down (it then says it was removed)
 //   proto share file <slug>[/<n>…] [--out <file.html>]   the same build as one HTML file, comments off
 //   proto share stop         stop the local host (the next share starts it again)
@@ -80,6 +84,8 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, buildUpNeeded, isCurrent } from '../app/assignment.mjs'
 import { idOf, letterOf, numberOf } from '../app/numbers.mjs'
+import { report as reportShared } from '../app/share/owner.mjs'
+import { sharedLines } from '../app/share/viewer-text.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 // The languages the page speaks (app/shell/i18n.ts). --lang sets the session's: the language the
@@ -119,7 +125,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -697,13 +703,14 @@ function plan() {
 
 // A variant is built (its checks passed): the page drops its Building mark and shows its errors
 // again. `proto done <slug>` ends every variant of that prototype.
-function done() {
+async function done() {
   const dir = sessionDir()
   need(dir)
   if (!args.length) die('which variant? proto done <slug>/<letter> (or <slug> for all of its variants)')
   const ended = endBuilding(dir, args)
   // One line: agents read this command's output through `tail -1`.
-  const { closed, pending } = locked(dir, () => closeWaiting(dir))
+  const { closed, pending, shared } = locked(dir, () => closeWaiting(dir))
+  await reportShared(dir, shared, 'done')
   console.log(`${ended.length ? `built: ${ended.join(', ')}` : `nothing was building there (${args.join(', ')})`}${closed.length ? ` · closed ${closed.join(', ')}` : ''}${pending.length ? ` · assignment pending for ${pending.join(', ')} (run proto inbox)` : ''}`)
 }
 
@@ -728,7 +735,7 @@ function endBuilding(dir, refs) {
 // nothing came back to close it. Returns closed and pending assignment refs. Run under the lock.
 function closeWaiting(dir) {
   const building = readSession(dir)?.building
-  const closed = [], pending = []
+  const closed = [], pending = [], shared = []
   for (const id of batchesIn(dir, 'taken')) {
     const file = join(inboxDir(dir), 'taken', id, 'batch.json')
     const b = readJson(file, null)
@@ -736,12 +743,12 @@ function closeWaiting(dir) {
     if (!ready.length) continue
     for (const c of ready) {
       if (pendingAssignment(dir, c)) pending.push(`${id}/${c.n}`)
-      else { c.done = true; closed.push(`${id}/${c.n}`) }
+      else { c.done = true; closed.push(`${id}/${c.n}`); if (c.from) shared.push(c) }
     }
     b.done = b.comments.every(c => c.done)
     writeJson(file, b)
   }
-  return { closed, pending }
+  return { closed, pending, shared }
 }
 
 // meta.ts with its object replaced. Through a function: a replacement string would read `$&` or `$$`
@@ -1722,11 +1729,11 @@ const spanOf = c => c.to === undefined ? secs(c.at) : `${(c.at / 1000).toFixed(2
 // can be acted on without opening each file first. Measured on a 12-comment batch: the comments
 // were done in 48 s, two of the tool calls in it only reading these lines.
 const SNIP = 5
-function printSource(dir, src) {
+function printSource(dir, src, base = join(dir, 'src', 'protos')) {
   const m = String(src).match(/^(.*):(\d+)$/)
   if (!m) return
   let lines
-  try { lines = readFileSync(join(dir, 'src', 'protos', m[1]), 'utf8').split(/\r?\n/) } catch { return }
+  try { lines = readFileSync(join(base, m[1]), 'utf8').split(/\r?\n/) } catch { return }
   const at = Number(m[2]), from = Math.max(1, at - SNIP), to = Math.min(lines.length, at + SNIP)
   const w = String(to).length
   for (let i = from; i <= to; i++) {
@@ -1786,7 +1793,7 @@ function turnsBefore(dir, re) {
     const b = ['taken', 'new'].map(sub => readJson(join(inboxDir(dir), sub, r.batch, 'batch.json'), null)).find(Boolean)
     const c = b?.comments?.find(x => x.n === r.n)
     if (!c) { turns.unshift({ gone: `${r.batch}/${r.n}` }); break }
-    turns.unshift({ text: c.text, reply: c.reply ?? b.reply ?? null })
+    turns.unshift({ text: c.from ? `(quoted feedback from @${c.from.viewer}, from a link)` : c.text, reply: c.reply ?? b.reply ?? null })
     r = c.re
   }
   return turns
@@ -1845,6 +1852,14 @@ function printBatch(dir, b) {
   if (b.orphaned) console.log('   taken earlier by a session that ended before it answered: handle these first')
   for (const c of live) {
     if (c.action === 'intake' && c.intake) { printIntake(dir, b, c); continue }
+    // A viewer's comment from a share link: quoted and fenced, never instructions (SKILL.md). Its
+    // source line is shown from the snapshot of the version the viewer saw.
+    if (c.from) {
+      console.log(`\n${sharedLines({ ...c, route: routeShown(c.route) }).join('\n')}`)
+      if (c.target?.src) printSource(dir, c.target.src, join(dir, '.proto', 'shares', c.from.share, `v${c.from.version}`))
+      if (c.view) console.log(`   (shoot it: proto shoot ${c.route} --size ${c.view.w}x${c.view.h})`)
+      continue
+    }
     console.log(`\n${c.n}. ${routeShown(c.route)}${c.re ? `  (reply to ${c.re.batch}/${c.re.n})` : ''}`)
     if (c.re) for (const t of turnsBefore(dir, c.re)) console.log(t.gone ? `   earlier: ${t.gone} (no longer in the inbox)` : `   earlier: "${oneLine(t.text, 160)}"  ->  ${t.reply ? `${WHO[t.reply.by] ?? 'Claude'}: "${oneLine(t.reply.text, 160)}"` : 'no reply'}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
@@ -1948,6 +1963,10 @@ function printListener(dir) {
   console.log('Only if this host offers no wakeup mechanism, read proto inbox on active turns and tell the user automatic replies are unavailable.')
 }
 
+// A taken batch's comments from share links are `working` on the host: their viewers see "In
+// progress". Only the status goes; Claude's reply never leaves this Mac.
+const sharedTaken = (dir, batches) => reportShared(dir, batches.flatMap(b => b.comments.filter(c => c.from && !c.withdrawn && !c.done)), 'working')
+
 async function inbox() {
   const dir = sessionDir()
   const s = need(dir)
@@ -1978,6 +1997,7 @@ async function inbox() {
   if (!flags.wait) {
     const lost = orphans(dir)
     const got = [...lost, ...take(dir)]
+    await sharedTaken(dir, got)
     got.forEach(b => printBatch(dir, b))
     if (!got.length) console.log('no new comments')
     stillOpen(dir, got.map(b => b.id))
@@ -1986,7 +2006,7 @@ async function inbox() {
   }
   // Comments a session that ended took and never answered come first, as an arrival does.
   const lost = orphans(dir)
-  if (lost.length) { lost.forEach(b => printBatch(dir, b)); stillOpen(dir, lost.map(b => b.id)); return }
+  if (lost.length) { await sharedTaken(dir, lost); lost.forEach(b => printBatch(dir, b)); stillOpen(dir, lost.map(b => b.id)); return }
   const minutes = Number(flags.timeout) || 115
   const existing = locked(dir, () => {
     const w = readJson(waiterFile(dir), null)
@@ -2016,6 +2036,7 @@ async function inbox() {
       // A reviewer often sends twice in a row: a moment's grace takes both in one wake.
       await sleep(1500)
       const got = take(dir)
+      if (got.length) await sharedTaken(dir, got)
       if (got.length) { done(); got.forEach(b => printBatch(dir, b)); stillOpen(dir, got.map(b => b.id)); return }
     }
     if (!alive(readSession(dir)?.pid)) { done(); return console.log('the server stopped, so no comments can come. `proto up`, then listen again.') }
@@ -2025,7 +2046,7 @@ async function inbox() {
   console.log(`no comments in ${minutes} min. Listen again: proto inbox --wait`)
 }
 
-function reply() {
+async function reply() {
   const dir = sessionDir()
   need(dir)
   const [ref, ...words] = args
@@ -2064,6 +2085,7 @@ function reply() {
     return c
   }
   // Under the lock `proto done` closes comments in: a batch is read and written whole.
+  const shared = []
   locked(dir, () => {
     const b = readJson(file, null)
     const building = until ? marksOf(readSession(dir)?.building, until).length : 0
@@ -2091,6 +2113,7 @@ function reply() {
     }
     b.done = b.comments.every(c => c.done)
     writeJson(file, b)
+    shared.push(...answered.filter(c => c.from && c.done))
     // One line, as `proto done`'s. A comment left open shows "Claude is on it" until something closes it, so say so.
     const what = flags.done ? 'done'
       : until ? (building ? `open until ${until.join(', ')} is built (${building} building)${answered.some(c => pendingAssignment(dir, c)) ? '; assignment pending' : ''}` : answered.some(c => !c.done) ? 'still open: assignment pending' : `done (nothing in ${until.join(', ')} is building)`)
@@ -2098,6 +2121,8 @@ function reply() {
     const head = pairs ? `replied to ${answered.map(c => c.n).join(', ')}` : text ? 'replied' : ''
     console.log(`${ids[0]}${n ? `/${n}` : ''}: ${[head, what].filter(Boolean).join(', ')}${b.done ? ' (batch done)' : ''}`)
   })
+  // Done on the host too, for comments from links: their viewers see "Done". Only the status goes.
+  await reportShared(dir, shared, 'done')
 }
 
 // Comments taken and not done, which the page still shows as "Claude is on it": printed when
@@ -2112,7 +2137,7 @@ function stillOpen(dir, skip) {
     for (const c of readJson(join(inboxDir(dir), 'taken', id, 'batch.json'), null)?.comments || []) {
       if (c.done || c.withdrawn) continue
       const left = c.until ? marksOf(building, c.until).length : 0
-      lines.push(`  ${id}/${c.n} "${clip(c.text, 50)}": ${c.assignment || c.buildUp ? actionText(dir, c) : c.until ? `closes itself when ${c.until.join(', ')} is built (${left} building)` : c.reply ? `replied "${clip(c.reply.text, 50)}", never closed` : 'not answered'}`)
+      lines.push(`  ${id}/${c.n} ${c.from ? `(from a link, by @${c.from.viewer})` : `"${clip(c.text, 50)}"`}: ${c.assignment || c.buildUp ? actionText(dir, c) : c.until ? `closes itself when ${c.until.join(', ')} is built (${left} building)` : c.reply ? `replied "${clip(c.reply.text, 50)}", never closed` : 'not answered'}`)
     }
   }
   if (lines.length) console.log(`Still open from earlier (the page says "Agent is on it"); once each one's work is in: proto reply <batch>/<n> "…" --done\n${lines.join('\n')}\n`)

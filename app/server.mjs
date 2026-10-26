@@ -318,6 +318,16 @@ const viewOf = c => {
   return v && typeof v === 'object' && VIEW_SIZES.has(v.size) && px(v.w) && px(v.h) ? { size: v.size, w: v.w, h: v.h } : false
 }
 
+// Where a comment from a share link came from (app/share/viewer-text.mjs fromComment): the share,
+// the version the viewer saw, their GitHub login and display name, and the host's comment id.
+const SHARE_ID = /^[0-9a-z]{10}$/
+const fromOk = f => !!f && typeof f === 'object' && SHARE_ID.test(f.share) && SHARE_ID.test(f.link) && Number.isInteger(f.version) && f.version > 0 && f.version < 1e6
+  && typeof f.viewer === 'string' && /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(f.viewer) && typeof f.verified === 'boolean'
+  && typeof f.comment === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(f.comment)
+  && (f.name === undefined || (typeof f.name === 'string' && /^[\p{L}\p{N} .'-]{0,40}$/u.test(f.name)))
+  && (f.title === undefined || (typeof f.title === 'string' && f.title.length <= 120 && !/[\x00-\x1f\x7f-\x9f]/.test(f.title)))
+const fromOf = f => ({ share: f.share, version: f.version, viewer: f.viewer, name: f.name ?? '', verified: f.verified, link: f.link, comment: f.comment, ...(f.title ? { title: f.title } : {}) })
+
 // A decision on a variant made in the page (its Pick, More like this and Build it) comes as a
 // comment with one of these and no element. A copy choice (the copy picker's Send) is one too, on
 // the element of the line it changes. More variants is the one made on a prototype (route <slug>),
@@ -331,7 +341,8 @@ const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'co
  * each on its own, so one that fails says why in its comment and never keeps the batch from
  * arriving. Returns the batch, and whether the working variant moved.
  */
-function receive(data) {
+export function receive(data, root = dir) {
+  const inbox = join(root, '.proto', 'inbox')
   const comments = Array.isArray(data.comments) ? data.comments : []
   if (!comments.length) throw Object.assign(new Error('no comments'), { status: 400 })
   const bad = (i, why) => Object.assign(new Error(`comment ${i + 1}${why}`), { status: 400 })
@@ -351,13 +362,19 @@ function receive(data) {
     // A follow-up answers the reply to a comment sent before: which one, so `proto inbox` can say
     // what was said before it. Only its address is kept; the thread itself is in the batches.
     if (c.re !== undefined && (typeof c.re?.batch !== 'string' || !/^[\w-]{1,60}$/.test(c.re.batch) || !Number.isInteger(c.re.n) || c.re.n < 1 || c.action !== undefined)) throw bad(i, ': re is { batch, n }, the sent comment whose reply this answers, on a comment with no action')
+    // A viewer's comment from a share link (Send to Claude, or `proto share take`): their words are
+    // data, printed fenced by `proto inbox`; it carries none of what only the owner's page can send.
+    if (c.from !== undefined) {
+      if (!fromOk(c.from)) throw bad(i, ': from is { share, version, viewer, verified, link, comment }, a comment from a share link')
+      if (c.action !== undefined || c.re !== undefined || c.point !== undefined || c.region !== undefined || time || (Array.isArray(c.tags) && c.tags.length) || (Array.isArray(c.images) && c.images.length)) throw bad(i, ': a comment from a link has no action, follow-up, spot, region, moment, tags or pictures')
+    }
     const view = viewOf(c)
     if (view === false) throw bad(i, ': view is { size: phone, tablet or desktop, w, h }, the layout\'s size in whole CSS px from 200 to 4000')
     if (view && (c.action !== undefined || time)) throw bad(i, ': a comment in a device view is on the design, with no action and no moment of the motion')
     if (c.action === 'more-variants') {
       const [slug, ...rest] = c.route.split('/')
       if (rest.length) throw bad(i, ': more-variants is on a prototype (<slug>), not a variant')
-      if (!existsSync(join(dir, 'src', 'protos', slug))) throw bad(i, `: there is no prototype ${slug}`)
+      if (!existsSync(join(root, 'src', 'protos', slug))) throw bad(i, `: there is no prototype ${slug}`)
       if (!Number.isInteger(c.count) || c.count < 1 || c.count > 9) throw bad(i, ': count is a whole number from 1 to 9')
       if (c.point !== undefined || c.region !== undefined || c.target !== undefined || time) throw bad(i, ': more-variants has no element, spot, region or moment')
     } else if (c.action !== undefined) {
@@ -386,6 +403,7 @@ function receive(data) {
       ...time,
       ...(view ? { view } : {}),
       ...(c.re ? { re: { batch: c.re.batch, n: c.re.n } } : {}),
+      ...(c.from ? { from: fromOf(c.from), ...(typeof c.note === 'string' && c.note ? { note: clip(c.note, 400) } : {}) } : {}),
       target: element(c.target),
       tags: (Array.isArray(c.tags) ? c.tags : []).map(element).filter(Boolean).slice(0, 20),
       images,
@@ -440,7 +458,8 @@ function receive(data) {
     id, at,
     viewport: data.viewport && { w: +data.viewport.w || 0, h: +data.viewport.h || 0, phone: !!data.viewport.phone },
     theme: data.theme === 'dark' ? 'dark' : 'light',
-    ...(() => { const st = storageOf(data.storage); return st ? { storage: st } : {} })(),
+    // The design's storage is the owner's page's; a batch from a link has none.
+    ...(() => { const st = !list.some(c => c.from) && storageOf(data.storage); return st ? { storage: st } : {} })(),
     comments: list,
     ...(list.every(c => c.done) ? { done: true } : {}),
   }
@@ -594,6 +613,18 @@ export function prototypeServer(session) {
         try { host = new URL(req.headers.origin).host } catch { /* "null", or not a URL */ }
         return host && host === String(req.headers.host || '').trim().toLowerCase() ? null : [403, 'only the prototype page itself can do this']
       }
+      // Share links: the owner's side, with the poll that fills the tray (`proto:shares`). Loaded
+      // here rather than imported above, so server.mjs still loads on its own (as the checks copy it).
+      let shares = null
+      const sharesReady = import('./share/routes.mjs').then(({ shareServer }) => {
+        shares = shareServer({
+          root: dir, session: () => read(), receive: (data, root) => receive(data, root),
+          emit: tray => server.ws.send({ type: 'custom', event: 'proto:shares', data: tray }),
+        })
+        server.httpServer?.once('close', () => shares.close())
+        return shares
+      })
+      sharesReady.catch(e => console.error(`share links are off: ${e?.message || e}`))
       server.middlewares.use('/__proto', (req, res) => {
         const chunks = []
         let size = 0
@@ -618,12 +649,24 @@ export function prototypeServer(session) {
             let data = {}
             try { if (size) data = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { return fail(400, 'not JSON') }
             if (!data || typeof data !== 'object' || Array.isArray(data)) return fail(400, 'send a JSON object')
-            if (route === '/ping') activity = Date.now()
+            // Share links (app/share/routes.mjs): the Share sheet and the "From links" tray.
+            if (route.startsWith('/share/')) {
+              sharesReady.then(sh => sh.handle(route.slice('/share/'.length), data)).then(({ status, body }) => {
+                res.statusCode = status
+                res.setHeader('content-type', 'application/json')
+                res.end(JSON.stringify(body))
+              }, e => fail(500, String(e?.message || e).slice(0, 300)))
+              return
+            }
+            if (route === '/ping') { activity = Date.now(); shares?.ping() }
             if (route === '/keep') write({ keep: !!data.keep })
             if (route === '/work' && typeof data.proto === 'string' && typeof data.variant === 'string') work({ proto: data.proto, variant: data.variant, undo: data.undo })
             let got
             if (route === '/comments') {
               activity = Date.now()
+              // A viewer's comment reaches the inbox only through Send (/__proto/share/send), from the
+              // host's own copy of it: the page never says where a comment came from.
+              if (Array.isArray(data.comments) && data.comments.some(c => c && typeof c === 'object' && 'from' in c)) return fail(400, 'comments from share links are sent with /__proto/share/send')
               try { got = receive(data) } catch (e) { return fail(e.status || 500, e.message) }
             }
             let heard

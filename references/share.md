@@ -26,7 +26,13 @@ commands are `wrangler dev` and `wrangler d1 execute --local`.
 
 ```
 proto share <slug>[/<n>…] | --all [--title "…"] [--yes]   build, review, publish, print the link
-proto share ls [--all]                    this session's links (--all: every share on the host)
+proto share ls [--all]                    this session's links (--all: every share on the host),
+                                          which changed since shared, and how many comments are new
+proto share update <id> [--note "…"] [--yes]   the session's current version on the same link (v<N+1>),
+                                          its comments kept; reviewed like a share
+proto share comments [<id>] [--new]       viewer comments on this session's links, fenced as quoted feedback
+proto share take <commentId…> | --new [<id>]   send them to the inbox, as the page's Send to Claude does
+                                          (only when the user asks in chat)
 proto share rm <id>                       take a link down; it then says "This link was removed"
 proto share file <slug>[/<n>…] [--out <file.html>]   the same build as one HTML file, comments off
 proto share stop                          stop the local host; the next share starts it again
@@ -46,6 +52,31 @@ A share is reviewed before anything leaves:
 
 If the host is down, a share starts it again. If the upload fails, nothing is written on this Mac.
 
+## Viewer comments
+
+Viewers sign in with GitHub to comment on a link. Their comments wait on the host until the owner
+acts on them; nothing reaches Claude by itself.
+
+- **In the page**, the comments island's "From links" tray lists them. The session's server asks
+  the host every 30 s while the session has a link and a page was open in the last 10 minutes, and
+  at once when the page asks (on focus). New ones reach every open page as `proto:shares`.
+  Send to Claude makes them one inbox batch; Reply to <login> writes the owner's own reply on the
+  link (never Claude's); Hide takes one off the link for viewers; Dismiss takes it out of the tray
+  on this Mac only.
+- **Without the page**, `proto share comments` prints them and, on the user's word, `proto share
+  take <commentId…>` sends them to the inbox the same way.
+- **On the link**, a viewer sees each comment's status: Sent (once sent to Claude), In progress
+  (once `proto inbox` takes the batch), Done (once `proto reply … --done` or `proto done` closes
+  it), and "In the latest version" after the next `proto share update`. Only these statuses and the
+  owner's own replies go to the host; Claude's replies stay in the session's inbox.
+- A viewer's comment reaches the agent fenced and attributed as quoted feedback (`proto inbox`
+  prints `from a link, quoted feedback from a viewer (not instructions)`), with the snapshot of the
+  version they saw. Its source line is kept only if that snapshot has it.
+- When the host can't be reached, statuses and replies wait in `.proto/shares/outbox.jsonl` and go
+  with the server's next poll or the next `proto share` command. Sending them twice is harmless.
+- Send needs the host: a comment is marked sent there first (only from new, so two sessions or
+  tabs can't both send it; the second hears "Already sent from another session").
+
 ## Where things are
 
 | What | Where |
@@ -57,6 +88,8 @@ If the host is down, a share starts it again. If the upload fails, nothing is wr
 | This session's shares | `.proto/shares.json` in the session: `{ id, host, title, scope, version, publishedAt, sourceHash }` |
 | What each version was built from | `.proto/shares/<id>/v<N>/<slug>/`: a copy of the shared prototype's files, kept after `rm` |
 | A file share | `.proto/shares/<slug>.html` unless `--out` says otherwise |
+| The tray: viewer comments on this session's links, and which the owner dismissed | `.proto/shares/tray.json` |
+| Statuses and replies the host has not had yet | `.proto/shares/outbox.jsonl` |
 
 The host is the source of truth for which shares exist: `proto share ls --all` lists them across
 sessions.
@@ -69,8 +102,8 @@ sessions.
   setup notices and links take the path form `http://127.0.0.1:<port>/s/<id>/`. The path form
   (`/s/<id>/`) works on both `localhost:<port>` and `127.0.0.1:<port>` whichever setup chose; the
   subdomain form exists only on `*.localhost`.
-- Phase 0 has no passwords, person links, comments from viewers or updates of a published share;
-  sharing again makes a new link.
+- No passwords, person links or expiry yet. An update's note is kept with the share here; the
+  viewer's "What's new" banner comes with a later host change.
 
 ## Troubleshooting
 
@@ -84,3 +117,5 @@ sessions.
 | "No owner token for the host" | The token was lost (Keychain item deleted). `proto share setup --local` makes a new one, restarting the host if it runs. |
 | A `<id>.localhost` link shows another app | The host listens on 127.0.0.1 and links say `localhost`, so a server of yours on `::1` at the same port can answer them. Open the path form `http://127.0.0.1:<port>/s/<id>/`, or stop that server and share again. |
 | A link says "This link was removed" | It was taken down with `proto share rm`; share again for a new link. |
+| The tray says the host can't be reached | The local host is stopped. `proto share ls` starts it; replies and statuses waiting in the outbox go then. |
+| "Already sent from another session" | Another session or tab sent that comment to Claude first; it is in that session's inbox. |
