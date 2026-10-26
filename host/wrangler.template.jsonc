@@ -1,0 +1,11 @@
+// Filled in by `proto share setup`: the {{…}} tokens become the KV namespace id, the D1 database id,
+// the host's own name (localhost:8787 locally) and "1" for path mode or "0" for one origin per share.
+// Locally `wrangler dev --persist-to` makes the namespace and database itself, so the ids can be any string.
+{
+  "name": "proto-share",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "kv_namespaces": [{ "binding": "KV", "id": "{{KV_ID}}" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "proto-share", "database_id": "{{DB_ID}}" }],
+  "vars": { "BASE": "{{BASE}}", "PATH_MODE": "{{PATH_MODE}}" }
+}

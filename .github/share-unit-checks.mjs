@@ -273,3 +273,226 @@ test('imagesPlugin with the real sharp turns an orientation-6 photo upright', { 
     assert.deepEqual({ width, height, format }, { width: 20, height: 30, format: 'webp' })
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
+
+// The host Worker, run against in-memory fakes: KV is a Map, D1 is node:sqlite with the real schema.
+import { DatabaseSync } from 'node:sqlite'
+import { readFileSync } from 'node:fs'
+import { gzipSync } from 'node:zlib'
+import worker from '../host/worker.mjs'
+import { newId, isId } from '../host/lib/ids.mjs'
+import { route } from '../host/lib/routes.mjs'
+
+const TOKEN = 'owner-token-for-tests'
+const BASE = 'localhost:8787'
+const hex = async s => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map(b => b.toString(16).padStart(2, '0')).join('')
+
+async function makeEnv(extra = {}) {
+  const sql = new DatabaseSync(':memory:')
+  sql.exec(readFileSync(new URL('../host/schema.sql', import.meta.url), 'utf8'))
+  sql.prepare('INSERT INTO owners (id, name, created_at) VALUES (?, ?, ?)').run('o1', 'Dananz', 1)
+  sql.prepare('INSERT INTO owner_tokens (sha256, owner_id, device, created_at) VALUES (?, ?, ?, ?)').run(await hex(TOKEN), 'o1', 'test', 1)
+  const store = new Map()
+  const KV = {
+    store,
+    async get(key, type) { const v = store.get(key); if (v === undefined) return null; return type === 'arrayBuffer' ? v.slice(0) : new TextDecoder().decode(v) },
+    async put(key, value) { store.set(key, value instanceof ArrayBuffer ? value.slice(0) : new TextEncoder().encode(String(value)).buffer) },
+    async delete(key) { store.delete(key) },
+  }
+  const stmt = (query, args = []) => ({
+    bind: (...a) => stmt(query, a),
+    first: async () => sql.prepare(query).get(...args) ?? null,
+    all: async () => ({ results: sql.prepare(query).all(...args) }),
+    run: async () => { const r = sql.prepare(query).run(...args); return { success: true, meta: { changes: Number(r.changes) } } },
+  })
+  const DB = { sql, prepare: q => stmt(q), async batch(list) { const out = []; for (const s of list) out.push(await s.run()); return out } }
+  return { KV, DB, BASE, PATH_MODE: '0', ...extra }
+}
+const auth = { authorization: `Bearer ${TOKEN}` }
+const meta = (o = {}) => Buffer.from(JSON.stringify({ title: 'Pricing', session: 's1', projectLabel: 'shop', scope: [{ proto: 'pricing', variants: ['A'] }], lang: 'en', ...o })).toString('base64url')
+const call = (env, url, init) => worker.fetch(new Request(url, init), env)
+const noCors = res => assert.deepEqual([...res.headers.keys()].filter(k => k.startsWith('access-control-')), [])
+const bytesOf = async res => Buffer.from(await res.arrayBuffer())
+async function publish(env, html = '<!doctype html><p>hello', m = meta()) {
+  const created = await call(env, `http://${BASE}/api/shares`, { method: 'POST', headers: auth })
+  const { id } = await created.json()
+  const body = gzipSync(html)
+  const put = await call(env, `http://${BASE}/api/shares/${id}`, { method: 'PUT', headers: { ...auth, 'x-share-meta': m }, body })
+  return { id, body, put }
+}
+
+test('ids shape', () => {
+  const seen = new Set()
+  for (let i = 0; i < 1000; i++) { const id = newId(); assert.ok(isId(id), id); seen.add(id) }
+  assert.equal(seen.size, 1000)
+  assert.ok(!isId('K3x9p2abcd') && !isId('k3x9p2abc') && !isId('k3x9p2abcde') && !isId('iiiiiiiiii'))
+})
+test('route reads the four origins', () => {
+  const r = (u, b = BASE) => route(new URL(u), b)
+  assert.deepEqual(r('http://k3x9p2abcd.localhost:8787/x'), { at: 'share', shareId: 'k3x9p2abcd', path: '/x' })
+  assert.deepEqual(r('http://localhost:8787/s/k3x9p2abcd/api/state'), { at: 'share', shareId: 'k3x9p2abcd', path: '/api/state' })
+  assert.deepEqual(r('http://localhost:8787/s/k3x9p2abcd'), { at: 'share', shareId: 'k3x9p2abcd', path: '' })
+  assert.deepEqual(r('https://prtype.dev/k3x9p2abcd', 'prtype.dev'), { at: 'apex', shareId: 'k3x9p2abcd', path: '/k3x9p2abcd' })
+  assert.equal(r('http://localhost:8787/api/shares').at, 'api')
+  assert.equal(r('http://k3x9p2abcd.localhost:8787/_health').at, 'health')
+  assert.equal(r('http://localhost:8787/nope').at, 'none')
+  assert.equal(r('http://evil.example/').at, 'none')
+})
+test('owner api needs a token', async () => {
+  const env = await makeEnv()
+  for (const headers of [{}, { authorization: 'Bearer wrong' }, { authorization: TOKEN }]) {
+    const res = await call(env, `http://${BASE}/api/shares`, { headers })
+    assert.equal(res.status, 401)
+    assert.ok((await res.json()).error)
+    noCors(res)
+  }
+  assert.equal((await call(env, `http://${BASE}/api/shares`, { method: 'POST' })).status, 401)
+  env.DB.sql.prepare('UPDATE owner_tokens SET revoked_at = 5').run()
+  assert.equal((await call(env, `http://${BASE}/api/shares`, { headers: auth })).status, 401)
+})
+test('publish and serve', async () => {
+  const env = await makeEnv()
+  const { id, body, put } = await publish(env)
+  assert.equal(put.status, 200)
+  noCors(put)
+  const res = await call(env, `http://${id}.${BASE}/`)
+  assert.equal(res.status, 200)
+  assert.deepEqual(await bytesOf(res), body)
+  assert.equal(res.headers.get('content-encoding'), 'gzip')
+  assert.equal(res.headers.get('content-type'), 'text/html; charset=utf-8')
+  assert.equal(res.headers.get('x-robots-tag'), 'noindex')
+  assert.equal(res.headers.get('content-security-policy'), "frame-ancestors 'self'")
+  assert.equal(res.headers.get('x-frame-options'), 'SAMEORIGIN')
+  assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
+  assert.equal(res.headers.get('cache-control'), 'private, no-cache')
+  noCors(res)
+  assert.equal((await call(env, `http://${id}.${BASE}/?v=1`)).headers.get('cache-control'), 'private, max-age=31536000, immutable')
+  assert.equal((await call(env, `http://${id}.${BASE}/?v=2`)).headers.get('cache-control'), 'private, no-cache')
+  const list = await (await call(env, `http://${BASE}/api/shares`, { headers: auth })).json()
+  assert.equal(list.length, 1)
+  assert.deepEqual({ id: list[0].id, title: list[0].title, version: list[0].version, bytes: list[0].bytes }, { id, title: 'Pricing', version: 1, bytes: body.length })
+  assert.equal(typeof list[0].updatedAt, 'number')
+})
+test('put refuses what is not a share', async () => {
+  const env = await makeEnv()
+  const url = id => `http://${BASE}/api/shares/${id}`
+  assert.equal((await call(env, url('k3x9p2abcd'), { method: 'PUT', headers: { ...auth, 'x-share-meta': meta() }, body: gzipSync('x') })).status, 404)
+  const { id } = await (await call(env, `http://${BASE}/api/shares`, { method: 'POST', headers: auth })).json()
+  assert.equal((await call(env, url(id), { method: 'PUT', headers: auth, body: gzipSync('x') })).status, 400)
+  assert.equal((await call(env, url(id), { method: 'PUT', headers: { ...auth, 'x-share-meta': meta() }, body: Buffer.from('plain') })).status, 400)
+})
+test('path mode', async () => {
+  const env = await makeEnv({ PATH_MODE: '1' })
+  const { id, body } = await publish(env)
+  const bare = await call(env, `http://${BASE}/s/${id}`, { redirect: 'manual' })
+  assert.equal(bare.status, 301)
+  assert.equal(bare.headers.get('location'), `http://${BASE}/s/${id}/`)
+  noCors(bare)
+  const res = await call(env, `http://${BASE}/s/${id}/`)
+  assert.deepEqual(await bytesOf(res), body)
+  assert.equal(res.headers.get('content-encoding'), 'gzip')
+  noCors(res)
+  const state = await call(env, `http://${BASE}/s/${id}/api/state`, { headers: { 'x-proto': '1' } })
+  assert.equal((await state.json()).version, 1)
+  const off = await makeEnv({ PATH_MODE: '0' })
+  assert.equal((await call(off, `http://${BASE}/s/${id}/`)).status, 404)
+})
+test('update bumps version and drops the old key', async () => {
+  const env = await makeEnv()
+  const { id } = await publish(env, 'one')
+  assert.ok(env.KV.store.has(`html:${id}:1`))
+  const two = gzipSync('two')
+  const put = await call(env, `http://${BASE}/api/shares/${id}`, { method: 'PUT', headers: { ...auth, 'x-share-meta': meta({ title: 'Pricing 2' }) }, body: two })
+  assert.equal((await put.json()).version, 2)
+  assert.ok(!env.KV.store.has(`html:${id}:1`) && env.KV.store.has(`html:${id}:2`))
+  assert.deepEqual(await bytesOf(await call(env, `http://${id}.${BASE}/`)), two)
+  const state = await (await call(env, `http://${id}.${BASE}/api/state`, { headers: { 'X-Proto': '1' } })).json()
+  assert.equal(state.version, 2)
+  assert.equal(state.title, 'Pricing 2')
+  assert.equal(typeof state.updatedAt, 'number')
+})
+test('state needs X-Proto', async () => {
+  const env = await makeEnv()
+  const { id } = await publish(env)
+  const bare = await call(env, `http://${id}.${BASE}/api/state`)
+  assert.equal(bare.status, 400)
+  noCors(bare)
+  const ok = await call(env, `http://${id}.${BASE}/api/state`, { headers: { 'X-Proto': '1' } })
+  assert.equal(ok.status, 200)
+  assert.match(ok.headers.get('content-type'), /application\/json/)
+  noCors(ok)
+})
+test('apex og page keeps the hash', async () => {
+  const env = await makeEnv()
+  const { id } = await publish(env)
+  const res = await call(env, `http://${BASE}/${id}`, { redirect: 'manual' })
+  assert.equal(res.status, 200)
+  const html = await res.text()
+  assert.match(html, /location\.hash/)
+  assert.match(html, /og:title" content="Pricing"/)
+  assert.match(html, /A prototype shared by Dananz/)
+  assert.match(html, /http-equiv="refresh" content="0;url=/)
+  assert.ok(html.includes(`http://${id}.${BASE}/`))
+  assert.ok(!res.headers.has('location'))
+  noCors(res)
+})
+test('apex og page escapes the title', async () => {
+  const env = await makeEnv()
+  const { id } = await publish(env, 'x', meta({ title: '"><script>alert(1)</script>' }))
+  const html = await (await call(env, `http://${BASE}/${id}`)).text()
+  assert.ok(!html.includes('<script>alert(1)'))
+})
+test('removed is 410', async () => {
+  const env = await makeEnv()
+  const { id } = await publish(env)
+  const del = await call(env, `http://${BASE}/api/shares/${id}`, { method: 'DELETE', headers: auth })
+  assert.equal(del.status, 200)
+  noCors(del)
+  assert.ok(![...env.KV.store.keys()].some(k => k.includes(id)))
+  for (const url of [`http://${id}.${BASE}/`, `http://${BASE}/${id}`]) {
+    const res = await call(env, url)
+    assert.equal(res.status, 410)
+    assert.match(res.headers.get('x-robots-tag'), /noindex/)
+    noCors(res)
+  }
+  assert.equal((await call(env, `http://${id}.${BASE}/api/state`, { headers: { 'x-proto': '1' } })).status, 410)
+  assert.deepEqual(await (await call(env, `http://${BASE}/api/shares`, { headers: auth })).json(), [])
+})
+test('unknown is 404', async () => {
+  const env = await makeEnv()
+  for (const url of [`http://k3x9p2abcd.${BASE}/`, `http://${BASE}/k3x9p2abcd`, `http://${BASE}/nothing`]) {
+    const res = await call(env, url)
+    assert.equal(res.status, 404, url)
+    assert.match(res.headers.get('content-type'), /text\/html/)
+    noCors(res)
+  }
+})
+test('error pages come in he', async () => {
+  const env = await makeEnv()
+  const { id } = await publish(env, 'x', meta({ lang: 'he' }))
+  await call(env, `http://${BASE}/api/shares/${id}`, { method: 'DELETE', headers: auth })
+  const html = await (await call(env, `http://${id}.${BASE}/`)).text()
+  assert.match(html, /dir="rtl"/)
+  assert.match(html, /lang="he"/)
+})
+test('too big is 413', async () => {
+  const env = await makeEnv()
+  const { id } = await (await call(env, `http://${BASE}/api/shares`, { method: 'POST', headers: auth })).json()
+  const res = await call(env, `http://${BASE}/api/shares/${id}`, { method: 'PUT', headers: { ...auth, 'x-share-meta': meta() }, body: new Uint8Array(20 * 1024 * 1024 + 1) })
+  assert.equal(res.status, 413)
+  noCors(res)
+  assert.equal(env.KV.store.size, 0)
+})
+test('health answers anywhere and another owner cannot touch a share', async () => {
+  const env = await makeEnv()
+  assert.equal((await call(env, `http://abc.${BASE}/_health`)).status, 200)
+  const { id } = await publish(env)
+  env.DB.sql.prepare('INSERT INTO owners (id, name, created_at) VALUES (?, ?, ?)').run('o2', 'Other', 1)
+  env.DB.sql.prepare('INSERT INTO owner_tokens (sha256, owner_id, device, created_at) VALUES (?, ?, ?, ?)').run(await hex('other'), 'o2', 'x', 1)
+  const res = await call(env, `http://${BASE}/api/shares/${id}`, { method: 'DELETE', headers: { authorization: 'Bearer other' } })
+  assert.equal(res.status, 404)
+})
+test('subdomain mode serves a path that starts with /s/ as an ordinary path', async () => {
+  const env = await makeEnv()
+  const { id } = await publish(env)
+  assert.equal((await call(env, `http://${id}.${BASE}/s/${id}`)).status, 404)
+})
