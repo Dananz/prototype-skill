@@ -1,8 +1,10 @@
 // The Vite plugins of a share build (`vite build --mode share`, run by build.mjs). The session app
-// is built as it is, with five of its modules swapped for ones made from the scope: the registry
+// is built as it is, with some of its modules swapped for ones made from the scope: the registry
 // holds only the chosen variants, session.json only its name, stack and language, images.ts only
 // the pictures those variants name, and slot-source.ts the slot picks of this moment with nothing
 // else. Everything the swapped-out globs would have pulled in is then simply not in the bundle.
+// The shell itself (shell/shell.ts) is swapped for a stand-in too: a share boots the viewer
+// (shell/viewer/), and none of the owner's chrome, or its calls to the session server, goes in.
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
@@ -15,7 +17,7 @@ import { imagesPlugin } from './images.mjs'
 const VARIANT_EXTS = ['tsx', 'jsx', 'vue', 'svelte']
 const ASSET_EXTS = /\.(png|jpe?g|webp|avif)$/i
 const CODE_EXTS = /\.(m?[jt]sx?|vue|svelte)$/
-const VIRTUAL = { registry: '\0proto-share:registry', session: '\0proto-share:session', images: '\0proto-share:images', slots: '\0proto-share:slots' }
+const VIRTUAL = { registry: '\0proto-share:registry', session: '\0proto-share:session', images: '\0proto-share:images', slots: '\0proto-share:slots', shell: '\0proto-share:shell' }
 
 /** sharp from ~/.prototypes/share-tools, where `proto share` installs it; null when it isn't there. */
 export function loadSharp() {
@@ -139,6 +141,9 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
       `export const pointers = async () => (${JSON.stringify(slots)})`,
       'export const onChange = () => {}',
     ].join('\n'),
+    // main.ts calls createShell only outside a share; the module body (its listeners, its
+    // fetches, every panel it imports) never runs in one.
+    [VIRTUAL.shell]: () => 'export function createShell() { throw new Error(\'a share boots the viewer, not the shell\') }',
   }
   // The modules swapped, by the real file they stand for.
   const swapped = new Map([
@@ -146,6 +151,7 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
     [slash(join(root, 'session.json')), VIRTUAL.session],
     [slash(join(root, 'src', 'images.ts')), VIRTUAL.images],
     [slash(join(root, 'src', 'slot-source.ts')), VIRTUAL.slots],
+    [slash(join(root, 'shell', 'shell.ts')), VIRTUAL.shell],
   ])
   const inProtos = id => within(protosDir, bare(id))
 
@@ -157,7 +163,7 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
       // (the shell, jsx.ts itself, the project's files) through jsx-prod.ts, since production
       // React has no jsxDEV for the development transform's calls.
       if (source === 'react/jsx-dev-runtime') return join(root, importer && inProtos(importer) ? join('shell', 'jsx.ts') : join('share', 'jsx-prod.ts'))
-      if (!/(?:^|\/)(?:registry|session\.json|images|slot-source)(?:\.ts)?$/.test(source) || !importer || importer.startsWith('\0')) return null
+      if (!/(?:^|\/)(?:registry|session\.json|images|slot-source|shell)(?:\.ts)?$/.test(source) || !importer || importer.startsWith('\0')) return null
       const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
       return (resolved && swapped.get(bare(resolved.id))) ?? resolved
     },

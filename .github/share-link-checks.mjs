@@ -4,11 +4,13 @@
 // variants, the borrowed prototype's own meta, the owner's asks, this machine's paths). The
 // session's dev server and its own dist/ are left as they were, and two publishes at once take
 // turns. sharp is installed into ~/.prototypes/share-tools here until `proto share` does it.
+// Part 2 (viewerChecks, below) opens such a share in Chrome and checks the viewer it boots into.
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { createServer } from 'node:http'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { crc32, deflateSync } from 'node:zlib'
 import { createRequire } from 'node:module'
 
@@ -38,7 +40,7 @@ const metaFile = (app, slug) => join(app, 'src/protos', slug, 'meta.ts')
 const readMeta = (app, slug) => JSON.parse(readFileSync(metaFile(app, slug), 'utf8').replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
 const writeMeta = (app, slug, meta) => writeFileSync(metaFile(app, slug), `export default ${JSON.stringify(meta, null, 2)}\n`)
 
-export async function shareLinkChecks({ proto, app, local, fail }) {
+export async function shareLinkChecks({ proto, app, local, openPage, fail }) {
   const assert = (ok, why) => { if (!ok) fail(`share link: ${why}`) }
   if (!existsSync(join(tools, 'node_modules', 'sharp'))) {
     console.log(`\n$ npm i --prefix ${tools} sharp@0.35.5`)
@@ -144,4 +146,194 @@ export default function C() { return <main className="share-link-tile"><h1>MARK-
   assert(!existsSync(join(app, '.proto', 'shares', '.lock')), 'publishes are serialized: the lock was left behind')
   assert(!readdirSync(join(app, '.proto', 'shares')).length, 'build leaves the session alone: something was left in .proto/shares')
   console.log('share link: one-file build checks passed')
+  await viewerChecks({ proto, app, openPage, fail, buildShare })
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+async function until(get, ms = 10_000) {
+  for (const end = Date.now() + ms; ; await sleep(100)) {
+    const v = await get()
+    if (v || Date.now() > end) return v
+  }
+}
+
+/**
+ * The share as a host serves it, on a throwaway server: the page at /, its state at /api/state.
+ * Every path asked for is kept, so a check can tell that nothing reached for the session's server.
+ */
+async function host(html) {
+  const state = { version: 1, paths: [] }
+  const server = createServer((req, res) => {
+    state.paths.push(req.url)
+    if (req.url.split('?')[0] === '/api/state') {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ version: state.version, updatedAt: new Date().toISOString() }))
+    }
+    if (req.url === '/' || req.url.startsWith('/?')) { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html) }
+    res.writeHead(404); res.end()
+  })
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok))
+  return { url: `http://127.0.0.1:${server.address().port}/`, state, close: () => server.close() }
+}
+
+// Share links, part 2: the viewer a share boots into (decision 19). Not the owner's shell: the
+// desk of the shared designs, the list of the share's prototypes, zoom, the mount policy, the
+// phone's one design, the newer-version banner, Hebrew, and a page opened from disk.
+async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
+  const assert = (ok, why) => { if (!ok) fail(`share viewer: ${why}`) }
+  const protos = join(app, 'src/protos')
+  const info = { title: 'Smoke share', owner: 'Smoke', version: 1 }
+  const build = async scope => {
+    try { return (await buildShare({ sessionDir: app, scope, info })).html } catch (e) { fail(`share viewer: buildShare threw: ${e?.stack || e}`) }
+  }
+  const pairScope = { protos: [{ id: 'share-link', variants: ['B', 'C'] }, { id: 'lineage-src', variants: ['A'] }], start: 'share-link/B' }
+  const html = await build(pairScope)
+  const site = await host(html)
+  try {
+    const page = await openPage(site.url)
+    try {
+      const boards = () => page.run(`[...document.querySelectorAll('[data-board]')].map(b => b.dataset.board).join(' ')`)
+      const text = () => page.run('document.body.innerText')
+      await until(async () => (await text())?.includes('MARK-C'))
+      const seen = await text()
+      assert(await boards() === 'share-link/B share-link/C', `desk lists only shared: the desk has ${JSON.stringify(await boards())}`)
+      assert(seen.includes('MARK-B') && seen.includes('MARK-C'), 'desk lists only shared: #2 or #3 is not mounted')
+      for (const id of ['A', 'D', 'E']) assert(!seen.includes(`MARK-${id}`), `desk lists only shared: MARK-${id} is on the desk`)
+      assert(await page.run(`!document.querySelector('[data-act]')`), 'desk lists only shared: the owner\'s shell chrome ([data-act]) is on the page')
+      assert(await page.run(`[...document.querySelectorAll('[data-board] [data-label]')].map(l => l.textContent).join(' ').includes('#2')`), 'desk lists only shared: the label #2 is missing')
+
+      // The stamps: where each element is written survives into the share.
+      assert(await page.run(`(() => { const el = document.querySelector('[data-board="share-link/C"] [data-proto-src^="share-link/"]'); return !!el && !!el.dataset.protoComponent })()`), 'stamps survive: no element in C carries data-proto-src and data-proto-component')
+
+      // Zoom: + raises the readout, 0 is Fit again, 1 is 100 %. CSS zoom, never a transform.
+      const readout = () => page.run(`document.querySelector('[data-zoom-readout]')?.textContent ?? ''`)
+      const cssZoom = () => page.run(`document.querySelector('[data-board]')?.currentCSSZoom ?? 0`)
+      await page.run(`document.querySelector('[data-viewer-desk]')?.focus()`)
+      const z0 = await cssZoom(), r0 = await readout()
+      await page.key('+')
+      await sleep(700)
+      const z1 = await cssZoom(), r1 = await readout()
+      assert(parseInt(r1) > parseInt(r0), `zoom: + took the readout from ${JSON.stringify(r0)} to ${JSON.stringify(r1)}`)
+      assert(z1 > z0, `zoom: an artboard's zoom went from ${z0} to ${z1}`)
+      assert(await page.run(`[...document.querySelectorAll('[data-board], [data-world]')].every(el => getComputedStyle(el).transform === 'none')`), 'zoom: an artboard or the desk is scaled with a transform')
+      await page.key('0')
+      await sleep(700)
+      assert(await page.run(`document.querySelector('[data-fit]')?.getAttribute('aria-pressed') === 'true'`) && await readout() === r0, `zoom: 0 did not return to Fit (${await readout()})`)
+      await page.key('1')
+      await sleep(700)
+      assert(await readout() === '100%', `zoom: 1 reads ${JSON.stringify(await readout())}`)
+
+      // The prototypes of the share, in the header's list.
+      assert(await page.run(`!!document.querySelector('[data-proto-switch] [data-caret]')`), 'prototype list: the title has no caret')
+      const at = sel => page.run(`(() => { const r = document.querySelector(${JSON.stringify(sel)})?.getBoundingClientRect(); return r ? [r.left + r.width / 2, r.top + r.height / 2] : null })()`)
+      const sw = await at('[data-proto-switch]')
+      assert(sw, 'prototype list: no title button')
+      await page.press(...sw)
+      const rows = await until(async () => (await page.run(`document.querySelectorAll('[data-proto-row]').length`)) || 0, 3000)
+      assert(rows === 2, `prototype list: it lists ${rows} prototypes`)
+      await page.press(...await at('[data-proto-row="lineage-src"]'))
+      await until(async () => (await boards()) === 'lineage-src/A', 3000)
+      assert(await boards() === 'lineage-src/A', `prototype list: choosing lineage-src left ${JSON.stringify(await boards())}`)
+      assert(await until(async () => (await text())?.includes('MARK-LINEAGE-A'), 5000), 'prototype list: lineage-src/A is not mounted')
+
+      await sleep(5000)
+      const asked = [...site.state.paths, ...await page.run(`performance.getEntriesByType('resource').map(e => new URL(e.name).pathname)`)]
+      assert(!asked.some(p => p.startsWith('/__proto')), `no session calls: the page asked for ${asked.filter(p => p.startsWith('/__proto')).join(', ')}`)
+
+      // A newer version on the host: the next look (focus) says so.
+      site.state.version = 2
+      await page.run(`window.dispatchEvent(new Event('focus'))`)
+      const banner = await until(() => page.run(`document.querySelector('[data-newer]')?.textContent ?? ''`), 5000)
+      assert(banner.includes('There is a newer version') && banner.includes('Reload'), `newer version banner: ${JSON.stringify(banner)}`)
+      site.state.version = 1
+    } finally { page.close() }
+
+    // A phone: one design, the switcher, and no sideways gesture changes it.
+    const phone = await openPage(site.url, { width: 390, height: 844, phone: true })
+    try {
+      const live = () => phone.run(`document.querySelectorAll('[data-live]').length`)
+      const text = () => phone.run('document.body.innerText')
+      await until(async () => (await text())?.includes('MARK-B'))
+      assert(await live() === 1, `phone: ${await live()} designs are mounted`)
+      const label = () => phone.run(`document.querySelector('[data-switcher]')?.textContent ?? ''`)
+      assert(/#2.*·\s*1\/2/.test(await label()), `phone: the switcher reads ${JSON.stringify(await label())}`)
+      const next = await phone.run(`(() => { const r = document.querySelector('[data-next]')?.getBoundingClientRect(); return r ? [r.left + r.width / 2, r.top + r.height / 2] : null })()`)
+      assert(next, 'phone: the switcher has no next button')
+      await phone.press(...next)
+      assert(await until(async () => (await text())?.includes('MARK-C'), 3000), 'phone: › did not show MARK-C')
+      assert(await live() === 1 && !(await text()).includes('MARK-B'), `phone: after ›, ${await live()} designs are mounted`)
+      const box = await phone.run(`(() => { const r = document.querySelector('[data-live]').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2] })()`)
+      await phone.mouse('mouseWheel', box[0], box[1], { button: 'none', deltaX: 600, deltaY: 0 })
+      await phone.drag([box[0] + 120, box[1]], [box[0] - 120, box[1]])
+      await phone.touch('touchStart', [[box[0] + 120, box[1]]])
+      for (let i = 1; i <= 8; i++) await phone.touch('touchMove', [[box[0] + 120 - i * 30, box[1]]])
+      await phone.touch('touchEnd', [])
+      await sleep(600)
+      assert((await text()).includes('MARK-C') && /·\s*2\/2/.test(await label()), `phone: a sideways wheel, drag or swipe changed the design (${JSON.stringify(await label())})`)
+    } finally { phone.close() }
+    const asked = site.state.paths.filter(p => p.startsWith('/__proto'))
+    assert(!asked.length, `no session calls: the host was asked for ${asked.join(', ')}`)
+  } finally { site.close() }
+
+  // Opened from disk: no host, no state to ask for, no errors.
+  const dir = mkdtempSync(join(tmpdir(), 'proto-share-file-'))
+  writeFileSync(join(dir, 'share.html'), html)
+  const file = await openPage(pathToFileURL(join(dir, 'share.html')).href, { errors: true })
+  try {
+    assert(await until(async () => (await file.run('document.body.innerText'))?.includes('MARK-B')), 'file open: MARK-B is not on the page')
+    await sleep(500)
+    const errors = file.errors()
+    assert(!errors.length, `file open: the page reported ${JSON.stringify(errors)}`)
+  } finally { file.close(); rmSync(dir, { recursive: true, force: true }) }
+
+  // Twenty designs: at most 8 run at once, the nearest; panning to the end moves them there.
+  const letters = Array.from({ length: 20 }, (_, i) => String.fromCharCode(65 + i))
+  proto(['add', 'many', '--title', 'Many', '--variants', letters.map(l => `${l}:Design ${l}`).join(',')])
+  for (const l of letters) writeFileSync(join(protos, `many/${l}.tsx`), `export default function ${l}() { return <main style={{ padding: 40 }}><h1>MARK-MANY-${l}</h1></main> }\n`)
+  const manyHtml = await build({ protos: [{ id: 'many', variants: letters }], start: 'many/A' })
+  const many = await host(manyHtml)
+  try {
+    const page = await openPage(many.url)
+    try {
+      const live = () => page.run(`[...document.querySelectorAll('[data-board]')].filter(b => b.querySelector('[data-live]')).map(b => b.dataset.board.split('/')[1])`)
+      await until(async () => (await live())?.length > 0)
+      await sleep(800)
+      let most = 0
+      const look = async () => { const l = await live(); most = Math.max(most, l.length); return l }
+      const atFit = await look()
+      assert(atFit.length > 0 && atFit.length <= 8, `mount policy: ${atFit.length} live at Fit (${atFit})`)
+      await page.run(`document.querySelector('[data-viewer-desk]')?.focus()`)
+      await page.key('1')
+      await sleep(800)
+      await look()
+      for (let i = 1; i <= 10; i++) {
+        await page.run(`(() => { const d = document.querySelector('[data-viewer-desk]'); d.scrollLeft = (d.scrollWidth - d.clientWidth) * ${i / 10}; d.scrollTop = (d.scrollHeight - d.clientHeight) * ${i / 10} })()`)
+        await sleep(150)
+        await look()
+      }
+      await sleep(800)
+      const end = await look()
+      assert(most <= 8, `mount policy: ${most} designs were live at once`)
+      assert(end.includes('T') && !end.includes('A'), `mount policy: at the far end the live ones are ${end}`)
+    } finally { page.close() }
+  } finally { many.close() }
+
+  // Hebrew: the chrome reads right to left, the desk keeps its order.
+  const sessionFile = join(app, 'session.json')
+  const before = readFileSync(sessionFile, 'utf8')
+  writeFileSync(sessionFile, JSON.stringify({ ...JSON.parse(before), lang: 'he' }, null, 2) + '\n')
+  let heHtml
+  try { heHtml = await build({ protos: [{ id: 'share-link', variants: ['B', 'C'] }], start: 'share-link/B' }) } finally { writeFileSync(sessionFile, before) }
+  const he = await host(heHtml)
+  try {
+    const page = await openPage(he.url)
+    try {
+      await until(async () => (await page.run('document.body.innerText'))?.includes('MARK-C'))
+      const dirs = await page.run(`[document.querySelector('[data-viewer-header]')?.getAttribute('dir'), document.querySelector('[data-viewer-bar]')?.getAttribute('dir')].join(' ')`)
+      assert(dirs === 'rtl rtl', `hebrew share is rtl: header and bar have dir ${JSON.stringify(dirs)}`)
+      const order = await page.run(`[...document.querySelectorAll('[data-board]')].sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left).map(b => b.dataset.board).join(' ')`)
+      assert(order === 'share-link/B share-link/C', `hebrew share is rtl: the artboards read ${JSON.stringify(order)} from the left`)
+    } finally { page.close() }
+  } finally { he.close() }
+  console.log('share viewer: checks passed')
 }

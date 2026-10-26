@@ -97,7 +97,9 @@ const pngs = dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.
 // A page in headless Chrome (1440x900, or a phone's size), once it says it is ready, as shoot.mjs
 // does: run evaluates an expression in it (awaiting a promise), as often as needed, and it stays
 // open until closed, so the page can carry on while proto runs beside it.
-async function openPage(url, { width = 1440, height = 900, phone = false } = {}) {
+// errors: true also keeps what the page reports as an error (uncaught exceptions, console.error,
+// failed loads), read back with errors().
+async function openPage(url, { width = 1440, height = 900, phone = false, errors = false } = {}) {
   const profile = mkdtempSync(join(tmpdir(), 'proto-smoke-'))
   const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run'])
   let ws
@@ -117,8 +119,12 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
     await new Promise((ok, no) => { ws.onopen = ok; ws.onerror = no })
     let n = 0
     const waiting = new Map()
+    const reported = []
     ws.onmessage = e => {
       const m = JSON.parse(e.data)
+      if (m.method === 'Runtime.exceptionThrown') reported.push(m.params.exceptionDetails?.exception?.description || m.params.exceptionDetails?.text)
+      if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') reported.push(m.params.args.map(a => a.value ?? a.description).join(' '))
+      if (m.method === 'Log.entryAdded' && m.params.entry.level === 'error') reported.push(`${m.params.entry.text} ${m.params.entry.url ?? ''}`)
       // A page that crashes says so at once, instead of every check after it waiting out its time.
       if (m.method === 'Inspector.targetCrashed') fail(`Chrome's page crashed (Inspector.targetCrashed) at ${url}`)
       waiting.get(m.id)?.(m.result); waiting.delete(m.id)
@@ -127,6 +133,7 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
     const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
     await send('Inspector.enable', {}, sessionId)
+    if (errors) { await send('Runtime.enable', {}, sessionId); await send('Log.enable', {}, sessionId) }
     await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: phone ? 2 : 1, mobile: phone }, sessionId)
     if (phone) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
     await send('Page.navigate', { url }, sessionId)
@@ -173,7 +180,7 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
       writeFileSync(file, Buffer.from(data, 'base64'))
     }
     const appearance = value => send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value }] }, sessionId)
-    return { run, close, press, enter, key, touch, drag, hover, mouse, screenshot, appearance }
+    return { run, close, press, enter, key, touch, drag, hover, mouse, screenshot, appearance, errors: () => [...reported] }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {

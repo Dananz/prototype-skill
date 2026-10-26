@@ -1,13 +1,32 @@
 import '../shell/shell.css'
 import { createShell } from '../shell/shell'
 import { refOfPath } from '../shell/building'
+import { SHARE, shareInfo } from '../shell/mode'
+import { status } from '../shell/transport'
 import { mount } from './mount'
 import { protos } from './registry'
 import session from '../session.json'
 
-const shell = createShell(document.getElementById('app')!, { mount, protos, session })
+const app = document.getElementById('app')!
 
-if (import.meta.hot) {
+// A share boots the viewer instead of the shell (the share build leaves the shell out, see
+// app/share/plugin.mjs), and looks at its host for a newer version: every minute while the page
+// is in view, and whenever it comes back to it.
+if (SHARE) {
+  void import('../shell/viewer/index').then(({ createViewer }) => {
+    const viewer = createViewer(app, { mount, protos, session })
+    const check = async () => {
+      const state = await status()
+      if (state && shareInfo && state.version > shareInfo.version) viewer.newer()
+    }
+    setInterval(() => { if (document.visibilityState === 'visible') void check() }, 60_000)
+    window.addEventListener('focus', () => void check())
+  })
+}
+
+const shell = SHARE ? null : createShell(app, { mount, protos, session })
+
+if (import.meta.hot && shell) {
   // New or renamed prototype files re-run the registry; the shell takes the new list
   // without a page reload. Edits inside a variant are handled by the framework's own HMR.
   import.meta.hot.accept('./registry', mod => mod && shell.setProtos(mod.protos))

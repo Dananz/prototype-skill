@@ -36,6 +36,7 @@ import type { Intake } from './intake/types'
 import { createSettings, type Appearance } from './settings'
 import { followSession, rtl, t, tn, day } from './i18n'
 import { createShare } from './share'
+import * as transport from './transport'
 import { framed, frameClicks, frameMenus, offerTheme, openFrame, frameUrl, type Frame } from './view/frame'
 import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
 import { dims, FILL_MIN_W, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
@@ -387,7 +388,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const was = p.favorites
     set(on ? [...was, variant] : was.filter(f => f !== variant))
     try {
-      const res = await fetch('/__proto/fav', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ proto, variant, on }) })
+      const res = await transport.fav({ proto, variant, on })
       if (!res.ok) throw new Error()
     } catch { set(was) }
   }
@@ -3118,7 +3119,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const paintLifecycle = () => layers.querySelectorAll('[data-lifecycle]').forEach(el => { el.textContent = lifecycle() })
   async function refreshStatus() {
     try {
-      st.status = await (await fetch('/__proto/status')).json()
+      st.status = await transport.status<Status>()
       if (st.status!.lastEdit > st.lastEdit) st.lastEdit = st.status!.lastEdit
       render()
       paintLifecycle()
@@ -3132,7 +3133,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   async function post(path: string, body: unknown = {}, at?: 'session' | 'work'): Promise<Status | null> {
     try {
       const signal = at === 'session' ? AbortSignal.timeout(10_000) : undefined
-      const res = await fetch(`/__proto/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal })
+      const res = await transport.post(path, body, signal)
       const got = await res.json().catch(() => { if (signal?.aborted) throw signal.reason; return {} })
       if (!res.ok) throw new Error(got.error || `the server answered ${res.status}`)
       if (at) st.failed = null
@@ -3153,7 +3154,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const pick = batch.comments.filter(c => c.action === 'pick').at(-1)
     if (pick) { const [proto, variant] = pick.route.split('/'); expected = { proto, variant } }
     try {
-      const res = await fetch('/__proto/comments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ theme: st.dark ? 'dark' : 'light', ...batch }) })
+      const res = await transport.sendBatch({ theme: st.dark ? 'dark' : 'light', ...batch })
       const body: { error?: string; sent: string; moved?: boolean; results?: Sent['results'] } & Status = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body.error || `the server answered ${res.status}`)
       // The answer says where the working variant is now. A move session.json hasn't brought yet is
