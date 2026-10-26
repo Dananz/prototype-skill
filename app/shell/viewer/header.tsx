@@ -12,7 +12,7 @@ import { Icon, card, iconBtn, popup } from './ui'
 
 export type Appearance = 'system' | 'light' | 'dark'
 /** The viewer signed in with GitHub, as the host's api/me answers. */
-export type Me = { login: string; name: string | null; avatar: string }
+export type Me = { login: string; name: string | null; avatar: string | null }
 /** Who is looking. me: undefined until the host answers. signIn: where Sign in goes, or null when there is no host to sign in to. */
 export type Account = { me: Me | null | undefined; comments: boolean; signIn: string | null; signOut: () => void }
 type Facts = { owner: string; version: number; updatedAt: string }
@@ -140,7 +140,16 @@ function Who({ account, wide, root }: { account: Account; wide: boolean; root: R
   const { me, comments, signIn, signOut } = account
   if (me === undefined) return null
   if (!me) {
-    if (!comments || !signIn) return null
+    if (!signIn) return null
+    // Without GitHub set up for this link the button stays, switched off, and says why.
+    if (!comments) return (
+      <span title={t("Comments aren't set up for this link yet")} className="inline-flex shrink-0">
+        <button type="button" data-signin disabled aria-label={`${t('Sign in with GitHub')}. ${t("Comments aren't set up for this link yet")}`}
+          className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-zinc-400 ring-1 ring-inset ring-black/[.06] dark:text-zinc-500 dark:ring-white/[.08]">
+          <Icon name="github" className="size-4" />{wide && <span>{t('Sign in with GitHub')}</span>}
+        </button>
+      </span>
+    )
     return (
       <a data-signin href={signIn} aria-label={t('Sign in with GitHub')} title={t('Sign in with GitHub to comment')}
         className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-zinc-700 ring-1 ring-inset ring-black/[.08] hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-200 dark:ring-white/10 dark:hover:bg-white/10 dark:hover:text-white">
@@ -153,14 +162,14 @@ function Who({ account, wide, root }: { account: Account; wide: boolean; root: R
     <Menu.Root modal={false}>
       <Menu.Trigger data-account aria-label={t('Signed in as {login}', { login: me.login })}
         className="-me-1.5 flex h-9 shrink-0 items-center gap-2 rounded-full py-1 ps-1 pe-1 text-[13px] font-medium hover:bg-zinc-900/5 data-[popup-open]:bg-zinc-900/5 sm:pe-2.5 dark:hover:bg-white/[.07] dark:data-[popup-open]:bg-white/[.07]">
-        <img src={me.avatar} alt="" width={28} height={28} className="size-7 shrink-0 rounded-full bg-zinc-200 ring-1 ring-black/[.06] dark:bg-zinc-800 dark:ring-white/10" />
+        <Face me={me} size="size-7 text-[12px]" />
         <span dir="ltr" className={wide ? 'max-w-[140px] truncate' : 'sr-only'}>{me.login}</span>
       </Menu.Trigger>
       <Menu.Portal container={root}>
         <Menu.Positioner side="bottom" align={rtl ? 'start' : 'end'} sideOffset={6} collisionPadding={8} className="z-50 outline-none">
           <Menu.Popup data-account-menu dir={dir} className={`${popup} w-64`} finalFocus={type => type === 'keyboard'}>
             <div className="flex items-center gap-2.5 px-2.5 pt-2 pb-2.5">
-              <img src={me.avatar} alt="" width={36} height={36} className="size-9 shrink-0 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+              <Face me={me} size="size-9 text-[14px]" />
               <span className="min-w-0 leading-tight">
                 <span dir="auto" className="block truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">{me.name || me.login}</span>
                 <span className="mt-0.5 flex items-center gap-1 text-[12px] text-zinc-500 dark:text-zinc-400"><Icon name="github" className="size-3.5" />{t('Signed in with GitHub')}</span>
@@ -175,4 +184,12 @@ function Who({ account, wide, root }: { account: Account; wide: boolean; root: R
       </Menu.Portal>
     </Menu.Root>
   )
+}
+
+/** A viewer's GitHub picture, or the first letter of their login when GitHub gave none. */
+function Face({ me, size }: { me: Me; size: string }) {
+  const cls = `${size} shrink-0 rounded-full bg-zinc-200 ring-1 ring-black/[.06] dark:bg-zinc-800 dark:ring-white/10`
+  return me.avatar
+    ? <img data-face src={me.avatar} alt="" referrerPolicy="no-referrer" className={cls} />
+    : <span data-face aria-hidden="true" className={`${cls} grid place-items-center font-semibold text-zinc-600 dark:text-zinc-300`}>{(me.login[0] ?? '?').toUpperCase()}</span>
 }

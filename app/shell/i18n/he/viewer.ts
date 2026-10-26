@@ -43,4 +43,5 @@ export default {
   'Signed in as {login}': 'מחובר בתור {login}',
   'Signed in with GitHub': 'מחובר עם GitHub',
   'Sign out': 'התנתק',
+  "Comments aren't set up for this link yet": 'עדיין לא הוגדרו תגובות לקישור הזה',
 } satisfies Record<string, string>

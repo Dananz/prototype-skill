@@ -6,7 +6,7 @@
 //
 // What a frame's document hears stays in it, so it tells the viewer outside, by message (a share
 // opened from disk has an opaque origin, where the viewer can't reach into its frame): Esc (back to
-// the desk), the viewer's zoom keys, and a pinch or ⌘/Ctrl+wheel, which it keeps from zooming the
+// the desk) unless the design used it, the viewer's zoom keys, and a pinch or ⌘/Ctrl+wheel, which it keeps from zooming the
 // browser's page and hands on as the frame's zoom.
 import { createRoot } from 'react-dom/client'
 import { MountsCtx, Mounted, type Mounts, type Screen } from './ui'
@@ -29,6 +29,13 @@ export const frameMsg = (data: unknown): FrameMsg | null =>
 /** A wheel's step as a zoom factor, as the desk takes it. */
 export const wheelBy = (dy: number) => Math.exp(-Math.max(-25, Math.min(25, dy)) * 0.01)
 
+// A field typed in: Esc there is the field's (an input method, a clear, an undo of a suggestion).
+const textField = (t: EventTarget | null) => {
+  const el = t as HTMLElement | null
+  if (!el?.closest) return false
+  if (el instanceof HTMLInputElement) return !/^(button|checkbox|radio|range|submit|reset|color|file|image)$/.test(el.type)
+  return !!el.closest('textarea, select, [contenteditable]:not([contenteditable="false"])')
+}
 // Keys a field or a control keeps for itself.
 const typing = (t: EventTarget | null) => !!(t as Element | null)?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
 
@@ -87,9 +94,15 @@ export function createFramed(el: HTMLElement, screen: Screen | undefined, mounts
   const asked = new URLSearchParams(location.search).get('theme')
   theme(asked ? asked === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches)
   addEventListener('message', e => { const m = frameMsg(e.data); if (e.source === parent && m?.protoViewer === 'theme') theme(m.dark) })
-  // Bubbling, after the design's own handlers: a menu of its own closes, and the view still goes back.
+  // Bubbling, after the design's own handlers. Esc goes back to the desk unless the design used it:
+  // it handled it, a field has the focus (or an input method is composing), or a dialog of its own is open.
+  const dialogOpen = () => [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog[open]')]
+    .some(d => d.getClientRects().length > 0 && !d.closest('[hidden], [inert]'))
   addEventListener('keydown', e => {
-    if (e.key === 'Escape') return tell({ protoViewer: 'esc' })
+    if (e.key === 'Escape') {
+      if (!e.defaultPrevented && !e.isComposing && !textField(e.target) && !dialogOpen()) tell({ protoViewer: 'esc' })
+      return
+    }
     const k = !e.defaultPrevented && zoomKey(e)
     if (k) { e.preventDefault(); tell({ protoViewer: 'key', key: k }) }
   })

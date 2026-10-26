@@ -11,10 +11,11 @@ const app = document.getElementById('app')!
 
 // A share boots the viewer instead of the shell (the share build leaves the shell out, see
 // app/share/plugin.mjs), and looks at its host for a newer version: every minute while the page
-// is in view, and whenever it comes back to it.
+// is in view, and whenever it comes back to it. The copy in the full view's frame (one design) doesn't.
 if (SHARE) {
   void import('../shell/viewer/index').then(({ createViewer }) => {
     const viewer = createViewer(app, { mount, protos, session })
+    if (viewer.framed) return
     const check = async () => {
       const state = await status()
       if (state && shareInfo && state.version > shareInfo.version) viewer.newer()

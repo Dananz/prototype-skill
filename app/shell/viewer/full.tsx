@@ -9,7 +9,7 @@
 // around it scrolling when it is bigger than the view. It grows out of its preview on the desk and
 // shrinks back into it (240 ms; none with reduced motion). The desk stays where it was underneath,
 // so going back finds it at the same zoom and place.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { dims, type Size } from '../view/sizes'
 import { shareInfo } from '../mode'
 import { lang } from '../i18n'
@@ -94,6 +94,11 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report }:
     const give = setTimeout(() => setReady(true), 4000)
     return () => { removeEventListener('message', ok); clearInterval(poll); clearTimeout(give) }
   }, [screen.key])
+  // The frame's address is made once per design, in the theme of that moment; a later theme goes by
+  // message, so the open design keeps its state (what was typed, where it scrolled).
+  const darkNow = useRef(dark)
+  darkNow.current = dark
+  const src = useMemo(() => frameSrc(screen.key, darkNow.current), [screen.key])
   const was = useRef(dark)
   useEffect(() => {
     if (was.current === dark) return
@@ -139,7 +144,7 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report }:
             <div ref={card} data-full-card className="shrink-0" style={{ width: W * z, height: H * z }}>
               <div data-device-frame={size} className={shell} style={{ width: W, height: H, zoom: z }}>
                 <div data-phone-screen={size === 'phone' ? '' : undefined} className={`relative bg-white dark:bg-zinc-950 ${screenCls}`}>
-                  <iframe key={screen.key} ref={frame} src={frameSrc(screen.key, dark)} title={`#${screen.n} ${screen.name}`}
+                  <iframe key={screen.key} ref={frame} src={src} title={`#${screen.n} ${screen.name}`}
                     className={`block border-0 bg-transparent transition-opacity duration-200 motion-reduce:transition-none ${ready ? 'opacity-100' : 'opacity-0'}`}
                     style={{ width: d.w, height: d.h }} />
                 </div>

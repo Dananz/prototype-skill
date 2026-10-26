@@ -61,16 +61,12 @@ function useAppearance() {
   return { appearance, setAppearance, dark }
 }
 
-/** The share's id and where Sign in with GitHub starts: the apex, which in path mode (/s/<id>/) is
- *  this origin and otherwise this host without its `<id>.` label (host/worker.mjs shareOrigin). */
+/** Where Sign in with GitHub starts: the share's own `_in/start` (at /s/<id>/ in path mode, else at
+ *  the root), which sends the viewer on to the apex and brings them back to `back`. None from disk. */
 function signInUrl(): string | null {
   if (!/^https?:$/.test(location.protocol)) return null
-  const back = location.pathname + location.hash
-  const path = location.pathname.match(/^\/s\/([a-z0-9]+)\//)
-  if (path) return `${location.origin}/auth/github?share=${path[1]}&back=${encodeURIComponent(back)}`
-  const [id, ...rest] = location.hostname.split('.')
-  if (!rest.length || /^\d+$/.test(rest[rest.length - 1])) return null
-  return `${location.protocol}//${rest.join('.')}${location.port ? `:${location.port}` : ''}/auth/github?share=${id}&back=${encodeURIComponent(back)}`
+  const base = location.pathname.match(/^\/s\/[a-z0-9]+\//)?.[0] ?? '/'
+  return `${location.origin}${base}_in/start?back=${encodeURIComponent(location.pathname + location.hash)}`
 }
 
 const ask = (path: string, init?: RequestInit) => fetch(path, { ...init, headers: { 'X-Proto': '1' }, cache: 'no-store' })
@@ -140,8 +136,20 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   const [shown, setShown] = useState({ z: 1, fit: 1 })
   const [menu, setMenu] = useState(false)
   const patch = (d: Partial<Device>) => setDevice(was => { const n = { ...was, ...d }; saveDevice(n); return n })
-  const zoomBy = (f: number) => patch({ zoom: clampZoom(shown.z * 100 * f, shown.fit * 100) })
-  const zoomKeyed = (k: '0' | '1' | '+' | '-') => k === '0' ? patch({ zoom: 0 }) : k === '1' ? patch({ zoom: 100 }) : zoomBy(k === '+' ? 1.25 : 1 / 1.25)
+  // The zoom last asked for, ahead of the render that draws it: a fast wheel or pinch sends several
+  // steps between two renders, and each builds on the one before.
+  const at = useRef(shown)
+  useEffect(() => { at.current = shown }, [shown])
+  const zoomBy = (f: number) => {
+    const zoom = clampZoom(at.current.z * 100 * f, at.current.fit * 100)
+    at.current = { ...at.current, z: zoom ? zoom / 100 : at.current.fit }
+    patch({ zoom })
+  }
+  const zoomKeyed = (k: '0' | '1' | '+' | '-') => {
+    if (k === '+' || k === '-') return zoomBy(k === '+' ? 1.25 : 1 / 1.25)
+    at.current = { ...at.current, z: k === '1' ? 1 : at.current.fit }
+    patch({ zoom: k === '1' ? 100 : 0 })
+  }
   const now = useRef({ full, back, zoomBy, zoomKeyed, menu })
   now.current = { full, back, zoomBy, zoomKeyed, menu }
   useEffect(() => { if (!full) setMenu(false) }, [full])
@@ -160,7 +168,7 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
       const m = frameMsg(e.data), n = now.current
       const f = document.querySelector<HTMLIFrameElement>('[data-full] iframe')
       if (!m || !n.full || !f || e.source !== f.contentWindow) return
-      if (m.protoViewer === 'esc') { if (n.menu) setMenu(false); else n.back() }
+      if (m.protoViewer === 'esc') { if (n.menu) setMenu(false); else if (!popupOpen(root.current)) n.back() }
       else if (m.protoViewer === 'key') n.zoomKeyed(m.key)
       else if (m.protoViewer === 'zoom') n.zoomBy(m.by)
     }
@@ -228,7 +236,7 @@ export function createViewer(el: HTMLElement, opts: { mount: Mount; protos: Prot
   if (frameKey) {
     const screen = protos.flatMap(screensOf).find(s => s.key === frameKey)
     createFramed(el, screen, mounts)
-    return { newer: () => {} }
+    return { newer: () => {}, framed: true }
   }
   const newer = makeFlag()
   const root = createRoot(el)
@@ -238,5 +246,5 @@ export function createViewer(el: HTMLElement, opts: { mount: Mount; protos: Prot
   const wait = (ms: number) => new Promise(r => setTimeout(r, ms))
   Promise.all([document.fonts.ready, Promise.race([mountedOnce, wait(5000)])])
     .then(() => requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1' })))
-  return { newer: newer.raise }
+  return { newer: newer.raise, framed: false }
 }

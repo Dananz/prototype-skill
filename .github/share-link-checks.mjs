@@ -177,7 +177,7 @@ async function host(html) {
     if (at.startsWith('/api/') && req.headers['x-proto'] !== '1') { res.writeHead(400); return res.end() }
     if (at === '/api/state') return json(res, { version: state.version, updatedAt: Date.now() })
     if (at === '/api/config') return json(res, { comments: state.comments, owner: 'Smoke' })
-    if (at === '/api/me') return json(res, login ? { login, name: 'Octo Smoke', avatar: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#0ea5e9"/></svg>')}` } : null)
+    if (at === '/api/me') return json(res, login ? { login, name: 'Octo Smoke', avatar: login === 'noface' ? null : `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#0ea5e9"/></svg>')}` } : null)
     if (at === '/api/signout' && req.method === 'POST') return json(res, { ok: true }, { 'set-cookie': `v=; Path=${path.replace(/api\/signout$/, '')}; Max-Age=0` })
     if (at === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html) }
     res.writeHead(404); res.end()
@@ -200,7 +200,7 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
   // C gets a field, a plain line and a long body (3000 px): its preview must stay the size of
   // every other, and the field is used once C is open full size.
   writeFileSync(join(protos, 'share-link/C.tsx'), readFileSync(join(protos, 'share-link/C.tsx'), 'utf8')
-    .replace('<h1>MARK-C</h1>', '<h1>MARK-C</h1><p data-plain style={{ fontSize: 64 }}>PLAIN-TEXT-LINE in the design</p><textarea data-field defaultValue="SELECT-ME some words to select here" style={{ width: 900, height: 160, fontSize: 48 }} /><div style={{ height: 3000 }} />'))
+    .replace('<h1>MARK-C</h1>', '<h1>MARK-C</h1><button data-esc onKeyDown={e => { if (e.key === \'Escape\') e.preventDefault() }}>ESC-KEEPER</button><p data-plain style={{ fontSize: 64 }}>PLAIN-TEXT-LINE in the design</p><textarea data-field defaultValue="SELECT-ME some words to select here" style={{ width: 900, height: 160, fontSize: 48 }} /><div style={{ height: 3000 }} />'))
   const html = await build(pairScope)
   const site = await host(html)
   // Served as path mode serves a share (/s/<id>/), whose apex is the same origin.
@@ -335,11 +335,20 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       const kept = await page.run(`localStorage.getItem('proto-viewer-device')`)
       assert(/"size":"tablet"/.test(kept || '') && /"land":true/.test(kept || ''), `devices: the choice is not kept in this browser (${kept})`)
 
-      // Esc from inside the design (its field focused) goes back to the desk where it was.
+      // Esc in the design is the design's when it uses it: in its field, or handled by it. A plain
+      // Esc in it goes back to the desk where it was.
       await inFrame(`d.querySelector('[data-field]').focus()`)
       await page.key('+')
       await page.key('Escape')
-      assert(await until(async () => !await isOpen(), 3000), 'full view: Esc in the design did not go back to the desk')
+      await sleep(500)
+      assert(await isOpen(), 'full view: Esc in the design\'s field left the full view')
+      await inFrame(`d.querySelector('[data-esc]').focus()`)
+      await page.key('Escape')
+      await sleep(500)
+      assert(await isOpen(), 'full view: Esc the design handled (preventDefault) left the full view')
+      await inFrame(`(d.activeElement.blur(), d.body.focus(), true)`)
+      await page.key('Escape')
+      assert(await until(async () => !await isOpen(), 3000), 'full view: a plain Esc in the design did not go back to the desk')
       await sleep(300)
       assert(await scroll() === desk && await readout() === zoomBefore, `full view: back on the desk at ${await scroll()} ${await readout()}, not where it was (${desk} ${zoomBefore})`)
       // Its label opens it too, at the size chosen before, and All designs in the bar goes back.
@@ -353,10 +362,10 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       await page.press(...await at('[data-viewer-bar] [data-back]'))
       assert(await until(async () => !await isOpen(), 3000), 'full view: All designs did not go back to the desk')
 
-      // Signed out, with comments on: Sign in with GitHub, to the apex with this share and the way back.
+      // Signed out, with comments on: Sign in with GitHub, through this share's own _in/start (which
+      // goes on to the apex) with the way back.
       const signin = await until(() => page.run(`document.querySelector('[data-viewer-header] [data-signin]')?.href ?? ''`), 3000)
-      const apex = new URL(site.url).origin
-      assert(signin === `${apex}/auth/github?share=smk123&back=${encodeURIComponent('/s/smk123/')}`, `sign in: the button goes to ${JSON.stringify(signin)}`)
+      assert(signin === `${new URL(site.url).origin}/s/smk123/_in/start?back=${encodeURIComponent('/s/smk123/')}`, `sign in: the button goes to ${JSON.stringify(signin)}`)
 
       // The prototypes of the share, in the header's list.
       assert(await page.run(`!!document.querySelector('[data-proto-switch] [data-caret]')`), 'prototype list: the title has no caret')
@@ -382,6 +391,14 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       site.state.version = 1
     } finally { page.close() }
 
+    // Comments not set up for this link: Sign in stays, switched off, and says why.
+    site.state.comments = false
+    const off = await openPage(shareUrl)
+    try {
+      const state = await until(() => off.run(`(() => { const b = document.querySelector('[data-viewer-header] [data-signin]'); return b ? [b.disabled, b.closest('[title]')?.title].join('|') : '' })()`), 5000)
+      assert(state === "true|Comments aren't set up for this link yet", `comments off: the sign-in button is ${JSON.stringify(state)}`)
+    } finally { off.close(); site.state.comments = true }
+
     // Signed in (the host's cookie): the viewer's face and login at the top right, a menu with their
     // name and Sign out, which clears the cookie and brings Sign in back.
     const signedIn = await openPage(shareUrl)
@@ -390,7 +407,7 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       await sleep(500)
       await until(() => signedIn.run(`document.documentElement.dataset.ready === '1'`), 10_000)
       const who = await until(() => signedIn.run(`document.querySelector('[data-viewer-header] [data-account]')?.textContent ?? ''`), 5000)
-      assert(who?.includes('octo-smoke') && await signedIn.run(`(() => { const i = document.querySelector('[data-account] img'); return !!i && Math.round(i.getBoundingClientRect().width) === 28 })()`), `signed in: the header shows ${JSON.stringify(who)}`)
+      assert(who?.includes('octo-smoke') && await signedIn.run(`(() => { const i = document.querySelector('[data-account] [data-face]'); return !!i && Math.round(i.getBoundingClientRect().width) === 28 })()`), `signed in: the header shows ${JSON.stringify(who)}`)
       const spot = sel => signedIn.run(`(() => { const r = document.querySelector(${JSON.stringify(sel)})?.getBoundingClientRect(); return r ? [r.left + r.width / 2, r.top + r.height / 2] : null })()`)
       await signedIn.press(...await spot('[data-account]'))
       const out = await until(() => spot('[data-signout]'), 3000)
@@ -399,6 +416,11 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       await signedIn.press(...out)
       assert(await until(() => signedIn.run(`!!document.querySelector('[data-viewer-header] [data-signin]') && !document.querySelector('[data-account]')`), 3000), 'signed in: Sign out did not bring back Sign in')
       assert(!await signedIn.run(`document.cookie.includes('v=octo')`) && site.state.paths.includes('POST /s/smk123/api/signout'), 'signed in: Sign out did not clear the cookie on the host')
+      // GitHub gave no picture: the first letter of the login stands in.
+      await signedIn.run(`document.cookie = 'v=noface; path=/s/smk123/'; location.reload()`)
+      await sleep(500)
+      const face = await until(() => signedIn.run(`(() => { const f = document.querySelector('[data-account] [data-face]'); return f && f.tagName === 'SPAN' ? f.textContent : '' })()`), 5000)
+      assert(face === 'N', `signed in: with no avatar the face reads ${JSON.stringify(face)}`)
     } finally { signedIn.close() }
 
     // A phone: one design, the switcher, and no sideways gesture changes it.
