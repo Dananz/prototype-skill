@@ -19,6 +19,21 @@ const SECRETS = [
 const FONT_HOSTS = new Set(['fonts.googleapis.com', 'fonts.gstatic.com'])
 const PRIVATE_HOST = /^(?:localhost|127\.0\.0\.1|.+\.ts\.net|10\..+|192\.168\..+|172\.(?:1[6-9]|2\d|3[01])\..+)$/
 const URL_RE = /\bhttps?:\/\/([^\s/"'<>()\\?#:]+)(?::\d+)?[^\s"'<>()\\]*/g
+// Where a URL is loaded rather than merely written down: an attribute (or, in the compiled
+// JSX, a prop) that fetches, CSS url() and @import, and the string handed to fetch() or import().
+// A library's bundled text is full of URLs that are only words (React's error links, the SVG
+// namespace); counting every https:// would warn on every share.
+const QUOTED = `(["'\`])(https?:\\/\\/[^"'\`\\s<>]+)`
+const LOADING = [
+  new RegExp(`\\b(?:src|href|poster)\\s*[=:]\\s*${QUOTED}`, 'gi'),
+  /\b(?:src|href|poster)=(https?:\/\/[^\s"'<>`]+)/gi,
+  new RegExp(`\\bsrcset\\s*[=:]\\s*(["'\`])([^"'\`]*)\\1`, 'gi'),
+  /\burl\(\s*["']?(https?:\/\/[^\s"')]+)/gi,
+  new RegExp(`@import\\s+${QUOTED}`, 'gi'),
+  new RegExp(`\\b(?:fetch|import)\\(\\s*${QUOTED}`, 'g'),
+]
+// Every loading URL in the page (srcset lists several).
+const loadedUrls = html => LOADING.flatMap(re => [...html.matchAll(re)].flatMap(m => [...(m[2] ?? m[1]).matchAll(URL_RE)]))
 const ABS_PATH_RE = /\bsrc=["']?(\/(?!\/)[^\s"'>]*)|\burl\(\s*["']?(\/(?!\/)[^\s"')]*)/g
 
 // About 40 characters around a match, the secret itself cut to its first four so the user can
@@ -62,7 +77,7 @@ export function review({ html, gzBytes, projectPath, home, projectImports, curre
 
   const origins = new Set()
   const privates = new Map()
-  for (const m of html.matchAll(URL_RE)) {
+  for (const m of loadedUrls(html)) {
     const host = m[1].toLowerCase()
     const origin = m[0].match(/^https?:\/\/[^\s/"'<>()\\?#]+/)[0]
     if (PRIVATE_HOST.test(host)) privates.set(origin, (privates.get(origin) ?? 0) + 1)

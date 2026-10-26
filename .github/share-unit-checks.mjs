@@ -139,6 +139,14 @@ test('a private origin is one private-url and never an outside-url', () => {
   assert.deepEqual(r.warn.map(f => [f.code, f.where]), [['private-url', 'http://localhost:5173']])
   assert.ok(r.warn[0].message.includes('30'))
 })
+test('a url that is only text does not warn', () => {
+  const html = '<script>const e = "https://react.dev/errors/" + n; // see https://base-ui.com/x\nconst ns = "http://www.w3.org/2000/svg"</script><svg xmlns="http://www.w3.org/2000/svg"></svg>'
+  assert.deepEqual(run({ html }).warn, [])
+})
+test('urls in loading positions warn', () => {
+  const html = '<script>h("img",{src:"https://a.example/x.png"});fetch(`https://b.example/api`);import("https://c.example/m.js")</script><img srcset="https://d.example/1x.png 1x, https://e.example/2x.png 2x"><style>@import "https://f.example/s.css";.x{background:url(https://g.example/b.png)}</style><video poster=https://h.example/p.jpg>'
+  assert.deepEqual(run({ html }).warn.map(f => f.where).sort(), ['https://a.example', 'https://b.example', 'https://c.example', 'https://d.example', 'https://e.example', 'https://f.example', 'https://g.example', 'https://h.example'])
+})
 test('absolute asset path is reported', () => {
   assert.deepEqual(run({ html: '<img src="/assets/a.png">' }).warn.map(f => [f.code, f.where]), [['private-url', '/assets/a.png']])
   assert.deepEqual(run({ html: '.a{background:url(/img/b.png)} .b{background:url("/img/c.png")}' }).warn.map(f => f.where), ['/img/b.png', '/img/c.png'])

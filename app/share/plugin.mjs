@@ -3,10 +3,10 @@
 // holds only the chosen variants, session.json only its name, stack and language, images.ts only
 // the pictures those variants name, and slot-source.ts the slot picks of this moment with nothing
 // else. Everything the swapped-out globs would have pulled in is then simply not in the bundle.
-import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
-import { join, relative, sep } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { metaOf, slotPointers } from '../server.mjs'
 import { trimMeta, trimSession } from './scope.mjs'
 import { stampsPlugin } from './stamps.mjs'
@@ -47,6 +47,30 @@ export function imageNames(sources) {
   return { names, dynamic: [...new Set(dynamic)] }
 }
 
+const IMPORT_RE = /(?:\bfrom|\bimport)\s*\(?\s*(['"])(\.{1,2}\/[^'"]+)\1/g
+const RESOLVE_EXTS = ['', '.tsx', '.ts', '.jsx', '.js', '.mjs', '.vue', '.svelte', '/index.tsx', '/index.ts', '/index.jsx', '/index.js']
+const isFile = f => { try { return statSync(f).isFile() } catch { return false } }
+
+/**
+ * The files under dir that entries reach through relative imports (`from './x'`, `import './x.css'`,
+ * `import('./x')`), entries included. Imports leaving dir (the shell, src/images) are not followed.
+ */
+export function reachedFiles(entries, dir) {
+  const seen = new Set()
+  const visit = file => {
+    if (seen.has(file) || !within(dir, file)) return
+    seen.add(file)
+    if (!CODE_EXTS.test(file)) return
+    for (const m of readFileSync(file, 'utf8').matchAll(IMPORT_RE)) {
+      const base = join(dirname(file), m[2].split('?')[0])
+      const hit = RESOLVE_EXTS.map(x => base + x).find(isFile)
+      if (hit) visit(hit)
+    }
+  }
+  entries.forEach(visit)
+  return [...seen]
+}
+
 /**
  * scope: { protos: [{ id, variants }], start } from parseScope. info: { title, owner, version,
  * updatedAt }, the share's own facts for the viewer (__PROTO_SHARE__). session: the real
@@ -67,15 +91,27 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
     return `${slug}/${letter}.${ext}`
   }
 
-  // Slots: the variant plugged into each slot of a shared prototype right now. The plugged-in
-  // variant's code comes along (it is what the shared variant shows); its prototype is not listed.
-  const slots = Object.fromEntries(Object.entries(slotPointers()).filter(([key]) => shared.has(key.split('/')[0])))
+  // Slots: the variant plugged into each slot that a kept variant holds, right now. The
+  // plugged-in variant's code comes along (it is what the shared variant shows); its prototype is
+  // not listed. A slot whose holder isn't recorded is kept, since any variant could hold it.
+  const kept = new Map(scope.protos.map(p => [p.id, new Set(p.variants)]))
+  const holder = (slug, id) => { try { return metaOf(readFileSync(join(protosDir, slug, 'meta.ts'), 'utf8')).slots?.[id]?.variant } catch { return undefined } }
+  const slots = Object.fromEntries(Object.entries(slotPointers()).filter(([key]) => {
+    const [slug, id] = key.split('/')
+    const letter = holder(slug, id)
+    return kept.has(slug) && (!letter || kept.get(slug).has(String(letter)))
+  }))
   const slotFiles = [...new Set(Object.values(slots))].map(use => variantFile(...use.split('/')))
 
+  // What the share's code is: the kept variant files and the plugged-in ones, and every file
+  // under src/protos they reach by relative imports (a lineage helper from an unshared prototype
+  // too). Pictures and Tailwind classes are taken from these files only, so an unshared variant
+  // beside them adds neither.
+  const entries = [...scope.protos.flatMap(p => p.variants.map(v => variantFile(p.id, v))), ...slotFiles].map(f => join(protosDir, f))
+  const reached = reachedFiles(entries, protosDir)
+
   const warnings = []
-  // Pictures: those the shared prototypes' code (and the plugged-in variants') name in image('…').
-  const scanned = [...new Set([...shared, ...slotFiles.map(f => f.split('/')[0])])]
-    .flatMap(slug => filesIn(join(protosDir, slug)).filter(f => CODE_EXTS.test(f)).map(f => [slash(relative(protosDir, f)), readFileSync(f, 'utf8')]))
+  const scanned = reached.filter(f => CODE_EXTS.test(f)).map(f => [slash(relative(protosDir, f)), readFileSync(f, 'utf8')])
   const { names, dynamic } = imageNames(scanned)
   const assets = filesIn(join(root, 'src', 'assets')).filter(f => ASSET_EXTS.test(f))
   const keptAssets = dynamic.length ? assets : assets.filter(f => names.has(f.slice(join(root, 'src', 'assets').length + 1).replace(/\.\w+$/, '')))
@@ -153,6 +189,24 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
     },
   }
 
+  // Tailwind: shell.css lets it scan all of src/, which would put every class of every variant
+  // (arbitrary values carry text: `bg-[url(…)]`, `content-['…']`) in the share's stylesheet. In a
+  // share the scan is src/ outside protos, plus the reached files of the share.
+  const shellCss = slash(join(root, 'shell', 'shell.css'))
+  const sources = [
+    ...readdirSync(join(root, 'src')).filter(n => n !== 'protos' && n !== 'assets').map(n => join(root, 'src', n)),
+    ...reached,
+  ].map(f => `@source ${JSON.stringify(slash(relative(join(root, 'shell'), f)))};`)
+  const tailwindSources = {
+    name: 'proto-share-tailwind-sources',
+    enforce: 'pre',
+    transform(code, id) {
+      if (bare(id) !== shellCss) return null
+      if (!/@source\s+["']\.\.\/src["'];/.test(code)) throw new Error('shell/shell.css no longer has @source "../src"; the share build cannot narrow what Tailwind scans')
+      return { code: code.replace(/@source\s+["']\.\.\/src["'];/, () => sources.join('\n')), map: null }
+    },
+  }
+
   const options = {
     name: 'proto-share-options',
     config: () => ({
@@ -191,5 +245,5 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
     },
   }
 
-  return [swap, fileNames, icon, options, stampsPlugin({ protosDir }), imagesPlugin({ sharp, root })]
+  return [swap, tailwindSources, fileNames, icon, options, stampsPlugin({ protosDir }), imagesPlugin({ sharp, root })]
 }

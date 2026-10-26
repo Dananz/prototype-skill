@@ -26,7 +26,9 @@ async function shareMode() {
 }
 
 export default defineConfig(async ({ mode }) => ({
-  plugins: [framework, tailwind(), ...(mode === 'share' ? await shareMode() : [prototypeServer(session), reactSource()])],
+  // In a share the share plugins come before Tailwind's, which must see shell.css with its
+  // sources narrowed to what is shared.
+  plugins: mode === 'share' ? [framework, ...await shareMode(), tailwind()] : [framework, tailwind(), prototypeServer(session), reactSource()],
   // An inline config stops Vite from loading the project's own PostCSS config from above.
   css: { postcss: {} },
   resolve: { alias: { '@project': session.project } },

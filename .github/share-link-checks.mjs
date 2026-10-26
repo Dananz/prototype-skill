@@ -10,6 +10,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { crc32, deflateSync } from 'node:zlib'
+import { createRequire } from 'node:module'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 const tools = join(homedir(), '.prototypes', 'share-tools')
@@ -49,10 +50,22 @@ export async function shareLinkChecks({ proto, app, local, fail }) {
   const protos = join(app, 'src/protos')
   proto(['add', 'lineage-src', '--title', 'LINEAGE-TITLE-k3', '--variants', 'A:Only'])
   writeFileSync(join(protos, 'lineage-src/A.tsx'), `export default function A() { return <main>MARK-LINEAGE-A</main> }\n`)
-  writeFileSync(join(protos, 'lineage-src/parts.tsx'), `export function Badge() { return <em>MARK-HELPER</em> }\n`)
+  writeFileSync(join(protos, 'lineage-src/parts.tsx'), `import { image } from '../../images'
+export function Badge() { return <em>MARK-HELPER<img src={image('lineage-pic')} alt="" /></em> }
+`)
+  // Two pictures in src/assets: one named by the helper B borrows (in the share), one named only by
+  // the unshared D (not). WebP already, so Vite inlines their bytes as they are and the test can find them.
+  const sharp = createRequire(join(tools, 'index.js'))('sharp')
+  const picture = async color => sharp({ create: { width: 40, height: 40, channels: 3, background: color } }).webp({ quality: 90 }).toBuffer()
+  mkdirSync(join(app, 'src/assets'), { recursive: true })
+  const lineagePic = await picture('#16a34a'), dOnly = await picture('#db2777')
+  writeFileSync(join(app, 'src/assets/lineage-pic.webp'), lineagePic)
+  writeFileSync(join(app, 'src/assets/d-only.webp'), dOnly)
 
   proto(['add', 'share-link', '--title', 'Share link', '--ask', 'ASK-META-SECRET-p4', '--variants', 'A:One,B:Two,C:Current,D:Four,E:Five'])
-  for (const id of ['A', 'D', 'E']) writeFileSync(join(protos, `share-link/${id}.tsx`), `export default function ${id}() { return <main className="mt-[137px]">MARK-${id}</main> }\n`)
+  for (const id of ['A', 'D', 'E']) writeFileSync(join(protos, `share-link/${id}.tsx`), `import { image } from '../../images'
+export default function ${id}() { return <main className="mt-[137px]">MARK-${id}<img src={image('d-only')} alt="" /></main> }
+`)
   // A part of the owner's project, compiled in through @project: the review names it.
   const project = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8')).project
   mkdirSync(join(project, 'kit'), { recursive: true })
@@ -113,8 +126,10 @@ export default function C() { return <main className="share-link-tile"><h1>MARK-
   assert(html.includes('/src/protos/share-link/C.tsx') && !html.includes('/src/protos/share-link/A.tsx'), 'stamps: C\'s elements carry no source stamp')
   assert(one.review.warn.some(w => w.code === 'real-screens' && w.message.includes('share-link/C')), `review: the Current variant is not reported (${JSON.stringify(one.review)})`)
   assert(html.includes('MARK-PROJECT') && one.review.warn.some(w => w.code === 'project-code' && w.message.includes('Badge2.tsx')), `review: the @project file is not reported (${JSON.stringify(one.review.warn)})`)
-  // Not a check yet: Tailwind scans the whole session, so unshared variants' classes reach the stylesheet.
-  console.log(`share link: an unshared variant's Tailwind class ${html.includes('137px') ? 'is' : 'is not'} in the share's CSS`)
+  assert(!html.includes('137px'), 'tailwind: a class only unshared variants use is in the share\'s stylesheet')
+  assert(html.includes(lineagePic.toString('base64')), 'images: the picture the lineage helper names is missing')
+  assert(!html.includes(dOnly.toString('base64')), 'images: a picture only an unshared variant names is in the share')
+  assert(!one.review.warn.some(w => w.code === 'outside-url'), `review: outside-url warnings on a share that loads nothing from outside: ${JSON.stringify(one.review.warn.filter(w => w.code === 'outside-url'))}`)
   assert(!one.review.block.length, `review: the smoke share is blocked: ${JSON.stringify(one.review.block)}`)
 
   assert(statSync(join(app, 'dist')).mtimeMs === distBefore.dir && statSync(join(app, 'dist', 'index.html')).mtimeMs === distBefore.file && readFileSync(join(app, 'dist', 'index.html'), 'utf8') === 'DIST-BEFORE', 'build leaves the session alone: dist/ changed')
@@ -123,6 +138,9 @@ export default function C() { return <main className="share-link-tile"><h1>MARK-
   assert(page?.status === 200, `build leaves the session alone: the dev server answers ${page?.status}`)
   assert(two.html.includes('MARK-B'), 'publishes are serialized: the second build failed')
   assert(one.ended <= two.started || two.ended <= one.started, `publishes are serialized: the builds overlapped (${one.started}-${one.ended} and ${two.started}-${two.ended})`)
+  // The slot is held by C: a share of B alone has no slot, so nothing is plugged in.
+  const onlyB = await buildShare({ sessionDir: app, scope: { protos: [{ id: 'share-link', variants: ['B'] }], start: 'share-link/B' }, info })
+  assert(onlyB.html.includes('MARK-B') && !onlyB.html.includes('MARK-SLOT-B') && !onlyB.html.includes('slot-src/B'), 'slot holder: a share without the slot\'s variant carries its plugged-in variant')
   assert(!existsSync(join(app, '.proto', 'shares', '.lock')), 'publishes are serialized: the lock was left behind')
   assert(!readdirSync(join(app, '.proto', 'shares')).length, 'build leaves the session alone: something was left in .proto/shares')
   console.log('share link: one-file build checks passed')
