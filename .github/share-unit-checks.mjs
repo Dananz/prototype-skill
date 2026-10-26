@@ -3,6 +3,12 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ShareError, parseScope, trimMeta, trimSession } from '../app/share/scope.mjs'
 import { review } from '../app/share/review.mjs'
+import { stampSource, stampsPlugin } from '../app/share/stamps.mjs'
+import { imagesPlugin } from '../app/share/images.mjs'
+import { createRequire } from 'node:module'
+import { existsSync, readdirSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 const pricing = { id: 'pricing', variants: ['A', 'B', 'C', 'D', 'E'], archived: false }
 const old = { id: 'old', variants: ['A'], archived: true }
@@ -135,4 +141,83 @@ test('absolute asset path is reported', () => {
   assert.deepEqual(run({ html: '<img src="/assets/a.png">' }).warn.map(f => [f.code, f.where]), [['private-url', '/assets/a.png']])
   assert.deepEqual(run({ html: '.a{background:url(/img/b.png)} .b{background:url("/img/c.png")}' }).warn.map(f => f.where), ['/img/b.png', '/img/c.png'])
   assert.deepEqual(run({ html: '<img src="//cdn.example.com/a.png"><img src="data:image/png;base64,AAAA"><img src="a.png">' }).warn, [])
+})
+
+// Node has no JS parser of its own. The stamps are written against Rolldown's (the one Vite hands a
+// plugin as this.parse), so the checks borrow it from any session that has Vite installed.
+function sessionParser() {
+  const dir = join(homedir(), '.claude', 'skills', 'prototype', '.prototypes')
+  const roots = existsSync(dir) ? readdirSync(dir).map(d => join(dir, d)) : []
+  for (const root of [process.cwd(), ...roots]) {
+    try {
+      const vite = createRequire(join(root, 'package.json')).resolve('vite')
+      const { parseSync } = createRequire(vite)('rolldown/utils')
+      return code => parseSync('stamped.js', code).program
+    } catch {}
+  }
+  return null
+}
+const parse = sessionParser()
+const noParser = parse ? false : 'no session with vite installed, so no parser (Task 4 smoke covers this end to end)'
+
+// What the dev JSX transform leaves behind (Vite 8, Oxc, development: true), with the owner's disk path in it.
+const transformed = `var _jsxFileName = "/Users/me/s/src/protos/pricing/parts.tsx";
+import { jsxDEV as _jsxDEV } from "react/jsx-dev-runtime";
+export function PriceCard({ items }) {
+\treturn /* @__PURE__ */ _jsxDEV("ul", { children: items.map((i) => /* @__PURE__ */ _jsxDEV("li", { children: i }, i, false, {
+\t\tfileName: _jsxFileName,
+\t\tlineNumber: 1,
+\t\tcolumnNumber: 67
+\t}, this)) }, void 0, false, {
+\t\tfileName: _jsxFileName,
+\t\tlineNumber: 1,
+\t\tcolumnNumber: 47
+\t}, this);
+}
+const Badge = memo(() => /* @__PURE__ */ _jsxDEV("b", { children: "x" }, void 0, false, { fileName: _jsxFileName, lineNumber: 2, columnNumber: 21 }, this));
+const helper = () => /* @__PURE__ */ _jsxDEV("i", {}, void 0, false, { fileName: _jsxFileName, lineNumber: 3, columnNumber: 5 }, this);
+export default function () {
+\treturn /* @__PURE__ */ _jsxDEV(Badge, {}, void 0, false, { fileName: _jsxFileName, lineNumber: 4, columnNumber: 42 }, this);
+}
+`
+
+test('stamps rewrite', { skip: noParser }, () => {
+  const out = stampSource(transformed, parse(transformed), 'pricing/parts.tsx')
+  assert.ok(!out.includes('/Users/me'), 'the owner path is gone')
+  assert.equal(out.match(/fileName: "\/src\/protos\/pricing\/parts\.tsx"/g).length, 5)
+  assert.equal(out.split('componentName: "PriceCard"').length - 1, 2, 'the tag in the .map callback and the outer one are both PriceCard')
+  assert.equal(out.split('componentName: "Badge"').length - 1, 1, 'a memo-wrapped arrow takes the name it is assigned to')
+  assert.equal(out.split('componentName').length - 1, 3, 'a lowercase helper and an anonymous default export get none')
+  assert.doesNotThrow(() => parse(out), 'the result still parses')
+})
+test('stampsPlugin only touches files under protosDir', { skip: noParser }, () => {
+  const plugin = stampsPlugin({ protosDir: '/Users/me/s/src/protos' })
+  assert.equal(plugin.enforce, 'post')
+  const ctx = { parse: code => parse(code) }
+  assert.equal(plugin.transform.call(ctx, transformed, '/Users/me/s/src/shell/x.tsx'), null)
+  assert.equal(plugin.transform.call(ctx, transformed, '/Users/me/s/src/protos-other/x.tsx'), null)
+  const out = plugin.transform.call(ctx, transformed, '/Users/me/s/src/protos/pricing/parts.tsx?v=2')
+  assert.ok(out.code.includes('fileName: "/src/protos/pricing/parts.tsx"'))
+})
+test('imagesPlugin without sharp leaves the file and says so', async () => {
+  const plugin = imagesPlugin({ sharp: null, root: '/s' })
+  imagesPlugin.warnings.length = 0
+  assert.equal(plugin.enforce, 'pre')
+  assert.equal(await plugin.load('/s/src/protos/a/hero.png'), null)
+  assert.equal(imagesPlugin.warnings.length, 1)
+  assert.equal(await plugin.load('/s/src/protos/a/app.tsx'), null)
+  assert.equal(imagesPlugin.warnings.length, 1)
+})
+test('imagesPlugin turns a picture into a capped WebP', async () => {
+  const calls = []
+  const fake = file => {
+    const img = { metadata: async () => ({ width: 4000 }), resize: o => (calls.push(['resize', o.width]), img), webp: o => (calls.push(['webp', o.quality]), img), toBuffer: async () => Buffer.from('WEBP') }
+    calls.push(['input', file])
+    return img
+  }
+  const plugin = imagesPlugin({ sharp: fake, root: '/s' })
+  assert.equal(await plugin.load('/elsewhere/a.png'), null)
+  assert.equal(await plugin.load('/s/a.png'), `export default "data:image/webp;base64,${Buffer.from('WEBP').toString('base64')}"`)
+  assert.deepEqual(calls, [['input', '/s/a.png'], ['resize', 2560], ['webp', 82]])
+  assert.ok((await plugin.load('/s/b.jpeg?url')).startsWith('export default "data:image/webp'))
 })
