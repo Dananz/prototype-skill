@@ -195,10 +195,11 @@ function Who({ account, wide, root }: { account: Account; wide: boolean; root: R
   )
 }
 
-/** A viewer's GitHub picture, or the first letter of their login when GitHub gave none. */
+/** A viewer's GitHub picture, or the first letter of their login when GitHub gave none or it doesn't load. */
 function Face({ me, size }: { me: Me; size: string }) {
   const cls = `${size} shrink-0 rounded-full bg-zinc-200 ring-1 ring-black/[.06] dark:bg-zinc-800 dark:ring-white/10`
-  return me.avatar
-    ? <img data-face src={me.avatar} alt="" referrerPolicy="no-referrer" className={cls} />
+  const [broken, setBroken] = useState<string | null>(null)
+  return me.avatar && broken !== me.avatar
+    ? <img data-face src={me.avatar} alt="" referrerPolicy="no-referrer" className={cls} onError={() => setBroken(me.avatar)} />
     : <span data-face aria-hidden="true" className={`${cls} grid place-items-center font-semibold text-zinc-600 dark:text-zinc-300`}>{(me.login[0] ?? '?').toUpperCase()}</span>
 }

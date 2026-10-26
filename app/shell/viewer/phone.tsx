@@ -5,7 +5,7 @@
 // design fades up from its top.
 //
 // With comments (phase 1) the bar under it is the comment row and the switcher sits above the bar;
-// the design's pins are over it, and pin mode (the bar's Comment button) listens on its scroller.
+// the design's pins are over it, and pin mode (the bar's Comment button) listens on the page.
 import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
 import { rtl } from '../i18n'
 import { Jump } from './bar'
@@ -27,7 +27,8 @@ export function Phone({ screens, i, go, step, root, row }: {
       box.current?.animate([{ opacity: 0, translate: '0 8px' }, { opacity: 1, translate: '0 0' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' })
   }, [s.key])
   const mount = useCallback(() => box.current?.querySelector<HTMLElement>('[data-mount]') ?? null, [])
-  const at = useCallback(() => box.current, [])
+  // Pin mode listens on the page: the design, and what it puts on the body.
+  const at = useCallback(() => document, [])
   const view = useCallback(() => ({ size: 'phone', w: Math.round(innerWidth), h: Math.round(box.current?.clientHeight ?? innerHeight) }), [])
   return (
     <>

@@ -73,6 +73,11 @@ export async function shareCommentsChecks({ app, openPage, fail, buildShare, too
       const at = sel => page.run(`(() => { const r = document.querySelector(${JSON.stringify(sel)})?.getBoundingClientRect(); return r && r.width ? [r.left + r.width / 2, r.top + r.height / 2] : null })()`)
       const fill = (sel, text) => page.run(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.focus(); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, ${JSON.stringify(text)}); el.dispatchEvent(new Event('input', { bubbles: true })); return true })()`)
       const cards = () => page.run(`[...document.querySelectorAll('[data-comment-card]')].map(c => c.querySelector('[data-comment-body]')?.textContent ?? '')`)
+      // Every POST the page makes, with its start and end in the page's clock, so a slow run shows
+      // whether the time went in the page or on the host. __dropNext: the next POST reaches the host
+      // and its answer is lost on the way back (the page sees a network error).
+      const trace = () => page.run(`(() => { if (window.__posts) return true; window.__posts = []; const f = window.fetch.bind(window); window.fetch = async (u, i) => { if (!i || i.method !== 'POST') return f(u, i); const e = { url: String(u).replace(/^.*\\/api\\//, 'api/'), start: Math.round(performance.now()) }; window.__posts.push(e); try { const r = await f(u, i); e.end = Math.round(performance.now()); e.status = r.status; if (window.__dropNext) { window.__dropNext = false; e.dropped = true; throw new TypeError('Failed to fetch') } return r } catch (x) { e.end = e.end ?? Math.round(performance.now()); e.error = String(x); throw x } }; return true })()`)
+      const posts = () => page.run(`JSON.stringify(window.__posts || [])`)
 
       // Signed out: the bar's comment row asks for GitHub, and goes through the host's sign-in.
       const signin = await until(() => page.run(`document.querySelector('[data-viewer-bar] [data-comment-signin]')?.textContent ?? ''`), 8000)
@@ -81,6 +86,7 @@ export async function shareCommentsChecks({ app, openPage, fail, buildShare, too
       await page.press(...await at('[data-comment-signin]'))
       const who = await until(() => page.run(`document.querySelector('[data-account]')?.textContent ?? ''`), 15_000)
       assert(who?.includes('dana-test'), `sign in: after the round trip the header shows ${JSON.stringify(who)}`)
+      await trace()
       assert(await until(() => page.run(`!!document.querySelector('[data-comment-field]')`), 5000), 'signed in: no comment field in the bar')
 
       // A comment on the whole design, from the bar's field. Its words are text, never markup.
@@ -117,6 +123,11 @@ export async function shareCommentsChecks({ app, openPage, fail, buildShare, too
       await page.run(`document.activeElement?.blur(); document.body.focus()`)
       await page.key('c')
       assert(await until(() => page.run(`!!document.querySelector('[data-pin-mode]') && document.querySelector('[data-pin-toggle]')?.getAttribute('aria-pressed') === 'true'`), 3000), 'pin mode: C did not turn it on')
+      // A key in the design does nothing there in pin mode: Enter on its focused button neither clicks it nor pins.
+      await page.run(`(() => { const f = document.querySelector('[data-full] iframe'); f.contentWindow.focus(); f.contentDocument.querySelector('[data-count]').focus(); return true })()`)
+      await page.key('Enter')
+      await sleep(300)
+      assert(await page.run(`!document.querySelector('[data-full] iframe').contentDocument.body.dataset.clicks && !document.querySelector('[data-pin-composer]')`), 'pin mode: Enter on a focused button in the design clicked it, or placed a pin')
       await page.hover(btn[0] + btn[2] / 2, btn[1] + btn[3] / 2)
       await sleep(250)
       const outline = await page.run(`(() => { const r = document.querySelector('[data-pin-outline]')?.getBoundingClientRect(); return r ? [r.left, r.top, r.width, r.height] : null })()`)
@@ -127,7 +138,7 @@ export async function shareCommentsChecks({ app, openPage, fail, buildShare, too
       assert(await page.run(`document.querySelectorAll('[data-pin-composer]').length === 1 && document.querySelectorAll('[data-pin-new]').length === 1`), 'pin mode: the pin being written shows more than once (the desk under the full view too)')
       await fill('[data-pin-composer] textarea', 'PINNED-NOTE')
       await page.key('Enter')
-      assert(await until(async () => (await owned()).some(c => c.body === 'PINNED-NOTE'), 12_000), `pinned comment: the host never got it (composer: ${await page.run(`JSON.stringify([document.querySelector('[data-pin-composer] textarea')?.value, document.querySelector('[data-pin-composer] [data-comment-error]')?.textContent, document.activeElement?.tagName, document.querySelector('[data-pin-composer] button:last-child')?.disabled, [...document.querySelectorAll('[data-comment-card] [data-comment-body]')].map(e => e.textContent)])`)})`)
+      assert(await until(async () => (await owned()).some(c => c.body === 'PINNED-NOTE'), 12_000), `pinned comment: the host never got it (posts ${await posts()}; composer: ${await page.run(`JSON.stringify([document.querySelector('[data-pin-composer] textarea')?.value, document.querySelector('[data-pin-composer] [data-comment-error]')?.textContent, document.activeElement?.tagName, document.querySelector('[data-pin-composer] button:last-child')?.disabled, [...document.querySelectorAll('[data-comment-card] [data-comment-body]')].map(e => e.textContent)])`)})`)
       mine = await owned()
       const pinned = mine.find(c => c.body === 'PINNED-NOTE')
       const t = pinned.target
@@ -145,13 +156,23 @@ export async function shareCommentsChecks({ app, openPage, fail, buildShare, too
       assert(await until(() => page.run(`!document.querySelector('[data-pin-mode]')`), 2000) && await page.run(`!!document.querySelector('[data-full]')`), 'pin mode: Esc did not leave pin mode alone (or left the full view)')
 
       // After a reload: the pin on the desk's preview and in the full view, and on a phone's layout.
+      console.log(`share comments: POSTs so far ${await posts()}`)
+      // A pin whose element is gone (another design version): drawn dimmed, and its card says so.
+      const gone = await page.run(`fetch('api/comments', { method: 'POST', headers: { 'X-Proto': '1', 'content-type': 'application/json' }, body: JSON.stringify({ id: crypto.randomUUID(), variant: 'share-link/C', body: 'GONE-SPOT', target: { src: 'share-link/C.tsx:9999', path: ':scope > div:nth-child(42)', x: 50, y: 50, view: { size: 'desktop', w: 1440, h: 900 } } }) }).then(r => r.json()).then(c => c.id)`)
       await page.run(`location.reload()`)
       await sleep(500)
       assert(await until(() => page.run(`document.documentElement.dataset.ready === '1' && !!document.querySelector('[data-comment-field]')`), 15_000), 'reload: the viewer did not come back signed in')
+      await trace()
       const badge = await until(() => page.run(`document.querySelector('[data-board="share-link/C"] [data-count-badge]')?.textContent ?? ''`), 5000)
-      assert(badge.includes('2'), `desk: the label's count badge reads ${JSON.stringify(badge)}`)
+      assert(badge.includes('3'), `desk: the label's count badge reads ${JSON.stringify(badge)}`)
       const deskBtn = await page.run(`(() => { const r = document.querySelector('[data-board="share-link/C"] [data-count]')?.getBoundingClientRect(); return r ? [r.left, r.top, r.width, r.height] : null })()`)
       assert(await until(() => pinIn(`[data-board="share-link/C"] [data-pin="${pinned.id}"]`, deskBtn), 5000), `desk: the pin is not on the button in the preview (${JSON.stringify(deskBtn)})`)
+      assert(await until(() => page.run(`!!document.querySelector('[data-board="share-link/C"] [data-pin="${gone}"][data-pin-lost]')`), 5000), 'lost pin: a pin whose element is gone is not drawn as lost')
+      await page.press(...await at('[data-comments-toggle]'))
+      const lostLine = await until(() => page.run(`document.querySelector('[data-comment-card="${gone}"] [data-lost]')?.textContent ?? ''`), 3000)
+      assert(lostLine === 'The spot changed', `lost pin: its card reads ${JSON.stringify(lostLine)}`)
+      await page.key('Escape')
+      await sleep(400)
       await page.press(...await at('[data-board="share-link/C"] [data-frame]'))
       assert(await until(frameReady, 8000), 'reload: the design did not open')
       await sleep(600)
@@ -197,6 +218,20 @@ export async function shareCommentsChecks({ app, openPage, fail, buildShare, too
       const err = await until(() => page.run(`document.querySelector('[data-comment-error]')?.textContent ?? ''`), 5000)
       assert(err.includes('at most 4,000 characters'), `caps: the message reads ${JSON.stringify(err)}`)
       assert(await page.run(`document.querySelector('[data-comment-field]').value.length`) === 4001, 'caps: the refused words left the field')
+
+      // The answer lost on the way back: the comment stays, not sent, with Retry; Retry sends the same
+      // id, and the host has it once.
+      await page.run(`window.__dropNext = true`)
+      await fill('[data-comment-field]', 'RETRY-NOTE')
+      await page.key('Enter')
+      const notSent = await until(() => page.run(`(() => { const c = [...document.querySelectorAll('[data-comment-card]')].find(c => c.querySelector('[data-comment-body]')?.textContent === 'RETRY-NOTE'); return c && c.querySelector('[data-retry]') ? c.dataset.commentCard : '' })()`), 5000)
+      assert(notSent && await page.run(`document.querySelector('[data-comment-card="${notSent}"] [data-status]')?.textContent`) === 'Not sent', `lost answer: the comment is not kept as not sent with Retry (posts ${await posts()})`)
+      await sleep(700) // the list follows a new comment down (smooth): the button moves until it has
+      await page.press(...await at(`[data-comment-card="${notSent}"] [data-retry]`))
+      assert(await until(async () => (await page.run(`document.querySelector('[data-comment-card="${notSent}"] [data-status]')?.textContent`)) === 'Sent', 5000), `lost answer: Retry did not send it (status ${await page.run(`document.querySelector('[data-comment-card="${notSent}"] [data-status]')?.textContent`)}, retry at ${JSON.stringify(await at(`[data-comment-card="${notSent}"] [data-retry]`))}, open ${await page.run(`document.querySelector('[data-viewer-bar]').hasAttribute('data-open')`)}, hit ${await page.run(`(() => { const b = document.querySelector('[data-comment-card="${notSent}"] [data-retry]').getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return e?.outerHTML.slice(0, 120) })()`)}, posts ${await posts()})`)
+      const copies = (await owned()).filter(c => c.body === 'RETRY-NOTE')
+      assert(copies.length === 1 && copies[0].id === notSent, `lost answer: the host has ${copies.length} copies (posts ${await posts()})`)
+      console.log(`share comments: POSTs ${await posts()}`)
       // The refused post above is Chrome's one expected network error (429).
       const errors = page.errors().filter(e => !/status of 429 .*api\/comments/.test(e))
       assert(!errors.length, `the page reported ${JSON.stringify(errors)}`)
@@ -214,9 +249,11 @@ export async function shareCommentsChecks({ app, openPage, fail, buildShare, too
       assert(await until(() => phone.run(`!!document.querySelector('[data-pin-mode]')`), 3000), 'phone: the Comment button did not turn pin mode on')
       const b = await phone.run(`(() => { const r = document.querySelector('[data-live] [data-count]')?.getBoundingClientRect(); return r ? [r.left + r.width / 2, r.top + r.height / 2] : null })()`)
       assert(b, 'phone: no COUNT-ME on the phone')
-      await phone.press(...b)
+      // A real finger: the tap pins, the design gets no click, and nothing of the design takes the focus.
+      await phone.touch('touchStart', [b])
+      await phone.touch('touchEnd', [])
       assert(await until(() => phone.run(`!!document.querySelector('[data-pin-composer] textarea')`), 3000), 'phone: a tap in pin mode did not open the composer')
-      assert(await phone.run(`!document.body.dataset.clicks`), 'phone: the design got the tap')
+      assert(await phone.run(`!document.body.dataset.clicks && !document.activeElement?.closest('[data-live]')`), 'phone: the design got the tap, or the focus')
       await phone.run(`(() => { const el = document.querySelector('[data-pin-composer] textarea'); el.focus(); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, 'PHONE-PIN'); el.dispatchEvent(new Event('input', { bubbles: true })) })()`)
       await phone.key('Enter')
       assert(await until(async () => (await owned()).find(c => c.body === 'PHONE-PIN')?.target?.view?.size === 'phone', 5000), `phone: the pinned comment's target is ${JSON.stringify((await owned()).find(c => c.body === 'PHONE-PIN')?.target)}`)

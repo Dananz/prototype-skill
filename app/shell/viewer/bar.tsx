@@ -30,7 +30,7 @@ export function Bar({ screens, i, go, step, store, api, root, full, back, wide, 
   const list = useRef<HTMLDivElement>(null)
   // Follow a new comment down as it grows in, and once more when it has.
   const sent = () => {
-    const end = () => list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' })
+    const end = () => list.current?.scrollTo({ top: list.current.scrollHeight, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
     requestAnimationFrame(end); setTimeout(end, 300)
   }
   if (!wide && !row) return null

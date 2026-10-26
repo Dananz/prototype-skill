@@ -193,7 +193,16 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   useEffect(() => { setOpen(null); setClosing(false) }, [protoId])
 
   // Comments: the link's, from its host; the bar grown into them; the one lit; pin mode and the pin being written.
-  const { notes, add, remove, fresh, told } = useNotes(hosted, account.me)
+  const { notes, add, retry, remove, fresh, told } = useNotes(hosted, account.me)
+  // Each pin layer's lost pins (`kind:design`); the cards say so for the view on screen.
+  const [lostBy, setLostBy] = useState<Record<string, string[]>>({})
+  const setLost = (layer: string, ids: string[]) => setLostBy(was => {
+    const old = was[layer] ?? []
+    if (old.length === ids.length && old.every((x, k) => x === ids[k])) return was
+    const next = { ...was }
+    if (ids.length) next[layer] = ids; else delete next[layer]
+    return next
+  })
   const [barOpen, setBarOpen] = useState(false)
   const [active, setActive] = useState<string | null>(null)
   const [pinMode, setPinMode] = useState(false)
@@ -209,7 +218,8 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   useEffect(() => { if (!wide) setReach(true) }, [wide])
   const barInset = () => bar.current?.offsetHeight ?? 0
   const talk: Talk = {
-    hosted, can, signIn: account.signIn, owner: account.owner || facts.owner, me: account.me, notes, fresh, told, add, remove,
+    hosted, can, signIn: account.signIn, owner: account.owner || facts.owner, me: account.me, notes, fresh, told, add, retry, remove,
+    lost: new Set(Object.entries(lostBy).filter(([k]) => k.startsWith(`${full ? 'full' : wide ? 'desk' : 'phone'}:`)).flatMap(([, ids]) => ids)), setLost,
     open: barOpen, setOpen: setBarOpen, active, setActive, pinMode, setPinMode: on => { setPinMode(on); if (!on) setPlacing(null) }, placing, setPlacing,
     reach: wide ? reach : true,
     onPin: (c: Note) => {

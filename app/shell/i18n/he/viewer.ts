@@ -81,4 +81,7 @@ export default {
   'Comments go to {owner}, who may pass them to an AI assistant. Everyone with this link sees your name and comments.': 'התגובות נשלחות אל {owner}, שעשוי להעביר אותן לעוזר AI. כל מי שיש לו את הקישור רואה את השם והתגובות שלך.',
   'Comment on this spot': 'תגובה על הנקודה הזו',
   'Say what you think…': 'ספר מה אתה חושב…',
+  'Not sent': 'לא נשלחה',
+  'The spot changed': 'המקום השתנה',
+  'Retry': 'נסה שוב',
 } satisfies Record<string, string>

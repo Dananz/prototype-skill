@@ -6,17 +6,19 @@
 // `data-proto-component` stamps, its CSS path inside the design's mount, the point within it (% of
 // its box) and the view it was made in. It is found again, on any device size and after a reload:
 // by the path, when the element there still carries the same stamp; else by the first element that
-// shows with that stamp; else the stored point on the design itself.
+// shows with that stamp. When neither is there the spot changed: the pin is drawn dimmed in the
+// design's top corner, and its card says so.
 //
 // The layer is in the viewer's own page, over the design: in the full view inside the device's
 // zoomed screen, next to the frame, so the frame's own px are the layer's (the zoom applies to
-// both). Pin mode listens in the design's document (the frame's, same origin; a phone's scroller)
-// before the design does, and stops what a click would do there. A frame that can't be reached (a
+// both). Pin mode listens in the design's document (the frame's window, same origin; a phone's
+// document) before the design does, on the design and on what it puts on the page's body (its menus
+// and dialogs), and stops what a press, a tap or a key would do there. A frame that can't be reached (a
 // share opened from disk) gets no pins and no pin mode.
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { t } from '../i18n'
-import { drafts, ofDesign, useTalk, type Note, type Placing, type Target } from './comments'
+import { drafts, ofDesign, useTalk, uuid, type Note, type Placing, type Target } from './comments'
 import { Icon, card } from './ui'
 
 /** From the mount down, one `tag:nth-child(n)` per level. */
@@ -33,24 +35,25 @@ const stamp = (mount: Element, el: Element) => { const s = el.closest('[data-pro
 /** The design's own root in its mount. */
 const rootOf = (mount: Element) => mount.firstElementChild ?? mount
 
-/** The element a pin is on now, and whether it is only the stored point on the design (its element is gone). */
-export function anchorOf(mount: Element, t: Target): { el: Element; lost: boolean } {
+/** The element a pin is on now, or null when it is gone (the spot changed). */
+export function anchorOf(mount: Element, t: Target): Element | null {
   if (t.path) {
     let el: Element | null = null
     try { el = mount.querySelector(t.path) } catch { /* not a selector any more */ }
-    if (shows(el) && (!t.src || stamp(mount, el)?.getAttribute('data-proto-src') === t.src)) return { el, lost: false }
+    if (shows(el) && (!t.src || stamp(mount, el)?.getAttribute('data-proto-src') === t.src)) return el
   }
   if (t.src) {
     const same = [...mount.querySelectorAll('[data-proto-src]')].find(e => e.getAttribute('data-proto-src') === t.src && (!t.component || e.getAttribute('data-proto-component') === t.component) && shows(e))
-    if (same) return { el: same, lost: false }
+    if (same) return same
   }
-  return { el: rootOf(mount), lost: true }
+  return null
 }
 
 const round = (n: number) => Math.round(Math.min(100, Math.max(0, n)) * 10) / 10
 /** A pin on el at the point (cx, cy) of its own document's view, made in `view`. */
 export function targetOf(mount: Element, el: Element, cx: number, cy: number, view: Target['view']): Target {
-  const r = el.getBoundingClientRect(), s = stamp(mount, el), path = pathOf(mount, el)
+  // Something the design put on the body (a menu, a dialog) has no path from the mount: its stamps find it.
+  const r = el.getBoundingClientRect(), s = mount.contains(el) ? stamp(mount, el) : el.closest('[data-proto-src]'), path = mount.contains(el) ? pathOf(mount, el) : ''
   const src = s?.getAttribute('data-proto-src'), component = s?.getAttribute('data-proto-component')
   return {
     ...(src && src.length <= 300 ? { src } : {}),
@@ -96,7 +99,7 @@ function cursorSheet(doc: Document) {
   doc.head.append(s)
 }
 
-type Pos = { left: number; top: number }
+type Pos = { left: number; top: number; lost?: boolean }
 type Box = Pos & { width: number; height: number }
 
 /**
@@ -117,13 +120,17 @@ export function Pins({ variant, mount, kind, pick, ready = true, scale }: {
   const pinned = here.filter(n => n.target)
   const placing = talk.placing?.variant === variant && talk.placing.where === kind ? talk.placing : null
   const [pos, setPos] = useState<Record<string, Pos | null>>({})
+  const layerKey = `${kind}:${variant}`
   const [hover, setHover] = useState<Box | null>(null)
   const hovered = useRef<Element | null>(null)
   const now = useRef({ pinned, placing })
   now.current = { pinned, placing }
+  const talkNow = useRef(talk)
+  talkNow.current = talk
 
   // Where each pin is now: measured on scroll, resize and layout changes in the design's document,
-  // and twice a second besides (a design settles in its own time: fonts, pictures, its first render).
+  // and, while there are pins, twice a second besides (a design settles in its own time: fonts,
+  // pictures, its first render). A pin whose element is gone sits dimmed in the design's top corner.
   useLayoutEffect(() => {
     if (!ready) return
     let frame = 0
@@ -134,14 +141,23 @@ export function Pins({ variant, mount, kind, pick, ready = true, scale }: {
       const next: Record<string, Pos | null> = {}
       const all: [string, Target][] = now.current.pinned.map(n => [n.id, n.target!])
       if (now.current.placing) all.push(['placing', now.current.placing.target])
-      for (const [id, tg] of all) next[id] = m ? (() => { const a = anchorOf(m, tg); return placeIn(l, a.el, tg.x, tg.y) })() : null
+      let k = 0
+      for (const [id, tg] of all) {
+        if (!m) { next[id] = null; continue }
+        const el = anchorOf(m, tg)
+        if (el) { next[id] = placeIn(l, el, tg.x, tg.y); continue }
+        const corner = placeIn(l, rootOf(m), 0, 0)
+        next[id] = { left: Math.max(0, corner.left) + 20 + 34 * k++, top: Math.max(0, corner.top) + 8, lost: true }
+      }
       setPos(was => (JSON.stringify(was) === JSON.stringify(next) ? was : next))
+      const lost = Object.entries(next).filter(([id, p]) => p?.lost && id !== 'placing').map(([id]) => id)
+      talkNow.current.setLost(layerKey, lost)
       const h = hovered.current
       setHover(h && h.isConnected ? boxIn(l, h) : null)
     }
     const soon = () => { if (!frame) frame = requestAnimationFrame(measure) }
     measure()
-    const every = setInterval(soon, 500)
+    const every = now.current.pinned.length || now.current.placing ? setInterval(soon, 500) : 0
     let off = () => {}
     const bind = () => {
       const m = mount()
@@ -158,10 +174,13 @@ export function Pins({ variant, mount, kind, pick, ready = true, scale }: {
     const waiting = bind() ? 0 : setInterval(() => { if (bind()) clearInterval(waiting) }, 200)
     window.addEventListener('resize', soon)
     return () => { cancelAnimationFrame(frame); clearInterval(every); clearInterval(waiting); off(); window.removeEventListener('resize', soon) }
-  }, [ready, mount, pinned.length, placing, talk.notes])
+  }, [ready, mount, pinned.length, placing, talk.notes, layerKey])
+  // Gone, this layer's pins are lost to no one.
+  useEffect(() => () => talkNow.current.setLost(layerKey, []), [layerKey])
 
-  // Pin mode: the element under the pointer is outlined; a click places a pin there and opens the
-  // composer. The design gets neither the press nor the click.
+  // Pin mode: the element under the pointer is outlined; a click or a tap places a pin there and
+  // opens the composer. The design gets none of it: no press, tap, click or key (Esc still leaves),
+  // and a tap doesn't put the focus in its fields. A click the keyboard made places nothing.
   const composing = useRef(false)
   composing.current = !!placing
   const pickNow = useRef(pick)
@@ -170,32 +189,95 @@ export function Pins({ variant, mount, kind, pick, ready = true, scale }: {
     if (!pick?.on || !ready) { hovered.current = null; setHover(null); return }
     const at = pick.at(), m = mount()
     if (!at || !m) return
-    cursorSheet(m.ownerDocument)
-    m.setAttribute('data-pinning', '')
-    const inside = (e: Event) => { const el = e.target as Element | null; return el && el !== m && m.contains(el) ? el : null }
+    const doc = m.ownerDocument
+    cursorSheet(doc)
+    // The crosshair: on the whole frame (all of it is the design), on a phone only over the design.
+    const marked = kind === 'full' ? doc.body : m
+    marked.setAttribute('data-pinning', '')
+    // The design: its mount, and what it puts on the body. In a frame the whole body is the design's;
+    // on a phone the viewer's own parts are not.
+    const inside = (e: Event) => {
+      const el = e.target as Element | null
+      if (!el || typeof el.closest !== 'function' || el === m) return null
+      if (m.contains(el)) return el
+      if (el === doc.body || !doc.body.contains(el)) return null
+      return kind === 'full' || !el.closest('[data-viewer]') ? el : null
+    }
     const move = (e: Event) => { const el = inside(e); if (el !== hovered.current) { hovered.current = el; const l = layer.current; setHover(el && l ? boxIn(l, el) : null) } }
     const leave = () => { hovered.current = null; setHover(null) }
     let wasComposing = false
-    const stop = (e: Event) => { if (!inside(e)) return; e.stopPropagation(); if ((e as PointerEvent).pointerType !== 'touch') e.preventDefault(); if (e.type === 'pointerdown') wasComposing = composing.current }
+    const place = (el: Element, x: number, y: number) => {
+      if (wasComposing) { wasComposing = false; talk.setPlacing(null); return }
+      talk.setPlacing({ id: uuid(), variant, target: targetOf(m, el, x, y, pickNow.current!.view()), where: kind })
+    }
+    const stop = (e: Event) => {
+      if (!inside(e)) return
+      e.stopPropagation()
+      if ((e as PointerEvent).pointerType !== 'touch') e.preventDefault()
+      if (e.type === 'pointerdown' || e.type === 'mousedown') wasComposing = composing.current
+    }
     const click = (e: Event) => {
       const el = inside(e)
       if (!el) return
       e.stopPropagation(); e.preventDefault()
-      if (wasComposing) { wasComposing = false; talk.setPlacing(null); return }
       const p = e as MouseEvent
-      talk.setPlacing({ variant, target: targetOf(m, el, p.clientX, p.clientY, pickNow.current!.view()), where: kind })
+      if (p.detail === 0) return
+      place(el, p.clientX, p.clientY)
+    }
+    // A tap: the scroll it may be stays the design's; a tap that didn't move pins, and its click and
+    // focus never happen (the touchend is cancelled).
+    let touch: { x: number; y: number; el: Element; moved: boolean } | null = null
+    const tStart = (e: TouchEvent) => {
+      const el = inside(e)
+      if (!el) return
+      e.stopPropagation()
+      wasComposing = composing.current
+      touch = { x: e.touches[0].clientX, y: e.touches[0].clientY, el, moved: false }
+    }
+    const tMove = (e: TouchEvent) => {
+      if (!touch) return
+      e.stopPropagation()
+      if (Math.hypot(e.touches[0].clientX - touch.x, e.touches[0].clientY - touch.y) > 10) touch.moved = true
+    }
+    const tEnd = (e: TouchEvent) => {
+      if (!touch) return
+      e.stopPropagation()
+      const t0 = touch
+      touch = null
+      if (t0.moved) return
+      e.preventDefault()
+      const c = e.changedTouches[0]
+      place(t0.el, c?.clientX ?? t0.x, c?.clientY ?? t0.y)
+    }
+    // Keys in the design are not the design's while pins are placed; Esc goes on (it leaves pin mode),
+    // Tab still moves, and C leaves too.
+    const key = (e: KeyboardEvent) => {
+      if (!inside(e) || e.key === 'Escape' || e.key === 'Tab') return
+      e.stopPropagation(); e.preventDefault()
+      if (e.type === 'keydown' && (e.key === 'c' || e.key === 'C') && !e.metaKey && !e.ctrlKey && !e.altKey) talk.setPinMode(false)
     }
     const kinds = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'dblclick', 'contextmenu'] as const
+    const keys = ['keydown', 'keyup', 'keypress'] as const
+    const opts = { capture: true, passive: false }
     at.addEventListener('pointermove', move, true)
     at.addEventListener('pointerleave', leave, true)
     for (const k of kinds) at.addEventListener(k, stop, true)
+    for (const k of keys) at.addEventListener(k, key as EventListener, true)
     at.addEventListener('click', click, true)
+    at.addEventListener('touchstart', tStart as EventListener, { capture: true, passive: true })
+    at.addEventListener('touchmove', tMove as EventListener, { capture: true, passive: true })
+    at.addEventListener('touchend', tEnd as EventListener, opts)
+    at.addEventListener('touchcancel', (() => { touch = null }) as EventListener, true)
     return () => {
-      m.removeAttribute('data-pinning')
+      marked.removeAttribute('data-pinning')
       at.removeEventListener('pointermove', move, true)
       at.removeEventListener('pointerleave', leave, true)
       for (const k of kinds) at.removeEventListener(k, stop, true)
+      for (const k of keys) at.removeEventListener(k, key as EventListener, true)
       at.removeEventListener('click', click, true)
+      at.removeEventListener('touchstart', tStart as EventListener, true)
+      at.removeEventListener('touchmove', tMove as EventListener, true)
+      at.removeEventListener('touchend', tEnd as EventListener, true)
       hovered.current = null; setHover(null)
     }
   }, [pick?.on, ready, mount, variant, kind])
@@ -205,7 +287,8 @@ export function Pins({ variant, mount, kind, pick, ready = true, scale }: {
     const s = talk.seek, m = mount()
     if (!s || kind === 'desk' || !m) return
     const n = pinned.find(x => x.id === s.id)
-    if (n) bringIn(anchorOf(m, n.target!).el)
+    const el = n && anchorOf(m, n.target!)
+    if (el) bringIn(el)
   }, [talk.seek])
 
   const pinRef = useRef<HTMLSpanElement>(null)
@@ -213,7 +296,7 @@ export function Pins({ variant, mount, kind, pick, ready = true, scale }: {
   // Pins on the desk and in the full view are drawn at a zoom; --pin keeps them their size on screen.
   const sized = kind !== 'phone'
   return (
-    <div ref={layer} data-pins={kind} data-pin-mode={pick?.on ? '' : undefined} aria-hidden={desk || undefined}
+    <div ref={layer} data-pins={kind} data-pin-mode={pick?.on ? '' : undefined}
       style={scale ? { ['--pin' as string]: String(Math.max(1, scale)) } : undefined}
       className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
       {hover && <div data-pin-outline className="absolute rounded-[3px] ring-2 ring-sky-500" style={hover} />}
@@ -234,11 +317,12 @@ export function Pins({ variant, mount, kind, pick, ready = true, scale }: {
 
 function PinButton({ n, num, at, desk, sized, active, onClick }: { n: Note; num: number; at: Pos; desk: boolean; sized: boolean; active: boolean; onClick: () => void }) {
   // No room above the point (the top of the design): the pin hangs below it instead.
-  const below = at.top < (desk ? 28 * deskPin() : 42)
+  const below = at.lost || at.top < (desk ? 28 * deskPin() : 42)
   return (
-    <button data-pin={n.id} onClick={e => { e.stopPropagation(); onClick() }} onPointerDown={e => e.stopPropagation()}
-      aria-label={t('Comment {n}', { n: num })} title={n.body.slice(0, 80)} style={at}
-      className={`pointer-events-auto absolute grid size-7 -translate-x-1/2 place-items-center rounded-full text-[11px] font-bold text-white shadow-lg ring-2 ring-white transition-[background-color] motion-reduce:transition-none dark:ring-zinc-900 ${below ? 'rounded-tl-none' : '-translate-y-full rounded-bl-none'} ${active ? 'z-10 bg-sky-500' : 'bg-zinc-900 hover:bg-zinc-700 dark:bg-zinc-700 dark:hover:bg-zinc-600'} ${sized ? `${below ? 'origin-top' : 'origin-bottom'} [scale:var(--pin,1)]` : active ? `scale-125 ${below ? 'origin-top' : 'origin-bottom'}` : ''}`}>
+    <button data-pin={n.id} data-pin-lost={at.lost ? '' : undefined} onClick={e => { e.stopPropagation(); onClick() }} onPointerDown={e => e.stopPropagation()}
+      aria-label={at.lost ? `${t('Comment {n}', { n: num })}. ${t('The spot changed')}` : t('Comment {n}', { n: num })}
+      title={at.lost ? `${t('The spot changed')} · ${n.body.slice(0, 80)}` : n.body.slice(0, 80)} style={{ left: at.left, top: at.top }}
+      className={`pointer-events-auto absolute ${at.lost ? 'opacity-55 outline-dashed outline-1 outline-offset-2 outline-zinc-400' : ''} grid size-7 -translate-x-1/2 place-items-center rounded-full text-[11px] font-bold text-white shadow-lg ring-2 ring-white transition-[background-color] motion-reduce:transition-none dark:ring-zinc-900 ${below ? 'rounded-tl-none' : '-translate-y-full rounded-bl-none'} ${active ? 'z-10 bg-sky-500' : 'bg-zinc-900 hover:bg-zinc-700 dark:bg-zinc-700 dark:hover:bg-zinc-600'} ${sized ? `${below ? 'origin-top' : 'origin-bottom'} [scale:var(--pin,1)]` : active ? `scale-125 ${below ? 'origin-top' : 'origin-bottom'}` : ''}`}>
       {num}
     </button>
   )
@@ -247,6 +331,7 @@ function PinButton({ n, num, at, desk, sized, active, onClick }: { n: Note; num:
 const deskPin = () => Number(getComputedStyle(document.querySelector('[data-world]') ?? document.body).getPropertyValue('--pin')) || 1
 
 /** Writing the comment of a pin just placed: at the pin, Enter sends, Shift+Enter is a new line, Esc lets it go. */
+/** One placement is one comment: its id goes with every send of it (Send again after no answer is the same comment to the host). */
 function Composer({ placing, anchor }: { placing: Placing; anchor: RefObject<HTMLSpanElement | null> }) {
   const talk = useTalk()
   const key = drafts.key(placing.variant, true)
@@ -259,9 +344,9 @@ function Composer({ placing, anchor }: { placing: Placing; anchor: RefObject<HTM
     const body = text.trim()
     if (!body || busy) return
     setBusy(true)
-    const why = await talk.add(placing.variant, body, placing.target)
+    const r = await talk.add(placing.id, placing.variant, body, placing.target)
     setBusy(false)
-    if (why) { setError(why); return }
+    if (!r.ok) { setError(r.why); return }
     drafts.set(key, '')
     talk.setPlacing(null)
   }

@@ -7,9 +7,11 @@
 //
 // Everything comes from the share's own host (api/comments, X-Proto: 1): read once, then every 20 s
 // while the page is visible and on focus, from the host's `now` on, merged by id. A new comment is
-// on the list at once under the viewer's own id (a retry of it is the same comment to the host); one
-// the host refuses comes off again and its words go back where they were written, with the host's
-// reason. Drafts stay in this browser. Viewer text is only ever text here (React's escaping).
+// on the list at once under the viewer's own id, which stays with its draft until the host answers:
+// sending again (Retry, or the same draft after a reload) uses the same id, which the host stores
+// once. One the host refuses (a 4xx) comes off again and its words go back where they were written,
+// with the host's reason; one that got no answer stays on the list as not sent, with Retry. Drafts
+// stay in this browser until the host has them. Viewer text is only ever text here (React's escaping).
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { t, tn } from '../i18n'
 import { ago } from '../ui'
@@ -27,7 +29,10 @@ export type Note = {
   owner_reply: string | null; owner_reply_at: number | null
   author: { login: string | null; name: string | null; avatar: string | null }
   mine: boolean; created_at: number; updated_at: number; version: number; done_in: number | null
+  /** Written here and not yet stored by the host. */
   pending?: boolean
+  /** Sent, and no answer came (the network, or the host failed): Retry sends it again under the same id. */
+  failed?: boolean
 }
 
 /** A host to talk to: the page came over http(s). A share opened from disk has none. */
@@ -37,7 +42,7 @@ const call = async (path: string, init?: RequestInit) => {
   const r = await fetch(path, { ...init, cache: 'no-store', headers: { 'X-Proto': '1', ...(init?.body ? { 'content-type': 'application/json' } : {}) } })
   let body: unknown = null
   try { body = await r.json() } catch { /* no body */ }
-  return { ok: r.ok, body: body as Record<string, unknown> | null }
+  return { ok: r.ok, status: r.status, body: body as Record<string, unknown> | null }
 }
 
 /** A random UUID, also where the page isn't a secure context (crypto.randomUUID is missing there). */
@@ -64,17 +69,37 @@ function reason(code: unknown) {
 const DRAFTS = 'proto-viewer-drafts', TOLD = 'proto-viewer-told'
 const read = (k: string) => { try { return localStorage.getItem(k) } catch { return null } }
 const write = (k: string, v: string | null) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v) } catch { /* private mode: this load only */ } }
-/** A draft per link and design (and one for the pin being written), kept in this browser. */
+/** A draft per link and design (and one for the pin being written), kept in this browser, with the
+ *  id it was sent under while the host hasn't said it has it. */
+type Draft = { text: string; id?: string }
+const allDrafts = (): Record<string, Draft> => {
+  try {
+    const all = JSON.parse(read(DRAFTS) || '{}') as Record<string, Draft | string>
+    return Object.fromEntries(Object.entries(all).map(([k, v]) => [k, typeof v === 'string' ? { text: v } : v]))
+  } catch { return {} }
+}
+const saveDrafts = (all: Record<string, Draft>) => write(DRAFTS, Object.keys(all).length ? JSON.stringify(all) : null)
 export const drafts = {
   key: (variant: string, pin = false) => `${location.pathname}|${variant}${pin ? '|pin' : ''}`,
-  get(key: string) { try { return (JSON.parse(read(DRAFTS) || '{}') as Record<string, string>)[key] ?? '' } catch { return '' } },
-  set(key: string, text: string) {
-    let all: Record<string, string> = {}
-    try { all = JSON.parse(read(DRAFTS) || '{}') } catch { /* a broken entry starts again */ }
-    if (text) all[key] = text; else delete all[key]
-    write(DRAFTS, Object.keys(all).length ? JSON.stringify(all) : null)
+  get: (key: string) => allDrafts()[key]?.text ?? '',
+  /** The id this draft was sent under, while the host hasn't answered for it. */
+  id: (key: string) => allDrafts()[key]?.id,
+  /** New words drop the id (they are a new comment); `id` keeps the one they were sent under. */
+  set(key: string, text: string, id?: string) {
+    const all = allDrafts()
+    if (text) all[key] = id ? { text, id } : { text }; else delete all[key]
+    saveDrafts(all)
+  },
+  /** The host has the comment sent under id: its draft goes. */
+  done(id: string) {
+    const all = allDrafts()
+    for (const [k, v] of Object.entries(all)) if (v.id === id) delete all[k]
+    saveDrafts(all)
   },
 }
+
+/** What a send came to: stored; refused for good (a 4xx, with the host's reason); or no answer (kept, to retry). */
+export type Sent = { ok: true } | { ok: false; refused: boolean; why: string }
 
 /* ---------------------------------------------------------------- the comments, from the host */
 
@@ -95,7 +120,10 @@ export function useNotes(on: boolean, me: Me | null | undefined) {
     since.current = typeof r.body.now === 'number' ? r.body.now : Date.now()
     if (!first.current) first.current = new Set(got.map(n => n.id))
     setNotes(list => {
-      const m = new Map((from ? list : list.filter(n => n.pending)).map(n => [n.id, n]))
+      // A poll that brings nothing new leaves the list as it was (no new array, no redraw).
+      if (from && !removed.some(id => list.some(n => n.id === id))
+        && got.every(n => { const o = list.find(x => x.id === n.id); return o && !o.pending && !o.failed && o.updated_at === n.updated_at })) return list
+      const m = new Map((from ? list : list.filter(n => n.pending || n.failed)).map(n => [n.id, n]))
       for (const n of got) m.set(n.id, n)
       for (const id of removed) m.delete(id)
       return [...m.values()].sort((a, b) => a.created_at - b.created_at)
@@ -113,26 +141,42 @@ export function useNotes(on: boolean, me: Me | null | undefined) {
     return () => { clearInterval(every); removeEventListener('focus', look); document.removeEventListener('visibilitychange', look) }
   }, [on, me, load])
 
-  /** Writes a comment; null when the host has it, else the reason it didn't take it. */
-  const add = async (variant: string, body: string, target: Target | null): Promise<string | null> => {
-    const id = uuid(), now = Date.now()
-    setNotes(l => [...l, {
+  /**
+   * Writes a comment under `id` (the same id again for a retry: the host stores it once). On the list
+   * at once; a 4xx takes it off (refused, with the host's reason); no answer leaves it there as failed.
+   */
+  const add = async (id: string, variant: string, body: string, target: Target | null): Promise<Sent> => {
+    const now = Date.now()
+    const note: Note = {
       id, variant, body, target, status: 'new', owner_reply: null, owner_reply_at: null,
       author: { login: me?.login ?? null, name: me?.name ?? null, avatar: me?.avatar ?? null }, mine: true,
       created_at: now, updated_at: now, version: shareInfo?.version ?? 1, done_in: null, pending: true,
-    }])
+    }
+    setNotes(l => (l.some(n => n.id === id) ? l.map(n => (n.id === id ? { ...n, pending: true, failed: false } : n)) : [...l, note]))
     const r = await call('api/comments', { method: 'POST', body: JSON.stringify({ id, variant, body, target }) }).catch(() => null)
     if (r?.ok && r.body && r.body.id === id) {
       setNotes(l => l.map(n => (n.id === id ? r.body as unknown as Note : n)))
+      drafts.done(id)
       setTold(true); write(TOLD, '1')
-      return null
+      return { ok: true }
     }
-    setNotes(l => l.filter(n => n.id !== id))
-    return reason(r?.body?.code)
+    if (r && r.status >= 400 && r.status < 500 && r.status !== 408) {
+      setNotes(l => l.filter(n => n.id !== id))
+      return { ok: false, refused: true, why: reason(r.body?.code) }
+    }
+    setNotes(l => l.map(n => (n.id === id ? { ...n, pending: false, failed: true } : n)))
+    return { ok: false, refused: false, why: t("Couldn't send. Try again") }
+  }
+  /** Sends a comment that got no answer again, under its own id. */
+  const retry = (id: string) => {
+    const n = notes.find(x => x.id === id)
+    if (n) void add(n.id, n.variant, n.body, n.target)
   }
   /** Deletes the viewer's own comment while it is new; null when it went, else why not. */
   const remove = async (id: string): Promise<string | null> => {
     const was = notes.find(n => n.id === id)
+    // One that never reached the host only leaves this page.
+    if (was?.failed) { setNotes(l => l.filter(n => n.id !== id)); drafts.done(id); return null }
     setNotes(l => l.filter(n => n.id !== id))
     const r = await call(`api/comments/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null)
     if (r?.ok) return null
@@ -140,13 +184,13 @@ export function useNotes(on: boolean, me: Me | null | undefined) {
     return t("Couldn't delete it. Try again")
   }
   const fresh = (id: string) => !!first.current && !first.current.has(id)
-  return { notes, add, remove, fresh, told }
+  return { notes, add, retry, remove, fresh, told }
 }
 
 /* ---------------------------------------------------------------- what the viewer's parts share about comments */
 
-/** A pin being placed: on which design, where, and in which view of it (the desk under the full view has the same design). */
-export type Placing = { variant: string; target: Target; where: 'desk' | 'full' | 'phone' }
+/** A pin being placed: the id its comment will have, on which design, where, and in which view of it (the desk under the full view has the same design). */
+export type Placing = { id: string; variant: string; target: Target; where: 'desk' | 'full' | 'phone' }
 export type Talk = {
   /** A host to talk to. */
   hosted: boolean
@@ -158,7 +202,8 @@ export type Talk = {
   notes: Note[]
   fresh: (id: string) => boolean
   told: boolean
-  add: (variant: string, body: string, target: Target | null) => Promise<string | null>
+  add: (id: string, variant: string, body: string, target: Target | null) => Promise<Sent>
+  retry: (id: string) => void
   remove: (id: string) => Promise<string | null>
   /** The bar grown into the comments. */
   open: boolean; setOpen: (o: boolean) => void
@@ -175,6 +220,10 @@ export type Talk = {
   /** Bring a comment's pin into view; at changes each time it is asked. */
   seek: { id: string; at: number } | null
   seekTo: (id: string) => void
+  /** Pins whose element is gone from the design as it is drawn now (the spot changed). */
+  lost: Set<string>
+  /** A pin layer says which of its pins are lost. */
+  setLost: (layer: string, ids: string[]) => void
 }
 export const TalkCtx = createContext<Talk | null>(null)
 export const useTalk = () => useContext(TalkCtx)!
@@ -189,17 +238,19 @@ export function ofDesign(notes: Note[], variant: string) {
 
 /* ---------------------------------------------------------------- small pieces */
 
-/** A commenter's GitHub picture, or the first letter of their login when there is none. */
+/** A commenter's GitHub picture, or the first letter of their login when there is none or it doesn't load. */
 export function Face({ who, size = 20, ring = false }: { who: Note['author'] | Me; size?: number; ring?: boolean }) {
   const cls = `inline-grid shrink-0 place-items-center overflow-hidden rounded-full bg-zinc-200 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-700 dark:text-zinc-200 ${ring ? 'ring-2 ring-white dark:ring-zinc-900' : ''}`
   const style = { width: size, height: size }
-  return who.avatar
-    ? <img data-face src={who.avatar} alt="" referrerPolicy="no-referrer" style={style} className={cls} />
+  const [broken, setBroken] = useState<string | null>(null)
+  return who.avatar && broken !== who.avatar
+    ? <img data-face src={who.avatar} alt="" referrerPolicy="no-referrer" style={style} className={cls} onError={() => setBroken(who.avatar)} />
     : <span data-face aria-hidden="true" style={style} className={cls}>{((who.login || '?')[0] ?? '?').toUpperCase()}</span>
 }
 
 const TONE = {
   sending: 'text-zinc-400 dark:text-zinc-500',
+  failed: 'text-red-600 dark:text-red-400',
   sent: 'text-zinc-500 dark:text-zinc-400',
   seen: 'text-zinc-600 dark:text-zinc-300',
   working: 'text-amber-600 dark:text-amber-400',
@@ -207,7 +258,8 @@ const TONE = {
 }
 /** Sent → Seen → In progress → Done → In the latest version (after the update that has it). */
 export function StatusChip({ n }: { n: Note }) {
-  const [label, tone, icon] = n.pending ? [t('Sending…'), TONE.sending, 'circle' as const]
+  const [label, tone, icon] = n.failed ? [t('Not sent'), TONE.failed, 'circle' as const]
+    : n.pending ? [t('Sending…'), TONE.sending, 'circle' as const]
     : n.status === 'new' ? [t('Sent'), TONE.sent, 'circle' as const]
     : n.status === 'sent' ? [t('Seen'), TONE.seen, 'seen' as const]
     : n.status === 'working' ? [t('In progress'), TONE.working, 'working' as const]
@@ -221,9 +273,10 @@ export function PinNumber({ n, active = false }: { n: number; active?: boolean }
   return <span className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold text-white ${active ? 'bg-sky-500' : 'bg-zinc-900 dark:bg-zinc-600'}`}>{n}</span>
 }
 
-/** One comment: who, when, the words, its status, the owner's reply; Delete on one's own while it is new. */
-export function CommentCard({ n, num, active, owner, onShow, onDelete }: {
-  n: Note; num?: number; active: boolean; owner: string; onShow: () => void; onDelete: () => void
+/** One comment: who, when, the words, its status, the owner's reply; Delete on one's own while it is
+ *  new; Retry on one that got no answer. lost: its pin's element is gone from the design. */
+export function CommentCard({ n, num, active, owner, lost, onShow, onDelete, onRetry }: {
+  n: Note; num?: number; active: boolean; owner: string; lost: boolean; onShow: () => void; onDelete: () => void; onRetry: () => void
 }) {
   const name = n.author.login || n.author.name || '?'
   return (
@@ -239,8 +292,13 @@ export function CommentCard({ n, num, active, owner, onShow, onDelete }: {
         <span className="ms-auto shrink-0 text-[11px] text-zinc-400">{n.pending ? '' : ago(n.created_at)}</span>
       </div>
       <p data-comment-body dir="auto" className="mt-1.5 whitespace-pre-wrap break-words text-[13px] leading-snug text-zinc-700 dark:text-zinc-300">{n.body}</p>
+      {lost && <p data-lost className="mt-1 text-[11.5px] text-zinc-500 dark:text-zinc-400">{t('The spot changed')}</p>}
       <div className="mt-2 flex items-center gap-2">
         <StatusChip n={n} />
+        {n.failed && (
+          <button data-retry onClick={e => { e.stopPropagation(); onRetry() }}
+            className="inline-flex h-6 items-center rounded-md px-1.5 text-[11px] font-medium text-sky-600 hover:bg-sky-500/10 dark:text-sky-400">{t('Retry')}</button>
+        )}
         {n.mine && n.status === 'new' && !n.pending && (
           <button data-delete onClick={e => { e.stopPropagation(); onDelete() }} title={t('Delete comment')} aria-label={t('Delete comment')}
             className="ms-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100">
@@ -323,9 +381,9 @@ export function Panel({ here, wide, list }: { here: Here; wide: boolean; list: R
             {count
               ? notes.map(c => (
                 <Grow key={c.id} fresh={talk.fresh(c.id)}>
-                  <CommentCard n={c} num={num.get(c.id)} active={talk.active === c.id} owner={talk.owner}
+                  <CommentCard n={c} num={num.get(c.id)} active={talk.active === c.id} owner={talk.owner} lost={talk.lost.has(c.id)}
                     onShow={() => { talk.setActive(c.id); if (c.target) talk.seekTo(c.id) }}
-                    onDelete={() => { void talk.remove(c.id).then(e => setError(e ?? '')) }} />
+                    onDelete={() => { void talk.remove(c.id).then(e => setError(e ?? '')) }} onRetry={() => talk.retry(c.id)} />
                 </Grow>
               ))
               : <p className="px-3 py-6 text-center text-[13px] text-zinc-500">{t('Nothing on #{n} yet. Say what you think.', { n: here.n })}</p>}
@@ -371,7 +429,7 @@ export function Foot({ here, pins, onSent }: { here: Here; pins: boolean; onSent
         aria-label={talk.open ? t('Hide comments') : tn(notes.length, '{n} comment on #{v}', '{n} comments on #{v}', { v: here.n })}
         className="flex h-11 shrink-0 items-center gap-1.5 rounded-[18px] px-3 text-[13px] text-zinc-600 transition-colors hover:bg-zinc-900/5 motion-reduce:transition-none dark:text-zinc-300 dark:hover:bg-white/10">
         {people.length > 0
-          ? <span className="flex -space-x-1 rtl:space-x-reverse">{people.map((p, k) => <Face key={k} who={p} ring />)}</span>
+          ? <span className="flex -space-x-1">{people.map((p, k) => <Face key={k} who={p} ring />)}</span>
           : <Icon name="chat" className="size-4" />}
         <span className="tabular-nums">{notes.length}</span>
         <Icon name="caret-down" className={`size-3 transition-transform duration-200 motion-reduce:transition-none ${talk.open ? '' : 'rotate-180'}`} />
@@ -394,7 +452,8 @@ function PinToggle() {
   )
 }
 
-/** The field: Enter sends a comment on the whole design; a refused one keeps its words, with the host's reason. */
+/** The field: Enter sends a comment on the whole design. Its words stay stored, with the id they went
+ *  under, until the host has them; a refused one comes back into the field with the host's reason. */
 function Field({ here, onFocus, onSent }: { here: Here; onFocus: () => void; onSent: () => void }) {
   const talk = useTalk()
   const key = drafts.key(here.variant)
@@ -405,10 +464,14 @@ function Field({ here, onFocus, onSent }: { here: Here; onFocus: () => void; onS
   const send = async () => {
     const body = text.trim()
     if (!body) return
-    change('')
+    const id = drafts.id(key) ?? uuid()
+    drafts.set(key, body, id)
+    setText(''); setError('')
     onSent()
-    const why = await talk.add(here.variant, body, null)
-    if (why) { setText(body); drafts.set(key, body); setError(why) }
+    const r = await talk.add(id, here.variant, body, null)
+    if (r.ok) return
+    if (r.refused) { setText(body); drafts.set(key, body); setError(r.why) }
+    else setError(r.why)
   }
   return (
     <div className="relative flex min-w-0 flex-1 flex-col">
