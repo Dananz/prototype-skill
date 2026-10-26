@@ -1,5 +1,8 @@
 -- The host's D1 schema. Safe to run again: every statement is IF NOT EXISTS.
 -- The shots tables live in their own database and are added with the comments task.
+-- A database made by an older schema is brought up to this one by the Worker itself (host/lib/upgrade.mjs:
+-- SQLite has no ADD COLUMN IF NOT EXISTS), so nothing here may name a column added since phase 0
+-- outside its own CREATE TABLE: on an old database that statement would fail and stop the file.
 CREATE TABLE IF NOT EXISTS owners   (id TEXT PRIMARY KEY, name TEXT NOT NULL, notify_url TEXT,
                        created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS owner_tokens (sha256 TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id),
@@ -22,19 +25,32 @@ CREATE TABLE IF NOT EXISTS links    (id TEXT PRIMARY KEY, share_id TEXT NOT NULL
                        revoked_at INTEGER, created_at INTEGER NOT NULL, last_seen_at INTEGER);
 CREATE TABLE IF NOT EXISTS comments (id TEXT NOT NULL,               -- the viewer's own UUID (format checked): retries are idempotent
                        share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
-                       link_id TEXT NOT NULL, viewer TEXT NOT NULL, verified INTEGER NOT NULL,
-                       version INTEGER NOT NULL, route TEXT NOT NULL,
-                       body TEXT NOT NULL,             -- JSON: the Draft and Target, validated
+                       link_id TEXT NOT NULL,          -- '' for the open link (person links come in phase 2)
+                       viewer TEXT NOT NULL,           -- gh:<GitHub id>
+                       verified INTEGER NOT NULL,      -- 1: every commenter signs in with GitHub (decision 20)
+                       version INTEGER NOT NULL,       -- the share version the viewer saw
+                       route TEXT NOT NULL,            -- the same as variant
+                       body TEXT NOT NULL,             -- the viewer's words, plain text, at most 4000 characters; '' once deleted
+                       gh_id INTEGER,                  -- viewers.gh_id of the author
+                       variant TEXT,                   -- slug/LETTER, one of the share's variants
+                       target TEXT,                    -- JSON { src?, component?, path?, x, y, view: { size, w, h } }, NULL for the whole design
                        re TEXT,                        -- id of the comment this follows up
                        status TEXT NOT NULL DEFAULT 'new'
                          CHECK (status IN ('new','sent','working','done','dismissed')),
                        taken_by TEXT,                  -- session that sent it to Claude
                        owner_reply TEXT,               -- the owner's own words; Claude's replies never come here
-                       hidden INTEGER NOT NULL DEFAULT 0, -- hidden from viewers by the owner
+                       owner_reply_at INTEGER,
+                       hidden INTEGER NOT NULL DEFAULT 0, -- hidden from viewers by the owner, or by its author once sent
+                       deleted INTEGER NOT NULL DEFAULT 0, -- deleted by its author while new: body and target are emptied
                        done_in INTEGER,
                        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
                        PRIMARY KEY (share_id, id));
 CREATE INDEX IF NOT EXISTS comments_owner_poll ON comments (share_id, updated_at);
+CREATE TABLE IF NOT EXISTS viewers  (gh_id INTEGER PRIMARY KEY,   -- GitHub's user id; the access token is never kept
+                       login TEXT NOT NULL, name TEXT, avatar TEXT, seen_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS caps     (what TEXT NOT NULL,            -- 'gh:<id>' (per hour) or 'share:<id>' (per day)
+                       slot INTEGER NOT NULL,          -- the hour or day number since the epoch
+                       n INTEGER NOT NULL, PRIMARY KEY (what, slot));
 CREATE TABLE IF NOT EXISTS votes    (share_id TEXT NOT NULL, link_id TEXT NOT NULL, viewer TEXT NOT NULL,
                        route TEXT NOT NULL, created_at INTEGER NOT NULL,
                        PRIMARY KEY (share_id, link_id, viewer));

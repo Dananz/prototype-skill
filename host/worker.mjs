@@ -2,13 +2,12 @@ import { newId, isId } from './lib/ids.mjs'
 import { ownerOf } from './lib/auth.mjs'
 import { namesOf, route } from './lib/routes.mjs'
 import { page, ogPage } from './lib/pages.mjs'
+import { json, fail } from './lib/http.mjs'
+import { upgraded } from './lib/upgrade.mjs'
+import { authCallback, authStart, ticketIn } from './lib/github.mjs'
+import { ownerComments, viewerApi } from './lib/comments.mjs'
 
 const MAX_BYTES = 20 * 1024 * 1024
-
-// No route sends CORS headers: the API answers same-origin pages and the owner's CLI only.
-const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' }
-const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
-const fail = (status, error) => json({ error }, status)
 
 const htmlKey = (id, version) => `html:${id}:${version}`
 const ogKey = (id, version) => `og:${id}:${version}`
@@ -27,7 +26,12 @@ export default {
       const url = new URL(req.url)
       const r = route(url, namesOf(env.BASE).names)
       if (r.at === 'health') return new Response('ok', { headers: { 'content-type': 'text/plain', 'cache-control': 'no-store' } })
-      if (r.at === 'api') return await api(req, env, r.path)
+      await upgraded(env.DB)
+      if (r.at === 'api') return await api(req, env, url, r.path)
+      if (r.at === 'auth') {
+        if (req.method !== 'GET') return new Response(null, { status: 405, headers: { allow: 'GET' } })
+        return r.path === '/auth/github' ? await authStart(env, url) : await authCallback(req, env, url)
+      }
       if (r.at === 'apex') return await apex(env, url, r.shareId)
       if (r.at === 'share' && (pathsServed(env) || !onBase(url, env))) return await share(req, env, url, r)
       return page('notfound', {})
@@ -38,10 +42,11 @@ export default {
   },
 }
 
-async function api(req, env, path) {
+async function api(req, env, url, path) {
   const owner = await ownerOf(req, env)
   if (!owner) return fail(401, 'A valid owner token is needed.')
-  const parts = path.split('/').filter(Boolean) // ['api', 'shares', id?]
+  const parts = path.split('/').filter(Boolean) // ['api', 'shares', id?] or ['api', 'owner', 'comments', id?]
+  if (parts[1] === 'owner' && parts[2] === 'comments' && parts.length <= 4) return ownerComments(req, env, owner, url, parts[3])
   if (parts[1] !== 'shares' || parts.length > 3) return fail(404, 'No such route.')
   const id = parts[2]
   if (id === undefined) {
@@ -108,7 +113,11 @@ async function putShare(req, env, owner, id) {
      ON CONFLICT(id) DO UPDATE SET session = excluded.session, project_label = excluded.project_label, title = excluded.title,
        scope = excluded.scope, version = excluded.version, bytes = excluded.bytes, lang = excluded.lang, updated_at = excluded.updated_at`,
   ).bind(id, owner.id, meta.session, meta.projectLabel, meta.title, JSON.stringify(meta.scope), version, body.byteLength, meta.lang, now, now).run()
-  if (old) await env.KV.delete(htmlKey(id, old.version))
+  if (old) {
+    await env.KV.delete(htmlKey(id, old.version))
+    // The comments marked done are in this version: the viewer sees "In the latest version".
+    await env.DB.prepare("UPDATE comments SET done_in = ?, updated_at = ? WHERE share_id = ? AND status = 'done' AND done_in IS NULL").bind(version, now, id).run()
+  }
   return json({ id, version, bytes: body.byteLength })
 }
 
@@ -118,6 +127,8 @@ async function deleteShare(env, owner, id) {
   await env.KV.delete(htmlKey(id, row.version))
   await env.KV.delete(ogKey(id, row.version))
   await env.DB.prepare('UPDATE shares SET deleted_at = COALESCE(deleted_at, ?) WHERE id = ?').bind(Date.now(), id).run()
+  // Deleting a share deletes its comments (spec: Data and privacy); the row stays as a tombstone.
+  await env.DB.prepare('DELETE FROM comments WHERE share_id = ?').bind(id).run()
   return json({ id })
 }
 
@@ -145,16 +156,15 @@ function unavailable(row) {
 }
 
 async function share(req, env, url, r) {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return new Response(null, { status: 405, headers: { allow: 'GET, HEAD' } })
-  if (onBase(url, env) && r.path === '') return new Response(null, { status: 301, headers: { location: `${url.origin}/s/${r.shareId}/` } })
-  const row = await getShare(env, r.shareId)
-
-  if (r.path === '/api/state') {
-    if (req.headers.get('x-proto') !== '1') return fail(400, 'X-Proto: 1 is required.')
-    if (!row) return fail(404, 'No such share.')
-    if (row.deleted_at) return fail(410, 'This share was removed.')
-    return json({ version: row.version, updatedAt: row.updated_at, title: row.title })
+  const pathForm = onBase(url, env)
+  if (r.path === '/api' || r.path.startsWith('/api/')) {
+    const row = await env.DB.prepare('SELECT s.*, o.name AS owner_name FROM shares s JOIN owners o ON o.id = s.owner_id WHERE s.id = ?').bind(r.shareId).first()
+    return viewerApi(req, env, url, row, r.path, pathForm)
   }
+  if (req.method !== 'GET' && req.method !== 'HEAD') return new Response(null, { status: 405, headers: { allow: 'GET, HEAD' } })
+  if (pathForm && r.path === '') return new Response(null, { status: 301, headers: { location: `${url.origin}/s/${r.shareId}/` } })
+  const row = await getShare(env, r.shareId)
+  if (r.path === '/_in/auth') return unavailable(row) || ticketIn(env, url, row, pathForm)
   if (r.path !== '/') return page('notfound', { lang: row?.lang })
   const gone = unavailable(row)
   if (gone) return gone
