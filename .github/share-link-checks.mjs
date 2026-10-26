@@ -52,11 +52,16 @@ export async function shareLinkChecks({ proto, app, local, fail }) {
   writeFileSync(join(protos, 'lineage-src/parts.tsx'), `export function Badge() { return <em>MARK-HELPER</em> }\n`)
 
   proto(['add', 'share-link', '--title', 'Share link', '--ask', 'ASK-META-SECRET-p4', '--variants', 'A:One,B:Two,C:Current,D:Four,E:Five'])
-  for (const id of ['A', 'D', 'E']) writeFileSync(join(protos, `share-link/${id}.tsx`), `export default function ${id}() { return <main>MARK-${id}</main> }\n`)
+  for (const id of ['A', 'D', 'E']) writeFileSync(join(protos, `share-link/${id}.tsx`), `export default function ${id}() { return <main className="mt-[137px]">MARK-${id}</main> }\n`)
+  // A part of the owner's project, compiled in through @project: the review names it.
+  const project = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8')).project
+  mkdirSync(join(project, 'kit'), { recursive: true })
+  writeFileSync(join(project, 'kit', 'Badge2.tsx'), `export function Badge2() { return <strong>MARK-PROJECT</strong> }\n`)
   writeFileSync(join(protos, 'share-link/hero.png'), png(3000, 2000, (x, y) => [(x * 7 + y) & 255, (x ^ y) & 255, ((x * y) >> 6) & 255]))
   writeFileSync(join(protos, 'share-link/B.tsx'), `import hero from './hero.png'
 import { Badge } from '../lineage-src/parts'
-export default function B() { return <main><h1>MARK-B</h1><Badge /><img src={hero} alt="" /></main> }
+import { Badge2 } from '@project/kit/Badge2'
+export default function B() { return <main><h1>MARK-B</h1><Badge /><Badge2 /><img src={hero} alt="" /></main> }
 `)
   writeFileSync(join(protos, 'share-link/tile.png'), png(16, 16, (x, y) => ((x >> 2) + (y >> 2)) % 2 ? [20, 120, 220] : [240, 240, 240]))
   writeFileSync(join(protos, 'share-link/C.css'), `.share-link-tile { background: url(./tile.png); min-height: 64px }\n`)
@@ -103,11 +108,13 @@ export default function C() { return <main className="share-link-tile"><h1>MARK-
   const pngs = [...html.matchAll(/data:image\/png;base64,[A-Za-z0-9+/=]*/g)].map(m => m[0].length)
   assert(pngs.every(n => n <= 10 * 1024), `webp: a PNG of ${Math.max(...pngs)} characters is inlined as it is`)
   assert(/\.share-link-tile\{[^}]*url\(["']?data:/.test(html.replace(/\s+/g, '')), 'css url inlined: C\'s tile is not a data: URL')
-  const project = session.project
   for (const [what, text] of [['the project path', project], ['the project\'s real path', realpathSync(project)], ['the session\'s real path', realpathSync(app)], ['the home folder', homedir()], ['the tailnet', 'ts.net'], ['the session asks', 'ASK-SESSION-SECRET-r8'], ['the prototype ask', 'ASK-META-SECRET-p4']]) assert(!html.includes(text), `no session secrets: the share contains ${what} (${text})`)
   assert(html.includes('MARK-SLOT-B') && !html.includes('MARK-SLOT-C') && html.includes('slot-src/B'), 'slot pick baked: the share does not carry the plugged-in variant alone')
   assert(html.includes('/src/protos/share-link/C.tsx') && !html.includes('/src/protos/share-link/A.tsx'), 'stamps: C\'s elements carry no source stamp')
   assert(one.review.warn.some(w => w.code === 'real-screens' && w.message.includes('share-link/C')), `review: the Current variant is not reported (${JSON.stringify(one.review)})`)
+  assert(html.includes('MARK-PROJECT') && one.review.warn.some(w => w.code === 'project-code' && w.message.includes('Badge2.tsx')), `review: the @project file is not reported (${JSON.stringify(one.review.warn)})`)
+  // Not a check yet: Tailwind scans the whole session, so unshared variants' classes reach the stylesheet.
+  console.log(`share link: an unshared variant's Tailwind class ${html.includes('137px') ? 'is' : 'is not'} in the share's CSS`)
   assert(!one.review.block.length, `review: the smoke share is blocked: ${JSON.stringify(one.review.block)}`)
 
   assert(statSync(join(app, 'dist')).mtimeMs === distBefore.dir && statSync(join(app, 'dist', 'index.html')).mtimeMs === distBefore.file && readFileSync(join(app, 'dist', 'index.html'), 'utf8') === 'DIST-BEFORE', 'build leaves the session alone: dist/ changed')
@@ -117,6 +124,6 @@ export default function C() { return <main className="share-link-tile"><h1>MARK-
   assert(two.html.includes('MARK-B'), 'publishes are serialized: the second build failed')
   assert(one.ended <= two.started || two.ended <= one.started, `publishes are serialized: the builds overlapped (${one.started}-${one.ended} and ${two.started}-${two.ended})`)
   assert(!existsSync(join(app, '.proto', 'shares', '.lock')), 'publishes are serialized: the lock was left behind')
-  assert(!readdirSync(app).some(f => f.startsWith('.share-')), 'build leaves the session alone: a temp file was left in the session')
+  assert(!readdirSync(join(app, '.proto', 'shares')).length, 'build leaves the session alone: something was left in .proto/shares')
   console.log('share link: one-file build checks passed')
 }
