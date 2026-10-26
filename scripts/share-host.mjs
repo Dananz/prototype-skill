@@ -7,7 +7,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:net'
+import { connect, createServer } from 'node:net'
 import { homedir, hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -81,9 +81,19 @@ export function getToken(name) {
   try { return readFileSync(tokenFile(name), 'utf8').trim() || null } catch { return null }
 }
 
+/**
+ * The `security` call that stores a token: the command goes in on stdin (`security -i`), so the
+ * token never shows in `ps` the way an argument would. Tokens are base64url, so nothing needs quoting.
+ */
+export function keychainAdd(name, token) {
+  if (!/^[A-Za-z0-9_-]+$/.test(token) || !/^[A-Za-z0-9_-]+$/.test(name)) throw new ShareError('The owner token or host name has characters the Keychain command cannot take')
+  return { args: ['-i'], input: `add-generic-password -U -a prototype -s ${service(name)} -w ${token}\n` }
+}
+
 export function setToken(name, token) {
   if (inKeychain()) {
-    const r = spawnSync('security', ['add-generic-password', '-U', '-a', 'prototype', '-s', service(name), '-w', token], { encoding: 'utf8' })
+    const { args, input } = keychainAdd(name, token)
+    const r = spawnSync('security', args, { input, encoding: 'utf8' })
     if (r.status !== 0) throw new ShareError(`Could not save the owner token in the Keychain: ${r.stderr.trim()}`)
     return
   }
@@ -97,10 +107,29 @@ export function setToken(name, token) {
 const portOf = host => Number(new URL(host.url).port || 80)
 const pidFile = () => join(hostDir(), 'host.pid')
 const alive = pid => { try { process.kill(pid, 0); return true } catch (e) { return e.code === 'EPERM' } }
-// A pid from the file is ours only while it is still a wrangler: pids are reused.
-const ours = pid => !!pid && alive(pid) && /wrangler/.test(spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }).stdout || '')
+const configFile = () => join(hostDir(), 'wrangler.jsonc')
+/** Whether a command line is this host's wrangler: started with `-c` and this host's own config. */
+export const runsConfig = (command, config) => ` ${command.trim()} `.includes(` -c ${config} `)
+// A pid from the file is ours only while it is still the wrangler running this host's config: pids
+// are reused, and the user may run a wrangler dev of their own (-ww: the whole line, untruncated).
+const ours = pid => !!pid && alive(pid) && runsConfig(spawnSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }).stdout || '', configFile())
 const healthy = async port => { try { return (await fetch(`http://127.0.0.1:${port}/_health`, { signal: AbortSignal.timeout(2000) })).ok } catch { return false } }
-const portFree = port => new Promise(ok => { const s = createServer().once('error', () => ok(false)).listen(port, '127.0.0.1', () => s.close(() => ok(true))) })
+// Nothing answers at host:port. Refused, or an address this machine doesn't have (no IPv6), is free.
+const unanswered = (host, port) => new Promise(ok => {
+  const s = connect({ host, port })
+  s.setTimeout(1000, () => { s.destroy(); ok(false) })
+  s.once('connect', () => { s.destroy(); ok(false) })
+  s.once('error', e => ok(e.code !== 'ETIMEDOUT'))
+})
+const binds = port => new Promise(ok => { const s = createServer().once('error', () => ok(false)).listen(port, '127.0.0.1', () => s.close(() => ok(true))) })
+/**
+ * A port is free only when nothing listens on it by either loopback name. A bind on 127.0.0.1
+ * alone succeeds beside a server on ::, ::1 or 0.0.0.0, and browsers try ::1 first for localhost,
+ * so a link would reach that other server.
+ */
+export async function portFree(port) {
+  return await unanswered('127.0.0.1', port) && await unanswered('::1', port) && await binds(port)
+}
 
 /** Whether the local host this Mac knows is up and answering. */
 export async function localRunning(host = readHosts().find(h => h.name === LOCAL)) {
@@ -153,7 +182,7 @@ export async function startLocal({ name } = {}) {
   if (!port) throw new ShareError(`Ports ${PORTS[0]} to ${PORTS[1]} are all taken on this Mac. Free one and run the command again.`)
   const pathMode = known?.pathMode ?? !await subdomainsResolve(port)
   const base = `localhost:${port}`
-  const dir = hostDir(), state = join(dir, 'state'), config = join(dir, 'wrangler.jsonc')
+  const dir = hostDir(), state = join(dir, 'state'), config = configFile()
   mkdirSync(state, { recursive: true })
   // Locally `--persist-to` makes the KV namespace and the database itself, so their ids are any string.
   const template = readFileSync(join(SKILL, 'host', 'wrangler.template.jsonc'), 'utf8')

@@ -460,10 +460,11 @@ async function hostChecks({ app, openPage, fail }) {
   const again = share(['share-link/2', '--yes'])
   assert(again.status === 0 && (await answer(linkIn(again.out) || 'http://0/')).status === 200, `host down: the share after a stop exited ${again.status}`)
 
-  // 8787 taken by something else: the host moves to the next free port, and the link with it.
+  // 8787 taken by something else: the host moves to the next free port, and the link with it. The
+  // other server listens on :: (as many dev servers do), which a bind on 127.0.0.1 alone can't see.
   share(['stop'])
   dummy = createServer((req, res) => res.end('not the host'))
-  const taken = await new Promise(ok => dummy.once('error', () => { dummy = null; ok(false) }).listen(8787, '127.0.0.1', () => ok(true)))
+  const taken = await new Promise(ok => dummy.once('error', () => { dummy = null; ok(false) }).listen({ port: 8787, host: '::' }, () => ok(true)))
   if (!taken) console.log('share host: 8787 is already taken on this machine; the port check runs against that')
   const moved = share(['share-link/3', '--yes'])
   const movedLink = linkIn(moved.out)

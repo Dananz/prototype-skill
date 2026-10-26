@@ -547,3 +547,35 @@ test('production keeps one name', async () => {
   const p = await publish(paths)
   assert.equal(await target(`https://prtype.dev/${p.id}`, paths), `https://prtype.dev/s/${p.id}/`)
 })
+
+// The local host's own checks, none of which touch the Keychain or start a host.
+import { createServer as tcpServer } from 'node:net'
+import { keychainAdd, portFree, runsConfig } from '../scripts/share-host.mjs'
+
+test('the owner token reaches the Keychain on stdin, never on the command line', () => {
+  const token = 'Ab9_-' + 'x'.repeat(38)
+  const { args, input } = keychainAdd('local', token)
+  assert.deepEqual(args, ['-i'])
+  assert.ok(!args.join(' ').includes(token))
+  assert.equal(input, `add-generic-password -U -a prototype -s prototype-share-local -w ${token}\n`)
+  assert.throws(() => keychainAdd('local', 'two words'), /token/)
+  assert.throws(() => keychainAdd('local', 'a"b'), /token/)
+})
+test('a port is free only when nothing listens on it by any loopback name', async () => {
+  const listen = host => new Promise((ok, no) => { const s = tcpServer().once('error', no).listen(0, host, () => ok(s)) })
+  for (const host of ['127.0.0.1', '::1', '::', '0.0.0.0']) {
+    let s
+    try { s = await listen(host) } catch { continue } // no IPv6 on this machine
+    const port = s.address().port
+    assert.equal(await portFree(port), false, `a listener on ${host} went unseen`)
+    await new Promise(ok => s.close(ok))
+    assert.equal(await portFree(port), true, `${port} is still taken after ${host} closed`)
+  }
+})
+test('the host stops only its own wrangler', () => {
+  const config = '/Users/x/.prototypes/host/wrangler.jsonc'
+  assert.ok(runsConfig(`/opt/node /tools/wrangler.js dev -c ${config} --ip 127.0.0.1 --port 8787`, config))
+  assert.ok(!runsConfig('/opt/node /tools/wrangler.js dev -c /Users/x/app/wrangler.jsonc --port 8787', config))
+  assert.ok(!runsConfig('node wrangler dev', config))
+  assert.ok(!runsConfig(`/opt/node /tools/wrangler.js dev -c ${config}.bak`, config))
+})
