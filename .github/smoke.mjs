@@ -35,6 +35,7 @@ import { keyboardColumnsChecks } from './keyboard-columns-checks.mjs'
 import { slotChecks } from './slot-checks.mjs'
 import { settingsChecks } from './settings-checks.mjs'
 import { shareChecks } from './share-checks.mjs'
+import { shareLinkChecks } from './share-link-checks.mjs'
 import { tweaksChecks } from './tweaks-checks.mjs'
 import { tweaksRegistryChecks } from './tweaks-registry-checks.mjs'
 import { middleDragChecks } from './middle-drag-checks.mjs'
@@ -225,6 +226,20 @@ if (process.argv.includes('--broken-global-only')) {
   console.log('OK: focused broken-global checks')
   process.exit(0)
 }
+if (process.argv.includes('--share-link-only')) {
+  await shareLinkChecks({ proto, app, local, openPage, fail })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused share link checks')
+  process.exit(0)
+}
+if (process.argv.includes('--slots-only')) {
+  await slotChecks({ proto, app, local, openPage, fail })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused slot checks')
+  process.exit(0)
+}
 if (process.argv.includes('--compare-comments-only')) {
   await commentCompareChecks({ proto, app, openPage, fail })
   proto(['rm'])
@@ -242,6 +257,7 @@ await virtualWindowChecks({ local, openPage, fail })
 await virtualReactChecks({ proto, app, local, openPage, fail })
 await virtualVariantsChecks({ proto, app, local, openPage, fail })
 await shareChecks({ proto, app, local, openPage, fail })
+await shareLinkChecks({ proto, app, local, openPage, fail })
 await settingsChecks({ proto, app, local, openPage, fail })
 await tweaksRegistryChecks({ local, openPage, fail })
 await tweaksChecks({ proto, app, local, openPage, fail })

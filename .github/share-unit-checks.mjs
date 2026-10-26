@@ -5,9 +5,11 @@ import { ShareError, parseScope, trimMeta, trimSession } from '../app/share/scop
 import { review } from '../app/share/review.mjs'
 import { stampSource, stampsPlugin } from '../app/share/stamps.mjs'
 import { imagesPlugin } from '../app/share/images.mjs'
+import { imageNames, loadSharp } from '../app/share/plugin.mjs'
+import { inlineHtml } from '../app/share/inline.mjs'
 import { createRequire } from 'node:module'
-import { existsSync, readdirSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const pricing = { id: 'pricing', variants: ['A', 'B', 'C', 'D', 'E'], archived: false }
@@ -230,4 +232,36 @@ test('imagesPlugin turns a photo upright before it measures it', async () => {
   await imagesPlugin({ sharp, root: '/s' }).load('/s/phone.jpg')
   // Stored 3000 wide but shown 1800 wide (a quarter turn), so 1800 is the width and it is not enlarged.
   assert.deepEqual(calls, ['rotate', 'metadata', 'resize 1800'])
+})
+test('imageNames keeps literal names and notices worked-out ones', () => {
+  const plain = imageNames([['a/A.tsx', `const x = image('hero'); const y = image("logo") ?? z; const t = image(\`tile\`); const bg = 'background-image(none)'`]])
+  assert.deepEqual([...plain.names].sort(), ['hero', 'logo', 'tile'])
+  assert.deepEqual(plain.dynamic, [])
+  const worked = imageNames([['a/B.tsx', 'image(`kiosk-${id}`)'], ['a/C.tsx', 'image(name)'], ['a/D.tsx', "image('ok')"]])
+  assert.deepEqual(worked.dynamic, ['a/B.tsx', 'a/C.tsx'])
+})
+test('inlineHtml puts the script and stylesheet in the page, and refuses any other file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'inline-check-'))
+  try {
+    mkdirSync(join(dir, 'assets'))
+    writeFileSync(join(dir, 'index.html'), '<html><head><script type="module" crossorigin src="/assets/index-a1.js"></script><link rel="stylesheet" crossorigin href="/assets/index-b2.css"></head><body></body></html>')
+    writeFileSync(join(dir, 'assets/index-a1.js'), 'const s = "</script>"; console.log("$&", s)')
+    writeFileSync(join(dir, 'assets/index-b2.css'), 'body{color:red}')
+    const html = inlineHtml(dir)
+    assert.equal(html, '<html><head><script type="module">const s = "<\\/script>"; console.log("$&", s)</script><style>body{color:red}</style></head><body></body></html>')
+    writeFileSync(join(dir, 'assets/logo.svg'), '<svg/>')
+    assert.throws(() => inlineHtml(dir), e => e instanceof ShareError && e.message.includes('assets/logo.svg'))
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+const sharp = loadSharp()
+test('imagesPlugin with the real sharp turns an orientation-6 photo upright', { skip: sharp ? false : 'sharp is not installed in ~/.prototypes/share-tools' }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'images-check-'))
+  try {
+    const file = join(dir, 'phone.jpg')
+    writeFileSync(file, await sharp({ create: { width: 30, height: 20, channels: 3, background: '#2563eb' } }).jpeg().withMetadata({ orientation: 6 }).toBuffer())
+    const code = await imagesPlugin({ sharp, root: dir }).load(file)
+    const webp = Buffer.from(code.match(/base64,([^"]+)/)[1], 'base64')
+    const { width, height, format } = await sharp(webp).metadata()
+    assert.deepEqual({ width, height, format }, { width: 20, height: 30, format: 'webp' })
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })

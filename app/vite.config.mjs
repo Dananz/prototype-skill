@@ -1,4 +1,6 @@
 import { readFileSync, realpathSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import tailwind from '@tailwindcss/vite'
 import { prototypeServer } from './server.mjs'
@@ -12,8 +14,19 @@ const plugins = { react: '@vitejs/plugin-react', vue: '@vitejs/plugin-vue' }
 const options = { vue: { template: { compilerOptions: { nodeTransforms: [vueSource] } } } }
 const framework = (await import(plugins[session.stack])).default(options[session.stack])
 
-export default defineConfig({
-  plugins: [framework, tailwind(), prototypeServer(session), reactSource()],
+// A share (`vite build --mode share`, run by share/build.mjs) builds the same app with its
+// modules cut down to the variants being shared; the scope and the share's facts come in a JSON
+// file, and the dev server's own plugins stay out.
+async function shareMode() {
+  const { sharePlugins, loadSharp } = await import('./share/plugin.mjs')
+  const file = process.env.PROTO_SHARE_SCOPE, outDir = process.env.PROTO_SHARE_OUT
+  if (!file || !outDir) throw new Error('a share build needs PROTO_SHARE_SCOPE and PROTO_SHARE_OUT')
+  const { scope, info } = JSON.parse(readFileSync(file, 'utf8'))
+  return sharePlugins({ scope, info, session, sharp: loadSharp(), appDir: fileURLToPath(new URL('.', import.meta.url)), outDir, report: join(dirname(file), 'report.json') })
+}
+
+export default defineConfig(async ({ mode }) => ({
+  plugins: [framework, tailwind(), ...(mode === 'share' ? await shareMode() : [prototypeServer(session), reactSource()])],
   // An inline config stops Vite from loading the project's own PostCSS config from above.
   css: { postcss: {} },
   resolve: { alias: { '@project': session.project } },
@@ -39,4 +52,4 @@ export default defineConfig({
     // The server's own log and pid live in .proto/; changes there are not edits.
     watch: { ignored: ['**/.proto/**'] },
   },
-})
+}))
