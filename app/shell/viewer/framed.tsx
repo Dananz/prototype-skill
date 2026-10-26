@@ -6,7 +6,7 @@
 //
 // What a frame's document hears stays in it, so it tells the viewer outside, by message (a share
 // opened from disk has an opaque origin, where the viewer can't reach into its frame): Esc (back to
-// the desk) unless the design used it, the viewer's zoom keys, and a pinch or ⌘/Ctrl+wheel, which it keeps from zooming the
+// the desk) unless the design used it, the viewer's zoom keys and C (pin mode), and a pinch or ⌘/Ctrl+wheel, which it keeps from zooming the
 // browser's page and hands on as the frame's zoom.
 import { createRoot } from 'react-dom/client'
 import { MountsCtx, Mounted, type Mounts, type Screen } from './ui'
@@ -19,7 +19,7 @@ export type FrameMsg =
   | { protoViewer: 'ready' }
   | { protoViewer: 'esc' }
   | { protoViewer: 'press' }
-  | { protoViewer: 'key'; key: '0' | '1' | '+' | '-' }
+  | { protoViewer: 'key'; key: '0' | '1' | '+' | '-' | 'c' }
   | { protoViewer: 'zoom'; by: number }
   | { protoViewer: 'theme'; dark: boolean }
 
@@ -106,6 +106,8 @@ export function createFramed(el: HTMLElement, screen: Screen | undefined, mounts
     }
     const k = !e.defaultPrevented && zoomKey(e)
     if (k) { e.preventDefault(); tell({ protoViewer: 'key', key: k }) }
+    // C: the viewer's pin mode, on and off.
+    else if ((e.key === 'c' || e.key === 'C') && !e.defaultPrevented && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(e.target)) tell({ protoViewer: 'key', key: 'c' })
   })
   // A press in the design is a press outside the viewer's popups, which can't hear it from here.
   addEventListener('pointerdown', () => tell({ protoViewer: 'press' }), true)

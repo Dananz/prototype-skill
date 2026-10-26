@@ -16,6 +16,17 @@ import x from '@phosphor-icons/core/assets/regular/x.svg?raw'
 import github from '@phosphor-icons/core/assets/regular/github-logo.svg?raw'
 import signOut from '@phosphor-icons/core/assets/regular/sign-out.svg?raw'
 import center from '@phosphor-icons/core/assets/regular/frame-corners.svg?raw'
+import chat from '@phosphor-icons/core/assets/bold/chat-circle-bold.svg?raw'
+import chatFill from '@phosphor-icons/core/assets/fill/chat-circle-fill.svg?raw'
+import chatText from '@phosphor-icons/core/assets/bold/chat-circle-text-bold.svg?raw'
+import chatDots from '@phosphor-icons/core/assets/bold/chat-circle-dots-bold.svg?raw'
+import send from '@phosphor-icons/core/assets/fill/paper-plane-tilt-fill.svg?raw'
+import circle from '@phosphor-icons/core/assets/bold/circle-bold.svg?raw'
+import seen from '@phosphor-icons/core/assets/bold/eye-bold.svg?raw'
+import working from '@phosphor-icons/core/assets/bold/circle-notch-bold.svg?raw'
+import done from '@phosphor-icons/core/assets/fill/check-circle-fill.svg?raw'
+import trash from '@phosphor-icons/core/assets/regular/trash.svg?raw'
+import close from '@phosphor-icons/core/assets/bold/x-bold.svg?raw'
 import type { Variant } from '../shell'
 import { ERROR_CLASS } from '../building'
 import { SIZE_PATHS } from '../view/sizes'
@@ -28,11 +39,11 @@ export const iconBtn = 'inline-grid size-8 place-items-center rounded-lg text-zi
 /** A popup that opens from its anchor: scales and fades in 150 ms. */
 export const popup = `${card} origin-[var(--transform-origin)] p-1 shadow-2xl outline-none transition-[opacity,scale] duration-150 data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 motion-reduce:transition-none`
 
-const ICONS = { grid, 'caret-down': caretDown, 'caret-left': caretLeft, 'caret-right': caretRight, check, minus, plus, info, reload, eye, x, github, 'sign-out': signOut, center }
+const ICONS = { grid, 'caret-down': caretDown, 'caret-left': caretLeft, 'caret-right': caretRight, check, minus, plus, info, reload, eye, x, github, 'sign-out': signOut, center, chat, 'chat-fill': chatFill, 'chat-text': chatText, 'chat-dots': chatDots, send, circle, seen, working, done, trash, close }
 export type IconName = keyof typeof ICONS
-/** One of Phosphor's own files, at the size the class gives. Carets along the line mirror in a right-to-left page. */
+/** One of Phosphor's own files, at the size the class gives. Carets along the line (and the send arrow) mirror in a right-to-left page. */
 export function Icon({ name, className = 'size-4' }: { name: IconName; className?: string }) {
-  const along = name === 'caret-left' || name === 'caret-right' ? ' rtl:-scale-x-100' : ''
+  const along = name === 'caret-left' || name === 'caret-right' || name === 'send' ? ' rtl:-scale-x-100' : ''
   return <span aria-hidden="true" className={`inline-grid shrink-0 place-items-center [&>svg]:size-full ${className}${along}`} dangerouslySetInnerHTML={{ __html: ICONS[name] }} />
 }
 
@@ -71,8 +82,9 @@ export function closePopups() {
 
 /** One shared design: its route (`pricing/B`), its number and name, and its module. */
 export type Screen = { key: string; n: number; name: string; v: Variant }
-/** What the desk can be asked to do: fly to a design, Fit, 100 %, or zoom by a factor. */
-export type Api = { show: (key: string) => void; fit?: () => void; actual?: () => void; by?: (f: number) => void }
+/** What the desk can be asked to do: fly to a design, Fit, 100 %, zoom by a factor, or bring a
+ *  pin into the part of the view a grown bar leaves open (inset: the bar's height). */
+export type Api = { show: (key: string) => void; fit?: () => void; actual?: () => void; by?: (f: number) => void; toPin?: (id: string, inset?: number) => void }
 
 /* ---------------------------------------------------------------- zoom state, outside React */
 

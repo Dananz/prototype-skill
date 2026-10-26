@@ -12,9 +12,14 @@
 // row of the desk lines up and nothing in it reacts. The desk is for looking across designs: a drag
 // anywhere or a plain wheel moves it, ⌘/Ctrl+wheel and a pinch zoom it. A click on a preview or its
 // label (or Enter on a focused one) opens that design full size and live (full.tsx).
-import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react'
-import { t } from '../i18n'
-import { Mounted, type Api, type Screen, type Store } from './ui'
+//
+// Comments (phase 1): a count badge on each label opens the bar on that design's comments, and the
+// pins sit on the previews, the same size on screen at any zoom; a pin opens the bar on its comment.
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react'
+import { t, tn } from '../i18n'
+import { useTalk } from './comments'
+import { Pins } from './pins'
+import { Icon, Mounted, type Api, type Screen, type Store } from './ui'
 
 const GAP = 160 // between artboards, in artboard pixels
 const LABEL = 34 // the label above an artboard, in screen pixels at any zoom
@@ -26,13 +31,16 @@ const PREVIEW = 'pointer-events-none h-full overflow-hidden'
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 
-export function Desk({ screens, size, phone, sel, store, api, onCentre, open, hidden }: {
+export function Desk({ screens, size, phone, sel, store, api, onCentre, open, hidden, onBadge }: {
   screens: Screen[]; size: [number, number]; phone: boolean; sel: string; store: Store; api: MutableRefObject<Api | null>; onCentre: (key: string) => void
   /** Opens a design full size. */
   open: (key: string) => void
   /** A design is open full size over the desk: the desk keeps its place and takes no keys. */
   hidden: boolean
+  /** A label's comment count was pressed: the bar opens on that design's comments. */
+  onBadge: (key: string) => void
 }) {
+  const talk = useTalk()
   const [W, H] = size
   const cols = Math.min(screens.length, 5), rows = Math.ceil(screens.length / cols)
   const scroller = useRef<HTMLDivElement>(null)
@@ -58,6 +66,7 @@ export function Desk({ screens, size, phone, sel, store, api, onCentre, open, hi
       w.style.zoom = String(nz)
       w.style.setProperty('--z', String(nz))
       w.style.setProperty('--inv', String(1 / nz))
+      w.style.setProperty('--pin', String(Math.max(1, 0.75 / nz)))
       store.set({ z: nz, fit: fitting })
     }
     const view = () => {
@@ -128,7 +137,17 @@ export function Desk({ screens, size, phone, sel, store, api, onCentre, open, hi
       fly(1, p.x, p.y)
     }
     const by = (f: number) => { manual(); const { cx, cy } = view(), p = toWorld(cx, cy); fly(clampZ(z * f), p.x, p.y) }
-    api.current = { show, fit: () => fitAll(true), actual, by }
+    /* Bring a pin into the part of the desk the grown bar leaves open (inset: the bar's height). */
+    const toPin = (id: string, inset = 0) => {
+      const pin = w.querySelector<HTMLElement>(`[data-pin="${CSS.escape(id)}"]`)
+      if (!pin) return
+      manual()
+      const r = w.getBoundingClientRect(), b = pin.getBoundingClientRect(), { r: sr, cy } = view()
+      const want = sr.top + Math.max(80, (sr.height - inset - 24) / 2)
+      const tz = Math.max(z, Math.min(0.75, MAX_Z))
+      fly(tz, (b.left + b.width / 2 - r.left) / z, (b.bottom - r.top) / z - 14 / tz + (cy - want) / tz)
+    }
+    api.current = { show, fit: () => fitAll(true), actual, by, toPin }
 
     /* Which designs run: the selected one, then those near the view, nearest first, up to 8. */
     const near = new Set<string>()
@@ -304,6 +323,7 @@ export function Desk({ screens, size, phone, sel, store, api, onCentre, open, hi
           style={{ gridTemplateColumns: `repeat(${cols}, ${W}px)`, columnGap: GAP, rowGap: GAP * 1.5 }}>
           {screens.map(s => {
             const on = s.key === sel, running = live.has(s.key)
+            const count = talk.notes.filter(c => c.variant === s.key).length
             return (
               <section key={s.key} data-board={s.key} aria-label={`#${s.n} ${s.name}`} className="shrink-0" style={{ width: W }}>
                 {/* The label, as on a design canvas. It stays the same size on screen at any zoom. */}
@@ -312,6 +332,12 @@ export function Desk({ screens, size, phone, sel, store, api, onCentre, open, hi
                     <span className={`font-semibold tabular-nums transition-colors motion-reduce:transition-none ${on ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400 dark:text-zinc-500'}`}>#{s.n}</span>
                     <span className={`truncate transition-colors motion-reduce:transition-none ${on ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'}`}>{s.name}</span>
                   </button>
+                  {count > 0 && (
+                    <button data-count-badge onClick={() => onBadge(s.key)} aria-label={tn(count, '{n} comment on #{v}', '{n} comments on #{v}', { v: s.n })}
+                      className="ms-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-zinc-900 px-2 text-[11px] font-semibold text-white tabular-nums dark:bg-white dark:text-zinc-900">
+                      <Icon name="chat-fill" className="size-3" />{count}
+                    </button>
+                  )}
                 </div>
                 <div data-frame role="button" tabIndex={0} aria-label={t('Open #{n} {name}', { n: s.n, name: s.name })}
                   onClick={() => open(s.key)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(s.key) } }}
@@ -322,6 +348,7 @@ export function Desk({ screens, size, phone, sel, store, api, onCentre, open, hi
                     boxShadow: `0 0 0 calc(${on ? 2 : 1}px * var(--inv, 1)) ${on ? '#0ea5e9' : 'var(--ring)'}, 0 calc(24px * var(--inv, 1)) calc(60px * var(--inv, 1)) calc(-24px * var(--inv, 1)) rgba(0,0,0,.45)`,
                   }}>
                   <Mounted v={s.v} live={running} inert className={PREVIEW} />
+                  {running && <DeskPins board={s.key} />}
                   {!running && (
                     <div aria-hidden="true" className="absolute inset-0 grid place-items-center bg-zinc-50 text-[40px] text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500">
                       <span><span className="tabular-nums">#{s.n}</span> <span className="font-semibold text-zinc-500 dark:text-zinc-400">{s.name}</span></span>
@@ -335,4 +362,10 @@ export function Desk({ screens, size, phone, sel, store, api, onCentre, open, hi
       </div>
     </div>
   )
+}
+
+/** The pins on one preview. */
+function DeskPins({ board }: { board: string }) {
+  const mount = useCallback(() => document.querySelector<HTMLElement>(`[data-board="${CSS.escape(board)}"] [data-frame] [data-mount]`), [board])
+  return <Pins variant={board} mount={mount} kind="desk" />
 }

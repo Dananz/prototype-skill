@@ -6,8 +6,9 @@
 // session, tweaks at their defaults. A design open full size runs in a frame of this same page at a
 // device's size (full.tsx); that frame is this page too, opened with ?frame=, and draws only the
 // design (framed.tsx). Who is looking comes from the host (api/config, api/me): Sign in with GitHub,
-// or the signed-in viewer at the top right. Comments (the bar's second row, pins, counts) come next.
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+// or the signed-in viewer at the top right. Comments (comments.tsx, pins.tsx): the bar's second row,
+// which grows into the comments of the design in view, pins on the designs, counts on the labels.
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Proto, Session, Variant } from '../shell'
 import { shareInfo, shareScope } from '../mode'
@@ -20,6 +21,7 @@ import { Header, type Account, type Appearance, type Me } from './header'
 import { Phone } from './phone'
 import { clampZoom, loadDevice, saveDevice, type Device } from './device'
 import { createFramed, frameKey, frameMsg, holdZoom, zoomKey } from './framed'
+import { TalkCtx, hosted, useNotes, type Note, type Placing, type Talk } from './comments'
 import { Icon, MountsCtx, closePopups, face, makeStore, surface, type Api, type Mounts, type Screen } from './ui'
 
 type Mount = (el: HTMLElement, component: unknown) => () => void
@@ -75,15 +77,16 @@ const ask = (path: string, init?: RequestInit) => fetch(path, { ...init, headers
 /** Whether comments are on for this link, and who is signed in: asked of the host once, at start. */
 function useAccount(): Account {
   const [comments, setComments] = useState(false)
+  const [owner, setOwner] = useState('')
   const [me, setMe] = useState<Me | null | undefined>(undefined)
   const [signIn] = useState(signInUrl)
   useEffect(() => {
     if (!/^https?:$/.test(location.protocol)) return setMe(null)
-    ask('api/config').then(c => setComments(c?.comments === true), () => {})
+    ask('api/config').then(c => { setComments(c?.comments === true); if (typeof c?.owner === 'string') setOwner(c.owner) }, () => {})
     ask('api/me').then(m => setMe(m && typeof m.login === 'string' ? m : null), () => setMe(null))
   }, [])
   const signOut = () => { void ask('api/signout', { method: 'POST' }).catch(() => {}).finally(() => setMe(null)) }
-  return { me, comments, signIn, signOut }
+  return { me, comments, signIn, signOut, owner }
 }
 
 /** Whether a popup of the viewer's own is open (Base UI marks its trigger). */
@@ -118,6 +121,7 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   useEffect(() => { if (!screens.some(s => s.key === sel)) setSel(screens[0].key) })
   const isNewer = useSyncExternalStore(newer.sub, newer.get)
   const facts = { owner: shareInfo?.owner ?? '', version: shareInfo?.version ?? 1, updatedAt: shareInfo?.updatedAt ?? new Date().toISOString() }
+  const bar = useRef<HTMLDivElement>(null)
 
   // A design opened full size from the desk, and whether it is on its way back into its preview.
   const [open, setOpen] = useState<string | null>(null)
@@ -150,8 +154,8 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
     at.current = { ...at.current, z: k === '1' ? 1 : at.current.fit }
     patch({ zoom: k === '1' ? 100 : 0 })
   }
-  const now = useRef({ full, back, zoomBy, zoomKeyed })
-  now.current = { full, back, zoomBy, zoomKeyed }
+  const now = useRef({ full, back, zoomBy, zoomKeyed, talkEsc: () => false, togglePins: () => {} })
+  now.current = { ...now.current, full, back, zoomBy, zoomKeyed }
   useEffect(() => { if (!full) setMenu(false) }, [full])
   // Esc always goes back to the desk, a popup of the viewer's own closing first (Base UI closes it).
   // Heard before anything else, so the popup is still open when it is asked. The zoom keys, ⌘/Ctrl+
@@ -159,8 +163,14 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const n = now.current
+      if (e.key === 'Escape') {
+        if (popupOpen(root.current)) return
+        if (n.talkEsc()) { e.preventDefault(); return }
+        if (n.full) n.back()
+        return
+      }
       if (!n.full) return
-      if (e.key === 'Escape') { if (!popupOpen(root.current)) n.back(); return }
+      if ((e.key === 'c' || e.key === 'C') && !e.defaultPrevented && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target as Element | null)?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) { e.preventDefault(); n.togglePins(); return }
       const k = !e.defaultPrevented && zoomKey(e)
       if (k) { e.preventDefault(); n.zoomKeyed(k) }
     }
@@ -169,9 +179,9 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
       const f = document.querySelector<HTMLIFrameElement>('[data-full] iframe')
       if (!m || !n.full || !f || e.source !== f.contentWindow) return
       // Esc from the design closes an open popup of the viewer first, as Esc out here does; a press in it closes them.
-      if (m.protoViewer === 'esc') { if (!closePopups() && !popupOpen(root.current)) n.back() }
+      if (m.protoViewer === 'esc') { if (!closePopups() && !popupOpen(root.current) && !n.talkEsc()) n.back() }
       else if (m.protoViewer === 'press') closePopups()
-      else if (m.protoViewer === 'key') n.zoomKeyed(m.key)
+      else if (m.protoViewer === 'key') { if (m.key === 'c') n.togglePins(); else n.zoomKeyed(m.key) }
       else if (m.protoViewer === 'zoom') n.zoomBy(m.by)
     }
     window.addEventListener('keydown', key, true)
@@ -182,6 +192,53 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   // Another prototype chosen in the header goes back to its desk.
   useEffect(() => { setOpen(null); setClosing(false) }, [protoId])
 
+  // Comments: the link's, from its host; the bar grown into them; the one lit; pin mode and the pin being written.
+  const { notes, add, remove, fresh, told } = useNotes(hosted, account.me)
+  const [barOpen, setBarOpen] = useState(false)
+  const [active, setActive] = useState<string | null>(null)
+  const [pinMode, setPinMode] = useState(false)
+  const [placing, setPlacing] = useState<Placing | null>(null)
+  const [reach, setReach] = useState(!wide)
+  const [seek, setSeek] = useState<Talk['seek']>(null)
+  const can: Talk['can'] = !account.comments ? 'off' : account.me ? 'write' : account.me === null ? 'signin' : 'off'
+  const row = hosted && (account.comments || notes.length > 0)
+  // Pins are placed in the full view and on a phone, by someone who can comment.
+  const pinnable = can === 'write' && (wide ? full : true)
+  useEffect(() => { if (!pinnable) { setPinMode(false); setPlacing(null) } }, [pinnable])
+  useEffect(() => { setPlacing(null) }, [cur.key, full])
+  useEffect(() => { if (!wide) setReach(true) }, [wide])
+  const barInset = () => bar.current?.offsetHeight ?? 0
+  const talk: Talk = {
+    hosted, can, signIn: account.signIn, owner: account.owner || facts.owner, me: account.me, notes, fresh, told, add, remove,
+    open: barOpen, setOpen: setBarOpen, active, setActive, pinMode, setPinMode: on => { setPinMode(on); if (!on) setPlacing(null) }, placing, setPlacing,
+    reach: wide ? reach : true,
+    onPin: (c: Note) => {
+      setSel(c.variant); setActive(c.id); setBarOpen(true)
+      // Once grown, if the bar now covers the pin, bring the pin up into the open part of the desk.
+      if (wide && !full) setTimeout(() => {
+        const pin = document.querySelector(`[data-board] [data-pin="${CSS.escape(c.id)}"]`), b = bar.current
+        if (pin && b && pin.getBoundingClientRect().bottom > b.getBoundingClientRect().top - 8) api.current?.toPin?.(c.id, b.offsetHeight)
+      }, 260)
+    },
+    seek, seekTo: id => { setSeek({ id, at: Date.now() }); if (wide && !full) api.current?.toPin?.(id, barInset()) },
+  }
+  // Esc, before it goes back to the desk: the pin being written goes, then pin mode, then the grown bar folds.
+  const talkEsc = () => {
+    if (placing) { setPlacing(null); return true }
+    if (pinMode) { setPinMode(false); return true }
+    if (barOpen) { setBarOpen(false); return true }
+    return false
+  }
+  const togglePins = () => { if (pinnable && talk.reach) { setPinMode(p => !p); setPlacing(null) } }
+  // The grown bar is sized against the viewer, not the window: about 70 % of it on a phone.
+  useLayoutEffect(() => {
+    const el = root.current
+    if (!el) return
+    const ro = new ResizeObserver(() => el.style.setProperty('--rh', `${el.clientHeight}px`))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const go = (key: string) => { setSel(key); api.current?.show(key) }
   const step = (d: number) => {
     const n = i + d
@@ -189,7 +246,12 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
     if (full) { setSel(screens[n].key); setOpen(screens[n].key) } else go(screens[n].key)
   }
 
+  now.current.talkEsc = talkEsc
+  now.current.togglePins = togglePins
+  const here = { variant: cur.key, n: cur.n, name: cur.name, about: proto.about?.[cur.v.id] }
+
   return (
+    <TalkCtx.Provider value={talk}>
     <div ref={root} data-viewer dir="ltr" className={`${face} ${surface} relative flex h-full flex-col overflow-hidden text-zinc-900 antialiased dark:text-zinc-100`}>
       <Header protos={protos} cur={proto} choose={setProtoId} wide={wide} facts={facts} appearance={appearance} setAppearance={setAppearance} account={account} root={root} />
       {isNewer && (
@@ -204,15 +266,17 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
         {wide
           ? <>
             <Desk key={proto.id} screens={screens} size={size} phone={proto.kind === 'phone'} sel={cur.key} store={store} api={api}
-              onCentre={key => { if (!full && key !== cur.key) setSel(key) }} open={openDesign} hidden={full} />
+              onCentre={key => { if (!full && key !== cur.key) setSel(key) }} open={openDesign} hidden={full}
+              onBadge={key => { go(key); setActive(null); setBarOpen(true) }} />
             {full && <Full screen={cur} phone={proto.kind === 'phone' ? proto.screen : null} device={device} dark={dark} closing={closing} onClosed={closed}
-              report={(z, fit) => setShown(s => (s.z === z && s.fit === fit ? s : { z, fit }))} />}
+              report={(z, fit) => setShown(s => (s.z === z && s.fit === fit ? s : { z, fit }))} row={row} setReach={setReach} />}
           </>
-          : <Phone screens={screens} i={i} go={go} step={step} root={root} />}
+          : <Phone screens={screens} i={i} go={go} step={step} root={root} row={row} />}
       </div>
-      {wide && <Bar screens={screens} i={i} go={go} step={step} store={store} api={api} root={root} back={back}
-        full={full ? { device, set: patch, shown: shown.z, phone: proto.kind === 'phone', menu, setMenu } : null} />}
+      <Bar screens={screens} i={i} go={go} step={step} store={store} api={api} root={root} back={back} wide={wide} row={row} here={here} barRef={bar}
+        full={full ? { device, set: patch, shown: shown.z, phone: proto.kind === 'phone', menu, setMenu } : null} />
     </div>
+    </TalkCtx.Provider>
   )
 }
 

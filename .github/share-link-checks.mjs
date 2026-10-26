@@ -6,6 +6,7 @@
 // turns. sharp is installed into ~/.prototypes/share-tools here until `proto share` does it.
 // Part 2 (viewerChecks, below) opens such a share in Chrome and checks the viewer it boots into.
 // Part 3 (hostChecks, at the end) runs `proto share` itself against a local host under wrangler dev.
+// Part 4 (share-comments-checks.mjs) checks the viewer's comments against a real host and a fake GitHub.
 import { spawnSync } from 'node:child_process'
 import { createServer, get } from 'node:http'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -14,6 +15,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { crc32, deflateSync, gunzipSync } from 'node:zlib'
 import { createRequire } from 'node:module'
+import { shareCommentsChecks } from './share-comments-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // PROTO_SHARE_TOOLS is how part 3 hands the same folder to commands it runs under another HOME.
@@ -148,8 +150,10 @@ export default function C() { return <main className="share-link-tile"><h1>MARK-
   assert(!existsSync(join(app, '.proto', 'shares', '.lock')), 'publishes are serialized: the lock was left behind')
   assert(!readdirSync(join(app, '.proto', 'shares')).length, 'build leaves the session alone: something was left in .proto/shares')
   console.log('share link: one-file build checks passed')
-  await viewerChecks({ proto, app, openPage, fail, buildShare })
-  await hostChecks({ app, openPage, fail })
+  // --share-comments-only (with --share-link-only): the build above, then part 4 alone.
+  if (!process.argv.includes('--share-comments-only')) await viewerChecks({ proto, app, openPage, fail, buildShare })
+  await shareCommentsChecks({ app, openPage, fail, buildShare, tools })
+  if (!process.argv.includes('--share-comments-only')) await hostChecks({ app, openPage, fail })
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
@@ -167,7 +171,7 @@ async function until(get, ms = 10_000) {
  * for is kept, so a check can tell that nothing reached for the session's server.
  */
 async function host(html) {
-  const state = { version: 1, paths: [], comments: true }
+  const state = { version: 1, paths: [], comments: true, list: [] }
   const json = (res, body, headers = {}) => { res.writeHead(200, { 'content-type': 'application/json', ...headers }); res.end(JSON.stringify(body)) }
   const server = createServer((req, res) => {
     state.paths.push(`${req.method} ${req.url}`)
@@ -178,6 +182,7 @@ async function host(html) {
     if (at === '/api/state') return json(res, { version: state.version, updatedAt: Date.now() })
     if (at === '/api/config') return json(res, { comments: state.comments, owner: 'Smoke' })
     if (at === '/api/me') return json(res, login ? { login, name: 'Octo Smoke', avatar: login === 'noface' ? null : `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#0ea5e9"/></svg>')}` } : null)
+    if (at === '/api/comments' && req.method === 'GET') return json(res, { comments: state.list, removed: [], now: Date.now() })
     if (at === '/api/signout' && req.method === 'POST') return json(res, { ok: true }, { 'set-cookie': `v=; Path=${path.replace(/api\/signout$/, '')}; Max-Age=0` })
     if (at === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html) }
     res.writeHead(404); res.end()
@@ -391,13 +396,20 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       site.state.version = 1
     } finally { page.close() }
 
-    // Comments not set up for this link: Sign in stays, switched off, and says why.
+    // Comments not set up for this link: Sign in stays, switched off, and says why. The bar has no
+    // comment field, and the comments already on the link still show.
     site.state.comments = false
+    site.state.list = [{ id: '00000000-0000-4000-8000-000000000001', variant: 'share-link/B', body: 'EARLIER-NOTE', target: null, status: 'sent', owner_reply: null, owner_reply_at: null, author: { login: 'noa', name: 'Noa', avatar: null }, mine: false, created_at: Date.now() - 60_000, updated_at: Date.now() - 60_000, version: 1, done_in: null }]
     const off = await openPage(shareUrl)
     try {
       const state = await until(() => off.run(`(() => { const b = document.querySelector('[data-viewer-header] [data-signin]'); return b ? [b.disabled, b.closest('[title]')?.title].join('|') : '' })()`), 5000)
       assert(state === "true|Comments aren't set up for this link yet", `comments off: the sign-in button is ${JSON.stringify(state)}`)
-    } finally { off.close(); site.state.comments = true }
+      const count = await until(() => off.run(`document.querySelector('[data-viewer-bar] [data-comments-toggle]')?.textContent ?? ''`), 5000)
+      assert(count.includes('1') && await off.run(`!document.querySelector('[data-comment-field]') && !document.querySelector('[data-comment-signin]')`), `comments off: the bar's comment row is ${JSON.stringify(count)}, or it has a field`)
+      const toggle = await off.run(`(() => { const r = document.querySelector('[data-comments-toggle]').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2] })()`)
+      await off.press(...toggle)
+      assert(await until(async () => (await off.run(`document.querySelector('[data-comment-card] [data-comment-body]')?.textContent ?? ''`)) === 'EARLIER-NOTE', 3000), 'comments off: the comment on the link does not show')
+    } finally { off.close(); site.state.comments = true; site.state.list = [] }
 
     // Signed in (the host's cookie): the viewer's face and login at the top right, a menu with their
     // name and Sign out, which clears the cookie and brings Sign in back.

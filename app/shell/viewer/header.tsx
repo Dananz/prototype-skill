@@ -9,12 +9,14 @@ import { rtl, t, tn } from '../i18n'
 import { ago } from '../ui'
 import type { Proto } from '../shell'
 import { Icon, card, iconBtn, popup, useClosable } from './ui'
+import { Count } from './bar'
+import { useTalk } from './comments'
 
 export type Appearance = 'system' | 'light' | 'dark'
 /** The viewer signed in with GitHub, as the host's api/me answers. */
 export type Me = { login: string; name: string | null; avatar: string | null }
 /** Who is looking. me: undefined until the host answers. signIn: where Sign in goes, or null when there is no host to sign in to. */
-export type Account = { me: Me | null | undefined; comments: boolean; signIn: string | null; signOut: () => void }
+export type Account = { me: Me | null | undefined; comments: boolean; signIn: string | null; signOut: () => void; owner: string }
 type Facts = { owner: string; version: number; updatedAt: string }
 const dir = rtl ? 'rtl' : 'ltr'
 const TINTS = ['bg-zinc-900 text-white dark:bg-white dark:text-zinc-900', 'bg-amber-500 text-white', 'bg-violet-500 text-white', 'bg-teal-500 text-white', 'bg-sky-500 text-white', 'bg-rose-500 text-white']
@@ -29,7 +31,7 @@ export function Header({ protos, cur, choose, wide, facts, appearance, setAppear
       <Protos protos={protos} cur={cur} choose={choose} compact={!wide} owner={facts.owner} updated={facts.updatedAt} root={root} />
       <div className="flex-1" />
       {wide && <p className="hidden text-[12px] text-zinc-500 md:block dark:text-zinc-400">{t('Drag to move · pinch or {key} scroll to zoom', { key: isMac ? '⌘' : 'Ctrl' })}</p>}
-      <About facts={facts} appearance={appearance} setAppearance={setAppearance} root={root} />
+      <About facts={facts} appearance={appearance} setAppearance={setAppearance} root={root} comments={account.comments} />
       <Who account={account} wide={wide} root={root} />
     </header>
   )
@@ -45,6 +47,7 @@ function Mark({ protos, p, small }: { protos: Proto[]; p: Proto; small?: boolean
 function Protos({ protos, cur, choose, compact, owner, updated, root }: {
   protos: Proto[]; cur: Proto; choose: (id: string) => void; compact: boolean; owner: string; updated: string; root: RefObject<HTMLDivElement | null>
 }) {
+  const talk = useTalk()
   const [open, setOpen] = useState(false)
   useClosable(open, setOpen)
   const many = protos.length > 1
@@ -83,6 +86,7 @@ function Protos({ protos, cur, choose, compact, owner, updated, root }: {
                     <span className={`block truncate text-[13px] ${on ? 'font-semibold' : ''}`}>{p.title}</span>
                     <span className="block truncate text-[11.5px] text-zinc-500 dark:text-zinc-400">{tn(p.variants.length, '{n} design', '{n} designs')} · {t('updated {when}', { when: ago(Date.parse(updated)) })}</span>
                   </span>
+                  <Count n={talk.notes.filter(c => c.variant.startsWith(`${p.id}/`)).length} />
                   {on && <Icon name="check" className="size-3.5 text-sky-500" />}
                 </button>
               )
@@ -95,7 +99,7 @@ function Protos({ protos, cur, choose, compact, owner, updated, root }: {
 }
 
 /** About this link: who shared it, when, which version, that it is read-only, and this viewer's theme. */
-function About({ facts, appearance, setAppearance, root }: { facts: Facts; appearance: Appearance; setAppearance: (a: Appearance) => void; root: RefObject<HTMLDivElement | null> }) {
+function About({ facts, appearance, setAppearance, root, comments }: { facts: Facts; appearance: Appearance; setAppearance: (a: Appearance) => void; root: RefObject<HTMLDivElement | null>; comments: boolean }) {
   const [open, setOpen] = useState(false)
   useClosable(open, setOpen)
   const rows: [string, string][] = [
@@ -120,6 +124,7 @@ function About({ facts, appearance, setAppearance, root }: { facts: Facts; appea
             </dl>
             <p className="mt-3 rounded-lg bg-zinc-900/[.04] p-2.5 text-[12px] leading-snug text-zinc-600 dark:bg-white/[.05] dark:text-zinc-400">
               {facts.owner ? t('This is a read-only copy that {owner} shared. Nothing you do here changes it.', { owner: facts.owner }) : t('This is a read-only copy. Nothing you do here changes it.')}
+              {comments && <> {t('Comments go to {owner}, who may pass them to an AI assistant. Everyone with this link sees your name and comments.', { owner: facts.owner || t('the owner') })}</>}
             </p>
             <div className="mt-3 flex items-center justify-between gap-3 text-[13px]">
               <span className="text-zinc-500">{t('Theme')}</span>

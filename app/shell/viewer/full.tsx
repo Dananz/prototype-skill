@@ -9,16 +9,22 @@
 // around it scrolling when it is bigger than the view. It grows out of its preview on the desk and
 // shrinks back into it (240 ms; none with reduced motion). The desk stays where it was underneath,
 // so going back finds it at the same zoom and place.
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+//
+// Comments: the design's pins over it (pins.tsx), and pin mode, which listens in the frame's own
+// document (same origin over http(s)); a frame that can't be reached gets neither.
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { dims, type Size } from '../view/sizes'
 import { shareInfo } from '../mode'
 import { lang } from '../i18n'
 import type { Device } from './device'
 import { frameMsg } from './framed'
+import { useTalk } from './comments'
+import { Pins } from './pins'
 import { surface, type Screen } from './ui'
 
 const EASE = 'cubic-bezier(.2,.8,.2,1)'
-const BAR = 76 // the bar's room at the bottom
+const BAR = 76 // the bar's room at the bottom (one row)
+const BAR2 = 128 // and with its comment row
 const PAD = 24 // the desk around the device at Fit
 
 // The owner's phone (shell.ts PHONE, its bezel and island in shell.css), and a tablet in the same
@@ -41,9 +47,14 @@ const frameSrc = (key: string, dark: boolean) => {
  * phone: a phone prototype (screen: its size), drawn as a phone at any device.
  * report: the zoom the device is drawn at, for the bar's readout and the zoom keys.
  */
-export function Full({ screen, phone, device, dark, closing, onClosed, report }: {
+export function Full({ screen, phone, device, dark, closing, onClosed, report, row, setReach }: {
   screen: Screen; phone: [number, number] | null; device: Device; dark: boolean; closing: boolean; onClosed: () => void; report: (z: number, fit: number) => void
+  /** The bar has its comment row. */
+  row: boolean
+  /** Whether the frame's design can be reached (pins and pin mode need it). */
+  setReach: (r: boolean) => void
 }) {
+  const talk = useTalk()
   const size: Size = phone ? 'phone' : device.size
   const d = phone ? { w: phone[0], h: phone[1] } : dims(device.size, device.land)
   const b = BEZEL[size]
@@ -132,13 +143,25 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report }:
     a.finished.then(onClosed, onClosed)
   }, [closing])
 
+  // The design in the frame, when its document can be reached: same origin over http(s), never from disk.
+  const mount = useCallback(() => { try { return frame.current?.contentDocument?.querySelector<HTMLElement>('[data-mount]') ?? null } catch { return null } }, [])
+  useEffect(() => {
+    if (!ready) return
+    let reach = false
+    try { reach = !!frame.current?.contentDocument?.documentElement } catch { /* opaque */ }
+    setReach(reach)
+    return () => setReach(false)
+  }, [ready, screen.key])
+  const at = useCallback(() => { try { return frame.current?.contentDocument ? frame.current.contentWindow : null } catch { return null } }, [])
+  const view = useCallback(() => ({ size, w: d.w, h: d.h }), [size, d.w, d.h])
+
   // The frame keeps its page (what was typed, where it scrolled) through a new size or zoom; a new design is a new page.
   const shell = size === 'phone' ? PHONE : size === 'tablet' ? TABLET : SHEET
   const screenCls = size === 'phone' ? 'h-full overflow-hidden' : size === 'tablet' ? 'h-full overflow-hidden rounded-[22px]' : 'h-full'
   return (
     <div data-full className="absolute inset-0 isolate z-[5]">
       <div ref={back} className={`absolute inset-0 ${surface}`} />
-      <div ref={area} data-full-area className="absolute inset-x-0 top-0 overflow-auto overscroll-contain [scrollbar-width:thin]" style={{ bottom: BAR }}>
+      <div ref={area} data-full-area className="absolute inset-x-0 top-0 overflow-auto overscroll-contain [scrollbar-width:thin]" style={{ bottom: row ? BAR2 : BAR }}>
         <div className="flex h-max min-h-full w-max min-w-full items-center justify-center" style={{ padding: PAD }}>
           {room && (
             <div ref={card} data-full-card className="shrink-0" style={{ width: W * z, height: H * z }}>
@@ -147,6 +170,7 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report }:
                   <iframe key={screen.key} ref={frame} src={src} title={`#${screen.n} ${screen.name}`}
                     className={`block border-0 bg-transparent transition-opacity duration-200 motion-reduce:transition-none ${ready ? 'opacity-100' : 'opacity-0'}`}
                     style={{ width: d.w, height: d.h }} />
+                  {ready && talk.reach && <Pins variant={screen.key} mount={mount} kind="full" ready={ready} pick={{ on: talk.pinMode, at, view }} scale={1 / z} />}
                 </div>
               </div>
             </div>
