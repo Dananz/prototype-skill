@@ -52,6 +52,13 @@
 //   proto kit screen <name> <slug>[/<letter>] [--sources <file,…>]   a Current that matches its reference
 //   proto plan <slug>   each placeholder shows its direction's one-line plan from .proto/briefs/<slug>.json
 //   proto fonts [--hebrew]   the title-and-body pairings (references/fonts.json) and the faces never used for a title
+//   proto share setup --local [--name <owner>]   a share host on this Mac (wrangler dev); links open only here
+//   proto share <slug>[/<n>…] | --all [--title "…"] [--yes]   build, review, publish, print the link
+//             (only when the user asks; read the review's warnings to them before --yes)
+//   proto share ls [--all]   this session's links (or every share on the host)
+//   proto share rm <id>      take a link down (it then says it was removed)
+//   proto share file <slug>[/<n>…] [--out <file.html>]   the same build as one HTML file, comments off
+//   proto share stop         stop the local host (the next share starts it again)
 //   proto archive <slug> [--off]    proto keep [--off]      proto url    proto stack
 //   proto stop    proto rm    proto ls    proto gc
 //
@@ -112,7 +119,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -437,7 +444,8 @@ function install(dir) {
 
 // ---------- commands ----------
 async function up() {
-  await gc(true)
+  // PROTO_NO_GC=1 (the smoke run sets it) leaves every other session and tailnet rule alone.
+  if (process.env.PROTO_NO_GC !== '1') await gc(true)
   const project = projectRoot()
   const dir = sessionDir()
   if (!existsSync(sessionFile(dir))) scaffold(dir, project)
@@ -2483,6 +2491,7 @@ const commands = {
   stack: () => { const d = detectStack(projectRoot()); console.log(`${d.stack} (${d.why})`) },
   fonts,
   kit: () => !args[0] ? kitStatus() : args[0] === 'save' ? kitSave() : args[0] === 'screen' ? kitScreen() : die(`proto kit ${args[0]}? It is proto kit, proto kit save or proto kit screen`),
+  share: () => import('./share.mjs').then(m => m.main(args, flags, { sessionDir: sessionDir(), session: need(sessionDir()), die })),
 }
 // The page shows variants by number (app/numbers.mjs), so the user names them that way: a route
 // given with a number (hero/29, hero/29/open) means that letter (hero/AC). Only where the slug is a

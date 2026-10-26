@@ -19,9 +19,14 @@ const ASSET_EXTS = /\.(png|jpe?g|webp|avif)$/i
 const CODE_EXTS = /\.(m?[jt]sx?|vue|svelte)$/
 const VIRTUAL = { registry: '\0proto-share:registry', session: '\0proto-share:session', images: '\0proto-share:images', slots: '\0proto-share:slots', shell: '\0proto-share:shell' }
 
-/** sharp from ~/.prototypes/share-tools, where `proto share` installs it; null when it isn't there. */
+/**
+ * sharp from ~/.prototypes/share-tools, where `proto share` installs it (or the folder
+ * PROTO_SHARE_TOOLS names, as the smoke does for commands it runs under another HOME); null when
+ * it isn't there.
+ */
 export function loadSharp() {
-  try { return createRequire(join(homedir(), '.prototypes', 'share-tools', 'index.js'))('sharp') } catch { return null }
+  const tools = process.env.PROTO_SHARE_TOOLS || join(homedir(), '.prototypes', 'share-tools')
+  try { return createRequire(join(tools, 'index.js'))('sharp') } catch { return null }
 }
 
 const slash = p => p.replaceAll('\\', '/')

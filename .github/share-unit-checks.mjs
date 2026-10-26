@@ -313,10 +313,10 @@ const call = (env, url, init) => worker.fetch(new Request(url, init), env)
 const noCors = res => assert.deepEqual([...res.headers.keys()].filter(k => k.startsWith('access-control-')), [])
 const bytesOf = async res => Buffer.from(await res.arrayBuffer())
 async function publish(env, html = '<!doctype html><p>hello', m = meta()) {
-  const created = await call(env, `http://${BASE}/api/shares`, { method: 'POST', headers: auth })
+  const created = await call(env, `http://${env.BASE}/api/shares`, { method: 'POST', headers: auth })
   const { id } = await created.json()
   const body = gzipSync(html)
-  const put = await call(env, `http://${BASE}/api/shares/${id}`, { method: 'PUT', headers: { ...auth, 'x-share-meta': m }, body })
+  const put = await call(env, `http://${env.BASE}/api/shares/${id}`, { method: 'PUT', headers: { ...auth, 'x-share-meta': m }, body })
   return { id, body, put }
 }
 
@@ -393,8 +393,11 @@ test('path mode', async () => {
   noCors(res)
   const state = await call(env, `http://${BASE}/s/${id}/api/state`, { headers: { 'x-proto': '1' } })
   assert.equal((await state.json()).version, 1)
-  const off = await makeEnv({ PATH_MODE: '0' })
-  assert.equal((await call(off, `http://${BASE}/s/${id}/`)).status, 404)
+  // One origin per share in production refuses the path form there.
+  const off = await makeEnv({ PATH_MODE: '0', BASE: 'prtype.dev' })
+  const prod = await publish(off)
+  assert.equal((await call(off, `https://prtype.dev/s/${prod.id}/`)).status, 404)
+  assert.equal((await call(off, `https://${prod.id}.prtype.dev/`)).status, 200)
 })
 test('update bumps version and drops the old key', async () => {
   const env = await makeEnv()
@@ -495,4 +498,52 @@ test('subdomain mode serves a path that starts with /s/ as an ordinary path', as
   const env = await makeEnv()
   const { id } = await publish(env)
   assert.equal((await call(env, `http://${id}.${BASE}/s/${id}`)).status, 404)
+})
+
+// The host on this Mac answers on both loopback names, localhost:<port> and 127.0.0.1:<port>, and
+// serves the path form (/s/<id>/) on either whatever PATH_MODE says: *.localhost may not resolve
+// in every browser, and 127.0.0.1 has no subdomains. Production keeps its one name.
+test('route takes several names for the host', () => {
+  const names = ['localhost:8787', '127.0.0.1:8787']
+  assert.equal(route(new URL('http://127.0.0.1:8787/api/shares'), names).at, 'api')
+  assert.deepEqual(route(new URL('http://127.0.0.1:8787/s/k3x9p2abcd/'), names), { at: 'share', shareId: 'k3x9p2abcd', path: '/' })
+  assert.deepEqual(route(new URL('http://k3x9p2abcd.localhost:8787/'), names), { at: 'share', shareId: 'k3x9p2abcd', path: '/' })
+  assert.equal(route(new URL('http://127.0.0.1:8788/api/shares'), names).at, 'none')
+})
+test('the local host answers on 127.0.0.1 too', async () => {
+  const env = await makeEnv()
+  const { id, body } = await publish(env)
+  const list = await call(env, 'http://127.0.0.1:8787/api/shares', { headers: auth })
+  assert.equal(list.status, 200)
+  assert.equal((await list.json())[0].id, id)
+  for (const url of [`http://127.0.0.1:8787/s/${id}/`, `http://localhost:8787/s/${id}/`, `http://${id}.localhost:8787/`]) {
+    const res = await call(env, url)
+    assert.equal(res.status, 200, url)
+    assert.deepEqual(await bytesOf(res), body, url)
+  }
+  const bare = await call(env, `http://127.0.0.1:8787/s/${id}`, { redirect: 'manual' })
+  assert.equal(bare.headers.get('location'), `http://127.0.0.1:8787/s/${id}/`)
+  assert.equal((await (await call(env, `http://127.0.0.1:8787/s/${id}/api/state`, { headers: { 'x-proto': '1' } })).json()).version, 1)
+  assert.equal((await call(env, `http://127.0.0.1:8788/s/${id}/`)).status, 404)
+})
+test('the apex page sends a local visitor to the form their host can open', async () => {
+  const env = await makeEnv()
+  const { id } = await publish(env)
+  const target = async (url, e = env) => /http-equiv="refresh" content="0;url=([^"]+)"/.exec(await (await call(e, url)).text())[1]
+  assert.equal(await target(`http://127.0.0.1:8787/${id}`), `http://127.0.0.1:8787/s/${id}/`)
+  assert.equal(await target(`http://localhost:8787/${id}`), `http://${id}.localhost:8787/`)
+  const paths = await makeEnv({ PATH_MODE: '1' })
+  const p = await publish(paths)
+  assert.equal(await target(`http://localhost:8787/${p.id}`, paths), `http://localhost:8787/s/${p.id}/`)
+  assert.equal(await target(`http://127.0.0.1:8787/${p.id}`, paths), `http://127.0.0.1:8787/s/${p.id}/`)
+})
+test('production keeps one name', async () => {
+  const env = await makeEnv({ BASE: 'prtype.dev' })
+  const { id } = await publish(env)
+  const target = async (url, e = env) => /http-equiv="refresh" content="0;url=([^"]+)"/.exec(await (await call(e, url)).text())[1]
+  assert.equal(await target(`https://prtype.dev/${id}`), `https://${id}.prtype.dev/`)
+  for (const url of [`https://prtype.dev/s/${id}/`, `http://127.0.0.1:8787/s/${id}/`, `http://localhost:8787/api/shares`]) assert.equal((await call(env, url, { headers: auth })).status, 404, url)
+  const paths = await makeEnv({ BASE: 'prtype.dev', PATH_MODE: '1' })
+  const p = await publish(paths)
+  assert.equal(await target(`https://prtype.dev/${p.id}`, paths), `https://prtype.dev/s/${p.id}/`)
 })

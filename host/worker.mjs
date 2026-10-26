@@ -1,6 +1,6 @@
 import { newId, isId } from './lib/ids.mjs'
 import { ownerOf } from './lib/auth.mjs'
-import { route } from './lib/routes.mjs'
+import { namesOf, route } from './lib/routes.mjs'
 import { page, ogPage } from './lib/pages.mjs'
 
 const MAX_BYTES = 20 * 1024 * 1024
@@ -14,7 +14,10 @@ const htmlKey = (id, version) => `html:${id}:${version}`
 const ogKey = (id, version) => `og:${id}:${version}`
 
 // A share seen on the host's own name (not on <id>.<base>) is path mode.
-const onBase = (url, env) => url.host.toLowerCase() === env.BASE.toLowerCase()
+const onBase = (url, env) => namesOf(env.BASE).names.some(n => n.toLowerCase() === url.host.toLowerCase())
+// Path mode is served when the host is set to it, and always by the host on this Mac, which must
+// serve 127.0.0.1:<port>/s/<id>/ whether or not *.localhost resolves.
+const pathsServed = env => env.PATH_MODE === '1' || namesOf(env.BASE).local
 
 const getShare = (env, id) => env.DB.prepare('SELECT * FROM shares WHERE id = ?').bind(id).first()
 
@@ -22,11 +25,11 @@ export default {
   async fetch(req, env) {
     try {
       const url = new URL(req.url)
-      const r = route(url, env.BASE)
+      const r = route(url, namesOf(env.BASE).names)
       if (r.at === 'health') return new Response('ok', { headers: { 'content-type': 'text/plain', 'cache-control': 'no-store' } })
       if (r.at === 'api') return await api(req, env, r.path)
       if (r.at === 'apex') return await apex(env, url, r.shareId)
-      if (r.at === 'share' && (env.PATH_MODE === '1' || !onBase(url, env))) return await share(req, env, url, r)
+      if (r.at === 'share' && (pathsServed(env) || !onBase(url, env))) return await share(req, env, url, r)
       return page('notfound', {})
     } catch (e) {
       console.error(e)
@@ -118,8 +121,14 @@ async function deleteShare(env, owner, id) {
   return json({ id })
 }
 
-// Where a share lives, in the same form the request came in.
-const shareOrigin = (url, env, id) => env.PATH_MODE === '1' ? `${url.protocol}//${env.BASE}/s/${id}/` : `${url.protocol}//${id}.${env.BASE}/`
+// Where a share lives, for the visitor of the apex page. On this Mac it stays on the name the
+// visitor came in on (the page answers on both loopback names), and 127.0.0.1 can only take the path
+// form; anywhere else it is BASE.
+function shareOrigin(url, env, id) {
+  const base = namesOf(env.BASE).local ? url.host : env.BASE
+  const paths = env.PATH_MODE === '1' || /^127\.0\.0\.1(:|$)/.test(base)
+  return paths ? `${url.protocol}//${base}/s/${id}/` : `${url.protocol}//${id}.${base}/`
+}
 
 async function apex(env, url, id) {
   const row = await env.DB.prepare('SELECT s.*, o.name AS owner_name FROM shares s JOIN owners o ON o.id = s.owner_id WHERE s.id = ?').bind(id).first()

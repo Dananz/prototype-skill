@@ -83,6 +83,9 @@ const fail = msg => {
 }
 process.on('unhandledRejection', e => fail(`unhandled rejection: ${e?.stack || e}`))
 process.on('uncaughtException', e => fail(`uncaught: ${e?.stack || e}`))
+// proto up's sweep of idle sessions would reach this machine's real ones (and their tailnet
+// rules); the run's own session is all it should touch.
+process.env.PROTO_NO_GC ??= '1'
 const proto = (args, { ok = true, stdout = false } = {}) => {
   console.log(`\n$ proto ${args.join(' ')}`)
   const r = spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), ...args, '--project', project, '--session', 'smoke'], { encoding: 'utf8', timeout: 600_000 })

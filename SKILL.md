@@ -963,6 +963,17 @@ follow it: `proto handoff`, build with the project's own components, then the `-
 
 When the user wants the prototypes in a doc or artifact to share: read `references/build.md` (Snapshots).
 
+## Only if asked: share a link
+
+Publish only when the user asks for a link; never on your own. Read `references/share.md` first.
+`proto share <slug>/<n> …` (or `--all`) builds just those variants into one page and reviews it.
+A clean review publishes at once; otherwise it stops. A block (a secret, a path on this Mac) is
+fixed in the prototype; warnings (the project's own code, real screens, outside URLs, size) are
+read to the user in their words, and only on their yes run it again with `--yes`. Give them the
+printed link as it is. For now the host runs on this Mac (`proto share setup --local` once), so
+the link opens only here; say so. `proto share file <slug>/<n>` writes the same page as one HTML
+file they can send themselves.
+
 ## Follow-up requests in the same session
 
 | The user asks for | Do |
@@ -988,6 +999,7 @@ When the user wants the prototypes in a doc or artifact to share: read `referenc
 | A comment in a view (`view: tablet 834x1194` in a batch) | the shoot its line names, change that layout's breakpoints, reply naming the size (Comments from the page) |
 | To drop a direction or prototype | `proto archive <slug>` (still reachable under Archived) |
 | The prototypes in a doc to share | Snapshots with an available document tool, or `proto shoot` images (section above) |
+| A link to the prototypes ("send me a link to 2 and 3") | Only if asked: share a link (`proto share <slug>/2 <slug>/3`, review read to them, then `--yes`) |
 | Comments sent from the page (a webhook wakeup or completed `proto inbox --wait`) | the batch as one job: one `proto ask --to <slug>/<letter> --each` per variant in it, edits, one shot, one `proto reply <batch> 1 "…" 2 "…" --done`, keep the same listener active |
 | Prototypes for a different project | `proto up --project <dir>`: a separate app for that project |
 

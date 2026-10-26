@@ -5,17 +5,19 @@
 // session's dev server and its own dist/ are left as they were, and two publishes at once take
 // turns. sharp is installed into ~/.prototypes/share-tools here until `proto share` does it.
 // Part 2 (viewerChecks, below) opens such a share in Chrome and checks the viewer it boots into.
+// Part 3 (hostChecks, at the end) runs `proto share` itself against a local host under wrangler dev.
 import { spawnSync } from 'node:child_process'
-import { createServer } from 'node:http'
+import { createServer, get } from 'node:http'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { crc32, deflateSync } from 'node:zlib'
+import { crc32, deflateSync, gunzipSync } from 'node:zlib'
 import { createRequire } from 'node:module'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
-const tools = join(homedir(), '.prototypes', 'share-tools')
+// PROTO_SHARE_TOOLS is how part 3 hands the same folder to commands it runs under another HOME.
+const tools = process.env.PROTO_SHARE_TOOLS || join(homedir(), '.prototypes', 'share-tools')
 
 // An RGB PNG of the given size, drawn by pixel(x, y) -> [r, g, b]. Node has zlib and crc32, which
 // is all a PNG needs; a pattern rather than flat colour, so the file is as heavy as a screenshot.
@@ -147,6 +149,7 @@ export default function C() { return <main className="share-link-tile"><h1>MARK-
   assert(!readdirSync(join(app, '.proto', 'shares')).length, 'build leaves the session alone: something was left in .proto/shares')
   console.log('share link: one-file build checks passed')
   await viewerChecks({ proto, app, openPage, fail, buildShare })
+  await hostChecks({ app, openPage, fail })
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
@@ -375,4 +378,112 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
     } finally { page.close() }
   } finally { he.close() }
   console.log('share viewer: checks passed')
+}
+
+// Share links, part 3: `proto share` itself, publishing to a host on this Mac (wrangler dev). Every
+// command runs with HOME in a folder of this run and the file token store, so the run never writes
+// to the login Keychain, ~/.config/prototype or ~/.prototypes/host; the pinned tools come from the
+// usual ~/.prototypes/share-tools through PROTO_SHARE_TOOLS rather than a second install.
+async function hostChecks({ app, openPage, fail }) {
+  const project = dirname(dirname(app))
+  const home = mkdtempSync(join(tmpdir(), 'proto-share-home-'))
+  const env = { ...process.env, HOME: home, PROTO_SHARE_TOKEN_STORE: 'file', PROTO_SHARE_TOOLS: tools }
+  delete env.PROTO_SHARE_NO_START
+  let dummy = null
+  const share = (args, extra = {}) => {
+    console.log(`\n$ proto share ${args.join(' ')}`)
+    const r = spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'share', ...args, '--project', project, '--session', 'smoke'], { env: { ...env, ...extra }, encoding: 'utf8', timeout: 600_000 })
+    process.stdout.write(r.stdout || '')
+    process.stderr.write(r.stderr || '')
+    return { status: r.status, out: (r.stdout || '') + (r.stderr || '') }
+  }
+  // A failure stops the host and frees 8787 before the run gives up, so neither outlives it.
+  const cleanup = () => {
+    spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'share', 'stop', '--project', project, '--session', 'smoke'], { env, stdio: 'ignore', timeout: 60_000 })
+    dummy?.close()
+    rmSync(home, { recursive: true, force: true })
+  }
+  // A throw the asserts don't see (a page that hangs) ends the run through the harness's own
+  // fail(), which exits: the host and the dummy go with it.
+  process.once('exit', cleanup)
+  const assert = (ok, why) => { if (!ok) { cleanup(); fail(`share host: ${why}`) } }
+  const keychain = () => process.platform === 'darwin' && spawnSync('security', ['find-generic-password', '-s', 'prototype-share-local'], { stdio: 'ignore' }).status === 0
+  const realHosts = join(homedir(), '.config', 'prototype', 'hosts.json')
+  const before = { keychain: keychain(), hosts: existsSync(realHosts) ? readFileSync(realHosts, 'utf8') : null, host: existsSync(join(homedir(), '.prototypes', 'host')) }
+  const linkIn = out => (out.match(/^link (\S+)/m) || [])[1]
+  const portOf = url => Number(new URL(url).port)
+  const answer = async (url, init) => { try { const r = await fetch(url, { signal: AbortSignal.timeout(10_000), ...init }); return { status: r.status, text: await r.text() } } catch (e) { return { status: 0, text: String(e?.cause?.code || e) } } }
+  // The bytes as they come off the wire, with no Accept-Encoding: the stored gzip, sent once.
+  const raw = url => new Promise(ok => get(url, res => { const parts = []; res.on('data', d => parts.push(d)).on('end', () => ok({ headers: res.headers, body: Buffer.concat(parts) })) }).on('error', () => ok(null)))
+  const sharesFile = join(app, '.proto', 'shares.json')
+  const entries = () => existsSync(sharesFile) ? JSON.parse(readFileSync(sharesFile, 'utf8')) : []
+
+  const setup = share(['setup', '--local', '--name', 'Smoke'])
+  assert(setup.status === 0, `setup --local exited ${setup.status}`)
+  const hosts = JSON.parse(readFileSync(join(home, '.config', 'prototype', 'hosts.json'), 'utf8'))
+  assert(hosts.length === 1 && hosts[0].stage === 'local' && hosts[0].default === true, `setup: hosts.json is ${JSON.stringify(hosts)}`)
+  const token = join(home, '.config', 'prototype', 'token-local')
+  assert(existsSync(token) && (statSync(token).mode & 0o777) === 0o600, 'setup: no token file with mode 600 in the file store')
+
+  const one = share(['share-link/2', 'share-link/3', '--yes'])
+  const link = linkIn(one.out)
+  assert(one.status === 0 && link, `publish: exited ${one.status} without a link`)
+  const page = await answer(link)
+  assert(page.status === 200 && page.text.includes('MARK-B') && page.text.includes('MARK-C'), `publish: ${link} answered ${page.status} without MARK-B and MARK-C`)
+  const wire = await raw(link)
+  assert(wire?.headers['content-encoding'] === 'gzip' && wire.body[0] === 0x1f && wire.body[1] === 0x8b && gunzipSync(wire.body).toString().includes('MARK-B'), 'publish: the page is not the stored gzip, sent once')
+  const id = entries().at(-1)?.id
+  assert(id && link.includes(id) && entries().at(-1).version === 1 && entries().at(-1).host === 'local', `publish: .proto/shares.json has ${JSON.stringify(entries())}`)
+  assert(existsSync(join(app, '.proto', 'shares', id, 'v1', 'share-link', 'B.tsx')), 'publish: the snapshot of share-link is missing')
+  const port = portOf(link)
+
+  const ls = share(['ls'])
+  assert(ls.status === 0 && ls.out.includes(id), `ls: ${id} is not listed`)
+  // The apex /<id> is the page link previews read; it sends a browser on to the link.
+  const apexAt = link.includes('/s/') ? `http://127.0.0.1:${port}/${id}` : `http://localhost:${port}/${id}`
+  const apex = await answer(apexAt)
+  assert(apex.status === 200 && apex.text.includes(`url=${link}`), `apex: ${apexAt} does not lead to ${link}`)
+
+  const out = join(home, 'one-file.html')
+  const file = share(['file', 'share-link/2', '--out', out])
+  assert(file.status === 0 && existsSync(out), `file: exited ${file.status}, ${out} not written`)
+  const opened = await openPage(pathToFileURL(out).href)
+  try { assert(await until(async () => (await opened.run('document.body.innerText'))?.includes('MARK-B')), 'file: MARK-B is not on the page') } finally { opened.close() }
+
+  const rm = share(['rm', id])
+  assert(rm.status === 0, `rm exited ${rm.status}`)
+  assert((await answer(link)).status === 410, 'rm: the link does not answer 410')
+  assert(!entries().some(e => e.id === id) && existsSync(join(app, '.proto', 'shares', id, 'v1')), 'rm: the entry is still there, or the snapshot went with it')
+
+  // The host down: the next share starts it again.
+  assert(share(['stop']).status === 0 && (await answer(`http://127.0.0.1:${port}/_health`)).status === 0, 'host down: stop left the host answering')
+  const again = share(['share-link/2', '--yes'])
+  assert(again.status === 0 && (await answer(linkIn(again.out) || 'http://0/')).status === 200, `host down: the share after a stop exited ${again.status}`)
+
+  // 8787 taken by something else: the host moves to the next free port, and the link with it.
+  share(['stop'])
+  dummy = createServer((req, res) => res.end('not the host'))
+  const taken = await new Promise(ok => dummy.once('error', () => { dummy = null; ok(false) }).listen(8787, '127.0.0.1', () => ok(true)))
+  if (!taken) console.log('share host: 8787 is already taken on this machine; the port check runs against that')
+  const moved = share(['share-link/3', '--yes'])
+  const movedLink = linkIn(moved.out)
+  assert(moved.status === 0 && movedLink, `port taken: exited ${moved.status}`)
+  const movedPort = portOf(movedLink)
+  assert(movedPort >= 8788 && movedPort <= 8799 && (await answer(movedLink)).status === 200, `port taken: the link ${movedLink} is not on a port from 8788 to 8799 that answers`)
+  dummy?.close()
+  dummy = null
+
+  // An upload that fails (host stopped, not allowed to start) leaves nothing behind.
+  share(['stop'])
+  const count = entries().length, folders = readdirSync(join(app, '.proto', 'shares')).length
+  const failed = share(['share-link/2', '--yes'], { PROTO_SHARE_NO_START: '1' })
+  assert(failed.status === 1 && /share host "local"/.test(failed.out), `failed upload: exited ${failed.status}, or the message does not name the host`)
+  assert(entries().length === count && readdirSync(join(app, '.proto', 'shares')).length === folders, 'failed upload: something was written to .proto/shares')
+
+  share(['stop'])
+  process.removeListener('exit', cleanup)
+  assert(keychain() === before.keychain, 'isolation: the login Keychain gained a prototype-share-local item')
+  assert((existsSync(realHosts) ? readFileSync(realHosts, 'utf8') : null) === before.hosts && existsSync(join(homedir(), '.prototypes', 'host')) === before.host, 'isolation: the real ~/.config/prototype or ~/.prototypes/host changed')
+  rmSync(home, { recursive: true, force: true })
+  console.log('share host: checks passed')
 }
