@@ -74,7 +74,9 @@ app), React 19 shell, Cloudflare Workers + KV + D1 under `wrangler` 4.149.0 (loc
 | `app/shell/jsx.ts` | Use a compile-time component name; fall back to `jsx-prod` when React has no `jsxDEV` |
 | `app/shell/mode.ts` (new) | `SHARE` flag and the build-time share info |
 | `app/shell/transport.ts` (new) | The four `/__proto` calls behind one interface, dev and share |
-| `app/shell/shell.ts`, `app/src/main.ts` | Use `transport`; hide owner-only controls when `SHARE` |
+| `app/shell/shell.ts` | Its four `/__proto` fetches go through `transport` |
+| `app/shell/viewer/*` (new) | The viewer of decision 19 (header, desk, phone, bar), mounted by `main.ts` in share mode |
+| `app/src/main.ts` | `createViewer` in share mode, the state poll |
 | `app/vite.config.mjs` | In `share` mode, add `sharePlugins()` |
 | `host/schema.sql` (new) | The spec's D1 schema, `IF NOT EXISTS` throughout |
 | `host/wrangler.template.jsonc` (new) | Worker config with `KV` and `DB` bindings, filled in by setup |
@@ -182,7 +184,7 @@ app), React 19 shell, Cloudflare Workers + KV + D1 under `wrangler` 4.149.0 (loc
     - resolve `./images` (from `src/`) to a module whose map holds only the asset names the shared protos' files name in a literal `image('…')`; a non-literal call anywhere in them keeps all, and adds a warning;
     - route `react/jsx-dev-runtime`: imports from `src/protos/**` go to `app/shell/jsx.ts`, all others to `app/share/jsx-prod.ts`; make the JSX transform run in development mode for the share build (find the Vite 8 / `@vitejs/plugin-react` 6 option; record it in a comment);
     - set `envDir: false`, `envPrefix: '__PROTO_NONE__'`, `build.sourcemap: false`, `build.assetsInlineLimit: Number.MAX_SAFE_INTEGER`, `build.cssCodeSplit: false`, a single JS chunk (Rolldown's option for inlining dynamic imports; verify the name against Rolldown 1.2 docs), `build.outDir` from `PROTO_SHARE_OUT`;
-    - define `__PROTO_SHARE__` as `{ title, owner, version, scope }` JSON for `mode.ts` (Task 5).
+    - define `__PROTO_SHARE__` as `{ title, owner, version, updatedAt, scope }` JSON for `mode.ts` (Task 5).
   - `inlineHtml(outDir: string) -> string`: reads `index.html`, replaces the one `<script type="module" src>` with an inline module script and the one stylesheet `<link>` with a `<style>`; throws `ShareError` listing any other file left in `outDir`.
   - `buildShare({ sessionDir, scope, info: { title, owner, version } }) -> Promise<{ gz: Buffer, html: string, rawBytes: number, gzBytes: number, review: ReturnType<typeof review>, warnings: string[] }>`: takes `.proto/shares/.lock` (waits up to 5 min, then `ShareError`), writes the scope to a temp file, runs `node <session>/node_modules/vite/bin/vite.js build --mode share` with cwd `sessionDir` and `PROTO_SHARE_SCOPE` / `PROTO_SHARE_OUT` (a fresh `mkdtemp`), inlines, gzips at level 9, reviews (project imports = resolved ids under `session.project` that the build reports through a JSON file the plugin writes; `currents` = kept variants whose meta name is `Current`), removes the temp dir, releases the lock.
 
@@ -200,33 +202,41 @@ app), React 19 shell, Cloudflare Workers + KV + D1 under `wrangler` 4.149.0 (loc
 - [ ] **Step 4: Run** the smoke. Expected: PASS. Then build the two heavy real sessions measured on 2026-10-26 (`4f389d48`, `1dd8affe…`) whole, and record their gzipped sizes in the commit message (expected about 2 to 3 MB).
 - [ ] **Step 5: Commit** `feat(share): one-file share build`.
 
-### Task 5: The shell in share mode
+### Task 5: The viewer (decision 19)
+
+**Reference:** session `f64ced15`, `src/protos/viewer-board/C.tsx` (and `../viewer/parts.tsx` for
+About). Read it and the spec's Design › Viewer before starting; run
+`proto handoff viewer-board/C --session f64ced15-a520-4f47-9572-f624b9fc8c21` and tick its lines
+(comment-only lines are phase 1: say so, don't build them).
 
 **Files:**
-- Create: `app/shell/mode.ts`, `app/shell/transport.ts`
-- Modify: `app/shell/shell.ts` (lines 390, 3121, 3135, 3156 and the controls listed below), `app/src/main.ts`, `app/shell/i18n/he/*.ts`
+- Create: `app/shell/mode.ts`, `app/shell/transport.ts`, `app/shell/viewer/index.tsx` (`createViewer`), `app/shell/viewer/desk.tsx` (wide canvas, pan/zoom, mount policy), `app/shell/viewer/phone.tsx`, `app/shell/viewer/header.tsx` (title, prototype list, About), `app/shell/viewer/bar.tsx`
+- Modify: `app/shell/shell.ts` (the four `/__proto` fetches through `transport`, lines 390, 3121, 3135, 3156), `app/src/main.ts`, `app/shell/i18n/he/*.ts`
 - Test: `.github/share-link-checks.mjs` (part 2)
 
 **Interfaces:**
-- Consumes: `__PROTO_SHARE__` (Task 4).
+- Consumes: `__PROTO_SHARE__` (Task 4); the stack's `mount(el, Variant) -> () => void` from `./mount`; `protos` from the share registry.
 - Produces:
-  - `mode.ts`: `export const SHARE: boolean` (`import.meta.env.MODE === 'share'`), `export const shareInfo: { title: string, owner: string, version: number } | null`.
-  - `transport.ts`: `status(): Promise<Status | null>`, `post(path, body, signal?) -> Promise<Response>`, `sendBatch(body) -> Promise<Response>`, `fav(body) -> Promise<Response>`. Dev: today's fetches, moved as they are. Share: `status()` fetches `api/state` (relative to the document, so path mode works) with header `X-Proto: 1` and maps `{ version, updatedAt }` into the fields the shell reads; `post`, `sendBatch` and `fav` reject with `new Error('read-only')` and are never called because their controls are gone. Opened from a file (`location.protocol === 'file:'`): `status()` resolves `null`.
-  - In `shell.ts`, with `SHARE` true: no favorites stars, Pick / More like this / More variants / Build it / Try it, copy picker's send, Building marks, the working pin, agent status and live dot, Settings › Session, Share screenshots rows, Stop / Keep, intake screens, the comment button and island (comments arrive in phase 1). Collect the `data-act` / `data-shoot` values of these into `export const OWNER_ONLY: string[]` in `mode.ts`, which the smoke test reads. The header shows `shareInfo.title` and a small `t('by {owner}')`. The ⋯ menu gets `t('About this link')` (owner, version, `t('This is a read-only copy.')`).
-  - `main.ts`: when `SHARE`, call `status()` every 60 s while `document.visibilityState === 'visible'` and on `focus`; a higher version than `shareInfo.version` shows a quiet banner `t('There is a newer version')` with `t('Reload')`.
+  - `mode.ts`: `export const SHARE: boolean` (`import.meta.env.MODE === 'share'`), `export const shareInfo: { title: string, owner: string, version: number, updatedAt: string } | null`.
+  - `transport.ts`: `status(): Promise<Status | null>`, `post(path, body, signal?)`, `sendBatch(body)`, `fav(body)`. Dev: today's fetches, moved as they are (the shell keeps working unchanged). Share: `status()` fetches `api/state` (relative to the document, so path mode works) with header `X-Proto: 1`, mapping `{ version, updatedAt }`; the other three reject with `new Error('read-only')`. From `file:`, `status()` resolves `null`.
+  - `createViewer(el, { mount, protos, session })`: the viewer of the spec (header with the prototype list and About, the desk on wide screens, one design and the switcher on a phone, the bar's first row with name, dots or jump list, and zoom). No comment field, no counts, no pins (phase 1). `main.ts`: `SHARE ? createViewer(…) : createShell(…)`, and in share mode `status()` every 60 s while visible and on `focus`; a higher version shows a quiet banner `t('There is a newer version')` with `t('Reload')` under the header.
+  - Mount policy exactly as the spec: live within one viewport of the view or selected, at most 8 live, the rest a light card; a phone mounts one.
 
-- [ ] **Step 1: Write the failing checks** (Chrome, through the smoke's `openPage`, on the Task 4 build served by a throwaway `node:http` server that answers `/` with the html and `/api/state` with `{ version: 1 }`):
-  - `no owner controls`: none of `OWNER_ONLY` is in the DOM, on the lobby and on a variant.
-  - `no session calls`: no request path starts with `/__proto` during 5 s of use (record with the page's `PerformanceObserver` for `resource`).
-  - `navigation works`: the lobby lists B and C only; `#/share-link/C` shows `MARK-C`; the device view opens and its frame shows the variant.
+- [ ] **Step 1: Write the failing checks** (Chrome, through the smoke's `openPage`, on the Task 4 build served by a throwaway `node:http` server answering `/` with the html and `/api/state` with `{ version: 1 }`):
+  - `desk lists only shared`: at 1440x900 the desk has artboards `#2` and `#3` (markers `MARK-B`, `MARK-C`), no `MARK-A`/`D`/`E`, and no shell chrome (`[data-act]` absent).
+  - `prototype list`: a share of `share-link/2 share-link/3 lineage-src` shows a caret on the title; opening it lists two prototypes; choosing `lineage-src` swaps the artboards.
+  - `zoom`: `+` raises the readout, `0` returns to Fit, `1` reads `100%`; an artboard's computed `zoom` changes and its `transform` stays `none`.
+  - `mount policy`: with 20 designs (a fixture prototype of 20 small variants), live mounts never exceed 8 at Fit, and panning to the far end mounts the end ones and unmounts the start.
+  - `phone`: at 390x844 one design is mounted, the switcher reads `#2 … · 1/2`, its `›` shows `MARK-C` with one mount, and a horizontal wheel/drag over the design does not change it.
+  - `no session calls`: no request path starts with `/__proto` during 5 s of use.
   - `stamps survive`: an element in C has `data-proto-src` starting `share-link/` and a non-empty `data-proto-component`.
   - `newer version banner`: the server then answers `{ version: 2 }`; after a `focus` event the banner shows.
-  - `hebrew share is rtl`: a rebuild with `lang: 'he'` in `session.json` gives `document.documentElement.dir === 'rtl'`.
-  - `file open`: the html written to disk and opened as `file://` renders `MARK-B` with no errors in the console.
+  - `hebrew share is rtl`: with `lang: 'he'` the header and bar have `dir="rtl"` and the artboards keep their order.
+  - `file open`: the html opened as `file://` renders `MARK-B` with no console errors.
 - [ ] **Step 2: Run** the smoke. Expected: FAIL.
-- [ ] **Step 3: Implement** `mode.ts`, `transport.ts`, the `shell.ts` and `main.ts` changes, Hebrew strings.
-- [ ] **Step 4: Run** the smoke and `node scripts/i18n-check.mjs`. Expected: PASS. Capture before/after screenshots of the lobby and a variant (desktop and phone) for the PR per AGENTS.md.
-- [ ] **Step 5: Commit** `feat(share): read-only shell for shared links`.
+- [ ] **Step 3: Implement** `mode.ts`, `transport.ts` (and the shell's switch to it), the viewer files, `main.ts`, Hebrew strings.
+- [ ] **Step 4: Run** the smoke, `node scripts/i18n-check.mjs`, and the dev smoke (the shell must be unchanged). Expected: PASS. Then the overlay check: screenshot the built viewer at 1440x900 and 390x844 into the reference session's `.proto/ref/viewer-board/built-C.png` (and `built-C-phone.png`) with the same three designs, run `proto shoot viewer-board/C --ref … --as built`, and fix until the overlay shows no double edges in the chrome (the designs themselves differ: theirs are stand-ins).
+- [ ] **Step 5: Commit** `feat(share): the viewer, a zoom desk of the shared designs`.
 
 ### Task 6: The host Worker
 

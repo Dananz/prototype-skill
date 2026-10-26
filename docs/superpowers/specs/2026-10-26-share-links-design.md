@@ -98,6 +98,13 @@ Non-goals (this spec):
     owner publishes in phases 0 to 4 (it is his own code), and it is bounded: the move to `prto.fyi`
     keeps every id, and `p.dananz.com/<id>` becomes a redirect to `prto.fyi/<id>`. Nothing is
     connected or deployed until Tomer says so.
+19. **The viewer is the zoom desk, not the reduced shell** (Tomer picked #3 "Zoom desk" of the
+    viewer-board prototype, 2026-10-26, session `f64ced15`, `src/protos/viewer-board/C.tsx`). A
+    friend sees every shared design as a big artboard on a dotted desk they drag and zoom, a small
+    header whose title switches between the prototypes on the link, and one bar in thumb reach that
+    names the design in view, carries the zoom, and grows into that design's comments. On a phone
+    it is one design at a time with no sideways swipe (the design's own carousels and wide tables
+    keep the gesture), and a switcher above the bar. See Design › Viewer.
 
 
 ## Prior art (how comparable products do this)
@@ -476,7 +483,8 @@ shared by Dananz" and no image.
 
 ### On the share
 
-The comment layer is the same React code. In share mode:
+The comment layer's logic is the same code (store, pins, regions, drafts); the viewer draws it in
+its bar (Design › Viewer) rather than the shell's island. In share mode:
 
 - The send button reads "Send to Dananz" (the owner's GitHub login, from setup), not "Send to Claude".
   "Send as I add" is off and hidden; each send is one POST.
@@ -624,18 +632,68 @@ host" with Retry, and the selection is kept.
 
 ### Viewer: the shared prototype
 
-It is the prototype shell itself, reduced:
+Decision 19. The reference is `viewer-board/C` in session `f64ced15` (its `proto handoff` lists
+every material, motion and interaction); the build matches it with the overlay check of
+`references/build.md`. It is a view of its own, `app/shell/viewer/` (React, like
+`app/shell/view/`), which `main.ts` mounts instead of `createShell` when `SHARE` is true. It mounts
+designs through the stack's own `mount(el, Variant)` (`app/adapters/react.tsx`, `vue.ts`), so a
+design runs exactly as in the session, with its tweaks at their defaults. None of the owner's
+chrome exists in it: no sidebar, Decide, Pick/More/Build, stars, Building marks, agent status,
+Settings, Share rows, intake, copy picker, motion dock or device views.
 
-- No Building marks, agent status, working pin, Pick/More/Build, stars (votes replace them when on),
-  Settings › Session, Share rows, Stop/Keep, intake screens, the copy picker's send.
-- Header: the share's title and a small "by Dananz" in the title area, nothing else added. The ⋯ menu
-  gains "About this link" (who shared it, when it was updated, "Comments go to Dananz, not to an AI
-  directly").
-- Comments, device views, the motion dock, Focus, compare, zoom, theme and the keyboard shortcuts
-  stay. The phone keeps one design at a time (#136).
-- Language and direction follow the session's `lang`, island side included (#139). Host pages
-  (gate, expired, removed, errors) come in English and Hebrew, picked by the share's `lang`.
-- First comment on an open link asks "Your name" in the composer itself, one field, remembered.
+**Header** (56 px; 48 px on a phone). A mark (the prototype's first letter on a tinted square) and
+the prototype's title with a caret: it opens a list, "Shared with you by Dananz", of every
+prototype in the share (`scope.protos`), each with its mark, title, "n designs · updated …", its
+comment count (phase 1) and a check on the one shown. Choosing one rebuilds the desk with its
+designs. Under the title, on a wide screen only, "by Dananz · read-only · n prototypes". On the
+right, a quiet hint on wide screens ("Drag to move · pinch or ⌘ scroll to zoom") and About.
+**About** opens a small panel: shared by Dananz, updated when, version, read-only, "Comments go to
+Dananz, not to an AI directly", and the theme (System, Light, Dark; per viewer, in localStorage).
+A share with one prototype shows the title without the caret.
+
+**The desk, wide screens (≥ 640 px).** Every design of the chosen prototype is an artboard drawn
+at 1200 px wide on the dotted desk, in rows of at most five, ordered by number, 160 px apart
+(240 px between rows). Above each, a label that stays the same size at any zoom: `#n` and the
+name (sky and bold on the selected one), and a comment-count badge (phase 1). The selected
+artboard has a 2 px sky ring, the others a 1 px line. Drag or scroll pans; pinch, ⌘/Ctrl+scroll,
+`+` and `-` zoom about the pointer, from Fit down to 0.05 and up to 200 %; `0` fits, `1` is
+100 %. Artboards shrink with CSS `zoom`, never `transform: scale` (Safari keeps one real layout
+per design). Whichever artboard is nearest the middle of the view is the selected one; the bar
+names it and comments go to it. Clicking a label flies to that artboard.
+
+**Mount policy.** Each artboard mounts its design live only while it is within one viewport of
+the view, or is the selected one; the others are a light card with `#n Name` until they come
+near, and unmount when they leave (an `IntersectionObserver` with a one-viewport margin). At most
+8 live at once on a wide screen, the nearest first. A phone mounts exactly one design (#136).
+
+**The bar** (bottom, centred, 540 px wide; 440 px on a phone). Row one, wide screens only: `#n
+Name`, then page dots (or, past 7 designs, `‹ n of N ⌄ ›` with a list of every design and its
+comment count), then the zoom: `−`, the percentage, `+`, Fit, 100 %. Row two (phase 1): the
+comment field ("Comment on #n…", one field that looks the same folded and grown) and the
+commenters' faces with the count. Phase 0 has no row two; the bar is row one only.
+
+**Comments in the bar** (phase 1). Asking for the comments grows the same card upward into them
+(230 ms, the grid-rows transition), never a separate sheet: the count and "everyone on this link
+sees them", the owner's note for the design, then the comments; Esc or ✕ folds it. Pins sit on
+the artboards; a pin opens the bar on its comment and pans the desk so the pin stays above the bar.
+A comment written since the page opened grows in (280 ms, from no height, fading and rising
+8 px). The first comment asks "Your name" in the same place, once, and says everyone on the link
+sees it. Statuses and the owner's replies as in Viewer comments; Claude's replies never.
+
+**Phone (< 640 px).** One design at a time, filling the space between the header and the bar,
+scrolling inside itself in both directions. No sideways swipe changes the design. Above the bar,
+a switcher: `‹ #n Name · i/N ⌄ ›`, the list opening upward. A new design fades up from its top
+(220 ms). The bar is the comment row only (phase 1; phase 0 shows no bar on a phone, the switcher
+sits at the bottom). Open comments name the design in their first line.
+
+**Motion and materials** follow the reference: dotted desk (`radial-gradient` 1 px dots, 16 px
+grid), white / zinc-900 cards with a 1 px line, the bar's shadow `0 18px 40px -12px
+rgba(0,0,0,.5)`, the ease `cubic-bezier(.2,.8,.2,1)`, Google Sans at 450, sky-500 selection.
+Every transition has a `prefers-reduced-motion` fallback with none.
+
+**Language.** Strings through `t()` with Hebrew entries. In a Hebrew share the chrome reads right
+to left (header, bar, lists); the desk keeps its left-to-right order of designs and each design
+keeps the `dir` its session gave it.
 
 Host pages (gate, expired, removed, over budget) are one small HTML template: the share title, one
 line, one field or none, the same type and colors as the shell, dark by `prefers-color-scheme`.
@@ -707,7 +765,8 @@ the viewer."
 | Where | Change |
 |---|---|
 | `app/shell/shell.ts:390, 3121, 3135, 3156` | The four `/__proto` fetches go through a `transport` module (`app/shell/transport.ts`, new) with two implementations: `dev` (today's fetches) and `share` (host API: `GET /api/state` for status, `POST /api/comments`; favorites and actions are absent). Chosen by `import.meta.env.MODE`. |
-| `app/src/main.ts` | The `import.meta.hot` handlers stay dev-only (they are already guarded). Share mode starts the 60 s state poll instead. |
+| `app/src/main.ts` | The `import.meta.hot` handlers stay dev-only (they are already guarded). Share mode mounts `createViewer` (below) instead of `createShell`, and starts the 60 s state poll. |
+| `app/shell/viewer/` (new) | The viewer of decision 19: header and prototype list, desk, bar, phone view, About; phase 1 adds the comments in the bar. Uses `transport.ts` and the stack's `mount`. |
 | `app/shell/comments/types.ts` | `Item` and the batch comment gain `from?: { share: string; version: number; viewer: string; verified: boolean; link: string; comment: string }`. `Place` gains `share?: true` for share mode UI. |
 | `app/shell/comments/*` | Send label and island sections by mode; the "From links" tray (new `links.tsx`); statuses for share comments in `progress()`. |
 | `app/shell/share.ts` | Untouched (screenshots). The new sheet is `app/shell/share-link.ts` (+ `.tsx` views), reusing `share-capture.ts` to make the preview image. |
@@ -806,7 +865,7 @@ Each phase is its own PR, with screenshots per AGENTS.md.
 
 | Phase | Ships | Done when |
 |---|---|---|
-| **0. Local host and share builds** | `host/` Worker under `wrangler dev`; `share-build.mjs`; `proto share setup --local`, `proto share <scope>`, `ls`, `rm`, `file`; the review checks; viewer mode of the shell | A share of 2 of 5 variants opens at `k3x9p2.localhost:8787` in Chrome and Safari, the other 3 are absent from the file, stamps present, a planted fake key blocks publishing, under 5 ms CPU per request in `wrangler dev` |
+| **0. Local host and share builds** | `host/` Worker under `wrangler dev`; `share-build.mjs`; `proto share setup --local`, `proto share <scope>`, `ls`, `rm`, `file`; the review checks; the viewer (decision 19) without comments | A share of 2 of 5 variants opens at `k3x9p2.localhost:8787` in Chrome and Safari, the other 3 are absent from the file, stamps present, a planted fake key blocks publishing, under 5 ms CPU per request in `wrangler dev` |
 | **1. Comments round trip** | The Share link sheet in the page (New link, Your links), viewer comments, the tray, Send to Claude, statuses back, follow-ups, `comments` and `take`, injection framing | A comment from a second browser profile reaches the tray within 30 s, Send to Claude lands in `proto inbox` framed, the reply's status shows in the viewer |
 | **2. On Cloudflare (workers.dev)** | `proto share setup` for a free account, owner token in Keychain, password gate, person links, update and changed-since, budget counters, notify | A friend opens a workers.dev link on their phone, enters the password, comments; Tomer gets a Discord ping |
 | **3. Own domain** | `--domain`, wildcard per-share origins, short apex links, preview images, owner view | `prto.fyi/k3x9p2` redirects to its own subdomain over TLS; two shares can't read each other's storage (tested) |
