@@ -8,7 +8,7 @@ import { Menu } from '@base-ui/react/menu'
 import { rtl, t, tn } from '../i18n'
 import { ago } from '../ui'
 import type { Proto } from '../shell'
-import { Icon, card, iconBtn, popup } from './ui'
+import { Icon, card, iconBtn, popup, useClosable } from './ui'
 
 export type Appearance = 'system' | 'light' | 'dark'
 /** The viewer signed in with GitHub, as the host's api/me answers. */
@@ -46,6 +46,7 @@ function Protos({ protos, cur, choose, compact, owner, updated, root }: {
   protos: Proto[]; cur: Proto; choose: (id: string) => void; compact: boolean; owner: string; updated: string; root: RefObject<HTMLDivElement | null>
 }) {
   const [open, setOpen] = useState(false)
+  useClosable(open, setOpen)
   const many = protos.length > 1
   // A share written to a file before any host is set up has no owner name: then no "by" at all.
   const line = `${owner ? t('by {owner} · read-only', { owner }) : t('Read-only')} · ${many ? tn(protos.length, '{n} prototype', '{n} prototypes') : tn(cur.variants.length, '{n} design', '{n} designs')}`
@@ -96,6 +97,7 @@ function Protos({ protos, cur, choose, compact, owner, updated, root }: {
 /** About this link: who shared it, when, which version, that it is read-only, and this viewer's theme. */
 function About({ facts, appearance, setAppearance, root }: { facts: Facts; appearance: Appearance; setAppearance: (a: Appearance) => void; root: RefObject<HTMLDivElement | null> }) {
   const [open, setOpen] = useState(false)
+  useClosable(open, setOpen)
   const rows: [string, string][] = [
     ...(facts.owner ? [[t('Shared by'), facts.owner] as [string, string]] : []),
     [t('Updated'), `${ago(Date.parse(facts.updatedAt))} · ${t('version {n}', { n: facts.version })}`],
@@ -138,6 +140,8 @@ function About({ facts, appearance, setAppearance, root }: { facts: Facts; appea
 /** Signed out, with comments on: Sign in with GitHub. Signed in: their face and login, and a menu to sign out. */
 function Who({ account, wide, root }: { account: Account; wide: boolean; root: RefObject<HTMLDivElement | null> }) {
   const { me, comments, signIn, signOut } = account
+  const [open, setOpen] = useState(false)
+  useClosable(open, setOpen)
   if (me === undefined) return null
   if (!me) {
     if (!signIn) return null
@@ -159,7 +163,7 @@ function Who({ account, wide, root }: { account: Account; wide: boolean; root: R
   }
   const row = 'flex h-9 w-full cursor-default items-center gap-2.5 rounded-lg px-2.5 text-start text-[13px] text-zinc-700 outline-none data-[highlighted]:bg-zinc-900/[.05] dark:text-zinc-300 dark:data-[highlighted]:bg-white/[.07]'
   return (
-    <Menu.Root modal={false}>
+    <Menu.Root modal={false} open={open} onOpenChange={setOpen}>
       <Menu.Trigger data-account aria-label={t('Signed in as {login}', { login: me.login })}
         className="-me-1.5 flex h-9 shrink-0 items-center gap-2 rounded-full py-1 ps-1 pe-1 text-[13px] font-medium hover:bg-zinc-900/5 data-[popup-open]:bg-zinc-900/5 sm:pe-2.5 dark:hover:bg-white/[.07] dark:data-[popup-open]:bg-white/[.07]">
         <Face me={me} size="size-7 text-[12px]" />

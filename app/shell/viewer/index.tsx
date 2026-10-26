@@ -20,7 +20,7 @@ import { Header, type Account, type Appearance, type Me } from './header'
 import { Phone } from './phone'
 import { clampZoom, loadDevice, saveDevice, type Device } from './device'
 import { createFramed, frameKey, frameMsg, holdZoom, zoomKey } from './framed'
-import { Icon, MountsCtx, face, makeStore, surface, type Api, type Mounts, type Screen } from './ui'
+import { Icon, MountsCtx, closePopups, face, makeStore, surface, type Api, type Mounts, type Screen } from './ui'
 
 type Mount = (el: HTMLElement, component: unknown) => () => void
 const THEME_KEY = 'proto-theme'
@@ -150,8 +150,8 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
     at.current = { ...at.current, z: k === '1' ? 1 : at.current.fit }
     patch({ zoom: k === '1' ? 100 : 0 })
   }
-  const now = useRef({ full, back, zoomBy, zoomKeyed, menu })
-  now.current = { full, back, zoomBy, zoomKeyed, menu }
+  const now = useRef({ full, back, zoomBy, zoomKeyed })
+  now.current = { full, back, zoomBy, zoomKeyed }
   useEffect(() => { if (!full) setMenu(false) }, [full])
   // Esc always goes back to the desk, a popup of the viewer's own closing first (Base UI closes it).
   // Heard before anything else, so the popup is still open when it is asked. The zoom keys, ⌘/Ctrl+
@@ -168,7 +168,9 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
       const m = frameMsg(e.data), n = now.current
       const f = document.querySelector<HTMLIFrameElement>('[data-full] iframe')
       if (!m || !n.full || !f || e.source !== f.contentWindow) return
-      if (m.protoViewer === 'esc') { if (n.menu) setMenu(false); else if (!popupOpen(root.current)) n.back() }
+      // Esc from the design closes an open popup of the viewer first, as Esc out here does; a press in it closes them.
+      if (m.protoViewer === 'esc') { if (!closePopups() && !popupOpen(root.current)) n.back() }
+      else if (m.protoViewer === 'press') closePopups()
       else if (m.protoViewer === 'key') n.zoomKeyed(m.key)
       else if (m.protoViewer === 'zoom') n.zoomBy(m.by)
     }

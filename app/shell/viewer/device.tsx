@@ -7,7 +7,7 @@ import { useState, type CSSProperties, type RefObject } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { rtl, t } from '../i18n'
 import { dims, ORDER, SIZES, sizeIcon, type Size } from '../view/sizes'
-import { Icon, SizeIcon, popup } from './ui'
+import { Icon, SizeIcon, popup, useClosable } from './ui'
 
 /** zoom: 0 is Fit, else a percentage, 25 to 200. */
 export type Device = { size: Size; land: boolean; zoom: number }
@@ -55,6 +55,7 @@ export function DeviceMenu({ device, set, shown, phone, open, setOpen, root }: {
   device: Device; set: (d: Partial<Device>) => void; shown: number; phone: boolean
   open: boolean; setOpen: (o: boolean) => void; root: RefObject<HTMLDivElement | null>
 }) {
+  useClosable(open, setOpen)
   const pct = Math.round(shown * 100)
   const icon = phone ? 'phone' : sizeIcon(device.size, device.land)
   const z = device.zoom

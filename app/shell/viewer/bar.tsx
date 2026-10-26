@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type MutableRefObject, type RefObject } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { rtl, t, tn } from '../i18n'
-import { Icon, card, iconBtn, popup, type Api, type Screen, type Store } from './ui'
+import { Icon, card, iconBtn, popup, useClosable, type Api, type Screen, type Store } from './ui'
 import { DeviceMenu, type Device } from './device'
 
 const dir = rtl ? 'rtl' : 'ltr'
@@ -83,6 +83,7 @@ export function Jump({ screens, i, go, step, root, named }: {
   screens: Screen[]; i: number; go: (key: string) => void; step: (d: number) => void; root: RefObject<HTMLDivElement | null>; named?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  useClosable(open, setOpen)
   const list = useRef<HTMLDivElement>(null)
   // Opening scrolls the list to the design in view.
   useEffect(() => { if (open) requestAnimationFrame(() => list.current?.querySelector('[aria-current]')?.scrollIntoView({ block: 'center' })) }, [open])

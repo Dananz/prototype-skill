@@ -409,6 +409,36 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       const who = await until(() => signedIn.run(`document.querySelector('[data-viewer-header] [data-account]')?.textContent ?? ''`), 5000)
       assert(who?.includes('octo-smoke') && await signedIn.run(`(() => { const i = document.querySelector('[data-account] [data-face]'); return !!i && Math.round(i.getBoundingClientRect().width) === 28 })()`), `signed in: the header shows ${JSON.stringify(who)}`)
       const spot = sel => signedIn.run(`(() => { const r = document.querySelector(${JSON.stringify(sel)})?.getBoundingClientRect(); return r ? [r.left + r.width / 2, r.top + r.height / 2] : null })()`)
+      // In the full view, Esc and a press in the design reach the viewer's popups: Esc from the frame
+      // closes an open account menu or About and stays; the next Esc goes back; a press closes them.
+      const full = () => signedIn.run(`!!document.querySelector('[data-full]')`)
+      const openFull = async () => {
+        await signedIn.press(...await spot('[data-board="share-link/C"] [data-frame]'))
+        assert(await until(() => signedIn.run(`document.querySelector('[data-full] iframe')?.contentDocument?.documentElement.dataset.ready === '1'`), 5000), 'popups: the full view did not open')
+        await sleep(400)
+      }
+      const intoFrame = () => signedIn.run(`(() => { const f = document.querySelector('[data-full] iframe'); f.contentWindow.focus(); f.contentDocument.body.tabIndex = -1; f.contentDocument.body.focus(); return true })()`)
+      for (const [name, trigger, popupSel] of [['account menu', '[data-account]', '[data-account-menu]'], ['About', '[aria-label="About this link"]', '[role="dialog"]']]) {
+        await openFull()
+        await signedIn.press(...await spot(trigger))
+        assert(await until(() => signedIn.run(`!!document.querySelector(${JSON.stringify(popupSel)})`), 3000), `popups: the ${name} did not open`)
+        await intoFrame()
+        await signedIn.key('Escape')
+        await sleep(500)
+        assert(await full() && !await signedIn.run(`!!document.querySelector(${JSON.stringify(popupSel)})`), `popups: Esc from the design with the ${name} open did not close only it`)
+        await signedIn.key('Escape')
+        assert(await until(async () => !await full(), 3000), `popups: a second Esc from the design (after the ${name}) did not go back to the desk`)
+        await sleep(400)
+      }
+      await openFull()
+      await signedIn.press(...await spot('[data-account]'))
+      assert(await until(() => signedIn.run(`!!document.querySelector('[data-account-menu]')`), 3000), 'popups: the account menu did not open')
+      await signedIn.press(...await spot('[data-full-card]'))
+      assert(await until(() => signedIn.run(`!document.querySelector('[data-account-menu]')`), 3000) && await full(), 'popups: a press in the design did not close the account menu')
+      await signedIn.press(...await spot('[data-viewer-bar] [data-back]'))
+      assert(await until(async () => !await full(), 3000), 'popups: All designs did not go back')
+      await sleep(400)
+
       await signedIn.press(...await spot('[data-account]'))
       const out = await until(() => spot('[data-signout]'), 3000)
       const menu = await signedIn.run(`document.querySelector('[data-account-menu]')?.textContent ?? ''`)

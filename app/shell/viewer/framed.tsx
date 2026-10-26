@@ -18,6 +18,7 @@ export const frameKey = new URLSearchParams(location.search).get('frame')
 export type FrameMsg =
   | { protoViewer: 'ready' }
   | { protoViewer: 'esc' }
+  | { protoViewer: 'press' }
   | { protoViewer: 'key'; key: '0' | '1' | '+' | '-' }
   | { protoViewer: 'zoom'; by: number }
   | { protoViewer: 'theme'; dark: boolean }
@@ -106,6 +107,8 @@ export function createFramed(el: HTMLElement, screen: Screen | undefined, mounts
     const k = !e.defaultPrevented && zoomKey(e)
     if (k) { e.preventDefault(); tell({ protoViewer: 'key', key: k }) }
   })
+  // A press in the design is a press outside the viewer's popups, which can't hear it from here.
+  addEventListener('pointerdown', () => tell({ protoViewer: 'press' }), true)
   holdZoom(window, by => tell({ protoViewer: 'zoom', by }))
   let ready = false
   const done = () => {

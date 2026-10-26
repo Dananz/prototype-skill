@@ -45,6 +45,30 @@ export function SizeIcon({ name, className = 'size-4' }: { name: keyof typeof SI
   )
 }
 
+/* ---------------------------------------------------------------- the viewer's open popups */
+
+// Each open popup of the viewer (a list, About, the account menu, the device menu), with its close.
+// A press or Esc in the full view's frame stays in the frame's document, where Base UI never hears
+// it; the viewer closes them from here instead (index.tsx).
+const closers = new Set<() => void>()
+/** Keeps a controlled popup's close at hand while it is open. */
+export function useClosable(open: boolean, setOpen: (o: boolean) => void) {
+  const set = useRef(setOpen)
+  set.current = setOpen
+  useEffect(() => {
+    if (!open) return
+    const close = () => set.current(false)
+    closers.add(close)
+    return () => { closers.delete(close) }
+  }, [open])
+}
+/** Closes every open popup of the viewer; whether there was one. */
+export function closePopups() {
+  const any = closers.size > 0
+  ;[...closers].forEach(f => f())
+  return any
+}
+
 /** One shared design: its route (`pricing/B`), its number and name, and its module. */
 export type Screen = { key: string; n: number; name: string; v: Variant }
 /** What the desk can be asked to do: fly to a design, Fit, 100 %, or zoom by a factor. */
