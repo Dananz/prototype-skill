@@ -19,6 +19,7 @@ export function parseScope(words, all, protos) {
     const [slug, spec] = word.split('/')
     const p = byId.get(slug)
     if (!p) throw new ShareError(`No prototype called "${slug}" (in "${word}")`)
+    if (!p.variants.length) throw new ShareError(`"${slug}" has no variants to share`)
     const set = picked.get(slug) ?? new Set()
     if (spec === undefined) p.variants.forEach(v => set.add(v))
     else {
@@ -30,6 +31,7 @@ export function parseScope(words, all, protos) {
   }
   if (!picked.size) throw new ShareError('Name a prototype to share (pricing, pricing/2, pricing/B) or pass --all')
   const out = [...picked].map(([id, set]) => ({ id, variants: byId.get(id).variants.filter(v => set.has(v)) })).filter(p => p.variants.length)
+  if (!out.length) throw new ShareError('Nothing to share: no prototype has variants yet')
   // The first word's route: its own variant when it named one, else the prototype's first.
   const [slug, spec] = (words[0] ?? `${out[0].id}`).split('/')
   const p = out.find(x => x.id === slug)

@@ -24,6 +24,12 @@ test('parseScope rejects', () => {
   bad(['pricing/9'], false, 'pricing/9')
   bad([], false, 'prototype')
 })
+test('parseScope rejects prototypes without variants', () => {
+  const empty = [{ id: 'x', variants: [], archived: false }]
+  for (const [words, all] of [[['x'], false], [['x/A'], false], [[], true]]) {
+    assert.throws(() => parseScope(words, all, empty), e => e instanceof ShareError && (all || e.message.includes('"x"')))
+  }
+})
 test('trimMeta drops owner data', () => {
   const meta = { title: 'T', kind: 'web', screen: [1, 2], created: 'x', states: [], variants: { A: 'a', B: 'b' }, about: { A: 'x', B: 'y' }, ask: 'q', picked: 'A', favorites: ['A'], archived: true, count: 3, from: 'home/B', mystery: 1 }
   const out = trimMeta(meta, ['B'], new Set(['pricing']))
