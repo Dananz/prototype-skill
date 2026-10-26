@@ -195,14 +195,38 @@ export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
     }
     const onTouchEnd = (e: TouchEvent) => { if (e.touches.length < 2) { t0 = null; touching = e.touches.length > 0 } }
 
-    /* Drag with the mouse anywhere that isn't a control, to move the desk. */
+    /* Drag with the mouse to move the desk: on the desk itself (gaps, padding, a card that isn't
+       running) with the left button, anywhere with the middle one or with Space held, as in design
+       tools. A press on a running design is the design's own: it selects text, drags its sliders
+       and its drag-and-drop, so it never starts a pan, and neither does a press the design handled
+       (defaultPrevented) or one on a control or a field. */
     let drag: { x: number; y: number; l: number; t: number; id: number; moved: boolean } | null = null
+    let space = false
+    // Whether the last press was on a running design: the page's focus then rests on the body
+    // while the design has it, so the desk's keys leave its keystrokes alone (onKey).
+    let inDesign = false
+    const CONTROL = 'button, a, input, textarea, select, label, [contenteditable]:not([contenteditable="false"]), [draggable="true"], [role="slider"], [data-label]'
+    const onPress = (e: PointerEvent) => { inDesign = !!(e.target as Element).closest?.('[data-mount]') }
+    // A press on a design's plain text focuses the desk (the nearest focusable box); only the
+    // keyboard's own way back to the desk (Tab, focus-visible) gives the keys to the desk again.
+    const onFocus = () => { if (s.matches(':focus-visible')) inDesign = false }
     const onDown = (e: PointerEvent) => {
-      if (e.pointerType !== 'mouse' || (e.button !== 0 && e.button !== 1)) return
-      if (e.button === 0 && (e.target as HTMLElement).closest('button, a, input, label, [data-label]')) return
+      if (e.pointerType !== 'mouse' || (e.button !== 0 && e.button !== 1) || e.defaultPrevented) return
+      const at = e.target as HTMLElement
+      if (e.button === 0 && !space && (at.closest(CONTROL) || at.closest('[data-mount]'))) return
       drag = { x: e.clientX, y: e.clientY, l: s.scrollLeft, t: s.scrollTop, id: e.pointerId, moved: false }
-      if (e.button === 1) e.preventDefault()
+      if (e.button === 1 || space) e.preventDefault()
     }
+    const onSpace = (e: KeyboardEvent) => {
+      if (e.key !== ' ' || e.repeat) return
+      const at = e.target as HTMLElement
+      if (e.type === 'keyup') { space = false; delete s.dataset.space; return }
+      if ((at !== s && at !== document.body && at !== document.documentElement) || inDesign) return
+      space = true
+      s.dataset.space = ''
+      e.preventDefault()
+    }
+    const onBlur = () => { space = false; delete s.dataset.space }
     const onMove = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y
@@ -226,10 +250,12 @@ export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
       }
       drag = null
     }
-    // The keys work on the desk, and on the page when nothing else has the focus (as when it opens).
+    // The keys work on the desk, and on the page when nothing else has the focus (as when it opens),
+    // unless the last press was on a design: its own shortcuts on window are then its own.
     const onKey = (e: KeyboardEvent) => {
       const at = e.target as HTMLElement
       if (at !== s && at !== document.body && at !== document.documentElement) return
+      if (inDesign) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const { cx, cy } = view()
       if (e.key === '+' || e.key === '=') { manual(); zoomAt(z * 1.25, cx, cy) }
@@ -264,6 +290,11 @@ export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
     s.addEventListener('pointerup', onUp)
     s.addEventListener('pointercancel', onUp)
     window.addEventListener('keydown', onKey)
+    window.addEventListener('keydown', onSpace)
+    window.addEventListener('keyup', onSpace)
+    window.addEventListener('blur', onBlur)
+    window.addEventListener('pointerdown', onPress, true)
+    s.addEventListener('focus', onFocus)
     return () => {
       stop(); cancelAnimationFrame(ticking); ro.disconnect(); io.disconnect()
       s.removeEventListener('scroll', onScroll)
@@ -279,6 +310,11 @@ export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
       s.removeEventListener('pointerup', onUp)
       s.removeEventListener('pointercancel', onUp)
       window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keydown', onSpace)
+      window.removeEventListener('keyup', onSpace)
+      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('pointerdown', onPress, true)
+      s.removeEventListener('focus', onFocus)
       api.current = null
     }
   }, [api, store, rows])
@@ -296,7 +332,7 @@ export function Desk({ screens, size, grows, sel, store, api, onCentre }: {
 
   return (
     <div ref={scroller} data-viewer-desk tabIndex={0} role="region" aria-label={t('Every shared design on one desk. Drag to move, pinch or Ctrl+scroll to zoom, 0 fits, 1 is actual size.')}
-      className="absolute inset-0 cursor-grab touch-pan-x touch-pan-y overflow-auto overscroll-contain select-none [scrollbar-width:none] data-[drag]:cursor-grabbing [&::-webkit-scrollbar]:hidden">
+      className="absolute inset-0 cursor-grab touch-pan-x touch-pan-y overflow-auto overscroll-contain select-none [scrollbar-width:none] data-[drag]:cursor-grabbing data-[space]:[&_[data-mount]]:cursor-grab [&::-webkit-scrollbar]:hidden [&_[data-mount]]:cursor-auto [&_[data-mount]]:select-text">
       <div className="grid min-h-full w-max min-w-full place-items-center" style={{ padding: `${PAD.top}px ${PAD.x}px ${PAD.bottom}px` }}>
         <div ref={world} data-world className="grid items-start [--edge:rgba(0,0,0,.12)] dark:[--edge:rgba(255,255,255,.12)]"
           style={{ gridTemplateColumns: `repeat(${cols}, ${W}px)`, columnGap: GAP, rowGap: GAP * 1.5 }}>

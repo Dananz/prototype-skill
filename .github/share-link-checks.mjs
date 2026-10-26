@@ -187,6 +187,9 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
     try { return (await buildShare({ sessionDir: app, scope, info })).html } catch (e) { fail(`share viewer: buildShare threw: ${e?.stack || e}`) }
   }
   const pairScope = { protos: [{ id: 'share-link', variants: ['B', 'C'] }, { id: 'lineage-src', variants: ['A'] }], start: 'share-link/B' }
+  // C gets a field and a plain line, to press and drag in: the design's own, never the desk's.
+  writeFileSync(join(protos, 'share-link/C.tsx'), readFileSync(join(protos, 'share-link/C.tsx'), 'utf8')
+    .replace('<h1>MARK-C</h1>', '<h1>MARK-C</h1><p data-plain style={{ fontSize: 64 }}>PLAIN-TEXT-LINE in the design</p><textarea data-field defaultValue="SELECT-ME some words to select here" style={{ width: 900, height: 160, fontSize: 48 }} />'))
   const html = await build(pairScope)
   const site = await host(html)
   try {
@@ -222,6 +225,42 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       await page.key('1')
       await sleep(700)
       assert(await readout() === '100%', `zoom: 1 reads ${JSON.stringify(await readout())}`)
+
+      // Gestures in a design are the design's: a drag in its field selects text, a drag on its text
+      // doesn't move the desk, and after a press in it the desk's keys leave its keystrokes alone.
+      // The empty desk still moves with a drag.
+      // #3's dot in the bar flies the desk to it.
+      const dot = await page.run(`(() => { const r = document.querySelector('[data-viewer-bar] [role=tab][aria-label^="#3"]').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2] })()`)
+      await page.press(...dot)
+      await sleep(800)
+      // At 100 %: Chrome hit-tests a textarea under an ancestor's CSS zoom off by the zoom (the
+      // caret lands at the end), which is the browser's, not the desk's.
+      await page.run(`document.querySelector('[data-viewer-desk]').focus()`)
+      await page.key('1')
+      await sleep(800)
+      const scroll = () => page.run(`(() => { const d = document.querySelector('[data-viewer-desk]'); return d.scrollLeft + ',' + d.scrollTop })()`)
+      assert(await page.run(`(() => { const d = document.querySelector('[data-viewer-desk]'); return d.scrollWidth > d.clientWidth })()`), 'design gestures: the desk has no room to move, so the checks below would prove nothing')
+      const field = await page.run(`(() => { const r = document.querySelector('[data-board="share-link/C"] [data-field]').getBoundingClientRect(); return [r.left, r.top, r.width, r.height] })()`)
+      const before = await scroll()
+      await page.drag([field[0] + 12, field[1] + field[3] / 3], [field[0] + field[2] - 12, field[1] + field[3] / 3], 10)
+      await sleep(300)
+      assert(await scroll() === before, `design gestures: a drag in the design's textarea moved the desk (${before} to ${await scroll()})`)
+      const chosen = await page.run(`(() => { const t = document.querySelector('[data-board="share-link/C"] [data-field]'); return t.selectionEnd - t.selectionStart })()`)
+      assert(chosen > 0, 'design gestures: a drag in the design\'s textarea selected nothing')
+      const plain = await page.run(`(() => { const r = document.querySelector('[data-board="share-link/C"] [data-plain]').getBoundingClientRect(); return [r.left, r.top + r.height / 2, r.width] })()`)
+      await page.drag([plain[0] + 4, plain[1]], [plain[0] + Math.min(plain[2] - 4, 400), plain[1]], 10)
+      await sleep(300)
+      assert(await scroll() === before, 'design gestures: a drag on the design\'s text moved the desk')
+      assert((await page.run('String(getSelection())')).length > 0, 'design gestures: text in a design cannot be selected')
+      const shown = await readout()
+      await page.key('+')
+      await sleep(500)
+      assert(await readout() === shown, `design gestures: + after a press in the design zoomed the desk (${shown} to ${await readout()})`)
+      // The gap between #2 and #3, at the height of #3's middle.
+      const gap = await page.run(`(() => { const [b, c] = ['share-link/B', 'share-link/C'].map(k => document.querySelector('[data-board="' + k + '"] [data-frame]').getBoundingClientRect()); return [(b.right + c.left) / 2, c.top + c.height / 2] })()`)
+      await page.drag(gap, [gap[0] - 200, gap[1] + 5], 10)
+      await sleep(300)
+      assert(await scroll() !== before, 'design gestures: a drag on the empty desk no longer moves it')
 
       // The prototypes of the share, in the header's list.
       assert(await page.run(`!!document.querySelector('[data-proto-switch] [data-caret]')`), 'prototype list: the title has no caret')
