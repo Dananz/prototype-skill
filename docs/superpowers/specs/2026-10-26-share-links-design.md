@@ -196,8 +196,9 @@ A share build is a production Vite build of the session app with `mode: 'share'`
    every absolute path into the bundle (which item 6 then refuses), the stack of one inlined,
    minified script names the page URL and mangled functions, and React's production
    `react/jsx-dev-runtime` exports `jsxDEV` as undefined. So for `src/protos/**` the share build
-   runs a compile-time pass (a small Babel plugin through `@vitejs/plugin-react`'s `babel` option)
-   that writes `data-proto-src="<file under src/protos>:<line>"` and
+   runs a compile-time pass (a Vite `transform` hook ordered after the JSX transform, which parses
+   the module with the plugin context's `this.parse()`; `@vitejs/plugin-react` 6 no longer runs
+   Babel) that writes `data-proto-src="<file under src/protos>:<line>"` and
    `data-proto-component="<enclosing capitalized function>"` onto each DOM tag, and records the
    same relative place for component uses (`uses`). `jsx.ts` keeps any stamp already present and
    uses `jsx`/`jsxs` from `react/jsx-runtime` when `jsxDEV` is missing. Vue's template
@@ -209,8 +210,13 @@ A share build is a production Vite build of the session app with `mode: 'share'`
    `process.env`, sourcemaps off. Nothing from any `.env` can be inlined.
 6. **Strips absolute paths.** Stamps are already relative to `src/protos`. The build fails if the
    output contains the project's absolute path or the user's home path.
-7. **Inlines** JS, CSS, fonts listed in the session (Google Fonts stay as their CDN link, which
-   is free and public), and images under `src/assets`.
+7. **Inlines** JS, CSS and images (Google Fonts stay as their CDN link, which is free and public).
+8. **Converts images to WebP** (quality 82, at most 2560 px wide, with `sharp`) before inlining.
+   Measured 2026-10-26 on two real sessions: 66 PNGs, 45.2 MB, became 2.2 MB. `src/images.ts`'s
+   eager glob is rewritten to the assets the shared variants name with a literal `image('…')`; a
+   non-literal call keeps them all and warns.
+9. **Trims `session.json`** to `{ name, stack, lang }` for the bundle: the real file holds the
+   project's absolute path, the tailnet URL, the port and the asks.
 
 ### Pre-publish review (blocking)
 
@@ -363,8 +369,10 @@ D1 5 million rows read/day, 100,000 rows written/day (daily caps enforced on Fre
 2026-09-01), 5 GB total, 500 MB per database, 10 databases, 2 MB per row, 50 queries per Worker
 invocation. All reset at 00:00 UTC (03:00 in Israel in winter, 02:00 in summer).
 
-Budget, assuming a typical share of 1.5 MiB gzipped (to be measured on a real session in plan
-step 1):
+Budget, from a measurement on 2026-10-26 (production builds of four real sessions): the shell and
+code are about 1 MB raw, 0.3 MB gzipped, for any share; images were 0 to 28 MB as PNG and come to
+about 1 to 2.5 MB as WebP. So a share is 0.3 MB without pictures and up to about 3 MB with many;
+the table uses 1.5 MiB:
 
 | Resource | Use | Capacity | At the limit |
 |---|---|---|---|
@@ -799,7 +807,7 @@ Each phase is its own PR, with screenshots per AGENTS.md.
 | Phase | Ships | Done when |
 |---|---|---|
 | **0. Local host and share builds** | `host/` Worker under `wrangler dev`; `share-build.mjs`; `proto share setup --local`, `proto share <scope>`, `ls`, `rm`, `file`; the review checks; viewer mode of the shell | A share of 2 of 5 variants opens at `k3x9p2.localhost:8787` in Chrome and Safari, the other 3 are absent from the file, stamps present, a planted fake key blocks publishing, under 5 ms CPU per request in `wrangler dev` |
-| **1. Comments round trip** | Viewer comments, the tray, Send to Claude, statuses back, follow-ups, `comments` and `take`, injection framing | A comment from a second browser profile reaches the tray within 30 s, Send to Claude lands in `proto inbox` framed, the reply's status shows in the viewer |
+| **1. Comments round trip** | The Share link sheet in the page (New link, Your links), viewer comments, the tray, Send to Claude, statuses back, follow-ups, `comments` and `take`, injection framing | A comment from a second browser profile reaches the tray within 30 s, Send to Claude lands in `proto inbox` framed, the reply's status shows in the viewer |
 | **2. On Cloudflare (workers.dev)** | `proto share setup` for a free account, owner token in Keychain, password gate, person links, update and changed-since, budget counters, notify | A friend opens a workers.dev link on their phone, enters the password, comments; Tomer gets a Discord ping |
 | **3. Own domain** | `--domain`, wildcard per-share origins, short apex links, preview images, owner view | `prto.fyi/k3x9p2` redirects to its own subdomain over TLS; two shares can't read each other's storage (tested) |
 | **4. Extras** | votes, blind review, "What's new" banner, QR, expiry, view counts | each behind its switch, off by default except the banner |
