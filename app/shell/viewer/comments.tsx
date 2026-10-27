@@ -96,6 +96,12 @@ export const drafts = {
     for (const [k, v] of Object.entries(all)) if (v.id === id) delete all[k]
     saveDrafts(all)
   },
+  /** The host refused the comment sent under id: its draft stays, as a new comment next time. */
+  forget(id: string) {
+    const all = allDrafts()
+    for (const v of Object.values(all)) if (v.id === id) delete v.id
+    saveDrafts(all)
+  },
 }
 
 /** What a send came to: stored; refused for good (a 4xx, with the host's reason); or no answer (kept, to retry). */
@@ -168,9 +174,14 @@ export function useNotes(on: boolean, me: Me | null | undefined) {
     return { ok: false, refused: false, why: t("Couldn't send. Try again") }
   }
   /** Sends a comment that got no answer again, under its own id. */
-  const retry = (id: string) => {
+  const retry = async (id: string): Promise<string | null> => {
     const n = notes.find(x => x.id === id)
-    if (n) void add(n.id, n.variant, n.body, n.target)
+    if (!n) return null
+    const r = await add(n.id, n.variant, n.body, n.target)
+    if (r.ok) return null
+    // Refused for good: the card went; a draft still holding its words sends them under a new id.
+    if (r.refused) drafts.forget(id)
+    return r.why
   }
   /** Deletes the viewer's own comment while it is new; null when it went, else why not. */
   const remove = async (id: string): Promise<string | null> => {
@@ -203,7 +214,7 @@ export type Talk = {
   fresh: (id: string) => boolean
   told: boolean
   add: (id: string, variant: string, body: string, target: Target | null) => Promise<Sent>
-  retry: (id: string) => void
+  retry: (id: string) => Promise<string | null>
   remove: (id: string) => Promise<string | null>
   /** The bar grown into the comments. */
   open: boolean; setOpen: (o: boolean) => void
@@ -383,7 +394,7 @@ export function Panel({ here, wide, list }: { here: Here; wide: boolean; list: R
                 <Grow key={c.id} fresh={talk.fresh(c.id)}>
                   <CommentCard n={c} num={num.get(c.id)} active={talk.active === c.id} owner={talk.owner} lost={talk.lost.has(c.id)}
                     onShow={() => { talk.setActive(c.id); if (c.target) talk.seekTo(c.id) }}
-                    onDelete={() => { void talk.remove(c.id).then(e => setError(e ?? '')) }} onRetry={() => talk.retry(c.id)} />
+                    onDelete={() => { void talk.remove(c.id).then(e => setError(e ?? '')) }} onRetry={() => { void talk.retry(c.id).then(e => setError(e ?? '')) }} />
                 </Grow>
               ))
               : <p className="px-3 py-6 text-center text-[13px] text-zinc-500">{t('Nothing on #{n} yet. Say what you think.', { n: here.n })}</p>}

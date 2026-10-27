@@ -267,7 +267,8 @@ export function Pins({ variant, mount, kind, pick, ready = true, scale }: {
     at.addEventListener('touchstart', tStart as EventListener, { capture: true, passive: true })
     at.addEventListener('touchmove', tMove as EventListener, { capture: true, passive: true })
     at.addEventListener('touchend', tEnd as EventListener, opts)
-    at.addEventListener('touchcancel', (() => { touch = null }) as EventListener, true)
+    const tCancel = () => { touch = null }
+    at.addEventListener('touchcancel', tCancel, true)
     return () => {
       marked.removeAttribute('data-pinning')
       at.removeEventListener('pointermove', move, true)
@@ -278,6 +279,7 @@ export function Pins({ variant, mount, kind, pick, ready = true, scale }: {
       at.removeEventListener('touchstart', tStart as EventListener, true)
       at.removeEventListener('touchmove', tMove as EventListener, true)
       at.removeEventListener('touchend', tEnd as EventListener, true)
+      at.removeEventListener('touchcancel', tCancel, true)
       hovered.current = null; setHover(null)
     }
   }, [pick?.on, ready, mount, variant, kind])
@@ -339,14 +341,21 @@ function Composer({ placing, anchor }: { placing: Placing; anchor: RefObject<HTM
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const area = useRef<HTMLTextAreaElement>(null)
+  // The id a send went out under, with its text: Send again with that text reuses it (the host stores it
+  // once); edited text is another comment, under a new id, and the unsent card it replaces leaves.
+  const tried = useRef<{ id: string; body: string } | null>(null)
   const change = (v: string) => { setText(v); drafts.set(key, v); if (error) setError('') }
   const send = async () => {
     const body = text.trim()
     if (!body || busy) return
     setBusy(true)
-    const r = await talk.add(placing.id, placing.variant, body, placing.target)
+    const was = tried.current
+    const id = !was ? placing.id : was.body === body ? was.id : uuid()
+    if (was && id !== was.id && talk.notes.some(n => n.id === was.id && n.failed)) void talk.remove(was.id)
+    tried.current = { id, body }
+    const r = await talk.add(id, placing.variant, body, placing.target)
     setBusy(false)
-    if (!r.ok) { setError(r.why); return }
+    if (!r.ok) { if (r.refused) tried.current = { id: uuid(), body }; setError(r.why); return }
     drafts.set(key, '')
     talk.setPlacing(null)
   }
