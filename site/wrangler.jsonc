@@ -14,7 +14,7 @@
   },
   "routes": [{ "pattern": "prtype.dev", "custom_domain": true }],
   "workers_dev": false,
-  "observability": { "enabled": false }
-  // Added once the share host is deployed (proto share setup):
-  // "services": [{ "binding": "HOST", "service": "<the share host's Worker name>" }]
+  "observability": { "enabled": false },
+  // The share host, reached for the share paths (proto share setup --domain added this).
+  "services": [{ "binding": "HOST", "service": "proto-share" }]
 }
