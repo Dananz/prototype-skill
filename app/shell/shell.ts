@@ -37,6 +37,8 @@ import { createSettings, type Appearance } from './settings'
 import { followSession, rtl, t, tn, day } from './i18n'
 import { createShare } from './share'
 import { createShareLink } from './share-link'
+import { mountSharePop } from './share-popover'
+import { badge as shareBadge, shareState, watchShares } from './share-state'
 import type { LinkTray } from './comments/types'
 import * as transport from './transport'
 import { framed, frameClicks, frameMenus, offerTheme, openFrame, frameUrl, type Frame } from './view/frame'
@@ -535,6 +537,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div data-menu-sheet></div>
     <div data-comments-sheet></div>
     <div data-decide></div>
+    <div data-share-popover></div>
     <div data-vmenu></div>
     <div data-ctx></div>
     <div data-intake hidden class="fixed inset-0 z-[60]"></div>
@@ -1221,7 +1224,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ${switcher}
       <div class="ms-auto flex shrink-0 items-center gap-1">
         ${stepper}${stepper && (view === 'variant' || viewOk() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${replayBtn()}${deviceBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${moreBtn()}
+        ${replayBtn()}${deviceBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${shareBtn()}${moreBtn()}
       </div></div>`)
     menus = { protos: drill(), session: '' }
 
@@ -1314,6 +1317,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     paintHints()
     paintPill()
     paintDecide()
+    paintShare()
     paintSettings()
     paintVmenu()
     paintCtx()
@@ -1826,17 +1830,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         // alone, from the page's menus the prototype on screen.
         const q = arg ? byId(arg) : cur()
         if (framed || !q) return
-        const variant = arg2 || (here?.proto === q.id ? here.variant : q.variants[0]?.id ?? '')
-        linkOpen = true
-        st.open = null; st.menu = ''; closeCard(true); render()
-        drawLink({
-          protos: protos.map(x => ({ id: x.id, title: x.title, archived: x.archived, screen: x.screen, variants: x.variants.map(v => ({ id: v.id, name: v.name })) })),
-          proto: q.id, variant, what: arg2 ? 'variant' : 'proto', dark: st.dark,
-          pathOf: (proto: string, v: string) => pathOf({ view: 'variant', proto, variant: v }),
-          onClose: () => { linkOpen = false; drawLink(null) },
-          returnFocus: () => phoneMq.matches ? menuBtn() : [...root.querySelectorAll<HTMLElement>('[data-act]')].find(el => el.dataset.act === `vm:${q.id}:${variant}` && el.getClientRects().length > 0) ?? bar.querySelector<HTMLElement>('[data-shoot=more]'),
-        })
-        return
+        return openLinkSheet(q, arg2 || (here?.proto === q.id ? here.variant : q.variants[0]?.id ?? ''), arg2 ? 'variant' : 'proto')
       }
       case 'settings': settingsCategory = arg === 'session' || arg === 'shortcuts' ? arg : undefined; settingsOpen = true; st.open = null; st.menu = ''; st.drawer = false; render(); void refreshStatus(); return
       case 'tweaks': {
@@ -2565,6 +2559,47 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const settingsBtn = (status = false) => `<button data-act="settings" aria-label="${t('Settings')}" aria-haspopup="dialog" title="${t('Settings')}" class="${IB}${status ? ' relative' : ''}">${ic('settings')}${status ? `<span class="absolute end-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span>` : ''}</button>`
   const drawShare = createShare()
   const drawLink = createShareLink()
+  const linkProtos = () => protos.map(x => ({ id: x.id, title: x.title, archived: x.archived, screen: x.screen, variants: x.variants.map(v => ({ id: v.id, name: v.name })) }))
+  /** The Share link sheet, on a prototype and its variant (from its menus, the ⋯ menu, the popover's Choose…). */
+  function openLinkSheet(q: Proto, variant: string, what: 'variant' | 'proto' | 'all', message = '') {
+    linkOpen = true
+    st.open = null; st.menu = ''; closeCard(true); render()
+    drawLink({
+      protos: linkProtos(), proto: q.id, variant, what, message, dark: st.dark,
+      pathOf: (proto: string, v: string) => pathOf({ view: 'variant', proto, variant: v }),
+      onClose: () => { linkOpen = false; drawLink(null) },
+      returnFocus: () => phoneMq.matches ? menuBtn() : [...root.querySelectorAll<HTMLElement>('[data-act]')].find(el => el.dataset.act === `vm:${q.id}:${variant}` && el.getClientRects().length > 0) ?? bar.querySelector<HTMLElement>('[data-share-btn]') ?? bar.querySelector<HTMLElement>('[data-shoot=more]'),
+    })
+  }
+  // The bar's Share (a wide page): the popover under it, with this session's links. The list is
+  // watched from the start for the button's dot (a link behind its edits) and count (people in a link now).
+  const drawSharePop = mountSharePop(root.querySelector<HTMLElement>('[data-share-popover]')!)
+  const shareHere = () => {
+    const p = cur(), pl = st.place
+    return p ? { proto: p.id, variant: pl.view === 'variant' && pl.proto === p.id ? pl.variant : p.variants[0]?.id ?? '' } : null
+  }
+  function shareBtn() {
+    if (framed || !cur()) return ''
+    const on = st.open === 'share', b = shareBadge()
+    const say = [t('Share'), b.now ? tn(b.now, '{n} person in a link now', '{n} people in a link now') : '', b.behind ? t('A link is behind your edits') : ''].filter(Boolean).join(' · ')
+    return `<button data-act="open:share" data-share-btn data-shoot="share-popover" aria-haspopup="dialog" aria-expanded="${on}" aria-label="${esc(say)}" title="${esc(say)}" class="${IB} relative shrink-0 ${on ? ON : ''}">${ic('share')}<span class="hidden text-xs lg:inline">${t('Share')}</span>${b.now ? `<span data-share-now class="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-1.5 py-px text-[10px] font-semibold tabular-nums text-emerald-700 dark:text-emerald-300"><span class="size-1.5 rounded-full bg-emerald-500"></span>${b.now}</span>` : ''}${b.behind ? `<span data-share-behind class="absolute end-1 top-1 size-1.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-zinc-950"></span>` : ''}</button>`
+  }
+  const paintShare = () => {
+    const h = shareHere()
+    drawSharePop({
+      open: st.open === 'share' && !!h, protos: linkProtos(), proto: h?.proto ?? '', variant: h?.variant ?? '', dark: st.dark,
+      anchor: () => { const b = bar.querySelector<HTMLElement>('[data-share-btn]'); return b?.offsetParent ? b : null },
+      pathOf: (proto: string, v: string) => pathOf({ view: 'variant', proto, variant: v }),
+      onClose: () => { if (st.open === 'share') { st.open = null; render() } },
+      onChoose: (what, message) => { const q = cur(); if (q && h) openLinkSheet(q, h.variant, what, message) },
+    })
+  }
+  if (!framed) {
+    // Started once the shell is set up: only a change to the dot or the count redraws the bar.
+    let was = 'false:0'
+    shareState.subscribe(() => { const b = shareBadge(), now = `${b.behind}:${b.now}`; if (now !== was) { was = now; render() } })
+    setTimeout(watchShares)
+  }
   const drawSettings = createSettings()
   function paintSettings() {
     drawSettings({

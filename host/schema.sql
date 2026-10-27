@@ -5,7 +5,9 @@
 -- SQLite has no ADD COLUMN IF NOT EXISTS), so nothing here may name a column added since phase 0
 -- outside its own CREATE TABLE: on an old database that statement would fail and stop the file.
 CREATE TABLE IF NOT EXISTS owners   (id TEXT PRIMARY KEY, name TEXT NOT NULL, notify_url TEXT,
-                       created_at INTEGER NOT NULL);
+                       created_at INTEGER NOT NULL,
+                       gh_id INTEGER, gh_login TEXT,  -- the owner's GitHub identity, from the claim sign-in; a new share needs it
+                       gh_name TEXT, gh_avatar TEXT);
 CREATE TABLE IF NOT EXISTS owner_tokens (sha256 TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id),
                        device TEXT NOT NULL,          -- "Mac Studio", "M4": one token per machine
                        created_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER);
@@ -21,7 +23,8 @@ CREATE TABLE IF NOT EXISTS shares   (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL
                        note TEXT, expires_at INTEGER, created_at INTEGER NOT NULL,
                        updated_at INTEGER NOT NULL,
                        deleted_at INTEGER,            -- a tombstone: "This link was removed"
-                       html_key TEXT);                -- the live version's KV key; NULL: html:<id>:<version>
+                       html_key TEXT,                 -- the live version's KV key; NULL: html:<id>:<version>
+                       message TEXT);                 -- the owner's words for viewers, at most 280 characters
 CREATE TABLE IF NOT EXISTS links    (id TEXT PRIMARY KEY, share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
                        kind TEXT NOT NULL CHECK (kind IN ('open','person')), name TEXT,
                        revoked_at INTEGER, created_at INTEGER NOT NULL, last_seen_at INTEGER);
@@ -63,6 +66,11 @@ CREATE TABLE IF NOT EXISTS views    (share_id TEXT NOT NULL, link_id TEXT NOT NU
                        n INTEGER NOT NULL, PRIMARY KEY (share_id, link_id, day));
 CREATE TABLE IF NOT EXISTS budget   (day TEXT NOT NULL, what TEXT NOT NULL, n INTEGER NOT NULL,
                        PRIMARY KEY (day, what));      -- the host's own count of KV writes, D1 writes
+CREATE TABLE IF NOT EXISTS presence (share_id TEXT NOT NULL,      -- a signed-in viewer on a link, upserted at most once a minute
+                       gh_id INTEGER NOT NULL,         -- viewers.gh_id
+                       route TEXT,                     -- what they were looking at, slug/LETTER
+                       at INTEGER NOT NULL,            -- their last ping; "now" is within 2 minutes
+                       PRIMARY KEY (share_id, gh_id));
 CREATE TABLE IF NOT EXISTS kv_trash (key TEXT PRIMARY KEY,           -- a KV key whose delete waits for a day with budget left
                        at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS meta     (k TEXT PRIMARY KEY,             -- 'owner_id': the one owner allowed to upload

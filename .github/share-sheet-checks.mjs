@@ -15,7 +15,7 @@ import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
-import { startFakeGitHub } from './fake-github.mjs'
+import { signOwnerIn, startFakeGitHub } from './fake-github.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 const tools = process.env.PROTO_SHARE_TOOLS || join(homedir(), '.prototypes', 'share-tools')
@@ -107,6 +107,10 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
   assert(share(['setup', '--local', '--name', 'Smoke']).status === 0, 'setup --local failed')
   const host = JSON.parse(readFileSync(join(home, '.config', 'prototype', 'hosts.json'), 'utf8'))[0]
   const hostPort = Number(new URL(host.url).port)
+  // A new link goes out under the owner's GitHub name: the fake GitHub signs the owner in.
+  const ownerToken = readFileSync(join(home, '.config', 'prototype', 'token-local'), 'utf8').trim()
+  const signed = await signOwnerIn(`http://127.0.0.1:${hostPort}`, ownerToken)
+  assert(signed.status === 200 && signed.text.includes('Signed in as dana-test'), `owner sign-in: ${signed.status} ${signed.text.slice(0, 200)}`)
   await click(page, '[data-link-retry]')
   await waitFor(page, '!!document.querySelector("[data-link-what=proto]")', 'with a host: the New link view does not show')
   assert(await page.run('document.querySelector("[data-link-what=proto]").getAttribute("aria-checked")==="true"'), 'This prototype is not the default')

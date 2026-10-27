@@ -4,12 +4,18 @@ import { namesOf, route } from './lib/routes.mjs'
 import { page, ogPage } from './lib/pages.mjs'
 import { json, fail } from './lib/http.mjs'
 import { upgraded } from './lib/upgrade.mjs'
-import { authCallback, authStart, startIn, ticketIn } from './lib/github.mjs'
+import { authCallback, authStart, claimUrl, signinReady, startIn, ticketIn } from './lib/github.mjs'
 import { ownerComments, viewerApi } from './lib/comments.mjs'
-import { dropKey, metered, putCounted, queueKey, uploadRefused, usage } from './lib/budget.mjs'
+import { dropKey, metered, putCounted, queueKey, room, today, uploadRefused, usage } from './lib/budget.mjs'
 import { cron } from './lib/cron.mjs'
 
 const MAX_BYTES = 20 * 1024 * 1024
+const MAX_MESSAGE = 280
+const MAX_NOTE = 300
+const DAY_MS = 86_400_000
+// The owner list's faces: the latest 8 viewers of each link, from the last 30 days.
+const FACES = 8
+const FACES_DAYS = 30
 
 // A version's KV key. Each upload writes its own (a random part makes two uploads of one version two
 // keys), and shares.html_key names the live one; a version uploaded before that column has none.
@@ -119,12 +125,19 @@ async function api(req, env, url, path) {
   const parts = path.split('/').filter(Boolean) // ['api', 'shares', id?] or ['api', 'owner', 'comments', id?]
   if (parts[1] === 'owner' && parts[2] === 'comments' && parts.length <= 4) return ownerComments(req, env, owner, url, parts[3])
   if (parts[1] === 'owner' && parts[2] === 'usage' && parts.length === 3) return req.method === 'GET' ? json(await usage(env.DB)) : fail(405, 'Method not allowed.')
+  if (parts[1] === 'owner' && parts.length === 2) return req.method === 'GET' ? json({ ...ownerShape(owner), signin: signinReady(env) }) : fail(405, 'Method not allowed.')
+  if (parts[1] === 'owner' && parts[2] === 'claim' && parts.length === 3) {
+    if (req.method !== 'POST') return fail(405, 'Method not allowed.')
+    if (!signinReady(env)) return fail(409, 'GitHub sign-in is not set up on this host.', { code: 'signin_off' })
+    return json({ url: await claimUrl(env, url, owner.id) })
+  }
   if (parts[1] !== 'shares' || parts.length > 3) return fail(404, 'No such route.')
   const id = parts[2]
   if ((id === undefined && req.method === 'POST') || (id !== undefined && req.method === 'PUT')) {
     const refused = await uploader(env, owner)
     if (refused) return refused
   }
+  if (id === undefined && req.method === 'POST' && needsSignIn(env, owner)) return signInFirst()
   if (id === undefined) {
     if (req.method === 'POST') return createShare(env)
     if (req.method === 'GET') return listShares(env, owner)
@@ -145,6 +158,17 @@ async function uploader(env, owner) {
   return fail(403, 'This host takes uploads from its owner only.', { code: 'not_owner' })
 }
 
+// The owner as the Share popover shows them: their GitHub login, name and avatar, each null before
+// they sign in. GET /api/owner adds `signin`: whether this host can run the sign-in at all.
+const ownerShape = o => ({ login: o.gh_login ?? null, name: o.gh_name ?? null, avatar: o.gh_avatar ?? null })
+
+// A new share goes out under the owner's GitHub name: once the host can run sign-in, it takes none
+// until the owner has signed in. Updates and removes of existing shares never ask, so live links keep
+// working. A host without sign-in (a local one before setup --github, workers.dev) can't run the
+// flow, so it doesn't ask either.
+const needsSignIn = (env, owner) => signinReady(env) && !owner.gh_id
+const signInFirst = () => fail(403, 'Sign in with GitHub before sharing a new link.', { code: 'sign_in' })
+
 async function createShare(env) {
   for (let i = 0; i < 8; i++) {
     const id = newId()
@@ -158,11 +182,42 @@ async function createShare(env) {
   return fail(503, 'Could not make an id. Try again.')
 }
 
+// Three queries whatever the number of shares (a Free invocation has 50 subrequests): the shares,
+// their views, and their latest faces.
 async function listShares(env, owner) {
   const { results } = await env.DB.prepare(
-    'SELECT id, title, version, bytes, updated_at FROM shares WHERE owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC, id',
+    'SELECT id, title, version, bytes, updated_at, message FROM shares WHERE owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC, id',
   ).bind(owner.id).all()
-  return json(results.map(s => ({ id: s.id, title: s.title, version: s.version, bytes: s.bytes, updatedAt: s.updated_at })))
+  const views = new Map(), faces = new Map()
+  if (results.length) {
+    const counted = await env.DB.prepare(
+      'SELECT v.share_id AS id, SUM(v.n) AS n FROM views v JOIN shares s ON s.id = v.share_id WHERE s.owner_id = ? AND s.deleted_at IS NULL GROUP BY v.share_id',
+    ).bind(owner.id).all()
+    for (const r of counted.results) views.set(r.id, Number(r.n) || 0)
+    const seen = await env.DB.prepare(
+      `SELECT * FROM (SELECT p.share_id AS id, p.route AS route, p.at AS at, v.login AS login, v.name AS name, v.avatar AS avatar,
+         ROW_NUMBER() OVER (PARTITION BY p.share_id ORDER BY p.at DESC, p.gh_id) AS k
+       FROM presence p JOIN shares s ON s.id = p.share_id JOIN viewers v ON v.gh_id = p.gh_id
+       WHERE s.owner_id = ? AND s.deleted_at IS NULL AND p.at >= ?) WHERE k <= ? ORDER BY id, k`,
+    ).bind(owner.id, Date.now() - FACES_DAYS * DAY_MS, FACES).all()
+    for (const r of seen.results) {
+      if (!faces.has(r.id)) faces.set(r.id, [])
+      faces.get(r.id).push({ login: r.login, name: r.name, avatar: r.avatar, route: r.route, at: r.at })
+    }
+  }
+  return json(results.map(s => ({
+    id: s.id, title: s.title, version: s.version, bytes: s.bytes, updatedAt: s.updated_at,
+    message: s.message ?? null, views: views.get(s.id) ?? 0, viewers: faces.get(s.id) ?? [],
+  })))
+}
+
+// The message for viewers: trimmed, at most 280 characters; '' and null are none. Undefined: not sent.
+function textOf(v, max) {
+  if (v === undefined) return { absent: true }
+  if (v === null) return { value: null }
+  if (typeof v !== 'string' || v.length > max * 2) return null
+  const t = v.trim()
+  return t.length > max ? null : { value: t || null }
 }
 
 function readMeta(header) {
@@ -171,7 +226,10 @@ function readMeta(header) {
     const text = v => typeof v === 'string' && v.length <= 300
     if (!text(m.title) || !text(m.session) || !text(m.projectLabel) || !['en', 'he'].includes(m.lang)) return null
     if (!m.scope || typeof m.scope !== 'object') return null
-    return m
+    // message: set (a string), cleared (null) or kept (absent); note: an update's "What's new".
+    const message = textOf(m.message, MAX_MESSAGE), note = textOf(m.note, MAX_NOTE)
+    if (!message || !note) return null
+    return { ...m, message, note }
   } catch { return null }
 }
 
@@ -181,7 +239,8 @@ async function putShare(req, env, owner, id) {
   if (!reserved || (first && (first.owner_id !== owner.id || first.deleted_at))) return fail(404, 'No such share.')
   if (Number(req.headers.get('content-length')) > MAX_BYTES) return fail(413, 'A share is at most 20 MiB gzipped.', { code: 'too_big' })
   const meta = readMeta(req.headers.get('x-share-meta'))
-  if (!meta) return fail(400, 'x-share-meta must be base64url JSON with title, session, projectLabel, scope and lang.')
+  if (!meta) return fail(400, 'x-share-meta must be base64url JSON with title, session, projectLabel, scope and lang (message at most 280 characters, note at most 300).')
+  if (!first && needsSignIn(env, owner)) return signInFirst()
   const body = await req.arrayBuffer()
   if (body.byteLength > MAX_BYTES) return fail(413, 'A share is at most 20 MiB gzipped.', { code: 'too_big' })
   const magic = new Uint8Array(body, 0, Math.min(2, body.byteLength))
@@ -199,15 +258,18 @@ async function putShare(req, env, owner, id) {
   const now = Date.now()
   const key = newKey(id, version)
   await putCounted(env, key, body)
-  const row = [meta.session, meta.projectLabel, meta.title, JSON.stringify(meta.scope), version, body.byteLength, meta.lang, now, key]
+  // An update keeps the message unless it says otherwise; its note is this version's alone.
+  const message = meta.message.absent ? (old?.message ?? null) : meta.message.value
+  const note = old ? (meta.note.value ?? null) : null
+  const row = [meta.session, meta.projectLabel, meta.title, JSON.stringify(meta.scope), version, body.byteLength, meta.lang, now, key, message, note]
   const flipped = old
     ? await env.DB.prepare(
-      `UPDATE shares SET session = ?, project_label = ?, title = ?, scope = ?, version = ?, bytes = ?, lang = ?, updated_at = ?, html_key = ?
+      `UPDATE shares SET session = ?, project_label = ?, title = ?, scope = ?, version = ?, bytes = ?, lang = ?, updated_at = ?, html_key = ?, message = ?, note = ?
        WHERE id = ? AND version = ? AND deleted_at IS NULL`,
     ).bind(...row, id, old.version).run()
     : await env.DB.prepare(
-      `INSERT INTO shares (session, project_label, title, scope, version, bytes, lang, updated_at, html_key, id, owner_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
+      `INSERT INTO shares (session, project_label, title, scope, version, bytes, lang, updated_at, html_key, message, note, id, owner_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
     ).bind(...row, id, owner.id, now).run()
   if (!flipped.meta?.changes) {
     await dropKey(env, key)
@@ -219,7 +281,7 @@ async function putShare(req, env, owner, id) {
     // The comments marked done are in this version: the viewer sees "In the latest version".
     await env.DB.prepare("UPDATE comments SET done_in = ?, updated_at = ? WHERE share_id = ? AND status = 'done' AND done_in IS NULL").bind(version, now, id).run()
   }
-  return json({ id, version, bytes: body.byteLength })
+  return json({ id, version, bytes: body.byteLength, message })
 }
 
 async function deleteShare(env, owner, id) {
@@ -234,6 +296,7 @@ async function deleteShare(env, owner, id) {
   await env.DB.prepare('UPDATE shares SET deleted_at = COALESCE(deleted_at, ?) WHERE id = ?').bind(Date.now(), id).run()
   // Deleting a share deletes its comments (spec: Data and privacy); the row stays as a tombstone.
   await env.DB.prepare('DELETE FROM comments WHERE share_id = ?').bind(id).run()
+  await env.DB.prepare('DELETE FROM presence WHERE share_id = ?').bind(id).run()
   if (await dropKey(env, key)) await env.DB.prepare('DELETE FROM kv_trash WHERE key = ?').bind(key).run()
   return json({ id })
 }
@@ -261,10 +324,21 @@ function unavailable(row) {
   return null
 }
 
+// A view of the link: one row per share per day, counted while today's D1 writes last. A view that
+// can't be counted is still served.
+async function counted(env, id) {
+  try {
+    if (!await room(env.DB, 'd1_write')) return
+    await env.DB.prepare("INSERT INTO views (share_id, link_id, day, n) VALUES (?, '', ?, 1) ON CONFLICT(share_id, link_id, day) DO UPDATE SET n = views.n + 1").bind(id, today()).run()
+  } catch (e) { console.error(e) }
+}
+
 async function share(req, env, url, r) {
   const pathForm = onBase(url, env)
   if (r.path === '/api' || r.path.startsWith('/api/')) {
-    const row = await env.DB.prepare('SELECT s.*, o.name AS owner_name FROM shares s JOIN owners o ON o.id = s.owner_id WHERE s.id = ?').bind(r.shareId).first()
+    const row = await env.DB.prepare(
+      'SELECT s.*, o.name AS owner_name, o.gh_login AS owner_login, o.gh_name AS owner_gh_name, o.gh_avatar AS owner_avatar FROM shares s JOIN owners o ON o.id = s.owner_id WHERE s.id = ?',
+    ).bind(r.shareId).first()
     return viewerApi(req, env, url, row, r.path, pathForm)
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') return new Response(null, { status: 405, headers: { allow: 'GET, HEAD' } })
@@ -281,6 +355,7 @@ async function share(req, env, url, r) {
     bytes = await env.KV.get(keyOf(row), 'arrayBuffer')
   }
   if (!bytes) return page('error', { lang: row.lang })
+  if (req.method === 'GET') await counted(env, row.id)
   const pinned = url.searchParams.get('v') === String(row.version)
   // encodeBody: 'manual' is a Workers-only init option: the bytes are already gzip, so the runtime
   // must send them as they are with our content-encoding instead of compressing them again.

@@ -9,7 +9,6 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent
 import { Dialog } from '@base-ui/react/dialog'
 import { Drawer } from '@base-ui/react/drawer'
 import { uiBox } from './portals'
-import { post } from './transport'
 import { rtl, t, tn } from './i18n'
 import { ago } from './ui'
 import { variantLabel } from './variants'
@@ -17,33 +16,29 @@ import { captureRoute } from './share-capture'
 import { drawQr } from './share-link-qr'
 import { VIRTUAL_THRESHOLD } from './virtual'
 import { Icon } from './comments/ui'
+import { loadOwner, mustSignIn, putListed, route, shareState, signedOut, type Listed, type ShareRow } from './share-state'
 
-type P = { id: string; title: string; archived: boolean; screen?: [number, number]; variants: { id: string; name: string }[] }
+export type P = { id: string; title: string; archived: boolean; screen?: [number, number]; variants: { id: string; name: string }[] }
 export type LinkProps = {
   protos: P[]
   /** The prototype and variant the sheet was opened on. */
   proto: string
   variant: string
-  /** What is picked to start with: the variant (from its own menu) or its prototype. */
-  what: 'variant' | 'proto'
+  /** What is picked to start with: the variant (from its own menu), its prototype, or everything (the popover's Choose…). */
+  what: 'variant' | 'proto' | 'all'
+  /** The popover's message for viewers, carried into the sheet by its Choose…. */
+  message?: string
   dark: boolean
   pathOf: (proto: string, variant: string) => string
   onClose: () => void
   returnFocus: () => HTMLElement | null
 }
-type What = 'variant' | 'proto' | 'all' | 'custom'
-type Review = { sizeMiB: number; block: { message: string; where?: string }[]; notes: string[] }
-type ShareRow = { id: string; title: string; scope: { protos: { id: string; variants: string[] }[]; start: string }; version: number; publishedAt: string; note?: string; host: string; link: string | null; changed: boolean; comments: { total: number; new: number }; live?: boolean | null }
-type Listed = { host: { name: string; stage: string; owner: string } | null; hostError: string | null; shares: ShareRow[]; setup?: string }
-type Answer = { status: number; body: Record<string, any> }
-type Step = { phase: 'busy' | 'review' | 'blocked' | 'down' | 'error'; review?: Review; error?: string }
+export type What = 'variant' | 'proto' | 'all' | 'custom'
+export type Review = { sizeMiB: number; block: { message: string; where?: string }[]; notes: string[] }
+export type Step = { phase: 'busy' | 'review' | 'blocked' | 'down' | 'error'; review?: Review; error?: string }
+/** The most a message for viewers can be (the host keeps 280). */
+export const MESSAGE_MAX = 280
 
-async function route(name: string, body: Record<string, unknown> = {}): Promise<Answer> {
-  try {
-    const res = await post(`share/${name}`, body)
-    return { status: res.status, body: await res.json().catch(() => ({})) }
-  } catch (e) { return { status: 0, body: { error: e instanceof Error ? e.message : String(e) } } }
-}
 function copyText(text: string) {
   try { void navigator.clipboard.writeText(text); return } catch { /* not a secure page: the old way */ }
   const el = document.createElement('textarea')
@@ -51,16 +46,16 @@ function copyText(text: string) {
   document.body.appendChild(el); el.select()
   try { document.execCommand('copy') } finally { el.remove() }
 }
-const keyOf = (proto: string, variant: string) => `${proto}/${variant}`
+export const keyOf = (proto: string, variant: string) => `${proto}/${variant}`
 
-const SMALL = 'text-xs text-zinc-500 dark:text-zinc-400'
-const TEXT_BTN = 'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-900/5 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10'
-const ICON_BTN = 'grid size-9 shrink-0 place-items-center rounded-lg text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white'
-const PRIMARY_BTN = 'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-proto-primary px-3.5 text-[13px] font-medium text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-40'
-const SECTION = 'px-1 pb-2 text-[11px] font-medium text-zinc-500 dark:text-zinc-400'
+export const SMALL = 'text-xs text-zinc-500 dark:text-zinc-400'
+export const TEXT_BTN = 'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-900/5 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10'
+export const ICON_BTN = 'grid size-9 shrink-0 place-items-center rounded-lg text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white'
+export const PRIMARY_BTN = 'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-proto-primary px-3.5 text-[13px] font-medium text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-40'
+export const SECTION = 'px-1 pb-2 text-[11px] font-medium text-zinc-500 dark:text-zinc-400'
 
 /** A button that says Copied for a moment after it copies. */
-function CopyButton({ text, label, icon = true, ...rest }: { text: string; label?: string; icon?: boolean } & Record<string, unknown>) {
+export function CopyButton({ text, label, icon = true, ...rest }: { text: string; label?: string; icon?: boolean } & Record<string, unknown>) {
   const [done, setDone] = useState(false)
   useEffect(() => { if (!done) return; const id = window.setTimeout(() => setDone(false), 1800); return () => clearTimeout(id) }, [done])
   return (
@@ -71,10 +66,10 @@ function CopyButton({ text, label, icon = true, ...rest }: { text: string; label
   )
 }
 
-function Spinner() { return <span className="inline-flex animate-spin motion-reduce:animate-none"><Icon name="spinner" className="size-4" /></span> }
+export function Spinner() { return <span className="inline-flex animate-spin motion-reduce:animate-none"><Icon name="spinner" className="size-4" /></span> }
 
 /** The start variant as it looks, from the same capture the screenshots use; nothing when it can't be had. */
-function Preview({ path, screen, dark }: { path: string; screen?: [number, number]; dark: boolean }) {
+export function Preview({ path, screen, dark, className = 'w-28' }: { path: string; screen?: [number, number]; dark: boolean; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const [state, setState] = useState<'wait' | 'ok' | 'none'>('wait')
   const [w, hgt] = screen && screen[0] > 0 && screen[1] > 0 ? screen : [1280, 800]
@@ -95,14 +90,14 @@ function Preview({ path, screen, dark }: { path: string; screen?: [number, numbe
   }, [path, dark, w, hgt])
   if (state === 'none') return null
   return (
-    <span data-link-preview className="relative block aspect-[16/10] w-28 shrink-0 overflow-hidden rounded-lg bg-zinc-100 ring-1 ring-black/[.08] dark:bg-zinc-800 dark:ring-white/10">
+    <span data-link-preview className={`relative block aspect-[16/10] ${className} shrink-0 overflow-hidden rounded-lg bg-zinc-100 ring-1 ring-black/[.08] dark:bg-zinc-800 dark:ring-white/10`}>
       <canvas ref={ref} aria-hidden className={`absolute inset-0 size-full object-cover object-top transition-opacity motion-reduce:transition-none ${state === 'ok' ? 'opacity-100' : 'opacity-0'}`} />
     </span>
   )
 }
 
 /** The three quick choices: a radio group of segments, with arrow keys that follow the line. */
-function Quick({ value, onChange, options }: { value: What; onChange: (w: What) => void; options: { id: What; label: string }[] }) {
+export function Quick({ value, onChange, options }: { value: What; onChange: (w: What) => void; options: { id: What; label: string }[] }) {
   const keys = (e: KeyboardEvent<HTMLDivElement>) => {
     const step = e.key === 'ArrowDown' || e.key === (rtl ? 'ArrowLeft' : 'ArrowRight') ? 1 : e.key === 'ArrowUp' || e.key === (rtl ? 'ArrowRight' : 'ArrowLeft') ? -1 : 0
     if (!step) return
@@ -122,7 +117,7 @@ function Quick({ value, onChange, options }: { value: What; onChange: (w: What) 
   )
 }
 
-function ReviewBox({ review, blocked, children }: { review: Review; blocked: boolean; children?: ReactNode }) {
+export function ReviewBox({ review, blocked, children }: { review: Review; blocked: boolean; children?: ReactNode }) {
   return (
     <div data-link-review className={`space-y-2 rounded-xl p-3 text-xs ${blocked ? 'bg-rose-500/10 text-rose-800 dark:text-rose-200' : 'bg-amber-500/10 text-amber-900 dark:text-amber-100'}`}>
       <p className="flex items-center gap-2 font-medium"><Icon name="warning" className="size-4" />{blocked ? t('This can’t be shared yet') : t('Check before it goes out')}<span className="ms-auto font-normal tabular-nums opacity-70">{t('{size} MiB', { size: review.sizeMiB })}</span></p>
@@ -135,7 +130,7 @@ function ReviewBox({ review, blocked, children }: { review: Review; blocked: boo
   )
 }
 
-function Again({ onRetry, busy }: { onRetry: () => void; busy: boolean }) {
+export function Again({ onRetry, busy }: { onRetry: () => void; busy: boolean }) {
   return <button type="button" data-link-retry disabled={busy} onClick={onRetry} className={TEXT_BTN}>{busy ? <Spinner /> : <Icon name="refresh" className="size-4" />}{t('Check again')}</button>
 }
 
@@ -143,7 +138,7 @@ function Again({ onRetry, busy }: { onRetry: () => void; busy: boolean }) {
  * No host on this Mac (or no token for it): what a link needs, in two lines, and the command (the
  * server's: --local for the host on this Mac, else the online setup).
  */
-function NoHost({ onRetry, busy, cmd }: { onRetry: () => void; busy: boolean; cmd: string }) {
+export function NoHost({ onRetry, busy, cmd }: { onRetry: () => void; busy: boolean; cmd: string }) {
   return (
     <div data-link-nohost className="space-y-3 px-1 py-2">
       <p className="text-[13px] font-medium">{t('No share host on this Mac yet')}</p>
@@ -159,7 +154,7 @@ function NoHost({ onRetry, busy, cmd }: { onRetry: () => void; busy: boolean; cm
 }
 
 /** The link once made: read-only with Copy, Open, and its QR code. */
-function Made({ link, title }: { link: string; title: string }) {
+export function Made({ link, title, message }: { link: string; title: string; message?: string }) {
   const qr = useRef<HTMLCanvasElement>(null)
   useLayoutEffect(() => { if (qr.current) drawQr(qr.current, link) }, [link])
   return (
@@ -173,10 +168,108 @@ function Made({ link, title }: { link: string; title: string }) {
       </div>
       <div className="flex items-center gap-4">
         <span className="rounded-xl bg-white p-1.5 ring-1 ring-black/[.08] dark:ring-white/10"><canvas ref={qr} data-link-qr aria-label={t('QR code of the link')} role="img" className="block" /></span>
-        <p className={`${SMALL} max-w-56`}>{t('Anyone with the link can view it. To comment, they sign in with GitHub; their comments come back to this page.')}</p>
+        <p className={`${SMALL} max-w-64`}>
+          {message && <span data-link-made-message className="mb-1 block">{t('Viewers see your message first:')} <q dir="auto" className="text-zinc-800 dark:text-zinc-200">{message}</q></span>}
+          {t('Anyone with the link can view it. To comment, they sign in with GitHub; their comments come back to this page.')}
+        </p>
       </div>
     </div>
   )
+}
+
+/** Three ways to start a message for viewers, in the owner's words once picked. */
+const STARTERS = () => [t('Which one would you pick?'), t('Is anything confusing?'), t('Does the copy read well?')]
+
+/** The message viewers see first: optional, at most 280 characters, with three starters. */
+export function MessageField({ value, onChange, rows = 2 }: { value: string; onChange: (v: string) => void; rows?: number }) {
+  const id = useId()
+  return (
+    <div className="space-y-2">
+      <textarea id={id} data-link-message value={value} rows={rows} dir="auto" maxLength={MESSAGE_MAX} onChange={e => onChange(e.target.value.slice(0, MESSAGE_MAX))}
+        aria-label={t('Message for viewers')} placeholder={t('What should they look at? Viewers see this first.')}
+        className="block w-full resize-none rounded-xl bg-zinc-900/[.05] px-3 py-2.5 text-[13px] leading-5 outline-none placeholder:text-zinc-400 focus:ring-2 focus:ring-proto-primary-ring dark:bg-white/[.07] dark:placeholder:text-zinc-500" />
+      <div className="flex flex-wrap items-center gap-1.5">
+        {STARTERS().map(s => (
+          <button key={s} type="button" data-link-starter onClick={() => onChange(s)}
+            className="h-7 rounded-full bg-zinc-900/[.05] px-2.5 text-[11px] text-zinc-600 hover:bg-zinc-900/10 hover:text-zinc-900 dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white">{s}</button>
+        ))}
+        {value && <span className="ms-auto text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500">{value.length}/{MESSAGE_MAX}</span>}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Sign in with GitHub for this share host: the claim page opens in a new tab (opened in the press
+ * itself, so no popup blocker stops it, then sent on once the server answers), and the owner is
+ * asked again every two seconds, for five minutes, until GitHub has answered.
+ */
+export function useSignIn() {
+  const [phase, setPhase] = useState<'idle' | 'wait' | 'error'>('idle')
+  const [error, setError] = useState('')
+  const [url, setUrl] = useState('')
+  const timer = useRef(0)
+  useEffect(() => () => clearInterval(timer.current), [])
+  const go = async () => {
+    let tab: Window | null = null
+    try { tab = window.open('', '_blank') } catch { /* blocked: the link below opens it */ }
+    setPhase('wait'); setError(''); setUrl('')
+    const r = await route('signin')
+    if (r.status !== 200 || typeof r.body.url !== 'string') {
+      tab?.close()
+      setPhase('error')
+      setError(r.body.code === 'signin_off' ? t('This share host can’t run GitHub sign-in yet. Ask Claude to set it up.') : r.body.error || t('The session server answered {status}.', { status: r.status }))
+      return
+    }
+    setUrl(r.body.url)
+    if (tab) { try { tab.opener = null } catch { /* another origin already */ } tab.location.href = r.body.url }
+    const end = Date.now() + 5 * 60e3
+    clearInterval(timer.current)
+    timer.current = window.setInterval(() => {
+      if (Date.now() > end) { clearInterval(timer.current); setPhase('idle'); return }
+      void loadOwner(true).then(o => { if (o?.signedIn) { clearInterval(timer.current); setPhase('idle') } })
+    }, 2000)
+  }
+  const cancel = () => { clearInterval(timer.current); setPhase('idle') }
+  return { phase, error, url, go, cancel }
+}
+
+/** Signed out of the share host: why a link needs GitHub, and the way to sign in. */
+export function Gate({ signin = true }: { signin?: boolean }) {
+  const s = useSignIn()
+  const waiting = s.phase === 'wait'
+  return (
+    <div data-link-gate className="space-y-4 px-1 py-1">
+      <span className="grid size-10 place-items-center rounded-xl bg-zinc-900/[.05] dark:bg-white/[.07]"><Icon name="github-fill" className="size-[22px]" /></span>
+      <div>
+        <p className="text-[15px] font-semibold">{t('Sign in to share')}</p>
+        <p className={`mt-1 leading-5 ${SMALL}`}>{t('Links go out under your GitHub name, so viewers know who sent them, and only you can update or remove them. You sign in once for each share host.')}</p>
+      </div>
+      {signin ? (
+        <>
+          <button type="button" data-link-signin disabled={waiting} onClick={() => void s.go()}
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 text-[13px] font-semibold text-white hover:bg-zinc-700 disabled:opacity-70 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">
+            {waiting ? <Spinner /> : <Icon name="github-fill" className="size-[18px]" />}{waiting ? t('Waiting for GitHub…') : t('Sign in with GitHub')}
+          </button>
+          {waiting && s.url && (
+            <p className={`flex items-center gap-2 ${SMALL}`}>
+              <a data-link-signin-url href={s.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-zinc-900 dark:hover:text-white">{t('Open the sign-in page again')}</a>
+              <button type="button" onClick={s.cancel} className="ms-auto hover:text-zinc-900 dark:hover:text-white">{t('Cancel')}</button>
+            </p>
+          )}
+          {s.phase === 'error' && <p role="alert" data-link-error className="rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-800 dark:text-rose-200">{s.error}</p>}
+          <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t('Your public GitHub name and picture only. No access to your repositories.')}</p>
+        </>
+      ) : <p role="status" className="rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">{t('This share host can’t run GitHub sign-in yet. Ask Claude to set it up.')}</p>}
+    </div>
+  )
+}
+
+/** The owner on the share host, asked once as the view opens; undefined while unknown (then nothing is gated). */
+export function useOwner() {
+  const [s, setS] = useState(shareState.get)
+  useEffect(() => { const off = shareState.subscribe(() => setS(shareState.get())); void loadOwner(); return off }, [])
+  return s.owner
 }
 
 function Row({ s, protos, hold, onChanged }: { s: ShareRow; protos: P[]; hold: (on: boolean) => void; onChanged: () => void }) {
@@ -252,7 +345,9 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
   const [start, setStart] = useState(keyOf(p.proto, p.variant))
   const [open, setOpen] = useState<string[]>(() => [p.proto])
   const [step, setStep] = useState<Step | null>(null)
-  const [made, setMade] = useState<{ link: string; title: string } | null>(null)
+  const [made, setMade] = useState<{ link: string; title: string; message?: string } | null>(null)
+  const [message, setMessage] = useState(p.message ?? '')
+  const owner = useOwner()
   const uid = useId()
   const toTab = (id: 'new' | 'mine') => { setTab(id); if (id === 'mine') void load() }
   // Only the latest list answers: an older one arriving late can't put back what a newer one replaced.
@@ -263,7 +358,7 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
     const r = await route('list')
     if (n !== asked.current) return
     setLoading(false)
-    if (r.status === 200 && Array.isArray(r.body.shares)) { setListed(r.body as Listed); setListErr('') }
+    if (r.status === 200 && Array.isArray(r.body.shares)) { setListed(r.body as Listed); setListErr(''); putListed(r.body as Listed); if (r.body.host) void loadOwner() }
     else setListErr(r.body.error || t('The session server answered {status}.', { status: r.status }))
   }
   useEffect(() => { void load() }, [])
@@ -297,14 +392,18 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
     if (!startKey) return
     setStep({ phase: 'busy' }); setMade(null)
     p.hold(true)
-    const r = await route('publish', { ...words(), ...(yes ? { yes: true } : {}) }).finally(() => p.hold(false))
-    if (r.status === 200 && r.body.ok) { setStep(null); setMade({ link: r.body.link, title: r.body.share?.title ?? '' }); void load() }
+    const said = message.trim().slice(0, MESSAGE_MAX)
+    const r = await route('publish', { ...words(), ...(said ? { message: said } : {}), ...(yes ? { yes: true } : {}) }).finally(() => p.hold(false))
+    if (r.status === 200 && r.body.ok) { setStep(null); setMade({ link: r.body.link, title: r.body.share?.title ?? '', message: said || undefined }); setMessage(''); void load() }
     else if (r.status === 200 && r.body.needsYes) setStep({ phase: 'review', review: r.body.review })
     else if (r.status === 422) setStep({ phase: 'blocked', review: r.body.review })
+    else if (r.status === 409 && r.body.code === 'sign_in') { setStep(null); signedOut() }
     else if (r.status === 409 && (r.body.code === 'no_host' || r.body.code === 'no_token')) { setStep(null); setListed(l => ({ ...(l ?? { hostError: null, shares: [] }), host: null, setup: r.body.setup ?? l?.setup })) }
     else setStep({ phase: r.status === 503 ? 'down' : 'error', error: r.body.error || t('The session server answered {status}.', { status: r.status }) })
   }
   const noHost = !!listed && !listed.host
+  // Signed out of the host: the New link view is the sign-in step (Your links still list and update).
+  const gated = !noHost && mustSignIn(owner)
   const mine = listed?.shares ?? []
   const big = all.length > VIRTUAL_THRESHOLD
   const busy = step?.phase === 'busy'
@@ -346,7 +445,7 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
     </div>
   )
 
-  const newView = made ? <Made link={made.link} title={made.title} /> : (
+  const newView = made ? <Made link={made.link} title={made.title} message={made.message} /> : gated ? <Gate signin={owner?.signin !== false} /> : (
     <fieldset disabled={busy} className="m-0 min-w-0 space-y-5 border-0 p-0">
       <section>
         <h3 className={SECTION}>{t('What to share')}</h3>
@@ -371,6 +470,10 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
           <Icon name="link-simple" className="mt-0.5 size-4 text-zinc-500" />
           <span className="min-w-0"><span className="block text-[13px] font-medium">{t('Anyone with the link')}</span><span className={`mt-0.5 block ${SMALL}`}>{t('They can view without signing in. To comment, they sign in with GitHub.')}</span></span>
         </div>
+      </section>
+      <section>
+        <h3 className={SECTION}>{t('Message for viewers')}</h3>
+        <MessageField value={message} onChange={setMessage} />
       </section>
       {(step?.phase === 'review' || step?.phase === 'blocked') && step.review && (
         <ReviewBox review={step.review} blocked={step.phase === 'blocked'}>
@@ -417,7 +520,7 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
     : noHost ? <NoHost busy={loading} onRetry={() => void load()} cmd={listed?.setup || 'proto share setup'} />
     : tab === 'new' ? newView : mineView
 
-  const footer = !listed || noHost ? null : tab === 'mine' ? null : made ? (
+  const footer = !listed || noHost ? null : tab === 'mine' || (gated && !made) ? null : made ? (
     <div className="flex items-center justify-end gap-1">
       <button type="button" onClick={() => setMade(null)} className={TEXT_BTN}>{t('Make another link')}</button>
       <button type="button" onClick={() => toTab('mine')} className={TEXT_BTN}>{t('Your links')}</button>
@@ -434,7 +537,7 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
       <header className={`flex shrink-0 items-center gap-3 ${p.phone ? 'px-4 pb-2 pt-1' : 'px-5 pb-3 pt-4'}`}>
         <span className="min-w-0 flex-1">
           {p.Title({ className: 'block text-[15px] font-semibold', children: t('Share link') })}
-          {listed && !noHost && tab === 'new' && !made && order.length > 0 && <span data-link-subtitle className={`mt-0.5 block truncate ${SMALL}`}>{protosIn === 1 ? <><bdi>{p.protos.find(x => x.id === order[0].split('/')[0])?.title}</bdi> · {tn(order.length, '{n} variant', '{n} variants')}</> : `${tn(protosIn, '{n} prototype', '{n} prototypes')} · ${tn(order.length, '{n} variant', '{n} variants')}`}</span>}
+          {listed && !noHost && !gated && tab === 'new' && !made && order.length > 0 && <span data-link-subtitle className={`mt-0.5 block truncate ${SMALL}`}>{protosIn === 1 ? <><bdi>{p.protos.find(x => x.id === order[0].split('/')[0])?.title}</bdi> · {tn(order.length, '{n} variant', '{n} variants')}</> : `${tn(protosIn, '{n} prototype', '{n} prototypes')} · ${tn(order.length, '{n} variant', '{n} variants')}`}</span>}
         </span>
         {p.Close}
       </header>

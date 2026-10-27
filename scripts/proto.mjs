@@ -57,11 +57,15 @@
 //   proto share setup --domain prtype.dev   the host behind prtype.dev: short links, GitHub sign-in to comment
 //   proto share setup --local [--name <owner>]   a share host on this Mac (wrangler dev); links open only here
 //   proto share setup --github [--client-id <id>] [--restart]   the local host's GitHub OAuth App (secret on stdin)
-//   proto share <slug>[/<n>…] | --all [--title "…"] [--yes] [--host local|online]   build, review, publish, print the link
+//   proto share signin [--no-open] [--again]   sign in with GitHub as the host's owner (a new link needs it once the host
+//             runs sign-in): prints and opens the link, waits up to five minutes
+//   proto share <slug>[/<n>…] | --all [--title "…"] [--message "…"] [--yes] [--host local|online]   build, review,
+//             publish, print the link; --message: what viewers read first, at most 280 characters
 //             (only when the user asks; read the review's warnings to them before --yes)
 //   proto share ls [--all]   this session's links (or every share on the host), changed since shared, new comments,
-//             and an online host's usage today
-//   proto share update <id> [--note "…"] [--yes]   the same link at a new version, its comments kept
+//             who is in each link now, views, the variants changed since, and an online host's usage today
+//   proto share update <id> [--note "…"] [--message "…" | --message=] [--yes]   the same link at a new version,
+//             its comments kept; --message sets the viewers' message, --message= clears it
 //   proto share comments [<id>] [--new]   viewer comments on this session's links, fenced as quoted feedback
 //   proto share take <commentId…> | --new [<id>]   send viewer comments to the inbox, as the page's Send to Claude
 //             does (only when the user asks for it in chat)
@@ -118,7 +122,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'again'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }

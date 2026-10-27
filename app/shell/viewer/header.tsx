@@ -16,8 +16,8 @@ export type Appearance = 'system' | 'light' | 'dark'
 /** The viewer signed in with GitHub, as the host's api/me answers. */
 export type Me = { login: string; name: string | null; avatar: string | null }
 /** Who is looking. me: undefined until the host answers. signIn: where Sign in goes, or null when there is no host to sign in to. */
-export type Account = { me: Me | null | undefined; comments: boolean; signIn: string | null; signOut: () => void; owner: string }
-type Facts = { owner: string; version: number; updatedAt: string }
+export type Account = { me: Me | null | undefined; comments: boolean; signIn: string | null; signOut: () => void; owner: string; sharer?: Me | null }
+type Facts = { owner: string; avatar?: string | null; version: number; updatedAt: string }
 const dir = rtl ? 'rtl' : 'ltr'
 const TINTS = ['bg-zinc-900 text-white dark:bg-white dark:text-zinc-900', 'bg-amber-500 text-white', 'bg-violet-500 text-white', 'bg-teal-500 text-white', 'bg-sky-500 text-white', 'bg-rose-500 text-white']
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
@@ -30,7 +30,7 @@ export function Header({ protos, cur, choose, wide, facts, appearance, setAppear
 }) {
   return (
     <header data-viewer-header dir={dir} className={`relative z-30 flex shrink-0 items-center gap-2.5 px-4 ${wide ? 'h-14' : 'h-12'}`}>
-      <Protos protos={protos} cur={cur} choose={choose} compact={!wide} owner={facts.owner} updated={facts.updatedAt} root={root} />
+      <Protos protos={protos} cur={cur} choose={choose} compact={!wide} owner={facts.owner} avatar={facts.avatar ?? null} signed={!!account.sharer} updated={facts.updatedAt} root={root} />
       <div className="flex-1" />
       {center && <div data-header-center className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">{center}</div>}
       {wide && !center && <p className="hidden text-[12px] text-zinc-500 md:block dark:text-zinc-400">{t('Drag to move · pinch or {key} scroll to zoom', { key: isMac ? '⌘' : 'Ctrl' })}</p>}
@@ -47,15 +47,15 @@ function Mark({ protos, p, small }: { protos: Proto[]; p: Proto; small?: boolean
 }
 
 /** The prototype shown, and with more than one in the share, the list of them all. */
-function Protos({ protos, cur, choose, compact, owner, updated, root }: {
-  protos: Proto[]; cur: Proto; choose: (id: string) => void; compact: boolean; owner: string; updated: string; root: RefObject<HTMLDivElement | null>
+function Protos({ protos, cur, choose, compact, owner, avatar, signed, updated, root }: {
+  protos: Proto[]; cur: Proto; choose: (id: string) => void; compact: boolean; owner: string; avatar: string | null; signed: boolean; updated: string; root: RefObject<HTMLDivElement | null>
 }) {
   const talk = useTalk()
   const [open, setOpen] = useState(false)
   useClosable(open, setOpen)
   const many = protos.length > 1
   // A share written to a file before any host is set up has no owner name: then no "by" at all.
-  const line = `${owner ? t('by {owner} · read-only', { owner }) : t('Read-only')} · ${many ? tn(protos.length, '{n} prototype', '{n} prototypes') : tn(cur.variants.length, '{n} design', '{n} designs')}`
+  const line = `${owner ? signed ? t('Shared by {owner} · read-only', { owner }) : t('by {owner} · read-only', { owner }) : t('Read-only')} · ${many ? tn(protos.length, '{n} prototype', '{n} prototypes') : tn(cur.variants.length, '{n} design', '{n} designs')}`
   const title = (
     <>
       <Mark protos={protos} p={cur} small={compact} />
@@ -64,7 +64,7 @@ function Protos({ protos, cur, choose, compact, owner, updated, root }: {
           <span className="truncate">{cur.title}</span>
           {many && <span data-caret className={`inline-grid text-zinc-400 transition-transform duration-200 motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}><Icon name="caret-down" className="size-3" /></span>}
         </span>
-        {!compact && <span className="flex items-center gap-1 truncate text-[12px] text-zinc-500 dark:text-zinc-400"><Icon name="eye" className="size-3" />{line}</span>}
+        {!compact && <span data-shared-by={signed ? owner : undefined} className="flex items-center gap-1 truncate text-[12px] text-zinc-500 dark:text-zinc-400">{signed ? <Face me={{ login: owner, name: null, avatar }} size="size-3.5 text-[8px]" /> : <Icon name="eye" className="size-3" />}{line}</span>}
       </span>
     </>
   )

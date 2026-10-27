@@ -84,4 +84,7 @@ export default {
   'Not sent': 'לא נשלחה',
   'The spot changed': 'המקום השתנה',
   'Retry': 'נסה שוב',
+  'Shared by {owner} · read-only': 'שותף על ידי {owner} · לצפייה בלבד',
+  'A message from {owner}': 'הודעה מ-{owner}',
+  'Got it': 'הבנתי',
 } satisfies Record<string, string>

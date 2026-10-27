@@ -7,8 +7,8 @@
 // on its own: no poll, no refresh when the page asks for the tray, no host listing. The smoke's own
 // session runs that way, so it can never reach the owner's real host or Keychain; what the person
 // does (publish, send, reply) still goes out.
-import { clientFor, defaultHost, dismiss, flush, forget, getToken, hostNamed, hostUp, isLocal, linkOf, mergeTray, outboxFile, pollOnce, queue, readShares, sendComments, setupHint, trayItems, trayView } from './owner.mjs'
-import { changedSince, protosOf, publishShare, removeShare, titleOf, updateShare } from './publish.mjs'
+import { SIGN_IN_FIRST, client, clientFor, defaultHost, dismiss, flush, forget, getToken, hostNamed, hostUp, isLocal, linkOf, mergeTray, outboxFile, pollOnce, queue, readShares, sendComments, setupHint, trayItems, trayView } from './owner.mjs'
+import { changedSince, changedVariants, messageOf, protosOf, publishShare, removeShare, titleOf, updateShare } from './publish.mjs'
 import { ShareError, parseScope } from './scope.mjs'
 import { spawn } from 'node:child_process'
 import { statSync } from 'node:fs'
@@ -16,6 +16,8 @@ import { join } from 'node:path'
 
 const PAGE_FRESH = 10 * 60e3 // a page pinged this recently counts as a person there
 const REFRESH_GAP = 3000 // the tray asked for again sooner than this answers from what is here
+const OWNER_FRESH = 60e3 // the owner's GitHub identity, asked of the host at most once a minute
+const NOW_MS = 2 * 60e3 // a viewer whose last ping is this recent is in the link now
 
 const failure = (status, error, extra = {}) => Object.assign(new Error(error), { status, extra })
 
@@ -101,10 +103,17 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
     const mine = tray.filter(c => c.share.id === e.id)
     return {
       id: e.id, title: e.title, scope: e.scope, version: e.version, publishedAt: e.publishedAt, ...(e.note ? { note: e.note } : {}),
-      host: e.host, link: host ? linkOf(host, e.id) : null, changed: changedSince(root, e),
+      host: e.host, link: host ? linkOf(host, e.id) : null, changed: changedSince(root, e), changedVariants: changedVariants(root, e),
+      message: e.message ?? null,
       comments: { total: mine.length, new: mine.filter(c => c.status === 'new' && !c.dismissed).length },
     }
   }
+  // The host's faces on a link, each with `now` (in it within the last two minutes).
+  const facesOf = rows => (Array.isArray(rows) ? rows : []).map(v => ({ login: v.login, name: v.name ?? null, avatar: v.avatar ?? null, route: v.route ?? null, at: v.at, now: Date.now() - v.at < NOW_MS }))
+
+  // The owner's GitHub identity per host name: { at, value }. A sign-in or a token found later asks again.
+  const owners = new Map()
+  const signedOut = host => ({ host: host?.name ?? null, signedIn: false, login: null, name: null, avatar: null, signin: false })
   // A publish or an update answered: the link, or the review that stopped it.
   const published = r => {
     if (r.ok) return { ok: true, share: shareView(r.entry), link: r.link, review: r.review }
@@ -144,27 +153,77 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
           const rows = api ? await api.list() : null
           if (!rows) { hostError = `No owner token for the host "${name}" on this Mac.`; continue }
           const byId = new Map(rows.map(r => [r.id, r]))
-          for (const s of shares) if (s.host === name) Object.assign(s, { live: byId.has(s.id), views: byId.get(s.id)?.views ?? null })
+          for (const s of shares) {
+            if (s.host !== name) continue
+            const r = byId.get(s.id)
+            Object.assign(s, { live: !!r, views: r?.views ?? null, viewers: facesOf(r?.viewers), ...(r && 'message' in r ? { message: r.message ?? null } : {}) })
+          }
         } catch (e) { if (e?.status === 401) forget(name); hostError = String(e?.message || e) }
       }
-      for (const s of shares) { s.live ??= null; s.views ??= null }
+      for (const s of shares) { s.live ??= null; s.views ??= null; s.viewers ??= [] }
       return { host: host ? { name: host.name, stage: host.stage, owner: host.owner || '' } : null, hostError, shares, setup: setupHint(host) }
+    },
+    /**
+     * Who the owner is on the default host: { host, signedIn, login, name, avatar, signin }, signin
+     * saying whether the host can run the GitHub sign-in. Asked of the host at most once a minute;
+     * refresh: true asks now (the page waiting for GitHub). A server that never asks a host on its own
+     * (PROTO_SHARE_POLL_MS=0) asks only on refresh.
+     */
+    async owner(data) {
+      const host = defaultHost()
+      if (!host) return signedOut(null)
+      const was = owners.get(host.name)
+      const refresh = data.refresh === true
+      if (was && !refresh && Date.now() - was.at < OWNER_FRESH) return was.value
+      if (quiet && !refresh) return was?.value ?? signedOut(host)
+      // A token made since a call found none (setup just ran) is used at once, as list does.
+      if (!clientFor(host.name) && getToken(host.name)) forget(host.name)
+      const api = clientFor(host.name)
+      if (!api) return { ...signedOut(host), code: 'no_token', error: `No owner token for the host "${host.name}" on this Mac: ${setupHint(host)} makes one.` }
+      let o
+      try { o = await api.owner() } catch (e) {
+        if (e?.status === 401) forget(host.name)
+        return { ...(was?.value ?? signedOut(host)), code: e?.unreachable ? 'host_down' : e?.code || 'host', error: String(e?.message || e) }
+      }
+      const value = { host: host.name, signedIn: !!o?.login, login: o?.login ?? null, name: o?.name ?? null, avatar: o?.avatar ?? null, signin: o?.signin === true }
+      owners.set(host.name, { at: Date.now(), value })
+      return value
+    },
+    /** { url }: the GitHub sign-in link for the owner, to open in a new tab (10 minutes, once). */
+    async signin() {
+      const { host, token } = await reach()
+      owners.delete(host.name)
+      try {
+        return { url: (await client(host, token).claim()).url }
+      } catch (e) {
+        if (e?.code === 'signin_off') throw failure(409, e.message, { code: 'signin_off' })
+        throw e
+      }
     },
     async publish(data) {
       const words = Array.isArray(data.scope) ? data.scope.filter(w => typeof w === 'string').slice(0, 60) : []
       const protos = protosOf(root)
       const scope = parseScope(words, data.all === true, protos)
       const title = typeof data.title === 'string' && data.title.trim() ? data.title.trim().slice(0, 200) : titleOf(scope, protos, session())
+      const message = messageOf(typeof data.message === 'string' ? data.message : undefined)
       const { host, token } = await reach()
       const stale = await syncFirst(root, session())
-      return published(await publishShare({ sessionDir: root, session: session(), host, token, scope, title, yes: data.yes === true, notes: stale ? [stale] : [] }))
+      try {
+        return published(await publishShare({ sessionDir: root, session: session(), host, token, scope, title, message, yes: data.yes === true, notes: stale ? [stale] : [] }))
+      } catch (e) {
+        // A new link needs the owner signed in with GitHub: the page shows its sign-in step.
+        if (e?.code === 'sign_in') { owners.delete(host.name); throw failure(409, SIGN_IN_FIRST, { code: 'sign_in' }) }
+        throw e
+      }
     },
     async update(data) {
-      if (typeof data.id !== 'string') throw failure(400, 'send { id, note?, yes? }')
+      if (typeof data.id !== 'string') throw failure(400, 'send { id, note?, message?, yes? }')
+      if (!(data.message === undefined || data.message === null || typeof data.message === 'string')) throw failure(400, 'message is text, or null to clear it')
       const e = entryOf(data.id)
+      const message = messageOf(data.message)
       const { host, token } = await reach(e.host)
       const stale = await syncFirst(root, session())
-      const r = published(await updateShare({ sessionDir: root, session: session(), host, token, id: e.id, note: typeof data.note === 'string' ? data.note : undefined, yes: data.yes === true, notes: stale ? [stale] : [] }))
+      const r = published(await updateShare({ sessionDir: root, session: session(), host, token, id: e.id, note: typeof data.note === 'string' ? data.note : undefined, message, yes: data.yes === true, notes: stale ? [stale] : [] }))
       // The tray's comments on the old version now say it has changed since.
       if (r.ok) tell()
       return r

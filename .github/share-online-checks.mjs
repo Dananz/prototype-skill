@@ -21,7 +21,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { startFakeGitHub } from './fake-github.mjs'
+import { signOwnerIn, startFakeGitHub } from './fake-github.mjs'
 import { hostHash, portFree, wranglerEnv } from '../scripts/share-host.mjs'
 import { ownerAndToken, writeOnlineConfig } from '../scripts/share-online.mjs'
 import { CRON } from '../host/lib/cron.mjs'
@@ -117,6 +117,12 @@ export async function shareOnlineChecks({ proto, app, openPage, fail, shots }) {
   const A = { authorization: `Bearer ${TOKEN}` }
 
   try {
+    // ---------- the owner signs in with (the fake) GitHub, which a new link needs here ----------
+    const gated = cli(['share', 'share-link/2', '--yes'])
+    assert(gated.status !== 0 && gated.out.includes('Sign in with GitHub first: proto share signin'), `publish before sign-in: ${gated.out.slice(-300)}`)
+    const claimed = await signOwnerIn(origin, TOKEN)
+    assert(claimed.status === 200 && claimed.url.startsWith(`${origin}/auth/github?claim=`) && claimed.text.includes('Signed in as dana-test'), `owner sign-in: ${claimed.status} ${claimed.text.slice(0, 200)}`)
+
     // ---------- 11, 1: the shell copy refreshed, then a publish with the short link ----------
     const header = join(app, 'shell', 'viewer', 'header.tsx'), template = readFileSync(join(skill, 'app', 'shell', 'viewer', 'header.tsx'), 'utf8')
     writeFileSync(header, template.replaceAll('data-viewer-header', 'data-viewer-stale-header'))

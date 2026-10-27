@@ -21,7 +21,7 @@ import { Header, type Account, type Appearance, type Me } from './header'
 import { Phone } from './phone'
 import { DeviceMenu, clampZoom, loadDevice, saveDevice, type Device } from './device'
 import { createFramed, frameKey, frameMsg, holdZoom, zoomKey } from './framed'
-import { TalkCtx, hosted, useNotes, type Note, type Placing, type Talk } from './comments'
+import { Face, TalkCtx, hosted, useNotes, type Note, type OwnerMessage, type Placing, type Talk } from './comments'
 import { Icon, MountsCtx, closePopups, face, makeStore, presence, surface, usePresence, type Api, type Mounts, type Screen } from './ui'
 
 type Mount = (el: HTMLElement, component: unknown) => () => void
@@ -74,19 +74,59 @@ function signInUrl(): string | null {
 const ask = (path: string, init?: RequestInit) => fetch(path, { ...init, headers: { 'X-Proto': '1' }, cache: 'no-store' })
   .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
 
-/** Whether comments are on for this link, and who is signed in: asked of the host once, at start. */
-function useAccount(): Account {
+/** Whether comments are on for this link, who is signed in, and who shared it: asked of the host once, at start. */
+function useAccount(): Account & { message: string } {
   const [comments, setComments] = useState(false)
   const [owner, setOwner] = useState('')
+  const [sharer, setSharer] = useState<Me | null>(null)
+  const [message, setMessage] = useState('')
   const [me, setMe] = useState<Me | null | undefined>(undefined)
   const [signIn] = useState(signInUrl)
   useEffect(() => {
     if (!/^https?:$/.test(location.protocol)) return setMe(null)
     ask('api/config').then(c => { setComments(c?.comments === true); if (typeof c?.owner === 'string') setOwner(c.owner) }, () => {})
     ask('api/me').then(m => setMe(m && typeof m.login === 'string' ? m : null), () => setMe(null))
+    // The owner's GitHub name and picture, and their message for viewers (a host before them has neither).
+    ask('api/state').then(s => {
+      const o = s?.owner
+      if (o && typeof o.login === 'string' && o.login) setSharer({ login: o.login, name: typeof o.name === 'string' ? o.name : null, avatar: typeof o.avatar === 'string' ? o.avatar : null })
+      if (typeof s?.message === 'string') setMessage(s.message.trim())
+    }, () => {})
   }, [])
   const signOut = () => { void ask('api/signout', { method: 'POST' }).catch(() => {}).finally(() => setMe(null)) }
-  return { me, comments, signIn, signOut, owner }
+  return { me, comments, signIn, signOut, owner: sharer?.login || owner, sharer, message }
+}
+
+/**
+ * Who is in the link: a signed-in viewer tells the host where they are (api/here), once a minute
+ * while the page is in view and as it comes back into view; never more than once in 50 seconds.
+ */
+function usePresencePing(me: Me | null | undefined, route: string) {
+  const at = useRef({ route, last: 0 })
+  at.current.route = route
+  useEffect(() => {
+    if (!me || !hosted) return
+    const ping = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - at.current.last < 50_000) return
+      at.current.last = Date.now()
+      void fetch('api/here', { method: 'POST', headers: { 'X-Proto': '1', 'content-type': 'application/json' }, body: JSON.stringify({ route: at.current.route }), cache: 'no-store' }).catch(() => {})
+    }
+    ping()
+    const tick = window.setInterval(ping, 60_000)
+    const back = () => { if (document.visibilityState === 'visible') ping() }
+    window.addEventListener('focus', ping)
+    document.addEventListener('visibilitychange', back)
+    return () => { clearInterval(tick); window.removeEventListener('focus', ping); document.removeEventListener('visibilitychange', back) }
+  }, [me])
+}
+
+/** The owner's message, open on the first visit and folded once read (then it sits atop the comments), per link and message in this browser. */
+function useMessageRead(text: string) {
+  const key = `proto-message:${location.pathname}:${text.length}:${[...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7)}`
+  const [read, setRead] = useState(() => { try { return localStorage.getItem(key) === '1' } catch { return false } })
+  useEffect(() => { try { setRead(localStorage.getItem(key) === '1') } catch { /* private mode */ } }, [key])
+  const fold = () => { setRead(true); try { localStorage.setItem(key, '1') } catch { /* this load only */ } }
+  return { read, fold }
 }
 
 /** Whether a popup of the viewer's own is open (Base UI marks its trigger). */
@@ -120,7 +160,7 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   // A prototype chosen in the header starts on its first design.
   useEffect(() => { if (!screens.some(s => s.key === sel)) setSel(screens[0].key) })
   const isNewer = useSyncExternalStore(newer.sub, newer.get)
-  const facts = { owner: shareInfo?.owner ?? '', version: shareInfo?.version ?? 1, updatedAt: shareInfo?.updatedAt ?? new Date().toISOString() }
+  const facts = { owner: account.sharer?.login || (shareInfo?.owner ?? ''), avatar: account.sharer?.avatar ?? null, version: shareInfo?.version ?? 1, updatedAt: shareInfo?.updatedAt ?? new Date().toISOString() }
   const bar = useRef<HTMLDivElement>(null)
 
   // A design opened full size from the desk, and whether it is on its way back into its preview.
@@ -196,6 +236,9 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
 
   // Comments: the link's, from its host; the bar grown into them; the one lit; pin mode and the pin being written.
   const { notes, add, retry, remove, fresh, told } = useNotes(hosted, account.me)
+  usePresencePing(account.me, cur.key)
+  const message: OwnerMessage | null = account.message ? { text: account.message, login: facts.owner || t('The owner'), avatar: facts.avatar } : null
+  const msg = useMessageRead(account.message)
   // Each pin layer's lost pins (`kind:design`); the cards say so for the view on screen.
   const [lostBy, setLostBy] = useState<Record<string, string[]>>({})
   const setLost = (layer: string, ids: string[]) => setLostBy(was => {
@@ -220,7 +263,7 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   useEffect(() => { if (!wide) setReach(true) }, [wide])
   const barInset = () => bar.current?.offsetHeight ?? 0
   const talk: Talk = {
-    hosted, can, signIn: account.signIn, owner: account.owner || facts.owner, me: account.me, notes, fresh, told, add, retry, remove,
+    hosted, can, signIn: account.signIn, owner: account.owner || facts.owner, message, me: account.me, notes, fresh, told, add, retry, remove,
     lost: new Set(Object.entries(lostBy).filter(([k]) => k.startsWith(`${full ? 'full' : wide ? 'desk' : 'phone'}:`)).flatMap(([, ids]) => ids)), setLost,
     open: barOpen, setOpen: setBarOpen, active, setActive, pinMode, setPinMode: on => { setPinMode(on); if (!on) setPlacing(null) }, placing, setPlacing,
     reach: wide ? reach : true,
@@ -277,6 +320,16 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
             <span className="text-zinc-700 dark:text-zinc-300">{t('There is a newer version')}</span>
             <button onClick={() => location.reload()} className="inline-flex h-7 items-center gap-1.5 rounded-full bg-sky-500 px-3 text-[12px] font-medium text-white"><Icon name="reload" className="size-3.5" />{t('Reload')}</button>
           </div>
+        </div>
+      )}
+      {message && !msg.read && (
+        <div className={`pointer-events-none absolute inset-x-0 z-20 flex justify-center px-4 ${wide ? 'top-16' : 'top-14'} [&>*]:pointer-events-auto`}>
+          <section data-owner-message aria-label={t('A message from {owner}', { owner: message.login })} dir={document.documentElement.dir}
+            className="flex w-full max-w-md items-start gap-3 rounded-2xl border border-zinc-200 bg-white/95 p-3 text-[13px] shadow-lg backdrop-blur dark:border-white/10 dark:bg-zinc-900/95">
+            <Face who={{ login: message.login, name: message.login, avatar: message.avatar }} size={28} />
+            <p dir="auto" className="min-w-0 flex-1 whitespace-pre-wrap break-words pt-1 leading-snug text-zinc-700 dark:text-zinc-300"><span className="font-semibold text-zinc-900 dark:text-zinc-100">{message.login}:</span> {message.text}</p>
+            <button data-owner-message-fold onClick={msg.fold} className="h-8 shrink-0 rounded-lg px-2.5 text-[12.5px] font-medium text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white">{t('Got it')}</button>
+          </section>
         </div>
       )}
       <div className="relative min-h-0 flex-1">

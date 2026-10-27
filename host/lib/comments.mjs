@@ -91,7 +91,8 @@ export async function viewerApi(req, env, url, share, path, pathForm) {
   if (share.expires_at && share.expires_at < Date.now()) return fail(410, 'This link has expired.', { code: 'expired' })
   const m = req.method
   const only = () => fail(405, 'Method not allowed.', { code: 'method' })
-  if (path === '/api/state') return m === 'GET' ? json({ version: share.version, updatedAt: share.updated_at, title: share.title }) : only()
+  if (path === '/api/state') return m === 'GET' ? json(stateOf(share)) : only()
+  if (path === '/api/here') return m === 'POST' ? here(req, env, share) : only()
   if (path === '/api/config') return m === 'GET' ? json({ comments: signinReady(env) && share.comments === 1, owner: share.owner_name }) : only()
   if (path === '/api/me') {
     if (m !== 'GET') return only()
@@ -107,6 +108,34 @@ export async function viewerApi(req, env, url, share, path, pathForm) {
   const one = /^\/api\/comments\/([^/]+)$/.exec(path)
   if (one) return m === 'DELETE' ? deleteComment(req, env, share, one[1]) : only()
   return fail(404, 'No such route.', { code: 'no_route' })
+}
+
+// The link as the viewer opens it: its version, the owner's message and the update's note, and who
+// shared it (null until the owner signed in with GitHub).
+const stateOf = s => ({
+  version: s.version, updatedAt: s.updated_at, title: s.title, message: s.message ?? null, note: s.note ?? null,
+  owner: s.owner_login ? { login: s.owner_login, name: s.owner_gh_name ?? null, avatar: s.owner_avatar ?? null } : null,
+})
+
+const HERE_MS = 50_000 // one write per viewer per link at most this often; the page pings once a minute
+const ROUTE = /^[^\u0000-\u001f\u007f]{0,200}$/
+
+// POST /api/here { route }: a signed-in viewer is on the link now (the owner's "who is in it now").
+// The row is read first and written only when its last ping is older than 50 s, and not at all
+// once today's D1 writes are used up (204 either way: the page has nothing to show for it).
+async function here(req, env, share) {
+  const me = await viewerOf(req, env, share.id)
+  if (!me) return fail(401, 'Sign in with GitHub first.', { code: 'signin' })
+  const b = await bodyOf(req)
+  if (b instanceof Response) return b
+  if (!(b.route === undefined || b.route === null || (typeof b.route === 'string' && ROUTE.test(b.route)))) return fail(400, 'route must be text of at most 200 characters.', { code: 'invalid' })
+  const now = Date.now()
+  const last = await env.DB.prepare('SELECT at FROM presence WHERE share_id = ? AND gh_id = ?').bind(share.id, me.gh_id).first()
+  if (last && last.at > now - HERE_MS) return new Response(null, { status: 204 })
+  if (!await room(env.DB, 'd1_write')) return new Response(null, { status: 204 })
+  await env.DB.prepare('INSERT INTO presence (share_id, gh_id, route, at) VALUES (?, ?, ?, ?) ON CONFLICT(share_id, gh_id) DO UPDATE SET route = excluded.route, at = excluded.at')
+    .bind(share.id, me.gh_id, b.route || null, now).run()
+  return new Response(null, { status: 204 })
 }
 
 // ?since=<ms> returns what changed since then (by updated_at, so status flips and replies come

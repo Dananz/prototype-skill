@@ -10,6 +10,7 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS tickets (nonce TEXT PRIMARY KEY, exp INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS kv_trash (key TEXT PRIMARY KEY, at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS presence (share_id TEXT NOT NULL, gh_id INTEGER NOT NULL, route TEXT, at INTEGER NOT NULL, PRIMARY KEY (share_id, gh_id))`,
 ]
 // ADD COLUMN can't add NOT NULL without a default, hence the defaults.
 const COLUMNS = {
@@ -17,7 +18,8 @@ const COLUMNS = {
     ['gh_id', 'INTEGER'], ['variant', 'TEXT'], ['target', 'TEXT'], ['owner_reply_at', 'INTEGER'],
     ['deleted', 'INTEGER NOT NULL DEFAULT 0'], ['withdrawn', 'INTEGER NOT NULL DEFAULT 0'],
   ],
-  shares: [['html_key', 'TEXT']],
+  shares: [['html_key', 'TEXT'], ['message', 'TEXT']],
+  owners: [['gh_id', 'INTEGER'], ['gh_login', 'TEXT'], ['gh_name', 'TEXT'], ['gh_avatar', 'TEXT']],
 }
 
 // Once per isolate: the binding object may be new on every request, so it can't be the key. An

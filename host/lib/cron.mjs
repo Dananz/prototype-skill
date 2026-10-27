@@ -12,13 +12,15 @@ const DAY_MS = 86_400_000
 const BATCH = 30 // KV deletes per run: 30 a hour is 720 a day
 const CEILING = 800 // of the day's 900 deletes; the rest stays for the day's own updates
 const KEEP_DAYS = 7
+const PRESENCE_DAYS = 30 // the owner list shows faces from the last 30 days
 
-// About 8 D1 queries besides the BATCH KV deletes, so a run stays under 50.
+// About 9 D1 queries besides the BATCH KV deletes, so a run stays under 50.
 export async function cron(env, now = Date.now()) {
   try {
     await pruneCaps(env, now)
     await env.DB.prepare('DELETE FROM tickets WHERE exp < ?').bind(now).run()
     await env.DB.prepare('DELETE FROM budget WHERE day < ?').bind(today(now - KEEP_DAYS * DAY_MS)).run()
+    await env.DB.prepare('DELETE FROM presence WHERE at < ?').bind(now - PRESENCE_DAYS * DAY_MS).run()
   } catch (e) {
     // A failed prune leaves the trash to drain anyway.
     console.error(e)

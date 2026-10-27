@@ -79,11 +79,16 @@ export async function hostUp(host, { fetch = globalThis.fetch } = {}) {
   try { return (await fetch(`${apiOrigin(host)}/_health`, { signal: AbortSignal.timeout(2000) })).ok } catch { return false }
 }
 
+/** What a new link answers until the owner has signed in with GitHub (the host's 403 sign_in). */
+export const SIGN_IN_FIRST = 'Sign in with GitHub first: proto share signin'
+
 // What a refusal says. The budget's own words are the host's (when it resets, what is biggest); a
 // token the host doesn't take as its owner's is repaired by setup.
 function refusal(host, status, data) {
   if (data?.code === 'budget' && data.error) return data.error
   if (data?.code === 'not_owner') return `This Mac's token isn't the host's owner: ${setupHint(host)}`
+  if (data?.code === 'sign_in') return SIGN_IN_FIRST
+  if (data?.code === 'signin_off') return `GitHub sign-in isn't set up on the share host "${host.name}": ${isLocal(host) ? 'proto share setup --github' : 'proto share setup --domain prtype.dev'}`
   if (data?.code === 'moved') return `The share host "${host.name}" moved${data.error ? ` (${data.error})` : ''}: run ${setupHint(host)} to point this Mac at it`
   return `The share host "${host.name}" answered ${status}${data?.error ? `: ${data.error}` : ''}`
 }
@@ -122,6 +127,10 @@ export function client(host, token, { fetch = globalThis.fetch, timeout = 60_000
     },
     list: () => call('GET', '/api/shares'),
     remove: async id => { await call('DELETE', `/api/shares/${id}`) },
+    /** The owner's GitHub identity on this host: { login, name, avatar, signin }, nulls before they sign in. */
+    owner: () => call('GET', '/api/owner'),
+    /** { url }: the 10-minute sign-in link that ties the owner to a GitHub account (refused with signin_off). */
+    claim: () => call('POST', '/api/owner/claim'),
     /** Today's counts against the daily caps (an online host): { day, kv_write, kv_delete, d1_write, kv_bytes, caps, resetsAt }. */
     usage: () => call('GET', '/api/owner/usage'),
     /** { comments: OwnerComment[], now }: every comment on the owner's live shares changed at or after `since`. */
