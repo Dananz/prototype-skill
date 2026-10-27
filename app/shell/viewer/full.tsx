@@ -20,7 +20,7 @@ import type { Device } from './device'
 import { frameMsg } from './framed'
 import { useTalk } from './comments'
 import { Pins } from './pins'
-import { surface, type Screen } from './ui'
+import { Mounted, surface, type Screen } from './ui'
 
 const EASE = 'cubic-bezier(.2,.8,.2,1)'
 const BAR = 76 // the bar's room at the bottom (one row)
@@ -64,7 +64,18 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report, r
   const back = useRef<HTMLDivElement>(null)
   const frame = useRef<HTMLIFrameElement>(null)
   const [room, setRoom] = useState<[number, number] | null>(null)
-  const [ready, setReady] = useState(false)
+  // Ready is per design, so a new design is never shown as ready for the old one's sake.
+  const [readyKey, setReadyKey] = useState<string | null>(null)
+  const ready = readyKey === screen.key
+  const setReady = (on: boolean) => setReadyKey(on ? screen.key : null)
+  // Until the live design has faded in, its preview stands under the frame (desktop only: the preview
+  // lays out at the window's breakpoints, as on the desk), so opening or switching never shows a blank card.
+  const [settled, setSettled] = useState<string | null>(null)
+  useEffect(() => {
+    if (!ready) return
+    const t = setTimeout(() => setSettled(screen.key), 200)
+    return () => clearTimeout(t)
+  }, [ready, screen.key])
   useLayoutEffect(() => {
     const el = area.current!
     const measure = () => setRoom(r => (r && r[0] === el.clientWidth && r[1] === el.clientHeight ? r : [el.clientWidth, el.clientHeight]))
@@ -96,7 +107,6 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report, r
 
   // The page in the frame says it is ready, and asks for nothing else; the theme follows the viewer's.
   useEffect(() => {
-    setReady(false)
     const ok = (e: MessageEvent) => { if (e.source === frame.current?.contentWindow && frameMsg(e.data)?.protoViewer === 'ready') setReady(true) }
     addEventListener('message', ok)
     const f = frame.current
@@ -118,15 +128,19 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report, r
   }, [dark])
 
   // From the preview's place and size on the desk to the card's own, or back.
+  // Scaled from the card's top-left corner (the translate is measured corner to corner); a preview that
+  // is off screen on the desk isn't flown to: the card fades in place instead.
   const flip = (reverse: boolean) => {
-    const c = card.current, from = deskFrame(screen.key)
-    if (!c || !from || matchMedia('(prefers-reduced-motion: reduce)').matches) return null
+    const c = card.current, from = deskFrame(screen.key), view = area.current?.getBoundingClientRect()
+    if (!c || matchMedia('(prefers-reduced-motion: reduce)').matches) return null
     const to = c.getBoundingClientRect()
-    const at = `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`
-    const frames = [{ transform: at, opacity: 0.6 }, { transform: 'none', opacity: 1 }]
-    const opts = { duration: 240, easing: EASE, fill: 'both' as const }
-    back.current?.animate([{ opacity: 0 }, { opacity: 1 }], { ...opts, direction: reverse ? 'reverse' : 'normal' })
-    return c.animate(frames, { ...opts, direction: reverse ? 'reverse' : 'normal' })
+    const seen = !!from && !!view && from.width > 0 && from.right > view.left && from.left < view.right && from.bottom > view.top && from.top < view.bottom
+    const at = seen ? `translate(${from!.left - to.left}px, ${from!.top - to.top}px) scale(${from!.width / to.width}, ${from!.height / to.height})` : 'scale(.96)'
+    const frames = [{ transform: at, opacity: seen ? 0.6 : 0 }, { transform: 'none', opacity: 1 }]
+    const opts = { duration: seen ? 260 : 180, easing: EASE, fill: 'both' as const, direction: reverse ? 'reverse' as const : 'normal' as const }
+    back.current?.animate([{ opacity: 0 }, { opacity: 1 }], opts)
+    c.style.transformOrigin = seen ? '0 0' : '50% 50%'
+    return c.animate(frames, opts)
   }
   const opened = useRef(false)
   useLayoutEffect(() => {
@@ -167,8 +181,13 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report, r
             <div ref={card} data-full-card className="shrink-0" style={{ width: W * z, height: H * z }}>
               <div data-device-frame={size} className={shell} style={{ width: W, height: H, zoom: z }}>
                 <div data-phone-screen={size === 'phone' ? '' : undefined} className={`relative bg-white dark:bg-zinc-950 ${screenCls}`}>
+                  {size === 'desktop' && settled !== screen.key && (
+                    <div aria-hidden="true" data-full-preview className="absolute inset-0 overflow-hidden [&_*]:![animation-delay:-60s] [&_*]:![animation-play-state:paused]">
+                      <Mounted key={screen.key} v={screen.v} live inert className="pointer-events-none h-full overflow-hidden" />
+                    </div>
+                  )}
                   <iframe key={screen.key} ref={frame} src={src} title={`#${screen.n} ${screen.name}`}
-                    className={`block border-0 bg-transparent transition-opacity duration-200 motion-reduce:transition-none ${ready ? 'opacity-100' : 'opacity-0'}`}
+                    className={`relative block border-0 bg-white transition-opacity duration-150 dark:bg-zinc-950 motion-reduce:transition-none ${ready ? 'opacity-100' : 'opacity-0'}`}
                     style={{ width: d.w, height: d.h }} />
                   {ready && talk.reach && <Pins variant={screen.key} mount={mount} kind="full" ready={ready} pick={{ on: talk.pinMode, at, view }} scale={1 / z} />}
                 </div>
