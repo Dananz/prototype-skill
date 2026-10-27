@@ -2,19 +2,19 @@
 // proto="<this prototype>" id="<id>" …props>, its original markup as children. While the page has
 // a variant plugged in (its pick, see proto add --slot), that variant is drawn here with the
 // slot's props; otherwise, or when it fails, the children are.
+// Where the variants and the pointers come from is slot-source.ts (a share build bakes both in).
 import { Component, Fragment, Suspense, createElement as h, lazy, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
-
-const loaders = import.meta.glob<{ default: ComponentType<any> }>(['./protos/*/[A-Z].{tsx,jsx}', './protos/*/[A-Z][A-Z].{tsx,jsx}'])
+import { loaders, onChange, pointers as readPointers } from './slot-source'
 
 let pointers: Record<string, string> = {}
 const listeners = new Set<() => void>()
 const read = async () => {
-  try { pointers = (await (await fetch('/__proto/status')).json()).slots ?? {} } catch { /* the originals show */ }
+  pointers = await readPointers() ?? pointers
   listeners.forEach(f => f())
 }
 // Top level await: a variant that imports this never paints the original and then swaps.
 await read()
-import.meta.hot?.on('proto:edit', (d: { path: string }) => { if (/\/meta\.ts$/.test(d.path)) void read() })
+onChange(() => void read())
 
 const subscribe = (f: () => void) => { listeners.add(f); return () => { listeners.delete(f) } }
 const parts = new Map<string, ComponentType<any>>()

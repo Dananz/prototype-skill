@@ -6,6 +6,8 @@ turns and compaction. `proto` means `node "<absolute-skill-dir>/scripts/proto.mj
 
 Keep one listener for the entire session, including while handling comments. Never add a
 listener agent, helper conversation, recurring polling task, or second subscription.
+Viewer comments from share links arrive through this same listener once the owner sends them
+from the page (or `proto share take`); they need no second listener.
 Read `proto inbox` at the start and end of active turns to handle pending comments.
 
 ## T3 Code, both Codex and Claude

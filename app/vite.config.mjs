@@ -1,4 +1,6 @@
 import { readFileSync, realpathSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import tailwind from '@tailwindcss/vite'
 import { prototypeServer } from './server.mjs'
@@ -12,14 +14,27 @@ const plugins = { react: '@vitejs/plugin-react', vue: '@vitejs/plugin-vue' }
 const options = { vue: { template: { compilerOptions: { nodeTransforms: [vueSource] } } } }
 const framework = (await import(plugins[session.stack])).default(options[session.stack])
 
-export default defineConfig({
-  plugins: [framework, tailwind(), prototypeServer(session), reactSource()],
+// A share (`vite build --mode share`, run by share/build.mjs) builds the same app with its
+// modules cut down to the variants being shared; the scope and the share's facts come in a JSON
+// file, and the dev server's own plugins stay out.
+async function shareMode() {
+  const { sharePlugins, loadSharp } = await import('./share/plugin.mjs')
+  const file = process.env.PROTO_SHARE_SCOPE, outDir = process.env.PROTO_SHARE_OUT
+  if (!file || !outDir) throw new Error('a share build needs PROTO_SHARE_SCOPE and PROTO_SHARE_OUT')
+  const { scope, info } = JSON.parse(readFileSync(file, 'utf8'))
+  return sharePlugins({ scope, info, session, sharp: loadSharp(), appDir: fileURLToPath(new URL('.', import.meta.url)), outDir, report: join(dirname(file), 'report.json') })
+}
+
+export default defineConfig(async ({ mode }) => ({
+  // In a share the share plugins come before Tailwind's, which must see shell.css with its
+  // sources narrowed to what is shared.
+  plugins: mode === 'share' ? [framework, ...await shareMode(), tailwind()] : [framework, tailwind(), prototypeServer(session), reactSource()],
   // An inline config stops Vite from loading the project's own PostCSS config from above.
   css: { postcss: {} },
   resolve: { alias: { '@project': session.project } },
   // The shell's sheet runs on React in every stack; bundled up front, a Vue app doesn't reload
   // the first time it opens.
-  optimizeDeps: { include: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime', 'react/jsx-dev-runtime', '@base-ui/react/dialog', '@base-ui/react/drawer', '@base-ui/react/menu', '@base-ui/react/tooltip', 'modern-screenshot'] },
+  optimizeDeps: { include: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime', 'react/jsx-dev-runtime', '@base-ui/react/dialog', '@base-ui/react/drawer', '@base-ui/react/menu', '@base-ui/react/tooltip', 'modern-screenshot', 'qrcode-generator'] },
   server: {
     host: '127.0.0.1',
     port: session.port,
@@ -39,4 +54,4 @@ export default defineConfig({
     // The server's own log and pid live in .proto/; changes there are not edits.
     watch: { ignored: ['**/.proto/**'] },
   },
-})
+}))

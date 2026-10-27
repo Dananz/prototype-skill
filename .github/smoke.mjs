@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startChrome, stopChrome } from '../scripts/chrome.mjs'
+import { shareOnlineChecks } from './share-online-checks.mjs'
 import { optionalExtras } from './optional-extras.mjs'
 import { designKit } from './design-kit.mjs'
 import { speedChecks } from './speed-checks.mjs'
@@ -35,6 +36,9 @@ import { keyboardColumnsChecks } from './keyboard-columns-checks.mjs'
 import { slotChecks } from './slot-checks.mjs'
 import { settingsChecks } from './settings-checks.mjs'
 import { shareChecks } from './share-checks.mjs'
+import { shareLinkChecks } from './share-link-checks.mjs'
+import { shareTrayChecks } from './share-tray-checks.mjs'
+import { shareSheetChecks } from './share-sheet-checks.mjs'
 import { tweaksChecks } from './tweaks-checks.mjs'
 import { tweaksRegistryChecks } from './tweaks-registry-checks.mjs'
 import { middleDragChecks } from './middle-drag-checks.mjs'
@@ -82,6 +86,12 @@ const fail = msg => {
 }
 process.on('unhandledRejection', e => fail(`unhandled rejection: ${e?.stack || e}`))
 process.on('uncaughtException', e => fail(`uncaught: ${e?.stack || e}`))
+// proto up's sweep of idle sessions would reach this machine's real ones (and their tailnet
+// rules); the run's own session is all it should touch.
+process.env.PROTO_NO_GC ??= '1'
+// The run's session never asks a share host anything on its own (it could reach the owner's real
+// host and Keychain); share-tray-checks runs its own server under a temporary HOME for that.
+process.env.PROTO_SHARE_POLL_MS ??= '0'
 const proto = (args, { ok = true, stdout = false } = {}) => {
   console.log(`\n$ proto ${args.join(' ')}`)
   const r = spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), ...args, '--project', project, '--session', 'smoke'], { encoding: 'utf8', timeout: 600_000 })
@@ -96,9 +106,12 @@ const pngs = dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.
 // A page in headless Chrome (1440x900, or a phone's size), once it says it is ready, as shoot.mjs
 // does: run evaluates an expression in it (awaiting a promise), as often as needed, and it stays
 // open until closed, so the page can carry on while proto runs beside it.
-async function openPage(url, { width = 1440, height = 900, phone = false } = {}) {
+// errors: true also keeps what the page reports as an error (uncaught exceptions, console.error,
+// failed loads), read back with errors().
+// args: more Chrome switches (the online checks take wrangler dev's self-signed certificate).
+async function openPage(url, { width = 1440, height = 900, phone = false, errors = false, args = [] } = {}) {
   const profile = mkdtempSync(join(tmpdir(), 'proto-smoke-'))
-  const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run'])
+  const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run', ...args])
   let ws
   const close = () => {
     pages.delete(close)
@@ -116,8 +129,12 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
     await new Promise((ok, no) => { ws.onopen = ok; ws.onerror = no })
     let n = 0
     const waiting = new Map()
+    const reported = []
     ws.onmessage = e => {
       const m = JSON.parse(e.data)
+      if (m.method === 'Runtime.exceptionThrown') reported.push(m.params.exceptionDetails?.exception?.description || m.params.exceptionDetails?.text)
+      if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') reported.push(m.params.args.map(a => a.value ?? a.description).join(' '))
+      if (m.method === 'Log.entryAdded' && m.params.entry.level === 'error') reported.push(`${m.params.entry.text} ${m.params.entry.url ?? ''}`)
       // A page that crashes says so at once, instead of every check after it waiting out its time.
       if (m.method === 'Inspector.targetCrashed') fail(`Chrome's page crashed (Inspector.targetCrashed) at ${url}`)
       waiting.get(m.id)?.(m.result); waiting.delete(m.id)
@@ -126,6 +143,7 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
     const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
     await send('Inspector.enable', {}, sessionId)
+    if (errors) { await send('Runtime.enable', {}, sessionId); await send('Log.enable', {}, sessionId) }
     await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: phone ? 2 : 1, mobile: phone }, sessionId)
     if (phone) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
     await send('Page.navigate', { url }, sessionId)
@@ -172,7 +190,7 @@ async function openPage(url, { width = 1440, height = 900, phone = false } = {})
       writeFileSync(file, Buffer.from(data, 'base64'))
     }
     const appearance = value => send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value }] }, sessionId)
-    return { run, close, press, enter, key, touch, drag, hover, mouse, screenshot, appearance }
+    return { run, close, press, enter, key, touch, drag, hover, mouse, screenshot, appearance, errors: () => [...reported] }
   } catch (e) { close(); throw e }
 }
 async function inPage(url, expression) {
@@ -225,6 +243,51 @@ if (process.argv.includes('--broken-global-only')) {
   console.log('OK: focused broken-global checks')
   process.exit(0)
 }
+// The owner's side of share links alone, on a prototype of its own (the full share-link run is above).
+if (process.argv.includes('--share-tray-only')) {
+  proto(['add', 'share-link', '--title', 'Share link', '--variants', 'A:One,B:Two,C:Three'])
+  for (const id of ['A', 'B', 'C']) writeFileSync(join(app, 'src/protos/share-link', `${id}.tsx`), `export default function ${id}() { return <main><h1>MARK-${id}</h1></main> }\n`)
+  await shareTrayChecks({ proto, app, fail })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused share tray checks')
+  process.exit(0)
+}
+// The owner's page alone: the Share sheet and the From links tray in a real browser (Task 5).
+if (process.argv.includes('--share-sheet-only')) {
+  proto(['add', 'share-link', '--title', 'Share link', '--variants', 'A:One,B:Two,C:Three'])
+  for (const id of ['A', 'B', 'C']) writeFileSync(join(app, 'src/protos/share-link', `${id}.tsx`), `export default function ${id}() { return <main><h1>MARK-${id}</h1></main> }\n`)
+  await shareSheetChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_SHEET_SHOTS || join(keepShots, 'share-sheet') })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused share sheet checks')
+  process.exit(0)
+}
+// The share host as it runs online, under wrangler dev over https with the generated config (Task 7 of
+// the online plan): proto share against it, a viewer in Chrome, the owner's sheet and tray.
+if (process.argv.includes('--share-online-only')) {
+  await shareOnlineChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_ONLINE_SHOTS || join(keepShots, 'share-online') })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused share online checks')
+  process.exit(0)
+}
+if (process.argv.includes('--share-link-only')) {
+  await shareLinkChecks({ proto, app, local, openPage, fail })
+  await shareTrayChecks({ proto, app, fail })
+  await shareSheetChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_SHEET_SHOTS || join(keepShots, 'share-sheet') })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused share link checks')
+  process.exit(0)
+}
+if (process.argv.includes('--slots-only')) {
+  await slotChecks({ proto, app, local, openPage, fail })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused slot checks')
+  process.exit(0)
+}
 if (process.argv.includes('--compare-comments-only')) {
   await commentCompareChecks({ proto, app, openPage, fail })
   proto(['rm'])
@@ -242,6 +305,9 @@ await virtualWindowChecks({ local, openPage, fail })
 await virtualReactChecks({ proto, app, local, openPage, fail })
 await virtualVariantsChecks({ proto, app, local, openPage, fail })
 await shareChecks({ proto, app, local, openPage, fail })
+await shareLinkChecks({ proto, app, local, openPage, fail })
+await shareTrayChecks({ proto, app, fail })
+await shareSheetChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_SHEET_SHOTS || join(keepShots, 'share-sheet') })
 await settingsChecks({ proto, app, local, openPage, fail })
 await tweaksRegistryChecks({ local, openPage, fail })
 await tweaksChecks({ proto, app, local, openPage, fail })

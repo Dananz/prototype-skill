@@ -23,6 +23,8 @@ jobs:
         run: git ls-files -z '*.mjs' | xargs -0 -r -n1 node --check
       - name: Agent compatibility
         run: node --test .github/agent-checks.mjs
+      - name: Share unit checks
+        run: node --test .github/share-unit-checks.mjs
       - name: Chrome profile cleanup
         run: node --test .github/chrome-sweep-checks.mjs
       - name: CLI starts

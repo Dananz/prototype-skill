@@ -11,6 +11,7 @@ import type { CState, Item, Note } from './types'
 import { inScope, noteSays, shotsOf } from './types'
 import { PLACEHOLDER, useTagField } from './tag-field'
 import { variantRef } from '../variants'
+import { LinksTray } from './links'
 import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, PRIMARY, Reply, since, spanOf, SrcTag, ViewChip, Working, ImageChip, PictureStrip } from './ui'
 
 export function useRows() {
@@ -230,9 +231,12 @@ export function CommentList({ roomy, onOpen }: { roomy?: boolean; onOpen?: (id: 
   const open = (id: string) => { onOpen?.(id); act.open(id) }
   const by = (st: CState[]) => rows.filter(r => st.includes(r.state))
   const drafts = by(['draft']), wait = by(['sent', 'seen']), done = by(['done'])
-  if (!rows.length && !held) return <p className="px-3 py-6 text-center text-xs text-zinc-400">{matchMedia('(pointer: coarse), (max-width: 639px)').matches ? t('Nothing yet. Tap the hand, then anything in the design.') : t('Nothing yet. Press C, then click anything in the design.')}</p>
+  // The tray of viewers' comments from share links comes first: it waits on the owner.
+  const fromLinks = !!s.links?.comments.length || !!s.links?.error
+  if (!rows.length && !held) return <>{fromLinks && <LinksTray />}{!fromLinks && <p className="px-3 py-6 text-center text-xs text-zinc-400">{matchMedia('(pointer: coarse), (max-width: 639px)').matches ? t('Nothing yet. Tap the hand, then anything in the design.') : t('Nothing yet. Press C, then click anything in the design.')}</p>}</>
   return (
     <div>
+      <LinksTray />
       {(drafts.length > 0 || held) && (
         <section aria-label={t('Ready to send')}>
           <Head title={t('Ready to send')} n={drafts.length + (held ? 1 : 0)} />

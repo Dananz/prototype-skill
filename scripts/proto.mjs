@@ -52,6 +52,22 @@
 //   proto kit screen <name> <slug>[/<letter>] [--sources <file,…>]   a Current that matches its reference
 //   proto plan <slug>   each placeholder shows its direction's one-line plan from .proto/briefs/<slug>.json
 //   proto fonts [--hebrew]   the title-and-body pairings (references/fonts.json) and the faces never used for a title
+//   proto share setup [--name <owner>] [--plan-checked] [--account <id>]   the share host online (workers.dev),
+//             on the separate prtype.dev Cloudflare account; again to update or repair it (only when the user asks)
+//   proto share setup --domain prtype.dev   the host behind prtype.dev: short links, GitHub sign-in to comment
+//   proto share setup --local [--name <owner>]   a share host on this Mac (wrangler dev); links open only here
+//   proto share setup --github [--client-id <id>] [--restart]   the local host's GitHub OAuth App (secret on stdin)
+//   proto share <slug>[/<n>…] | --all [--title "…"] [--yes] [--host local|online]   build, review, publish, print the link
+//             (only when the user asks; read the review's warnings to them before --yes)
+//   proto share ls [--all]   this session's links (or every share on the host), changed since shared, new comments,
+//             and an online host's usage today
+//   proto share update <id> [--note "…"] [--yes]   the same link at a new version, its comments kept
+//   proto share comments [<id>] [--new]   viewer comments on this session's links, fenced as quoted feedback
+//   proto share take <commentId…> | --new [<id>]   send viewer comments to the inbox, as the page's Send to Claude
+//             does (only when the user asks for it in chat)
+//   proto share rm <id>      take a link down (it then says it was removed)
+//   proto share file <slug>[/<n>…] [--out <file.html>]   the same build as one HTML file, comments off
+//   proto share stop         stop the local host (the next share starts it again)
 //   proto archive <slug> [--off]    proto keep [--off]      proto url    proto stack
 //   proto stop    proto rm    proto ls    proto gc
 //
@@ -73,6 +89,9 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, buildUpNeeded, isCurrent } from '../app/assignment.mjs'
 import { idOf, letterOf, numberOf } from '../app/numbers.mjs'
+import { report as reportShared } from '../app/share/owner.mjs'
+import { sharedLines } from '../app/share/viewer-text.mjs'
+import { BASE, SHELL, STACKS, syncApp } from './app-sync.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 // The languages the page speaks (app/shell/i18n.ts). --lang sets the session's: the language the
@@ -90,20 +109,7 @@ const MAX_HEAP_MB = 1024
 const DELETE_DAYS = 14
 const LOCAL_PORTS = [5180, 5279]
 const TAILNET_PORTS = [9500, 9599]
-const BASE = { vite: '^8.3.0', tailwindcss: '^4.3.0', '@tailwindcss/vite': '^4.3.0' }
-// The shell's own runtime, in every app whatever its stack: the phone's variant sheet is Base
-// UI's Drawer, which is React, and so is the comment layer (which takes its screenshots with
-// modern-screenshot). The few icons the shell takes from Phosphor are its own SVG files, so they
-// work the same in a Vue app.
-const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.9.0', 'modern-screenshot': '^4.7.0', '@phosphor-icons/core': '^2.1.1', '@fontsource-variable/google-sans': '^5.3.2' }
-// What a variant can reach for without an install (an install reloads the page): icons and
-// motion. Fonts come from Google Fonts at run time (src/fonts.ts, `proto fonts`). New sessions
-// only; `proto up` never adds them to an existing one, so a running session isn't reinstalled and
-// restarted for packages it never asked for.
-const STACKS = {
-  react: { deps: {}, craft: { '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', tweaks: 'tweaks.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', slot: 'slot.react.ts', stub: 'react.tsx', plan: 'react-plan.tsx' },
-  vue: { deps: { vue: '^3.5.0' }, craft: { '@phosphor-icons/vue': '^2.2.1', 'motion-v': '^2.7.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', tweaks: 'tweaks.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue', plan: 'vue-plan.vue' },
-}
+// The template's packages and stacks live with the app sync (scripts/app-sync.mjs).
 
 // ---------- arguments ----------
 const argv = process.argv.slice(2)
@@ -112,7 +118,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -360,68 +366,18 @@ function scaffold(dir, project) {
 }
 
 // ---------- update ----------
-// What a session's app takes from the template, by its path in the session: everything copied in
-// except the session's own work (its prototypes and theme), plus the stack's adapters.
-const OWN = new Set(['adapters', 'stubs', 'node_modules', join('src', 'protos'), join('src', 'theme.css')])
-function appFiles(stack) {
-  const kit = STACKS[stack] || die(`unknown stack "${stack}" in session.json`)
-  const out = new Map()
-  const walk = rel => {
-    for (const e of readdirSync(join(APP, rel), { withFileTypes: true })) {
-      const r = join(rel, e.name)
-      if (OWN.has(r)) continue
-      if (e.isDirectory()) walk(r)
-      else out.set(r === 'gitignore' ? '.gitignore' : r, join(APP, r))
-    }
-  }
-  walk('')
-  out.set(join('src', `mount.${kit.adapter.split('.').pop()}`), join(APP, 'adapters', kit.adapter))
-  out.set(join('src', 'hints.ts'), join(APP, 'adapters', kit.hints))
-  out.set(join('src', 'tweaks.ts'), join(APP, 'adapters', kit.tweaks))
-  out.set(join('src', 'copy.ts'), join(APP, 'adapters', kit.copy))
-  out.set(join('src', 'motion.ts'), join(APP, 'adapters', kit.motion))
-  if (kit.slot) out.set(join('src', 'slot.ts'), join(APP, 'adapters', kit.slot))
-  return out
-}
-
 /**
- * Brings an existing session's app up to date with the template, so a fix to the shell reaches a
- * session made before it. The shell is one piece, so every file of it is replaced, never some.
- * Packages the shell needs are added or moved to the template's version; ones the session added
- * stay. Vite picks up changed shell code by itself; new packages, its config and the server need
- * the dev server started again, which `up` then does.
+ * Brings an existing session's app up to date with the template (scripts/app-sync.mjs), so a fix
+ * to the shell reaches a session made before it. Vite picks up changed shell code by itself; new
+ * packages, its config and the server need the dev server started again, which `up` then does.
  */
 async function update(dir) {
-  const s = readSession(dir)
-  const kit = STACKS[s.stack]
-  const files = appFiles(s.stack)
-  const changed = []
-  for (const [rel, from] of files) {
-    const to = join(dir, rel), next = readFileSync(from)
-    if (existsSync(to) && readFileSync(to).equals(next)) continue
-    mkdirSync(dirname(to), { recursive: true })
-    writeFileSync(to, next)
-    changed.push(rel)
-  }
-  // A shell file the template dropped or renamed would otherwise linger beside its replacement.
-  const sweep = rel => {
-    for (const e of readdirSync(join(dir, rel), { withFileTypes: true })) {
-      const r = join(rel, e.name)
-      if (e.isDirectory()) { sweep(r); if (!readdirSync(join(dir, r)).length) rmSync(join(dir, r), { recursive: true }) }
-      else if (!files.has(r)) { rmSync(join(dir, r)); changed.push(r) }
-    }
-  }
-  if (existsSync(join(dir, 'shell'))) sweep('shell')
-  const pkgFile = join(dir, 'package.json'), pkg = readJson(pkgFile, {})
-  let deps = false
-  for (const [key, want] of [['dependencies', { ...SHELL, ...kit.deps }], ['devDependencies', { ...BASE, ...kit.dev }]]) {
-    pkg[key] ||= {}
-    for (const [name, v] of Object.entries(want)) if (pkg[key][name] !== v) { pkg[key][name] = v; deps = true }
-  }
+  let r
+  try { r = syncApp(dir) } catch (e) { die(e.message) }
+  const { changed, deps, restartWorthy } = r
   if (!changed.length && !deps) return
-  if (deps) writeJson(pkgFile, pkg)
   console.log(`updated the app: ${changed.length} file${changed.length === 1 ? '' : 's'}${deps ? ', packages' : ''}`)
-  if (deps || changed.some(f => ['vite.config.mjs', 'server.mjs', 'source.mjs', 'assignment.mjs', 'listener.mjs'].includes(f))) await stop(dir, 'updated')
+  if (deps || restartWorthy) await stop(dir, 'updated')
   if (deps) install(dir)
 }
 
@@ -437,7 +393,8 @@ function install(dir) {
 
 // ---------- commands ----------
 async function up() {
-  await gc(true)
+  // PROTO_NO_GC=1 (the smoke run sets it) leaves every other session and tailnet rule alone.
+  if (process.env.PROTO_NO_GC !== '1') await gc(true)
   const project = projectRoot()
   const dir = sessionDir()
   if (!existsSync(sessionFile(dir))) scaffold(dir, project)
@@ -455,7 +412,7 @@ async function up() {
     const log = openSync(join(dir, '.proto', 'dev.log'), 'a')
     // A ceiling on the server's JS heap: it idles near 200 MB, so this only stops a runaway,
     // which exits and is restarted by the next `proto up`.
-    const child = spawn(process.execPath, [`--max-old-space-size=${MAX_HEAP_MB}`, join(dir, 'node_modules', 'vite', 'bin', 'vite.js')], { cwd: dir, detached: true, windowsHide: true, stdio: ['ignore', log, log] })
+    const child = spawn(process.execPath, [`--max-old-space-size=${MAX_HEAP_MB}`, join(dir, 'node_modules', 'vite', 'bin', 'vite.js')], { cwd: dir, detached: true, windowsHide: true, stdio: ['ignore', log, log], env: { ...process.env, PROTO_SKILL: SKILL } })
     child.unref()
     s = patchSession(dir, { pid: child.pid })
     for (let i = 0; i < 60 && !await answers(`http://127.0.0.1:${port}/__proto/status`, 1000); i++) await sleep(250)
@@ -689,13 +646,14 @@ function plan() {
 
 // A variant is built (its checks passed): the page drops its Building mark and shows its errors
 // again. `proto done <slug>` ends every variant of that prototype.
-function done() {
+async function done() {
   const dir = sessionDir()
   need(dir)
   if (!args.length) die('which variant? proto done <slug>/<letter> (or <slug> for all of its variants)')
   const ended = endBuilding(dir, args)
   // One line: agents read this command's output through `tail -1`.
-  const { closed, pending } = locked(dir, () => closeWaiting(dir))
+  const { closed, pending, shared } = locked(dir, () => closeWaiting(dir))
+  await reportShared(dir, shared, 'done')
   console.log(`${ended.length ? `built: ${ended.join(', ')}` : `nothing was building there (${args.join(', ')})`}${closed.length ? ` · closed ${closed.join(', ')}` : ''}${pending.length ? ` · assignment pending for ${pending.join(', ')} (run proto inbox)` : ''}`)
 }
 
@@ -720,7 +678,7 @@ function endBuilding(dir, refs) {
 // nothing came back to close it. Returns closed and pending assignment refs. Run under the lock.
 function closeWaiting(dir) {
   const building = readSession(dir)?.building
-  const closed = [], pending = []
+  const closed = [], pending = [], shared = []
   for (const id of batchesIn(dir, 'taken')) {
     const file = join(inboxDir(dir), 'taken', id, 'batch.json')
     const b = readJson(file, null)
@@ -728,12 +686,12 @@ function closeWaiting(dir) {
     if (!ready.length) continue
     for (const c of ready) {
       if (pendingAssignment(dir, c)) pending.push(`${id}/${c.n}`)
-      else { c.done = true; closed.push(`${id}/${c.n}`) }
+      else { c.done = true; closed.push(`${id}/${c.n}`); if (c.from) shared.push(c) }
     }
     b.done = b.comments.every(c => c.done)
     writeJson(file, b)
   }
-  return { closed, pending }
+  return { closed, pending, shared }
 }
 
 // meta.ts with its object replaced. Through a function: a replacement string would read `$&` or `$$`
@@ -1714,11 +1672,11 @@ const spanOf = c => c.to === undefined ? secs(c.at) : `${(c.at / 1000).toFixed(2
 // can be acted on without opening each file first. Measured on a 12-comment batch: the comments
 // were done in 48 s, two of the tool calls in it only reading these lines.
 const SNIP = 5
-function printSource(dir, src) {
+function printSource(dir, src, base = join(dir, 'src', 'protos')) {
   const m = String(src).match(/^(.*):(\d+)$/)
   if (!m) return
   let lines
-  try { lines = readFileSync(join(dir, 'src', 'protos', m[1]), 'utf8').split(/\r?\n/) } catch { return }
+  try { lines = readFileSync(join(base, m[1]), 'utf8').split(/\r?\n/) } catch { return }
   const at = Number(m[2]), from = Math.max(1, at - SNIP), to = Math.min(lines.length, at + SNIP)
   const w = String(to).length
   for (let i = from; i <= to; i++) {
@@ -1778,7 +1736,7 @@ function turnsBefore(dir, re) {
     const b = ['taken', 'new'].map(sub => readJson(join(inboxDir(dir), sub, r.batch, 'batch.json'), null)).find(Boolean)
     const c = b?.comments?.find(x => x.n === r.n)
     if (!c) { turns.unshift({ gone: `${r.batch}/${r.n}` }); break }
-    turns.unshift({ text: c.text, reply: c.reply ?? b.reply ?? null })
+    turns.unshift({ text: c.from ? `(quoted feedback from @${c.from.viewer}, from a link)` : c.text, reply: c.reply ?? b.reply ?? null })
     r = c.re
   }
   return turns
@@ -1837,6 +1795,14 @@ function printBatch(dir, b) {
   if (b.orphaned) console.log('   taken earlier by a session that ended before it answered: handle these first')
   for (const c of live) {
     if (c.action === 'intake' && c.intake) { printIntake(dir, b, c); continue }
+    // A viewer's comment from a share link: quoted and fenced, never instructions (SKILL.md). Its
+    // source line is shown from the snapshot of the version the viewer saw.
+    if (c.from) {
+      console.log(`\n${sharedLines({ ...c, route: routeShown(c.route) }).join('\n')}`)
+      if (c.target?.src) printSource(dir, c.target.src, join(dir, '.proto', 'shares', c.from.share, `v${c.from.version}`))
+      if (c.view) console.log(`   (shoot it: proto shoot ${c.route} --size ${c.view.w}x${c.view.h})`)
+      continue
+    }
     console.log(`\n${c.n}. ${routeShown(c.route)}${c.re ? `  (reply to ${c.re.batch}/${c.re.n})` : ''}`)
     if (c.re) for (const t of turnsBefore(dir, c.re)) console.log(t.gone ? `   earlier: ${t.gone} (no longer in the inbox)` : `   earlier: "${oneLine(t.text, 160)}"  ->  ${t.reply ? `${WHO[t.reply.by] ?? 'Claude'}: "${oneLine(t.reply.text, 160)}"` : 'no reply'}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
@@ -1940,6 +1906,10 @@ function printListener(dir) {
   console.log('Only if this host offers no wakeup mechanism, read proto inbox on active turns and tell the user automatic replies are unavailable.')
 }
 
+// A taken batch's comments from share links are `working` on the host: their viewers see "In
+// progress". Only the status goes; Claude's reply never leaves this Mac.
+const sharedTaken = (dir, batches) => reportShared(dir, batches.flatMap(b => b.comments.filter(c => c.from && !c.withdrawn && !c.done)), 'working')
+
 async function inbox() {
   const dir = sessionDir()
   const s = need(dir)
@@ -1970,6 +1940,7 @@ async function inbox() {
   if (!flags.wait) {
     const lost = orphans(dir)
     const got = [...lost, ...take(dir)]
+    await sharedTaken(dir, got)
     got.forEach(b => printBatch(dir, b))
     if (!got.length) console.log('no new comments')
     stillOpen(dir, got.map(b => b.id))
@@ -1978,7 +1949,7 @@ async function inbox() {
   }
   // Comments a session that ended took and never answered come first, as an arrival does.
   const lost = orphans(dir)
-  if (lost.length) { lost.forEach(b => printBatch(dir, b)); stillOpen(dir, lost.map(b => b.id)); return }
+  if (lost.length) { await sharedTaken(dir, lost); lost.forEach(b => printBatch(dir, b)); stillOpen(dir, lost.map(b => b.id)); return }
   const minutes = Number(flags.timeout) || 115
   const existing = locked(dir, () => {
     const w = readJson(waiterFile(dir), null)
@@ -2008,6 +1979,7 @@ async function inbox() {
       // A reviewer often sends twice in a row: a moment's grace takes both in one wake.
       await sleep(1500)
       const got = take(dir)
+      if (got.length) await sharedTaken(dir, got)
       if (got.length) { done(); got.forEach(b => printBatch(dir, b)); stillOpen(dir, got.map(b => b.id)); return }
     }
     if (!alive(readSession(dir)?.pid)) { done(); return console.log('the server stopped, so no comments can come. `proto up`, then listen again.') }
@@ -2017,7 +1989,7 @@ async function inbox() {
   console.log(`no comments in ${minutes} min. Listen again: proto inbox --wait`)
 }
 
-function reply() {
+async function reply() {
   const dir = sessionDir()
   need(dir)
   const [ref, ...words] = args
@@ -2056,6 +2028,7 @@ function reply() {
     return c
   }
   // Under the lock `proto done` closes comments in: a batch is read and written whole.
+  const shared = []
   locked(dir, () => {
     const b = readJson(file, null)
     const building = until ? marksOf(readSession(dir)?.building, until).length : 0
@@ -2083,6 +2056,7 @@ function reply() {
     }
     b.done = b.comments.every(c => c.done)
     writeJson(file, b)
+    shared.push(...answered.filter(c => c.from && c.done))
     // One line, as `proto done`'s. A comment left open shows "Claude is on it" until something closes it, so say so.
     const what = flags.done ? 'done'
       : until ? (building ? `open until ${until.join(', ')} is built (${building} building)${answered.some(c => pendingAssignment(dir, c)) ? '; assignment pending' : ''}` : answered.some(c => !c.done) ? 'still open: assignment pending' : `done (nothing in ${until.join(', ')} is building)`)
@@ -2090,6 +2064,8 @@ function reply() {
     const head = pairs ? `replied to ${answered.map(c => c.n).join(', ')}` : text ? 'replied' : ''
     console.log(`${ids[0]}${n ? `/${n}` : ''}: ${[head, what].filter(Boolean).join(', ')}${b.done ? ' (batch done)' : ''}`)
   })
+  // Done on the host too, for comments from links: their viewers see "Done". Only the status goes.
+  await reportShared(dir, shared, 'done')
 }
 
 // Comments taken and not done, which the page still shows as "Claude is on it": printed when
@@ -2104,7 +2080,7 @@ function stillOpen(dir, skip) {
     for (const c of readJson(join(inboxDir(dir), 'taken', id, 'batch.json'), null)?.comments || []) {
       if (c.done || c.withdrawn) continue
       const left = c.until ? marksOf(building, c.until).length : 0
-      lines.push(`  ${id}/${c.n} "${clip(c.text, 50)}": ${c.assignment || c.buildUp ? actionText(dir, c) : c.until ? `closes itself when ${c.until.join(', ')} is built (${left} building)` : c.reply ? `replied "${clip(c.reply.text, 50)}", never closed` : 'not answered'}`)
+      lines.push(`  ${id}/${c.n} ${c.from ? `(from a link, by @${c.from.viewer})` : `"${clip(c.text, 50)}"`}: ${c.assignment || c.buildUp ? actionText(dir, c) : c.until ? `closes itself when ${c.until.join(', ')} is built (${left} building)` : c.reply ? `replied "${clip(c.reply.text, 50)}", never closed` : 'not answered'}`)
     }
   }
   if (lines.length) console.log(`Still open from earlier (the page says "Agent is on it"); once each one's work is in: proto reply <batch>/<n> "…" --done\n${lines.join('\n')}\n`)
@@ -2483,6 +2459,11 @@ const commands = {
   stack: () => { const d = detectStack(projectRoot()); console.log(`${d.stack} (${d.why})`) },
   fonts,
   kit: () => !args[0] ? kitStatus() : args[0] === 'save' ? kitSave() : args[0] === 'screen' ? kitScreen() : die(`proto kit ${args[0]}? It is proto kit, proto kit save or proto kit screen`),
+  // setup and stop are about the host, not a session: they run from any folder.
+  share: () => import('./share.mjs').then(m => {
+    const free = ['setup', 'stop'].includes(args[0])
+    return m.main(args, flags, { sessionDir: free ? null : sessionDir(), session: free ? null : need(sessionDir()), die })
+  }),
 }
 // The page shows variants by number (app/numbers.mjs), so the user names them that way: a route
 // given with a number (hero/29, hero/29/open) means that letter (hero/AC). Only where the slug is a
