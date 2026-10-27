@@ -30,3 +30,57 @@ Deferred findings from the phase 0 task reviews and the final review (2026-10-26
 - Task 7: token file written before chmod / config dir 755; shares.json read-modify-write outside the build lock; snapshot and sourceHash taken after upload; references/share.md:21 owner naming order reversed; setup/stop need a session; local path mode puts all shares on one origin (phase 1 concern); smoke Keychain check only tests existence.
 - Task 7: host binds 127.0.0.1 only while links say localhost (browsers may try ::1 first); setToken doesn't read back.
 - Final review: viewer ignores the URL hash (deep links land on the start design; for phase 1's Copy link); the noscript injection needs a bare `<body>`; a token lost and repaired leaves the old token row unrevoked.
+
+## Online: verified (Task 0 of 2026-10-27-share-links-online, read 2026-10-27)
+
+No account was changed. Wrangler facts are from 4.149.0 (`--help`, its bundled source, and a
+read-only `whoami` with `XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home`); the rest is from
+the official docs at the URLs given.
+
+1. **Custom domains** (developers.cloudflare.com/workers/configuration/routing/custom-domains/): an
+   apex works, `routes: [{ pattern: "prtype.dev", custom_domain: true }]` is the config, and
+   Cloudflare "will create DNS records and issue necessary certificates on your behalf" (an Advanced
+   Certificate for the hostname). It needs "an active Cloudflare zone". It refuses a hostname with an
+   existing CNAME; the docs don't say what an existing A/AAAA does, so setup keeps refusing any apex
+   A/AAAA/CNAME. No Free restriction is stated.
+2. **Universal SSL** (developers.cloudflare.com/ssl/edge-certificates/universal-ssl/) covers the apex
+   and first-level names on Free, issued "within 15 minutes to 24 hours of domain activation". The
+   15-minute TLS wait in Task 6 can time out on a slow issue; re-running is the answer.
+3. **workers.dev subdomain:** `GET /accounts/{id}/workers/subdomain` answers code 10007 when there is
+   none; `PUT` with `{ subdomain }` registers it (the OAuth scope `workers_scripts:write` covers
+   "subdomains"). A non-interactive `wrangler deploy` without one fails (its confirm falls back to no)
+   unless wrangler thinks it runs under an agent, when it registers the Worker's name by itself.
+   Setup must PUT first. `workers_dev` defaults to false once `routes` exist, so set it explicitly.
+4. **Free-plan signal:** the zone's `plan` field is deprecated in favour of
+   `/zones/{id}/subscription`; `plan.legacy_id` is `"free"` in the samples. No API says whether an
+   account is on Workers Free or Paid (`/accounts/{id}/subscriptions` needs Billing Read, which
+   wrangler's OAuth doesn't have; `workers/account-settings` has only the usage model). Fallback
+   taken: setup stops with the dashboard path (Workers & Pages › Plans) and continues only with
+   `--plan-checked`.
+5. **Zone creation:** `wrangler login --scopes-list` offers `zone:read` and no zone or DNS write
+   scope at all; `POST /zones` needs Zone Edit. So the zone and any DNS record are dashboard steps
+   (M3), and Task 6's "create the zone if the token can" branch is never taken.
+6. **Wrangler commands:** `whoami --json` → `{ loggedIn, authType, email, accounts: [{ id, name }],
+   tokenPermissions }` (exits non-zero when logged out). `auth token --json` → `{ type: 'oauth',
+   token }`. `secret put` reads stdin when it isn't a TTY. `secret list --format json` (the default)
+   → `[{ name, type }]`. `deploy --secrets-file` exists. `d1 migrations apply` skips its prompt when
+   not interactive (its help says so; checked locally). `migrations_dir` is a key of each
+   `d1_databases` entry, not top-level. `d1 list --json` and `kv namespace list` exist for lookups.
+   `wrangler dev --test-scheduled` answers both `/__scheduled?cron=` and `/cdn-cgi/local/scheduled`
+   (the docs name only the second).
+7. **Free limits** (workers, KV, D1 limits and pricing pages): Workers 100,000 requests a day, 10 ms
+   CPU per request, 5 cron triggers, 50 subrequests; KV 100,000 reads, 1,000 writes, 1,000 deletes,
+   1,000 lists a day, 1 GB, 25 MiB values; D1 5 M rows read, 100,000 rows written a day, 5 GB, 500 MB
+   a database, 10 databases, 50 queries an invocation. All reset at 00:00 UTC. Over the daily request
+   limit a route either fails open or closed (error 1027); the docs don't say which a custom domain
+   or workers.dev does, but neither has an origin to pass through to. Over a KV or D1 cap, the call
+   errors.
+8. **CPU per request:** `wrangler tail` events aren't documented to carry CPU. Workers Logs do
+   (`$workers.cpuTimeMs`, changelog 2025-04-09), on Free: 200,000 events a day, kept 3 days. So the
+   generated config sets `observability.enabled`.
+9. **Vercel nameservers** (vercel.com/docs/domains/managing-nameservers): Domains › the domain ›
+   Nameservers › Edit, up to four; "Restore Original Nameservers" reverts; up to 48 h.
+10. **Vercel's records for prtype.dev** (read with the Vercel MCP, team Dananz): seven, all made by
+    Vercel: apex and `*` ALIAS `cname.vercel-dns-016.com.`, apex and `*` HTTPS (ech), apex CAA
+    `letsencrypt.org`, `sectigo.com`, `pki.goog`. Nothing to copy into Cloudflare. Nameservers today
+    `ns1/ns2.vercel-dns.com`. The domain has `renew: false` (bought 2026-10-26, expires 2027-10).
