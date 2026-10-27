@@ -52,10 +52,15 @@
 //   proto kit screen <name> <slug>[/<letter>] [--sources <file,…>]   a Current that matches its reference
 //   proto plan <slug>   each placeholder shows its direction's one-line plan from .proto/briefs/<slug>.json
 //   proto fonts [--hebrew]   the title-and-body pairings (references/fonts.json) and the faces never used for a title
+//   proto share setup [--name <owner>] [--plan-checked] [--account <id>]   the share host online (workers.dev),
+//             on the separate prtype.dev Cloudflare account; again to update or repair it (only when the user asks)
+//   proto share setup --domain prtype.dev   the host behind prtype.dev: short links, GitHub sign-in to comment
 //   proto share setup --local [--name <owner>]   a share host on this Mac (wrangler dev); links open only here
-//   proto share <slug>[/<n>…] | --all [--title "…"] [--yes]   build, review, publish, print the link
+//   proto share setup --github [--client-id <id>] [--restart]   the local host's GitHub OAuth App (secret on stdin)
+//   proto share <slug>[/<n>…] | --all [--title "…"] [--yes] [--host local|online]   build, review, publish, print the link
 //             (only when the user asks; read the review's warnings to them before --yes)
-//   proto share ls [--all]   this session's links (or every share on the host), changed since shared, new comments
+//   proto share ls [--all]   this session's links (or every share on the host), changed since shared, new comments,
+//             and an online host's usage today
 //   proto share update <id> [--note "…"] [--yes]   the same link at a new version, its comments kept
 //   proto share comments [<id>] [--new]   viewer comments on this session's links, fenced as quoted feedback
 //   proto share take <commentId…> | --new [<id>]   send viewer comments to the inbox, as the page's Send to Claude

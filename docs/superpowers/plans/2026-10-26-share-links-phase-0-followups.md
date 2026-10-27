@@ -31,6 +31,17 @@ Deferred findings from the phase 0 task reviews and the final review (2026-10-26
 - Task 7: host binds 127.0.0.1 only while links say localhost (browsers may try ::1 first); setToken doesn't read back.
 - Final review: viewer ignores the URL hash (deep links land on the start design; for phase 1's Copy link); the noscript injection needs a bare `<body>`; a token lost and repaired leaves the old token row unrevoked.
 
+## Fixed by the online plan (2026-10-27-share-links-online)
+
+- [x] Task 6: DELETE writes the D1 tombstone before the KV delete (Task 2).
+- [x] Task 6: concurrent PUTs: each upload claims its version first and writes its own key; the loser gets 409 `race`, which the CLI asks once more (Tasks 2, 3).
+- [x] Task 6: `last_used_at` written at most once an hour (Task 2).
+- [x] Task 6: the top-level catch answers JSON on `/api` (Task 2).
+- [x] Task 6: nosniff and noindex on every answer, `_health` and redirects included (Task 2).
+- [x] Task 6: the never-written `og:<id>` key is no longer deleted (Task 2).
+- [x] Task 7: setup and stop need a session: they run from any folder (Task 4).
+- [x] Final review: a token lost and repaired leaves the old token row unrevoked: setup revokes this machine's earlier rows when it mints a token (Task 5, `ownerAndToken`).
+
 ## Online: verified (Task 0 of 2026-10-27-share-links-online, read 2026-10-27)
 
 No account was changed. Wrangler facts are from 4.149.0 (`--help`, its bundled source, and a

@@ -123,6 +123,17 @@ Non-goals (this spec):
 21. **The full view has the device sizes and its own zoom** (Tomer, 2026-10-26): Phone, Tablet
     (turnable) and Desktop as in the owner's device view, plus Fit and a zoom that scales the design
     only, never the page; Esc goes back to the desk of all shared designs.
+22. **Path mode on prtype.dev** (Tomer, 2026-10-27). Online, every share is on one origin:
+    `https://prtype.dev/<id>` is the short link, and it opens `https://prtype.dev/s/<id>/`. No
+    per-share subdomains, no wildcard route and no `*` DNS record. Why: one name, one certificate,
+    nothing to add to DNS, and the site Worker that owns prtype.dev (`site/`, `prtype-site`) hands
+    the host its paths (`/s/*`, `/api*`, `/auth/*`, `/_health`, `/<id>`) over a service binding
+    (`HOST`), so the host needs no route of its own. The trade is weaker isolation between shares
+    (Security › Path mode): one share's scripts can read another's storage and call its API as its
+    viewer. It is allowed only while the owner is the only publisher, so the host takes uploads from
+    `meta.owner_id`'s token alone. Viewer cookies are `v` per share (`Path=/s/<id>/`, Secure,
+    HttpOnly). Subdomains stay possible later (a wildcard route and `*` record), and are required
+    before anyone else may upload (phase 5).
 
 
 ## Prior art (how comparable products do this)
@@ -271,7 +282,7 @@ and how links are spelled change.
 | **0. Local** | `wrangler dev` on the Mac, state in `~/.prototypes/host/` | none | `http://k3x9p2.localhost:8787/` (path fallback `http://127.0.0.1:8787/s/k3x9p2/`) | yes with `*.localhost`, else no | the Mac (and a free `cloudflared` quick tunnel for a one-off test with a friend while the Mac is on) |
 | **1. workers.dev** | Cloudflare, free account | free, separate | `https://proto-share.<acct>.workers.dev/s/k3x9p2/` | no (one origin) | anyone with the link |
 | **1b. dananz.com (interim, not used: decision 18)** | same Worker, custom domain `p.dananz.com` on the account that holds the dananz.com zone | Tomer's existing account (its Workers plan checked at setup, verify) | `https://p.dananz.com/k3x9p2` | no (path mode: one origin, per-share cookies) | anyone with the link |
-| **2. Own domain** | same Worker, custom domain + wildcard route | same | `https://prtype.dev/k3x9p2` → `https://k3x9p2.prtype.dev/` | yes | anyone with the link |
+| **2. Own domain (decision 22)** | same Worker, reached through the site Worker on prtype.dev (service binding `HOST`), no route of its own | same | `https://prtype.dev/k3x9p2` → `https://prtype.dev/s/k3x9p2/` | no (path mode: one origin, per-share cookies, owner-only uploads) | anyone with the link |
 
 Why path mode on dananz.com (moot since decision 14, kept for the record): per-share subdomains would need either a wildcard on the dananz.com
 apex (which would also catch every mistyped subdomain of Tomer's other sites) or a two-level
@@ -288,9 +299,10 @@ only the owner publishes; the host refuses third-party uploads on it.
   applies `host/schema.sql`, deploys, sets the owner token secret, prints the workers.dev URL.
 - `--domain p.dananz.com --path`: the interim stage 1b (not built, decision 18). Adds the Worker as a custom domain on
   that one hostname (the zone is already on the account), no wildcard.
-- `--domain prtype.dev`: adds the zone's custom domain on the apex, a proxied wildcard DNS record
-  `*` and the Worker route `*.prtype.dev/*`, then checks that `https://test.prtype.dev/_health`
-  answers over TLS.
+- `--domain prtype.dev` (decision 22): with the zone active on the account, redeploys the host with
+  `BASE=prtype.dev`, sign-in on and the workers.dev name as a legacy name (its links move to
+  prtype.dev), adds the `HOST` service binding to the site Worker's config and deploys the site,
+  then checks that `https://prtype.dev/_health` answers over TLS. No wildcard, no DNS record.
 
 Setup refuses to continue if the account's Workers plan is not Free, and it never creates an R2
 bucket. `prtype.dev` is registered at Vercel and only its nameservers point at the free
@@ -450,8 +462,9 @@ shows today's usage.
   redirects to `/`. The viewer cookie is `__Host-v`, HttpOnly, Secure, SameSite=Lax, 30 days,
   signed with HMAC-SHA256 (`VIEWER_KEY` secret): `{ share, link, name?, pwEpoch, exp }`. Each
   request checks the link isn't revoked (one indexed D1 read).
-- **Cookies by stage.** Stage 2 (own domain): `__Host-v` on `<id>.prtype.dev`, as above. Path mode
-  (stage 1, a `cloudflared` quick tunnel, which has no wildcard hostnames, and the local fallback):
+- **Cookies by stage.** On prtype.dev (decision 22) and workers.dev, path mode: `v` with
+  `Path=/s/<id>/`, Secure, HttpOnly, as below. One origin per share (`<id>.prtype.dev`, later):
+  `__Host-v`, as above. Path mode (stages 1 and 2, a `cloudflared` quick tunnel, which has no wildcard hostnames, and the local fallback):
   one origin holds every share, so each share gets its own cookie, `v_<shareId>` with
   `Path=/s/<shareId>/` (a `__Host-` cookie must have `Path=/`, so path mode can't use the prefix).
   Stage 0 on `http://*.localhost`: the cookie drops `Secure` only when the host is loopback, or the
@@ -779,7 +792,7 @@ line, one field or none, the same type and colors as the shell, dark by `prefers
 |---|---|
 | A share's scripts read another share's data or the viewer's other cookies | Each share is its own origin (`<id>.prtype.dev`); cookies are `__Host-` (host-only); no API answers cross-origin (no CORS headers; JSON only with a custom header) |
 | A share's scripts act as the viewer | They can, on that share only, which is what the viewer can do anyway: comment. Owner credentials never reach a browser. |
-| Path mode (stage 1, local fallback) has one origin for all shares | Acceptable while only the owner publishes (it's their own code). Phase 5 (other people's uploads) requires stage 2. The host refuses third-party uploads in path mode. |
+| Path mode (workers.dev, prtype.dev per decision 22, the local fallback) has one origin for all shares | Acceptable while only the owner publishes (it's their own code). Phase 5 (other people's uploads) requires one origin per share. The host refuses third-party uploads in path mode (`not_owner`). |
 | Guessing links | 50-bit random ids, rate-limited, `noindex`, no listing endpoint without the owner token |
 | Brute-forcing a password | Browser-side PBKDF2 (600k), constant-time compare, 5 tries per 15 min per IP per share, zone rate rule |
 | Stolen viewer cookie | HttpOnly, Secure, host-only, 30 days, revocable by link, invalidated by password change |
@@ -960,8 +973,7 @@ Each phase is its own PR, with screenshots per AGENTS.md.
 |---|---|---|
 | **0. Local host and share builds** | `host/` Worker under `wrangler dev`; `share-build.mjs`; `proto share setup --local`, `proto share <scope>`, `ls`, `rm`, `file`; the review checks; the viewer (decision 19) without comments | A share of 2 of 5 variants opens at `k3x9p2.localhost:8787` in Chrome and Safari, the other 3 are absent from the file, stamps present, a planted fake key blocks publishing |
 | **1. Comments round trip** | The Share link sheet in the page (New link, Your links), viewer comments, the tray, Send to Claude, statuses back, follow-ups, `comments` and `take`, injection framing | A comment from a second browser profile reaches the tray within 30 s, Send to Claude lands in `proto inbox` framed, the reply's status shows in the viewer |
-| **2. On Cloudflare (workers.dev)** | `proto share setup` for a free account, owner token in Keychain, password gate, person links, update and changed-since, budget counters, notify | A friend opens a workers.dev link on their phone, enters the password, comments; Tomer gets a Discord ping; the hot paths stay under 5 ms CPU per request, measured on Cloudflare (moved from phase 0: `wrangler dev` runs workerd on the Mac, whose timings say nothing about the Free plan's 10 ms limit) |
-| **3. Own domain** | `--domain`, wildcard per-share origins, short apex links, preview images, owner view | `prtype.dev/k3x9p2` redirects to its own subdomain over TLS; two shares can't read each other's storage (tested) |
+| **2 and 3. Online (plan 2026-10-27-share-links-online)** | `proto share setup` for a separate free account (workers.dev first), then `--domain prtype.dev` behind the site Worker (decision 22); owner token in the Keychain; owner-only uploads; the daily budget at 90% of Free and the hourly cron; update and changed-since; short apex links; `ls` with today's usage. Deferred: password gate, person links, notify, preview images, owner view | A share opens on Tomer's phone from a workers.dev link, then from `https://prtype.dev/<id>`, where he signs in with GitHub and his comment reaches the tray; the hot paths stay under 5 ms CPU per request, measured in Workers Logs |
 | **4. Extras** | votes, blind review, "What's new" banner, QR, expiry, view counts | each behind its switch, off by default except the banner |
 | **5. Later: hosting for other skill users** | GitHub sign-in (free OAuth app) to get an owner token, per-owner caps (10 live shares, 20 MiB each), 30-day expiry, "Shared by @user · Report" bar, report and ban tools | separate spec |
 
