@@ -296,19 +296,21 @@ async function makeEnv(extra = {}) {
   // Setup names the one owner who may upload; a host off this Mac takes uploads from no one else.
   sql.prepare("INSERT INTO meta (k, v) VALUES ('owner_id', 'o1')").run()
   const store = new Map()
+  // Every D1 query and KV call is one of a Worker invocation's 50 subrequests on Free: `ops` counts them.
+  const ops = { n: 0 }
   const KV = {
     store,
-    async get(key, type) { const v = store.get(key); if (v === undefined) return null; return type === 'arrayBuffer' ? v.slice(0) : new TextDecoder().decode(v) },
-    async put(key, value) { store.set(key, value instanceof ArrayBuffer ? value.slice(0) : new TextEncoder().encode(String(value)).buffer) },
-    async delete(key) { store.delete(key) },
+    async get(key, type) { ops.n++; const v = store.get(key); if (v === undefined) return null; return type === 'arrayBuffer' ? v.slice(0) : new TextDecoder().decode(v) },
+    async put(key, value) { ops.n++; store.set(key, value instanceof ArrayBuffer ? value.slice(0) : new TextEncoder().encode(String(value)).buffer) },
+    async delete(key) { ops.n++; store.delete(key) },
   }
   const stmt = (query, args = []) => ({
     bind: (...a) => stmt(query, a),
-    first: async () => sql.prepare(query).get(...args) ?? null,
-    all: async () => ({ results: sql.prepare(query).all(...args) }),
-    run: async () => { const r = sql.prepare(query).run(...args); return { success: true, meta: { changes: Number(r.changes), rows_written: Number(r.changes) } } },
+    first: async () => { ops.n++; return sql.prepare(query).get(...args) ?? null },
+    all: async () => { ops.n++; return { results: sql.prepare(query).all(...args) } },
+    run: async () => { ops.n++; const r = sql.prepare(query).run(...args); return { success: true, meta: { changes: Number(r.changes), rows_written: Number(r.changes) } } },
   })
-  const DB = { sql, prepare: q => stmt(q), async batch(list) { const out = []; for (const s of list) out.push(await s.run()); return out } }
+  const DB = { sql, ops, prepare: q => stmt(q), async batch(list) { const out = []; for (const s of list) out.push(await s.run()); return out } }
   return { KV, DB, BASE, PATH_MODE: '0', ...extra }
 }
 const auth = { authorization: `Bearer ${TOKEN}` }
@@ -316,6 +318,9 @@ const meta = (o = {}) => Buffer.from(JSON.stringify({ title: 'Pricing', session:
 const call = (env, url, init) => worker.fetch(new Request(url, init), env)
 const noCors = res => assert.deepEqual([...res.headers.keys()].filter(k => k.startsWith('access-control-')), [])
 const bytesOf = async res => Buffer.from(await res.arrayBuffer())
+// The share's KV keys, and the one its row names as live.
+const htmlKeys = (env, id) => [...env.KV.store.keys()].filter(k => k.startsWith(`html:${id}:`))
+const liveKey = (env, id) => env.DB.sql.prepare('SELECT html_key FROM shares WHERE id = ?').get(id).html_key
 async function publish(env, html = '<!doctype html><p>hello', m = meta()) {
   const created = await call(env, `http://${env.BASE}/api/shares`, { method: 'POST', headers: auth })
   const { id } = await created.json()
@@ -411,11 +416,14 @@ test('path mode', async () => {
 test('update bumps version and drops the old key', async () => {
   const env = await makeEnv()
   const { id } = await publish(env, 'one')
-  assert.ok(env.KV.store.has(`html:${id}:1`))
+  const one = liveKey(env, id)
+  assert.match(one, new RegExp(`^html:${id}:1:[0-9a-z]{10}$`))
+  assert.deepEqual(htmlKeys(env, id), [one])
   const two = gzipSync('two')
   const put = await call(env, `http://${BASE}/api/shares/${id}`, { method: 'PUT', headers: { ...auth, 'x-share-meta': meta({ title: 'Pricing 2' }) }, body: two })
   assert.equal((await put.json()).version, 2)
-  assert.ok(!env.KV.store.has(`html:${id}:1`) && env.KV.store.has(`html:${id}:2`))
+  assert.match(liveKey(env, id), new RegExp(`^html:${id}:2:`))
+  assert.deepEqual(htmlKeys(env, id), [liveKey(env, id)])
   assert.deepEqual(await bytesOf(await call(env, `http://${id}.${BASE}/`)), two)
   const state = await (await call(env, `http://${id}.${BASE}/api/state`, { headers: { 'X-Proto': '1' } })).json()
   assert.equal(state.version, 2)
@@ -1146,6 +1154,7 @@ test('migrations: numbered from 0001, and 0001 is the phase 0 and 1 schema', () 
   list.forEach(([f], i) => assert.ok(f.startsWith(String(i + 1).padStart(4, '0') + '_'), `${f} is number ${i + 1}`))
   assert.match(list[0][0], /^0001_initial\.sql$/)
   assert.match(list[1][0], /^0002_online\.sql$/)
+  assert.match(list[2][0], /^0003_html_key\.sql$/)
 })
 test('migrations applied in order make what schema.sql makes', () => {
   const shape = shapeOf(fromMigrations())
@@ -1159,6 +1168,7 @@ test('a phase 0 database plus upgrade() makes what schema.sql makes', async () =
   // Phase 0's tables, as the first local hosts made them: comments without the phase 1 columns, and
   // none of the tables added since.
   sql.exec(`DROP TABLE comments; DROP TABLE viewers; DROP TABLE caps; DROP TABLE tickets; DROP TABLE kv_trash; DROP TABLE meta;
+    ALTER TABLE shares DROP COLUMN html_key;
     CREATE TABLE comments (id TEXT NOT NULL, share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
       link_id TEXT NOT NULL, viewer TEXT NOT NULL, verified INTEGER NOT NULL, version INTEGER NOT NULL, route TEXT NOT NULL,
       body TEXT NOT NULL, re TEXT, status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','sent','working','done','dismissed')),
@@ -1172,8 +1182,14 @@ test('every migration runs twice, and none drops anything', () => {
   const sql = new DatabaseSync(':memory:')
   for (const [f, text] of migrations()) {
     sql.exec(text)
-    assert.doesNotThrow(() => sql.exec(text), `${f} runs again`)
     const code = text.replace(/--.*$/gm, '')
+    // SQLite has no ADD COLUMN IF NOT EXISTS: a migration that adds columns may only fail again with
+    // "duplicate column", having changed nothing.
+    if (/\bADD\s+COLUMN\b/i.test(code)) {
+      const before = JSON.stringify(shapeOf(sql))
+      assert.throws(() => sql.exec(text), /duplicate column/i, `${f} fails only on the column it added`)
+      assert.equal(JSON.stringify(shapeOf(sql)), before)
+    } else assert.doesNotThrow(() => sql.exec(text), `${f} runs again`)
     assert.ok(!/\bDROP\b/i.test(code), `${f} drops nothing`)
   }
 })
@@ -1181,6 +1197,7 @@ test('every migration runs twice, and none drops anything', () => {
 // Online: the host on a public origin (prtype.dev in path mode, its old workers.dev name, the daily
 // budget, the cron and the hardening a public host needs).
 import { today, CAPS } from '../host/lib/budget.mjs'
+import { CRON } from '../host/lib/cron.mjs'
 
 const ONLINE = { BASE: 'prtype.dev', PATH_MODE: '1' }
 const pubEnv = (extra = {}) => makeEnv({ ...ONLINE, ...extra })
@@ -1243,13 +1260,13 @@ test('sign-in only where the OAuth App lives: SIGNIN=0 reads comments and shows 
   assert.equal((await (await pubCall(on, `/s/${p.id}/api/config`, { headers: XP })).json()).comments, true)
 })
 
-test('the old workers.dev name: 301 to the same path on prtype.dev, 410 for the api, health still 200', async () => {
+test('the old workers.dev name: 308 to the same path on prtype.dev, 410 for the api, health still 200', async () => {
   const LEGACY = 'proto-share.dananz.workers.dev'
   const env = await pubEnv({ LEGACY: `${LEGACY}, other.example` })
   const { id } = await publish(env)
   for (const path of [`/s/${id}/`, `/s/${id}/?v=1`, `/${id}`]) {
     const res = await call(env, `https://${LEGACY}${path}`, { redirect: 'manual' })
-    assert.equal(res.status, 301, path)
+    assert.equal(res.status, 308, path)
     assert.equal(res.headers.get('location'), `https://prtype.dev${path}`)
     hardened(res)
   }
@@ -1260,7 +1277,9 @@ test('the old workers.dev name: 301 to the same path on prtype.dev, 410 for the 
     hardened(res)
   }
   assert.equal((await call(env, `https://${LEGACY}/_health`)).status, 200)
-  assert.equal((await call(env, `https://other.example/s/${id}/`, { redirect: 'manual' })).status, 301)
+  assert.equal((await call(env, `https://other.example/s/${id}/`, { redirect: 'manual' })).status, 308)
+  // 308 keeps the method: a viewer's POST is re-sent to the same path there.
+  assert.equal((await call(env, `https://${LEGACY}/s/${id}/api/comments`, { method: 'POST', redirect: 'manual' })).status, 308)
   assert.equal((await call(env, `https://${LEGACY}/nope`)).status, 404)
 })
 
@@ -1308,14 +1327,15 @@ test('budget: stored bytes stop at 900 MB, naming the biggest shares', async () 
 test('budget: past 90% of the KV deletes an old version waits in kv_trash; the cron drains it', async () => {
   const env = await pubEnv()
   const { id } = await publish(env, 'one')
+  const one = liveKey(env, id)
   setUsed(env, 'kv_delete', CAPS.kv_delete)
   assert.equal((await pubPut(env, id, 'two')).status, 200)
-  assert.ok(env.KV.store.has(`html:${id}:1`), 'the old key stays for now')
-  assert.deepEqual(env.DB.sql.prepare('SELECT key FROM kv_trash').all().map(r => r.key), [`html:${id}:1`])
+  assert.ok(env.KV.store.has(one), 'the old key stays for now')
+  assert.deepEqual(env.DB.sql.prepare('SELECT key FROM kv_trash').all().map(r => r.key), [one])
   // The next day.
   env.DB.sql.prepare('DELETE FROM budget').run()
-  await worker.scheduled({ cron: '17 0 * * *', scheduledTime: Date.now() }, env)
-  assert.ok(!env.KV.store.has(`html:${id}:1`) && env.KV.store.has(`html:${id}:2`))
+  await worker.scheduled({ cron: CRON, scheduledTime: Date.now() }, env)
+  assert.deepEqual(htmlKeys(env, id), [liveKey(env, id)])
   assert.equal(env.DB.sql.prepare('SELECT COUNT(*) AS n FROM kv_trash').get().n, 0)
   assert.equal(used(env, 'kv_delete'), 1)
 })
@@ -1348,15 +1368,15 @@ test('the owner reads today\'s usage', async () => {
   assert.equal(u.resetsAt, Date.parse(`${today()}T00:00:00Z`) + 86_400_000)
 })
 
-test('the cron prunes old counters, spent tickets, old budget days and stale upload claims', async () => {
+test('the cron prunes old counters, spent tickets and old budget days', async () => {
   const env = await pubEnv()
   const now = Date.now(), hour = Math.floor(now / 3_600_000)
-  env.DB.sql.prepare('INSERT INTO caps (what, slot, n) VALUES (?, ?, 1), (?, ?, 1), (?, ?, ?), (?, ?, ?)').run('gh:1', hour, 'gh:1', hour - 5, 'put:aaaaaaaaaa', 2, now - 2 * 86_400_000, 'put:bbbbbbbbbb', 3, now)
+  env.DB.sql.prepare('INSERT INTO caps (what, slot, n) VALUES (?, ?, 1), (?, ?, 1)').run('gh:1', hour, 'gh:1', hour - 5)
   env.DB.sql.prepare('INSERT INTO tickets (nonce, exp) VALUES (?, ?), (?, ?)').run('old', now - 1, 'new', now + 60_000)
   const day = n => new Date(now - n * 86_400_000).toISOString().slice(0, 10)
   for (const d of [0, 6, 8, 30]) env.DB.sql.prepare("INSERT INTO budget (day, what, n) VALUES (?, 'kv_write', 1)").run(day(d))
-  await worker.scheduled({ cron: '17 0 * * *', scheduledTime: now }, env)
-  assert.deepEqual(env.DB.sql.prepare('SELECT what, slot FROM caps ORDER BY what').all().map(r => `${r.what}@${r.slot}`), [`gh:1@${hour}`, 'put:bbbbbbbbbb@3'])
+  await worker.scheduled({ cron: CRON, scheduledTime: now }, env)
+  assert.deepEqual(env.DB.sql.prepare('SELECT what, slot FROM caps ORDER BY what').all().map(r => `${r.what}@${r.slot}`), [`gh:1@${hour}`])
   assert.deepEqual(env.DB.sql.prepare('SELECT nonce FROM tickets').all().map(r => r.nonce), ['new'])
   assert.deepEqual(env.DB.sql.prepare("SELECT day FROM budget WHERE what = 'kv_write' ORDER BY day DESC").all().map(r => r.day), [day(0), day(6)])
 })
@@ -1364,22 +1384,21 @@ test('the cron prunes old counters, spent tickets, old budget days and stale upl
 test('two updates at once: one wins, the other is a 409 race, and only the winner\'s bytes are in KV', async () => {
   const env = await pubEnv()
   const { id } = await publish(env, 'one')
-  // Both read the share (version 1) before either writes: the read waits for the other's.
+  // Both have read the share (version 1) and both write version 2: each KV write waits for the other's.
   let waiting = []
-  const prepare = env.DB.prepare
-  env.DB.prepare = q => {
-    const st = prepare(q)
-    if (q !== 'SELECT * FROM shares WHERE id = ?' || !waiting) return st
-    return { bind: (...a) => ({ first: async () => { const row = await st.bind(...a).first(); await new Promise(go => { waiting.push(go); if (waiting.length === 2) { waiting.forEach(f => f()); waiting = null } }); return row } }) }
+  const put = env.KV.put
+  env.KV.put = async (key, value) => {
+    await put(key, value)
+    if (waiting) await new Promise(go => { waiting.push(go); if (waiting.length === 2) { waiting.forEach(f => f()); waiting = null } })
   }
   const [a, b] = await Promise.all([pubPut(env, id, 'from a'), pubPut(env, id, 'from b')])
-  env.DB.prepare = prepare
+  env.KV.put = put
   const statuses = [a.status, b.status].sort()
   assert.deepEqual(statuses, [200, 409])
   const lost = a.status === 409 ? a : b
   assert.equal((await lost.json()).code, 'race')
-  const keys = [...env.KV.store.keys()].filter(k => k.startsWith(`html:${id}:`))
-  assert.deepEqual(keys, [`html:${id}:2`])
+  assert.match(liveKey(env, id), new RegExp(`^html:${id}:2:`))
+  assert.deepEqual(htmlKeys(env, id), [liveKey(env, id)], 'the loser dropped its own key, never the live one')
   const won = a.status === 200 ? 'from a' : 'from b'
   assert.deepEqual(await bytesOf(await pubCall(env, `/s/${id}/`)), gzipSync(won))
   // The loser's retry lands as the next version.
@@ -1389,14 +1408,105 @@ test('two updates at once: one wins, the other is a 409 race, and only the winne
 test('delete writes the tombstone before it drops the KV key', async () => {
   const env = await pubEnv()
   const { id } = await publish(env)
+  const key = liveKey(env, id)
   const seen = []
   const del = env.KV.delete
   env.KV.delete = async key => { seen.push([key, env.DB.sql.prepare('SELECT deleted_at FROM shares WHERE id = ?').get(id).deleted_at]); return del(key) }
   assert.equal((await pubCall(env, `/api/shares/${id}`, { method: 'DELETE', headers: auth })).status, 200)
   assert.equal(seen.length, 1, 'one key: the html (no preview image is written yet)')
-  assert.equal(seen[0][0], `html:${id}:1`)
+  assert.equal(seen[0][0], key)
   assert.ok(seen[0][1] > 0, 'the tombstone was already there')
   assert.equal((await pubCall(env, `/s/${id}/`)).status, 410)
+  assert.equal(env.DB.sql.prepare('SELECT COUNT(*) AS n FROM kv_trash').get().n, 0, 'a delete that worked leaves nothing queued')
+})
+
+test('a KV delete that fails is finished by the cron, for a removed share and an update alike', async () => {
+  const env = await pubEnv()
+  const a = await publish(env, 'a')
+  const b = await publish(env, 'b')
+  const aKey = liveKey(env, a.id), bOld = liveKey(env, b.id)
+  const del = env.KV.delete
+  env.KV.delete = async () => { throw new Error('KV is down') }
+  const quiet = console.error
+  console.error = () => {}
+  try {
+    const gone = await pubCall(env, `/api/shares/${a.id}`, { method: 'DELETE', headers: auth })
+    assert.equal(gone.status, 200)
+    assert.equal((await pubCall(env, `/s/${a.id}/`)).status, 410)
+    // The update has landed even though its old key could not be deleted.
+    const up = await pubPut(env, b.id, 'b two')
+    assert.equal(up.status, 200)
+    assert.equal((await up.json()).version, 2)
+  } finally { console.error = quiet }
+  assert.deepEqual(env.DB.sql.prepare('SELECT key FROM kv_trash ORDER BY key').all().map(r => r.key), [aKey, bOld].sort())
+  env.KV.delete = del
+  // Removing it again is harmless.
+  assert.equal((await pubCall(env, `/api/shares/${a.id}`, { method: 'DELETE', headers: auth })).status, 200)
+  await worker.scheduled({ cron: CRON, scheduledTime: Date.now() }, env)
+  assert.ok(!env.KV.store.has(aKey) && !env.KV.store.has(bOld))
+  assert.equal(env.DB.sql.prepare('SELECT COUNT(*) AS n FROM kv_trash').get().n, 0)
+})
+
+test('an upload whose body is slow reads the share after it, and lands as the next version', async () => {
+  const env = await pubEnv()
+  const { id } = await publish(env, 'one')
+  let send
+  const arrived = new Promise(go => { send = go })
+  const slow = new ReadableStream({ async pull(c) { await arrived; c.enqueue(new Uint8Array(gzipSync('slow'))); c.close() } })
+  const a = pubCall(env, `/api/shares/${id}`, { method: 'PUT', headers: { ...auth, 'x-share-meta': meta() }, body: slow, duplex: 'half' })
+  // Meanwhile another upload lands version 2.
+  assert.equal((await (await pubPut(env, id, 'quick')).json()).version, 2)
+  send()
+  const res = await a
+  assert.equal(res.status, 200)
+  assert.equal((await res.json()).version, 3)
+  assert.deepEqual(htmlKeys(env, id), [liveKey(env, id)])
+  assert.deepEqual(await bytesOf(await pubCall(env, `/s/${id}/`)), gzipSync('slow'))
+})
+
+test('the hourly cron stays under 50 subrequests with a 1,000-key backlog, a batch at a time', async () => {
+  assert.equal(CRON, '17 * * * *')
+  const env = await pubEnv()
+  const insert = env.DB.sql.prepare('INSERT INTO kv_trash (key, at) VALUES (?, ?)')
+  for (let i = 0; i < 1000; i++) { const k = `html:trash${String(i).padStart(5, '0')}:1`; env.KV.store.set(k, new ArrayBuffer(1)); insert.run(k, i) }
+  env.DB.ops.n = 0
+  await worker.scheduled({ cron: CRON, scheduledTime: Date.now() }, env)
+  const first = env.DB.ops.n
+  assert.ok(first < 50, `one run made ${first} D1 queries and KV calls`)
+  const left = env.DB.sql.prepare('SELECT COUNT(*) AS n FROM kv_trash').get().n
+  assert.ok(left < 1000 && left >= 950, `${1000 - left} keys in one run`)
+  assert.equal(env.KV.store.size, left, 'the deleted keys are the dequeued ones')
+  // It stops short of the day's delete budget, leaving room for the day's own updates.
+  setUsed(env, 'kv_delete', 800)
+  await worker.scheduled({ cron: CRON, scheduledTime: Date.now() }, env)
+  assert.equal(env.DB.sql.prepare('SELECT COUNT(*) AS n FROM kv_trash').get().n, left)
+})
+
+test('the cron flushes its counters even when it fails', async () => {
+  const env = await pubEnv()
+  env.DB.sql.prepare('INSERT INTO kv_trash (key, at) VALUES (?, 1)').run('html:x:1')
+  const all = env.DB.prepare
+  // The DELETE ... IN after the KV delete fails; the KV delete already counted nothing, but the
+  // prunes' writes still reach today's d1_write.
+  env.DB.prepare = q => q.startsWith('DELETE FROM kv_trash WHERE key IN') ? { bind: () => ({ run: async () => { throw new Error('D1 is down') } }) } : all(q)
+  const quiet = console.error
+  console.error = () => {}
+  env.DB.sql.prepare("INSERT INTO tickets (nonce, exp) VALUES ('old', 1)").run()
+  try {
+    await assert.rejects(worker.scheduled({ cron: CRON, scheduledTime: Date.now() }, env), /D1 is down/)
+  } finally { console.error = quiet; env.DB.prepare = all }
+  assert.ok(used(env, 'd1_write') > 0)
+})
+
+test('a version just published but not yet readable in KV is read again, not a 500', async () => {
+  const env = await pubEnv()
+  const { id, body } = await publish(env)
+  const get = env.KV.get
+  let misses = 1
+  env.KV.get = async (...a) => misses-- > 0 ? null : get(...a)
+  const res = await pubCall(env, `/s/${id}/`)
+  assert.equal(res.status, 200)
+  assert.deepEqual(await bytesOf(res), body)
 })
 
 test('the owner token writes last_used_at at most once an hour', async () => {

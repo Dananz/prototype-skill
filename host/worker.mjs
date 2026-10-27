@@ -6,14 +6,17 @@ import { json, fail } from './lib/http.mjs'
 import { upgraded } from './lib/upgrade.mjs'
 import { authCallback, authStart, startIn, ticketIn } from './lib/github.mjs'
 import { ownerComments, viewerApi } from './lib/comments.mjs'
-import { dropKey, metered, putCounted, uploadRefused, usage } from './lib/budget.mjs'
+import { dropKey, metered, putCounted, queueKey, uploadRefused, usage } from './lib/budget.mjs'
 import { cron } from './lib/cron.mjs'
 
 const MAX_BYTES = 20 * 1024 * 1024
 
-const htmlKey = (id, version) => `html:${id}:${version}`
-// A crashed upload's claim on its version frees after this (see putShare).
-const CLAIM_MS = 60_000
+// A version's KV key. Each upload writes its own (a random part makes two uploads of one version two
+// keys), and shares.html_key names the live one; a version uploaded before that column has none.
+const newKey = (id, version) => `html:${id}:${version}:${newId()}`
+const keyOf = row => row.html_key || `html:${row.id}:${row.version}`
+// A version just published may not be readable in KV yet at this location: one short wait, then again.
+const KV_RETRY_MS = 300
 
 // A share seen on the host's own name (not on <id>.<base>) is path mode.
 const onBase = (url, env) => namesOf(env.BASE).names.some(n => n.toLowerCase() === url.host.toLowerCase())
@@ -65,8 +68,11 @@ export default {
   },
   async scheduled(event, env) {
     const m = metered(env)
-    await cron(m.env, event?.scheduledTime || Date.now())
-    await m.flush()
+    try {
+      await cron(m.env, event?.scheduledTime || Date.now())
+    } finally {
+      await m.flush()
+    }
   },
 }
 
@@ -94,7 +100,8 @@ async function serve(req, env) {
 
 // The names the Worker used to answer on (LEGACY, comma-separated: the workers.dev name once the
 // domain is live). Links sent from there keep working: a share or a short link moves to the same
-// path on BASE. The API and sign-in don't move: an old CLI or a half-done sign-in gets a clear 410.
+// path on BASE (308, which keeps the method). The API and sign-in don't move: an old CLI or a
+// half-done sign-in gets a clear 410.
 function moved(url, env) {
   const host = url.host.toLowerCase()
   if (!(env.LEGACY || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean).includes(host)) return null
@@ -102,7 +109,7 @@ function moved(url, env) {
   if (r.at === 'health') return null
   if (r.at === 'api' || r.at === 'auth') return fail(410, `This host moved to https://${env.BASE}.`, { code: 'moved' })
   // A Location can't carry the #/route; the browser keeps it across the redirect.
-  if (r.at === 'share' || r.at === 'apex') return new Response(null, { status: 301, headers: { location: `https://${env.BASE}${url.pathname}${url.search}`, 'cache-control': 'no-store' } })
+  if (r.at === 'share' || r.at === 'apex') return new Response(null, { status: 308, headers: { location: `https://${env.BASE}${url.pathname}${url.search}`, 'cache-control': 'no-store' } })
   return page('notfound', {})
 }
 
@@ -170,8 +177,8 @@ function readMeta(header) {
 
 async function putShare(req, env, owner, id) {
   const reserved = await env.DB.prepare("SELECT 1 AS ok FROM ids WHERE id = ? AND kind = 'share'").bind(id).first()
-  const old = await getShare(env, id)
-  if (!reserved || (old && (old.owner_id !== owner.id || old.deleted_at))) return fail(404, 'No such share.')
+  const first = await getShare(env, id)
+  if (!reserved || (first && (first.owner_id !== owner.id || first.deleted_at))) return fail(404, 'No such share.')
   if (Number(req.headers.get('content-length')) > MAX_BYTES) return fail(413, 'A share is at most 20 MiB gzipped.', { code: 'too_big' })
   const meta = readMeta(req.headers.get('x-share-meta'))
   if (!meta) return fail(400, 'x-share-meta must be base64url JSON with title, session, projectLabel, scope and lang.')
@@ -180,38 +187,35 @@ async function putShare(req, env, owner, id) {
   const magic = new Uint8Array(body, 0, Math.min(2, body.byteLength))
   if (magic[0] !== 0x1f || magic[1] !== 0x8b) return fail(400, 'The body must be gzip.')
 
-  // A version is never overwritten (KV can serve an overwritten key stale): write the new key, flip
-  // the pointer in D1, then drop the old key. Two uploads at once would both take old+1 and write the
-  // same key, so each first claims (share, version) in D1; the loser stops before it touches KV. A
-  // claim older than CLAIM_MS is free again, so a crashed upload can't wedge the share.
+  // A version is never overwritten (KV can serve an overwritten key stale): write this upload's own
+  // key, flip the pointer in D1 only if the version is still the one read here, then drop the old
+  // key. The share is read again after the body, which may have taken a while to arrive. A loser of
+  // two uploads at once finds the version moved, drops its own key (never the live one) and says so.
+  const old = await getShare(env, id)
+  if (old && (old.owner_id !== owner.id || old.deleted_at)) return fail(404, 'No such share.')
   const version = old ? old.version + 1 : 1
   const refused = await uploadRefused(env, id, body.byteLength)
   if (refused) return refused
   const now = Date.now()
-  const race = () => fail(409, 'Another update of this share landed first. Try again.', { code: 'race' })
-  const claim = await env.DB.prepare('INSERT INTO caps (what, slot, n) VALUES (?, ?, ?) ON CONFLICT(what, slot) DO UPDATE SET n = excluded.n WHERE caps.n < ?')
-    .bind(`put:${id}`, version, now, now - CLAIM_MS).run()
-  if (!claim.meta?.changes) return race()
-  await putCounted(env, htmlKey(id, version), body)
-  const row = [meta.session, meta.projectLabel, meta.title, JSON.stringify(meta.scope), version, body.byteLength, meta.lang, now]
+  const key = newKey(id, version)
+  await putCounted(env, key, body)
+  const row = [meta.session, meta.projectLabel, meta.title, JSON.stringify(meta.scope), version, body.byteLength, meta.lang, now, key]
   const flipped = old
     ? await env.DB.prepare(
-      `UPDATE shares SET session = ?, project_label = ?, title = ?, scope = ?, version = ?, bytes = ?, lang = ?, updated_at = ?
+      `UPDATE shares SET session = ?, project_label = ?, title = ?, scope = ?, version = ?, bytes = ?, lang = ?, updated_at = ?, html_key = ?
        WHERE id = ? AND version = ? AND deleted_at IS NULL`,
     ).bind(...row, id, old.version).run()
     : await env.DB.prepare(
-      `INSERT INTO shares (session, project_label, title, scope, version, bytes, lang, updated_at, id, owner_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
+      `INSERT INTO shares (session, project_label, title, scope, version, bytes, lang, updated_at, html_key, id, owner_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
     ).bind(...row, id, owner.id, now).run()
   if (!flipped.meta?.changes) {
-    // Removed meanwhile, or a stale claim lost to a newer one: the key is ours only if the pointer
-    // isn't on it.
-    const cur = await getShare(env, id)
-    if (cur?.version !== version || cur?.deleted_at) await dropKey(env, htmlKey(id, version))
-    return race()
+    await dropKey(env, key)
+    return fail(409, 'Another update of this share landed first. Try again.', { code: 'race' })
   }
   if (old) {
-    await dropKey(env, htmlKey(id, old.version))
+    // The update has landed: a failed delete only queues the old key (dropKey never throws on KV).
+    await dropKey(env, keyOf(old))
     // The comments marked done are in this version: the viewer sees "In the latest version".
     await env.DB.prepare("UPDATE comments SET done_in = ?, updated_at = ? WHERE share_id = ? AND status = 'done' AND done_in IS NULL").bind(version, now, id).run()
   }
@@ -221,11 +225,16 @@ async function putShare(req, env, owner, id) {
 async function deleteShare(env, owner, id) {
   const row = await getShare(env, id)
   if (!row || row.owner_id !== owner.id) return fail(404, 'No such share.')
-  // The tombstone first: between it and the KV delete the link already says removed, never a 500.
+  // The key is queued before the tombstone, so whatever fails after it, the cron still deletes the
+  // bytes; the tombstone comes before the KV delete, so the link says removed, never a 500. Once the
+  // tombstone is there, a repeat has nothing left to do.
+  if (row.deleted_at) return json({ id })
+  const key = keyOf(row)
+  await queueKey(env, key)
   await env.DB.prepare('UPDATE shares SET deleted_at = COALESCE(deleted_at, ?) WHERE id = ?').bind(Date.now(), id).run()
   // Deleting a share deletes its comments (spec: Data and privacy); the row stays as a tombstone.
   await env.DB.prepare('DELETE FROM comments WHERE share_id = ?').bind(id).run()
-  if (!row.deleted_at) await dropKey(env, htmlKey(id, row.version))
+  if (await dropKey(env, key)) await env.DB.prepare('DELETE FROM kv_trash WHERE key = ?').bind(key).run()
   return json({ id })
 }
 
@@ -266,7 +275,11 @@ async function share(req, env, url, r) {
   if (r.path !== '/') return page('notfound', { lang: row?.lang })
   const gone = unavailable(row)
   if (gone) return gone
-  const bytes = await env.KV.get(htmlKey(row.id, row.version), 'arrayBuffer')
+  let bytes = await env.KV.get(keyOf(row), 'arrayBuffer')
+  if (!bytes) {
+    await new Promise(go => setTimeout(go, KV_RETRY_MS))
+    bytes = await env.KV.get(keyOf(row), 'arrayBuffer')
+  }
   if (!bytes) return page('error', { lang: row.lang })
   const pinned = url.searchParams.get('v') === String(row.version)
   // encodeBody: 'manual' is a Workers-only init option: the bytes are already gzip, so the runtime

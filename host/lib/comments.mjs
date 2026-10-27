@@ -13,6 +13,7 @@ const VARIANT = /^[a-z0-9][a-z0-9_-]{0,63}\/[A-Z]{1,3}$/
 const MAX_BODY = 4000
 const PER_HOUR = 30 // per viewer
 const PER_DAY = 300 // per share
+const COMMENT_ROWS = 10
 // Forward only: new → sent → working → done. `dismissed` stays on the owner's Mac.
 const ORDER = ['new', 'sent', 'working', 'done']
 
@@ -149,8 +150,10 @@ async function createComment(req, env, share) {
   const target = readTarget(b.target)
   if (!target) return fail(400, 'target is not a pin this host can keep.', { code: 'invalid' })
 
-  // The host's own D1 write budget (90% of Free): the viewer's page shows its "Couldn't send".
-  if (!await room(env.DB, 'd1_write', 4)) return fail(429, "The host's daily budget for comments is used up. Try again tomorrow.", { code: 'budget' })
+  // The host's own D1 write budget (90% of Free): the viewer's page shows its "Couldn't send". A
+  // comment writes about 10 rows: its row and two indexes, two counters with their keys, the day's
+  // d1_write counter.
+  if (!await room(env.DB, 'd1_write', COMMENT_ROWS)) return fail(429, "The host's daily budget for comments is used up. Try again tomorrow.", { code: 'budget' })
   const now = Date.now()
   const day = Math.floor(now / 86_400_000), hour = Math.floor(now / 3_600_000)
   const atHourCap = () => fail(429, "You've written 30 comments this hour. Try again in a while.", { code: 'hour' })

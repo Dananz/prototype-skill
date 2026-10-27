@@ -12,10 +12,13 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
 ]
 // ADD COLUMN can't add NOT NULL without a default, hence the defaults.
-const COLUMNS = [
-  ['gh_id', 'INTEGER'], ['variant', 'TEXT'], ['target', 'TEXT'], ['owner_reply_at', 'INTEGER'],
-  ['deleted', 'INTEGER NOT NULL DEFAULT 0'], ['withdrawn', 'INTEGER NOT NULL DEFAULT 0'],
-]
+const COLUMNS = {
+  comments: [
+    ['gh_id', 'INTEGER'], ['variant', 'TEXT'], ['target', 'TEXT'], ['owner_reply_at', 'INTEGER'],
+    ['deleted', 'INTEGER NOT NULL DEFAULT 0'], ['withdrawn', 'INTEGER NOT NULL DEFAULT 0'],
+  ],
+  shares: [['html_key', 'TEXT']],
+}
 
 // Once per isolate: the binding object may be new on every request, so it can't be the key. An
 // isolate serves one host, so one database.
@@ -29,15 +32,17 @@ export function upgraded(env) {
 
 export async function upgrade(db) {
   for (const t of TABLES) await db.prepare(t).run()
-  const { results } = await db.prepare('PRAGMA table_info(comments)').all()
-  const have = new Set(results.map(c => c.name))
-  for (const [name, type] of COLUMNS) {
-    if (have.has(name)) continue
-    try {
-      await db.prepare(`ALTER TABLE comments ADD COLUMN ${name} ${type}`).run()
-    } catch (e) {
-      // Another isolate may have added it a moment ago.
-      if (!/duplicate column/i.test(String(e?.message || e))) throw e
+  for (const [table, columns] of Object.entries(COLUMNS)) {
+    const { results } = await db.prepare(`PRAGMA table_info(${table})`).all()
+    const have = new Set(results.map(c => c.name))
+    for (const [name, type] of columns) {
+      if (have.has(name)) continue
+      try {
+        await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`).run()
+      } catch (e) {
+        // Another isolate may have added it a moment ago.
+        if (!/duplicate column/i.test(String(e?.message || e))) throw e
+      }
     }
   }
   console.log('proto-share: database schema checked')

@@ -43,14 +43,24 @@ export async function uploadRefused(env, id, bytes) {
   return fail(507, `The host holds at most ${mb(CAPS.kv_bytes)} of shares, and this one would pass it. The biggest: ${biggest}. proto share rm <id> frees room.`, { code: 'budget' })
 }
 
-/** Deletes a KV key while today's deletes last; past that it waits in kv_trash for the cron. */
+/** Puts a KV key in kv_trash, for the cron to delete. */
+export const queueKey = (env, key) => env.DB.prepare('INSERT INTO kv_trash (key, at) VALUES (?, ?) ON CONFLICT(key) DO NOTHING').bind(key, Date.now()).run()
+
+/**
+ * Deletes a KV key while today's deletes last. Past that, or when the delete fails, it waits in
+ * kv_trash for the cron, so the request that asked still succeeds. True when it is gone now.
+ */
 export async function dropKey(env, key) {
-  if (await room(env.DB, 'kv_delete')) {
-    await env.KV.delete(key)
-    await spend(env.DB, 'kv_delete')
-    return true
+  try {
+    if (await room(env.DB, 'kv_delete')) {
+      await env.KV.delete(key)
+      await spend(env.DB, 'kv_delete')
+      return true
+    }
+  } catch (e) {
+    console.error(e)
   }
-  await env.DB.prepare('INSERT INTO kv_trash (key, at) VALUES (?, ?) ON CONFLICT(key) DO NOTHING').bind(key, Date.now()).run()
+  await queueKey(env, key)
   return false
 }
 

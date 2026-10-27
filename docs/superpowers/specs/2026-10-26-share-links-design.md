@@ -411,6 +411,18 @@ the table uses 1.5 MiB:
 | D1 storage | main database: rows of about 2 KB; shots database: 300 KB per shot | main: ~200,000 comments; shots: ~1,500 per database, up to 9 databases | Over 450 MB the host opens the next shots database. Shots of comments that are `done` or `dismissed` are deleted after 30 days (the Mac already has its copy in the inbox). If every database is full, comments still send and pictures are refused: "Pictures can't be added right now". |
 | CPU (10 ms) | password checks are a hash compare (stretching is in the browser), HTML is served as stored gzip bytes | fits | `wrangler dev` reports CPU; the plan's tests assert under 5 ms on the hot paths |
 
+Online, prtype.dev is the site Worker (`prtype-site`), which hands the share paths to the share
+host over a service binding. Both Workers are on the same Free account and share its 100,000
+requests a day. A request through a service binding is not counted again: "Requests made from your
+Worker to another worker via a Service Binding do not incur additional request fees", and the
+caller's one request is what counts (developers.cloudflare.com/workers/platform/pricing/). It does
+count as one of the caller's subrequests (50 per invocation on Free), as does every KV and D1 call
+(developers.cloudflare.com/workers/platform/limits/). The site's static files don't run a Worker:
+"Requests to static assets are free and unlimited". Past the daily cap, the paths that run the
+Worker first (the share paths) "will receive a 429 (Too Many Requests) response", so a share fails
+closed (developers.cloudflare.com/workers/static-assets/billing-and-limitations/). The host's hourly cron is held to that 50: a run deletes at most 30 queued KV
+keys.
+
 The host keeps its own counters in `budget` and refuses work at 90% of each daily cap, so it
 answers with a clear message instead of hitting Cloudflare's error. The owner's `proto share ls`
 shows today's usage.
@@ -780,6 +792,24 @@ line, one field or none, the same type and colors as the shell, dark by `prefers
 | A malformed or hostile payload from the host reaching the Mac | the session server validates host comments with the same rules as `receive()` before they enter the tray; paths in targets are display-only, never opened |
 | Spam on open links | per-viewer and per-share caps, Turnstile switches on after a trip, owner can turn comments off per share |
 | Abuse reports against the domain | separate account and domain; owner-only uploads until phase 5 |
+
+### Path mode: one origin for every share (prtype.dev, workers.dev)
+
+Online, every share is served from one origin (`https://prtype.dev/s/<id>/`; plan
+2026-10-27-share-links-online). A path is not a security boundary, so a share's scripts can:
+
+- read and write every other share's `localStorage`, `sessionStorage` and IndexedDB on that origin;
+- register a service worker scoped to `/` (or to another share's path) that sees and rewrites the
+  requests of every share a viewer opens afterwards;
+- `fetch('/s/<other>/api/…')` with `X-Proto: 1`: it is same-origin, so the browser sends the other
+  share's `v` cookie (its `Path=/s/<other>/` matches the request) and the viewer's sign-in there acts
+  for the script: reading comments, posting or deleting as that viewer.
+
+That is acceptable only because every byte on the origin is the owner's own build. So the host must
+never accept content from anyone else in path mode: uploads need the token of `meta.owner_id` (403
+`not_owner` otherwise, and no uploads at all before setup names the owner), and nothing in the API
+adds an owner. Opening uploads to others (phase 5) needs one origin per share again
+(`<id>.prtype.dev`, a wildcard route).
 
 ### How viewer text reaches the agent
 
