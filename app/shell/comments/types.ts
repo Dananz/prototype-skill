@@ -156,6 +156,8 @@ export type State = {
   /** The prototype the page is on (in one of its variants or its lobby): the list shows its comments only. Null in the session lobby, which shows all. */
   scope: string | null
   inbox?: Inbox
+  /** The "From links" tray: viewers' comments on this session's share links (links.tsx). */
+  links?: LinkTray
   /** The phone's list, in a sheet. */
   sheet: boolean
   /** The island (island.tsx) is open as the comments panel, on a wide screen. */

@@ -51,6 +51,8 @@ if (import.meta.hot && shell) {
   })
   // Comments taken, answered or marked done by the agent (the server watches .proto/inbox).
   import.meta.hot.on('proto:inbox', inbox => shell.setInbox(inbox))
+  // Viewers' comments on this session's share links (the server polls the host, app/share/routes.mjs).
+  import.meta.hot.on('proto:shares', tray => shell.setShares(tray))
   import.meta.hot.on('vite:ws:disconnect', () => shell.setLive(false))
   import.meta.hot.on('vite:ws:connect', () => shell.setLive(true))
 }

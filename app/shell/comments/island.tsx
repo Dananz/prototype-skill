@@ -14,6 +14,7 @@ import { useAgentName, useCtx } from './ctx'
 import { islandPrefs, useIslandPrefs, type IslandPrefs } from './island-prefs'
 import { useEdgeDrag, type Side } from './island-drag'
 import { CommentList, Notices, useRows } from './list'
+import { linksNew } from './links'
 import { Icon, Listening, MOD, plain, srcOf, elementName } from './ui'
 import { useKeyboard } from './keyboard'
 import type { CState, Target } from './types'
@@ -254,8 +255,10 @@ export function Island() {
   const live = news && !open ? news : null
   const edge = live ? EDGE[live.kind] : working ? EDGE.working : ''
   const top = prefs.place === 'top' && !phone
-  const total = rows.length
-  const dot = unread && !open ? EDGE.reply : working ? EDGE.working : total ? EDGE.done : ''
+  // Viewers' new comments from share links count too, in the colour of news that waits on you.
+  const fromLinks = linksNew(s.links)
+  const total = rows.length + fromLinks
+  const dot = (unread || fromLinks) && !open ? EDGE.reply : working ? EDGE.working : total ? EDGE.done : ''
   const width = phone ? '100%' : open ? size.listW ?? 440 : typing ? 400 : shown && !open ? 360 : 300
   const showNews = !!shown && !open
   // Send n takes the field's room: then the short placeholder, so it stays on one line.
@@ -267,7 +270,7 @@ export function Island() {
   const mark = (
     <span className="relative grid place-items-center">
       <Icon name="chats" className="size-[18px]" />
-      {total > 0 && <span key={`u${unread}`} className={`absolute -end-2 -top-2 grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-semibold tabular-nums transition-colors duration-500 ${unread > 0 && !open ? 'animate-[proto-isl-pop_.5s_cubic-bezier(.3,1.6,.5,1)]' : ''}`} style={{ background: dot || '#71717a', color: dot ? '#18181b' : '#fff' }}>
+      {total > 0 && <span key={`u${unread}-${fromLinks}`} data-link-badge={fromLinks > 0 ? fromLinks : undefined} className={`absolute -end-2 -top-2 grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-semibold tabular-nums transition-colors duration-500 ${(unread > 0 || fromLinks > 0) && !open ? 'animate-[proto-isl-pop_.5s_cubic-bezier(.3,1.6,.5,1)]' : ''}`} style={{ background: dot || '#71717a', color: dot ? '#18181b' : '#fff' }}>
         {total}
       </span>}
     </span>
@@ -390,7 +393,7 @@ export function Island() {
         className={`flex shrink-0 items-center rounded-full ${phone ? 'size-10 justify-center gap-0.5 text-sm' : 'h-8 gap-1.5 px-2 text-xs'} text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10`}>
         {/* Wide, the count is the comments icon with its badge, as on the side tab. A phone has no room
             for it: the count itself takes the news colour, lined up over the pill's end button. */}
-        {phone ? <span className="tabular-nums" style={dot ? { color: dot } : undefined}>{total}</span> : <span className="me-0.5">{mark}</span>}
+        {phone ? <span className="tabular-nums" data-link-badge={fromLinks > 0 ? fromLinks : undefined} style={dot ? { color: dot } : undefined}>{total}</span> : <span className="me-0.5">{mark}</span>}
         <span className={`transition-transform duration-300 ${open !== top ? 'rotate-180' : ''}`}><Icon name="caret-up" className="size-3 opacity-60" /></span>
       </button>}
     </div>

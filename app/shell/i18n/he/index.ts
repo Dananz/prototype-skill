@@ -6,5 +6,6 @@ import comments2 from './comments2'
 import panels from './panels'
 import misc from './misc'
 import viewer from './viewer'
+import shareLink from './share-link'
 
-export const he: Record<string, string> = { ...core, ...shell, ...comments, ...comments2, ...panels, ...misc, ...viewer }
+export const he: Record<string, string> = { ...core, ...shell, ...comments, ...comments2, ...panels, ...misc, ...viewer, ...shareLink }

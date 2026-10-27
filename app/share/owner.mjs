@@ -265,10 +265,12 @@ const variantHere = (dir, variant) => {
  */
 export function trayView(dir) {
   const tray = readTray(dir)
-  const mine = new Set(readShares(dir).map(e => e.id))
-  const comments = Object.values(tray.items).filter(c => mine.has(c.share?.id))
+  // The link's version as this Mac has it: an update doesn't touch the comments, so the host sends
+  // no new row for them and the row's own share version stays the one it was fetched at.
+  const versions = new Map(readShares(dir).map(e => [e.id, e.version]))
+  const comments = Object.values(tray.items).filter(c => versions.has(c.share?.id))
     .sort((a, b) => b.created_at - a.created_at)
-    .map(c => ({ ...c, dismissed: !!c.dismissed, changed: c.version < c.share.version, gone: !variantHere(dir, c.variant) }))
+    .map(c => ({ ...c, dismissed: !!c.dismissed, changed: c.version < Math.max(c.share.version, versions.get(c.share.id) || 0), gone: !variantHere(dir, c.variant) }))
   return {
     comments,
     new: comments.filter(c => c.status === 'new' && !c.dismissed).length,

@@ -270,6 +270,14 @@ test('the tray keeps this session\'s shares only, merges repeats, and keeps dism
   assert.deepEqual(trayView(dir).comments, [])
 })
 
+test('the tray says changed once this Mac updated the link, though the host row still names the old version', async t => {
+  const dir = session(t)
+  writeShares(dir, [{ id: 'k3x9p2abcd', host: 'local', title: 'Pricing', scope: { protos: [{ id: 'pricing', variants: ['C'] }], start: 'pricing/C' }, version: 2 }])
+  // Fetched while the link was at v1; the comment itself hasn't changed since, so the host doesn't send it again.
+  mergeTray(dir, 'local', [row({ version: 1, share: { id: 'k3x9p2abcd', title: 'Pricing', version: 1 } })], 100)
+  assert.equal(trayView(dir).comments[0].changed, true, 'made on v1, the link is on v2 now')
+})
+
 test('Send: the host row flips to sent, the batch is fenced data with from; a second Send is already sent', async t => {
   const dir = session(t)
   const env = await makeEnv(), host = hostOf(env)

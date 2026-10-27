@@ -36,6 +36,8 @@ import type { Intake } from './intake/types'
 import { createSettings, type Appearance } from './settings'
 import { followSession, rtl, t, tn, day } from './i18n'
 import { createShare } from './share'
+import { createShareLink } from './share-link'
+import type { LinkTray } from './comments/types'
 import * as transport from './transport'
 import { framed, frameClicks, frameMenus, offerTheme, openFrame, frameUrl, type Frame } from './view/frame'
 import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
@@ -191,7 +193,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let appearance: Appearance = stored === 'light' || stored === 'dark' ? stored : 'system'
   let themeOverride = q.has('theme')
   const systemTheme = matchMedia('(prefers-color-scheme: dark)')
-  let settingsOpen = false, shareOpen = false
+  let settingsOpen = false, shareOpen = false, linkOpen = false
   let settingsOrigin: 'bar' | 'dock' = 'bar'
   let settingsCategory: 'session' | 'shortcuts' | undefined
   // Where the focus goes back to: the control that opened Settings (or, for a menu row, the menu's button).
@@ -1160,6 +1162,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const row = (act: string, shoot: string, icon: string, label: string, kbd = '', cls = '') => `<button data-act="${act}" data-shoot="${shoot}" class="${cls || 'flex'} h-10 w-full items-center gap-3 rounded-lg px-3 text-start text-zinc-700 hover:bg-zinc-900/[.04] dark:text-zinc-300 dark:hover:bg-white/5">${ic(icon, 'size-4 text-zinc-500 dark:text-zinc-400')}<span class="flex-1">${label}</span>${kbd ? `<kbd class="font-sans text-xs text-zinc-400">${kbd}</kbd>` : ''}</button>`
       const rows = [
         view === 'variant' ? row('focus', 'focus', 'grow', t('Focus mode'), 'F', 'hidden [@media(hover:hover)]:flex') : '',
+        !framed && p ? row('share-link', 'share-link', 'link-simple', t('Share link…')) : '',
         !framed && p ? row('share', 'share', 'share', t('Share screenshots…')) : '',
         row('settings:shortcuts', 'shortcuts', 'keyboard', t('Keyboard shortcuts')),
         `<div class="mx-1 my-1 border-t border-black/[.06] dark:border-white/10"></div>`,
@@ -1452,6 +1455,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const p = cur()!, c = copyCounts(), n = tryCount(hintList())
     const rows = cardKind === 'layout' ? '' : [
       menuRow({ act: 'lobby:proto', shoot: 'all-variants', icon: 'grid', label: t('All variants'), detail: String(visible(p).length), on: st.place.view === 'proto' }),
+      !framed ? menuRow({ act: 'share-link', shoot: 'share-link', icon: 'link-simple', label: t('Share link…') }) : '',
       !framed ? menuRow({ act: 'share', shoot: 'share', icon: 'share', label: t('Share screenshots') }) : '',
       c.lines ? menuRow({ act: 'copymode', shoot: 'copy-mode', icon: 'text', label: t('Copy options'), detail: tn(c.lines, '{n} line', '{n} lines') }) : '',
       n ? menuRow({ act: 'try', shoot: 'try-it', icon: 'key', tint: 'text-amber-600 dark:text-amber-300', label: t('Try it'), detail: t('{n} to try', { n }) }) : '',
@@ -1817,6 +1821,23 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         })
         return
       }
+      case 'share-link': {
+        // A link to the prototypes themselves (share-link.ts): from a variant's menu that variant
+        // alone, from the page's menus the prototype on screen.
+        const q = arg ? byId(arg) : cur()
+        if (framed || !q) return
+        const variant = arg2 || (here?.proto === q.id ? here.variant : q.variants[0]?.id ?? '')
+        linkOpen = true
+        st.open = null; st.menu = ''; closeCard(true); render()
+        drawLink({
+          protos: protos.map(x => ({ id: x.id, title: x.title, archived: x.archived, screen: x.screen, variants: x.variants.map(v => ({ id: v.id, name: v.name })) })),
+          proto: q.id, variant, what: arg2 ? 'variant' : 'proto', dark: st.dark,
+          pathOf: (proto: string, v: string) => pathOf({ view: 'variant', proto, variant: v }),
+          onClose: () => { linkOpen = false; drawLink(null) },
+          returnFocus: () => phoneMq.matches ? menuBtn() : [...root.querySelectorAll<HTMLElement>('[data-act]')].find(el => el.dataset.act === `vm:${q.id}:${variant}` && el.getClientRects().length > 0) ?? bar.querySelector<HTMLElement>('[data-shoot=more]'),
+        })
+        return
+      }
       case 'settings': settingsCategory = arg === 'session' || arg === 'shortcuts' ? arg : undefined; settingsOpen = true; st.open = null; st.menu = ''; st.drawer = false; render(); void refreshStatus(); return
       case 'tweaks': {
         if (!tweakList().length) return
@@ -2052,7 +2073,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   listen(window, 'keydown', e => {
     const t = e.target as Element
-    if (settingsOpen || shareOpen) return
+    if (settingsOpen || shareOpen || linkOpen) return
     if (resetViewKey(e)) return
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); return act('side', (wide() ? st.side : st.drawer) ? '0' : '1', '') }
     // Cmd or Ctrl Enter sends what's ready to Claude, from anywhere but a field of the design's own.
@@ -2407,7 +2428,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   /** Keys pressed in the page inside the view: C comments on it, F is focus mode, P the design's
    *  actions and S stars it, as out here, and Esc stops. */
   function viewKey(e: KeyboardEvent) {
-    if (settingsOpen || shareOpen) return
+    if (settingsOpen || shareOpen || linkOpen) return
     if (resetViewKey(e)) return
     const t = e.target as Element
     if (e.metaKey || e.ctrlKey || e.altKey || t.closest?.('input, textarea, select, [contenteditable]')) return
@@ -2448,6 +2469,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (zoom && zoom.mount !== zoomMount()) unzoom()
   }
   comments.mountSheet(root.querySelector<HTMLElement>('[data-comments-sheet]')!)
+  // Viewers' comments on this session's share links, for the island's tray: asked for now and on each return.
+  if (!framed) comments.watchLinks()
   /** Mounts the design shown again, so what plays on load plays again: in a device view, the frame's. */
   function remountDesign() {
     if (!frameOn()) return layer?.remount?.() ?? Promise.resolve()
@@ -2540,6 +2563,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   const settingsBtn = (status = false) => `<button data-act="settings" aria-label="${t('Settings')}" aria-haspopup="dialog" title="${t('Settings')}" class="${IB}${status ? ' relative' : ''}">${ic('settings')}${status ? `<span class="absolute end-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span>` : ''}</button>`
   const drawShare = createShare()
+  const drawLink = createShareLink()
   const drawSettings = createSettings()
   function paintSettings() {
     drawSettings({
@@ -2694,6 +2718,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       for (const t of (['play', 'all', 'compare'] as Tool[]).filter(t => toolOk(q, v.id, t))) {
         rows.push({ id: `tool-${t}`, label: TOOLS[t].name, icon: TOOLS[t].icon, hint: t === 'compare' ? variantRef(q, otherOf(q, v.id)) : undefined, on: here && st.place.view === 'variant' && st.place.tool === t, run: () => act('tool', q.id, v.id, t) })
       }
+      rows.push({ id: 'share-link', label: t('Share link…'), icon: 'link-simple', run: () => act('share-link', q.id, v.id) })
       rows.push({ id: 'share', label: t('Share screenshots'), icon: 'share', run: () => act('share', q.id, v.id) })
       rows.push({ id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(linkOf(pathOf({ view: 'variant', proto: q.id, variant: v.id }))) })
     }
@@ -3282,6 +3307,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     },
     setLive(live: boolean) { st.live = live; render() },
     setInbox(inbox: Inbox) { if (st.status) { st.status = { ...st.status, inbox }; render() } },
+    /** The "From links" tray, from the server's `proto:shares`. */
+    setShares(tray: LinkTray) { comments.setLinks(tray) },
     sendComments: sendBatch,
     /** A compile error from Vite: one in a variant (or a helper of its own) that is still building is
      *  expected mid-build, so its overlay is taken away and kept until the variant is built. */

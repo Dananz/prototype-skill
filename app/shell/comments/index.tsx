@@ -13,9 +13,10 @@ import { climb, describe } from './dom'
 import { Selection } from './selection'
 import { PhoneSheet } from './rail'
 import { Island } from './island'
+import { watchLinks } from './links'
 import { createStore, isRoot, progress, threadOf } from './store'
 import { plain } from './ui'
-import { inScope, type Place, type State, type Target, type Item } from './types'
+import { inScope, type LinkTray, type Place, type State, type Target, type Item } from './types'
 
 export type { ContextPopProps, DecidePopProps, Place, State, Subject }
 export type { MenuRow } from './menu'
@@ -84,6 +85,10 @@ export function createComments(host: Host, sessionId: string) {
     },
     setPlace: act.setPlace,
     setInbox(inbox: Inbox | undefined) { store.set({ inbox }) },
+    /** The "From links" tray, as the server's `proto:shares` sends it (links.tsx). */
+    setLinks(tray: LinkTray) { if (tray && Array.isArray(tray.comments)) store.set({ links: tray }) },
+    /** Asks the server for the tray now and on every return to the page; the page that owns the session calls it once. */
+    watchLinks: () => watchLinks(store),
     /** Comments waiting to be sent and all of them (those of the prototype on screen), and open (sent, not yet done) ones per variant: for the bar and the tree. */
     counts() {
       const s = store.get()

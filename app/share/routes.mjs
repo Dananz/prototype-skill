@@ -55,6 +55,8 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
     if (!host) throw failure(409, 'No share host yet. Ask Claude to set one up (proto share setup --local).', { code: 'no_host' })
     const token = getToken(host.name)
     if (!token) throw failure(409, `No owner token for the host "${host.name}" on this Mac: proto share setup --local makes one.`, { code: 'no_token' })
+    // A token found now ends a "no token" the poll remembered from before setup.
+    if (!clientFor(host.name)) forget(host.name)
     if (!await hostUp(host)) throw failure(503, `The share host "${host.name}" isn't running. Ask Claude to share again (it starts the host), or run proto share setup --local.`, { code: 'host_down' })
     return { host, token }
   }
@@ -103,6 +105,8 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
       const tray = trayView(root).comments
       const shares = entries.map(e => shareView(e, tray))
       let hostError = null
+      // The sheet's Check again after `proto share setup`: the poll may remember there was no token.
+      if (host && !quiet && !clientFor(host.name) && getToken(host.name)) forget(host.name)
       if (!quiet) for (const name of new Set(entries.map(e => e.host))) {
         const api = clientFor(name)
         try {
@@ -127,7 +131,10 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
       if (typeof data.id !== 'string') throw failure(400, 'send { id, note?, yes? }')
       const e = entryOf(data.id)
       const { host, token } = await reach(e.host)
-      return published(await updateShare({ sessionDir: root, session: session(), host, token, id: e.id, note: typeof data.note === 'string' ? data.note : undefined, yes: data.yes === true }))
+      const r = published(await updateShare({ sessionDir: root, session: session(), host, token, id: e.id, note: typeof data.note === 'string' ? data.note : undefined, yes: data.yes === true }))
+      // The tray's comments on the old version now say it has changed since.
+      if (r.ok) tell()
+      return r
     },
     async remove(data) {
       if (typeof data.id !== 'string') throw failure(400, 'send { id }')

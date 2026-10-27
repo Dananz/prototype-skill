@@ -37,6 +37,7 @@ import { settingsChecks } from './settings-checks.mjs'
 import { shareChecks } from './share-checks.mjs'
 import { shareLinkChecks } from './share-link-checks.mjs'
 import { shareTrayChecks } from './share-tray-checks.mjs'
+import { shareSheetChecks } from './share-sheet-checks.mjs'
 import { tweaksChecks } from './tweaks-checks.mjs'
 import { tweaksRegistryChecks } from './tweaks-registry-checks.mjs'
 import { middleDragChecks } from './middle-drag-checks.mjs'
@@ -250,9 +251,20 @@ if (process.argv.includes('--share-tray-only')) {
   console.log('OK: focused share tray checks')
   process.exit(0)
 }
+// The owner's page alone: the Share sheet and the From links tray in a real browser (Task 5).
+if (process.argv.includes('--share-sheet-only')) {
+  proto(['add', 'share-link', '--title', 'Share link', '--variants', 'A:One,B:Two,C:Three'])
+  for (const id of ['A', 'B', 'C']) writeFileSync(join(app, 'src/protos/share-link', `${id}.tsx`), `export default function ${id}() { return <main><h1>MARK-${id}</h1></main> }\n`)
+  await shareSheetChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_SHEET_SHOTS || join(keepShots, 'share-sheet') })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused share sheet checks')
+  process.exit(0)
+}
 if (process.argv.includes('--share-link-only')) {
   await shareLinkChecks({ proto, app, local, openPage, fail })
   await shareTrayChecks({ proto, app, fail })
+  await shareSheetChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_SHEET_SHOTS || join(keepShots, 'share-sheet') })
   proto(['rm'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused share link checks')
@@ -284,6 +296,7 @@ await virtualVariantsChecks({ proto, app, local, openPage, fail })
 await shareChecks({ proto, app, local, openPage, fail })
 await shareLinkChecks({ proto, app, local, openPage, fail })
 await shareTrayChecks({ proto, app, fail })
+await shareSheetChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_SHEET_SHOTS || join(keepShots, 'share-sheet') })
 await settingsChecks({ proto, app, local, openPage, fail })
 await tweaksRegistryChecks({ local, openPage, fail })
 await tweaksChecks({ proto, app, local, openPage, fail })

@@ -32,8 +32,19 @@ import chatText from '@phosphor-icons/core/assets/regular/chat-circle-text.svg?r
 import gripV from '@phosphor-icons/core/assets/regular/dots-six-vertical.svg?raw'
 import foldRight from '@phosphor-icons/core/assets/regular/caret-double-right.svg?raw'
 import arrowClockwise from '@phosphor-icons/core/assets/regular/arrow-clockwise.svg?raw'
+import linkSimple from '@phosphor-icons/core/assets/regular/link-simple.svg?raw'
+import qrCode from '@phosphor-icons/core/assets/regular/qr-code.svg?raw'
+import squareOut from '@phosphor-icons/core/assets/regular/arrow-square-out.svg?raw'
+import copySimple from '@phosphor-icons/core/assets/regular/copy-simple.svg?raw'
+import trashSimple from '@phosphor-icons/core/assets/regular/trash-simple.svg?raw'
+import checkSimple from '@phosphor-icons/core/assets/regular/check.svg?raw'
+import xSimple from '@phosphor-icons/core/assets/regular/x.svg?raw'
+import paperPlane from '@phosphor-icons/core/assets/regular/paper-plane-tilt.svg?raw'
+import bendBack from '@phosphor-icons/core/assets/regular/arrow-bend-up-left.svg?raw'
+import warning from '@phosphor-icons/core/assets/regular/warning.svg?raw'
+import terminal from '@phosphor-icons/core/assets/regular/terminal-window.svg?raw'
 /** Icons that are Phosphor's own files, never drawn here: the ⋯, the pick's check circle, the favorite's star. */
-const PHOSPHOR: Record<string, string> = { select: cursor, 'select-on': cursorFill, tap: handTap, 'tap-on': handTapFill, chats: chatsCircle, 'chat-text': chatText, 'grip-v': gripV, 'fold-right': foldRight, 'caret-up': caretUp, spinner: circleNotch, 'share-stage': shotStage, 'share-phone': shotPhone, 'share-tablet': shotTablet, 'share-desktop': shotDesktop, 'share-pencil': shotPencil, share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon, translate, globe, star, 'star-fill': starFill, center: shotStage, replay: arrowClockwise }
+const PHOSPHOR: Record<string, string> = { select: cursor, 'select-on': cursorFill, tap: handTap, 'tap-on': handTapFill, chats: chatsCircle, 'chat-text': chatText, 'grip-v': gripV, 'fold-right': foldRight, 'caret-up': caretUp, spinner: circleNotch, 'share-stage': shotStage, 'share-phone': shotPhone, 'share-tablet': shotTablet, 'share-desktop': shotDesktop, 'share-pencil': shotPencil, share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon, translate, globe, star, 'star-fill': starFill, center: shotStage, replay: arrowClockwise, 'link-simple': linkSimple, qr: qrCode, 'open-out': squareOut, 'copy-simple': copySimple, 'trash-simple': trashSimple, 'check-simple': checkSimple, 'x-simple': xSimple, 'send-plane': paperPlane, 'reply-back': bendBack, warning, terminal, refresh: arrowClockwise }
 
 const PATHS: Record<string, string> = {
   ...SIZE_PATHS,
@@ -74,7 +85,7 @@ const PATHS: Record<string, string> = {
 }
 
 // Icons that point along the line mirror with it: in a right-to-left page, forward points left.
-const ALONG = new Set(['right', 'left', 'branch', 'from', 'fold-right'])
+const ALONG = new Set(['right', 'left', 'branch', 'from', 'fold-right', 'open-out', 'reply-back', 'send-plane'])
 export const ic = (name: string, size = 'size-4', cls = ALONG.has(name) ? `${size} rtl:-scale-x-100` : size) => PHOSPHOR[name]
   ? PHOSPHOR[name].replace('<svg', `<svg class="${cls} shrink-0" aria-hidden="true"`)
   : `<svg class="${cls} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${PATHS[name]}"/></svg>`
