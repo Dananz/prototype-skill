@@ -1,13 +1,14 @@
 // proto share: publish some of a session's variants as a link, list and remove those links, or
 // write the same build as one HTML file. In phase 0 the host is this Mac (`wrangler dev`), so a
 // link opens only here. scripts/share-host.mjs holds the host side; references/share.md the how-to.
+import { spawn } from 'node:child_process'
 import { mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { receive } from '../app/server.mjs'
 import { buildShare } from '../app/share/build.mjs'
 import { flush, pollOnce, readShares, sendComments, trayView } from '../app/share/owner.mjs'
 import { existsSync, readdirSync } from 'node:fs'
-import { changedSince, describe, protosOf, publishShare, removeShare, reviewOf, titleOf, updateShare } from '../app/share/publish.mjs'
+import { changedSince, changedVariants, describe, protosOf, publishShare, removeShare, reviewOf, titleOf, updateShare } from '../app/share/publish.mjs'
 import { ShareError, parseScope } from '../app/share/scope.mjs'
 import { hostCommentLines, trayRow } from '../app/share/viewer-text.mjs'
 import { client, defaultHost, ensureTools, getToken, hostHash, hostNamed, linkOf, localRunning, readHosts, setupHint, shortLinkOf, startLocal, stopLocal } from './share-host.mjs'
@@ -16,6 +17,7 @@ import { installApp, syncApp } from './app-sync.mjs'
 import { defaultIo, ensureViewerKey, setupGithub, setupOnline } from './share-online.mjs'
 
 const MiB = 2 ** 20
+const NOW_MS = 2 * 60e3 // a viewer is in a link now when their last ping is this recent
 
 // The host a command uses: --host <name> for this one command, else the default. A local one that
 // is down is started again, unless PROTO_SHARE_NO_START=1 (then the upload fails and says so, which
@@ -82,25 +84,54 @@ function report(result) {
   }
 }
 
+// --message "…" sets the words viewers read first; on update, --message= (empty) clears them.
+const messageFlag = (flags, clear) => typeof flags.message === 'string' ? (flags.message || (clear ? null : undefined)) : flags.message === true && clear ? null : undefined
+
 async function publish(args, flags, { sessionDir, session, die }) {
   const { host, token } = await liveHost(die, flags)
   freshApp(sessionDir, die)
   const protos = protosOf(sessionDir)
   const scope = parseScope(args, flags.all === true, protos)
   const title = typeof flags.title === 'string' ? flags.title : titleOf(scope, protos, session)
-  const result = await publishShare({ sessionDir, session, host, token, scope, title, yes: flags.yes === true })
+  const result = await publishShare({ sessionDir, session, host, token, scope, title, message: messageFlag(flags, false), yes: flags.yes === true })
   report(result)
-  console.log(`published ${describe(scope)} as "${title}", v${result.entry.version}`)
+  console.log(`published ${describe(scope)} as "${title}", v${result.entry.version}${result.entry.message ? `; message for viewers: "${result.entry.message}"` : ''}`)
   links(host, result.entry.id)
+}
+
+// proto share signin: the owner's GitHub sign-in on the host, which a new link needs once the host
+// runs sign-in. The link (10 minutes, once) is printed and opened in the browser (--no-open, or
+// PROTO_SHARE_NO_OPEN=1, only prints it); then the host is asked every 2 s, up to five minutes.
+const SIGNIN_WAIT_MS = 5 * 60e3
+async function signin(flags, { die }) {
+  const { host, token } = await liveHost(die, flags)
+  const api = client(host, token)
+  const before = await api.owner()
+  if (before.login && flags.again !== true) return console.log(`signed in as ${before.login} (proto share signin --again signs in with another GitHub account)`)
+  const { url } = await api.claim()
+  console.log(`Sign in with GitHub: ${url}`)
+  console.log('The link works once, for 10 minutes.')
+  if (flags['no-open'] !== true && process.env.PROTO_SHARE_NO_OPEN !== '1' && process.platform === 'darwin') {
+    try { spawn('open', [url], { stdio: 'ignore', detached: true }).unref() } catch { /* printed above */ }
+  }
+  const wait = Number(process.env.PROTO_SHARE_SIGNIN_WAIT_MS) || SIGNIN_WAIT_MS
+  for (const end = Date.now() + wait; Date.now() < end; await new Promise(r => setTimeout(r, 2000))) {
+    let o = null
+    try { o = await api.owner() } catch { /* asked again */ }
+    if (o?.login && o.login !== before.login) return console.log(`signed in as ${o.login}`)
+  }
+  if (before.login) return console.log(`still signed in as ${before.login}`)
+  die('No sign-in within five minutes: run proto share signin again')
 }
 
 async function update(id, flags, { sessionDir, session, die }) {
   if (!id) die('proto share update <id> [--note "…"]: which share? proto share ls lists them')
   const { host, token } = await liveHost(die, hostOfShare(sessionDir, id, flags))
   freshApp(sessionDir, die)
-  const result = await updateShare({ sessionDir, session, host, token, id, note: typeof flags.note === 'string' ? flags.note : undefined, yes: flags.yes === true })
+  const result = await updateShare({ sessionDir, session, host, token, id, note: typeof flags.note === 'string' ? flags.note : undefined, message: messageFlag(flags, true), yes: flags.yes === true })
   report(result)
   console.log(`updated ${id} to v${result.entry.version}: the same link, its comments kept${result.entry.note ? `; what's new: "${result.entry.note}"` : ''}`)
+  if (flags.message !== undefined) console.log(result.entry.message ? `message for viewers: "${result.entry.message}"` : 'message for viewers: none')
   links(host, id)
 }
 
@@ -134,6 +165,13 @@ async function ls(flags, { sessionDir, die }) {
     const r = byId.get(e.id), fresh = tray.filter(c => c.share.id === e.id && c.status === 'new').length
     const notes = [changedSince(sessionDir, e) && 'changed since shared: proto share update ' + e.id, fresh && `${fresh} new comment${fresh === 1 ? '' : 's'}: proto share comments ${e.id}`].filter(Boolean)
     console.log(line(e.id, r?.version ?? e.version, r?.title ?? e.title, !r, notes.length ? `  (${notes.join('; ')})` : ''))
+    if (!r) continue
+    // Who is in it now (a ping in the last two minutes), its views, and what changed since.
+    const now = (Array.isArray(r.viewers) ? r.viewers : []).filter(v => Date.now() - v.at < NOW_MS)
+    const views = Number(r.views) || 0
+    console.log(`    ${now.length ? `in it now: ${now.map(v => `${v.login}${v.route ? ` (${v.route})` : ''}`).join(', ')}` : 'nobody in it now'}; ${views} view${views === 1 ? '' : 's'}`)
+    const changed = changedVariants(sessionDir, e)
+    if (changed.length) console.log(`    changed since v${e.version}: ${changed.map(c => c.key.endsWith('/*') ? `${c.name} (${c.key.slice(0, -2)})` : `${c.key} ${c.name}`).join(', ')}`)
   }
   if (online) await usageLine(api)
 }
@@ -238,6 +276,7 @@ export async function main(args, flags, ctx) {
     // Every share command delivers what the outbox holds (statuses and replies the host missed).
     await flush(ctx.sessionDir).catch(() => {})
     if (sub === 'ls') return await ls(flags, ctx)
+    if (sub === 'signin') return await signin(flags, ctx)
     if (sub === 'rm') return await rm(rest[0], flags, ctx)
     if (sub === 'update') return await update(rest[0], flags, ctx)
     if (sub === 'comments') return await comments(rest, flags, ctx)

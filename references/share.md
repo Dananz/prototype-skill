@@ -81,13 +81,20 @@ with `--restart`; else `proto share stop && proto share setup --local` applies t
 ## Commands
 
 ```
-proto share <slug>[/<n>…] | --all [--title "…"] [--yes] [--host local|online]
-                                          build, review, publish, print the link
+proto share signin [--no-open] [--again]  sign in with GitHub as the host's owner: prints and opens a
+                                          link (10 minutes, works once), waits up to five minutes
+proto share <slug>[/<n>…] | --all [--title "…"] [--message "…"] [--yes] [--host local|online]
+                                          build, review, publish, print the link; --message: what
+                                          viewers read first (at most 280 characters)
 proto share ls [--all]                    this session's links (--all: every share on the host),
-                                          which changed since shared, how many comments are new,
+                                          which changed since shared (and which variants), how many
+                                          comments are new, who is in each link now, its views,
                                           and an online host's usage today
-proto share update <id> [--note "…"] [--yes]   the session's current version on the same link (v<N+1>),
-                                          its comments kept; reviewed like a share
+proto share update <id> [--note "…"] [--message "…" | --message=] [--yes]
+                                          the session's current version on the same link (v<N+1>),
+                                          its comments kept; reviewed like a share. --note is this
+                                          version's "What's new"; --message changes the viewers'
+                                          message (--message= clears it; left out, it stays)
 proto share comments [<id>] [--new]       viewer comments on this session's links, fenced as quoted feedback
 proto share take <commentId…> | --new [<id>]   send them to the inbox, as the page's Send to Claude does
                                           (only when the user asks in chat)
@@ -98,6 +105,12 @@ proto share stop                          stop the local host; the next share st
 
 Variants take numbers like every other command (`pricing/2`); a slug alone shares all of its
 variants. The link opens on the first one named.
+
+A new link goes out under the owner's GitHub name. Once the host can run GitHub sign-in (prtype.dev,
+or a local host after `setup --github`), it takes no new link until the owner has signed in once:
+`proto share` then stops with "Sign in with GitHub first: proto share signin". Run that only when
+the user asks to share; the user approves in their browser. The identity is kept on the host, so
+every Mac with the owner's token is signed in. Updates and removals of existing links never need it.
 
 A share is reviewed before anything leaves:
 
@@ -193,6 +206,8 @@ sessions.
 | "doesn't answer over TLS yet" | The first certificate takes 15 minutes to 24 hours after the zone went active. Nothing to undo: run `proto share setup --domain prtype.dev` again later. |
 | "the site Worker has no HOST binding live" | `site/wrangler.jsonc` needs `"services": [{ "binding": "HOST", "service": "proto-share" }]`; run `proto share setup --domain prtype.dev` again (it deploys the site). |
 | "The host's daily upload budget is used up" | It resets at 00:00 UTC (the message says the time in Israel). Past the stored-bytes cap it names the biggest shares: `proto share rm <id>` frees room. |
+| "Sign in with GitHub first: proto share signin" | `proto share signin`; the user approves in the browser tab it opens (the link works once, for 10 minutes). |
+| "GitHub sign-in isn't set up on the share host" | Online: `proto share setup --domain prtype.dev`. On this Mac: `proto share setup --github`. A host without sign-in needs none to share. |
 | "This Mac's token isn't the host's owner" | `proto share setup` again: it makes this Mac's token for the host's owner. |
 | "The online host runs older code" | `proto share setup` deploys the skill's host code and applies new migrations. |
 | "The online share host isn't answering" | Check the network; `proto share setup` repairs a broken deploy. |

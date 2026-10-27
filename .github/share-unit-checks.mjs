@@ -1,6 +1,7 @@
 // Unit checks for the share-link pieces that need no browser: scope parsing, trimming and the pre-publish review.
 import './share-owner-checks.mjs'
 import './share-online-unit-checks.mjs'
+import './share-popover-unit-checks.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ShareError, parseScope, trimMeta, trimSession } from '../app/share/scope.mjs'
@@ -291,7 +292,9 @@ const hex = async s => [...new Uint8Array(await crypto.subtle.digest('SHA-256', 
 async function makeEnv(extra = {}) {
   const sql = new DatabaseSync(':memory:')
   sql.exec(readFileSync(new URL('../host/schema.sql', import.meta.url), 'utf8'))
-  sql.prepare('INSERT INTO owners (id, name, created_at) VALUES (?, ?, ?)').run('o1', 'Dananz', 1)
+  // Signed in with GitHub already, as a new share needs once the host can run sign-in (the gate's own
+  // test signs the owner out first).
+  sql.prepare('INSERT INTO owners (id, name, created_at, gh_id, gh_login, gh_name, gh_avatar) VALUES (?, ?, ?, ?, ?, ?, ?)').run('o1', 'Dananz', 1, 1001, 'dananz', 'Tomer', 'https://avatars.githubusercontent.com/u/1001')
   sql.prepare('INSERT INTO owner_tokens (sha256, owner_id, device, created_at) VALUES (?, ?, ?, ?)').run(await hex(TOKEN), 'o1', 'test', 1)
   // Setup names the one owner who may upload; a host off this Mac takes uploads from no one else.
   sql.prepare("INSERT INTO meta (k, v) VALUES ('owner_id', 'o1')").run()
@@ -1155,6 +1158,7 @@ test('migrations: numbered from 0001, and 0001 is the phase 0 and 1 schema', () 
   assert.match(list[0][0], /^0001_initial\.sql$/)
   assert.match(list[1][0], /^0002_online\.sql$/)
   assert.match(list[2][0], /^0003_html_key\.sql$/)
+  assert.match(list[3][0], /^0004_owner_presence\.sql$/)
 })
 test('migrations applied in order make what schema.sql makes', () => {
   const shape = shapeOf(fromMigrations())

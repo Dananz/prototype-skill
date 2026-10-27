@@ -202,6 +202,9 @@ export function useNotes(on: boolean, me: Me | null | undefined) {
 
 /** A pin being placed: the id its comment will have, on which design, where, and in which view of it (the desk under the full view has the same design). */
 export type Placing = { id: string; variant: string; target: Target; where: 'desk' | 'full' | 'phone' }
+/** The message the owner left for viewers when sharing, and who they are on GitHub. */
+export type OwnerMessage = { text: string; login: string; avatar: string | null }
+
 export type Talk = {
   /** A host to talk to. */
   hosted: boolean
@@ -209,6 +212,8 @@ export type Talk = {
   can: 'write' | 'signin' | 'off'
   signIn: string | null
   owner: string
+  /** The owner's message for viewers (api/state), with who wrote it; null without one. */
+  message: OwnerMessage | null
   me: Me | null | undefined
   notes: Note[]
   fresh: (id: string) => boolean
@@ -383,6 +388,12 @@ export function Panel({ here, wide, list }: { here: Here; wide: boolean; list: R
             </p>
             <button onClick={() => talk.setOpen(false)} className={iconBtn} aria-label={t('Close comments')} title={t('Close (Esc)')}><Icon name="close" /></button>
           </div>
+          {talk.message && (
+            <p data-owner-message-folded dir="auto" className="mx-1.5 mb-1.5 flex shrink-0 items-start gap-2 rounded-xl bg-sky-500/[.07] px-3 py-2 text-[12.5px] leading-snug text-zinc-700 dark:bg-sky-400/[.08] dark:text-zinc-300">
+              <Face who={{ login: talk.message.login, name: talk.message.login, avatar: talk.message.avatar }} size={18} />
+              <span className="min-w-0 whitespace-pre-wrap break-words"><span className="font-semibold text-zinc-900 dark:text-zinc-100">{talk.message.login}:</span> {talk.message.text}</span>
+            </p>
+          )}
           {here.about && (
             <p dir="auto" className="mx-1.5 mb-1.5 shrink-0 rounded-xl bg-zinc-900/[.04] px-3 py-2 text-[12.5px] leading-snug text-zinc-600 dark:bg-white/[.05] dark:text-zinc-400">
               <span className="font-semibold text-zinc-800 dark:text-zinc-200">{talk.owner || t('The owner')}:</span> {here.about}

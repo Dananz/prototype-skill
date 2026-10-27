@@ -12,6 +12,8 @@ import { client, linkOf, readShares, writeShares } from './owner.mjs'
 import { ShareError } from './scope.mjs'
 
 const MiB = 2 ** 20
+/** The owner's message for viewers is at most this long (the host refuses more). */
+export const MAX_MESSAGE = 280
 const filesIn = dir => readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? filesIn(join(dir, e.name)) : [join(dir, e.name)])
 
 /** The session's prototypes as parseScope wants them: id, variant letters in the page's order, archived. */
@@ -56,6 +58,50 @@ export function hashOf(sessionDir, scope) {
 /** Whether the shared prototypes changed since that version was published ("Changed since shared"). */
 export const changedSince = (sessionDir, entry) => !!entry?.sourceHash && !!entry.scope?.protos && hashOf(sessionDir, entry.scope) !== entry.sourceHash
 
+const VARIANT_FILE = /^([A-Z]{1,3})\.(tsx|jsx|vue|svelte)$/
+const namesIn = dir => { try { return metaOf(readFileSync(join(dir, 'meta.ts'), 'utf8')).variants || {} } catch { return {} } }
+const filesUnder = dir => existsSync(dir) ? filesIn(dir).map(f => relative(dir, f)) : []
+
+/**
+ * Which shared variants changed since the version the link has: its kept sources
+ * (.proto/shares/<id>/v<N>/<proto>/) against src/protos/<proto>/, file by file. A shared variant's own
+ * file is that variant, { key: '<proto>/<LETTER>', name }; any other file (parts, meta, assets) is
+ * { key: '<proto>/*', name: 'Shared parts' }. A letter the link doesn't share is left out. Empty when
+ * nothing changed or the version's sources weren't kept.
+ */
+export function changedVariants(sessionDir, entry) {
+  if (!entry?.scope?.protos || !changedSince(sessionDir, entry)) return []
+  const kept = join(sessionDir, '.proto', 'shares', entry.id, `v${entry.version}`)
+  if (!existsSync(kept)) return []
+  const out = []
+  for (const p of entry.scope.protos) {
+    const then = join(kept, p.id), now = join(sessionDir, 'src', 'protos', p.id)
+    const names = { ...namesIn(then), ...namesIn(now) }
+    const letters = new Set(), files = new Set([...filesUnder(then), ...filesUnder(now)])
+    let parts = false
+    for (const f of files) {
+      const a = join(then, f), b = join(now, f)
+      if (existsSync(a) && existsSync(b) && readFileSync(a).equals(readFileSync(b))) continue
+      const m = f.includes('/') || f.includes('\\') ? null : VARIANT_FILE.exec(f)
+      if (!m) parts = true
+      else if (p.variants.includes(m[1])) letters.add(m[1])
+    }
+    for (const v of p.variants) if (letters.has(v)) out.push({ key: `${p.id}/${v}`, name: names[v] || v })
+    if (parts) out.push({ key: `${p.id}/*`, name: 'Shared parts' })
+  }
+  return out
+}
+
+/** The message as the host takes it: trimmed, '' is none; longer than 280 characters is refused. */
+export function messageOf(v) {
+  if (v === undefined) return undefined
+  if (v === null) return null
+  if (typeof v !== 'string') throw new ShareError('message must be text')
+  const t = v.trim()
+  if (t.length > MAX_MESSAGE) throw new ShareError(`The message for viewers is at most ${MAX_MESSAGE} characters (this one has ${t.length}).`)
+  return t || null
+}
+
 // What a version is built from, so what a viewer saw can be compared with the session later: the
 // shared prototypes' files and their hash, taken just before the build (an edit during the build
 // is then a change since shared, never folded into the snapshot), and kept as v<N> once published.
@@ -97,17 +143,18 @@ async function built({ sessionDir, scope, info, yes, notes = [] }) {
  * Resolves with { ok: true, entry, link, review }, or { ok: false, blocked | needsYes, review }
  * with nothing sent. Nothing is written on this Mac until the host has the page.
  */
-export async function publishShare({ sessionDir, session, host, token, scope, title, yes, notes, fetch }) {
+export async function publishShare({ sessionDir, session, host, token, scope, title, message, yes, notes, fetch }) {
+  const words = messageOf(message) ?? null
   const { b, review, stop, src } = await built({ sessionDir, scope, info: { title, owner: host.owner || '', version: 1 }, yes, notes })
   if (stop) return stop
   let id, version
   try {
     const api = client(host, token, fetch ? { fetch } : {})
     id = await api.create()
-    ;({ version } = await api.put(id, b.gz, metaFor(session, sessionDir, scope, title)))
+    ;({ version } = await api.put(id, b.gz, metaFor(session, sessionDir, scope, title, words ? { message: words } : {})))
   } catch (e) { src.drop(); throw e }
   src.keep(id, version)
-  const entry = { id, host: host.name, title, scope, version, publishedAt: new Date().toISOString(), sourceHash: src.hash }
+  const entry = { id, host: host.name, title, scope, version, publishedAt: new Date().toISOString(), sourceHash: src.hash, ...(words ? { message: words } : {}) }
   writeShares(sessionDir, [...readShares(sessionDir).filter(e => e.id !== id), entry])
   return { ok: true, entry, link: linkOf(host, id), review }
 }
@@ -115,22 +162,25 @@ export async function publishShare({ sessionDir, session, host, token, scope, ti
 /**
  * Update link: the same scope rebuilt and published as version N+1 of the same link, which keeps
  * its comments (the host marks those done as in this version). The note is kept with the share
- * here and sent along for the viewer's "What's new".
+ * here and sent along for the viewer's "What's new". message: text sets the viewers' message, null
+ * clears it, undefined keeps the one the link has.
  */
-export async function updateShare({ sessionDir, session, host, token, id, note, yes, notes, fetch }) {
+export async function updateShare({ sessionDir, session, host, token, id, note, message, yes, notes, fetch }) {
   const entry = readShares(sessionDir).find(e => e.id === id)
   if (!entry) throw new ShareError(`No share ${id} in this session: proto share ls lists them`)
   if (entry.host !== host.name) throw new ShareError(`${id} is on the host "${entry.host}", not "${host.name}"`)
   const text = typeof note === 'string' ? note.trim().slice(0, 300) : ''
+  const words = messageOf(message)
   const { b, review, stop, src } = await built({ sessionDir, scope: entry.scope, info: { title: entry.title, owner: host.owner || '', version: (entry.version || 1) + 1 }, yes, notes })
   if (stop) return stop
   let version
   try {
-    ;({ version } = await client(host, token, fetch ? { fetch } : {}).put(id, b.gz, metaFor(session, sessionDir, entry.scope, entry.title, text ? { note: text } : {})))
+    ;({ version } = await client(host, token, fetch ? { fetch } : {}).put(id, b.gz, metaFor(session, sessionDir, entry.scope, entry.title, { ...(text ? { note: text } : {}), ...(words !== undefined ? { message: words } : {}) })))
   } catch (e) { src.drop(); throw e }
   src.keep(id, version)
-  const next = { ...entry, version, publishedAt: new Date().toISOString(), sourceHash: src.hash, ...(text ? { note: text } : {}) }
+  const next = { ...entry, version, publishedAt: new Date().toISOString(), sourceHash: src.hash, ...(text ? { note: text } : {}), ...(words ? { message: words } : {}) }
   if (!text) delete next.note
+  if (words === null) delete next.message
   writeShares(sessionDir, readShares(sessionDir).map(e => e.id === id ? next : e))
   return { ok: true, entry: next, link: linkOf(host, id), review }
 }

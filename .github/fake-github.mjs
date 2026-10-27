@@ -64,3 +64,30 @@ export async function startFakeGitHub({ clientId = 'fake-client-id', clientSecre
     close: () => new Promise(ok => server.close(() => ok())),
   }
 }
+
+/**
+ * Signs the host's owner in with the fake's user, as `proto share signin` and the Share popover lead a
+ * person to: the owner token asks for the claim link (POST /api/owner/claim), and the browser's walk
+ * (claim → GitHub's authorize → the callback, with the state cookie) is done here by hand. `fetch`
+ * reaches the host (the Worker in memory, in the unit checks); the fake GitHub is always reached by
+ * the real fetch. Resolves with the last answer ({ status, text }) and the claim link.
+ */
+export async function signOwnerIn(origin, token, { fetch: hostFetch = globalThis.fetch } = {}) {
+  const claimed = await hostFetch(`${origin}/api/owner/claim`, { method: 'POST', headers: { authorization: `Bearer ${token}` } })
+  if (!claimed.ok) throw new Error(`claim: ${claimed.status} ${await claimed.text()}`)
+  const { url } = await claimed.json()
+  const walked = await walkClaim(url, { fetch: hostFetch })
+  return { ...walked, url }
+}
+
+/** A browser's walk of a claim link to its end (the host's page); { status, text, state }. */
+export async function walkClaim(url, { fetch: hostFetch = globalThis.fetch } = {}) {
+  let r = await hostFetch(url, { redirect: 'manual' })
+  // The other loopback name sends it on to the host's own.
+  if (r.status === 302 && new URL(r.headers.get('location')).pathname === '/auth/github') r = await hostFetch(r.headers.get('location'), { redirect: 'manual' })
+  if (r.status !== 302) return { status: r.status, text: await r.text(), state: null }
+  const state = (r.headers.getSetCookie()[0] || '').split(';')[0]
+  r = await fetch(r.headers.get('location'), { redirect: 'manual' })
+  r = await hostFetch(r.headers.get('location'), { redirect: 'manual', headers: { cookie: state } })
+  return { status: r.status, text: await r.text(), state }
+}

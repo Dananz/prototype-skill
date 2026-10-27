@@ -984,9 +984,11 @@ printed link as it is. Once `proto share setup` has run, links go online by defa
 with only a local host (`proto share setup --local`) the link opens only on this Mac, so say so.
 Never run `proto share setup` unless the user asks: it deploys to their Cloudflare account, and the
 first time (or when its login expired) it opens a browser for them to approve. `proto share file <slug>/<n>` writes the same page as one HTML
-file they can send themselves. `proto share update <id> [--note "…"]` publishes the session's
+file they can send themselves. `--message "…"` adds what viewers read first (when the user gives
+one). If it stops with "Sign in with GitHub first", run `proto share signin` and let the user approve
+in their browser. `proto share update <id> [--note "…"]` publishes the session's
 current version to the same link (its comments kept), only when the user asks; `proto share ls`
-says which links changed since shared and how many comments are new.
+says which links (and variants) changed since shared, who is in them now and how many comments are new.
 
 ## Follow-up requests in the same session
 

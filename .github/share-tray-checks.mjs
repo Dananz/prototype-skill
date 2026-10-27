@@ -17,7 +17,7 @@ import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
-import { startFakeGitHub } from './fake-github.mjs'
+import { startFakeGitHub, walkClaim } from './fake-github.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 const tools = process.env.PROTO_SHARE_TOOLS || join(homedir(), '.prototypes', 'share-tools')
@@ -96,16 +96,41 @@ export async function shareTrayChecks({ proto, app, fail }) {
   const forged = await post('comments', { comments: [{ route: 'share-link/C', text: 'x', from: { share: 'abcdefghjk', version: 1, viewer: 'x', verified: true, link: 'abcdefghjk', comment: randomUUID() } }] })
   assert(forged.status === 400 && /share\/send/.test(forged.body.error || ''), `forged from: /__proto/comments answered ${forged.status} ${JSON.stringify(forged.body)}`)
 
-  // Publish from the page: two variants, reviewed (the smoke's B has warnings, so it needs yes).
-  let pub = await post('share/publish', { scope: ['share-link/3'] })
+  // A new link needs the owner's GitHub sign-in (the Share popover): refused with sign_in until then.
+  let res = await post('share/owner', { refresh: true })
+  assert(res.status === 200 && res.body.host === host.name && res.body.signedIn === false && res.body.signin === true, `owner before sign-in: ${JSON.stringify(res.body)}`)
+  res = await post('share/publish', { scope: ['share-link/3'], yes: true })
+  assert(res.status === 409 && res.body.code === 'sign_in' && res.body.error === 'Sign in with GitHub first: proto share signin', `publish before sign-in: ${res.status} ${JSON.stringify(res.body).slice(0, 300)}`)
+  const cliRefused = share(['share-link/3', '--yes'])
+  assert(cliRefused.status !== 0 && cliRefused.out.trim().split('\n').at(-1).includes('Sign in with GitHub first: proto share signin'), `proto share before sign-in: ${cliRefused.out.slice(-300)}`)
+  // proto share signin prints the link (never opened here) and waits; the fake GitHub walks it.
+  const signinCli = spawn(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'share', 'signin', '--no-open', '--project', project, '--session', 'smoke'], { env: { ...env, PROTO_SHARE_NO_OPEN: '1' }, stdio: ['ignore', 'pipe', 'pipe'] })
+  let signinOut = ''
+  signinCli.stdout.on('data', d => { signinOut += d }); signinCli.stderr.on('data', d => { signinOut += d })
+  const claimUrl = await until(() => /Sign in with GitHub: (\S+)/.exec(signinOut)?.[1], 60_000)
+  assert(claimUrl, `proto share signin printed no link: ${signinOut.slice(-300)}`)
+  const walked = await walkClaim(claimUrl)
+  assert(walked.status === 200 && walked.text.includes('Signed in as dana-test'), `the claim link ended on ${walked.status} ${walked.text.slice(0, 200)}`)
+  assert(await until(() => signinCli.exitCode !== null, 30_000) && signinCli.exitCode === 0 && signinOut.includes('signed in as dana-test'), `proto share signin: ${signinCli.exitCode} ${signinOut.slice(-300)}`)
+  res = await post('share/owner', { refresh: true })
+  assert(res.body.signedIn === true && res.body.login === 'dana-test' && res.body.name === 'Dana', `owner after sign-in: ${JSON.stringify(res.body)}`)
+  // The page's sign-in link: a claim link on the host, for a new tab.
+  res = await post('share/signin')
+  assert(res.status === 200 && /\/auth\/github\?claim=/.test(res.body.url || ''), `signin: ${res.status} ${JSON.stringify(res.body)}`)
+
+  // Publish from the page: two variants, reviewed (the smoke's B has warnings, so it needs yes), with a
+  // message for viewers.
+  const MESSAGE = 'Which one would you pick?'
+  let pub = await post('share/publish', { scope: ['share-link/3'], message: MESSAGE })
   assert(pub.status === 200 && (pub.body.ok || pub.body.needsYes), `publish: ${pub.status} ${JSON.stringify(pub.body).slice(0, 400)}`)
-  if (!pub.body.ok) pub = await post('share/publish', { scope: ['share-link/3'], yes: true })
+  if (!pub.body.ok) pub = await post('share/publish', { scope: ['share-link/3'], message: MESSAGE, yes: true })
   assert(pub.status === 200 && pub.body.ok && pub.body.link && pub.body.share?.version === 1, `publish with yes: ${pub.status} ${JSON.stringify(pub.body).slice(0, 400)}`)
   const id = pub.body.share.id, link = pub.body.link
   assert((await fetch(link)).status === 200, `publish: ${link} does not answer`)
   const listed = await post('share/list')
   const row = listed.body.shares?.find(s => s.id === id)
   assert(row && row.live === true && row.changed === false && row.link === link, `list: ${JSON.stringify(listed.body).slice(0, 400)}`)
+  assert(row.message === MESSAGE && row.views >= 1 && Array.isArray(row.viewers) && !row.viewers.length && Array.isArray(row.changedVariants) && !row.changedVariants.length, `list, the popover's fields: ${JSON.stringify(row).slice(0, 400)}`)
 
   // A viewer signs in with (the fake) GitHub, from the path form on 127.0.0.1, as Task 1's flow runs.
   const S = `http://127.0.0.1:${hostPort}/s/${id}`
@@ -119,6 +144,15 @@ export async function shareTrayChecks({ proto, app, fail }) {
   const jar = (r.headers.getSetCookie().find(c => c.startsWith('v=')) || '').split(';')[0]
   assert(jar, `sign-in: no viewer cookie (${r.status} ${r.headers.get('location')})`)
   const XP = { 'x-proto': '1', cookie: jar }
+  // The viewer opens on the owner's message and who shared it; once signed in, they are in it now.
+  const st = await (await fetch(`${S}/api/state`, { headers: XP })).json()
+  assert(st.message === MESSAGE && st.note === null && st.owner?.login === 'dana-test', `state: ${JSON.stringify(st)}`)
+  const ping = await fetch(`${S}/api/here`, { method: 'POST', headers: { ...XP, 'content-type': 'application/json' }, body: JSON.stringify({ route: 'share-link/C' }) })
+  assert(ping.status === 204, `here: ${ping.status}`)
+  const anon = await fetch(`${S}/api/here`, { method: 'POST', headers: { 'x-proto': '1', 'content-type': 'application/json' }, body: '{}' })
+  assert(anon.status === 401, `here signed out: ${anon.status}`)
+  const face = (await post('share/list')).body.shares.find(s => s.id === id)?.viewers?.[0]
+  assert(face?.login === 'dana-test' && face.route === 'share-link/C' && face.now === true, `list: the viewer in it now is ${JSON.stringify(face)}`)
   const viewerList = async () => (await (await fetch(`${S}/api/comments`, { headers: XP })).json()).comments
   const comment = async (body, target = null) => {
     const cid = randomUUID()
@@ -144,7 +178,7 @@ export async function shareTrayChecks({ proto, app, fail }) {
   assert(inTray && inTray.status === 'new' && inTray.body === body && tray.body.new >= 1 && inTray.author.login === 'dana-test', `tray: ${JSON.stringify(tray.body).slice(0, 500)}`)
 
   // Reply and hide reach the viewer; Claude's words never do.
-  let res = await post('share/reply', { id: cid, text: 'OWNER-REPLY thanks' })
+  res = await post('share/reply', { id: cid, text: 'OWNER-REPLY thanks' })
   assert(res.status === 200 && res.body.pending === false, `reply: ${res.status} ${JSON.stringify(res.body).slice(0, 300)}`)
   assert((await viewerList()).find(c => c.id === cid)?.owner_reply === 'OWNER-REPLY thanks', 'reply: the viewer does not see the owner\'s reply')
   res = await post('share/hide', { id: cid })
@@ -196,12 +230,20 @@ export async function shareTrayChecks({ proto, app, fail }) {
 
   // Update: the same link at v2, the comments kept, the done one done in v2.
   writeFileSync(join(app, 'src', 'protos', 'share-link', 'C.tsx'), readFileSync(join(app, 'src', 'protos', 'share-link', 'C.tsx'), 'utf8') + '\n// changed after sharing\n')
-  assert((await post('share/list')).body.shares.find(s => s.id === id)?.changed === true, 'changed since shared: the list does not say so')
-  res = await post('share/update', { id, note: 'Bigger toggle', yes: true })
+  const behind = (await post('share/list')).body.shares.find(s => s.id === id)
+  assert(behind?.changed === true, 'changed since shared: the list does not say so')
+  assert(behind.changedVariants?.length === 1 && behind.changedVariants[0].key === 'share-link/C' && typeof behind.changedVariants[0].name === 'string', `changed variants: ${JSON.stringify(behind.changedVariants)}`)
+  // In it again (more than 50 s may have passed since the first ping), then ls says so.
+  await fetch(`${S}/api/here`, { method: 'POST', headers: { ...XP, 'content-type': 'application/json' }, body: JSON.stringify({ route: 'share-link/C' }) })
+  const lsNow = share(['ls'])
+  assert(lsNow.status === 0 && lsNow.out.includes('in it now: dana-test (share-link/C)') && /changed since v1: share-link\/C /.test(lsNow.out), `ls, who is in it and what changed: ${lsNow.out.slice(-500)}`)
+  res = await post('share/update', { id, note: 'Bigger toggle', message: 'Is anything confusing?', yes: true })
   assert(res.status === 200 && res.body.ok && res.body.share.version === 2 && res.body.link === link && res.body.share.changed === false, `update: ${res.status} ${JSON.stringify(res.body).slice(0, 400)}`)
   assert(existsSync(join(app, '.proto', 'shares', id, 'v2', 'share-link', 'C.tsx')), 'update: no v2 snapshot')
   const kept = (await viewerList()).find(c => c.id === cid)
   assert(kept?.done_in === 2, `update: the comment is ${JSON.stringify(kept)}`)
+  const st2 = await (await fetch(`${S}/api/state`, { headers: XP })).json()
+  assert(st2.version === 2 && st2.message === 'Is anything confusing?' && st2.note === 'Bigger toggle', `state after update: ${JSON.stringify(st2)}`)
 
   // Without the page: comments prints fenced, take sends one to the inbox.
   const second = await comment('SECOND-MARK from the CLI')

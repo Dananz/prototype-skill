@@ -64,10 +64,54 @@ export function startIn(env, url, share, pathForm) {
   return redirect(to.href, [cookie(nc.name, nonce, { path: nc.path, maxAge: STATE_MS / 1000, secure: nc.secure })])
 }
 
-/** GET <apex>/auth/github?share=<id>&back=<path>&nonce=<from /_in/start>[&via=<host>] */
+/**
+ * The owner's sign-in link (POST /api/owner/claim): the same OAuth App and callback as a viewer's, on
+ * BASE (GitHub matches redirect_uri exactly). The claim names the owner and is signed with its own
+ * purpose, so it is never a ticket or a cookie; it lasts 10 minutes and works once (its nonce is spent
+ * in tickets by the callback). Only the owner token can ask for one.
+ */
+export async function claimUrl(env, url, ownerId) {
+  const claim = await sign(env.VIEWER_KEY, 'claim', { owner: ownerId, cn: random(16), exp: Date.now() + STATE_MS })
+  const to = new URL(`${url.protocol}//${env.BASE}/auth/github`)
+  to.searchParams.set('claim', claim)
+  return to.href
+}
+
+// GET <apex>/auth/github?claim=<signed>: the state carries the claim on to the callback.
+async function claimStart(env, url, claim) {
+  const c = await verify(env.VIEWER_KEY, 'claim', claim)
+  if (!c || typeof c.owner !== 'string' || typeof c.cn !== 'string') return page('claimfail', {})
+  if (!await env.DB.prepare('SELECT 1 AS ok FROM owners WHERE id = ?').bind(c.owner).first()) return page('claimfail', {})
+  return toGitHub(env, url, { claim: c.owner, cn: c.cn, cexp: c.exp })
+}
+
+// Off to GitHub's authorize page, with the signed state in a 10-minute cookie for the callback.
+async function toGitHub(env, url, carry) {
+  const n = random(16), verifier = random(32)
+  const sc = stateCookie(url)
+  const state = await sign(env.VIEWER_KEY, 'state', { n, v: verifier, ...carry, exp: Date.now() + STATE_MS })
+  const go = new URL(`${oauthBase(env)}/login/oauth/authorize`)
+  go.search = new URLSearchParams({
+    client_id: env.GITHUB_CLIENT_ID,
+    redirect_uri: `${url.protocol}//${url.host}/auth/github/callback`,
+    scope: '', // the public profile only
+    state: n,
+    allow_signup: 'true',
+    code_challenge: await sha256(verifier),
+    code_challenge_method: 'S256',
+  }).toString()
+  return redirect(go.href, [cookie(sc.name, state, { path: sc.path, maxAge: STATE_MS / 1000, secure: sc.secure })])
+}
+
+/** GET <apex>/auth/github?share=<id>&back=<path>&nonce=<from /_in/start>[&via=<host>], or ?claim=<signed> */
 export async function authStart(env, url) {
   if (!signinReady(env)) return page('signin', {})
   const q = url.searchParams
+  if (q.has('claim')) {
+    // The claim link is made on BASE; on the other loopback name it goes there as it is.
+    if (url.host.toLowerCase() !== env.BASE.toLowerCase()) return redirect(`${url.protocol}//${env.BASE}/auth/github?claim=${encodeURIComponent(q.get('claim'))}`)
+    return claimStart(env, url, q.get('claim'))
+  }
   if (!NONCE.test(q.get('nonce') || '')) return page('signin', {})
   const id = q.get('share') || ''
   const row = isId(id) ? await env.DB.prepare('SELECT lang, deleted_at, expires_at FROM shares WHERE id = ?').bind(id).first() : null
@@ -85,20 +129,7 @@ export async function authStart(env, url) {
   const via = (q.get('via') || '').toLowerCase()
   const host = namesOf(env.BASE).names.some(n => n.toLowerCase() === via) ? via : url.host
   const ret = returnTo(env, url.protocol, host, id, q.get('back'))
-  const n = random(16), verifier = random(32)
-  const sc = stateCookie(url)
-  const state = await sign(env.VIEWER_KEY, 'state', { n, v: verifier, nn: q.get('nonce'), share: id, ...ret, exp: Date.now() + STATE_MS })
-  const go = new URL(`${oauthBase(env)}/login/oauth/authorize`)
-  go.search = new URLSearchParams({
-    client_id: env.GITHUB_CLIENT_ID,
-    redirect_uri: `${url.protocol}//${url.host}/auth/github/callback`,
-    scope: '', // the public profile only
-    state: n,
-    allow_signup: 'true',
-    code_challenge: await sha256(verifier),
-    code_challenge_method: 'S256',
-  }).toString()
-  return redirect(go.href, [cookie(sc.name, state, { path: sc.path, maxAge: STATE_MS / 1000, secure: sc.secure })])
+  return toGitHub(env, url, { nn: q.get('nonce'), share: id, ...ret })
 }
 
 // Avatars are shown as images on every viewer's page, so only GitHub's own image host is kept; a test
@@ -124,14 +155,17 @@ export function viewerFrom(u, env) {
 export async function authCallback(req, env, url) {
   const sc = stateCookie(url)
   const clear = cookie(sc.name, '', { path: sc.path, maxAge: 0, secure: sc.secure })
-  const bad = () => { const r = page('signin', {}); r.headers.append('set-cookie', clear); return r }
+  const failed = kind => { const r = page(kind, {}); r.headers.append('set-cookie', clear); return r }
+  let bad = () => failed('signin')
   if (!signinReady(env)) return bad()
   let st = null
   for (const [name, value] of readCookies(req)) if (!st && name === sc.name) st = await verify(env.VIEWER_KEY, 'state', value)
   const q = url.searchParams
   if (!st || typeof st.n !== 'string' || q.get('state') !== st.n) return bad()
-  // Declined on GitHub: back to the link, still signed out.
-  if (q.get('error') || !q.get('code')) return redirect(st.origin + st.back, [clear])
+  const claim = typeof st.claim === 'string' ? st.claim : null
+  if (claim) bad = () => failed('claimfail')
+  // Declined on GitHub: back to the link, still signed out (the owner's claim has no link: its page).
+  if (q.get('error') || !q.get('code')) return claim ? bad() : redirect(st.origin + st.back, [clear])
   let user = null
   try {
     const t = await fetch(`${oauthBase(env)}/login/oauth/access_token`, {
@@ -150,12 +184,29 @@ export async function authCallback(req, env, url) {
   }
   if (!user) return bad()
   const now = Date.now()
+  if (claim) return claimed(env, st, user, now, clear)
   await env.DB.prepare(
     `INSERT INTO viewers (gh_id, login, name, avatar, seen_at) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(gh_id) DO UPDATE SET login = excluded.login, name = excluded.name, avatar = excluded.avatar, seen_at = excluded.seen_at`,
   ).bind(user.gh_id, user.login, user.name, user.avatar, now).run()
   const ticket = await sign(env.VIEWER_KEY, 'ticket', { gh: user.gh_id, share: st.share, to: st.back, nn: st.nn, exp: now + TICKET_MS })
   return redirect(`${st.origin}${st.root}_in/auth?t=${encodeURIComponent(ticket)}`, [clear])
+}
+
+// The owner's claim, back from GitHub: its nonce is spent first (a claim works once), then the owner
+// row takes the GitHub fields. A claim older than 10 minutes never gets here: the state outlives it by
+// at most the time GitHub took, and its own expiry rides in the state too.
+async function claimed(env, st, user, now, clear) {
+  const bad = () => { const r = page('claimfail', {}); r.headers.append('set-cookie', clear); return r }
+  if (typeof st.cn !== 'string' || typeof st.cexp !== 'number' || st.cexp <= now) return bad()
+  await env.DB.prepare('DELETE FROM tickets WHERE exp < ?').bind(now).run()
+  const spent = await env.DB.prepare('INSERT INTO tickets (nonce, exp) VALUES (?, ?) ON CONFLICT(nonce) DO NOTHING').bind(`claim:${st.cn}`, st.cexp).run()
+  if (!spent.meta?.changes) return bad()
+  const done = await env.DB.prepare('UPDATE owners SET gh_id = ?, gh_login = ?, gh_name = ?, gh_avatar = ? WHERE id = ?').bind(user.gh_id, user.login, user.name, user.avatar, st.claim).run()
+  if (!done.meta?.changes) return bad()
+  const r = page('claimed', { login: user.login })
+  r.headers.append('set-cookie', clear)
+  return r
 }
 
 /**

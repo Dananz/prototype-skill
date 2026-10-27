@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { gzipSync } from 'node:zlib'
-import { startFakeGitHub } from './fake-github.mjs'
+import { signOwnerIn, startFakeGitHub } from './fake-github.mjs'
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 async function until(get, ms = 10_000) {
@@ -61,6 +61,10 @@ export async function shareCommentsChecks({ app, openPage, fail, buildShare, too
     const origin = `http://127.0.0.1:${port}`
     assert(await until(async () => { try { return (await fetch(`${origin}/_health`)).ok } catch { return false } }, 60_000), `the host on ${port} did not start`)
     const A = { authorization: `Bearer ${TOKEN}` }
+    // A new link goes out under the owner's GitHub name: refused until the owner signs in (the fake GitHub).
+    assert((await fetch(`${origin}/api/shares`, { method: 'POST', headers: A })).status === 403, 'a new share went out before the owner signed in')
+    const owner = await signOwnerIn(origin, TOKEN)
+    assert(owner.status === 200 && /Signed in as dana-test/.test(owner.text), `owner sign-in: ${owner.status} ${owner.text.slice(0, 200)}`)
     const { id } = await (await fetch(`${origin}/api/shares`, { method: 'POST', headers: A })).json()
     const meta = Buffer.from(JSON.stringify({ title: 'Comments smoke', session: 'smoke', projectLabel: 'smoke', lang: 'en', scope: { protos: [{ id: 'share-link', variants: ['B', 'C'] }], start: 'share-link/C' } })).toString('base64url')
     assert((await fetch(`${origin}/api/shares/${id}`, { method: 'PUT', headers: { ...A, 'x-share-meta': meta }, body: gzipSync(html) })).status === 200, 'publish failed')
