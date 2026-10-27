@@ -22,6 +22,7 @@ export type FrameMsg =
   | { protoViewer: 'key'; key: '0' | '1' | '+' | '-' | 'c' }
   | { protoViewer: 'zoom'; by: number }
   | { protoViewer: 'theme'; dark: boolean }
+  | { protoViewer: 'device'; size: string }
 
 /** A message of the viewer's own kind, or null. */
 export const frameMsg = (data: unknown): FrameMsg | null =>
@@ -94,7 +95,19 @@ export function createFramed(el: HTMLElement, screen: Screen | undefined, mounts
   }
   const asked = new URLSearchParams(location.search).get('theme')
   theme(asked ? asked === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches)
-  addEventListener('message', e => { const m = frameMsg(e.data); if (e.source === parent && m?.protoViewer === 'theme') theme(m.dark) })
+  // On a phone or a tablet the design scrolls as it would there: no scrollbar standing in its page.
+  const device = (size: string) => { document.documentElement.dataset.device = size }
+  document.head.append(Object.assign(document.createElement('style'), {
+    textContent: 'html:is([data-device=phone],[data-device=tablet]), html:is([data-device=phone],[data-device=tablet]) * { scrollbar-width: none }'
+      + ' html:is([data-device=phone],[data-device=tablet]) ::-webkit-scrollbar { display: none }',
+  }))
+  device(new URLSearchParams(location.search).get('device') || 'desktop')
+  addEventListener('message', e => {
+    const m = frameMsg(e.data)
+    if (e.source !== parent) return
+    if (m?.protoViewer === 'theme') theme(m.dark)
+    else if (m?.protoViewer === 'device') device(m.size)
+  })
   // Bubbling, after the design's own handlers. Esc goes back to the desk unless the design used it:
   // it handled it, a field has the focus (or an input method is composing), or a dialog of its own is open.
   const dialogOpen = () => [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog[open]')]

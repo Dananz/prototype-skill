@@ -37,8 +37,8 @@ const BEZEL: Record<Size, number> = { phone: 10, tablet: 14, desktop: 0 }
 const deskFrame = (key: string) => document.querySelector(`[data-board="${CSS.escape(key)}"] [data-frame]`)?.getBoundingClientRect() ?? null
 
 /** Where the frame loads this page: the design alone, in the viewer's theme and language, the version pinned (the host caches it). */
-const frameSrc = (key: string, dark: boolean) => {
-  const q = new URLSearchParams({ frame: key, theme: dark ? 'dark' : 'light', lang })
+const frameSrc = (key: string, dark: boolean, size: Size) => {
+  const q = new URLSearchParams({ frame: key, theme: dark ? 'dark' : 'light', device: size, lang })
   if (shareInfo) q.set('v', String(shareInfo.version))
   return `${location.pathname}?${q}`
 }
@@ -119,7 +119,10 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report, r
   // message, so the open design keeps its state (what was typed, where it scrolled).
   const darkNow = useRef(dark)
   darkNow.current = dark
-  const src = useMemo(() => frameSrc(screen.key, darkNow.current), [screen.key])
+  const sizeNow = useRef(size)
+  sizeNow.current = size
+  const src = useMemo(() => frameSrc(screen.key, darkNow.current, sizeNow.current), [screen.key])
+  useEffect(() => { frame.current?.contentWindow?.postMessage({ protoViewer: 'device', size }, '*') }, [size, ready])
   const was = useRef(dark)
   useEffect(() => {
     if (was.current === dark) return
