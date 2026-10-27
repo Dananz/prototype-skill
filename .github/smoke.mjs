@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startChrome, stopChrome } from '../scripts/chrome.mjs'
+import { shareOnlineChecks } from './share-online-checks.mjs'
 import { optionalExtras } from './optional-extras.mjs'
 import { designKit } from './design-kit.mjs'
 import { speedChecks } from './speed-checks.mjs'
@@ -107,9 +108,10 @@ const pngs = dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.
 // open until closed, so the page can carry on while proto runs beside it.
 // errors: true also keeps what the page reports as an error (uncaught exceptions, console.error,
 // failed loads), read back with errors().
-async function openPage(url, { width = 1440, height = 900, phone = false, errors = false } = {}) {
+// args: more Chrome switches (the online checks take wrangler dev's self-signed certificate).
+async function openPage(url, { width = 1440, height = 900, phone = false, errors = false, args = [] } = {}) {
   const profile = mkdtempSync(join(tmpdir(), 'proto-smoke-'))
-  const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run'])
+  const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run', ...args])
   let ws
   const close = () => {
     pages.delete(close)
@@ -259,6 +261,15 @@ if (process.argv.includes('--share-sheet-only')) {
   proto(['rm'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused share sheet checks')
+  process.exit(0)
+}
+// The share host as it runs online, under wrangler dev over https with the generated config (Task 7 of
+// the online plan): proto share against it, a viewer in Chrome, the owner's sheet and tray.
+if (process.argv.includes('--share-online-only')) {
+  await shareOnlineChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_ONLINE_SHOTS || join(keepShots, 'share-online') })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused share online checks')
   process.exit(0)
 }
 if (process.argv.includes('--share-link-only')) {

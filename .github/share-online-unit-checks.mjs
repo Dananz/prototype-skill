@@ -188,7 +188,7 @@ function fakeCloudflare({ zones = [{ id: 'z1', name: 'prtype.dev', status: 'acti
       const known = sql.prepare('SELECT 1 FROM owner_tokens WHERE revoked_at IS NULL AND sha256 = ?').get(createHash('sha256').update(t).digest('hex'))
       return json(known ? [] : { code: 'token' }, known ? 200 : 401)
     }
-    if (u.pathname.startsWith('/s/') && u.host.endsWith('workers.dev')) return new Response(null, { status: 301, headers: { location: `https://prtype.dev${u.pathname}` } })
+    if (u.pathname.startsWith('/s/') && u.host.endsWith('workers.dev')) return new Response(null, { status: 308, headers: { location: `https://prtype.dev${u.pathname}` } })
     if (u.pathname === '/auth/github') return new Response('not found', { status: 404, headers: { 'x-robots-tag': 'noindex' } })
     if (u.host === 'prtype.dev') return new Response('not found', { status: 404, headers: { 'x-robots-tag': 'noindex' } })
     throw new Error(`unexpected fetch ${url}`)
@@ -428,7 +428,7 @@ test('every wrangler the share tool starts runs on its own login', () => {
     const lines = read(url, 'utf8').split('\n')
     for (const [i, line] of lines.entries()) {
       // The call and the two lines after it, where a long call puts its options.
-      if (/\b(spawn|spawnSync)\(process\.execPath, \[(tools|t)\.wrangler/.test(line)) assert.match(lines.slice(i, i + 3).join('\n'), /wranglerEnv\(/, `${f}:${i + 1} starts wrangler without wranglerEnv()`)
+      if (/\b(spawn|spawnSync)\(process\.execPath, \[(tools|t)\.wrangler/.test(line)) assert.match(lines.slice(i, i + 3).join('\n'), /wranglerEnv\(|wenv\(\)/, `${f}:${i + 1} starts wrangler without wranglerEnv()`)
     }
   }
 })

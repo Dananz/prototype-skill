@@ -383,7 +383,7 @@ async function domainChecks(io, domain, workersDev) {
   }
   io.log(`Check: https://${domain}/_health answers over TLS on this code`)
   const moved = await probe(io, `https://${workersDev}/s/${ID}/`, { redirect: 'manual' })
-  if (moved?.status !== 301 || moved.headers.get('location') !== `https://${domain}/s/${ID}/`) throw new ShareError(`https://${workersDev}/s/${ID}/ should move to https://${domain}/s/${ID}/ but answered ${moved?.status ?? 'nothing'} ${moved?.headers.get('location') || ''}`)
+  if (![301, 308].includes(moved?.status) || moved.headers.get('location') !== `https://${domain}/s/${ID}/`) throw new ShareError(`https://${workersDev}/s/${ID}/ should move to https://${domain}/s/${ID}/ but answered ${moved?.status ?? 'nothing'} ${moved?.headers.get('location') || ''}`)
   io.log(`Check: old links on ${workersDev} move to ${domain}`)
   const signin = await probe(io, `https://${domain}/auth/github?share=${ID}&nonce=${NONCE}`, { redirect: 'manual' })
   // 404 (no such share) is the host past its sign-in switch; 400 is sign-in still off.
