@@ -203,12 +203,10 @@ export async function shareOnlineChecks({ proto, app, openPage, fail, shots }) {
     await shot(phone, 'viewer-comments-phone')
     await phone.key('Escape')
     await sleep(300)
-    const frame = await at(phone, '[data-board="share-link/C"] [data-frame]') || await at(phone, '[data-frame]')
-    if (frame) {
-      await phone.press(...frame)
-      await until(() => phone.run(`!!document.querySelector('[data-full]')`), 5000)
-      await shot(phone, 'viewer-full-phone')
-    }
+    // A phone has no desk or full view: it shows one design live, sized to the phone, with the
+    // switcher above the bar to move between the shared designs.
+    await waitFor(phone, `!!document.querySelector('[data-live]') && !!document.querySelector('[data-switcher]')`, 'phone: no live design with the switcher')
+    await shot(phone, 'viewer-design-phone')
     drop(phone)
 
     // ---------- 4: comments, take, inbox, reply --done ----------

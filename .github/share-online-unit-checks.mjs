@@ -153,6 +153,8 @@ function fakeCloudflare({ zones = [{ id: 'z1', name: 'prtype.dev', status: 'acti
     if (args[0] === 'deploy') {
       state.deploys.push(args.at(-1))
       if (args.at(-1).includes('site')) state.siteBound = /"service": "proto-share"/.test(read(args.at(-1), 'utf8'))
+      // The host as deployed: on its legacy name it answers /api with 410 (host/worker.mjs moved()).
+      else state.legacy = JSON.parse(read(args.at(-1), 'utf8').replace(/^\/\/.*\n/, '')).vars.LEGACY
       return ok('Deployed')
     }
     if (args[0] === 'secret' && args[1] === 'list') return ok(JSON.stringify([...state.secrets.keys()].map(name => ({ name, type: 'secret_text' }))))
@@ -183,6 +185,8 @@ function fakeCloudflare({ zones = [{ id: 'z1', name: 'prtype.dev', status: 'acti
       if (u.host === 'prtype.dev' && state.health++ < state.tlsAfter) throw new TypeError('fetch failed')
       return new Response('ok', { headers: { 'x-proto-host': VERSION } })
     }
+    if (u.pathname.startsWith('/api') && state.legacy && u.host === state.legacy) return json({ code: 'moved' }, 410)
+    if (u.pathname === '/api/shares' && u.host === 'prtype.dev' && !state.siteBound) return new Response('Shared links are not open yet.', { status: 503 })
     if (u.pathname === '/api/shares') {
       const t = (init.headers?.authorization || '').replace('Bearer ', '')
       const known = sql.prepare('SELECT 1 FROM owner_tokens WHERE revoked_at IS NULL AND sha256 = ?').get(createHash('sha256').update(t).digest('hex'))
@@ -398,6 +402,21 @@ test('setup --domain: a certificate not issued yet times out with the re-run adv
     cf.state.tlsAfter = 1e9
     await assert.rejects(setupOnline({ domain: 'prtype.dev' }, r.io), /doesn't answer over TLS yet[^]*15 minutes to 24 hours[^]*run proto share setup --domain prtype\.dev again later/)
     assert.equal(r.hosts().find(h => h.name === 'online').stage, 'workers')
+  } finally { r.done() }
+})
+
+test('setup --domain as the very first run: a TLS wait that times out still leaves the workers.dev host and the plan check', async () => {
+  const cf = fakeCloudflare()
+  const r = rig(cf)
+  try {
+    cf.state.tlsAfter = 1e9
+    await assert.rejects(setupOnline({ 'plan-checked': true, domain: 'prtype.dev' }, r.io), /over TLS yet/)
+    const entry = r.hosts().find(h => h.name === 'online')
+    assert.equal(entry.stage, 'workers')
+    assert.equal(entry.planChecked, true)
+    cf.state.tlsAfter = 0
+    cf.state.health = 0
+    assert.equal((await setupOnline({ domain: 'prtype.dev' }, r.io)).stage, 'domain')
   } finally { r.done() }
 })
 

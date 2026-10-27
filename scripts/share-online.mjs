@@ -324,13 +324,19 @@ export async function setupOnline(flags, io) {
   // 11, 12. The checks, then the host entry. Before the domain answers, links stay on workers.dev.
   const token = io.getToken('online')
   const entry = { name: 'online', url: `https://${workersDev}`, stage: 'workers', base: workersDev, pathMode: true, default: true, owner: owner.name, accountId: account.id, worker: WORKER, kvId: kv.id, dbId: db.uuid, hostVersion: io.hostVersion, workersDev, planChecked: true }
-  await upCheck(io, workersDev, token)
+  // With the domain the workers.dev name is a legacy one: its /api answers 410, so the token is
+  // checked on the domain instead (domainChecks).
+  await upCheck(io, workersDev, domain ? null : token)
   if (!domain) {
     io.saveHost(entry)
     log(`Online share host at https://${workersDev}/ (owner ${owner.name}). Links: https://${workersDev}/s/<id>/.`)
     log('Viewers can read; comments open once prtype.dev is set up: proto share setup --domain prtype.dev.')
     return entry
   }
+
+  // A first run straight to --domain keeps a host entry (and the plan check) even when the domain
+  // isn't answering yet; a domain already live stays the entry until the checks below pass.
+  if (known?.stage !== 'domain') io.saveHost(entry)
 
   // The domain: the site Worker on it hands the share paths to this one (HOST), so the site's
   // config gains the binding and is deployed again. The host gets no route of its own.
@@ -346,7 +352,7 @@ export async function setupOnline(flags, io) {
     must(run(['deploy', '-c', siteConfig], { cwd: io.siteDir }), 'Deploying the site')
     log(`Site: deployed with the HOST binding`)
   } else log('Site: already hands the share paths to the host')
-  await domainChecks(io, domain, workersDev)
+  await domainChecks(io, domain, workersDev, token)
   const live = { ...entry, url: `https://${domain}`, stage: 'domain', base: domain }
   io.saveHost(live)
   log(`${domain} is live: links are https://${domain}/<id>; viewers sign in with GitHub to comment.`)
@@ -364,13 +370,14 @@ async function upCheck(io, name, token) {
     if (res?.status === 200 && res.headers.get('x-proto-host') === io.hostVersion) break
     if (Date.now() >= end) throw new ShareError(`https://${name}/_health ${res ? `answered ${res.status}${res.headers.get('x-proto-host') ? ` from code ${res.headers.get('x-proto-host')}` : ''}` : "doesn't answer"} (expected code ${io.hostVersion}). A new workers.dev name can take a few minutes: run proto share setup again soon.`)
   }
+  if (!token) return io.log(`Check: https://${name}/_health answers on this code`)
   const api = await probe(io, `https://${name}/api/shares`, { headers: { authorization: `Bearer ${token}` } })
   if (api?.status !== 200) throw new ShareError(`The host doesn't take this Mac's token (GET /api/shares answered ${api?.status ?? 'nothing'}). Run proto share setup again`)
   io.log(`Check: https://${name}/_health answers on this code, and the owner API takes this Mac's token`)
 }
 
 // prtype.dev over TLS (Node's own trust store), the old name moving there, and sign-in switched on.
-async function domainChecks(io, domain, workersDev) {
+async function domainChecks(io, domain, workersDev, token) {
   let res = null
   for (let end = Date.now() + io.waits.tls; ; await io.sleep(io.waits.tlsEvery)) {
     res = await probe(io, `https://${domain}/_health`)
@@ -382,6 +389,8 @@ async function domainChecks(io, domain, workersDev) {
     }
   }
   io.log(`Check: https://${domain}/_health answers over TLS on this code`)
+  const api = await probe(io, `https://${domain}/api/shares`, { headers: { authorization: `Bearer ${token}` } })
+  if (api?.status !== 200) throw new ShareError(`The host on ${domain} doesn't take this Mac's token (GET /api/shares answered ${api?.status ?? 'nothing'}). Run proto share setup --domain ${domain} again`)
   const moved = await probe(io, `https://${workersDev}/s/${ID}/`, { redirect: 'manual' })
   if (![301, 308].includes(moved?.status) || moved.headers.get('location') !== `https://${domain}/s/${ID}/`) throw new ShareError(`https://${workersDev}/s/${ID}/ should move to https://${domain}/s/${ID}/ but answered ${moved?.status ?? 'nothing'} ${moved?.headers.get('location') || ''}`)
   io.log(`Check: old links on ${workersDev} move to ${domain}`)
