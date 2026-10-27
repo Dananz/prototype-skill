@@ -100,7 +100,7 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
   let page = await open('share-link/A?theme=light')
   await sheetOpen(page)
   await waitFor(page, '!!document.querySelector("[data-link-nohost]")', 'no host: the sheet does not say there is no host')
-  assert(await page.run('document.querySelector("[data-link-nohost]").textContent.includes("proto share setup --local")'), 'no host: the setup command is not shown')
+  assert(await page.run('document.querySelector("[data-link-nohost]").textContent.includes("proto share setup") && !document.querySelector("[data-link-nohost]").textContent.includes("--local")'), 'no host: the setup command is not shown')
   await shot(page, 'sheet-nohost-desktop-light')
 
   // 2. A host: Retry finds it, and the New link view shows the prototypes and their variants.

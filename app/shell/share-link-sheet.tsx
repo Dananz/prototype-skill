@@ -34,7 +34,7 @@ export type LinkProps = {
 type What = 'variant' | 'proto' | 'all' | 'custom'
 type Review = { sizeMiB: number; block: { message: string; where?: string }[]; notes: string[] }
 type ShareRow = { id: string; title: string; scope: { protos: { id: string; variants: string[] }[]; start: string }; version: number; publishedAt: string; note?: string; host: string; link: string | null; changed: boolean; comments: { total: number; new: number }; live?: boolean | null }
-type Listed = { host: { name: string; stage: string; owner: string } | null; hostError: string | null; shares: ShareRow[] }
+type Listed = { host: { name: string; stage: string; owner: string } | null; hostError: string | null; shares: ShareRow[]; setup?: string }
 type Answer = { status: number; body: Record<string, any> }
 type Step = { phase: 'busy' | 'review' | 'blocked' | 'down' | 'error'; review?: Review; error?: string }
 
@@ -139,9 +139,11 @@ function Again({ onRetry, busy }: { onRetry: () => void; busy: boolean }) {
   return <button type="button" data-link-retry disabled={busy} onClick={onRetry} className={TEXT_BTN}>{busy ? <Spinner /> : <Icon name="refresh" className="size-4" />}{t('Check again')}</button>
 }
 
-/** No host on this Mac (or no token for it): what a link needs, in two lines, and the command. */
-function NoHost({ onRetry, busy }: { onRetry: () => void; busy: boolean }) {
-  const cmd = 'proto share setup --local'
+/**
+ * No host on this Mac (or no token for it): what a link needs, in two lines, and the command (the
+ * server's: --local for the host on this Mac, else the online setup).
+ */
+function NoHost({ onRetry, busy, cmd }: { onRetry: () => void; busy: boolean; cmd: string }) {
   return (
     <div data-link-nohost className="space-y-3 px-1 py-2">
       <p className="text-[13px] font-medium">{t('No share host on this Mac yet')}</p>
@@ -299,7 +301,7 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
     if (r.status === 200 && r.body.ok) { setStep(null); setMade({ link: r.body.link, title: r.body.share?.title ?? '' }); void load() }
     else if (r.status === 200 && r.body.needsYes) setStep({ phase: 'review', review: r.body.review })
     else if (r.status === 422) setStep({ phase: 'blocked', review: r.body.review })
-    else if (r.status === 409 && (r.body.code === 'no_host' || r.body.code === 'no_token')) { setStep(null); setListed(l => ({ ...(l ?? { hostError: null, shares: [] }), host: null })) }
+    else if (r.status === 409 && (r.body.code === 'no_host' || r.body.code === 'no_token')) { setStep(null); setListed(l => ({ ...(l ?? { hostError: null, shares: [] }), host: null, setup: r.body.setup ?? l?.setup })) }
     else setStep({ phase: r.status === 503 ? 'down' : 'error', error: r.body.error || t('The session server answered {status}.', { status: r.status }) })
   }
   const noHost = !!listed && !listed.host
@@ -412,7 +414,7 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
 
   const body = !listed && !listErr ? <p className={`flex items-center gap-2 px-1 py-6 ${SMALL}`}><Spinner />{t('Looking for the share host…')}</p>
     : listErr ? <div className="space-y-3 px-1 py-2"><p data-link-error role="alert" className="rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-800 dark:text-rose-200">{listErr}</p><Again busy={loading} onRetry={() => void load()} /></div>
-    : noHost ? <NoHost busy={loading} onRetry={() => void load()} />
+    : noHost ? <NoHost busy={loading} onRetry={() => void load()} cmd={listed?.setup || 'proto share setup'} />
     : tab === 'new' ? newView : mineView
 
   const footer = !listed || noHost ? null : tab === 'mine' ? null : made ? (

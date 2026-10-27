@@ -26,7 +26,12 @@ function writeJson(file, value) {
 // Read at each call, not at import: HOME is what the tests move.
 const configDir = () => join(homedir(), '.config', 'prototype')
 
-/** Host = { name, url, stage: 'local', base, pathMode, default, owner } */
+/**
+ * Host = { name, url, stage, base, pathMode, default, owner }. stage is 'local' (wrangler dev on
+ * this Mac), 'workers' (online, on its workers.dev name) or 'domain' (online, on prtype.dev). An
+ * online host also keeps its Cloudflare ids (accountId, worker, kvId, dbId) and hostVersion; never
+ * a secret.
+ */
 export const readHosts = () => readJson(join(configDir(), 'hosts.json'), []).filter(h => h && typeof h.name === 'string')
 export const defaultHost = () => { const hosts = readHosts(); return hosts.find(h => h.default) || hosts[0] || null }
 export const hostNamed = name => readHosts().find(h => h.name === name) || null
@@ -46,18 +51,40 @@ export function getToken(name) {
 }
 
 const portOf = host => Number(new URL(host.url).port || 80)
-/** Where the owner API is reached: on this Mac by 127.0.0.1, which the host answers on as well as localhost. */
-export const apiOrigin = host => host.stage === 'local' ? `http://127.0.0.1:${portOf(host)}` : host.url.replace(/\/$/, '')
+export const isLocal = host => !host || host.stage === 'local'
+/**
+ * Where the owner API is reached: on this Mac by 127.0.0.1, which the host answers on as well as
+ * localhost; online at https://<base>.
+ */
+export const apiOrigin = host => isLocal(host) ? `http://127.0.0.1:${portOf(host)}` : `https://${host.base}`
 
-/** The link people open: one origin per share where *.localhost resolves, else the path form on 127.0.0.1. */
+/**
+ * The link a share opens on. On this Mac: one origin per share where *.localhost resolves, else the
+ * path form on 127.0.0.1. Online (path mode on one origin): https://<base>/s/<id>/.
+ */
 export function linkOf(host, id) {
+  if (!isLocal(host)) return `https://${host.base}/s/${id}/`
   const port = portOf(host)
   return host.pathMode ? `http://127.0.0.1:${port}/s/${id}/` : `http://${id}.localhost:${port}/`
 }
 
+/** The link to send: on prtype.dev the short https://prtype.dev/<id>, which opens /s/<id>/; else linkOf. */
+export const shortLinkOf = (host, id) => host?.stage === 'domain' ? `https://${host.base}/${id}` : linkOf(host, id)
+
+/** The command that sets up (or repairs) a host like this one: --local for the host on this Mac. */
+export const setupHint = host => host?.stage === 'local' ? 'proto share setup --local' : 'proto share setup'
+
 /** Whether the host answers at all (its /_health), within two seconds. */
 export async function hostUp(host, { fetch = globalThis.fetch } = {}) {
   try { return (await fetch(`${apiOrigin(host)}/_health`, { signal: AbortSignal.timeout(2000) })).ok } catch { return false }
+}
+
+// What a refusal says. The budget's own words are the host's (when it resets, what is biggest); a
+// token the host doesn't take as its owner's is repaired by setup.
+function refusal(host, status, data) {
+  if (data?.code === 'budget' && data.error) return data.error
+  if (data?.code === 'not_owner') return `This Mac's token isn't the host's owner: ${setupHint(host)}`
+  return `The share host "${host.name}" answered ${status}${data?.error ? `: ${data.error}` : ''}`
 }
 
 /**
@@ -76,20 +103,26 @@ export function client(host, token, { fetch = globalThis.fetch, timeout = 60_000
     const text = await res.text()
     let data = null
     try { data = JSON.parse(text) } catch { /* an HTML error page */ }
-    if (!res.ok) throw Object.assign(new ShareError(`The share host "${host.name}" answered ${res.status}${data?.error ? `: ${data.error}` : ''}`), { status: res.status, code: data?.code, data })
+    if (!res.ok) throw Object.assign(new ShareError(refusal(host, res.status, data)), { status: res.status, code: data?.code, data })
     return data
   }
   const json = { 'content-type': 'application/json' }
   return {
     host,
     create: async () => (await call('POST', '/api/shares')).id,
+    // Another upload of the same share in flight (409 race): asked once more, which by then is the
+    // next version.
     put: async (id, gz, meta) => {
       const header = Buffer.from(JSON.stringify(meta)).toString('base64url')
-      const { version } = await call('PUT', `/api/shares/${id}`, { body: gz, headers: { 'content-type': 'application/gzip', 'x-share-meta': header } })
-      return { version }
+      const once = () => call('PUT', `/api/shares/${id}`, { body: gz, headers: { 'content-type': 'application/gzip', 'x-share-meta': header } })
+      let r
+      try { r = await once() } catch (e) { if (e?.code !== 'race') throw e; r = await once() }
+      return { version: r.version }
     },
     list: () => call('GET', '/api/shares'),
     remove: async id => { await call('DELETE', `/api/shares/${id}`) },
+    /** Today's counts against the daily caps (an online host): { day, kv_write, kv_delete, d1_write, kv_bytes, caps, resetsAt }. */
+    usage: () => call('GET', '/api/owner/usage'),
     /** { comments: OwnerComment[], now }: every comment on the owner's live shares changed at or after `since`. */
     comments: since => call('GET', `/api/owner/comments${since ? `?since=${Number(since)}` : ''}`),
     /** One comment's status, the owner's reply or hidden; `share` settles a comment id two shares have. */
@@ -291,7 +324,7 @@ export async function pollOnce(dir, { clientFor: get = clientFor } = {}) {
   let changed = false, error = null
   for (const name of hosts) {
     const api = get(name)
-    if (!api) { error = `No owner token for the host "${name}" on this machine: run proto share setup --local`; continue }
+    if (!api) { error = `No owner token for the host "${name}" on this machine: run ${setupHint(hostNamed(name))}`; continue }
     try {
       const { comments, now } = await api.comments(readTray(dir).cursor[name] || 0)
       changed = mergeTray(dir, name, Array.isArray(comments) ? comments : [], now) || changed
@@ -321,7 +354,7 @@ export async function sendComments({ sessionDir, rows, receive, clientFor: get =
     try { c = fromComment(row, sessionDir); receive({ comments: [c] }, sessionDir, { check: true }) } catch (e) { results.push({ id, result: 'error', error: String(e?.message || e) }); continue }
     const name = shares.find(e => e.id === row.share.id)?.host || host || defaultHost()?.name
     const api = name && get(name)
-    if (!api) { results.push({ id, result: 'error', error: 'No share host with an owner token on this machine: run proto share setup --local' }); continue }
+    if (!api) { results.push({ id, result: 'error', error: `No share host with an owner token on this machine: run ${setupHint(hostNamed(name) || defaultHost())}` }); continue }
     try {
       const updated = await api.patch(id, { status: 'sent' }, row.share.id)
       winners.push(c)

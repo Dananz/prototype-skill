@@ -1,5 +1,6 @@
 // Unit checks for the share-link pieces that need no browser: scope parsing, trimming and the pre-publish review.
 import './share-owner-checks.mjs'
+import './share-online-unit-checks.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ShareError, parseScope, trimMeta, trimSession } from '../app/share/scope.mjs'

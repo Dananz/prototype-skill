@@ -7,7 +7,7 @@
 // on its own: no poll, no refresh when the page asks for the tray, no host listing. The smoke's own
 // session runs that way, so it can never reach the owner's real host or Keychain; what the person
 // does (publish, send, reply) still goes out.
-import { clientFor, defaultHost, dismiss, flush, forget, getToken, hostNamed, hostUp, linkOf, mergeTray, outboxFile, pollOnce, queue, readShares, sendComments, trayItems, trayView } from './owner.mjs'
+import { clientFor, defaultHost, dismiss, flush, forget, getToken, hostNamed, hostUp, isLocal, linkOf, mergeTray, outboxFile, pollOnce, queue, readShares, sendComments, setupHint, trayItems, trayView } from './owner.mjs'
 import { changedSince, protosOf, publishShare, removeShare, titleOf, updateShare } from './publish.mjs'
 import { ShareError, parseScope } from './scope.mjs'
 import { spawn } from 'node:child_process'
@@ -71,12 +71,16 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
   // The host a share is on, and its token; a 409 or 503 the sheet can show when there is none.
   const reach = async name => {
     const host = name ? hostNamed(name) : defaultHost()
-    if (!host) throw failure(409, 'No share host yet. Ask Claude to set one up (proto share setup --local).', { code: 'no_host' })
+    if (!host) throw failure(409, `No share host yet. Ask Claude to set one up (${setupHint(null)}).`, { code: 'no_host', setup: setupHint(null) })
     const token = getToken(host.name)
-    if (!token) throw failure(409, `No owner token for the host "${host.name}" on this Mac: proto share setup --local makes one.`, { code: 'no_token' })
+    if (!token) throw failure(409, `No owner token for the host "${host.name}" on this Mac: ${setupHint(host)} makes one.`, { code: 'no_token', setup: setupHint(host) })
     // A token found now ends a "no token" the poll remembered from before setup.
     if (!clientFor(host.name)) forget(host.name)
-    if (!await hostUp(host)) throw failure(503, `The share host "${host.name}" isn't running. Ask Claude to share again (it starts the host), or run proto share setup --local.`, { code: 'host_down' })
+    if (!await hostUp(host)) {
+      throw failure(503, isLocal(host)
+        ? `The share host "${host.name}" isn't running. Ask Claude to share again (it starts the host), or run ${setupHint(host)}.`
+        : `The share host "${host.name}" can't be reached. Check the network; ${setupHint(host)} repairs a broken deploy.`, { code: 'host_down' })
+    }
     return { host, token }
   }
   const entryOf = id => {
@@ -136,7 +140,7 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
         } catch (e) { if (e?.status === 401) forget(name); hostError = String(e?.message || e) }
       }
       for (const s of shares) { s.live ??= null; s.views ??= null }
-      return { host: host ? { name: host.name, stage: host.stage, owner: host.owner || '' } : null, hostError, shares }
+      return { host: host ? { name: host.name, stage: host.stage, owner: host.owner || '' } : null, hostError, shares, setup: setupHint(host) }
     },
     async publish(data) {
       const words = Array.isArray(data.scope) ? data.scope.filter(w => typeof w === 'string').slice(0, 60) : []

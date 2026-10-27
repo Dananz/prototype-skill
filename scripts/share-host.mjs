@@ -2,30 +2,54 @@
 // (~/.config/prototype/hosts.json, no secrets), the owner token (the macOS Keychain, else a file
 // only this user can read), the local host under `wrangler dev`, and the owner API.
 //
-// Phase 0 is local only: the only wrangler commands here are `wrangler dev` and `wrangler d1
-// execute --local`, so nothing logs in to or calls a Cloudflare account.
+// The only wrangler commands here are `wrangler dev` and `wrangler d1 execute`, local unless the
+// online setup (scripts/share-online.mjs) asks for --remote. Every wrangler runs on its own login,
+// wranglerEnv(), never the one Tomer's other projects use.
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { connect, createServer } from 'node:net'
 import { homedir, hostname } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ShareError } from '../app/share/scope.mjs'
-import { client, defaultHost, getToken, inKeychain, linkOf, readHosts, service, tokenFile } from '../app/share/owner.mjs'
+import { client, defaultHost, getToken, hostNamed, inKeychain, linkOf, readHosts, service, setupHint, shortLinkOf, tokenFile } from '../app/share/owner.mjs'
 
 // The owner side (hosts, the token, the owner API, links) is in app/share/owner.mjs, where a
 // session's server reaches it too.
-export { client, defaultHost, getToken, linkOf, readHosts }
+export { client, defaultHost, getToken, hostNamed, linkOf, readHosts, setupHint, shortLinkOf }
 
-const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
+export const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 const PINS = { wrangler: '4.149.0', sharp: '0.35.5' }
 const PORTS = [8787, 8799]
 const LOCAL = 'local'
 
 // Read at each call, not at import: HOME is what the tests move.
-const toolsDir = () => process.env.PROTO_SHARE_TOOLS || join(homedir(), '.prototypes', 'share-tools')
-const hostDir = () => join(homedir(), '.prototypes', 'host')
+export const toolsDir = () => process.env.PROTO_SHARE_TOOLS || join(homedir(), '.prototypes', 'share-tools')
+export const hostDir = () => join(homedir(), '.prototypes', 'host')
+
+/**
+ * The environment every wrangler the share tool starts runs in: its own login, in
+ * ~/.prototypes/share-tools/wrangler-home (XDG_CONFIG_HOME), for the Cloudflare account made for
+ * prtype.dev. The global wrangler login stays logged out, so no other project can reach that
+ * account, and this tool never reaches another. PROTO_SHARE_WRANGLER_HOME moves it (the tests).
+ */
+export function wranglerEnv(extra = {}) {
+  const home = process.env.PROTO_SHARE_WRANGLER_HOME || join(homedir(), '.prototypes', 'share-tools', 'wrangler-home')
+  return { ...process.env, XDG_CONFIG_HOME: home, WRANGLER_SEND_METRICS: 'false', ...extra }
+}
+
+/**
+ * A hash of the host's code (host/**), which setup deploys as HOST_VERSION and the host sends back
+ * on /_health, so the CLI can tell a deployed host older than the skill.
+ */
+export function hostHash() {
+  const root = join(SKILL, 'host')
+  const files = dir => readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? files(join(dir, e.name)) : [join(dir, e.name)])
+  const hash = createHash('sha256')
+  for (const f of files(root).sort()) hash.update(relative(root, f)).update('\0').update(readFileSync(f))
+  return hash.digest('hex').slice(0, 16)
+}
 const configDir = () => join(homedir(), '.config', 'prototype')
 const readJson = (f, fallback) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return fallback } }
 const sleep = ms => new Promise(r => setTimeout(r, ms))
@@ -141,8 +165,8 @@ async function subdomainsResolve(port) {
   } catch { return false } finally { server.close() }
 }
 
-function wrangler(tools, args, opts = {}) {
-  return spawnSync(process.execPath, [tools.wrangler, ...args], { cwd: hostDir(), encoding: 'utf8', env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, ...opts })
+export function wrangler(tools, args, opts = {}) {
+  return spawnSync(process.execPath, [tools.wrangler, ...args], { cwd: hostDir(), encoding: 'utf8', env: wranglerEnv(), ...opts })
 }
 
 // SQL literals for the few rows setup writes itself; the values are ids, hashes and a name.
@@ -207,7 +231,7 @@ export async function startLocal({ name } = {}) {
   const log = openSync(logFile, 'w')
   // Its own process group, so stopping it also stops the workerd it runs.
   const child = spawn(process.execPath, [tools.wrangler, 'dev', '-c', config, '--ip', '127.0.0.1', '--port', String(port), '--inspector-port', '0', '--persist-to', state, '--show-interactive-dev-session=false'], {
-    cwd: dir, detached: true, stdio: ['ignore', log, log], env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
+    cwd: dir, detached: true, stdio: ['ignore', log, log], env: wranglerEnv(),
   })
   closeSync(log)
   child.unref()
