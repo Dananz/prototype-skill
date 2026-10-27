@@ -158,7 +158,7 @@ export function useTagField(opts: Opts) {
   }
   const watchMention = () => {
     const sel = getSelection(), node = sel?.anchorNode
-    const before = node?.nodeType === 3 ? node.textContent!.slice(0, sel!.anchorOffset) : '', m = /(?:^|\s)@([^\s@]*)$/.exec(before)
+    const before = node?.nodeType === 3 ? node.textContent!.slice(0, sel!.anchorOffset) : '', m = /(?:^|[^\w.+-])@([^\s@]*)$/.exec(before)
     setMention(m ? { query: m[1], index: 0 } : null)
   }
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {

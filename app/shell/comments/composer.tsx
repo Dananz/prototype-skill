@@ -299,9 +299,9 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
               saveRange(); setEmpty(!ed.current!.innerText.trim()); emit()
               const s = getSelection(), node = s?.anchorNode
               const text = node?.nodeType === 3 ? node.textContent!.slice(0, s!.anchorOffset) : ''
-              const match = text.match(/(?:^|\s)@([^\s@]*)$/u)
+              const match = text.match(/(?:^|[^\w.+-])@([^\s@]*)$/u)
               if (match && (host.variantMentions?.().length ?? 0) > 0) setMention({ query: match[1], index: 0 })
-              else { setMention(null); if (/(^|\s)@$/.test(text)) act.tagPick() }
+              else { setMention(null); if (/(^|[^\w.+-])@$/.test(text)) act.tagPick() }
             }}
             onKeyUp={saveRange} onMouseUp={saveRange} onBlur={saveRange}
             onPaste={e => { const f = imageIn(e.clipboardData); if (!f) return; e.preventDefault(); void attach(f) }}
