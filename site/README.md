@@ -11,7 +11,7 @@ pnpm build     # type check, then static output in dist/
 pnpm preview   # serve dist/
 ```
 
-The site URL is `https://prototype.dananz.com`; set `SITE_URL` to build for another address (`SITE_URL=https://… pnpm build`).
+The site URL is `https://prtype.dev`; set `SITE_URL` to build for another address (`SITE_URL=https://… pnpm build`).
 Canonical links, the sitemap, robots.txt and the share image's absolute URL all come from it.
 
 - `src/pages/index.astro`: the page. `src/layouts/Base.astro`: head, meta, fonts, JSON-LD.
@@ -20,3 +20,16 @@ Canonical links, the sitemap, robots.txt and the share image's absolute URL all 
 - Static-page icons are Phosphor's SVGs from `@phosphor-icons/core` (`src/components/Icon.astro`); islands use `@phosphor-icons/react`.
 - `astro.config.mjs` bundles Phosphor and the React entries into the server render so they resolve to `preact/compat`.
 - Fonts are self-hosted through the Astro Fonts API (Fontsource), with Google Sans preloaded.
+
+## Deploy
+
+The site is a Cloudflare Worker (`prtype-site`, `wrangler.jsonc`) on the share host's free account: Cloudflare
+serves `dist/` as static files (free, not counted as Worker requests), and `worker.mjs` runs only for the share
+host's paths (`/s/…`, `/api`, `/auth/…`, `/_health`, and a share's short link `/<id>`), which it hands to the
+share Worker once that is bound as `HOST`. Build, then deploy with the share tools' wrangler and its own login:
+
+```
+pnpm build
+XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home ~/.prototypes/share-tools/node_modules/.bin/wrangler deploy
+```
+

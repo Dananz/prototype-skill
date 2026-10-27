@@ -10,7 +10,7 @@ const bundled = ['@phosphor-icons/react', 'react', 'react-dom', 'react-dom/test-
 
 // The public address. Canonical links, the sitemap, robots.txt and the share image's absolute URL
 // all come from it. SITE_URL overrides it, e.g. for a preview deploy.
-const site = process.env.SITE_URL ?? 'https://prototype.dananz.com'
+const site = process.env.SITE_URL ?? 'https://prtype.dev'
 
 export default defineConfig({
   site,
