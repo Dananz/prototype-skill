@@ -7,8 +7,8 @@ import { climb, describe, designStorage, find, inFrame, region, reveal, openerOf
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import { progress, threadOf, type Store } from './store'
-import type { Action, Draft, Item, Place, Target, Time, Source } from './types'
-import { shotsOf } from './types'
+import type { Action, Draft, Item, Note, Place, Seg, Target, Time, Source } from './types'
+import { noteSays, shotsOf } from './types'
 import { inScope, routeOf } from './types'
 import { sameView } from '../view/sizes'
 import { t } from '../i18n'
@@ -85,10 +85,10 @@ export function createActions(store: Store, host: Host) {
     stop() { opening++; set({ mode: { kind: 'idle' }, wholeTag: false }) },
     close() { opening++; set({ mode: { kind: 'idle' }, active: null, pendingTag: null, wholeTag: false }) },
     /** The whole-variant box's Tag an element: the next pick is a tag for it, not a new comment. */
-    tagWhole() { opening++; if (get().place) set({ mode: { kind: 'pick' }, active: null, wholeTag: true }) },
+    tagWhole(owner = 'island') { opening++; if (get().place) set({ mode: { kind: 'pick' }, active: null, wholeTag: true, tagOwner: owner, wholePicked: null }) },
     /** The element picked for the whole-variant box (null: picking was called off). */
     wholeTagDone(picked: Target | null) { opening++; set({ mode: { kind: 'idle' }, wholeTag: false, wholePicked: picked }) },
-    wholeTagTaken() { if (get().wholePicked) set({ wholePicked: null }) },
+    wholeTagTaken() { if (get().wholePicked || get().tagOwner) set({ wholePicked: null, tagOwner: null }) },
     /** `quote`: the words highlighted on the design, which start the comment as a quote. */
     begin(target: Target, quote?: string, trail?: Target[]) { opening++; set({ mode: { kind: 'compose', target, ...(quote ? { quote } : {}), ...(trail?.length ? { trail } : {}) }, active: null, wholeTag: false }) },
     /**
@@ -135,11 +135,12 @@ export function createActions(store: Store, host: Host) {
      * once with no composer in between, so a comment half-written on an element is left as it is.
      * `tags`: what it tagged (elements, other variants), each mentioned after the words.
      */
-    commentWhole(text: string, tags: Target[] = []) {
-      const p = get().place, t = act.wholeTarget(), words = text.trim()
-      if (!p || !t || (!words && !tags.length)) return false
+    commentWhole(segs: Seg[], tags: Target[] = []) {
+      const p = get().place, t = act.wholeTarget()
+      // Its words trimmed at both ends; the tags stay where they were written among them.
+      const body = segs.map((s, i) => typeof s === 'string' && i === 0 ? s.trimStart() : s).map((s, i, all) => typeof s === 'string' && i === all.length - 1 ? s.trimEnd() : s).filter(s => s !== '')
+      if (!p || !t || !body.some(s => typeof s !== 'string' || s.trim())) return false
       const n = Math.max(0, ...get().items.filter(i => i.proto === p.proto && i.variant === p.variant).map(i => i.n)) + 1
-      const body = [words, ...tags.flatMap((_, i) => [words || i ? ' ' : '', { tag: i }])].filter(s => s !== '')
       const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, body, tags, target: t, at: Date.now() }
       set(s => ({ items: [...s.items, item] }))
       if (get().live) void act.send()
@@ -266,14 +267,14 @@ export function createActions(store: Store, host: Host) {
      * own send. Throws with the server's reason, also when the batch arrived but a pick in it
      * couldn't be made (it waits with Claude then, saying why).
      */
-    async decide(to: { proto: string; variant: string }, action: Action, note = '') {
-      const label = variantRef(null, to.variant), say = ACTION[action].say(label), words = note.trim()
+    async decide(to: { proto: string; variant: string }, action: Action, note: Note = { body: [], tags: [] }) {
+      const label = variantRef(null, to.variant), say = ACTION[action].say(label), words = noteSays(note) ? plain(note) : ''
       const sent = await host.send({
         theme: host.dark() ? 'dark' : 'light',
         viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 },
-        comments: [{ route: `${to.proto}/${to.variant}`, text: words ? `${say}: ${words}` : say, action, ...(action === 'pick' && words ? { note: words } : {}) }],
+        comments: [{ route: `${to.proto}/${to.variant}`, text: words ? `${say}: ${words}` : say, action, ...(words && note.tags.length ? { tags: note.tags } : {}), ...(action === 'pick' && words ? { note: words } : {}) }],
       })
-      const item: Item = { id: uid(), proto: to.proto, variant: to.variant, n: 0, body: words ? [words] : [], tags: [], action, at: Date.now(), sent: { batch: sent.id, i: 1 } }
+      const item: Item = { id: uid(), proto: to.proto, variant: to.variant, n: 0, body: words ? note.body : [], tags: words ? note.tags : [], action, at: Date.now(), sent: { batch: sent.id, i: 1 } }
       set(s => ({ items: s.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? s.items : [...s.items, item] }))
       const r = sent.results[0]
       if (!r?.failed) return
@@ -286,15 +287,15 @@ export function createActions(store: Store, host: Host) {
      * a variant): `count` new directions, the note as its words. It joins the list as already sent,
      * on no variant. Throws with the server's reason.
      */
-    async moreVariants(proto: string, count: number, note = '') {
-      const words = note.trim(), n = Math.max(1, Math.min(9, Math.round(count)))
+    async moreVariants(proto: string, count: number, note: Note = { body: [], tags: [] }) {
+      const words = noteSays(note) ? plain(note) : '', n = Math.max(1, Math.min(9, Math.round(count)))
       const say = `${n} more variant${n === 1 ? '' : 's'}`
       const sent = await host.send({
         theme: host.dark() ? 'dark' : 'light',
         viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 },
-        comments: [{ route: proto, text: words ? `${say}: ${words}` : say, action: 'more-variants', count: n }],
+        comments: [{ route: proto, text: words ? `${say}: ${words}` : say, action: 'more-variants', count: n, ...(words && note.tags.length ? { tags: note.tags } : {}) }],
       })
-      const item: Item = { id: uid(), proto, variant: '', n: 0, body: words ? [words] : [], tags: [], action: 'more-variants', count: n, at: Date.now(), sent: { batch: sent.id, i: 1 } }
+      const item: Item = { id: uid(), proto, variant: '', n: 0, body: words ? note.body : [], tags: words ? note.tags : [], action: 'more-variants', count: n, at: Date.now(), sent: { batch: sent.id, i: 1 } }
       set(s => ({ items: s.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? s.items : [...s.items, item] }))
     },
     /**
@@ -323,9 +324,10 @@ export function createActions(store: Store, host: Host) {
      * It joins the thread as already sent, with the comment's pin number and no pin of its own.
      * Throws with the server's reason; the words are the caller's to keep.
      */
-    async followUp(id: string, text: string) {
-      const s = get(), root = s.items.find(i => i.id === id), words = text.trim()
-      if (!root || !words) return
+    async followUp(id: string, note: Note) {
+      const s = get(), root = s.items.find(i => i.id === id)
+      if (!root || !noteSays(note)) return
+      const words = plain(note)
       const last = threadOf(s.items, root).filter(i => i.sent).at(-1)
       if (!last?.sent) throw new Error('Send the comment first')
       const re = { batch: last.sent.batch, n: last.sent.i }
@@ -336,6 +338,7 @@ export function createActions(store: Store, host: Host) {
           // More variants is on the prototype, not a variant.
           route: root.variant ? routeOf(root) : root.proto,
           text: words,
+          ...(note.tags.length ? { tags: note.tags } : {}),
           ...(root.target?.point ? { point: root.target.point } : {}),
           ...(root.target?.region ? { region: root.target.region } : {}),
           ...(root.target ? { target: root.target } : {}),
@@ -345,7 +348,7 @@ export function createActions(store: Store, host: Host) {
         }],
       })
       const item: Item = {
-        id: uid(), proto: root.proto, variant: root.variant, ...(root.state ? { state: root.state } : {}), n: root.n, body: [words], tags: [],
+        id: uid(), proto: root.proto, variant: root.variant, ...(root.state ? { state: root.state } : {}), n: root.n, body: note.body, tags: note.tags,
         ...(root.target ? { target: root.target } : {}), ...(root.time ? { time: root.time } : {}),
         at: Date.now(), sent: { batch: sent.id, i: 1 }, re: { id: root.id, batch: re.batch, i: re.n },
       }

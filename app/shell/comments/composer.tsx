@@ -20,7 +20,7 @@ import { variantLabel } from '../variants'
 
 const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `${(t.at / 1000).toFixed(2)} s` : `${(t.at / 1000).toFixed(2)}–${(t.to / 1000).toFixed(2)} s`
 
-function readEditor(el: HTMLElement): Seg[] {
+export function readEditor(el: HTMLElement): Seg[] {
   const out: Seg[] = []
   el.childNodes.forEach(n => {
     if (n.nodeType === 3) { if (n.textContent) out.push(n.textContent.replace(/​/g, '')) }
@@ -30,7 +30,7 @@ function readEditor(el: HTMLElement): Seg[] {
   })
   return out.filter(s => s !== '')
 }
-const chipNode = (target: Target | undefined, i: number) => {
+export const chipNode = (target: Target | undefined, i: number) => {
   const s = document.createElement('span')
   s.contentEditable = 'false'
   s.dir = 'auto'
@@ -44,7 +44,7 @@ const chipNode = (target: Target | undefined, i: number) => {
   if (target?.variantRef) s.title = `${target.variantRef.label} · ${target.variantRef.name}`
   return s
 }
-const endRange = (el: HTMLElement) => { const x = document.createRange(); x.selectNodeContents(el); x.collapse(false); return x }
+export const endRange = (el: HTMLElement) => { const x = document.createRange(); x.selectNodeContents(el); x.collapse(false); return x }
 
 // An image from the clipboard or dropped on the composer becomes one of the comment's pictures, the
 // way a screenshot does (each paste, drop or screenshot adds one, up to MAX_SHOTS). It goes

@@ -47,14 +47,13 @@ export async function contextMenuChecks({ proto, app, local, openPage, fail }) {
       rc(document.querySelector('[data-act="mp:ctxfx"]'))
       if (!await until(menu)) return 'no menu'
       menu().querySelector('[data-shoot="ctx-more-variants"]').click()
-      if (!await until(() => menu()?.querySelector('textarea'))) return 'More variants opened no note'
+      if (!await until(() => menu()?.querySelector('[contenteditable=true]'))) return 'More variants opened no note'
       const out = () => menu().querySelector('[data-shoot="ctx-count"] output')?.textContent
       if (out() !== '4') return 'the count starts at ' + out() + ', not the prototype\\'s 4'
       menu().querySelector('[aria-label="One more"]').click()
       if (!await until(() => out() === '5')) return 'one more did not make it 5'
-      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-      set.call(menu().querySelector('textarea'), 'Calmer, with more air')
-      menu().querySelector('textarea').dispatchEvent(new Event('input', { bubbles: true }))
+      menu().querySelector('[contenteditable=true]').textContent = 'Calmer, with more air'
+      menu().querySelector('[contenteditable=true]').dispatchEvent(new Event('input', { bubbles: true }))
       menu().querySelector('[data-shoot="ctx-send"]').click()
       if (!await until(() => /5 more variants/.test(menu()?.textContent ?? ''))) return 'sending said nothing: ' + (menu()?.textContent ?? 'menu gone')
       if (!await until(() => saved().some(i => i.action === 'more-variants' && i.count === 5 && i.variant === ''))) return 'no more-variants item was kept'
@@ -81,7 +80,7 @@ export async function contextMenuChecks({ proto, app, local, openPage, fail }) {
       if (!await until(menu)) return 'right-click on the design opened no menu'
       const got = labels()
       for (const want of ['Comment on this element', 'Comment on the whole variant']) if (!got.some(l => l.startsWith(want))) return 'the artboard menu has no ' + want + ': ' + got.join(', ')
-      if (!got.some(l => l === 'Pick' || l.startsWith('Picked')) || !menu().querySelector('textarea[aria-label="Note for Pick #1"]')) return 'the artboard menu has no Pick for the variant: ' + got.join(', ')
+      if (!got.some(l => l === 'Pick' || l.startsWith('Picked')) || !menu().querySelector('[contenteditable=true][aria-label="Note for Pick #1"]')) return 'the artboard menu has no Pick for the variant: ' + got.join(', ')
       menu().querySelector('[data-shoot="ctx-comment-el"]').click()
       if (!await until(() => document.querySelector('[data-composer]'))) return 'Comment on this element opened no composer'
       return 'ok'
