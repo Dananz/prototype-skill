@@ -317,3 +317,25 @@ test('the Share sheet syncs through the skill, or says the viewer may be old', a
     assert.equal(readFileSync(join(dir, 'shell', 'viewer', 'index.tsx'), 'utf8'), readFileSync(join(skill, 'app', 'shell', 'viewer', 'index.tsx'), 'utf8'))
   } finally { rmSync(project, { recursive: true, force: true }) }
 })
+
+// From the page, moved packages are never installed under its running Vite: --sync-only exits 3 and
+// the review asks for proto up. A sync that hangs is cut off and said so.
+test('the page\'s sync leaves moved packages to proto up, and gives up on a hung sync', async () => {
+  const { syncFirst } = await import('../app/share/routes.mjs')
+  const project = mkdtempSync(join(tmpdir(), 'proto agent checks '))
+  try {
+    const dir = join(project, '.prototypes', 'sharer')
+    mkdirSync(dir, { recursive: true })
+    const session = { id: 'sharer', stack: 'react', project }
+    writeFileSync(join(dir, 'session.json'), JSON.stringify(session))
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { react: '^1.0.0' } }))
+    assert.match(await syncFirst(dir, session, skill), /packages changed with the skill: run proto up/)
+    assert.ok(!existsSync(join(dir, 'node_modules')), 'the sync installed packages')
+    const slow = join(project, 'slow-skill')
+    mkdirSync(join(slow, 'scripts'), { recursive: true })
+    writeFileSync(join(slow, 'scripts', 'proto.mjs'), 'setInterval(() => {}, 1000)\n')
+    const t = Date.now()
+    assert.match(await syncFirst(dir, session, slow, { timeout: 500 }), /took over 1 s: run proto up/)
+    assert.ok(Date.now() - t < 5000)
+  } finally { rmSync(project, { recursive: true, force: true }) }
+})

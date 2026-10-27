@@ -23,16 +23,24 @@ const failure = (status, error, extra = {}) => Object.assign(new Error(error), {
 // (PROTO_SKILL, set by `proto up`) brings it up to date first (scripts/app-sync.mjs); a server
 // started by an older proto has no PROTO_SKILL, so it publishes as is and says so in the review.
 // Resolves with a review note, or null when the copy is current.
-export function syncFirst(root, session, skill = process.env.PROTO_SKILL) {
+export function syncFirst(root, session, skill = process.env.PROTO_SKILL, { timeout = 120_000 } = {}) {
   if (!skill) return Promise.resolve("This session's viewer may be older than the skill: run proto up before sharing.")
   const args = [join(skill, 'scripts', 'proto.mjs'), 'share', '--sync-only', '--project', session.project, '--session', String(session.id)]
   return new Promise(done => {
-    let out = ''
+    let out = '', over = false
     const child = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PROTO_NO_GC: '1' } })
+    // A sync that hangs must not hold the sheet's publish forever.
+    const timer = setTimeout(() => { over = true; child.kill('SIGKILL') }, timeout)
     child.stdout.on('data', d => { out += d })
     child.stderr.on('data', d => { out += d })
-    child.on('error', e => done(`This session's app could not be brought up to date (${e.message}): run proto up before sharing.`))
-    child.on('close', code => done(code === 0 ? null : `This session's app could not be brought up to date: ${out.trim().split('\n').at(-1) || `exit ${code}`}. Run proto up before sharing.`))
+    child.on('error', e => { clearTimeout(timer); done(`This session's app could not be brought up to date (${e.message}): run proto up before sharing.`) })
+    child.on('close', code => {
+      clearTimeout(timer)
+      if (over) return done(`Bringing this session's app up to date took over ${Math.round(timeout / 1000)} s: run proto up before sharing.`)
+      // 3: the packages moved, which only proto up installs (it stops the server first).
+      if (code === 3) return done("This session's packages changed with the skill: run proto up (it installs them) before sharing.")
+      done(code === 0 ? null : `This session's app could not be brought up to date: ${out.trim().split('\n').at(-1) || `exit ${code}`}. Run proto up before sharing.`)
+    })
   })
 }
 

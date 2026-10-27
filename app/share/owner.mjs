@@ -84,6 +84,7 @@ export async function hostUp(host, { fetch = globalThis.fetch } = {}) {
 function refusal(host, status, data) {
   if (data?.code === 'budget' && data.error) return data.error
   if (data?.code === 'not_owner') return `This Mac's token isn't the host's owner: ${setupHint(host)}`
+  if (data?.code === 'moved') return `The share host "${host.name}" moved${data.error ? ` (${data.error})` : ''}: run ${setupHint(host)} to point this Mac at it`
   return `The share host "${host.name}" answered ${status}${data?.error ? `: ${data.error}` : ''}`
 }
 
@@ -170,8 +171,10 @@ export function queue(dir, entries) {
 }
 
 // A host that refuses for good (no such comment, deleted, a status behind it, already sent) is done
-// with the update; one that can't be reached, refuses the token, is busy or failed keeps it.
-const keep = e => !e?.status || e.status === 401 || e.status === 408 || e.status === 429 || e.status >= 500
+// with the update; one that can't be reached, refuses the token, is busy, failed or moved keeps it.
+// A host that moved (410 `moved`, the old workers.dev name once the domain is live) keeps them too:
+// they go once this Mac points at the new name (proto share setup).
+const keep = e => !e?.status || e.status === 401 || e.status === 408 || e.status === 429 || e.status >= 500 || e.code === 'moved'
 
 /**
  * Sends what the outbox holds. clientFor(hostName) gives the owner API for a host (or null). Says how

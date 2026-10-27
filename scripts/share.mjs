@@ -55,9 +55,12 @@ function links(host, id) {
 // it is brought up to date with the skill first, so a session not re-upped never publishes an old
 // viewer. The dev server is left running. Vite restarts itself when its config changed; anything
 // else a running server holds in memory waits for `proto up`.
-function freshApp(sessionDir, die) {
+// From the page (--sync-only, under its running Vite) nothing is installed: moved packages exit 3,
+// and the page's review asks for `proto up`, which installs them with the server stopped.
+function freshApp(sessionDir, die, { install = true } = {}) {
   let r
   try { r = syncApp(sessionDir) } catch (e) { die(e.message) }
+  if (r.deps && !install) { console.log('The session\'s packages changed with the skill: proto up installs them.'); process.exit(3) }
   if (r.deps && !installApp(sessionDir)) die('installing the session\'s packages failed (see above)')
   if (r.restartWorthy || r.deps) console.log('The session\'s app was updated for this share. If its page acts oddly, `proto up` restarts it on the new code.')
   else if (r.changed.length) console.log(`updated the session's app for this share: ${r.changed.length} file${r.changed.length === 1 ? '' : 's'}`)
@@ -227,7 +230,7 @@ export async function main(args, flags, ctx) {
     if (sub === 'setup') return await setup(flags, die)
     // The page's Share sheet runs this before it builds (app/share/routes.mjs), since the session's
     // server can't reach the skill's code itself.
-    if (flags['sync-only'] === true) return freshApp(ctx.sessionDir, die)
+    if (flags['sync-only'] === true) return freshApp(ctx.sessionDir, die, { install: false })
     if (sub === 'stop') {
       const was = await stopLocal()
       return console.log(was ? 'stopped the local share host (its links answer again after the next proto share)' : 'the local share host was not running')

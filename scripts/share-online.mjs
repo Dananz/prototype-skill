@@ -13,7 +13,7 @@
 import { spawnSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { hostname as machine } from 'node:os'
+import { hostname as machine, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ShareError } from '../app/share/scope.mjs'
 import { CRON } from '../host/lib/cron.mjs'
@@ -26,6 +26,8 @@ const NONCE = 'AAAAAAAAAAAAAAAAAAAAAA'
 const lit = v => typeof v === 'number' ? String(v) : `'${String(v).replace(/'/g, "''")}'`
 const sha = s => createHash('sha256').update(s).digest('hex')
 export const onlineDir = () => join(hostDir(), 'online')
+// Outside every folder that holds a wrangler config: see step 5.
+const accountDir = () => { const d = join(tmpdir(), 'proto-share-account'); mkdirSync(d, { recursive: true }); return d }
 export const prodVarsFile = () => join(hostDir(), 'prod.vars')
 export const devVarsFile = () => join(hostDir(), '.dev.vars')
 
@@ -54,8 +56,9 @@ export function parseVars(text, keys, what = 'the file') {
 /** ~/.prototypes/host/prod.vars, the production OAuth App's id and secret; only at mode 600. */
 export function readProdVars(file = prodVarsFile()) {
   if (!existsSync(file)) throw new ShareError(`No ${file}: it holds the prtype.dev OAuth App's GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET (mode 600)`)
+  // Only this user may read it: 600 or 400.
   const mode = statSync(file).mode & 0o777
-  if (mode !== 0o600) throw new ShareError(`${file} can be read by others (mode ${mode.toString(8)}): chmod 600 it, then run setup again`)
+  if (mode & 0o077) throw new ShareError(`${file} can be read by others (mode ${mode.toString(8)}): chmod 600 it, then run setup again`)
   return parseVars(readFileSync(file, 'utf8'), ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'], file)
 }
 
@@ -266,8 +269,14 @@ export async function setupOnline(flags, io) {
   } else log(`workers.dev: ${sub}.workers.dev`)
   const workersDev = `${WORKER}.${sub}.workers.dev`
 
-  // 5. The KV namespace and the D1 database, looked up before anything is made.
-  const empty = join(onlineDir(), 'account') // no wrangler config here, so no command edits one
+  // The OAuth App's id and secret, read before anything is made: a prod.vars that isn't right stops
+  // the run here.
+  const vars = io.prodVars()
+
+  // 5. The KV namespace and the D1 database, looked up before anything is made. These run in a
+  // folder of their own under the temp folder: wrangler looks for a config in the folder and every
+  // folder above it, and `kv namespace create` may offer to add a binding to one it finds.
+  const empty = accountDir()
   const kvList = () => jsonOf(must(run(['kv', 'namespace', 'list'], { cwd: empty }), 'wrangler kv namespace list').stdout) || []
   const kvFind = list => list.find(n => n.id === known?.kvId) || list.find(n => n.title === WORKER)
   let kv = kvFind(kvList())
@@ -288,21 +297,37 @@ export async function setupOnline(flags, io) {
     log(`D1: made ${db.name} (${db.uuid})`)
   } else log(`D1: ${db.name} (${db.uuid})`)
 
-  // 6. The config: on workers.dev, or behind the site on the domain (sign-in on, the old name kept).
+  // 6. The config, on workers.dev or behind the site on the domain (sign-in on, the old name kept),
+  // and the migrations, which don't depend on which.
   const configFile = join(onlineDir(), 'wrangler.jsonc')
-  const base = domain || workersDev
-  writeOnlineConfig(configFile, { accountId: account.id, kvId: kv.id, dbId: db.uuid, base, signin: !!domain, legacy: domain ? workersDev : '', hostVersion: io.hostVersion })
-  log(`Config: ${configFile} (BASE ${base}${domain ? ', sign-in on' : ''})`)
-
-  // 7, 8. Migrations, then the code.
+  const configFor = base => writeOnlineConfig(configFile, { accountId: account.id, kvId: kv.id, dbId: db.uuid, base, signin: base === domain, legacy: base === domain ? workersDev : '', hostVersion: io.hostVersion })
+  configFor(workersDev)
   const applied = must(run(['d1', 'migrations', 'apply', 'DB', '--remote', '-c', configFile]), 'Applying the migrations')
   log(/No migrations to apply/i.test(applied.stdout) ? 'Migrations: up to date' : 'Migrations: applied')
+  const sql = async text => {
+    const r = must(run(['d1', 'execute', 'DB', '--remote', '-c', configFile, '--json', '--command', text]), 'The host\'s database')
+    return (jsonOf(r.stdout) || []).flatMap(x => x.results || [])
+  }
+  // Where the host is live, as setup last left it in its own database: the host entry on this Mac
+  // may be missing (another Mac, a lost hosts.json), and a plain run must never move a host on the
+  // domain back to workers.dev with sign-in off.
+  const stored = Object.fromEntries((await sql("SELECT k, v FROM meta WHERE k IN ('stage', 'base')")).map(r => [r.k, r.v]))
+  if (stored.stage === 'domain' && !domain) throw new ShareError(`This host is live on ${stored.base}: a plain setup would move it back to workers.dev and turn sign-in off. Run proto share setup --domain ${stored.base}`)
+  const remember = (stage, base) => sql(`INSERT INTO meta (k, v) VALUES ('stage', ${lit(stage)}), ('base', ${lit(base)}) ON CONFLICT(k) DO UPDATE SET v = excluded.v`)
+  // Already behind this domain: deployed as it is. Else on workers.dev first; the domain's config
+  // goes out only once the site reaches the host (below), so links never point at a dead end.
+  // A host set up before setup kept its stage in the database has only this Mac's entry to say so.
+  const onDomain = !!domain && ((stored.stage === 'domain' && stored.base === domain) || (!stored.stage && known?.stage === 'domain' && known.base === domain))
+  const first = onDomain ? domain : workersDev
+  configFor(first)
+  log(`Config: ${configFile} (BASE ${first}${onDomain ? ', sign-in on' : ''})`)
+
+  // 7, 8. The code.
   must(run(['deploy', '-c', configFile]), 'wrangler deploy')
   log(`Deployed ${WORKER}`)
 
   // 9. Secrets, on stdin: the OAuth App's always (they may have changed), VIEWER_KEY only once, so
   // a re-run never signs viewers out. They wait unused until sign-in is on (the domain).
-  const vars = io.prodVars()
   const viewerKey = randomBytes(32).toString('base64url')
   const secrets = [vars.GITHUB_CLIENT_ID, vars.GITHUB_CLIENT_SECRET, viewerKey]
   const listed = jsonOf(must(run(['secret', 'list', '--format', 'json', '-c', configFile]), 'wrangler secret list', secrets).stdout) || []
@@ -314,45 +339,44 @@ export async function setupOnline(flags, io) {
   log(`Secrets: the GitHub OAuth App's id and secret${hadKey ? '' : ', a new viewer key'}`)
 
   // 10. The owner, the one allowed to upload, and this Mac's token.
-  const sql = async text => {
-    const r = must(run(['d1', 'execute', 'DB', '--remote', '-c', configFile, '--json', '--command', text]), 'The host\'s database')
-    return (jsonOf(r.stdout) || []).flatMap(x => x.results || [])
-  }
   const { owner, minted } = await ownerAndToken({ sql, name, tokenName: 'online', device: io.hostname, get: io.getToken, set: io.setToken })
   log(`Owner: ${owner.name}; ${minted ? 'a new token for this Mac in the Keychain (prototype-share-online)' : "this Mac's token works"}`)
 
   // 11, 12. The checks, then the host entry. Before the domain answers, links stay on workers.dev.
   const token = io.getToken('online')
   const entry = { name: 'online', url: `https://${workersDev}`, stage: 'workers', base: workersDev, pathMode: true, default: true, owner: owner.name, accountId: account.id, worker: WORKER, kvId: kv.id, dbId: db.uuid, hostVersion: io.hostVersion, workersDev, planChecked: true }
-  // With the domain the workers.dev name is a legacy one: its /api answers 410, so the token is
-  // checked on the domain instead (domainChecks).
-  await upCheck(io, workersDev, domain ? null : token)
-  if (!domain) {
+  if (!onDomain) {
+    await upCheck(io, workersDev, token)
+    if (stored.stage !== 'domain') await remember('workers', workersDev)
+    // Kept even when the domain steps below stop: the host and the plan check stay known.
     io.saveHost(entry)
-    log(`Online share host at https://${workersDev}/ (owner ${owner.name}). Links: https://${workersDev}/s/<id>/.`)
-    log('Viewers can read; comments open once prtype.dev is set up: proto share setup --domain prtype.dev.')
-    return entry
-  }
-
-  // A first run straight to --domain keeps a host entry (and the plan check) even when the domain
-  // isn't answering yet; a domain already live stays the entry until the checks below pass.
-  if (known?.stage !== 'domain') io.saveHost(entry)
+    if (!domain) {
+      log(`Online share host at https://${workersDev}/ (owner ${owner.name}). Links: https://${workersDev}/s/<id>/.`)
+      log('Viewers can read; comments open once prtype.dev is set up: proto share setup --domain prtype.dev.')
+      return entry
+    }
+  } else await upCheck(io, workersDev, null) // a legacy name: its /api answers 410, so the token is checked on the domain
 
   // The domain: the site Worker on it hands the share paths to this one (HOST), so the site's
-  // config gains the binding and is deployed again. The host gets no route of its own.
+  // config gains the binding and is deployed again, built fresh. The host gets no route of its own.
   const siteConfig = join(io.siteDir, 'wrangler.jsonc')
   const edited = bindSite(siteConfig)
   if (edited) log(`Site: ${siteConfig} binds HOST to ${WORKER} (commit that change)`)
   const before = await probe(io, `https://${domain}/_health`)
   if (edited || !(before?.status === 200 && before.headers.get('x-proto-host'))) {
-    if (!existsSync(join(io.siteDir, 'dist'))) {
-      log('Site: building (site/dist is missing)')
-      if (!io.build(io.siteDir)) throw new ShareError(`Building the site in ${io.siteDir} failed (see above)`)
-    }
+    log('Site: building')
+    if (!io.build(io.siteDir)) throw new ShareError(`Building the site in ${io.siteDir} failed (see above)`)
     must(run(['deploy', '-c', siteConfig], { cwd: io.siteDir }), 'Deploying the site')
-    log(`Site: deployed with the HOST binding`)
+    log('Site: deployed with the HOST binding')
   } else log('Site: already hands the share paths to the host')
+  await reaches(io, domain)
+  if (!onDomain) {
+    configFor(domain)
+    must(run(['deploy', '-c', configFile]), 'wrangler deploy')
+    log(`Deployed ${WORKER} behind ${domain} (BASE ${domain}, sign-in on, ${workersDev} kept for old links)`)
+  }
   await domainChecks(io, domain, workersDev, token)
+  await remember('domain', domain)
   const live = { ...entry, url: `https://${domain}`, stage: 'domain', base: domain }
   io.saveHost(live)
   log(`${domain} is live: links are https://${domain}/<id>; viewers sign in with GitHub to comment.`)
@@ -376,19 +400,32 @@ async function upCheck(io, name, token) {
   io.log(`Check: https://${name}/_health answers on this code, and the owner API takes this Mac's token`)
 }
 
-// prtype.dev over TLS (Node's own trust store), the old name moving there, and sign-in switched on.
-async function domainChecks(io, domain, workersDev, token) {
+// The site on the domain hands /_health to the host over TLS (Node's own trust store). The host's
+// config is still on workers.dev here, so a wait that runs out leaves every link working there.
+async function reaches(io, domain) {
   let res = null
   for (let end = Date.now() + io.waits.tls; ; await io.sleep(io.waits.tlsEvery)) {
     res = await probe(io, `https://${domain}/_health`)
-    if (res?.status === 200 && res.headers.get('x-proto-host') === io.hostVersion) break
+    if (res?.status === 200 && res.headers.get('x-proto-host')) break
     if (Date.now() >= end) {
       const text = res ? await res.text().catch(() => '') : ''
       if (/not open yet/i.test(text)) throw new ShareError(`https://${domain}/_health answers the site's "Shared links are not open yet": the site Worker has no HOST binding live. Check site/wrangler.jsonc has it, then run proto share setup --domain ${domain} again`)
-      throw new ShareError(`https://${domain}/_health ${res ? `answered ${res.status}` : "doesn't answer over TLS yet"}. The first certificate can take from 15 minutes to 24 hours after the zone went active. Nothing needs undoing: run proto share setup --domain ${domain} again later.`)
+      throw new ShareError(`https://${domain}/_health ${res ? `answered ${res.status}` : "doesn't answer over TLS yet"}. The first certificate can take from 15 minutes to 24 hours after the zone went active. Links keep working on workers.dev meanwhile: run proto share setup --domain ${domain} again later.`)
     }
   }
-  io.log(`Check: https://${domain}/_health answers over TLS on this code`)
+  io.log(`Check: https://${domain}/_health reaches the host over TLS`)
+}
+
+// The host behind the domain on this code, taking this Mac's token, the old name moving there, and
+// sign-in switched on.
+async function domainChecks(io, domain, workersDev, token) {
+  let res = null
+  for (let end = Date.now() + io.waits.up; ; await io.sleep(io.waits.upEvery)) {
+    res = await probe(io, `https://${domain}/_health`)
+    if (res?.status === 200 && res.headers.get('x-proto-host') === io.hostVersion) break
+    if (Date.now() >= end) throw new ShareError(`https://${domain}/_health answers code ${res?.headers.get('x-proto-host') || 'none'}, not ${io.hostVersion}. Run proto share setup --domain ${domain} again`)
+  }
+  io.log(`Check: https://${domain}/_health answers on this code`)
   const api = await probe(io, `https://${domain}/api/shares`, { headers: { authorization: `Bearer ${token}` } })
   if (api?.status !== 200) throw new ShareError(`The host on ${domain} doesn't take this Mac's token (GET /api/shares answered ${api?.status ?? 'nothing'}). Run proto share setup --domain ${domain} again`)
   const moved = await probe(io, `https://${workersDev}/s/${ID}/`, { redirect: 'manual' })

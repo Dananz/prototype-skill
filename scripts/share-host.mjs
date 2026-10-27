@@ -36,7 +36,10 @@ export const hostDir = () => join(homedir(), '.prototypes', 'host')
  */
 export function wranglerEnv(extra = {}) {
   const home = process.env.PROTO_SHARE_WRANGLER_HOME || join(homedir(), '.prototypes', 'share-tools', 'wrangler-home')
-  return { ...process.env, XDG_CONFIG_HOME: home, WRANGLER_SEND_METRICS: 'false', ...extra }
+  const env = { ...process.env, XDG_CONFIG_HOME: home, WRANGLER_SEND_METRICS: 'false', ...extra }
+  // A token or key in the shell's environment would win over this login and reach another account.
+  for (const k of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_KEY', 'CLOUDFLARE_EMAIL']) delete env[k]
+  return env
 }
 
 /**

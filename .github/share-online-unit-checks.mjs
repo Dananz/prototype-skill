@@ -123,7 +123,7 @@ test('a put that loses a race is asked once more', async () => {
 
 // ---------- proto share setup (online), wrangler and Cloudflare faked ----------
 
-import { chmodSync, cpSync, existsSync as exists, mkdirSync, mkdtempSync, readFileSync as read, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync as exists, mkdirSync, mkdtempSync, readFileSync as read, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CRON } from '../host/lib/cron.mjs'
@@ -151,10 +151,14 @@ function fakeCloudflare({ zones = [{ id: 'z1', name: 'prtype.dev', status: 'acti
     if (a === 'd1 create proto-share') { state.db.push({ uuid: '11111111-2222-4333-8444-555555555555', name: 'proto-share' }); return ok('created') }
     if (args[0] === 'd1' && args[1] === 'migrations') return ok('Migrations applied')
     if (args[0] === 'deploy') {
-      state.deploys.push(args.at(-1))
-      if (args.at(-1).includes('site')) state.siteBound = /"service": "proto-share"/.test(read(args.at(-1), 'utf8'))
-      // The host as deployed: on its legacy name it answers /api with 410 (host/worker.mjs moved()).
-      else state.legacy = JSON.parse(read(args.at(-1), 'utf8').replace(/^\/\/.*\n/, '')).vars.LEGACY
+      if (args.at(-1).includes('site')) {
+        state.siteBound = /"service": "proto-share"/.test(read(args.at(-1), 'utf8'))
+        state.deploys.push('site')
+      } else {
+        // The host as deployed: its BASE, its legacy name and its sign-in switch decide what it answers.
+        state.host = JSON.parse(read(args.at(-1), 'utf8').replace(/^\/\/.*\n/, '')).vars
+        state.deploys.push(state.host.BASE === 'prtype.dev' ? 'host:domain' : 'host:workers')
+      }
       return ok('Deployed')
     }
     if (args[0] === 'secret' && args[1] === 'list') return ok(JSON.stringify([...state.secrets.keys()].map(name => ({ name, type: 'secret_text' }))))
@@ -180,23 +184,41 @@ function fakeCloudflare({ zones = [{ id: 'z1', name: 'prtype.dev', status: 'acti
       if (p === '/accounts/acc1/workers/subdomain' && method === 'GET') return state.sub ? json({ success: true, result: { subdomain: state.sub } }) : json({ success: false, errors: [{ code: 10007, message: 'This account does not have a workers.dev subdomain' }] }, 404)
       if (p === '/accounts/acc1/workers/subdomain' && method === 'PUT') { state.sub = JSON.parse(init.body).subdomain; return json({ success: true, result: { subdomain: state.sub } }) }
     }
-    if (u.pathname === '/_health') {
-      if (u.host === 'prtype.dev' && !state.siteBound) return new Response('Shared links are not open yet.', { status: 503 })
-      if (u.host === 'prtype.dev' && state.health++ < state.tlsAfter) throw new TypeError('fetch failed')
-      return new Response('ok', { headers: { 'x-proto-host': VERSION } })
+    // prtype.dev is the site Worker: the share paths reach the host only once it binds HOST.
+    if (u.host === 'prtype.dev') {
+      if (!state.siteBound) return new Response('Shared links are not open yet.', { status: 503 })
+      if (u.pathname === '/_health' && state.health++ < state.tlsAfter) throw new TypeError('fetch failed')
     }
-    if (u.pathname.startsWith('/api') && state.legacy && u.host === state.legacy) return json({ code: 'moved' }, 410)
-    if (u.pathname === '/api/shares' && u.host === 'prtype.dev' && !state.siteBound) return new Response('Shared links are not open yet.', { status: 503 })
+    return hostAnswer(u, init)
+  }
+  // The share host as host/worker.mjs answers, by the name asked and the config it was deployed with.
+  const notFound = () => new Response('not found', { status: 404, headers: { 'x-robots-tag': 'noindex' } })
+  const hostAnswer = (u, init) => {
+    const vars = state.host
+    if (!vars) return new Response('There is nothing here yet', { status: 404 })
+    if (u.pathname === '/_health') return new Response('ok', { headers: { 'x-proto-host': vars.HOST_VERSION } })
+    if (vars.LEGACY && u.host === vars.LEGACY) {
+      if (u.pathname.startsWith('/api') || u.pathname.startsWith('/auth')) return json({ code: 'moved', error: `This host moved to https://${vars.BASE}.` }, 410)
+      return new Response(null, { status: 308, headers: { location: `https://${vars.BASE}${u.pathname}` } })
+    }
+    if (u.host !== vars.BASE) return notFound()
     if (u.pathname === '/api/shares') {
       const t = (init.headers?.authorization || '').replace('Bearer ', '')
       const known = sql.prepare('SELECT 1 FROM owner_tokens WHERE revoked_at IS NULL AND sha256 = ?').get(createHash('sha256').update(t).digest('hex'))
       return json(known ? [] : { code: 'token' }, known ? 200 : 401)
     }
-    if (u.pathname.startsWith('/s/') && u.host.endsWith('workers.dev')) return new Response(null, { status: 308, headers: { location: `https://prtype.dev${u.pathname}` } })
-    if (u.pathname === '/auth/github') return new Response('not found', { status: 404, headers: { 'x-robots-tag': 'noindex' } })
-    if (u.host === 'prtype.dev') return new Response('not found', { status: 404, headers: { 'x-robots-tag': 'noindex' } })
-    throw new Error(`unexpected fetch ${url}`)
+    // Sign-in on: a dummy share is not found (404); off, the "didn't finish" page (400).
+    if (u.pathname === '/auth/github') return vars.SIGNIN === '1' && state.secrets.has('GITHUB_CLIENT_SECRET') ? notFound() : new Response('signin', { status: 400 })
+    return notFound()
   }
+  // What a person would see, once setup is done: the share paths answered by the host, old links moved.
+  state.linksWork = async token => {
+    const api = await fetch('https://prtype.dev/api/shares', { headers: { authorization: `Bearer ${token}` } })
+    const old = await fetch(`https://proto-share.${state.sub}.workers.dev/s/k3x9p2m4q7/`, { redirect: 'manual' })
+    const signin = await fetch('https://prtype.dev/auth/github?share=k3x9p2m4q7&nonce=x', { redirect: 'manual' })
+    return api.status === 200 && old.status === 308 && old.headers.get('location') === 'https://prtype.dev/s/k3x9p2m4q7/' && signin.status === 404
+  }
+
   return { sql, state, wrangler, fetch }
 }
 
@@ -207,7 +229,8 @@ function rig(cf, { tokens = new Map(), hosts = [] } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'proto-online-'))
   const siteDir = join(home, 'site')
   mkdirSync(join(siteDir, 'dist'), { recursive: true })
-  cpSync(new URL('../site/wrangler.jsonc', import.meta.url), join(siteDir, 'wrangler.jsonc'))
+  // The site's config as it was before setup bound the host: the binding back to its placeholder.
+  writeFileSync(join(siteDir, 'wrangler.jsonc'), read(new URL('../site/wrangler.jsonc', import.meta.url), 'utf8').replace(/,\n\s*\/\/ The share host, reached[^\n]*\n\s*"services"[^\n]*\n/, '\n  // Added once the share host is deployed (proto share setup):\n  // "services": [{ "binding": "HOST", "service": "<the share host\'s Worker name>" }]\n'))
   const out = []
   const io = {
     wrangler: cf.wrangler, fetch: cf.fetch, log: l => out.push(l), sleep: async () => {},
@@ -229,7 +252,7 @@ test('setup online: the steps in order, the workers.dev name registered, then a 
   const r = rig(cf)
   try {
     const entry = await setupOnline({ 'plan-checked': true }, r.io)
-    assert.deepEqual(r.out.map(l => l.split(':')[0]), ['Cloudflare', 'Plan', 'workers.dev', 'KV', 'D1', 'Config', 'Migrations', 'Deployed proto-share', 'Secrets', 'Owner', 'Check', 'Online share host at https', 'Viewers can read; comments open once prtype.dev is set up'])
+    assert.deepEqual(r.out.map(l => l.split(':')[0]), ['Cloudflare', 'Plan', 'workers.dev', 'KV', 'D1', 'Migrations', 'Config', 'Deployed proto-share', 'Secrets', 'Owner', 'Check', 'Online share host at https', 'Viewers can read; comments open once prtype.dev is set up'])
     assert.equal(cf.state.sub, 'dananz-proto')
     assert.ok(cf.state.rest.includes('PUT /client/v4/accounts/acc1/workers/subdomain'))
     // The subdomain comes before the first deploy, which fails without one.
@@ -320,6 +343,9 @@ test('prod.vars: comments and quotes read, other keys and a readable mode refuse
     assert.throws(() => readProdVars(f), /mode 644[^]*chmod 600/)
     chmodSync(f, 0o600)
     assert.deepEqual(readProdVars(f), { GITHUB_CLIENT_ID: 'abc', GITHUB_CLIENT_SECRET: 'def' })
+    chmodSync(f, 0o400)
+    assert.deepEqual(readProdVars(f), { GITHUB_CLIENT_ID: 'abc', GITHUB_CLIENT_SECRET: 'def' })
+    chmodSync(f, 0o600)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
@@ -364,12 +390,16 @@ test('setup --domain: a zone missing or pending stops with the step to take and 
   try { await assert.rejects(setupOnline({ 'plan-checked': true, domain: 'prtype.dev' }, q.io), /Pro plan/) } finally { q.done() }
 })
 
-test('setup --domain on an active zone: the host behind the site, sign-in on, the old name kept; a re-run only deploys the host', async () => {
+test('setup --domain on an active zone: the site reaches the host before the host moves behind it; links work; a re-run only deploys the host', async () => {
   const cf = fakeCloudflare()
   const r = rig(cf)
   try {
     await setupOnline({ 'plan-checked': true }, r.io)
+    assert.equal(await cf.state.linksWork(r.tokens.get('online')), false)
     const entry = await setupOnline({ domain: 'prtype.dev' }, r.io)
+    // workers.dev first (as it was), then the site with the binding, and only then the host's domain config.
+    assert.deepEqual(cf.state.deploys, ['host:workers', 'host:workers', 'site', 'host:domain'])
+    assert.ok(await cf.state.linksWork(r.tokens.get('online')), 'after --domain the links on prtype.dev do not work')
     const c = configOf(r.home)
     assert.deepEqual(c.vars, { BASE: 'prtype.dev', PATH_MODE: '1', SIGNIN: '1', LEGACY: 'proto-share.dananz-proto.workers.dev', HOST_VERSION: VERSION })
     assert.equal(c.routes, undefined)
@@ -380,17 +410,40 @@ test('setup --domain on an active zone: the host behind the site, sign-in on, th
     // Still JSON once its comments are gone, with the domain route the site already had.
     const parsed = JSON.parse(site.replace(/^\s*\/\/.*$/gm, ''))
     assert.deepEqual(parsed.routes, [{ pattern: 'prtype.dev', custom_domain: true }])
-    assert.deepEqual(cf.state.deploys.map(d => d.includes('site') ? 'site' : 'host'), ['host', 'host', 'site'])
     assert.equal(entry.stage, 'domain')
     assert.equal(entry.url, 'https://prtype.dev')
     assert.equal(entry.workersDev, 'proto-share.dananz-proto.workers.dev')
+    assert.deepEqual(cf.sql.prepare("SELECT k, v FROM meta WHERE k IN ('stage', 'base') ORDER BY k").all().map(x => `${x.k}=${x.v}`), ['base=prtype.dev', 'stage=domain'])
     assert.match(r.out.at(-1), /prtype\.dev is live: links are https:\/\/prtype\.dev\/<id>/)
 
     cf.state.deploys.length = 0
     await setupOnline({}, r.io)
-    assert.deepEqual(cf.state.deploys.map(d => d.includes('site') ? 'site' : 'host'), ['host'])
+    assert.deepEqual(cf.state.deploys, ['host:domain'])
     assert.equal(configOf(r.home).vars.BASE, 'prtype.dev')
-    assert.equal(bindSite(join(r.siteDir, 'wrangler.jsonc')), false)
+    assert.ok(await cf.state.linksWork(r.tokens.get('online')))
+  } finally { r.done() }
+})
+
+test('a plain setup never moves a host on the domain back to workers.dev, even with this Mac\'s entry gone', async () => {
+  const cf = fakeCloudflare()
+  const r = rig(cf)
+  try {
+    await setupOnline({ 'plan-checked': true }, r.io)
+    await setupOnline({ domain: 'prtype.dev' }, r.io)
+    // Another Mac: no host entry, no token.
+    const other = rig(cf)
+    try {
+      cf.state.deploys.length = 0
+      await assert.rejects(setupOnline({ 'plan-checked': true }, other.io), /live on prtype\.dev[^]*proto share setup --domain prtype\.dev/)
+      assert.deepEqual(cf.state.deploys, [])
+      assert.ok(await cf.state.linksWork(r.tokens.get('online')), 'the refused run broke the links')
+      // With --domain it deploys straight behind the domain, and adds that Mac's token.
+      const entry = await setupOnline({ 'plan-checked': true, domain: 'prtype.dev' }, other.io)
+      // (its checkout's site config has no binding yet, so the site is deployed too)
+      assert.deepEqual(cf.state.deploys, ['host:domain', 'site'])
+      assert.equal(entry.stage, 'domain')
+      assert.ok(await cf.state.linksWork(other.tokens.get('online')))
+    } finally { other.done() }
   } finally { r.done() }
 })
 
@@ -400,8 +453,11 @@ test('setup --domain: a certificate not issued yet times out with the re-run adv
   try {
     await setupOnline({ 'plan-checked': true }, r.io)
     cf.state.tlsAfter = 1e9
-    await assert.rejects(setupOnline({ domain: 'prtype.dev' }, r.io), /doesn't answer over TLS yet[^]*15 minutes to 24 hours[^]*run proto share setup --domain prtype\.dev again later/)
+    await assert.rejects(setupOnline({ domain: 'prtype.dev' }, r.io), /doesn't answer over TLS yet[^]*15 minutes to 24 hours[^]*Links keep working on workers\.dev meanwhile[^]*again later/)
     assert.equal(r.hosts().find(h => h.name === 'online').stage, 'workers')
+    // The host never moved: its links on workers.dev still answer.
+    assert.equal(configOf(r.home).vars.BASE, 'proto-share.dananz-proto.workers.dev')
+    assert.ok(!cf.state.deploys.includes('host:domain'))
   } finally { r.done() }
 })
 
@@ -450,4 +506,30 @@ test('every wrangler the share tool starts runs on its own login', () => {
       if (/\b(spawn|spawnSync)\(process\.execPath, \[(tools|t)\.wrangler/.test(line)) assert.match(lines.slice(i, i + 3).join('\n'), /wranglerEnv\(|wenv\(\)/, `${f}:${i + 1} starts wrangler without wranglerEnv()`)
     }
   }
+})
+
+test('wrangler never sees a Cloudflare token or key from the shell', async () => {
+  const { wranglerEnv } = await import('../scripts/share-host.mjs')
+  const was = { ...process.env }
+  Object.assign(process.env, { CLOUDFLARE_API_TOKEN: 't', CLOUDFLARE_API_KEY: 'k', CLOUDFLARE_EMAIL: 'e@x' })
+  try {
+    const env = wranglerEnv({ CLOUDFLARE_ACCOUNT_ID: 'acc1' })
+    for (const k of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_KEY', 'CLOUDFLARE_EMAIL']) assert.equal(env[k], undefined, k)
+    assert.equal(env.CLOUDFLARE_ACCOUNT_ID, 'acc1')
+    assert.match(env.XDG_CONFIG_HOME, /wrangler-home$/)
+  } finally { for (const k of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_KEY', 'CLOUDFLARE_EMAIL']) if (!(k in was)) delete process.env[k] }
+})
+
+test('an update to a host that moved waits in the outbox, and the error names setup', async () => {
+  const { flush, queue, outboxFile } = await import('../app/share/owner.mjs')
+  const dir = mkdtempSync(join(tmpdir(), 'proto-moved-'))
+  try {
+    queue(dir, [{ host: 'online', share: 'k3x9p2m4q7', comment: 'c1', status: 'done' }])
+    const fetch = async () => new Response(JSON.stringify({ code: 'moved', error: 'This host moved to https://prtype.dev.' }), { status: 410 })
+    const api = client(workers, TOKEN, { fetch })
+    await assert.rejects(api.patch('c1', { status: 'done' }), e => /moved[^]*proto share setup to point this Mac at it/.test(e.message))
+    const r = await flush(dir, { clientFor: () => api })
+    assert.deepEqual(r, { delivered: 0, kept: 1 })
+    assert.match(read(outboxFile(dir), 'utf8'), /"status":"done"/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
