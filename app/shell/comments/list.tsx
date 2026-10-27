@@ -7,8 +7,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { t, tn } from '../i18n'
 import { useAgentName, useCtx } from './ctx'
 import { isRoot, progress, threadOf, useStore, type Said } from './store'
-import type { CState, Item } from './types'
-import { inScope, shotsOf } from './types'
+import type { CState, Item, Note } from './types'
+import { inScope, noteSays, shotsOf } from './types'
+import { PLACEHOLDER, useTagField } from './tag-field'
 import { variantRef } from '../variants'
 import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, PRIMARY, Reply, since, spanOf, SrcTag, ViewChip, Working, ImageChip, PictureStrip } from './ui'
 
@@ -117,36 +118,49 @@ function Thread({ r }: { r: Row }) {
  */
 function Answer({ r }: { r: Row }) {
   const agent = useAgentName()
-  const { act, store } = useCtx()
-  const empty = { open: false, text: '', busy: false, error: '' }
-  const { open, text, busy, error } = useStore(store).replies[r.item.id] ?? empty
+  const { store } = useCtx()
+  const empty = { open: false, note: { body: [], tags: [] } as Note, busy: false, error: '' }
+  const { open } = useStore(store).replies[r.item.id] ?? empty
   const update = (patch: Partial<typeof empty>) => store.set(s => s.items.some(i => i.id === r.item.id)
     ? { replies: { ...s.replies, [r.item.id]: { ...(s.replies[r.item.id] ?? empty), ...patch } } }
     : {})
-  const cancel = () => update({ open: false, text: '', error: '' })
   const last = r.turns[r.turns.length - 1]
   if (!last.item.sent || (!last.reply && last.state !== 'done')) return null
   if (!open) return <button data-shoot="comment-answer" onClick={() => update({ open: true })} title={t('Answer {agent}\'s reply', { agent })} className="mt-1.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-800 dark:hover:bg-white/10 dark:hover:text-zinc-200"><Icon name="comment" className="size-3" />{t('Reply')}</button>
+  return <AnswerBox r={r} empty={empty} update={update} />
+}
+
+/** The open reply: what is written is kept with the thread (its words and tags), so closing the row loses nothing. */
+function AnswerBox({ r, empty, update }: { r: Row; empty: { open: boolean; note: Note; busy: boolean; error: string }; update: (patch: Partial<typeof empty>) => void }) {
+  const agent = useAgentName()
+  const { act, store } = useCtx()
+  const { note, busy, error } = useStore(store).replies[r.item.id] ?? empty
+  const cancel = () => { field.clear(); update({ open: false, note: empty.note, error: '' }) }
   const send = async () => {
-    if (!text.trim() || store.get().replies[r.item.id]?.busy) return
+    const n = field.read()
+    if (!noteSays(n) || store.get().replies[r.item.id]?.busy) return
     update({ busy: true, error: '' })
-    try { await act.followUp(r.item.id, text); update(empty) }
+    try { await act.followUp(r.item.id, n); field.clear(); update(empty) }
     catch (e) { update({ error: e instanceof Error ? e.message : t('Could not send') }) }
     finally { update({ busy: false }) }
   }
+  const field = useTagField({
+    initial: note, autoFocus: true, about: { proto: r.item.proto, variant: r.item.variant },
+    onChange: n => update({ note: n }),
+    onKey: e => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel() }
+    },
+  })
   return (
     <span data-shoot="comment-answer-box" className="mt-2 block rounded-xl border border-black/10 bg-white p-1.5 dark:border-white/15 dark:bg-zinc-900">
-      <textarea autoFocus rows={2} value={text} aria-label={t('Answer {agent}', { agent })} placeholder={t('Answer {agent}…', { agent })} dir="auto"
-        onChange={e => update({ text: e.target.value })}
-        onKeyDown={e => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() }
-          else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel() }
-        }}
-        className="block max-h-32 w-full resize-none bg-transparent px-1.5 py-1 text-[12.5px] leading-[18px] text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100" />
+      <span {...field.props} aria-label={t('Answer {agent}', { agent })} data-placeholder={t('Answer {agent}…', { agent })}
+        className={`block max-h-32 min-h-9 w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-1.5 py-1 text-[12.5px] leading-[18px] text-zinc-900 outline-none dark:text-zinc-100 ${PLACEHOLDER}`} />
+      {field.menu}
       {error && <span role="alert" className="block px-1.5 pb-1 text-[11px] text-rose-600 dark:text-rose-400">{error}</span>}
       <span className="flex items-center justify-end gap-1">
         <button onClick={cancel} className="h-7 rounded-lg px-2 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>
-        <button data-shoot="comment-answer-send" onClick={() => void send()} disabled={!text.trim() || busy} title={`${t('Send to {agent}', { agent })} · ${MOD} Enter`} className={`inline-flex h-7 items-center gap-1 rounded-lg ps-2 pe-2.5 text-[11px] font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name="send" className="size-3" />{busy ? t('Sending…') : t('Send')}</button>
+        <button data-shoot="comment-answer-send" onClick={() => void send()} disabled={field.empty || busy} title={`${t('Send to {agent}', { agent })} · ${MOD} Enter`} className={`inline-flex h-7 items-center gap-1 rounded-lg ps-2 pe-2.5 text-[11px] font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name="send" className="size-3" />{busy ? t('Sending…') : t('Send')}</button>
       </span>
     </span>
   )
@@ -189,7 +203,7 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
       <div className={`group flex items-center rounded-xl transition-colors duration-150 ${active ? 'bg-emerald-500/10' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.05]'}`}>
         <button onClick={() => setOpen(!open)} aria-expanded={open} className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-1 text-start active:bg-zinc-900/[.04] dark:active:bg-white/5 ${roomy ? 'h-11' : 'h-9'}`}>
           <PinDot n={item.n} done whole={item.target?.whole} />
-          <span className={`min-w-0 flex-1 truncate text-zinc-500 transition-colors duration-150 group-hover:text-zinc-800 dark:group-hover:text-zinc-200 ${roomy ? 'text-[13.5px]' : 'text-[12.5px]'}`}>{item.action ? <span dir="auto">{aboutOf(item)}{item.body.length ? `: ${item.body.join('')}` : ''}</span> : <Body c={item} />}</span>
+          <span className={`min-w-0 flex-1 truncate text-zinc-500 transition-colors duration-150 group-hover:text-zinc-800 dark:group-hover:text-zinc-200 ${roomy ? 'text-[13.5px]' : 'text-[12.5px]'}`}>{item.action ? <span dir="auto">{aboutOf(item)}{item.body.length ? <>: <Body c={item} /></> : ''}</span> : <Body c={item} />}</span>
           <Where item={item} here={r.here} />
           <Icon name="right" className={`size-4 text-zinc-400 transition-[transform,color] group-hover:text-zinc-600 dark:group-hover:text-zinc-300 ${open ? 'rotate-90' : ''}`} />
         </button>

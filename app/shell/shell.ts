@@ -1919,7 +1919,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (!e.isTrusted && (e.target as Element).closest('[data-mount]')) return
     const el = (e.target as Element).closest<HTMLElement>('[data-act]')
     if (!el) {
-      if (st.open && !(e.target as Element).closest('[data-pop]')) { st.open = null; render() }
+      // Picking an element to tag in a menu's note: the click is the pick, and the menu waits for it.
+      if (st.open && !(e.target as Element).closest('[data-pop]') && !comments.store.get().wholeTag) { st.open = null; render() }
       return
     }
     const [name, arg = '', arg2 = '', arg3 = ''] = el.dataset.act!.split(':')
@@ -2593,7 +2594,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // stays (and the press goes on to what it was on); anywhere else, the two close together.
   document.addEventListener('pointerdown', e => {
     const at = e.target as Element
-    if (st.open !== 'vmenu' || at.closest?.('[role="menu"], [data-vmenu]')) return
+    if (st.open !== 'vmenu' || at.closest?.('[role="menu"], [data-vmenu]') || comments.store.get().wholeTag) return
     st.open = st.under && at.closest?.('[data-pop]') ? st.under : null
     st.under = null
     // Only the options close now: redrawing the switcher here would replace the row under the
