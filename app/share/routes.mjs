@@ -106,7 +106,7 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
       const shares = entries.map(e => shareView(e, tray))
       let hostError = null
       // The sheet's Check again after `proto share setup`: the poll may remember there was no token.
-      if (host && !quiet && !clientFor(host.name) && getToken(host.name)) forget(host.name)
+      if (!quiet) for (const name of new Set([host?.name, ...entries.map(e => e.host)])) if (name && !clientFor(name) && getToken(name)) forget(name)
       if (!quiet) for (const name of new Set(entries.map(e => e.host))) {
         const api = clientFor(name)
         try {

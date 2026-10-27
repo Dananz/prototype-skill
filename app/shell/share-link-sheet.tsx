@@ -5,7 +5,7 @@
 //
 // Phase 1 has one open link per share, and commenting needs a GitHub sign-in on the link; passwords,
 // people and expiry come in a later phase, as rows under "Who can open it".
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
 import { Drawer } from '@base-ui/react/drawer'
 import { uiBox } from './portals'
@@ -135,6 +135,10 @@ function ReviewBox({ review, blocked, children }: { review: Review; blocked: boo
   )
 }
 
+function Again({ onRetry, busy }: { onRetry: () => void; busy: boolean }) {
+  return <button type="button" data-link-retry disabled={busy} onClick={onRetry} className={TEXT_BTN}>{busy ? <Spinner /> : <Icon name="refresh" className="size-4" />}{t('Check again')}</button>
+}
+
 /** No host on this Mac (or no token for it): what a link needs, in two lines, and the command. */
 function NoHost({ onRetry, busy }: { onRetry: () => void; busy: boolean }) {
   const cmd = 'proto share setup --local'
@@ -147,7 +151,7 @@ function NoHost({ onRetry, busy }: { onRetry: () => void; busy: boolean }) {
         <code dir="ltr" className="min-w-0 flex-1 truncate font-mono text-xs">{cmd}</code>
         <CopyButton text={cmd} label={t('Copy')} icon={false} />
       </div>
-      <button type="button" data-link-retry disabled={busy} onClick={onRetry} className={TEXT_BTN}>{busy ? <Spinner /> : <Icon name="refresh" className="size-4" />}{t('Check again')}</button>
+      <Again busy={busy} onRetry={onRetry} />
     </div>
   )
 }
@@ -173,15 +177,15 @@ function Made({ link, title }: { link: string; title: string }) {
   )
 }
 
-function Row({ s, protos, onChanged }: { s: ShareRow; protos: P[]; onChanged: () => void }) {
+function Row({ s, protos, hold, onChanged }: { s: ShareRow; protos: P[]; hold: (on: boolean) => void; onChanged: () => void }) {
   const [step, setStep] = useState<Step | null>(null)
   const [ask, setAsk] = useState(false)
   useEffect(() => { if (!ask) return; const id = window.setTimeout(() => setAsk(false), 4000); return () => clearTimeout(id) }, [ask])
   const n = s.scope.protos.reduce((a, x) => a + x.variants.length, 0)
   const names = s.scope.protos.map(x => protos.find(q => q.id === x.id)?.title ?? x.id).join(', ')
   const update = async (yes = false) => {
-    setStep({ phase: 'busy' })
-    const r = await route('update', { id: s.id, ...(yes ? { yes: true } : {}) })
+    setStep({ phase: 'busy' }); hold(true)
+    const r = await route('update', { id: s.id, ...(yes ? { yes: true } : {}) }).finally(() => hold(false))
     if (r.status === 200 && r.body.ok) { setStep(null); onChanged() }
     else if (r.status === 200 && r.body.needsYes) setStep({ phase: 'review', review: r.body.review })
     else if (r.status === 422) setStep({ phase: 'blocked', review: r.body.review })
@@ -189,8 +193,8 @@ function Row({ s, protos, onChanged }: { s: ShareRow; protos: P[]; onChanged: ()
   }
   const remove = async () => {
     if (!ask) return setAsk(true)
-    setAsk(false); setStep({ phase: 'busy' })
-    const r = await route('remove', { id: s.id })
+    setAsk(false); setStep({ phase: 'busy' }); hold(true)
+    const r = await route('remove', { id: s.id }).finally(() => hold(false))
     if (r.status === 200) onChanged()
     else setStep({ phase: r.status === 503 ? 'down' : 'error', error: r.body.error || t('The session server answered {status}.', { status: r.status }) })
   }
@@ -214,7 +218,7 @@ function Row({ s, protos, onChanged }: { s: ShareRow; protos: P[]; onChanged: ()
         {!s.changed && <span className="me-auto" />}
         {busy && <span className={`inline-flex items-center gap-1.5 ${SMALL}`}><Spinner />{t('Building and uploading…')}</span>}
         <button type="button" data-link-remove disabled={busy} onClick={() => void remove()} className={`${TEXT_BTN} ${ask ? '!bg-rose-500/10 !text-rose-700 dark:!text-rose-300' : ''}`}>
-          {!ask && <Icon name="trash-simple" className="size-4" />}{ask ? tn(s.comments.total, 'Remove it and its {n} comment?', 'Remove it and its {n} comments?') : t('Remove')}
+          {!ask && <Icon name="trash-simple" className="size-4" />}{ask ? (s.comments.total ? tn(s.comments.total, 'Remove it and its {n} comment?', 'Remove it and its {n} comments?') : t('Remove it?')) : t('Remove')}
         </button>
         <button type="button" data-link-update disabled={busy} onClick={() => void update()} title={t('Publish what the variants look like now, at the same link')}
           className={s.changed ? `${TEXT_BTN} !text-proto-primary-soft-fg !font-semibold` : TEXT_BTN}><Icon name="refresh" className="size-4" />{t('Update link')}</button>
@@ -232,7 +236,7 @@ function Row({ s, protos, onChanged }: { s: ShareRow; protos: P[]; onChanged: ()
   )
 }
 
-function Sheet(p: LinkProps & { phone: boolean; Title: (props: { className: string; children: ReactNode }) => ReactNode; Close: ReactNode }) {
+function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Title: (props: { className: string; children: ReactNode }) => ReactNode; Close: ReactNode }) {
   const live = p.protos.filter(x => !x.archived)
   const here = p.protos.find(x => x.id === p.proto) ?? live[0]
   const all = live.flatMap(x => x.variants.map(v => keyOf(x.id, v.id)))
@@ -247,19 +251,27 @@ function Sheet(p: LinkProps & { phone: boolean; Title: (props: { className: stri
   const [open, setOpen] = useState<string[]>(() => [p.proto])
   const [step, setStep] = useState<Step | null>(null)
   const [made, setMade] = useState<{ link: string; title: string } | null>(null)
+  const uid = useId()
+  const toTab = (id: 'new' | 'mine') => { setTab(id); if (id === 'mine') void load() }
+  // Only the latest list answers: an older one arriving late can't put back what a newer one replaced.
+  const asked = useRef(0)
   const load = async () => {
+    const n = ++asked.current
     setLoading(true)
     const r = await route('list')
+    if (n !== asked.current) return
     setLoading(false)
     if (r.status === 200 && Array.isArray(r.body.shares)) { setListed(r.body as Listed); setListErr('') }
     else setListErr(r.body.error || t('The session server answered {status}.', { status: r.status }))
   }
   useEffect(() => { void load() }, [])
-  const choose = (w: What) => { setWhat(w); const next = pick(w); setPicked(next); if (w === 'all') setOpen(o => o.includes(p.proto) ? o : [...o, p.proto]) }
-  const flip = (k: string) => { setWhat('custom'); setPicked(a => a.includes(k) ? a.filter(x => x !== k) : [...a, k]) }
+  // A review is of the picks it was made for: any change to them asks again (a publish under way keeps them, its fieldset is disabled).
+  const changed = () => setStep(s => s?.phase === 'busy' ? s : null)
+  const choose = (w: What) => { changed(); setWhat(w); const next = pick(w); setPicked(next); if (w === 'all') setOpen(o => o.includes(p.proto) ? o : [...o, p.proto]) }
+  const flip = (k: string) => { changed(); setWhat('custom'); setPicked(a => a.includes(k) ? a.filter(x => x !== k) : [...a, k]) }
   const flipProto = (x: P) => {
     const keys = x.variants.map(v => keyOf(x.id, v.id)), on = keys.every(k => picked.includes(k))
-    setWhat('custom'); setPicked(a => on ? a.filter(k => !keys.includes(k)) : [...a, ...keys.filter(k => !a.includes(k))])
+    changed(); setWhat('custom'); setPicked(a => on ? a.filter(k => !keys.includes(k)) : [...a, ...keys.filter(k => !a.includes(k))])
   }
   // The link opens on the variant the sheet was opened on while it is picked, else on the first picked.
   const order = all.filter(k => picked.includes(k))
@@ -282,7 +294,8 @@ function Sheet(p: LinkProps & { phone: boolean; Title: (props: { className: stri
   const create = async (yes = false) => {
     if (!startKey) return
     setStep({ phase: 'busy' }); setMade(null)
-    const r = await route('publish', { ...words(), ...(yes ? { yes: true } : {}) })
+    p.hold(true)
+    const r = await route('publish', { ...words(), ...(yes ? { yes: true } : {}) }).finally(() => p.hold(false))
     if (r.status === 200 && r.body.ok) { setStep(null); setMade({ link: r.body.link, title: r.body.share?.title ?? '' }); void load() }
     else if (r.status === 200 && r.body.needsYes) setStep({ phase: 'review', review: r.body.review })
     else if (r.status === 422) setStep({ phase: 'blocked', review: r.body.review })
@@ -343,7 +356,7 @@ function Sheet(p: LinkProps & { phone: boolean; Title: (props: { className: stri
           <h3 className={SECTION}>{t('Opens on')}</h3>
           <div className="flex items-center gap-3">
             <Preview path={p.pathOf(startProto, startVariant)} screen={startP?.screen} dark={p.dark} />
-            <select data-link-start value={startKey} onChange={e => setStart(e.target.value)} aria-label={t('Opens on')}
+            <select data-link-start value={startKey} onChange={e => { changed(); setStart(e.target.value) }} aria-label={t('Opens on')}
               className="h-9 min-w-0 flex-1 rounded-lg bg-zinc-900/[.05] px-2 text-[13px] outline-none focus:ring-2 focus:ring-proto-primary-ring dark:bg-white/[.07]">
               {order.map(k => { const [a, b] = k.split('/'), x = p.protos.find(q => q.id === a); return <option key={k} value={k}>{`${x?.title ?? a} · ${variantLabel(x ?? null, b)} ${x?.variants.find(v => v.id === b)?.name ?? ''}`}</option> })}
             </select>
@@ -375,15 +388,21 @@ function Sheet(p: LinkProps & { phone: boolean; Title: (props: { className: stri
   const mineView = (
     <div className="space-y-2">
       {listed?.hostError && <p className="flex items-start gap-2 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-100"><Icon name="warning" className="mt-0.5 size-4" /><span>{t('Can’t reach the share host. What is listed here is this Mac’s copy.')}</span></p>}
-      {mine.length ? <ul className="space-y-2">{mine.map(s => <Row key={s.id} s={s} protos={p.protos} onChanged={() => void load()} />)}</ul>
+      {mine.length ? <ul className="space-y-2">{mine.map(s => <Row key={s.id} s={s} protos={p.protos} hold={p.hold} onChanged={() => void load()} />)}</ul>
         : <p className="px-1 py-6 text-center text-xs text-zinc-400">{t('No links from this session yet.')}</p>}
     </div>
   )
 
   const tabs = (
-    <div role="tablist" aria-label={t('Share link')} className="flex gap-0.5 rounded-xl bg-zinc-900/[.05] p-0.5 dark:bg-white/[.07]">
+    <div role="tablist" aria-label={t('Share link')} className="flex gap-0.5 rounded-xl bg-zinc-900/[.05] p-0.5 dark:bg-white/[.07]"
+      onKeyDown={e => {
+        const go = e.key === 'Home' ? 'new' : e.key === 'End' ? 'mine' : ['ArrowLeft', 'ArrowRight'].includes(e.key) ? (tab === 'new' ? 'mine' : 'new') : null
+        if (!go) return
+        e.preventDefault(); toTab(go)
+        e.currentTarget.querySelector<HTMLElement>(`[data-link-tab="${go}"]`)?.focus()
+      }}>
       {(['new', 'mine'] as const).map(id => (
-        <button key={id} type="button" role="tab" aria-selected={tab === id} data-link-tab={id} onClick={() => { setTab(id); if (id === 'mine') void load() }}
+        <button key={id} type="button" role="tab" id={`${uid}-tab-${id}`} aria-controls={`${uid}-panel`} aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} data-link-tab={id} onClick={() => toTab(id)}
           className={`h-8 min-w-0 flex-1 truncate rounded-[10px] px-2 text-xs font-medium ${tab === id ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'}`}>
           {id === 'new' ? t('New link') : <>{t('Your links')}{mine.length > 0 && <span className="ms-1 tabular-nums opacity-60">{mine.length}</span>}</>}
         </button>
@@ -392,14 +411,14 @@ function Sheet(p: LinkProps & { phone: boolean; Title: (props: { className: stri
   )
 
   const body = !listed && !listErr ? <p className={`flex items-center gap-2 px-1 py-6 ${SMALL}`}><Spinner />{t('Looking for the share host…')}</p>
-    : listErr ? <p data-link-error role="alert" className="rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-800 dark:text-rose-200">{listErr}</p>
+    : listErr ? <div className="space-y-3 px-1 py-2"><p data-link-error role="alert" className="rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-800 dark:text-rose-200">{listErr}</p><Again busy={loading} onRetry={() => void load()} /></div>
     : noHost ? <NoHost busy={loading} onRetry={() => void load()} />
     : tab === 'new' ? newView : mineView
 
   const footer = !listed || noHost ? null : tab === 'mine' ? null : made ? (
     <div className="flex items-center justify-end gap-1">
       <button type="button" onClick={() => setMade(null)} className={TEXT_BTN}>{t('Make another link')}</button>
-      <button type="button" onClick={() => { setTab('mine'); void load() }} className={TEXT_BTN}>{t('Your links')}</button>
+      <button type="button" onClick={() => toTab('mine')} className={TEXT_BTN}>{t('Your links')}</button>
     </div>
   ) : (
     <div className="flex items-center gap-3">
@@ -413,12 +432,12 @@ function Sheet(p: LinkProps & { phone: boolean; Title: (props: { className: stri
       <header className={`flex shrink-0 items-center gap-3 ${p.phone ? 'px-4 pb-2 pt-1' : 'px-5 pb-3 pt-4'}`}>
         <span className="min-w-0 flex-1">
           {p.Title({ className: 'block text-[15px] font-semibold', children: t('Share link') })}
-          {here && <span dir="auto" className={`mt-0.5 block truncate ${SMALL}`}>{here.title}</span>}
+          {listed && !noHost && tab === 'new' && !made && order.length > 0 && <span data-link-subtitle className={`mt-0.5 block truncate ${SMALL}`}>{protosIn === 1 ? <><bdi>{p.protos.find(x => x.id === order[0].split('/')[0])?.title}</bdi> · {tn(order.length, '{n} variant', '{n} variants')}</> : `${tn(protosIn, '{n} prototype', '{n} prototypes')} · ${tn(order.length, '{n} variant', '{n} variants')}`}</span>}
         </span>
         {p.Close}
       </header>
       {listed && !noHost && <div className={`shrink-0 ${p.phone ? 'px-4' : 'px-5'} pb-3`}>{tabs}</div>}
-      <div data-link-scroll className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${p.phone ? 'px-4' : 'px-5'} pb-4`}>{body}</div>
+      <div data-link-scroll id={`${uid}-panel`} {...(listed && !noHost ? { role: 'tabpanel', 'aria-labelledby': `${uid}-tab-${tab}` } : {})} className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${p.phone ? 'px-4' : 'px-5'} pb-4`}>{body}</div>
       {footer && <footer className={`shrink-0 border-t border-black/[.07] dark:border-white/10 ${p.phone ? 'px-4 pt-3' : 'px-5 py-3'}`}>{footer}</footer>}
     </div>
   )
@@ -431,16 +450,20 @@ const POPUP = '-mb-[3rem] flex w-full max-h-[calc(88vh+3rem)] flex-col overflow-
 export function LinkSheet(p: LinkProps) {
   const [phone] = useState(() => matchMedia('(max-width: 639px)').matches)
   const [open, setOpen] = useState(true)
+  // While a link is being built, uploaded or removed, Esc, a press outside and Close leave the sheet up.
+  const busy = useRef(0)
+  const hold = (on: boolean) => { busy.current = Math.max(0, busy.current + (on ? 1 : -1)) }
+  const ask = (o: boolean) => { if (!o && !busy.current) setOpen(false) }
   const done = (o: boolean) => { if (!o) p.onClose() }
   if (phone) return (
-    <Drawer.Root open={open} onOpenChange={(o: boolean) => { if (!o) setOpen(false) }} onOpenChangeComplete={done}>
+    <Drawer.Root open={open} onOpenChange={ask} onOpenChangeComplete={done}>
       <Drawer.Portal container={uiBox()}>
         <Drawer.Backdrop className={BACKDROP} />
         <Drawer.Viewport className="fixed inset-0 z-[300] flex items-end justify-center">
           <Drawer.Popup data-share-link="" data-phone="" finalFocus={p.returnFocus} className={POPUP}>
             <div className="mx-auto mb-1 h-1 w-10 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-700" />
             <Drawer.Content className="flex min-h-0 flex-1 flex-col">
-              <Sheet {...p} phone Title={({ className, children }) => <Drawer.Title className={className}>{children}</Drawer.Title>}
+              <Sheet {...p} hold={hold} phone Title={({ className, children }) => <Drawer.Title className={className}>{children}</Drawer.Title>}
                 Close={<Drawer.Close aria-label={t('Close')} className="grid size-9 shrink-0 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10"><Icon name="x-simple" className="size-4" /></Drawer.Close>} />
             </Drawer.Content>
           </Drawer.Popup>
@@ -449,12 +472,12 @@ export function LinkSheet(p: LinkProps) {
     </Drawer.Root>
   )
   return (
-    <Dialog.Root open={open} onOpenChange={(o: boolean) => { if (!o) setOpen(false) }} onOpenChangeComplete={done}>
+    <Dialog.Root open={open} onOpenChange={ask} onOpenChangeComplete={done}>
       <Dialog.Portal container={uiBox()}>
         <Dialog.Backdrop className="fixed inset-0 z-[300] bg-black/30 transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0 motion-reduce:transition-none dark:bg-black/60" />
         <Dialog.Popup data-share-link="" finalFocus={p.returnFocus}
           className="fixed inset-x-0 top-[7vh] z-[301] mx-auto flex max-h-[86vh] w-[min(36rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-2xl shadow-black/20 transition-[opacity,scale] duration-200 ease-out data-ending-style:scale-[.98] data-ending-style:opacity-0 data-starting-style:scale-[.98] data-starting-style:opacity-0 motion-reduce:transition-none dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">
-          <Sheet {...p} phone={false} Title={({ className, children }) => <Dialog.Title className={className}>{children}</Dialog.Title>}
+          <Sheet {...p} hold={hold} phone={false} Title={({ className, children }) => <Dialog.Title className={className}>{children}</Dialog.Title>}
             Close={<Dialog.Close aria-label={t('Close')} className={ICON_BTN}><Icon name="x-simple" className="size-4" /></Dialog.Close>} />
         </Dialog.Popup>
       </Dialog.Portal>

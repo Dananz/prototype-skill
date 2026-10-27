@@ -11,8 +11,8 @@ import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import worker from '../host/worker.mjs'
 import { clean, fence, fromComment, hostCommentLines, nameOf, sharedLines, trayRow } from '../app/share/viewer-text.mjs'
-import { pollEvery } from '../app/share/routes.mjs'
-import { client, flush, mergeTray, queue, readShares, sendComments, trayView, writeShares } from '../app/share/owner.mjs'
+import { pollEvery, shareServer } from '../app/share/routes.mjs'
+import { client, clientFor, flush, forget, mergeTray, queue, readShares, sendComments, trayView, writeShares } from '../app/share/owner.mjs'
 import { receive } from '../app/server.mjs'
 
 const TOKEN = 'owner-token-for-owner-checks'
@@ -359,4 +359,26 @@ test('the poll is off at 0 and at least a second otherwise', () => {
   assert.equal(pollEvery('5000'), 5000)
   assert.equal(pollEvery(undefined), 30_000)
   assert.equal(pollEvery('soon'), 30_000)
+})
+
+test('a token made after the poll found none is used once the sheet lists again, for every host of the session\'s links', async t => {
+  const dir = session(t)
+  const home = mkdtempSync(join(tmpdir(), 'proto-owner-home-'))
+  const was = { home: process.env.HOME, store: process.env.PROTO_SHARE_TOKEN_STORE }
+  process.env.HOME = home; process.env.PROTO_SHARE_TOKEN_STORE = 'file'
+  t.after(() => { process.env.HOME = was.home; if (was.store === undefined) delete process.env.PROTO_SHARE_TOKEN_STORE; else process.env.PROTO_SHARE_TOKEN_STORE = was.store; rmSync(home, { recursive: true, force: true }) })
+  const config = join(home, '.config', 'prototype')
+  mkdirSync(config, { recursive: true })
+  // Two hosts: the link is on the one that isn't the default. Port 9 answers nothing, so list only records an error.
+  writeFileSync(join(config, 'hosts.json'), JSON.stringify([{ ...HOST, name: 'main', url: 'http://localhost:9' }, { ...HOST, name: 'other', default: false, url: 'http://localhost:9' }]))
+  writeShares(dir, [{ id: 'k3x9p2abcd', host: 'other', title: 'Pricing', scope: { protos: [{ id: 'pricing', variants: ['C'] }], start: 'pricing/C' }, version: 1 }])
+  forget('other')
+  assert.equal(clientFor('other'), null, 'no token yet')
+  writeFileSync(join(config, 'token-other'), TOKEN)
+  assert.equal(clientFor('other'), null, 'the missing token is remembered for a while')
+  const server = shareServer({ root: dir, session: () => ({}), receive: () => {}, emit: () => {}, pollMs: 60_000 })
+  t.after(() => server.close())
+  const r = await server.handle('list', {})
+  assert.equal(r.status, 200)
+  assert.ok(clientFor('other'), 'listing found the token and forgot that there was none')
 })

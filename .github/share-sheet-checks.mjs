@@ -94,6 +94,9 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
   }
 
   // 1. No host yet: the sheet says so in two lines and shows the command.
+  // A design with colour, so the Opens on preview has something to show (put back at the end).
+  const fileA = join(app, 'src', 'protos', 'share-link', 'A.tsx'), designA = readFileSync(fileA, 'utf8')
+  writeFileSync(fileA, `export default function A() { return <main style={{ minHeight: '100vh', background: '#2563eb', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 64 }}><h1>MARK-A</h1></main> }\n`)
   let page = await open('share-link/A?theme=light')
   await sheetOpen(page)
   await waitFor(page, '!!document.querySelector("[data-link-nohost]")', 'no host: the sheet does not say there is no host')
@@ -107,6 +110,8 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
   await click(page, '[data-link-retry]')
   await waitFor(page, '!!document.querySelector("[data-link-what=proto]")', 'with a host: the New link view does not show')
   assert(await page.run('document.querySelector("[data-link-what=proto]").getAttribute("aria-checked")==="true"'), 'This prototype is not the default')
+  // The preview of the variant the link opens on: drawn, and blue like the design.
+  await waitFor(page, `(()=>{const c=document.querySelector('[data-link-preview] canvas.opacity-100');if(!c||!c.width)return false;const d=c.getContext('2d').getImageData(Math.floor(c.width/2),Math.floor(c.height*0.8),1,1).data;return d[2]>180&&d[0]<120})()`, 'Opens on: the preview is not drawn, or not the design', 40_000)
   assert(await page.run('(()=>{const all=document.querySelectorAll("input[data-link-variant^=\'share-link/\']");return all.length>=3&&[...all].every(e=>e.checked)})()'), 'This prototype does not check every variant of it')
   await click(page, '[data-link-what=variant]')
   assert(await page.run('[...document.querySelectorAll("input[data-link-variant]:checked")].map(e=>e.dataset.linkVariant).join()==="share-link/A"'), 'This variant does not check only the variant on the page')
@@ -202,6 +207,23 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
   assert(await until(async () => (await viewerList()).find(c => c.id === first)?.owner_reply === 'OWNER-REPLY thanks, bigger now', 15_000), 'reply: the viewer does not see the owner\'s reply')
   await waitFor(page, `document.querySelector('[data-link-card="${first}"]').textContent.includes('OWNER-REPLY')`, 'reply: the card does not show the reply')
 
+  // Hide takes it off the link for viewers and keeps it here; Unhide brings it back.
+  await click(page, `[data-link-card="${first}"] [data-link-hide]`)
+  assert(await until(async () => !(await viewerList()).some(c => c.id === first), 15_000), 'hide: the viewer still sees the comment')
+  await waitFor(page, `document.querySelector('[data-link-card="${first}"] [data-link-hide]')?.textContent==='Unhide' && !document.querySelector('[data-link-card="${first}"] [data-link-hide]').disabled`, 'hide: the card does not offer Unhide')
+  await click(page, `[data-link-card="${first}"] [data-link-hide]`)
+  assert(await until(async () => (await viewerList()).some(c => c.id === first), 15_000), 'unhide: the viewer does not see the comment again')
+  await waitFor(page, `document.querySelector('[data-link-card="${first}"] [data-link-hide]')?.textContent==='Hide' && !document.querySelector('[data-link-card="${first}"] [data-link-hide]').disabled`, 'unhide: the card does not offer Hide')
+  // Dismiss takes it out of the tray; the ⋯ menu's Dismissed shows it again, with Undo.
+  await click(page, `[data-link-card="${first}"] [data-link-dismiss]`)
+  await waitFor(page, `!document.querySelector('[data-link-card="${first}"]')`, 'dismiss: the card is still in the tray')
+  await click(page, '[data-link-tray-menu]')
+  await waitFor(page, '!!document.querySelector("[data-link-show-dismissed]")', 'the tray\'s ⋯ menu did not open')
+  await click(page, '[data-link-show-dismissed]')
+  await waitFor(page, `document.querySelector('[data-link-card="${first}"] [data-link-dismiss]')?.textContent==='Undo dismiss' && !document.querySelector('[data-link-card="${first}"] [data-link-dismiss]').disabled`, 'Dismissed: the dismissed card is not shown with Undo')
+  await click(page, `[data-link-card="${first}"] [data-link-dismiss]`)
+  await waitFor(page, `document.querySelector('[data-link-card="${first}"] [data-link-dismiss]')?.textContent==='Dismiss' && !document.querySelector('[data-link-card="${first}"] [data-link-dismiss]').disabled`, 'undo dismiss: the card is still dismissed')
+
   // Two more, picked together: the tray in its full state for the screenshots first.
   const second = await comment('Could the price be bigger on the phone?', 'share-link/A')
   const third = await comment('I like the plain one.', 'share-link/A')
@@ -247,6 +269,8 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
   await page.key('Escape')
   await click(page, '[data-shoot=island-open]')
   await waitFor(page, `!!document.querySelector('[data-link-card="${first}"]')`, 'Hebrew: the tray is empty')
+  // An English comment in the Hebrew page keeps its own side.
+  assert(await page.run(`(()=>{const b=document.querySelector('[data-link-card="${first}"] [data-link-body]'),c=getComputedStyle(b),r=b.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(b);const t=range.getClientRects()[0];return c.direction==='ltr'&&t.left-r.left<4})()`), 'Hebrew: an English comment is not on its own (left) side')
   await shot(page, 'tray-desktop-light-he')
   page.close(); pages.splice(pages.indexOf(page), 1)
 
@@ -287,6 +311,7 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
   page.close(); pages.splice(pages.indexOf(page), 1)
 
   // Back as it was.
+  writeFileSync(fileA, designA)
   process.kill(vite.pid, 'SIGTERM')
   await until(() => vite.exitCode !== null, 10_000)
   process.removeListener('exit', cleanup)

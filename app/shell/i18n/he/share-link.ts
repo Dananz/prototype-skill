@@ -67,6 +67,8 @@ export default {
   'Show it to everyone on the link again': 'הצג אותה שוב לכל מי שבקישור',
   'Take it off the link for viewers; it stays here': 'הסתר אותה מהצופים בקישור; היא נשארת כאן',
   'Unhide': 'בטל הסתרה',
+  'Remove reply': 'הסר את התשובה',
+  'Remove it?': 'להסיר אותו?',
   'Hide': 'הסתר',
   'Edit reply': 'ערוך תשובה',
   'Could not send it: {why}.': 'לא ניתן היה לשלוח: {why}.',
