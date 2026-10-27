@@ -13,6 +13,7 @@ import { hostCommentLines, trayRow } from '../app/share/viewer-text.mjs'
 import { client, defaultHost, ensureTools, getToken, hostHash, hostNamed, linkOf, localRunning, readHosts, setupHint, shortLinkOf, startLocal, stopLocal } from './share-host.mjs'
 import { apiOrigin } from '../app/share/owner.mjs'
 import { installApp, syncApp } from './app-sync.mjs'
+import { defaultIo, ensureViewerKey, setupGithub, setupOnline } from './share-online.mjs'
 
 const MiB = 2 ** 20
 
@@ -202,9 +203,17 @@ async function file(args, flags, { sessionDir, session, die }) {
   console.log(`wrote ${out} (${(statSync(out).size / MiB).toFixed(1)} MiB): one file, opens from disk, no comments`)
 }
 
+// proto share setup: online by default (scripts/share-online.mjs), --domain prtype.dev once the
+// domain is on the account, --local for a host on this Mac only, --github for that host's sign-in.
 async function setup(flags, die) {
-  if (flags.local !== true) die('Phase 0 sets up a host on this Mac only: proto share setup --local')
+  if (flags.github === true) return await setupGithub(flags)
+  if (flags.local !== true) {
+    const tools = await ensureTools()
+    await setupOnline(flags, defaultIo(tools))
+    return
+  }
   await ensureTools()
+  if (ensureViewerKey()) console.log('made a viewer key for the local host (~/.prototypes/host/.dev.vars); proto share setup --github turns on sign-in')
   const host = await startLocal({ name: flags.name })
   console.log(`local share host on ${host.url} (owner ${host.owner})`)
   console.log(host.pathMode ? `links: http://127.0.0.1:${new URL(host.url).port}/s/<id>/ (*.localhost does not resolve here)` : `links: http://<id>.localhost:${new URL(host.url).port}/`)
