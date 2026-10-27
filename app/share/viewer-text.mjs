@@ -78,7 +78,7 @@ const hasVariant = (sessionDir, slug, letter) => {
  * the prototype, with a note. Nothing here can carry an action, a follow-up address, tags, pictures
  * or the design's storage.
  */
-export function fromComment(row, sessionDir) {
+export function fromComment(row, sessionDir, parent = null) {
   const share = String(row?.share?.id ?? '')
   if (!SHARE_ID.test(share) || !UUID.test(String(row?.id ?? ''))) throw Object.assign(new Error('not a comment from a share link'), { status: 400 })
   const version = Number.isInteger(row.version) && row.version > 0 ? row.version : 1
@@ -105,6 +105,8 @@ export function fromComment(row, sessionDir) {
     from: {
       share, version, viewer: loginOf(row.author?.login) || 'unknown', name: nameOf(row.author?.name), verified: true, link: share,
       comment: row.id, title: titleOf(row.share?.title),
+      // A reply on the link: the comment it answers and the owner's reply to it, oldest first.
+      ...(parent ? { earlier: { text: clean(parent.body).trim() || '(no words)', reply: parent.owner_reply ? clean(parent.owner_reply).trim() : null } } : {}),
     },
     ...(Object.keys(target).length ? { target } : {}),
     ...(view ? { view } : {}),
@@ -122,6 +124,8 @@ export function sharedLines(c) {
   const inside = [c.text]
   const extra = []
   if (f.name) extra.push(`name: ${f.name}`)
+  // A reply on the link: what it answers, kept inside the fence with the rest of the viewer's text.
+  if (f.earlier) extra.push(`replying to their earlier comment: ${oneLine(f.earlier.text)}`, ...(f.earlier.reply ? [`which the owner answered: ${oneLine(f.earlier.reply)}`] : []))
   if (c.target?.selector) extra.push(`on the element at: ${c.target.selector}`)
   for (const [k, label] of [['text', 'on the element with text'], ['label', 'labeled'], ['within', 'within']]) if (c.target?.[k]) extra.push(`${label}: ${c.target[k]}`)
   for (const u of c.target?.uses || []) if (u.props) extra.push(`passed: ${u.props}`)
@@ -136,6 +140,8 @@ export function sharedLines(c) {
     ...(c.view ? [`   view: ${c.view.size} ${c.view.w}x${c.view.h}`] : []),
   ]
 }
+
+const oneLine = (s, max = 160) => { const t = String(s).replace(/\s+/g, ' '); return t.length > max ? t.slice(0, max - 1) + '…' : t }
 
 const STATUSES = ['new', 'sent', 'working', 'done']
 const VARIANT = /^[a-z0-9][a-z0-9_-]{0,63}\/[A-Z]{1,3}$/
@@ -169,6 +175,7 @@ export function trayRow(r) {
     variant: r.variant, version: r.version, body: clean(r.body), target, status: r.status,
     owner_reply: typeof r.owner_reply === 'string' ? clean(r.owner_reply) : null, owner_reply_at: time(r.owner_reply_at) ? r.owner_reply_at : null,
     hidden: !!r.hidden, deleted: !!r.deleted, withdrawn: !!r.withdrawn, done_in: int(r.done_in, 1) ? r.done_in : null,
+    ...(UUID.test(String(r.re)) ? { re: String(r.re) } : {}),
     author: { gh_id: int(r.author.gh_id, 1) ? r.author.gh_id : null, login, name: nameOf(r.author.name) || null, avatar },
     created_at: r.created_at, updated_at: r.updated_at,
   }

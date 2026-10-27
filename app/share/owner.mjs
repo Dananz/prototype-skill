@@ -363,7 +363,7 @@ export async function sendComments({ sessionDir, rows, receive, clientFor: get =
     let c
     // Made and checked as the inbox will take it before anything is marked sent on the host, so a
     // comment is never sent there and missing here.
-    try { c = fromComment(row, sessionDir); receive({ comments: [c] }, sessionDir, { check: true }) } catch (e) { results.push({ id, result: 'error', error: String(e?.message || e) }); continue }
+    try { c = fromComment(row, sessionDir, row.re ? trayItems(sessionDir, row.re, row.share.id)[0] : null); receive({ comments: [c] }, sessionDir, { check: true }) } catch (e) { results.push({ id, result: 'error', error: String(e?.message || e) }); continue }
     const name = shares.find(e => e.id === row.share.id)?.host || host || defaultHost()?.name
     const api = name && get(name)
     if (!api) { results.push({ id, result: 'error', error: `No share host with an owner token on this machine: run ${setupHint(hostNamed(name) || defaultHost())}` }); continue }

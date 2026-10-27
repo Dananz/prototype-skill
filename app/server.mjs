@@ -326,7 +326,9 @@ const fromOk = f => !!f && typeof f === 'object' && SHARE_ID.test(f.share) && SH
   && typeof f.comment === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(f.comment)
   && (f.name === undefined || (typeof f.name === 'string' && /^[\p{L}\p{N} .'-]{0,40}$/u.test(f.name)))
   && (f.title === undefined || (typeof f.title === 'string' && f.title.length <= 120 && !/[\x00-\x1f\x7f-\x9f]/.test(f.title)))
-const fromOf = f => ({ share: f.share, version: f.version, viewer: f.viewer, name: f.name ?? '', verified: f.verified, link: f.link, comment: f.comment, ...(f.title ? { title: f.title } : {}) })
+  && (f.earlier === undefined || (!!f.earlier && typeof f.earlier.text === 'string' && f.earlier.text.length <= 4000 && (f.earlier.reply === null || (typeof f.earlier.reply === 'string' && f.earlier.reply.length <= 4000))))
+// A reply on the link keeps what it answers (earlier: the viewer's comment and the owner's reply to it).
+const fromOf = f => ({ share: f.share, version: f.version, viewer: f.viewer, name: f.name ?? '', verified: f.verified, link: f.link, comment: f.comment, ...(f.title ? { title: f.title } : {}), ...(f.earlier ? { earlier: { text: f.earlier.text, reply: f.earlier.reply } } : {}) })
 
 // A decision on a variant made in the page (its Pick, More like this and Build it) comes as a
 // comment with one of these and no element. A copy choice (the copy picker's Send) is one too, on

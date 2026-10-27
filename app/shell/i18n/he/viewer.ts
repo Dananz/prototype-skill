@@ -87,4 +87,6 @@ export default {
   'Shared by {owner} · read-only': 'שותף על ידי {owner} · לצפייה בלבד',
   'A message from {owner}': 'הודעה מ-{owner}',
   'Got it': 'הבנתי',
+  'Reply to {owner}': 'השב ל-{owner}',
+  'Reply to {owner}…': 'השב ל-{owner}…',
 } satisfies Record<string, string>

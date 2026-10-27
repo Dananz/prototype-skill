@@ -116,4 +116,7 @@ export default {
   'Open the sign-in page again': 'פתח שוב את דף ההתחברות',
   'Your public GitHub name and picture only. No access to your repositories.': 'רק השם והתמונה הציבוריים שלך ב-GitHub. בלי גישה למאגרים שלך.',
   'This share host can’t run GitHub sign-in yet. Ask Claude to set it up.': 'שרת השיתוף הזה עדיין לא יכול להריץ התחברות עם GitHub. בקש מ-Claude להגדיר את זה.',
+  'Replying to': 'בתשובה ל',
+  'your reply: {text}': 'התשובה שלך: {text}',
+  'A reply on the link': 'תשובה בקישור',
 }

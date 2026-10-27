@@ -27,6 +27,8 @@ export type Status = 'new' | 'sent' | 'working' | 'done'
 export type Note = {
   id: string; variant: string; body: string; target: Target | null; status: Status
   owner_reply: string | null; owner_reply_at: number | null
+  /** A reply: the first comment of its thread (the host keeps threads flat). */
+  re?: string | null
   author: { login: string | null; name: string | null; avatar: string | null }
   mine: boolean; created_at: number; updated_at: number; version: number; done_in: number | null
   /** Written here and not yet stored by the host. */
@@ -151,15 +153,15 @@ export function useNotes(on: boolean, me: Me | null | undefined) {
    * Writes a comment under `id` (the same id again for a retry: the host stores it once). On the list
    * at once; a 4xx takes it off (refused, with the host's reason); no answer leaves it there as failed.
    */
-  const add = async (id: string, variant: string, body: string, target: Target | null): Promise<Sent> => {
+  const add = async (id: string, variant: string, body: string, target: Target | null, re: string | null = null): Promise<Sent> => {
     const now = Date.now()
     const note: Note = {
-      id, variant, body, target, status: 'new', owner_reply: null, owner_reply_at: null,
+      id, variant, body, target, status: 'new', owner_reply: null, owner_reply_at: null, re,
       author: { login: me?.login ?? null, name: me?.name ?? null, avatar: me?.avatar ?? null }, mine: true,
       created_at: now, updated_at: now, version: shareInfo?.version ?? 1, done_in: null, pending: true,
     }
     setNotes(l => (l.some(n => n.id === id) ? l.map(n => (n.id === id ? { ...n, pending: true, failed: false } : n)) : [...l, note]))
-    const r = await call('api/comments', { method: 'POST', body: JSON.stringify({ id, variant, body, target }) }).catch(() => null)
+    const r = await call('api/comments', { method: 'POST', body: JSON.stringify({ id, variant, body, target, ...(re ? { re } : {}) }) }).catch(() => null)
     if (r?.ok && r.body && r.body.id === id) {
       setNotes(l => l.map(n => (n.id === id ? r.body as unknown as Note : n)))
       drafts.done(id)
@@ -177,7 +179,7 @@ export function useNotes(on: boolean, me: Me | null | undefined) {
   const retry = async (id: string): Promise<string | null> => {
     const n = notes.find(x => x.id === id)
     if (!n) return null
-    const r = await add(n.id, n.variant, n.body, n.target)
+    const r = await add(n.id, n.variant, n.body, n.target, n.re ?? null)
     if (r.ok) return null
     // Refused for good: the card went; a draft still holding its words sends them under a new id.
     if (r.refused) drafts.forget(id)
@@ -212,13 +214,15 @@ export type Talk = {
   can: 'write' | 'signin' | 'off'
   signIn: string | null
   owner: string
+  /** The owner's GitHub picture, when the link knows it (api/state). */
+  ownerAvatar: string | null
   /** The owner's message for viewers (api/state), with who wrote it; null without one. */
   message: OwnerMessage | null
   me: Me | null | undefined
   notes: Note[]
   fresh: (id: string) => boolean
   told: boolean
-  add: (id: string, variant: string, body: string, target: Target | null) => Promise<Sent>
+  add: (id: string, variant: string, body: string, target: Target | null, re?: string | null) => Promise<Sent>
   retry: (id: string) => Promise<string | null>
   remove: (id: string) => Promise<string | null>
   /** The bar grown into the comments. */
@@ -246,10 +250,14 @@ export const useTalk = () => useContext(TalkCtx)!
 
 /** The comments on one design, oldest first, and the number of each pinned one. */
 export function ofDesign(notes: Note[], variant: string) {
-  const here = notes.filter(n => n.variant === variant)
+  const all = notes.filter(n => n.variant === variant)
+  // Replies sit under the comment they answer, so only the first of each thread gets a card and a pin.
+  const firsts = new Set(all.filter(n => !n.re).map(n => n.id))
+  const here = all.filter(n => !n.re || !firsts.has(n.re))
   const num = new Map<string, number>()
   here.filter(n => n.target).forEach((n, k) => num.set(n.id, k + 1))
-  return { here, num }
+  const replies = (id: string) => all.filter(n => n.re === id)
+  return { here, num, replies }
 }
 
 /* ---------------------------------------------------------------- small pieces */
@@ -291,8 +299,11 @@ export function PinNumber({ n, active = false }: { n: number; active?: boolean }
 
 /** One comment: who, when, the words, its status, the owner's reply; Delete on one's own while it is
  *  new; Retry on one that got no answer. lost: its pin's element is gone from the design. */
-export function CommentCard({ n, num, active, owner, lost, onShow, onDelete, onRetry }: {
-  n: Note; num?: number; active: boolean; owner: string; lost: boolean; onShow: () => void; onDelete: () => void; onRetry: () => void
+export function CommentCard({ n, num, active, owner, ownerAvatar = null, lost, replies = [], canReply = false, onReply, onShow, onDelete, onRetry, onDeleteReply, onRetryReply }: {
+  n: Note; num?: number; active: boolean; owner: string; ownerAvatar?: string | null; lost: boolean
+  /** The thread's later comments, oldest first. canReply: the viewer may answer (signed in, and the owner has answered in it). */
+  replies?: Note[]; canReply?: boolean; onReply?: (body: string) => Promise<string | null>
+  onShow: () => void; onDelete: () => void; onRetry: () => void; onDeleteReply?: (id: string) => void; onRetryReply?: (id: string) => void
 }) {
   const name = n.author.login || n.author.name || '?'
   return (
@@ -322,13 +333,85 @@ export function CommentCard({ n, num, active, owner, lost, onShow, onDelete, onR
           </button>
         )}
       </div>
-      {n.owner_reply && (
-        <div data-owner-reply className="mt-2.5 flex gap-2 border-s-2 border-zinc-200 ps-2.5 dark:border-white/10">
-          <Face who={{ login: owner, name: owner, avatar: null }} size={18} />
-          <p dir="auto" className="min-w-0 whitespace-pre-wrap break-words text-[12.5px] leading-snug text-zinc-600 dark:text-zinc-400"><span className="font-semibold text-zinc-800 dark:text-zinc-200">{owner}</span> {n.owner_reply}</p>
+      <OwnerReply text={n.owner_reply} owner={owner} avatar={ownerAvatar} />
+      {replies.map(r => (
+        <div key={r.id} data-thread-reply={r.id} className="mt-2.5 border-s-2 border-zinc-200 ps-2.5 dark:border-white/10">
+          <div className="flex items-center gap-2">
+            <Face who={r.author} size={18} />
+            <span dir="ltr" className="min-w-0 truncate text-[12.5px] font-semibold text-zinc-900 dark:text-zinc-100">{r.author.login || r.author.name || '?'}</span>
+            {r.mine && <span className="shrink-0 text-[11.5px] text-zinc-400">{t('(you)')}</span>}
+            <span className="ms-auto shrink-0 text-[11px] text-zinc-400">{r.pending ? '' : ago(r.created_at)}</span>
+          </div>
+          <p dir="auto" className="mt-1 whitespace-pre-wrap break-words text-[12.5px] leading-snug text-zinc-700 dark:text-zinc-300">{r.body}</p>
+          <div className="mt-1 flex items-center gap-2">
+            <StatusChip n={r} />
+            {r.failed && onRetryReply && <button onClick={e => { e.stopPropagation(); onRetryReply(r.id) }} className="inline-flex h-6 items-center rounded-md px-1.5 text-[11px] font-medium text-sky-600 hover:bg-sky-500/10 dark:text-sky-400">{t('Retry')}</button>}
+            {r.mine && r.status === 'new' && !r.pending && onDeleteReply && (
+              <button onClick={e => { e.stopPropagation(); onDeleteReply(r.id) }} aria-label={t('Delete comment')} title={t('Delete comment')}
+                className="ms-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100">
+                <Icon name="trash" className="size-3.5" />{t('Delete')}
+              </button>
+            )}
+          </div>
+          <OwnerReply text={r.owner_reply} owner={owner} avatar={ownerAvatar} />
         </div>
-      )}
+      ))}
+      {canReply && onReply && <ReplyBox owner={owner} onReply={onReply} />}
     </article>
+  )
+}
+
+/** The owner's answer under a comment, with their picture when the link has it. */
+function OwnerReply({ text, owner, avatar }: { text: string | null; owner: string; avatar: string | null }) {
+  if (!text) return null
+  return (
+    <div data-owner-reply className="mt-2.5 flex gap-2 border-s-2 border-zinc-200 ps-2.5 dark:border-white/10">
+      <Face who={{ login: owner, name: owner, avatar }} size={18} />
+      <p dir="auto" className="min-w-0 whitespace-pre-wrap break-words text-[12.5px] leading-snug text-zinc-600 dark:text-zinc-400"><span className="font-semibold text-zinc-800 dark:text-zinc-200">{owner}</span> {text}</p>
+    </div>
+  )
+}
+
+/** Reply, under a thread the owner answered: a small field that sends on Enter (Shift+Enter: a new line). */
+function ReplyBox({ owner, onReply }: { owner: string; onReply: (body: string) => Promise<string | null> }) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const box = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => { if (open) box.current?.focus({ preventScroll: true }) }, [open])
+  const send = async () => {
+    const body = text.trim()
+    if (!body || busy) return
+    setBusy(true); setError('')
+    const why = await onReply(body)
+    setBusy(false)
+    if (why) return setError(why)
+    setText(''); setOpen(false)
+  }
+  if (!open) return (
+    <button data-reply onClick={e => { e.stopPropagation(); setOpen(true) }}
+      className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[11.5px] font-medium text-sky-600 hover:bg-sky-500/10 dark:text-sky-400">
+      <Icon name="reply" className="size-3.5" />{t('Reply')}
+    </button>
+  )
+  return (
+    <div className="mt-2 space-y-1.5" onClick={e => e.stopPropagation()}>
+      <textarea ref={box} data-reply-box rows={2} value={text} dir="auto" maxLength={4000} disabled={busy}
+        aria-label={t('Reply to {owner}', { owner })} placeholder={t('Reply to {owner}…', { owner })}
+        onChange={e => setText(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(false) }
+          else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send() }
+        }}
+        className="block w-full resize-none rounded-xl bg-zinc-900/[.05] px-3 py-2 text-[12.5px] leading-[18px] text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-2 focus:ring-sky-500/50 dark:bg-white/[.08] dark:text-zinc-100" />
+      {error && <p role="alert" className="text-[11.5px] text-red-600 dark:text-red-400">{error}</p>}
+      <div className="flex justify-end gap-1">
+        <button onClick={() => setOpen(false)} className="h-7 rounded-md px-2 text-[11.5px] text-zinc-500 hover:bg-zinc-900/5 dark:text-zinc-400 dark:hover:bg-white/10">{t('Cancel')}</button>
+        <button data-reply-send disabled={!text.trim() || busy} onClick={() => void send()}
+          className="h-7 rounded-md bg-sky-600 px-2.5 text-[11.5px] font-medium text-white hover:bg-sky-500 disabled:opacity-40">{busy ? t('Sending…') : t('Send')}</button>
+      </div>
+    </div>
   )
 }
 
@@ -361,7 +444,7 @@ export type Here = { variant: string; n: number; name: string; about?: string }
  */
 export function Panel({ here, wide, list }: { here: Here; wide: boolean; list: RefObject<HTMLDivElement | null> }) {
   const talk = useTalk()
-  const { here: notes, num } = ofDesign(talk.notes, here.variant)
+  const { here: notes, num, replies } = ofDesign(talk.notes, here.variant)
   const [error, setError] = useState('')
   useEffect(() => setError(''), [here.variant, talk.open])
   // The comment asked for is lit and scrolled into the list (only the list scrolls).
@@ -403,9 +486,13 @@ export function Panel({ here, wide, list }: { here: Here; wide: boolean; list: R
             {count
               ? notes.map(c => (
                 <Grow key={c.id} fresh={talk.fresh(c.id)}>
-                  <CommentCard n={c} num={num.get(c.id)} active={talk.active === c.id} owner={talk.owner} lost={talk.lost.has(c.id)}
+                  <CommentCard n={c} num={num.get(c.id)} active={talk.active === c.id} owner={talk.owner} ownerAvatar={talk.ownerAvatar} lost={talk.lost.has(c.id)}
+                    replies={replies(c.id)}
+                    canReply={talk.can === 'write' && [c, ...replies(c.id)].some(x => x.owner_reply)}
+                    onReply={async body => { const r = await talk.add(uuid(), c.variant, body, c.target, c.id); return r.ok ? null : r.why }}
                     onShow={() => { talk.setActive(c.id); if (c.target) talk.seekTo(c.id) }}
-                    onDelete={() => { void talk.remove(c.id).then(e => setError(e ?? '')) }} onRetry={() => { void talk.retry(c.id).then(e => setError(e ?? '')) }} />
+                    onDelete={() => { void talk.remove(c.id).then(e => setError(e ?? '')) }} onRetry={() => { void talk.retry(c.id).then(e => setError(e ?? '')) }}
+                    onDeleteReply={id => { void talk.remove(id).then(e => setError(e ?? '')) }} onRetryReply={id => { void talk.retry(id).then(e => setError(e ?? '')) }} />
                 </Grow>
               ))
               : <p className="px-3 py-6 text-center text-[13px] text-zinc-500">{t('Nothing on #{n} yet. Say what you think.', { n: here.n })}</p>}

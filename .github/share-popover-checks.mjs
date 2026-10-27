@@ -298,16 +298,24 @@ async function main() {
   })
   await new Promise(r => viewerServer.listen(0, '127.0.0.1', r))
   const viewer = `http://127.0.0.1:${viewerServer.address().port}/s/abc/`
-  const here = []
+  const here = [], posted = []
+  // One comment by this viewer that the owner answered: its card offers Reply.
+  const first = { id: '11111111-1111-4111-8111-111111111111', variant: 'share-link/A', body: 'test', target: null, status: 'new', owner_reply: 'aaahh', owner_reply_at: now - 60e3, re: null, author: { login: 'dana', name: 'Dana', avatar: null }, mine: true, created_at: now - 120e3, updated_at: now - 60e3, version: 2, done_in: null }
   const vctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark' })
   await vctx.route('**/s/abc/api/**', async r => {
     const path = new URL(r.request().url()).pathname.split('/s/abc/api/')[1]
     const json = path === 'config' ? { comments: true, owner: 'Dananz' }
       : path === 'me' ? { login: 'dana', name: 'Dana', avatar: face('D', 160) }
       : path === 'state' ? { version: 2, updatedAt: now - 3600e3, message: 'Which one would you pick? The tiles or the rows?', note: 'The tiles are bigger now', owner: { login: 'Dananz', name: 'Tomer Danan', avatar: face('T', 265) } }
-      : path.startsWith('comments') ? { comments: [], removed: [], now: Date.now() }
+      : path.startsWith('comments') ? { comments: [first, ...posted], removed: [], now: Date.now() }
       : null
     if (path === 'here') { here.push(r.request().postDataJSON()); return r.fulfill({ status: 204 }) }
+    if (path === 'comments' && r.request().method() === 'POST') {
+      const b = r.request().postDataJSON()
+      const row = { ...first, id: b.id, body: b.body, re: b.re ?? null, owner_reply: null, owner_reply_at: null, created_at: Date.now(), updated_at: Date.now() }
+      posted.push(row)
+      return r.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(row) })
+    }
     if (!json) return r.fulfill({ status: 404, contentType: 'application/json', body: '{}' })
     await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(json) })
   })
@@ -328,6 +336,19 @@ async function main() {
   await sleep(800)
   ok(await vpage.locator('[data-owner-message]').count() === 0, 'viewer: once read, the message stays folded on the next visit')
   ok(await vpage.locator('[data-owner-message-folded]').count() === 1, 'viewer: folded, the message sits at the top of the comments')
+
+  // A viewer answers the owner's reply: Reply under it, the field, Enter; the reply sits in the thread.
+  await vpage.locator('[data-comments-toggle]').click()
+  await vpage.locator(`[data-comment-card="${first.id}"] [data-reply]`).waitFor({ timeout: 10_000 })
+  ok(true, 'viewer: a comment the owner answered offers Reply')
+  await vpage.locator(`[data-comment-card="${first.id}"] [data-reply]`).click()
+  await vpage.locator('[data-reply-box]').fill('thanks, looks better')
+  await vpage.locator('[data-reply-box]').press('Enter')
+  await vpage.locator(`[data-comment-card="${first.id}"] [data-thread-reply]`).waitFor({ timeout: 10_000 })
+  ok(posted[0]?.re === first.id && posted[0]?.body === 'thanks, looks better', `viewer: the reply is posted with re (${JSON.stringify(posted[0])})`)
+  ok((await vpage.locator(`[data-comment-card="${first.id}"] [data-thread-reply]`).innerText()).includes('thanks, looks better'), 'viewer: the reply shows inside the thread, not as a card of its own')
+  ok(await vpage.locator('[data-comment-card]').count() === 1, 'viewer: replies get no card or pin of their own')
+  await shot(vpage, 'viewer-reply')
 
   ok(!errors.length, `no page errors${errors.length ? `: ${errors.join('; ')}` : ''}`)
 }
