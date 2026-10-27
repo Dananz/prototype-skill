@@ -22,7 +22,7 @@ import { useTalk } from './comments'
 import { Pins } from './pins'
 import { Mounted, surface, type Screen } from './ui'
 
-const EASE = 'cubic-bezier(.2,.8,.2,1)'
+const SMOOTH = 'cubic-bezier(.22,1,.36,1)' // ease-out quint: a quick start and a long, soft landing
 const BAR = 76 // the bar's room at the bottom (one row)
 const BAR2 = 128 // and with its comment row
 const PAD = 24 // the desk around the device at Fit
@@ -136,9 +136,14 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report, r
     const to = c.getBoundingClientRect()
     const seen = !!from && !!view && from.width > 0 && from.right > view.left && from.left < view.right && from.bottom > view.top && from.top < view.bottom
     const at = seen ? `translate(${from!.left - to.left}px, ${from!.top - to.top}px) scale(${from!.width / to.width}, ${from!.height / to.height})` : 'scale(.96)'
-    const frames = [{ transform: at, opacity: seen ? 0.6 : 0 }, { transform: 'none', opacity: 1 }]
-    const opts = { duration: seen ? 260 : 180, easing: EASE, fill: 'both' as const, direction: reverse ? 'reverse' as const : 'normal' as const }
-    back.current?.animate([{ opacity: 0 }, { opacity: 1 }], opts)
+    // Played forwards both ways (never reversed: a reversed ease-out lands with a jolt). Going back it
+    // keeps its look until it sits on its preview, then melts into it.
+    const frames = !reverse
+      ? [{ transform: at, opacity: seen ? 0.6 : 0 }, { transform: 'none', opacity: 1 }]
+      : seen ? [{ transform: 'none', opacity: 1 }, { transform: at, opacity: 1, offset: 0.8 }, { transform: at, opacity: 0 }]
+        : [{ transform: 'none', opacity: 1 }, { transform: at, opacity: 0 }]
+    const opts = { duration: seen ? (reverse ? 380 : 300) : 200, easing: SMOOTH, fill: 'both' as const }
+    back.current?.animate(reverse ? [{ opacity: 1 }, { opacity: 0 }] : [{ opacity: 0 }, { opacity: 1 }], { ...opts, easing: reverse ? 'ease-in-out' : SMOOTH })
     c.style.transformOrigin = seen ? '0 0' : '50% 50%'
     return c.animate(frames, opts)
   }
