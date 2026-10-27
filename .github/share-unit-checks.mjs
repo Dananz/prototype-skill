@@ -1100,3 +1100,72 @@ test('what the host keeps of a GitHub user: login checked, name capped, avatar o
   assert.equal(viewerFrom(u({ login: 'bad login' }), real), null)
   assert.equal(viewerFrom(u({ id: -1 }), real), null)
 })
+
+// Online: a deployed database is made by host/migrations, in order; the local host by schema.sql and
+// upgrade(). All three must end in the same tables, columns and indexes.
+import { readdirSync as listDir } from 'node:fs'
+
+const MIGRATIONS = new URL('../host/migrations/', import.meta.url)
+const migrations = () => listDir(MIGRATIONS).filter(f => /^\d{4}_[a-z0-9_]+\.sql$/.test(f)).sort().map(f => [f, readFileSync(new URL(f, MIGRATIONS), 'utf8')])
+const d1Of = sql => {
+  const stmt = (query, args = []) => ({
+    bind: (...a) => stmt(query, a),
+    first: async () => sql.prepare(query).get(...args) ?? null,
+    all: async () => ({ results: sql.prepare(query).all(...args) }),
+    run: async () => { const r = sql.prepare(query).run(...args); return { success: true, meta: { changes: Number(r.changes) } } },
+  })
+  return { sql, prepare: q => stmt(q) }
+}
+// What a schema is, without the CREATE text (an ALTER-added column reads differently from one made in
+// its CREATE TABLE): each table's columns by name, and each index's table, columns and uniqueness.
+function shapeOf(sql) {
+  const out = {}
+  for (const { name, type } of sql.prepare("SELECT name, type FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name != 'd1_migrations' ORDER BY name").all()) {
+    if (type === 'table') {
+      const cols = sql.prepare(`PRAGMA table_info(${name})`).all().map(c => [c.name, c.type, c.notnull, c.dflt_value, c.pk].join(' ')).sort()
+      const idx = sql.prepare(`PRAGMA index_list(${name})`).all().filter(i => i.origin === 'c').map(i => `${i.name} ${i.unique} ${sql.prepare(`PRAGMA index_info(${i.name})`).all().map(c => c.name).join(',')}`).sort()
+      out[name] = { cols, idx }
+    }
+  }
+  return out
+}
+const fromSchema = () => { const sql = new DatabaseSync(':memory:'); sql.exec(readFileSync(new URL('../host/schema.sql', import.meta.url), 'utf8')); return sql }
+const fromMigrations = () => { const sql = new DatabaseSync(':memory:'); for (const [, text] of migrations()) sql.exec(text); return sql }
+
+test('migrations: numbered from 0001, and 0001 is the phase 0 and 1 schema', () => {
+  const list = migrations()
+  assert.ok(list.length >= 2, 'at least 0001 and 0002')
+  list.forEach(([f], i) => assert.ok(f.startsWith(String(i + 1).padStart(4, '0') + '_'), `${f} is number ${i + 1}`))
+  assert.match(list[0][0], /^0001_initial\.sql$/)
+  assert.match(list[1][0], /^0002_online\.sql$/)
+})
+test('migrations applied in order make what schema.sql makes', () => {
+  const shape = shapeOf(fromMigrations())
+  assert.deepEqual(shape, shapeOf(fromSchema()))
+  assert.ok(shape.kv_trash && shape.meta, 'the online tables are there')
+  assert.deepEqual(shape.kv_trash.cols, ['at INTEGER 1  0', 'key TEXT 0  1'])
+  assert.deepEqual(shape.meta.cols, ['k TEXT 0  1', 'v TEXT 1  0'])
+})
+test('a phase 0 database plus upgrade() makes what schema.sql makes', async () => {
+  const sql = fromSchema()
+  // Phase 0's tables, as the first local hosts made them: comments without the phase 1 columns, and
+  // none of the tables added since.
+  sql.exec(`DROP TABLE comments; DROP TABLE viewers; DROP TABLE caps; DROP TABLE tickets; DROP TABLE kv_trash; DROP TABLE meta;
+    CREATE TABLE comments (id TEXT NOT NULL, share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+      link_id TEXT NOT NULL, viewer TEXT NOT NULL, verified INTEGER NOT NULL, version INTEGER NOT NULL, route TEXT NOT NULL,
+      body TEXT NOT NULL, re TEXT, status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','sent','working','done','dismissed')),
+      taken_by TEXT, owner_reply TEXT, hidden INTEGER NOT NULL DEFAULT 0, done_in INTEGER,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (share_id, id));
+    CREATE INDEX comments_owner_poll ON comments (share_id, updated_at);`)
+  await upgrade(d1Of(sql))
+  assert.deepEqual(shapeOf(sql), shapeOf(fromSchema()))
+})
+test('every migration runs twice, and none drops anything', () => {
+  const sql = new DatabaseSync(':memory:')
+  for (const [f, text] of migrations()) {
+    sql.exec(text)
+    assert.doesNotThrow(() => sql.exec(text), `${f} runs again`)
+    const code = text.replace(/--.*$/gm, '')
+    assert.ok(!/\bDROP\b/i.test(code), `${f} drops nothing`)
+  }
+})

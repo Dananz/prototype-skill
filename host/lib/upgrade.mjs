@@ -8,6 +8,8 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS viewers (gh_id INTEGER PRIMARY KEY, login TEXT NOT NULL, name TEXT, avatar TEXT, seen_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS caps (what TEXT NOT NULL, slot INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (what, slot))`,
   `CREATE TABLE IF NOT EXISTS tickets (nonce TEXT PRIMARY KEY, exp INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS kv_trash (key TEXT PRIMARY KEY, at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
 ]
 // ADD COLUMN can't add NOT NULL without a default, hence the defaults.
 const COLUMNS = [

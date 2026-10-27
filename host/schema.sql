@@ -1,4 +1,5 @@
--- The host's D1 schema. Safe to run again: every statement is IF NOT EXISTS.
+-- The host's D1 schema. Safe to run again: every statement is IF NOT EXISTS. A deployed host is made
+-- by host/migrations instead, which must end in the same schema (see its README).
 -- The shots tables live in their own database and are added with the comments task.
 -- A database made by an older schema is brought up to this one by the Worker itself (host/lib/upgrade.mjs:
 -- SQLite has no ADD COLUMN IF NOT EXISTS), so nothing here may name a column added since phase 0
@@ -61,3 +62,7 @@ CREATE TABLE IF NOT EXISTS views    (share_id TEXT NOT NULL, link_id TEXT NOT NU
                        n INTEGER NOT NULL, PRIMARY KEY (share_id, link_id, day));
 CREATE TABLE IF NOT EXISTS budget   (day TEXT NOT NULL, what TEXT NOT NULL, n INTEGER NOT NULL,
                        PRIMARY KEY (day, what));      -- the host's own count of KV writes, D1 writes
+CREATE TABLE IF NOT EXISTS kv_trash (key TEXT PRIMARY KEY,           -- a KV key whose delete waits for a day with budget left
+                       at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS meta     (k TEXT PRIMARY KEY,             -- 'owner_id': the one owner allowed to upload
+                       v TEXT NOT NULL);
