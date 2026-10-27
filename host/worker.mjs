@@ -6,40 +6,104 @@ import { json, fail } from './lib/http.mjs'
 import { upgraded } from './lib/upgrade.mjs'
 import { authCallback, authStart, startIn, ticketIn } from './lib/github.mjs'
 import { ownerComments, viewerApi } from './lib/comments.mjs'
+import { dropKey, metered, putCounted, uploadRefused, usage } from './lib/budget.mjs'
+import { cron } from './lib/cron.mjs'
 
 const MAX_BYTES = 20 * 1024 * 1024
 
 const htmlKey = (id, version) => `html:${id}:${version}`
-const ogKey = (id, version) => `og:${id}:${version}`
+// A crashed upload's claim on its version frees after this (see putShare).
+const CLAIM_MS = 60_000
 
 // A share seen on the host's own name (not on <id>.<base>) is path mode.
 const onBase = (url, env) => namesOf(env.BASE).names.some(n => n.toLowerCase() === url.host.toLowerCase())
 // Path mode is served when the host is set to it, and always by the host on this Mac, which must
 // serve 127.0.0.1:<port>/s/<id>/ whether or not *.localhost resolves.
 const pathsServed = env => env.PATH_MODE === '1' || namesOf(env.BASE).local
+// A host off this Mac in path mode (prtype.dev, workers.dev) serves the path form only: there are no
+// per-share names, and a stray <id>.<base> must not become a second way in.
+const pathsOnly = env => env.PATH_MODE === '1' && !namesOf(env.BASE).local
 
 const getShare = (env, id) => env.DB.prepare('SELECT * FROM shares WHERE id = ?').bind(id).first()
 
+// Every answer is nosniff and noindex, redirects and errors included.
+function hardened(res) {
+  try {
+    if (!res.headers.has('x-content-type-options')) res.headers.set('x-content-type-options', 'nosniff')
+    if (!res.headers.has('x-robots-tag')) res.headers.set('x-robots-tag', 'noindex')
+    return res
+  } catch {
+    // Immutable headers (a fetched response): copy them once.
+    const copy = new Response(res.body, res)
+    copy.headers.set('x-content-type-options', 'nosniff')
+    copy.headers.set('x-robots-tag', 'noindex')
+    return copy
+  }
+}
+
+// The API faces answer a crash in JSON, as they answer everything else; the pages in HTML.
+function crashed(req, env) {
+  try {
+    const r = route(new URL(req.url), namesOf(env.BASE).names)
+    if (r.at === 'api' || (r.at === 'share' && (r.path === '/api' || r.path.startsWith('/api/')))) return fail(500, 'Something went wrong. Try again in a moment.', { code: 'error' })
+  } catch {}
+  return page('error', {})
+}
+
 export default {
   async fetch(req, env) {
+    const m = metered(env)
+    let res
     try {
-      const url = new URL(req.url)
-      const r = route(url, namesOf(env.BASE).names)
-      if (r.at === 'health') return new Response('ok', { headers: { 'content-type': 'text/plain', 'cache-control': 'no-store' } })
-      await upgraded(env)
-      if (r.at === 'api') return await api(req, env, url, r.path)
-      if (r.at === 'auth') {
-        if (req.method !== 'GET') return new Response(null, { status: 405, headers: { allow: 'GET' } })
-        return r.path === '/auth/github' ? await authStart(env, url) : await authCallback(req, env, url)
-      }
-      if (r.at === 'apex') return await apex(env, url, r.shareId)
-      if (r.at === 'share' && (pathsServed(env) || !onBase(url, env))) return await share(req, env, url, r)
-      return page('notfound', {})
+      res = await serve(req, m.env)
     } catch (e) {
       console.error(e)
-      return page('error', {})
+      res = crashed(req, env)
     }
+    try { await m.flush() } catch (e) { console.error(e) }
+    return hardened(res)
   },
+  async scheduled(event, env) {
+    const m = metered(env)
+    await cron(m.env, event?.scheduledTime || Date.now())
+    await m.flush()
+  },
+}
+
+async function serve(req, env) {
+  const url = new URL(req.url)
+  const gone = moved(url, env)
+  if (gone) return gone
+  const r = route(url, namesOf(env.BASE).names)
+  if (r.at === 'health') {
+    const headers = { 'content-type': 'text/plain', 'cache-control': 'no-store' }
+    // Which code runs here, for the CLI to tell a host older than the skill.
+    if (env.HOST_VERSION) headers['x-proto-host'] = env.HOST_VERSION
+    return new Response('ok', { headers })
+  }
+  await upgraded(env)
+  if (r.at === 'api') return await api(req, env, url, r.path)
+  if (r.at === 'auth') {
+    if (req.method !== 'GET') return new Response(null, { status: 405, headers: { allow: 'GET' } })
+    return r.path === '/auth/github' ? await authStart(env, url) : await authCallback(req, env, url)
+  }
+  if (r.at === 'apex') return await apex(env, url, r.shareId)
+  if (r.at === 'share' && (onBase(url, env) ? pathsServed(env) : !pathsOnly(env))) return await share(req, env, url, r)
+  return page('notfound', {})
+}
+
+// The names the Worker used to answer on (LEGACY, comma-separated: the workers.dev name once the
+// domain is live). Links sent from there keep working: a share or a short link moves to the same
+// path on BASE. The API and sign-in don't move: an old CLI or a half-done sign-in gets a clear 410.
+function moved(url, env) {
+  const host = url.host.toLowerCase()
+  if (!(env.LEGACY || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean).includes(host)) return null
+  const r = route(url, host)
+  if (r.at === 'health') return null
+  if (r.at === 'api' || r.at === 'auth') return fail(410, `This host moved to https://${env.BASE}.`, { code: 'moved' })
+  // A Location can't carry the #/route; the browser keeps it across the redirect.
+  if (r.at === 'share' || r.at === 'apex') return new Response(null, { status: 301, headers: { location: `https://${env.BASE}${url.pathname}${url.search}`, 'cache-control': 'no-store' } })
+  return page('notfound', {})
 }
 
 async function api(req, env, url, path) {
@@ -47,8 +111,13 @@ async function api(req, env, url, path) {
   if (!owner) return fail(401, 'A valid owner token is needed.', { code: 'token' })
   const parts = path.split('/').filter(Boolean) // ['api', 'shares', id?] or ['api', 'owner', 'comments', id?]
   if (parts[1] === 'owner' && parts[2] === 'comments' && parts.length <= 4) return ownerComments(req, env, owner, url, parts[3])
+  if (parts[1] === 'owner' && parts[2] === 'usage' && parts.length === 3) return req.method === 'GET' ? json(await usage(env.DB)) : fail(405, 'Method not allowed.')
   if (parts[1] !== 'shares' || parts.length > 3) return fail(404, 'No such route.')
   const id = parts[2]
+  if ((id === undefined && req.method === 'POST') || (id !== undefined && req.method === 'PUT')) {
+    const refused = await uploader(env, owner)
+    if (refused) return refused
+  }
   if (id === undefined) {
     if (req.method === 'POST') return createShare(env)
     if (req.method === 'GET') return listShares(env, owner)
@@ -58,6 +127,15 @@ async function api(req, env, url, path) {
   if (req.method === 'PUT') return putShare(req, env, owner, id)
   if (req.method === 'DELETE') return deleteShare(env, owner, id)
   return fail(405, 'Method not allowed.')
+}
+
+// Path mode puts every share on one origin, which is safe only while the owner alone publishes
+// (spec: Security). Setup names that owner in meta.owner_id; until it does, a host off this Mac takes
+// no uploads at all. The host on this Mac has one owner by construction and keeps phase 0's rule.
+async function uploader(env, owner) {
+  const row = await env.DB.prepare("SELECT v FROM meta WHERE k = 'owner_id'").first()
+  if (row ? row.v === owner.id : namesOf(env.BASE).local) return null
+  return fail(403, 'This host takes uploads from its owner only.', { code: 'not_owner' })
 }
 
 async function createShare(env) {
@@ -103,18 +181,37 @@ async function putShare(req, env, owner, id) {
   if (magic[0] !== 0x1f || magic[1] !== 0x8b) return fail(400, 'The body must be gzip.')
 
   // A version is never overwritten (KV can serve an overwritten key stale): write the new key, flip
-  // the pointer in D1, then drop the old key.
+  // the pointer in D1, then drop the old key. Two uploads at once would both take old+1 and write the
+  // same key, so each first claims (share, version) in D1; the loser stops before it touches KV. A
+  // claim older than CLAIM_MS is free again, so a crashed upload can't wedge the share.
   const version = old ? old.version + 1 : 1
+  const refused = await uploadRefused(env, id, body.byteLength)
+  if (refused) return refused
   const now = Date.now()
-  await env.KV.put(htmlKey(id, version), body)
-  await env.DB.prepare(
-    `INSERT INTO shares (id, owner_id, session, project_label, title, scope, version, bytes, lang, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET session = excluded.session, project_label = excluded.project_label, title = excluded.title,
-       scope = excluded.scope, version = excluded.version, bytes = excluded.bytes, lang = excluded.lang, updated_at = excluded.updated_at`,
-  ).bind(id, owner.id, meta.session, meta.projectLabel, meta.title, JSON.stringify(meta.scope), version, body.byteLength, meta.lang, now, now).run()
+  const race = () => fail(409, 'Another update of this share landed first. Try again.', { code: 'race' })
+  const claim = await env.DB.prepare('INSERT INTO caps (what, slot, n) VALUES (?, ?, ?) ON CONFLICT(what, slot) DO UPDATE SET n = excluded.n WHERE caps.n < ?')
+    .bind(`put:${id}`, version, now, now - CLAIM_MS).run()
+  if (!claim.meta?.changes) return race()
+  await putCounted(env, htmlKey(id, version), body)
+  const row = [meta.session, meta.projectLabel, meta.title, JSON.stringify(meta.scope), version, body.byteLength, meta.lang, now]
+  const flipped = old
+    ? await env.DB.prepare(
+      `UPDATE shares SET session = ?, project_label = ?, title = ?, scope = ?, version = ?, bytes = ?, lang = ?, updated_at = ?
+       WHERE id = ? AND version = ? AND deleted_at IS NULL`,
+    ).bind(...row, id, old.version).run()
+    : await env.DB.prepare(
+      `INSERT INTO shares (session, project_label, title, scope, version, bytes, lang, updated_at, id, owner_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
+    ).bind(...row, id, owner.id, now).run()
+  if (!flipped.meta?.changes) {
+    // Removed meanwhile, or a stale claim lost to a newer one: the key is ours only if the pointer
+    // isn't on it.
+    const cur = await getShare(env, id)
+    if (cur?.version !== version || cur?.deleted_at) await dropKey(env, htmlKey(id, version))
+    return race()
+  }
   if (old) {
-    await env.KV.delete(htmlKey(id, old.version))
+    await dropKey(env, htmlKey(id, old.version))
     // The comments marked done are in this version: the viewer sees "In the latest version".
     await env.DB.prepare("UPDATE comments SET done_in = ?, updated_at = ? WHERE share_id = ? AND status = 'done' AND done_in IS NULL").bind(version, now, id).run()
   }
@@ -124,11 +221,11 @@ async function putShare(req, env, owner, id) {
 async function deleteShare(env, owner, id) {
   const row = await getShare(env, id)
   if (!row || row.owner_id !== owner.id) return fail(404, 'No such share.')
-  await env.KV.delete(htmlKey(id, row.version))
-  await env.KV.delete(ogKey(id, row.version))
+  // The tombstone first: between it and the KV delete the link already says removed, never a 500.
   await env.DB.prepare('UPDATE shares SET deleted_at = COALESCE(deleted_at, ?) WHERE id = ?').bind(Date.now(), id).run()
   // Deleting a share deletes its comments (spec: Data and privacy); the row stays as a tombstone.
   await env.DB.prepare('DELETE FROM comments WHERE share_id = ?').bind(id).run()
+  if (!row.deleted_at) await dropKey(env, htmlKey(id, row.version))
   return json({ id })
 }
 

@@ -6,6 +6,7 @@
 import { isId } from './ids.mjs'
 import { json, fail, bodyOf } from './http.mjs'
 import { signinReady, signOutCookie, viewerOf } from './github.mjs'
+import { room } from './budget.mjs'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const VARIANT = /^[a-z0-9][a-z0-9_-]{0,63}\/[A-Z]{1,3}$/
@@ -148,6 +149,8 @@ async function createComment(req, env, share) {
   const target = readTarget(b.target)
   if (!target) return fail(400, 'target is not a pin this host can keep.', { code: 'invalid' })
 
+  // The host's own D1 write budget (90% of Free): the viewer's page shows its "Couldn't send".
+  if (!await room(env.DB, 'd1_write', 4)) return fail(429, "The host's daily budget for comments is used up. Try again tomorrow.", { code: 'budget' })
   const now = Date.now()
   const day = Math.floor(now / 86_400_000), hour = Math.floor(now / 3_600_000)
   const atHourCap = () => fail(429, "You've written 30 comments this hour. Try again in a while.", { code: 'hour' })

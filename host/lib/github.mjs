@@ -15,8 +15,12 @@ const COOKIE_S = 30 * 24 * 3600
 const oauthBase = env => (env.GITHUB_OAUTH || 'https://github.com').replace(/\/+$/, '')
 const apiBase = env => (env.GITHUB_API || 'https://api.github.com').replace(/\/+$/, '')
 
-/** Commenting needs all three secrets; without them the viewer only reads. */
-export const signinReady = env => !!(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET && env.VIEWER_KEY)
+/**
+ * Commenting needs all three secrets; without them the viewer only reads. Off this Mac it also needs
+ * SIGNIN=1, which setup sets only on the OAuth App's own host (prtype.dev): GitHub refuses a
+ * redirect_uri on any other name, so workers.dev reads comments and shows sign-in as not set up.
+ */
+export const signinReady = env => !!(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET && env.VIEWER_KEY) && (env.SIGNIN === '1' || namesOf(env.BASE).local)
 
 const NONCE = /^[\w-]{22}$/
 const random = n => b64url(crypto.getRandomValues(new Uint8Array(n)))

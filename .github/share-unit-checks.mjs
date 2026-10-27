@@ -292,6 +292,8 @@ async function makeEnv(extra = {}) {
   sql.exec(readFileSync(new URL('../host/schema.sql', import.meta.url), 'utf8'))
   sql.prepare('INSERT INTO owners (id, name, created_at) VALUES (?, ?, ?)').run('o1', 'Dananz', 1)
   sql.prepare('INSERT INTO owner_tokens (sha256, owner_id, device, created_at) VALUES (?, ?, ?, ?)').run(await hex(TOKEN), 'o1', 'test', 1)
+  // Setup names the one owner who may upload; a host off this Mac takes uploads from no one else.
+  sql.prepare("INSERT INTO meta (k, v) VALUES ('owner_id', 'o1')").run()
   const store = new Map()
   const KV = {
     store,
@@ -303,7 +305,7 @@ async function makeEnv(extra = {}) {
     bind: (...a) => stmt(query, a),
     first: async () => sql.prepare(query).get(...args) ?? null,
     all: async () => ({ results: sql.prepare(query).all(...args) }),
-    run: async () => { const r = sql.prepare(query).run(...args); return { success: true, meta: { changes: Number(r.changes) } } },
+    run: async () => { const r = sql.prepare(query).run(...args); return { success: true, meta: { changes: Number(r.changes), rows_written: Number(r.changes) } } },
   })
   const DB = { sql, prepare: q => stmt(q), async batch(list) { const out = []; for (const s of list) out.push(await s.run()); return out } }
   return { KV, DB, BASE, PATH_MODE: '0', ...extra }
@@ -399,6 +401,11 @@ test('path mode', async () => {
   const prod = await publish(off)
   assert.equal((await call(off, `https://prtype.dev/s/${prod.id}/`)).status, 404)
   assert.equal((await call(off, `https://${prod.id}.prtype.dev/`)).status, 200)
+  // And a public host in path mode serves the path form only.
+  const on = await makeEnv({ PATH_MODE: '1', BASE: 'prtype.dev' })
+  const pub = await publish(on)
+  assert.equal((await call(on, `https://prtype.dev/s/${pub.id}/`)).status, 200)
+  assert.equal((await call(on, `https://${pub.id}.prtype.dev/`)).status, 404)
 })
 test('update bumps version and drops the old key', async () => {
   const env = await makeEnv()
@@ -595,7 +602,7 @@ const KEY = 'viewer-key-for-tests'
 let gh
 before(async () => { gh = await startFakeGitHub() })
 after(async () => { await gh.close() })
-const ghEnv = (extra = {}) => makeEnv({ GITHUB_CLIENT_ID: gh.clientId, GITHUB_CLIENT_SECRET: gh.clientSecret, VIEWER_KEY: KEY, GITHUB_OAUTH: gh.url, GITHUB_API: gh.url, ...extra })
+const ghEnv = (extra = {}) => makeEnv({ GITHUB_CLIENT_ID: gh.clientId, GITHUB_CLIENT_SECRET: gh.clientSecret, VIEWER_KEY: KEY, GITHUB_OAUTH: gh.url, GITHUB_API: gh.url, SIGNIN: '1', ...extra })
 const XP = { 'x-proto': '1' }
 const setCookies = res => res.headers.getSetCookie()
 const pair = c => c.split(';')[0]
@@ -1168,4 +1175,274 @@ test('every migration runs twice, and none drops anything', () => {
     const code = text.replace(/--.*$/gm, '')
     assert.ok(!/\bDROP\b/i.test(code), `${f} drops nothing`)
   }
+})
+
+// Online: the host on a public origin (prtype.dev in path mode, its old workers.dev name, the daily
+// budget, the cron and the hardening a public host needs).
+import { today, CAPS } from '../host/lib/budget.mjs'
+
+const ONLINE = { BASE: 'prtype.dev', PATH_MODE: '1' }
+const pubEnv = (extra = {}) => makeEnv({ ...ONLINE, ...extra })
+const pubCall = (env, path, init) => call(env, `https://prtype.dev${path}`, init)
+const pubPut = (env, id, html, m = meta()) => pubCall(env, `/api/shares/${id}`, { method: 'PUT', headers: { ...auth, 'x-share-meta': m }, body: gzipSync(html) })
+const used = (env, what) => env.DB.sql.prepare('SELECT n FROM budget WHERE day = ? AND what = ?').get(today(), what)?.n ?? 0
+const setUsed = (env, what, n) => env.DB.sql.prepare('INSERT INTO budget (day, what, n) VALUES (?, ?, ?) ON CONFLICT(day, what) DO UPDATE SET n = excluded.n').run(today(), what, n)
+const hardened = res => {
+  assert.equal(res.headers.get('x-content-type-options'), 'nosniff', `${res.status} has nosniff`)
+  assert.equal(res.headers.get('x-robots-tag'), 'noindex', `${res.status} has noindex`)
+  noCors(res)
+}
+
+test('public path mode: the short link, the share under /s/<id>/, no subdomains, a Secure cookie per path', async () => {
+  const env = await ghEnv(ONLINE)
+  const { id, body } = await publish(env)
+  const short = await pubCall(env, `/${id}`)
+  assert.equal(short.status, 200)
+  const html = await short.text()
+  assert.ok(html.includes(`location.replace("https://prtype.dev/s/${id}/" + location.hash)`), 'the short link goes to the path form and keeps the hash')
+  hardened(short)
+  assert.deepEqual(await bytesOf(await pubCall(env, `/s/${id}/`)), body)
+  assert.equal((await call(env, `https://${id}.prtype.dev/`)).status, 404)
+  const s = await signIn(env, id, { start: `https://prtype.dev/s/${id}/_in/start`, back: `/s/${id}/` })
+  assert.match(s.cookie, /^v=/)
+  const a = attrs(s.cookie)
+  assert.ok(a.includes(`path=/s/${id}/`) && a.includes('secure') && a.includes('httponly') && a.includes('samesite=lax'))
+  assert.equal((await (await pubCall(env, `/s/${id}/api/me`, { headers: { ...XP, cookie: s.jar } })).json()).login, 'dana-test')
+})
+
+test('uploads: only the owner setup named; none at all before setup names one, off this Mac', async () => {
+  const env = await pubEnv()
+  const other = 'second-owner-token'
+  env.DB.sql.prepare('INSERT INTO owners (id, name, created_at) VALUES (?, ?, ?)').run('o2', 'Mallory', 1)
+  env.DB.sql.prepare('INSERT INTO owner_tokens (sha256, owner_id, device, created_at) VALUES (?, ?, ?, ?)').run(await hex(other), 'o2', 'x', 1)
+  const { id } = await publish(env)
+  const notOwner = async res => { assert.equal(res.status, 403); const b = await res.json(); assert.equal(b.code, 'not_owner'); assert.equal(b.error, 'This host takes uploads from its owner only.'); noCors(res) }
+  const theirs = { authorization: `Bearer ${other}` }
+  await notOwner(await pubCall(env, '/api/shares', { method: 'POST', headers: theirs }))
+  await notOwner(await pubCall(env, `/api/shares/${id}`, { method: 'PUT', headers: { ...theirs, 'x-share-meta': meta() }, body: gzipSync('x') }))
+  env.DB.sql.prepare("DELETE FROM meta WHERE k = 'owner_id'").run()
+  await notOwner(await pubCall(env, '/api/shares', { method: 'POST', headers: auth }))
+  await notOwner(await pubPut(env, id, 'again'))
+  // The host on this Mac keeps phase 0's rule: its one owner, with or without the setting.
+  const local = await makeEnv()
+  local.DB.sql.prepare("DELETE FROM meta WHERE k = 'owner_id'").run()
+  assert.equal((await publish(local)).put.status, 200)
+})
+
+test('sign-in only where the OAuth App lives: SIGNIN=0 reads comments and shows the signin page', async () => {
+  const env = await ghEnv({ ...ONLINE, SIGNIN: '0' })
+  const { id } = await publish(env)
+  assert.equal((await (await pubCall(env, `/s/${id}/api/config`, { headers: XP })).json()).comments, false)
+  const start = await pubCall(env, `/s/${id}/_in/start`, { redirect: 'manual' })
+  assert.equal(start.status, 400)
+  assert.ok((await start.text()).includes('Sign-in didn&#39;t finish'))
+  assert.equal((await pubCall(env, `/auth/github?share=${id}&nonce=${NONCE}`, { redirect: 'manual' })).status, 400)
+  const on = await ghEnv(ONLINE)
+  const p = await publish(on)
+  assert.equal((await (await pubCall(on, `/s/${p.id}/api/config`, { headers: XP })).json()).comments, true)
+})
+
+test('the old workers.dev name: 301 to the same path on prtype.dev, 410 for the api, health still 200', async () => {
+  const LEGACY = 'proto-share.dananz.workers.dev'
+  const env = await pubEnv({ LEGACY: `${LEGACY}, other.example` })
+  const { id } = await publish(env)
+  for (const path of [`/s/${id}/`, `/s/${id}/?v=1`, `/${id}`]) {
+    const res = await call(env, `https://${LEGACY}${path}`, { redirect: 'manual' })
+    assert.equal(res.status, 301, path)
+    assert.equal(res.headers.get('location'), `https://prtype.dev${path}`)
+    hardened(res)
+  }
+  for (const path of ['/api/shares', '/auth/github']) {
+    const res = await call(env, `https://${LEGACY}${path}`, { headers: auth })
+    assert.equal(res.status, 410, path)
+    assert.equal((await res.json()).code, 'moved')
+    hardened(res)
+  }
+  assert.equal((await call(env, `https://${LEGACY}/_health`)).status, 200)
+  assert.equal((await call(env, `https://other.example/s/${id}/`, { redirect: 'manual' })).status, 301)
+  assert.equal((await call(env, `https://${LEGACY}/nope`)).status, 404)
+})
+
+test('budget: uploads stop at 90% of the KV writes, with nothing written', async () => {
+  const env = await pubEnv()
+  const { id } = await publish(env)
+  assert.equal(used(env, 'kv_write'), 1)
+  setUsed(env, 'kv_write', CAPS.kv_write)
+  const keys = [...env.KV.store.keys()]
+  const row = () => env.DB.sql.prepare('SELECT version, title FROM shares WHERE id = ?').get(id)
+  const before = row()
+  const res = await pubPut(env, id, 'two', meta({ title: 'New' }))
+  assert.equal(res.status, 507)
+  const b = await res.json()
+  assert.equal(b.code, 'budget')
+  assert.match(b.error, /^The host's daily upload budget is used up\. It resets at 00:00 UTC \(\d\d:\d\d in Israel\)\.$/)
+  assert.deepEqual([...env.KV.store.keys()], keys)
+  assert.deepEqual(row(), before)
+  setUsed(env, 'kv_write', 3)
+  assert.equal((await pubPut(env, id, 'two')).status, 200)
+})
+
+test('budget: stored bytes stop at 900 MB, naming the biggest shares', async () => {
+  const env = await pubEnv()
+  const { id } = await publish(env)
+  const big = (sid, title, bytes) => {
+    env.DB.sql.prepare("INSERT INTO ids (id, kind) VALUES (?, 'share')").run(sid)
+    env.DB.sql.prepare("INSERT INTO shares (id, owner_id, session, project_label, title, scope, version, bytes, lang, created_at, updated_at) VALUES (?, 'o1', 's', 'p', ?, '[]', 1, ?, 'en', 1, 1)").run(sid, title, bytes)
+  }
+  big('aaaaaaaaaa', 'Huge', 500_000_000)
+  big('bbbbbbbbbb', 'Large', 300_000_000)
+  big('cccccccccc', 'Medium', 100_000_000)
+  big('dddddddddd', 'Small', 10)
+  const res = await pubPut(env, id, 'x'.repeat(2000))
+  assert.equal(res.status, 507)
+  const b = await res.json()
+  assert.equal(b.code, 'budget')
+  assert.ok(b.error.includes('900 MB'), b.error)
+  assert.ok(b.error.indexOf('Huge') < b.error.indexOf('Large') && b.error.indexOf('Large') < b.error.indexOf('Medium') && !b.error.includes('Small'), b.error)
+  // A removed share's bytes are gone from KV, so they don't count.
+  env.DB.sql.prepare("UPDATE shares SET deleted_at = 1 WHERE id = 'aaaaaaaaaa'").run()
+  assert.equal((await pubPut(env, id, 'x'.repeat(2000))).status, 200)
+})
+
+test('budget: past 90% of the KV deletes an old version waits in kv_trash; the cron drains it', async () => {
+  const env = await pubEnv()
+  const { id } = await publish(env, 'one')
+  setUsed(env, 'kv_delete', CAPS.kv_delete)
+  assert.equal((await pubPut(env, id, 'two')).status, 200)
+  assert.ok(env.KV.store.has(`html:${id}:1`), 'the old key stays for now')
+  assert.deepEqual(env.DB.sql.prepare('SELECT key FROM kv_trash').all().map(r => r.key), [`html:${id}:1`])
+  // The next day.
+  env.DB.sql.prepare('DELETE FROM budget').run()
+  await worker.scheduled({ cron: '17 0 * * *', scheduledTime: Date.now() }, env)
+  assert.ok(!env.KV.store.has(`html:${id}:1`) && env.KV.store.has(`html:${id}:2`))
+  assert.equal(env.DB.sql.prepare('SELECT COUNT(*) AS n FROM kv_trash').get().n, 0)
+  assert.equal(used(env, 'kv_delete'), 1)
+})
+
+test('budget: a comment past 90% of the D1 writes is a 429 with code budget', async () => {
+  const env = await ghEnv(ONLINE)
+  const { id } = await publish(env, '<p>x', realMeta())
+  addViewer(env, 4242, 'dana')
+  const jar = await mint(id)
+  const send = () => call(env, `https://prtype.dev/s/${id}/api/comments`, { method: 'POST', headers: { ...XP, cookie: jar, 'content-type': 'application/json' }, body: JSON.stringify({ id: uuid(), body: 'hi', variant: 'pricing/A', target: null }) })
+  assert.equal((await send()).status, 201)
+  assert.ok(used(env, 'd1_write') > 0, 'the comment counted its writes')
+  setUsed(env, 'd1_write', CAPS.d1_write)
+  const res = await send()
+  assert.equal(res.status, 429)
+  assert.equal((await res.json()).code, 'budget')
+})
+
+test('the owner reads today\'s usage', async () => {
+  const env = await pubEnv()
+  const { body } = await publish(env)
+  assert.equal((await pubCall(env, '/api/owner/usage')).status, 401)
+  const u = await (await pubCall(env, '/api/owner/usage', { headers: auth })).json()
+  assert.equal(u.day, today())
+  assert.equal(u.kv_write, 1)
+  assert.equal(u.kv_delete, 0)
+  assert.ok(u.d1_write > 0)
+  assert.equal(u.kv_bytes, body.length)
+  assert.deepEqual(u.caps, CAPS)
+  assert.equal(u.resetsAt, Date.parse(`${today()}T00:00:00Z`) + 86_400_000)
+})
+
+test('the cron prunes old counters, spent tickets, old budget days and stale upload claims', async () => {
+  const env = await pubEnv()
+  const now = Date.now(), hour = Math.floor(now / 3_600_000)
+  env.DB.sql.prepare('INSERT INTO caps (what, slot, n) VALUES (?, ?, 1), (?, ?, 1), (?, ?, ?), (?, ?, ?)').run('gh:1', hour, 'gh:1', hour - 5, 'put:aaaaaaaaaa', 2, now - 2 * 86_400_000, 'put:bbbbbbbbbb', 3, now)
+  env.DB.sql.prepare('INSERT INTO tickets (nonce, exp) VALUES (?, ?), (?, ?)').run('old', now - 1, 'new', now + 60_000)
+  const day = n => new Date(now - n * 86_400_000).toISOString().slice(0, 10)
+  for (const d of [0, 6, 8, 30]) env.DB.sql.prepare("INSERT INTO budget (day, what, n) VALUES (?, 'kv_write', 1)").run(day(d))
+  await worker.scheduled({ cron: '17 0 * * *', scheduledTime: now }, env)
+  assert.deepEqual(env.DB.sql.prepare('SELECT what, slot FROM caps ORDER BY what').all().map(r => `${r.what}@${r.slot}`), [`gh:1@${hour}`, 'put:bbbbbbbbbb@3'])
+  assert.deepEqual(env.DB.sql.prepare('SELECT nonce FROM tickets').all().map(r => r.nonce), ['new'])
+  assert.deepEqual(env.DB.sql.prepare("SELECT day FROM budget WHERE what = 'kv_write' ORDER BY day DESC").all().map(r => r.day), [day(0), day(6)])
+})
+
+test('two updates at once: one wins, the other is a 409 race, and only the winner\'s bytes are in KV', async () => {
+  const env = await pubEnv()
+  const { id } = await publish(env, 'one')
+  // Both read the share (version 1) before either writes: the read waits for the other's.
+  let waiting = []
+  const prepare = env.DB.prepare
+  env.DB.prepare = q => {
+    const st = prepare(q)
+    if (q !== 'SELECT * FROM shares WHERE id = ?' || !waiting) return st
+    return { bind: (...a) => ({ first: async () => { const row = await st.bind(...a).first(); await new Promise(go => { waiting.push(go); if (waiting.length === 2) { waiting.forEach(f => f()); waiting = null } }); return row } }) }
+  }
+  const [a, b] = await Promise.all([pubPut(env, id, 'from a'), pubPut(env, id, 'from b')])
+  env.DB.prepare = prepare
+  const statuses = [a.status, b.status].sort()
+  assert.deepEqual(statuses, [200, 409])
+  const lost = a.status === 409 ? a : b
+  assert.equal((await lost.json()).code, 'race')
+  const keys = [...env.KV.store.keys()].filter(k => k.startsWith(`html:${id}:`))
+  assert.deepEqual(keys, [`html:${id}:2`])
+  const won = a.status === 200 ? 'from a' : 'from b'
+  assert.deepEqual(await bytesOf(await pubCall(env, `/s/${id}/`)), gzipSync(won))
+  // The loser's retry lands as the next version.
+  assert.equal((await (await pubPut(env, id, 'again')).json()).version, 3)
+})
+
+test('delete writes the tombstone before it drops the KV key', async () => {
+  const env = await pubEnv()
+  const { id } = await publish(env)
+  const seen = []
+  const del = env.KV.delete
+  env.KV.delete = async key => { seen.push([key, env.DB.sql.prepare('SELECT deleted_at FROM shares WHERE id = ?').get(id).deleted_at]); return del(key) }
+  assert.equal((await pubCall(env, `/api/shares/${id}`, { method: 'DELETE', headers: auth })).status, 200)
+  assert.equal(seen.length, 1, 'one key: the html (no preview image is written yet)')
+  assert.equal(seen[0][0], `html:${id}:1`)
+  assert.ok(seen[0][1] > 0, 'the tombstone was already there')
+  assert.equal((await pubCall(env, `/s/${id}/`)).status, 410)
+})
+
+test('the owner token writes last_used_at at most once an hour', async () => {
+  const env = await pubEnv()
+  const last = () => env.DB.sql.prepare('SELECT last_used_at FROM owner_tokens').get().last_used_at
+  await pubCall(env, '/api/shares', { headers: auth })
+  const first = last()
+  assert.ok(first > 0)
+  const writes = used(env, 'd1_write')
+  await pubCall(env, '/api/shares', { headers: auth })
+  assert.equal(last(), first)
+  assert.equal(used(env, 'd1_write'), writes, 'a poll writes nothing')
+  env.DB.sql.prepare('UPDATE owner_tokens SET last_used_at = ?').run(Date.now() - 3_700_000)
+  await pubCall(env, '/api/shares', { headers: auth })
+  assert.ok(last() > Date.now() - 60_000)
+})
+
+test('a crash answers JSON on the apis and HTML elsewhere', async () => {
+  const env = await pubEnv()
+  const { id } = await publish(env)
+  const broken = { ...env, DB: { prepare() { throw new Error('boom') } } }
+  const quiet = console.error
+  console.error = () => {}
+  try {
+    for (const path of ['/api/shares', `/s/${id}/api/state`]) {
+      const res = await pubCall(broken, path, { headers: { ...auth, ...XP } })
+      assert.equal(res.status, 500, path)
+      assert.match(res.headers.get('content-type'), /^application\/json/)
+      assert.equal((await res.json()).code, 'error')
+      hardened(res)
+    }
+    const page = await pubCall(broken, `/s/${id}/`)
+    assert.equal(page.status, 500)
+    assert.match(page.headers.get('content-type'), /^text\/html/)
+  } finally { console.error = quiet }
+})
+
+test('health names the host version; every answer is nosniff and noindex, none has CORS', async () => {
+  const env = await pubEnv({ HOST_VERSION: 'abc123' })
+  const { id } = await publish(env)
+  const health = await pubCall(env, '/_health')
+  assert.equal(health.status, 200)
+  assert.equal(health.headers.get('x-proto-host'), 'abc123')
+  hardened(health)
+  hardened(await pubCall(env, `/s/${id}`, { redirect: 'manual' }))
+  hardened(await pubCall(env, `/s/${id}/`, { method: 'POST' }))
+  hardened(await pubCall(env, '/auth/github', { method: 'POST' }))
+  hardened(await pubCall(env, `/s/${id}/api/state`, { headers: XP }))
+  hardened(await pubCall(env, '/nope'))
 })
