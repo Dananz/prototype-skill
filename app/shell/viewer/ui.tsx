@@ -1,7 +1,7 @@
 // What the viewer's parts share: its materials (the reference's, viewer-board/C in session
 // f64ced15), Phosphor's own icons, the zoom state the desk writes and the bar reads, and the one
 // way a design is put on the page (Mounted), with the stack's own mount.
-import { createContext, useContext, useEffect, useRef } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import caretDown from '@phosphor-icons/core/assets/bold/caret-down-bold.svg?raw'
 import caretLeft from '@phosphor-icons/core/assets/bold/caret-left-bold.svg?raw'
 import caretRight from '@phosphor-icons/core/assets/bold/caret-right-bold.svg?raw'
@@ -135,3 +135,30 @@ export function Mounted({ v, live, inert = false, className = 'h-full' }: { v: V
   }, [v, live, inert, ctx, className])
   return <div ref={host} data-host className="contents" />
 }
+
+/**
+ * A part that comes and goes softly: mounted while on and for `ms` after (so it can fade out), and
+ * `shown` a frame after it mounts (so it can fade in). Off and gone, it is not in the page at all.
+ */
+export function usePresence(on: boolean, ms = 200) {
+  const [mounted, setMounted] = useState(on)
+  const [shown, setShown] = useState(on)
+  useEffect(() => {
+    if (on) {
+      setMounted(true)
+      let r2 = 0
+      const r1 = requestAnimationFrame(() => { r2 = requestAnimationFrame(() => setShown(true)) })
+      return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2) }
+    }
+    setShown(false)
+    const t = setTimeout(() => setMounted(false), ms)
+    return () => clearTimeout(t)
+  }, [on, ms])
+  return { mounted, shown }
+}
+/** The classes of a part that fades and rises in as it shows, and the reverse as it goes. */
+// Going: quick, so the two never read as one; coming: a beat later, longer, settling from a soft blur.
+export const presence = (shown: boolean) =>
+  `transition-[opacity,translate,filter] motion-reduce:transition-none ${shown
+    ? 'opacity-100 translate-y-0 blur-0 duration-[340ms] delay-[110ms] ease-[cubic-bezier(.25,1,.5,1)]'
+    : 'pointer-events-none opacity-0 translate-y-1 blur-[2px] duration-[150ms] ease-in'}`

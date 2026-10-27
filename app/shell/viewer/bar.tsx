@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type MutableRefObjec
 import { Popover } from '@base-ui/react/popover'
 import { rtl, t, tn } from '../i18n'
 import { Foot, Panel, useTalk, type Here } from './comments'
-import { Icon, card, iconBtn, popup, useClosable, type Api, type Screen, type Store } from './ui'
+import { Icon, card, iconBtn, popup, presence, useClosable, usePresence, type Api, type Screen, type Store } from './ui'
 import { DeviceMenu, type Device } from './device'
 
 const dir = rtl ? 'rtl' : 'ltr'
@@ -27,6 +27,12 @@ export function Bar({ screens, i, go, step, store, api, root, full, back, wide, 
 }) {
   const cur = screens[i]
   const talk = useTalk()
+  // The full view's controls and the desk's trade places softly: one fades out as the other fades in,
+  // over the same spot (the full view's are kept as last seen while they go).
+  const fullOn = usePresence(!!full), deskOn = usePresence(!full)
+  const lastFull = useRef(full)
+  if (full) lastFull.current = full
+  const f = full ?? lastFull.current
   const list = useRef<HTMLDivElement>(null)
   // Follow a new comment down as it grows in, and once more when it has.
   const sent = () => {
@@ -43,22 +49,26 @@ export function Bar({ screens, i, go, step, store, api, root, full, back, wide, 
           <p className="min-w-0 flex-1 truncate text-[13px]">
             <span className="text-zinc-400 tabular-nums">#{cur.n}</span> <span className="font-semibold">{cur.name}</span>
           </p>
-          {full
-            ? <>
+          <div className="grid shrink-0 items-center justify-items-end [&>*]:[grid-area:1/1]">
+          {fullOn.mounted && f && (
+            <div className={`flex items-center ${presence(fullOn.shown)}`} inert={!full}>
               <div className="flex shrink-0 items-center">
                 <button data-prev onClick={() => step(-1)} disabled={i === 0} className={`${iconBtn} size-7 disabled:opacity-30`} aria-label={t('Previous design')}><Icon name="caret-left" className="size-4" /></button>
                 <span className="px-1 text-[12px] text-zinc-500 tabular-nums dark:text-zinc-400">{t('{i} of {n}', { i: i + 1, n: screens.length })}</span>
                 <button data-next onClick={() => step(1)} disabled={i === screens.length - 1} className={`${iconBtn} size-7 disabled:opacity-30`} aria-label={t('Next design')}><Icon name="caret-right" className="size-4" /></button>
               </div>
-              <DeviceMenu device={full.device} set={full.set} shown={full.shown} phone={full.phone} open={full.menu} setOpen={full.setMenu} root={root} />
+              <DeviceMenu device={f.device} set={f.set} shown={f.shown} phone={f.phone} open={!!full && f.menu} setOpen={f.setMenu} root={root} />
               <div className="ms-1.5 flex shrink-0 items-center border-s border-zinc-200 ps-1.5 dark:border-white/10">
                 <button data-back onClick={back} title={t('All designs (Esc)')}
                   className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100">
                   <Icon name="grid" className="size-3.5" />{t('All designs')}
                 </button>
               </div>
-            </>
-            : screens.length > 7
+            </div>
+          )}
+          {deskOn.mounted && (
+            <div className={`flex items-center ${presence(deskOn.shown)}`} inert={!!full}>
+            {screens.length > 7
             ? <Jump screens={screens} i={i} go={go} step={step} root={root} />
             : <div className="flex items-center" role="tablist" aria-label={t('Designs')}>
               {screens.map((s, k) => (
@@ -67,7 +77,10 @@ export function Bar({ screens, i, go, step, store, api, root, full, back, wide, 
                 </button>
               ))}
             </div>}
-          {!full && <ZoomControls store={store} api={api} />}
+            <ZoomControls store={store} api={api} />
+            </div>
+          )}
+          </div>
         </div>}
         {row && <Foot here={here} pins={!wide || !!full} onSent={sent} />}
       </div>

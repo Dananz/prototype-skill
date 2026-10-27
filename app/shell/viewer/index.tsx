@@ -284,7 +284,7 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
           : <Phone screens={screens} i={i} go={go} step={step} root={root} row={row} />}
       </div>
       <Bar screens={screens} i={i} go={go} step={step} store={store} api={api} root={root} back={back} wide={wide} row={row} here={here} barRef={bar}
-        full={full ? { device, set: patch, shown: shown.z, phone: proto.kind === 'phone', menu, setMenu } : null} />
+        full={full && !closing ? { device, set: patch, shown: shown.z, phone: proto.kind === 'phone', menu, setMenu } : null} />
     </div>
     </TalkCtx.Provider>
   )

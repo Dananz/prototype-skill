@@ -17,7 +17,7 @@ import { t, tn } from '../i18n'
 import { ago } from '../ui'
 import { shareInfo } from '../mode'
 import type { Me } from './header'
-import { Icon, iconBtn } from './ui'
+import { Icon, iconBtn, usePresence } from './ui'
 
 /** Where a pin is: the element's stamps and its path inside the design, the point in it (%), and
  *  the view it was made in. null is a comment on the whole design. As the host keeps it. */
@@ -435,7 +435,7 @@ export function Foot({ here, pins, onSent }: { here: Here; pins: boolean; onSent
             <Icon name="github" className="size-4" /><span className="truncate">{t('Sign in with GitHub to comment')}</span>
           </a>
         : <div className="flex-1" />}
-      {pins && talk.can === 'write' && <PinToggle />}
+      {talk.can === 'write' && <PinReveal on={pins} />}
       <button data-comments-toggle onClick={() => (talk.open ? talk.setOpen(false) : grow(false))} aria-expanded={talk.open}
         aria-label={talk.open ? t('Hide comments') : tn(notes.length, '{n} comment on #{v}', '{n} comments on #{v}', { v: here.n })}
         className="flex h-11 shrink-0 items-center gap-1.5 rounded-[18px] px-3 text-[13px] text-zinc-600 transition-colors hover:bg-zinc-900/5 motion-reduce:transition-none dark:text-zinc-300 dark:hover:bg-white/10">
@@ -450,6 +450,17 @@ export function Foot({ here, pins, onSent }: { here: Here; pins: boolean; onSent
 }
 
 /** Pin mode, on and off (C in the full view). Off where the design can't be reached (a frame from disk). */
+/** The pin toggle opens out of the row (and folds back into it) as the full view comes and goes. */
+function PinReveal({ on }: { on: boolean }) {
+  const p = usePresence(on, 360)
+  if (!p.mounted) return null
+  return (
+    <div inert={!on} className={`grid shrink-0 transition-[grid-template-columns,opacity] duration-[340ms] ease-[cubic-bezier(.65,0,.35,1)] motion-reduce:transition-none ${p.shown ? 'grid-cols-[1fr] opacity-100' : 'grid-cols-[0fr] opacity-0'}`}>
+      <div className="min-w-0 overflow-hidden"><PinToggle /></div>
+    </div>
+  )
+}
+
 function PinToggle() {
   const talk = useTalk()
   const wide = innerWidth >= 640
