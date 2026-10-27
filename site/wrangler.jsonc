@@ -8,7 +8,7 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "not_found_handling": "404-page",
+    "not_found_handling": "none",
     // Shared links live on the share Worker; everything else is a file.
     "run_worker_first": ["/s/*", "/api", "/api/*", "/auth/*", "/_health"]
   },
