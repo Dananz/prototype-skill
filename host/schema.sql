@@ -50,9 +50,9 @@ CREATE TABLE IF NOT EXISTS comments (id TEXT NOT NULL,               -- the view
 CREATE INDEX IF NOT EXISTS comments_owner_poll ON comments (share_id, updated_at);
 CREATE TABLE IF NOT EXISTS viewers  (gh_id INTEGER PRIMARY KEY,   -- GitHub's user id; the access token is never kept
                        login TEXT NOT NULL, name TEXT, avatar TEXT, seen_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS caps     (what TEXT NOT NULL,            -- 'gh:<id>' (per hour) or 'share:<id>' (per day)
-                       slot INTEGER NOT NULL,          -- the hour or day number since the epoch
-                       n INTEGER NOT NULL, PRIMARY KEY (what, slot));
+CREATE TABLE IF NOT EXISTS caps     (what TEXT NOT NULL,            -- 'gh:<id>' (per hour) or 'share:<id>' (per day); 'put:<id>' is an upload's claim
+                       slot INTEGER NOT NULL,          -- the hour or day number since the epoch; for 'put:', the version claimed
+                       n INTEGER NOT NULL, PRIMARY KEY (what, slot)); -- the count; for 'put:', when it was claimed (ms)
 CREATE TABLE IF NOT EXISTS tickets  (nonce TEXT PRIMARY KEY,         -- a sign-in ticket's nonce, once used: a ticket works once
                        exp INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS votes    (share_id TEXT NOT NULL, link_id TEXT NOT NULL, viewer TEXT NOT NULL,
