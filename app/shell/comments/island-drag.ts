@@ -212,7 +212,7 @@ export function useEdgeDrag(o: {
     // is a drag, one that does not is a click. The box is most of the bar, so it is a handle too until
     // it has the cursor. The move and the release are heard on the window, so the drag goes on outside.
     const down = (ev: PointerEvent) => {
-      const at = ev.target as Element, box = at.closest('textarea')
+      const at = ev.target as Element, box = at.closest('[data-shoot=whole-input]')
       // The open list's header is a handle too (the rest of the list scrolls and selects).
       if (ev.button !== 0 || at.closest('input, [data-island-resize]') || (at.closest('[data-island-list]') && !at.closest('[data-island-grip]')) || (box && document.activeElement === box)) return
       const r = el.getBoundingClientRect()

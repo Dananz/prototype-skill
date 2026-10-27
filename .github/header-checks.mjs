@@ -66,9 +66,9 @@ export default function V() { useHints([{ kind: 'try', text: 'Press Go' }]); ret
     // The Decision card: a pick is chosen, its note is ready, and the other choices change the note.
     await page.run(`document.querySelector('[data-bar] [data-decide-btn]').click()`)
     await until(page, `document.querySelectorAll('[role=menuitemradio]').length === 3`, 'the card has no three choices')
-    assert(await page.run(`document.querySelector('textarea[aria-label^="Note for "]')?.getAttribute('aria-label') === 'Note for Pick #1'`), 'the card does not start on Pick')
+    assert(await page.run(`document.querySelector('[contenteditable][aria-label^="Note for "]')?.getAttribute('aria-label') === 'Note for Pick #1'`), 'the card does not start on Pick')
     await page.run(`[...document.querySelectorAll('[role=menuitemradio]')].find(b => b.textContent === 'More like this').click()`)
-    await until(page, `document.querySelector('textarea[aria-label^="Note for "]')?.getAttribute('aria-label') === 'Note for More like #1'`, 'choosing More like this did not change the note')
+    await until(page, `document.querySelector('[contenteditable][aria-label^="Note for "]')?.getAttribute('aria-label') === 'Note for More like #1'`, 'choosing More like this did not change the note')
     await page.key('Escape')
 
     // The panel folds to an edge; hovering it peeks the panel over the design without moving it; the pin docks it.

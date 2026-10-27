@@ -139,13 +139,18 @@ export type Mode =
 
 /** Where the page is, when it is on a single variant that can be commented on; view: the device
  *  view's layout while one is on, where comments are written and their pins shown. */
+/** What a short note says (a decision's, a reply's): its words, with chips where tags were written. */
+export type Note = { body: Seg[]; tags: Target[] }
+/** Whether a note says anything: words, or a tag. */
+export const noteSays = (n: Note) => n.body.some(s => typeof s !== 'string' || s.trim())
+
 export type Place = { proto: string; variant: string; state?: string; phone: boolean; title: string; compare?: true; view?: ViewSize }
 
 export type State = {
   items: Item[]
   held: Held | null
   /** Reply composers belong to the root thread, across row status and disclosure changes. */
-  replies: Record<string, { open: boolean; text: string; busy: boolean; error: string }>
+  replies: Record<string, { open: boolean; note: Note; busy: boolean; error: string }>
   mode: Mode
   active: string | null
   /** Bumped to make a composer that can't take a click say so (it shakes). */
@@ -167,8 +172,10 @@ export type State = {
   wholeFocus: boolean
   /** Set to put the focus in the whole-variant box (⇧C, a sidebar row's Comment on this); the box clears it once it has. */
   focusAsk: boolean
-  /** Picking an element to tag in the whole-variant box (its @ menu's Tag an element), not to comment on. */
+  /** Picking an element to tag in a comment box (its @ menu's Tag an element), not to comment on. */
   wholeTag: boolean
+  /** The box that asked (tag-field.tsx): the pick, or its cancel, goes back to it. */
+  tagOwner: string | null
   /** The element picked for it, waiting for the box to take it as a chip. */
   wholePicked: Target | null
   /** Send as I add: each comment goes to Claude the moment it is added, so work starts while the next is written. */

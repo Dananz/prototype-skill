@@ -9,6 +9,8 @@ import { t } from '../i18n'
 import { useAgentName, useCtx } from './ctx'
 import { useStore } from './store'
 import { Icon, MOD, PRIMARY, Pulse } from './ui'
+import { PLACEHOLDER, useTagField } from './tag-field'
+import type { Note } from './types'
 
 /** A row that asks first: a note (and a count, where there is one) before it sends. */
 export type MenuAsk = {
@@ -16,7 +18,7 @@ export type MenuAsk = {
   hint: string
   /** The count to start from, with a stepper; none: just a note. */
   count?: number
-  send: (note: string, count: number) => Promise<void>
+  send: (note: Note, count: number) => Promise<void>
   /** What is said once it went (a count is put in front of it: "5 more variants"). */
   done: (count: number) => string
 }
@@ -50,7 +52,8 @@ export function AskForm({ ask, onBack, onDone }: { ask: MenuAsk; onBack: () => v
   const agent = useAgentName()
   const { store } = useCtx()
   const listening = !!useStore(store).inbox?.listening
-  const [note, setNote] = useState('')
+  // A note on the prototype, not on a variant: an element tagged in it says which variant it is on.
+  const field = useTagField({ autoFocus: true, about: { proto: '', variant: '' } })
   const [count, setCount] = useState(ask.count ?? 0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -64,7 +67,7 @@ export function AskForm({ ask, onBack, onDone }: { ask: MenuAsk; onBack: () => v
   const send = async () => {
     if (sending.current) return
     sending.current = true; setBusy(true); setError('')
-    try { await ask.send(note, count); setSaid(true) }
+    try { await ask.send(field.read(), count); setSaid(true) }
     catch (e) { setError(e instanceof Error ? e.message : t('Could not send')) }
     finally { sending.current = false; setBusy(false) }
   }
@@ -90,8 +93,9 @@ export function AskForm({ ask, onBack, onDone }: { ask: MenuAsk; onBack: () => v
           <button onClick={() => setCount(c => Math.min(9, c + 1))} disabled={count >= 9} aria-label={t('One more')} className={step}><Icon name="plus" className="size-3.5" /></button>
         </span>}
       </div>
-      <textarea autoFocus value={note} onChange={e => setNote(e.target.value)} rows={3} maxLength={600} dir="auto" placeholder={ask.hint} aria-label={ask.title}
-        className="block w-full resize-none rounded-xl bg-zinc-900/[.04] px-3 py-2 text-[13px] leading-5 outline-none ring-1 ring-inset ring-transparent placeholder:text-zinc-400 focus:ring-proto-primary-ring dark:bg-white/[.06] [@media(pointer:coarse)]:text-base" />
+      <div {...field.props} data-placeholder={ask.hint} aria-label={ask.title}
+        className={`block max-h-40 min-h-[76px] w-full overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-zinc-900/[.04] px-3 py-2 text-[13px] leading-5 outline-none ring-1 ring-inset ring-transparent focus:ring-proto-primary-ring dark:bg-white/[.06] [@media(pointer:coarse)]:text-base ${PLACEHOLDER}`} />
+      {field.menu}
       {error && <p role="alert" className="mt-2 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-xs text-rose-700 dark:text-rose-300">{error}</p>}
       <div className="mt-2 flex items-center justify-end gap-1.5">
         <button onClick={() => { if (!sending.current) onBack() }} className="h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>
@@ -139,7 +143,7 @@ export function ContextPop({ open, at, title, sub, rows, onClose }: ContextPopPr
   // choice redraws the menu under it and a click on a removed button reads as one outside.
   return (
     <div ref={box} data-pop data-context-menu onClick={e => e.stopPropagation()} onContextMenu={e => { if (!e.shiftKey) e.preventDefault() }}
-      className="fixed z-40 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={pos}>
+      className="fixed z-40 w-72 overflow-hidden rounded-2xl transition-opacity has-[[data-tag-picking]]:pointer-events-none has-[[data-tag-picking]]:opacity-40 border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={pos}>
       {ask
         ? <AskForm ask={ask} onBack={() => setAsk(null)} onDone={onClose} />
         : <div role="menu" aria-label={title ?? t('Options')} onKeyDown={arrows} className="p-1.5">
