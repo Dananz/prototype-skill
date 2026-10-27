@@ -85,8 +85,9 @@ export function useTagField(opts: Opts) {
   const changed = () => {
     const el = input.current
     if (!el) return
-    // Emptied, it is emptied for good (no stray line break), so its placeholder shows.
-    if (!el.textContent && !el.querySelector('[data-tag]')) el.replaceChildren()
+    // Emptied, it is emptied for good (no stray line break left by the browser), so its placeholder
+    // shows; lines started with Enter are kept.
+    if (!el.textContent && el.childNodes.length === 1 && el.firstChild!.nodeName === 'BR') el.replaceChildren()
     setEmpty(!el.innerText.trim())
     optsRef.current.onChange?.(noteOf(el, tagsRef.current))
   }

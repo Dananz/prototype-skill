@@ -17,7 +17,7 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
     const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.filter(i => i.proto === 'threadfx') ?? []
     const panel = () => innerWidth < 640 ? document.querySelector('[role=dialog]') : document
     const rows = () => [...(panel()?.querySelectorAll('[data-shoot=comment-row]') ?? [])].filter(r => r.getClientRects().length && saved().some(i => i.id === r.dataset.comment))
-    const type = (el, text) => { const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set; set.call(el, text); el.dispatchEvent(new Event('input', { bubbles: true })) }
+    const type = (el, text) => { if (el.isContentEditable) el.textContent = text; else Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, text); el.dispatchEvent(new Event('input', { bubbles: true })) }
   `
   // The inbox, read until it prints what is expected (the page's send can still be on its way).
   const heard = async re => { let out = ''; for (let i = 0; i < 40 && !re.test(out); i++) { out += proto(['inbox'], { stdout: true }); if (!re.test(out)) await new Promise(r => setTimeout(r, 250)) } return out }
@@ -51,9 +51,9 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
       const reply = await until(() => rows()[0]?.querySelector('[data-shoot=comment-answer]'))
       if (!reply) return 'interim reply offers no Reply'
       reply.click()
-      const box = await until(() => rows()[0]?.querySelector('textarea'))
+      const box = await until(() => rows()[0]?.querySelector('[contenteditable=true]'))
       type(box, 'Keep this reply while finishing')
-      return await until(() => box.value === 'Keep this reply while finishing') ? 'ok' : 'typing failed'
+      return await until(() => box.textContent === 'Keep this reply while finishing') ? 'ok' : 'typing failed'
     })()`)
     if (typing !== 'ok') fail(`reply thread: ${typing}`)
     await capture('interim-draft')
@@ -63,24 +63,24 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
       const row = await until(() => rows()[0]?.closest('section')?.getAttribute('aria-label') === 'Done' && rows()[0])
       if (!row) return 'thread never finished'
       if (row.querySelector('button[aria-expanded]').getAttribute('aria-expanded') !== 'true') row.querySelector('button[aria-expanded]').click()
-      return await until(() => row.querySelector('textarea')?.value === 'Keep this reply while finishing', 1000) ? 'ok' : 'finishing lost the open reply draft'
+      return await until(() => row.querySelector('[contenteditable=true]')?.textContent === 'Keep this reply while finishing', 1000) ? 'ok' : 'finishing lost the open reply draft'
     })()`)
     await capture('done-draft')
     if (retained !== 'ok') regressions.push(retained)
     const collapsed = await page.run(`(async () => {
       ${helpers}
       const row = rows()[0]
-      if (!row.querySelector('textarea')) row.querySelector('[data-shoot=comment-answer]').click()
-      const box = await until(() => row.querySelector('textarea'))
+      if (!row.querySelector('[contenteditable=true]')) row.querySelector('[data-shoot=comment-answer]').click()
+      const box = await until(() => row.querySelector('[contenteditable=true]'))
       type(box, 'Keep this reply while folded')
       const original = window.fetch
       window.fetch = async (...args) => { if (args[0] !== '/__proto/comments') return original(...args); window.fetch = original; throw new TypeError('Reply connection failure') }
       ;(await until(() => !row.querySelector('[data-shoot=comment-answer-send]').disabled && row.querySelector('[data-shoot=comment-answer-send]'))).click()
       if (!await until(() => row.querySelector('[role=alert]')?.textContent.includes('Reply connection failure'))) return 'failed reply offered no error'
       row.querySelector('button[aria-expanded]').click()
-      await until(() => !row.querySelector('textarea'))
+      await until(() => !row.querySelector('[contenteditable=true]'))
       row.querySelector('button[aria-expanded]').click()
-      return await until(() => row.querySelector('textarea')?.value === 'Keep this reply while folded', 1000) ? (row.querySelector('[role=alert]')?.textContent.includes('Reply connection failure') ? 'ok' : 'collapse lost the reply error') : 'collapse lost the open reply draft'
+      return await until(() => row.querySelector('[contenteditable=true]')?.textContent === 'Keep this reply while folded', 1000) ? (row.querySelector('[role=alert]')?.textContent.includes('Reply connection failure') ? 'ok' : 'collapse lost the reply error') : 'collapse lost the open reply draft'
     })()`)
     await capture('reopened-draft')
     if (collapsed !== 'ok') regressions.push(collapsed)
@@ -88,14 +88,14 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
     const cancelled = await page.run(`(async () => {
       ${helpers}
       const row = rows()[0]
-      if (row.querySelector('textarea')) [...row.querySelectorAll('button')].find(b => b.textContent === 'Cancel').click()
+      if (row.querySelector('[contenteditable=true]')) [...row.querySelectorAll('button')].find(b => b.textContent === 'Cancel').click()
       ;(await until(() => row.querySelector('[data-shoot=comment-answer]'))).click()
-      const box = await until(() => row.querySelector('textarea'))
-      let result = box.value || row.querySelector('[role=alert]') ? 'Cancel did not clear the reply text and error' : 'ok'
+      const box = await until(() => row.querySelector('[contenteditable=true]'))
+      let result = box.textContent || row.querySelector('[role=alert]') ? 'Cancel did not clear the reply text and error' : 'ok'
       type(box, 'Explicitly discard this reply')
       box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       ;(await until(() => row.querySelector('[data-shoot=comment-answer]'))).click()
-      if ((await until(() => row.querySelector('textarea'))).value) result = 'Escape did not clear the reply text'
+      if ((await until(() => row.querySelector('[contenteditable=true]'))).textContent) result = 'Escape did not clear the reply text'
       ;[...row.querySelectorAll('button')].find(b => b.textContent === 'Cancel').click()
       row.querySelector('button[aria-expanded]').click()
       return result
@@ -112,7 +112,7 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
       const reply = await until(() => row.querySelector('[data-shoot=comment-answer]'))
       if (!reply) return 'no Reply under the answer'
       reply.click()
-      const box = await until(() => row.querySelector('[data-shoot=comment-answer-box] textarea'))
+      const box = await until(() => row.querySelector('[data-shoot=comment-answer-box] [contenteditable=true]'))
       if (!box) return 'Reply opened no box'
       type(box, 'Better, but the button still feels cramped')
       ;(await until(() => !row.querySelector('[data-shoot=comment-answer-send]').disabled && row.querySelector('[data-shoot=comment-answer-send]')))?.click()
@@ -166,9 +166,9 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
       ${helpers}
       const row = rows()[0]
       row.querySelector('[data-shoot=comment-answer]').click()
-      const box = await until(() => row.querySelector('[data-shoot=comment-answer-box] textarea'))
+      const box = await until(() => row.querySelector('[data-shoot=comment-answer-box] [contenteditable=true]'))
       if (!box) return 'Reply opened no box the second time'
-      if (box.value || row.querySelector('[role=alert]')) return 'successful send did not clear the reply draft'
+      if (box.textContent || row.querySelector('[role=alert]')) return 'successful send did not clear the reply draft'
       type(box, 'Good. Same for the footer?')
       ;(await until(() => !row.querySelector('[data-shoot=comment-answer-send]').disabled && row.querySelector('[data-shoot=comment-answer-send]')))?.click()
       const follow = await until(() => saved().filter(i => i.re && i.sent).length === 2 && saved().filter(i => i.re).sort((a, b) => a.at - b.at)[1])
@@ -189,7 +189,7 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
         const row = await until(() => rows()[0]?.closest('section')?.getAttribute('aria-label') === 'Done' && rows()[0])
         if (!row.querySelector('[data-shoot=comment-answer]')) row.querySelector('button[aria-expanded]').click()
         ;(await until(() => row.querySelector('[data-shoot=comment-answer]'))).click()
-        type(await until(() => row.querySelector('textarea')), 'Delete this pending reply')
+        type(await until(() => row.querySelector('[contenteditable=true]')), 'Delete this pending reply')
         // Post to the real server, hold its response until the user deletes the thread.
         const original = window.fetch
         window.fetch = async (...args) => {
@@ -206,14 +206,14 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
         ;(await until(() => !row.querySelector('[data-shoot=comment-answer-send]').disabled && row.querySelector('[data-shoot=comment-answer-send]'))).click()
         if (!await until(() => window.releaseReply)) return 'send never reached server'
         row.querySelector('button[aria-expanded]').click()
-        await until(() => !row.querySelector('textarea'))
+        await until(() => !row.querySelector('[contenteditable=true]'))
         row.querySelector('button[aria-expanded]').click()
-        const reopened = await until(() => row.querySelector('textarea') || row.querySelector('[data-shoot=comment-answer]'))
+        const reopened = await until(() => row.querySelector('[contenteditable=true]') || row.querySelector('[data-shoot=comment-answer]'))
         if (reopened.tagName === 'BUTTON') reopened.click()
         const sending = await until(() => row.querySelector('[data-shoot=comment-answer-send]'))
         const keptLock = sending.disabled && sending.textContent.includes('Sending')
         // A keyboard send after reopening must not enqueue the same reply again.
-        row.querySelector('textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))
+        row.querySelector('[contenteditable=true]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))
         row.querySelector('[data-shoot=remove]').click()
         if (!await until(() => saved().length === 0)) return 'deleting did not remove thread'
         window.releaseReply()
