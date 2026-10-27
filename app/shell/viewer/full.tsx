@@ -122,6 +122,13 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report, r
   const sizeNow = useRef(size)
   sizeNow.current = size
   const src = useMemo(() => frameSrc(screen.key, darkNow.current, sizeNow.current), [screen.key])
+  // A switch keeps the design shown so far under the next one until the next is ready and has faded
+  // in over it: one design crossfades into the other at any device, never through an empty screen.
+  // The last design that settled stays under the frame (in the same render the switch happens in, so it
+  // is never unmounted) until the new one has faded in over it.
+  const [last, setLast] = useState<{ key: string; src: string } | null>(null)
+  useEffect(() => { if (settled === screen.key) setLast({ key: screen.key, src }) }, [settled, screen.key])
+  const prev = last && last.key !== screen.key ? last : null
   useEffect(() => { frame.current?.contentWindow?.postMessage({ protoViewer: 'device', size }, '*') }, [size, ready])
   const was = useRef(dark)
   useEffect(() => {
@@ -189,14 +196,20 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report, r
             <div ref={card} data-full-card className="shrink-0" style={{ width: W * z, height: H * z }}>
               <div data-device-frame={size} className={shell} style={{ width: W, height: H, zoom: z }}>
                 <div data-phone-screen={size === 'phone' ? '' : undefined} className={`relative bg-white dark:bg-zinc-950 ${screenCls}`}>
-                  {size === 'desktop' && settled !== screen.key && (
-                    <div aria-hidden="true" data-full-preview className="absolute inset-0 overflow-hidden [&_*]:![animation-delay:-60s] [&_*]:![animation-play-state:paused]">
+                  {/* The frame shown now comes first, and the one switched from after it, so React never moves a
+                      frame (a moved frame reloads); the stacking puts the new one on top. */}
+                  <iframe key={screen.key} ref={frame} src={src} title={`#${screen.n} ${screen.name}`}
+                    className={`relative z-[2] block border-0 bg-white transition-opacity duration-200 dark:bg-zinc-950 motion-reduce:transition-none ${ready ? 'opacity-100' : 'opacity-0'}`}
+                    style={{ width: d.w, height: d.h }} />
+                  {prev && (
+                    <iframe key={prev.key} src={prev.src} aria-hidden="true" tabIndex={-1} title=""
+                      className="pointer-events-none absolute start-0 top-0 z-[1] block border-0 bg-white dark:bg-zinc-950" style={{ width: d.w, height: d.h }} />
+                  )}
+                  {size === 'desktop' && !prev && settled !== screen.key && (
+                    <div key="preview" aria-hidden="true" data-full-preview className="absolute inset-0 z-[1] overflow-hidden [&_*]:![animation-delay:-60s] [&_*]:![animation-play-state:paused]">
                       <Mounted key={screen.key} v={screen.v} live inert className="pointer-events-none h-full overflow-hidden" />
                     </div>
                   )}
-                  <iframe key={screen.key} ref={frame} src={src} title={`#${screen.n} ${screen.name}`}
-                    className={`relative block border-0 bg-white transition-opacity duration-150 dark:bg-zinc-950 motion-reduce:transition-none ${ready ? 'opacity-100' : 'opacity-0'}`}
-                    style={{ width: d.w, height: d.h }} />
                   {ready && talk.reach && <Pins variant={screen.key} mount={mount} kind="full" ready={ready} pick={{ on: talk.pinMode, at, view }} scale={1 / z} />}
                 </div>
               </div>
