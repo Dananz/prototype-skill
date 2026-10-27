@@ -9,7 +9,7 @@ import { Popover } from '@base-ui/react/popover'
 import { rtl, t, tn } from '../i18n'
 import { Foot, Panel, useTalk, type Here } from './comments'
 import { Icon, card, iconBtn, popup, presence, useClosable, usePresence, type Api, type Screen, type Store } from './ui'
-import { DeviceMenu, type Device } from './device'
+import type { Device } from './device'
 
 const dir = rtl ? 'rtl' : 'ltr'
 
@@ -57,7 +57,6 @@ export function Bar({ screens, i, go, step, store, api, root, full, back, wide, 
                 <span className="px-1 text-[12px] text-zinc-500 tabular-nums dark:text-zinc-400">{t('{i} of {n}', { i: i + 1, n: screens.length })}</span>
                 <button data-next onClick={() => step(1)} disabled={i === screens.length - 1} className={`${iconBtn} size-7 disabled:opacity-30`} aria-label={t('Next design')}><Icon name="caret-right" className="size-4" /></button>
               </div>
-              <DeviceMenu device={f.device} set={f.set} shown={f.shown} phone={f.phone} open={!!full && f.menu} setOpen={f.setMenu} root={root} />
               <div className="ms-1.5 flex shrink-0 items-center border-s border-zinc-200 ps-1.5 dark:border-white/10">
                 <button data-back onClick={back} title={t('All designs (Esc)')}
                   className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100">

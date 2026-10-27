@@ -2,7 +2,7 @@
 // list of the share's prototypes), a quiet hint on a wide screen, About, and who is looking: Sign
 // in with GitHub (comments need it, decision 20), or the signed-in viewer's face and login with a
 // menu to sign out. Little to do up here, so it stays small: 56 px, 48 px on a phone.
-import { useState, type RefObject } from 'react'
+import { useState, type ReactNode, type RefObject } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { Menu } from '@base-ui/react/menu'
 import { rtl, t, tn } from '../i18n'
@@ -22,15 +22,18 @@ const dir = rtl ? 'rtl' : 'ltr'
 const TINTS = ['bg-zinc-900 text-white dark:bg-white dark:text-zinc-900', 'bg-amber-500 text-white', 'bg-violet-500 text-white', 'bg-teal-500 text-white', 'bg-sky-500 text-white', 'bg-rose-500 text-white']
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
 
-export function Header({ protos, cur, choose, wide, facts, appearance, setAppearance, account, root }: {
+export function Header({ protos, cur, choose, wide, facts, appearance, setAppearance, account, root, center }: {
   protos: Proto[]; cur: Proto; choose: (id: string) => void; wide: boolean; facts: Facts
   appearance: Appearance; setAppearance: (a: Appearance) => void; account: Account; root: RefObject<HTMLDivElement | null>
+  /** In the middle of the header: the full view's device and zoom. The desk's hint gives way to it. */
+  center?: ReactNode
 }) {
   return (
     <header data-viewer-header dir={dir} className={`relative z-30 flex shrink-0 items-center gap-2.5 px-4 ${wide ? 'h-14' : 'h-12'}`}>
       <Protos protos={protos} cur={cur} choose={choose} compact={!wide} owner={facts.owner} updated={facts.updatedAt} root={root} />
       <div className="flex-1" />
-      {wide && <p className="hidden text-[12px] text-zinc-500 md:block dark:text-zinc-400">{t('Drag to move · pinch or {key} scroll to zoom', { key: isMac ? '⌘' : 'Ctrl' })}</p>}
+      {center && <div data-header-center className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">{center}</div>}
+      {wide && !center && <p className="hidden text-[12px] text-zinc-500 md:block dark:text-zinc-400">{t('Drag to move · pinch or {key} scroll to zoom', { key: isMac ? '⌘' : 'Ctrl' })}</p>}
       <About facts={facts} appearance={appearance} setAppearance={setAppearance} root={root} comments={account.comments} />
       <Who account={account} wide={wide} root={root} />
     </header>

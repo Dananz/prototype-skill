@@ -51,9 +51,11 @@ const STEP = 'grid size-10 shrink-0 place-items-center rounded-lg text-zinc-500 
  * The bar's device control. phone: a phone prototype, which is its own screen: the zoom only.
  * shown: the zoom the device is drawn at now (Fit's own when zoom is 0).
  */
-export function DeviceMenu({ device, set, shown, phone, open, setOpen, root }: {
+export function DeviceMenu({ device, set, shown, phone, open, setOpen, root, side = 'top' }: {
   device: Device; set: (d: Partial<Device>) => void; shown: number; phone: boolean
   open: boolean; setOpen: (o: boolean) => void; root: RefObject<HTMLDivElement | null>
+  /** Where its menu opens: above (in the bar) or below (in the header). */
+  side?: 'top' | 'bottom'
 }) {
   useClosable(open, setOpen)
   const pct = Math.round(shown * 100)
@@ -64,7 +66,7 @@ export function DeviceMenu({ device, set, shown, phone, open, setOpen, root }: {
   const p = ((Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, at)) - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN)) * 100
   const step = (d: number) => set({ zoom: clampZoom((z || pct) + d, -1) })
   return (
-    <div className="ms-1 flex shrink-0 items-center rounded-lg ring-1 ring-inset ring-black/[.08] dark:ring-white/10">
+    <div className="flex shrink-0 items-center rounded-lg ring-1 ring-inset ring-black/[.08] dark:ring-white/10">
       <Popover.Root open={open} onOpenChange={setOpen}>
         <Popover.Trigger data-device aria-label={t('Layout and zoom')} title={t('Layout and zoom')} className={`${BTN} rounded-e-none ps-2`}>
           <SizeIcon name={icon} className="size-4" />
@@ -72,7 +74,7 @@ export function DeviceMenu({ device, set, shown, phone, open, setOpen, root }: {
           <Icon name="caret-down" className="size-3 opacity-60" />
         </Popover.Trigger>
         <Popover.Portal container={root}>
-          <Popover.Positioner side="top" align="end" sideOffset={14} collisionPadding={8} className="z-50">
+          <Popover.Positioner side={side} align={side === 'top' ? 'end' : 'center'} sideOffset={side === 'top' ? 14 : 8} collisionPadding={8} className="z-50">
             <Popover.Popup data-device-menu dir={dir} className={`${popup} w-72 p-0 text-[13px]`}>
               {!phone && (
                 <div role="radiogroup" aria-label={t('Layout')} className="p-1.5">

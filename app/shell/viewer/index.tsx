@@ -19,10 +19,10 @@ import { Desk } from './desk'
 import { Full } from './full'
 import { Header, type Account, type Appearance, type Me } from './header'
 import { Phone } from './phone'
-import { clampZoom, loadDevice, saveDevice, type Device } from './device'
+import { DeviceMenu, clampZoom, loadDevice, saveDevice, type Device } from './device'
 import { createFramed, frameKey, frameMsg, holdZoom, zoomKey } from './framed'
 import { TalkCtx, hosted, useNotes, type Note, type Placing, type Talk } from './comments'
-import { Icon, MountsCtx, closePopups, face, makeStore, surface, type Api, type Mounts, type Screen } from './ui'
+import { Icon, MountsCtx, closePopups, face, makeStore, presence, surface, usePresence, type Api, type Mounts, type Screen } from './ui'
 
 type Mount = (el: HTMLElement, component: unknown) => () => void
 const THEME_KEY = 'proto-theme'
@@ -139,6 +139,8 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   const [device, setDevice] = useState<Device>(loadDevice)
   const [shown, setShown] = useState({ z: 1, fit: 1 })
   const [menu, setMenu] = useState(false)
+  // The device and zoom sit in the middle of the header while a design is open, coming and going softly.
+  const devOn = usePresence(full && !closing)
   const patch = (d: Partial<Device>) => setDevice(was => { const n = { ...was, ...d }; saveDevice(n); return n })
   // The zoom last asked for, ahead of the render that draws it: a fast wheel or pinch sends several
   // steps between two renders, and each builds on the one before.
@@ -263,7 +265,12 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   return (
     <TalkCtx.Provider value={talk}>
     <div ref={root} data-viewer dir="ltr" className={`${face} ${surface} relative flex h-full flex-col overflow-hidden text-zinc-900 antialiased dark:text-zinc-100`}>
-      <Header protos={protos} cur={proto} choose={setProtoId} wide={wide} facts={facts} appearance={appearance} setAppearance={setAppearance} account={account} root={root} />
+      <Header protos={protos} cur={proto} choose={setProtoId} wide={wide} facts={facts} appearance={appearance} setAppearance={setAppearance} account={account} root={root}
+        center={devOn.mounted ? (
+          <div className={presence(devOn.shown)} inert={!(full && !closing)}>
+            <DeviceMenu device={device} set={patch} shown={shown.z} phone={proto.kind === 'phone'} open={full && !closing && menu} setOpen={setMenu} root={root} side="bottom" />
+          </div>
+        ) : undefined} />
       {isNewer && (
         <div className={`pointer-events-none absolute inset-x-0 z-20 flex justify-center px-4 ${wide ? 'top-16' : 'top-14'} [&>*]:pointer-events-auto`}>
           <div role="status" data-newer dir={document.documentElement.dir} className="flex items-center gap-3 rounded-full border border-zinc-200 bg-white/95 py-1.5 ps-4 pe-1.5 text-[13px] shadow-lg backdrop-blur dark:border-white/10 dark:bg-zinc-900/95">

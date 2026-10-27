@@ -178,7 +178,7 @@ export async function shareCommentsChecks({ app, openPage, fail, buildShare, too
       await sleep(600)
       btn = await inFrame('[data-count]')
       assert(await until(() => pinIn(`[data-full] [data-pin="${pinned.id}"]`, btn), 4000), 'reload: the pin in the full view is not on the button')
-      await page.press(...await at('[data-viewer-bar] [data-device]'))
+      await page.press(...await at('[data-viewer-header] [data-device]'))
       const row = await until(() => at('[data-size="phone"]'), 3000)
       await page.press(...row)
       assert(await until(async () => (await page.run(`document.querySelector('[data-full] iframe')?.contentWindow.innerWidth`)) === 390, 4000), 'phone size: the frame is not 390 wide')

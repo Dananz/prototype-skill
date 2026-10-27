@@ -279,7 +279,7 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       await page.press(...await at('[data-board="share-link/C"] [data-frame]'))
       assert(await until(async () => (await frameText())?.includes('MARK-C') && await inFrame(`!!d.querySelector('[data-live]') && !d.querySelector('[data-live]').inert`), 5000), 'full view: a click on #3 did not open it live in a frame')
       await sleep(500)
-      assert(await page.run(`!!document.querySelector('[data-viewer-bar] [data-back]') && !!document.querySelector('[data-viewer-bar] [data-device]')`), 'full view: the bar has no way back to the desk, or no device control')
+      assert(await page.run(`!!document.querySelector('[data-viewer-bar] [data-back]') && !!document.querySelector('[data-viewer-header] [data-device]')`), 'full view: the bar has no way back to the desk, or no device control')
       const full = await inFrame(`(() => { const f = document.querySelector('[data-full] iframe').getBoundingClientRect(), z = document.querySelector('[data-full] iframe').currentCSSZoom, r = d.querySelector('[data-field]').getBoundingClientRect(); return [f.left + r.left * z, f.top + r.top * z, r.width * z, r.height * z] })()`)
       await page.drag([full[0] + 12, full[1] + full[3] / 3], [full[0] + full[2] - 12, full[1] + full[3] / 3], 10)
       await sleep(300)
@@ -294,7 +294,7 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       // breakpoints see the device, not the window).
       const frameW = () => inFrame(`d.defaultView.innerWidth`)
       const pick = async size => {
-        await page.press(...await at('[data-viewer-bar] [data-device]'))
+        await page.press(...await at('[data-viewer-header] [data-device]'))
         const row = await until(() => at(`[data-size="${size}"]`), 3000)
         assert(row, `devices: the menu has no ${size} row`)
         await page.press(...row)
@@ -305,7 +305,7 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       assert(await page.run(`!!document.querySelector('[data-full] [data-device-frame="phone"]')`), 'devices: Phone is not drawn as a phone')
       await pick('tablet')
       assert(await until(async () => await frameW() === 834, 3000), `devices: Tablet left the frame ${await frameW()} wide`)
-      await page.press(...await at('[data-viewer-bar] [data-device]'))
+      await page.press(...await at('[data-viewer-header] [data-device]'))
       const turn = await until(() => at('[data-turn]'), 3000)
       assert(turn, 'devices: no Turn for the tablet')
       await page.press(...turn)
