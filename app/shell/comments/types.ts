@@ -110,6 +110,8 @@ export type LinkComment = {
   status: 'new' | 'sent' | 'working' | 'done'
   owner_reply: string | null
   owner_reply_at: number | null
+  /** A reply on the link: the id of the comment it answers (the first of its thread). */
+  re?: string
   hidden: boolean
   deleted: boolean
   withdrawn: boolean

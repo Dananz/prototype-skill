@@ -263,7 +263,7 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   useEffect(() => { if (!wide) setReach(true) }, [wide])
   const barInset = () => bar.current?.offsetHeight ?? 0
   const talk: Talk = {
-    hosted, can, signIn: account.signIn, owner: account.owner || facts.owner, message, me: account.me, notes, fresh, told, add, retry, remove,
+    hosted, can, signIn: account.signIn, owner: account.owner || facts.owner, ownerAvatar: facts.avatar, message, me: account.me, notes, fresh, told, add, retry, remove,
     lost: new Set(Object.entries(lostBy).filter(([k]) => k.startsWith(`${full ? 'full' : wide ? 'desk' : 'phone'}:`)).flatMap(([, ids]) => ids)), setLost,
     open: barOpen, setOpen: setBarOpen, active, setActive, pinMode, setPinMode: on => { setPinMode(on); if (!on) setPlacing(null) }, placing, setPlacing,
     reach: wide ? reach : true,

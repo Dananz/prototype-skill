@@ -26,7 +26,7 @@ const parse = s => { try { return s ? JSON.parse(s) : null } catch { return null
 
 const viewerShape = (c, me) => ({
   id: c.id, variant: c.variant, body: c.body, target: parse(c.target), status: c.status,
-  owner_reply: c.owner_reply, owner_reply_at: c.owner_reply_at,
+  owner_reply: c.owner_reply, owner_reply_at: c.owner_reply_at, re: c.re || null,
   author: { login: c.login, name: c.vname, avatar: c.avatar },
   mine: !!me && me.gh_id === c.gh_id,
   created_at: c.created_at, updated_at: c.updated_at,
@@ -36,7 +36,7 @@ const viewerShape = (c, me) => ({
 const ownerShape = c => ({
   id: c.id, share: { id: c.share_id, title: c.share_title, version: c.share_version },
   variant: c.variant, version: c.version, body: c.body, target: parse(c.target), status: c.status,
-  owner_reply: c.owner_reply, owner_reply_at: c.owner_reply_at, hidden: !!c.hidden, deleted: !!c.deleted, withdrawn: !!c.withdrawn, done_in: c.done_in,
+  owner_reply: c.owner_reply, owner_reply_at: c.owner_reply_at, re: c.re || null, hidden: !!c.hidden, deleted: !!c.deleted, withdrawn: !!c.withdrawn, done_in: c.done_in,
   author: { gh_id: c.gh_id, login: c.login, name: c.vname, avatar: c.avatar },
   created_at: c.created_at, updated_at: c.updated_at,
 })
@@ -175,6 +175,18 @@ async function createComment(req, env, share) {
   if (again) return again
   if (typeof b.body !== 'string' || !b.body.trim()) return fail(400, 'Write something first.', { code: 'empty' })
   if (b.body.length > MAX_BODY) return fail(429, 'A comment is at most 4,000 characters.', { code: 'too_long' })
+  // A reply to a comment on the link (the owner answered it, and the viewer answers back): it joins
+  // that comment's thread, on its design and its spot. Threads are flat: a reply to a reply is one more
+  // reply to the first comment.
+  let re = null
+  if (b.re !== undefined && b.re !== null) {
+    const rid = typeof b.re === 'string' ? b.re.toLowerCase() : ''
+    const parent = UUID.test(rid) ? await env.DB.prepare('SELECT id, re, variant, target, deleted, withdrawn, hidden FROM comments WHERE share_id = ? AND id = ?').bind(share.id, rid).first() : null
+    if (!parent || parent.deleted || parent.withdrawn || parent.hidden) return fail(404, 'The comment you are replying to is gone.', { code: 'no_comment' })
+    re = parent.re || parent.id
+    b.variant = parent.variant
+    b.target = parse(parent.target)
+  }
   if (typeof b.variant !== 'string' || !VARIANT.test(b.variant) || !sharedVariants(share.scope).has(b.variant)) return fail(400, 'variant must be one of the shared designs, as slug/LETTER.', { code: 'invalid' })
   const target = readTarget(b.target)
   if (!target) return fail(400, 'target is not a pin this host can keep.', { code: 'invalid' })
@@ -198,9 +210,9 @@ async function createComment(req, env, share) {
   // The phase-0 columns are NOT NULL: the open link is '', every commenter is verified by GitHub,
   // and route is the variant.
   const ins = await env.DB.prepare(
-    `INSERT INTO comments (id, share_id, link_id, viewer, verified, version, route, body, gh_id, variant, target, status, hidden, deleted, created_at, updated_at)
-     VALUES (?, ?, '', ?, 1, ?, ?, ?, ?, ?, ?, 'new', 0, 0, ?, ?) ON CONFLICT(share_id, id) DO NOTHING`,
-  ).bind(id, share.id, `gh:${me.gh_id}`, share.version, b.variant, b.body, me.gh_id, b.variant, target.value && JSON.stringify(target.value), now, now).run()
+    `INSERT INTO comments (id, share_id, link_id, viewer, verified, version, route, body, gh_id, variant, target, re, status, hidden, deleted, created_at, updated_at)
+     VALUES (?, ?, '', ?, 1, ?, ?, ?, ?, ?, ?, ?, 'new', 0, 0, ?, ?) ON CONFLICT(share_id, id) DO NOTHING`,
+  ).bind(id, share.id, `gh:${me.gh_id}`, share.version, b.variant, b.body, me.gh_id, b.variant, target.value && JSON.stringify(target.value), re, now, now).run()
   if (!ins.meta?.changes) {
     // The same id arrived twice at once: the other request stored it.
     await giveBack(env, `share:${share.id}`, day)

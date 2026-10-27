@@ -107,7 +107,7 @@ function Avatar({ c }: { c: LinkComment }) {
   return <span data-link-avatar aria-hidden className="grid size-6 shrink-0 place-items-center rounded-full bg-zinc-900/[.06] text-[11px] font-semibold uppercase text-zinc-600 dark:bg-white/10 dark:text-zinc-300">{login.slice(0, 1)}</span>
 }
 
-function Card({ c, picked, onPick, busy, run }: { c: LinkComment; picked: boolean; onPick: (on: boolean) => void; busy: boolean; run: (name: string, body: Record<string, unknown>) => Promise<Answer | null> }) {
+function Card({ c, parent, picked, onPick, busy, run }: { c: LinkComment; parent?: LinkComment; picked: boolean; onPick: (on: boolean) => void; busy: boolean; run: (name: string, body: Record<string, unknown>) => Promise<Answer | null> }) {
   const agent = useAgentName()
   const { host } = useCtx()
   const [replying, setReplying] = useState(false)
@@ -135,6 +135,11 @@ function Card({ c, picked, onPick, busy, run }: { c: LinkComment; picked: boolea
       </div>
       {c.changed && <p data-link-changed className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-300">{t('On v{version}. It has changed since.', { version: c.version })}</p>}
       {c.gone && <p className="mt-1.5 text-[11px] text-zinc-500">{t('No longer in this session')}</p>}
+      {c.re && (
+        <p data-link-reply-to className="mt-1.5 truncate border-s-2 border-zinc-300 ps-2 text-[11px] text-zinc-500 dark:border-white/15 dark:text-zinc-400">
+          {parent ? <>{t('Replying to')} <span dir="auto" data-own-side>{parent.owner_reply ? t('your reply: {text}', { text: parent.owner_reply }) : parent.body}</span></> : t('A reply on the link')}
+        </p>
+      )}
       <p dir="auto" data-own-side data-link-body className="mt-1.5 whitespace-pre-wrap break-words text-[12.5px] leading-[18px] text-zinc-800 dark:text-zinc-100">{c.body}</p>
       {c.owner_reply && (
         <div className="mt-2 flex justify-end">
@@ -232,7 +237,7 @@ export function LinksTray() {
         </p>
       )}
       <div className="space-y-2">
-        {comments.map(c => <Card key={`${c.share.id}/${c.id}`} c={c} busy={busy} run={run} picked={picked.includes(c.id)} onPick={on => setPicked(p => on ? [...p, c.id] : p.filter(x => x !== c.id))} />)}
+        {comments.map(c => <Card key={`${c.share.id}/${c.id}`} c={c} parent={c.re ? comments.find(p => p.id === c.re && p.share.id === c.share.id) : undefined} busy={busy} run={run} picked={picked.includes(c.id)} onPick={on => setPicked(p => on ? [...p, c.id] : p.filter(x => x !== c.id))} />)}
       </div>
       {note && <p role="status" className="mt-2 px-1 text-xs text-zinc-500">{note}</p>}
       {picked.length > 1 && (

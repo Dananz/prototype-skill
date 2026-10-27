@@ -359,3 +359,44 @@ test('the session server: owner (cached, refresh asks now), signin, and the list
   assert.deepEqual(s.changedVariants, [])
   assert.equal(s.changed, false)
 })
+
+test('a viewer replies on the link: the reply joins the first comment\'s thread, its design and spot', async () => {
+  const env = await makeEnv()
+  signedIn(env)
+  const id = await publish(env)
+  addViewer(env, 77, 'noa')
+  const cookie = await cookieOf(id, 77)
+  const post = body => call(env, `/s/${id}/api/comments`, { method: 'POST', headers: { ...XP, cookie, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const first = crypto.randomUUID(), second = crypto.randomUUID(), third = crypto.randomUUID()
+  const target = { x: 10, y: 20, view: { size: 'desktop', w: 1440, h: 900 } }
+  assert.equal((await post({ id: first, variant: 'pricing/B', body: 'too dark', target })).status, 201)
+  // The reply names only the comment it answers; the host gives it that comment's design and spot.
+  const r = await post({ id: second, variant: 'pricing/A', body: 'thanks!', target: null, re: first })
+  assert.equal(r.status, 201, await r.clone().text())
+  const got = await r.json()
+  assert.equal(got.re, first)
+  assert.equal(got.variant, 'pricing/B')
+  assert.deepEqual(got.target, target)
+  // A reply to a reply joins the same thread: threads stay flat.
+  const r3 = await (await post({ id: third, variant: 'pricing/B', body: 'one more', target: null, re: second })).json()
+  assert.equal(r3.re, first)
+  // The owner sees what it answers.
+  const owned = await (await call(env, '/api/owner/comments', { headers: auth })).json()
+  assert.equal(owned.comments.find(c => c.id === second).re, first)
+  // Nothing to answer: refused.
+  assert.equal((await post({ id: crypto.randomUUID(), variant: 'pricing/B', body: 'x', re: crypto.randomUUID() })).status, 404)
+})
+
+test('a reply sent to Claude carries what it answers, inside the quoted fence', async () => {
+  const { fromComment, sharedLines } = await import('../app/share/viewer-text.mjs')
+  const dir = mkdtempSync(join(tmpdir(), 'proto-reply-'))
+  const row = { id: crypto.randomUUID(), share: { id: 'abcdefghjk', title: 'T', version: 1 }, variant: 'pricing/B', version: 1, body: 'thanks!', author: { login: 'noa' }, re: crypto.randomUUID() }
+  const parent = { body: 'too dark', owner_reply: 'made it lighter' }
+  const c = fromComment(row, dir, parent)
+  assert.deepEqual(c.from.earlier, { text: 'too dark', reply: 'made it lighter' })
+  const lines = sharedLines({ ...c, n: 1 }).join('\n')
+  const fenceStart = lines.indexOf('┌')
+  assert.ok(fenceStart > 0 && lines.indexOf('replying to their earlier comment: too dark') > fenceStart, lines)
+  assert.match(lines, /which the owner answered: made it lighter/)
+  rmSync(dir, { recursive: true, force: true })
+})
