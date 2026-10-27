@@ -11,6 +11,7 @@ import { changedSince, describe, protosOf, publishShare, removeShare, reviewOf, 
 import { ShareError, parseScope } from '../app/share/scope.mjs'
 import { hostCommentLines, trayRow } from '../app/share/viewer-text.mjs'
 import { client, defaultHost, ensureTools, getToken, linkOf, localRunning, startLocal, stopLocal } from './share-host.mjs'
+import { installApp, syncApp } from './app-sync.mjs'
 
 const MiB = 2 ** 20
 
@@ -25,6 +26,18 @@ async function liveHost(die) {
   if (process.env.PROTO_SHARE_NO_START === '1' || await localRunning(host)) return { host, token }
   const started = await startLocal()
   return { host: started, token: getToken(started.name) }
+}
+
+// A share is built from the session's own copy of the app, which only `proto up` used to refresh:
+// it is brought up to date with the skill first, so a session not re-upped never publishes an old
+// viewer. The dev server is left running. Vite restarts itself when its config changed; anything
+// else a running server holds in memory waits for `proto up`.
+function freshApp(sessionDir, die) {
+  let r
+  try { r = syncApp(sessionDir) } catch (e) { die(e.message) }
+  if (r.deps && !installApp(sessionDir)) die('installing the session\'s packages failed (see above)')
+  if (r.restartWorthy || r.deps) console.log('The session\'s app was updated for this share. If its page acts oddly, `proto up` restarts it on the new code.')
+  else if (r.changed.length) console.log(`updated the session's app for this share: ${r.changed.length} file${r.changed.length === 1 ? '' : 's'}`)
 }
 
 /** Prints the review. Blocks end the command; warnings need --yes. */
@@ -45,6 +58,7 @@ function report(result) {
 
 async function publish(args, flags, { sessionDir, session, die }) {
   const { host, token } = await liveHost(die)
+  freshApp(sessionDir, die)
   const protos = protosOf(sessionDir)
   const scope = parseScope(args, flags.all === true, protos)
   const title = typeof flags.title === 'string' ? flags.title : titleOf(scope, protos, session)
@@ -58,6 +72,7 @@ async function publish(args, flags, { sessionDir, session, die }) {
 async function update(id, flags, { sessionDir, session, die }) {
   if (!id) die('proto share update <id> [--note "…"]: which share? proto share ls lists them')
   const { host, token } = await liveHost(die)
+  freshApp(sessionDir, die)
   const result = await updateShare({ sessionDir, session, host, token, id, note: typeof flags.note === 'string' ? flags.note : undefined, yes: flags.yes === true })
   report(result)
   console.log(`updated ${id} to v${result.entry.version}: the same link, its comments kept${result.entry.note ? `; what's new: "${result.entry.note}"` : ''}`)
@@ -139,7 +154,8 @@ async function take(args, flags, { sessionDir, die }) {
   console.log(batch ? `batch ${batch}: run proto inbox to read them` : 'nothing was sent')
 }
 
-async function file(args, flags, { sessionDir, session }) {
+async function file(args, flags, { sessionDir, session, die }) {
+  freshApp(sessionDir, die)
   const protos = protosOf(sessionDir)
   const scope = parseScope(args, flags.all === true, protos)
   const title = typeof flags.title === 'string' ? flags.title : titleOf(scope, protos, session)
@@ -166,6 +182,9 @@ export async function main(args, flags, ctx) {
   try {
     const [sub, ...rest] = args
     if (sub === 'setup') return await setup(flags, die)
+    // The page's Share sheet runs this before it builds (app/share/routes.mjs), since the session's
+    // server can't reach the skill's code itself.
+    if (flags['sync-only'] === true) return freshApp(ctx.sessionDir, die)
     if (sub === 'stop') {
       const was = await stopLocal()
       return console.log(was ? 'stopped the local share host (its links answer again after the next proto share)' : 'the local share host was not running')

@@ -80,11 +80,13 @@ const metaFor = (session, sessionDir, scope, title, extra = {}) => ({
 })
 
 // Built and reviewed; null when it may go out, else what stops it.
-async function built({ sessionDir, scope, info, yes }) {
+// notes: the caller's own warnings, which need the same yes.
+async function built({ sessionDir, scope, info, yes, notes = [] }) {
   const src = sources(sessionDir, scope)
   let b
   try { b = await buildShare({ sessionDir, scope, info }) } catch (e) { src.drop(); throw e }
   const review = reviewOf(b)
+  review.notes.push(...notes)
   const stop = review.block.length ? { ok: false, blocked: true, review } : review.notes.length && !yes ? { ok: false, needsYes: true, review } : null
   if (stop) src.drop()
   return { b, review, stop, src }
@@ -95,8 +97,8 @@ async function built({ sessionDir, scope, info, yes }) {
  * Resolves with { ok: true, entry, link, review }, or { ok: false, blocked | needsYes, review }
  * with nothing sent. Nothing is written on this Mac until the host has the page.
  */
-export async function publishShare({ sessionDir, session, host, token, scope, title, yes, fetch }) {
-  const { b, review, stop, src } = await built({ sessionDir, scope, info: { title, owner: host.owner || '', version: 1 }, yes })
+export async function publishShare({ sessionDir, session, host, token, scope, title, yes, notes, fetch }) {
+  const { b, review, stop, src } = await built({ sessionDir, scope, info: { title, owner: host.owner || '', version: 1 }, yes, notes })
   if (stop) return stop
   let id, version
   try {
@@ -115,12 +117,12 @@ export async function publishShare({ sessionDir, session, host, token, scope, ti
  * its comments (the host marks those done as in this version). The note is kept with the share
  * here and sent along for the viewer's "What's new".
  */
-export async function updateShare({ sessionDir, session, host, token, id, note, yes, fetch }) {
+export async function updateShare({ sessionDir, session, host, token, id, note, yes, notes, fetch }) {
   const entry = readShares(sessionDir).find(e => e.id === id)
   if (!entry) throw new ShareError(`No share ${id} in this session: proto share ls lists them`)
   if (entry.host !== host.name) throw new ShareError(`${id} is on the host "${entry.host}", not "${host.name}"`)
   const text = typeof note === 'string' ? note.trim().slice(0, 300) : ''
-  const { b, review, stop, src } = await built({ sessionDir, scope: entry.scope, info: { title: entry.title, owner: host.owner || '', version: (entry.version || 1) + 1 }, yes })
+  const { b, review, stop, src } = await built({ sessionDir, scope: entry.scope, info: { title: entry.title, owner: host.owner || '', version: (entry.version || 1) + 1 }, yes, notes })
   if (stop) return stop
   let version
   try {

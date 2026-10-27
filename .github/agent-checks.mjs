@@ -1,7 +1,7 @@
 // Fast CLI checks, with no package install, browser, server or real session mutations.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -262,3 +262,58 @@ test('a comment from a link prints fenced, and its statuses wait in the outbox',
   assert.deepEqual(outbox().map(e => e.status), ['done'])
   assert.ok(!readFileSync(join(dir, '.proto', 'shares', 'outbox.jsonl'), 'utf8').includes('Made the toggle'), 'Claude\'s reply went into the outbox')
 }))
+
+// proto share brings the session's copy of the app up to date before it builds (scripts/app-sync.mjs):
+// --sync-only is that step alone, which the page's Share sheet runs through the skill. A stale
+// viewer file and a stale vite.config.mjs (one a running server holds) are both rewritten, and the
+// session's dev server, a live pid here, is never signalled.
+test('share --sync-only rewrites a stale shell and leaves the dev server alone', async () => {
+  const { BASE, SHELL, STACKS } = await import('../scripts/app-sync.mjs')
+  const { spawn } = await import('node:child_process')
+  const server = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); process.on("SIGINT", () => {}); setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+  try {
+    fixture(({ project, call, session }) => {
+      const dir = session('sharer')
+      const kit = STACKS.react
+      writeFileSync(join(dir, 'session.json'), JSON.stringify({ id: 'sharer', stack: 'react', project, localUrl: 'http://example.test/sharer', pid: server.pid }))
+      // The packages already as the template wants them, so the sync needs no install.
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { ...SHELL, ...kit.deps }, devDependencies: { ...BASE, ...kit.dev } }))
+      const first = call(['share', '--sync-only', '--session', 'sharer'])
+      assert.equal(first.status, 0, first.stderr)
+      const viewer = join(dir, 'shell', 'viewer', 'index.tsx'), config = join(dir, 'vite.config.mjs')
+      const template = f => readFileSync(join(skill, 'app', f), 'utf8')
+      writeFileSync(viewer, '// STALE VIEWER\n')
+      writeFileSync(config, '// STALE CONFIG\n')
+      const r = call(['share', '--sync-only', '--session', 'sharer'])
+      assert.equal(r.status, 0, r.stderr)
+      assert.equal(readFileSync(viewer, 'utf8'), template('shell/viewer/index.tsx'))
+      assert.equal(readFileSync(config, 'utf8'), template('vite.config.mjs'))
+      assert.match(r.stdout, /proto up` restarts it on the new code/)
+      assert.equal(server.exitCode, null)
+      assert.doesNotThrow(() => process.kill(server.pid, 0))
+      // Nothing left to do: a second run says nothing about a restart.
+      const again = call(['share', '--sync-only', '--session', 'sharer'])
+      assert.equal(again.status, 0, again.stderr)
+      assert.doesNotMatch(again.stdout, /restarts it/)
+    })
+  } finally { server.kill('SIGKILL') }
+})
+
+// The page's Share sheet: with PROTO_SKILL (set by proto up) the session is synced through the skill
+// before the build; without it (a server an older proto started) the review carries a note instead.
+test('the Share sheet syncs through the skill, or says the viewer may be old', async () => {
+  const { syncFirst } = await import('../app/share/routes.mjs')
+  const { BASE, SHELL, STACKS } = await import('../scripts/app-sync.mjs')
+  const project = mkdtempSync(join(tmpdir(), 'proto agent checks '))
+  try {
+    const dir = join(project, '.prototypes', 'sharer')
+    mkdirSync(dir, { recursive: true })
+    const session = { id: 'sharer', stack: 'react', project }
+    writeFileSync(join(dir, 'session.json'), JSON.stringify(session))
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { ...SHELL, ...STACKS.react.deps }, devDependencies: { ...BASE, ...STACKS.react.dev } }))
+    assert.match(await syncFirst(dir, session, ''), /may be older than the skill: run proto up/)
+    assert.ok(!existsSync(join(dir, 'shell')))
+    assert.equal(await syncFirst(dir, session, skill), null)
+    assert.equal(readFileSync(join(dir, 'shell', 'viewer', 'index.tsx'), 'utf8'), readFileSync(join(skill, 'app', 'shell', 'viewer', 'index.tsx'), 'utf8'))
+  } finally { rmSync(project, { recursive: true, force: true }) }
+})

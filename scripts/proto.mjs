@@ -86,6 +86,7 @@ import { assignmentNeeded, buildUpNeeded, isCurrent } from '../app/assignment.mj
 import { idOf, letterOf, numberOf } from '../app/numbers.mjs'
 import { report as reportShared } from '../app/share/owner.mjs'
 import { sharedLines } from '../app/share/viewer-text.mjs'
+import { BASE, SHELL, STACKS, syncApp } from './app-sync.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 // The languages the page speaks (app/shell/i18n.ts). --lang sets the session's: the language the
@@ -103,20 +104,7 @@ const MAX_HEAP_MB = 1024
 const DELETE_DAYS = 14
 const LOCAL_PORTS = [5180, 5279]
 const TAILNET_PORTS = [9500, 9599]
-const BASE = { vite: '^8.3.0', tailwindcss: '^4.3.0', '@tailwindcss/vite': '^4.3.0' }
-// The shell's own runtime, in every app whatever its stack: the phone's variant sheet is Base
-// UI's Drawer, which is React, and so is the comment layer (which takes its screenshots with
-// modern-screenshot). The few icons the shell takes from Phosphor are its own SVG files, so they
-// work the same in a Vue app.
-const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react': '^1.9.0', 'modern-screenshot': '^4.7.0', '@phosphor-icons/core': '^2.1.1', '@fontsource-variable/google-sans': '^5.3.2', 'qrcode-generator': '^2.0.4' }
-// What a variant can reach for without an install (an install reloads the page): icons and
-// motion. Fonts come from Google Fonts at run time (src/fonts.ts, `proto fonts`). New sessions
-// only; `proto up` never adds them to an existing one, so a running session isn't reinstalled and
-// restarted for packages it never asked for.
-const STACKS = {
-  react: { deps: {}, craft: { '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', tweaks: 'tweaks.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', slot: 'slot.react.ts', stub: 'react.tsx', plan: 'react-plan.tsx' },
-  vue: { deps: { vue: '^3.5.0' }, craft: { '@phosphor-icons/vue': '^2.2.1', 'motion-v': '^2.7.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', tweaks: 'tweaks.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue', plan: 'vue-plan.vue' },
-}
+// The template's packages and stacks live with the app sync (scripts/app-sync.mjs).
 
 // ---------- arguments ----------
 const argv = process.argv.slice(2)
@@ -125,7 +113,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -373,68 +361,18 @@ function scaffold(dir, project) {
 }
 
 // ---------- update ----------
-// What a session's app takes from the template, by its path in the session: everything copied in
-// except the session's own work (its prototypes and theme), plus the stack's adapters.
-const OWN = new Set(['adapters', 'stubs', 'node_modules', join('src', 'protos'), join('src', 'theme.css')])
-function appFiles(stack) {
-  const kit = STACKS[stack] || die(`unknown stack "${stack}" in session.json`)
-  const out = new Map()
-  const walk = rel => {
-    for (const e of readdirSync(join(APP, rel), { withFileTypes: true })) {
-      const r = join(rel, e.name)
-      if (OWN.has(r)) continue
-      if (e.isDirectory()) walk(r)
-      else out.set(r === 'gitignore' ? '.gitignore' : r, join(APP, r))
-    }
-  }
-  walk('')
-  out.set(join('src', `mount.${kit.adapter.split('.').pop()}`), join(APP, 'adapters', kit.adapter))
-  out.set(join('src', 'hints.ts'), join(APP, 'adapters', kit.hints))
-  out.set(join('src', 'tweaks.ts'), join(APP, 'adapters', kit.tweaks))
-  out.set(join('src', 'copy.ts'), join(APP, 'adapters', kit.copy))
-  out.set(join('src', 'motion.ts'), join(APP, 'adapters', kit.motion))
-  if (kit.slot) out.set(join('src', 'slot.ts'), join(APP, 'adapters', kit.slot))
-  return out
-}
-
 /**
- * Brings an existing session's app up to date with the template, so a fix to the shell reaches a
- * session made before it. The shell is one piece, so every file of it is replaced, never some.
- * Packages the shell needs are added or moved to the template's version; ones the session added
- * stay. Vite picks up changed shell code by itself; new packages, its config and the server need
- * the dev server started again, which `up` then does.
+ * Brings an existing session's app up to date with the template (scripts/app-sync.mjs), so a fix
+ * to the shell reaches a session made before it. Vite picks up changed shell code by itself; new
+ * packages, its config and the server need the dev server started again, which `up` then does.
  */
 async function update(dir) {
-  const s = readSession(dir)
-  const kit = STACKS[s.stack]
-  const files = appFiles(s.stack)
-  const changed = []
-  for (const [rel, from] of files) {
-    const to = join(dir, rel), next = readFileSync(from)
-    if (existsSync(to) && readFileSync(to).equals(next)) continue
-    mkdirSync(dirname(to), { recursive: true })
-    writeFileSync(to, next)
-    changed.push(rel)
-  }
-  // A shell file the template dropped or renamed would otherwise linger beside its replacement.
-  const sweep = rel => {
-    for (const e of readdirSync(join(dir, rel), { withFileTypes: true })) {
-      const r = join(rel, e.name)
-      if (e.isDirectory()) { sweep(r); if (!readdirSync(join(dir, r)).length) rmSync(join(dir, r), { recursive: true }) }
-      else if (!files.has(r)) { rmSync(join(dir, r)); changed.push(r) }
-    }
-  }
-  if (existsSync(join(dir, 'shell'))) sweep('shell')
-  const pkgFile = join(dir, 'package.json'), pkg = readJson(pkgFile, {})
-  let deps = false
-  for (const [key, want] of [['dependencies', { ...SHELL, ...kit.deps }], ['devDependencies', { ...BASE, ...kit.dev }]]) {
-    pkg[key] ||= {}
-    for (const [name, v] of Object.entries(want)) if (pkg[key][name] !== v) { pkg[key][name] = v; deps = true }
-  }
+  let r
+  try { r = syncApp(dir) } catch (e) { die(e.message) }
+  const { changed, deps, restartWorthy } = r
   if (!changed.length && !deps) return
-  if (deps) writeJson(pkgFile, pkg)
   console.log(`updated the app: ${changed.length} file${changed.length === 1 ? '' : 's'}${deps ? ', packages' : ''}`)
-  if (deps || changed.some(f => ['vite.config.mjs', 'server.mjs', 'source.mjs', 'assignment.mjs', 'listener.mjs'].includes(f))) await stop(dir, 'updated')
+  if (deps || restartWorthy) await stop(dir, 'updated')
   if (deps) install(dir)
 }
 
@@ -469,7 +407,7 @@ async function up() {
     const log = openSync(join(dir, '.proto', 'dev.log'), 'a')
     // A ceiling on the server's JS heap: it idles near 200 MB, so this only stops a runaway,
     // which exits and is restarted by the next `proto up`.
-    const child = spawn(process.execPath, [`--max-old-space-size=${MAX_HEAP_MB}`, join(dir, 'node_modules', 'vite', 'bin', 'vite.js')], { cwd: dir, detached: true, windowsHide: true, stdio: ['ignore', log, log] })
+    const child = spawn(process.execPath, [`--max-old-space-size=${MAX_HEAP_MB}`, join(dir, 'node_modules', 'vite', 'bin', 'vite.js')], { cwd: dir, detached: true, windowsHide: true, stdio: ['ignore', log, log], env: { ...process.env, PROTO_SKILL: SKILL } })
     child.unref()
     s = patchSession(dir, { pid: child.pid })
     for (let i = 0; i < 60 && !await answers(`http://127.0.0.1:${port}/__proto/status`, 1000); i++) await sleep(250)
@@ -2516,7 +2454,11 @@ const commands = {
   stack: () => { const d = detectStack(projectRoot()); console.log(`${d.stack} (${d.why})`) },
   fonts,
   kit: () => !args[0] ? kitStatus() : args[0] === 'save' ? kitSave() : args[0] === 'screen' ? kitScreen() : die(`proto kit ${args[0]}? It is proto kit, proto kit save or proto kit screen`),
-  share: () => import('./share.mjs').then(m => m.main(args, flags, { sessionDir: sessionDir(), session: need(sessionDir()), die })),
+  // setup and stop are about the host, not a session: they run from any folder.
+  share: () => import('./share.mjs').then(m => {
+    const free = ['setup', 'stop'].includes(args[0])
+    return m.main(args, flags, { sessionDir: free ? null : sessionDir(), session: free ? null : need(sessionDir()), die })
+  }),
 }
 // The page shows variants by number (app/numbers.mjs), so the user names them that way: a route
 // given with a number (hero/29, hero/29/open) means that letter (hero/AC). Only where the slug is a

@@ -10,12 +10,31 @@
 import { clientFor, defaultHost, dismiss, flush, forget, getToken, hostNamed, hostUp, linkOf, mergeTray, outboxFile, pollOnce, queue, readShares, sendComments, trayItems, trayView } from './owner.mjs'
 import { changedSince, protosOf, publishShare, removeShare, titleOf, updateShare } from './publish.mjs'
 import { ShareError, parseScope } from './scope.mjs'
+import { spawn } from 'node:child_process'
 import { statSync } from 'node:fs'
+import { join } from 'node:path'
 
 const PAGE_FRESH = 10 * 60e3 // a page pinged this recently counts as a person there
 const REFRESH_GAP = 3000 // the tray asked for again sooner than this answers from what is here
 
 const failure = (status, error, extra = {}) => Object.assign(new Error(error), { status, extra })
+
+// A share is built from this session's copy of the app, which only `proto up` refreshes. The skill
+// (PROTO_SKILL, set by `proto up`) brings it up to date first (scripts/app-sync.mjs); a server
+// started by an older proto has no PROTO_SKILL, so it publishes as is and says so in the review.
+// Resolves with a review note, or null when the copy is current.
+export function syncFirst(root, session, skill = process.env.PROTO_SKILL) {
+  if (!skill) return Promise.resolve("This session's viewer may be older than the skill: run proto up before sharing.")
+  const args = [join(skill, 'scripts', 'proto.mjs'), 'share', '--sync-only', '--project', session.project, '--session', String(session.id)]
+  return new Promise(done => {
+    let out = ''
+    const child = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PROTO_NO_GC: '1' } })
+    child.stdout.on('data', d => { out += d })
+    child.stderr.on('data', d => { out += d })
+    child.on('error', e => done(`This session's app could not be brought up to date (${e.message}): run proto up before sharing.`))
+    child.on('close', code => done(code === 0 ? null : `This session's app could not be brought up to date: ${out.trim().split('\n').at(-1) || `exit ${code}`}. Run proto up before sharing.`))
+  })
+}
 
 /**
  * root: the session folder. session(): session.json as it is now. receive(data, root): the server's
@@ -125,13 +144,15 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
       const scope = parseScope(words, data.all === true, protos)
       const title = typeof data.title === 'string' && data.title.trim() ? data.title.trim().slice(0, 200) : titleOf(scope, protos, session())
       const { host, token } = await reach()
-      return published(await publishShare({ sessionDir: root, session: session(), host, token, scope, title, yes: data.yes === true }))
+      const stale = await syncFirst(root, session())
+      return published(await publishShare({ sessionDir: root, session: session(), host, token, scope, title, yes: data.yes === true, notes: stale ? [stale] : [] }))
     },
     async update(data) {
       if (typeof data.id !== 'string') throw failure(400, 'send { id, note?, yes? }')
       const e = entryOf(data.id)
       const { host, token } = await reach(e.host)
-      const r = published(await updateShare({ sessionDir: root, session: session(), host, token, id: e.id, note: typeof data.note === 'string' ? data.note : undefined, yes: data.yes === true }))
+      const stale = await syncFirst(root, session())
+      const r = published(await updateShare({ sessionDir: root, session: session(), host, token, id: e.id, note: typeof data.note === 'string' ? data.note : undefined, yes: data.yes === true, notes: stale ? [stale] : [] }))
       // The tray's comments on the old version now say it has changed since.
       if (r.ok) tell()
       return r
