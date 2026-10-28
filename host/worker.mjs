@@ -1,7 +1,7 @@
 import { newId, isId } from './lib/ids.mjs'
 import { ownerOf } from './lib/auth.mjs'
 import { namesOf, route } from './lib/routes.mjs'
-import { page, ogPage } from './lib/pages.mjs'
+import { page, ogPage, ROBOTS } from './lib/pages.mjs'
 import { json, fail } from './lib/http.mjs'
 import { upgraded } from './lib/upgrade.mjs'
 import { authCallback, authStart, claimUrl, signinReady, startIn, ticketIn } from './lib/github.mjs'
@@ -10,6 +10,8 @@ import { dropKey, metered, putCounted, queueKey, room, today, uploadRefused, usa
 import { cron } from './lib/cron.mjs'
 
 const MAX_BYTES = 20 * 1024 * 1024
+// A preview card is a 1200×630 JPEG of about 50 KB; chat apps skip images much past 300 KB.
+const MAX_CARD = 300 * 1024
 const MAX_MESSAGE = 280
 const MAX_NOTE = 300
 const DAY_MS = 86_400_000
@@ -84,6 +86,7 @@ export default {
 
 async function serve(req, env) {
   const url = new URL(req.url)
+  if (url.pathname === '/robots.txt') return new Response(ROBOTS, { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=3600' } })
   const gone = moved(url, env)
   if (gone) return gone
   const r = route(url, namesOf(env.BASE).names)
@@ -130,6 +133,11 @@ async function api(req, env, url, path) {
     if (req.method !== 'POST') return fail(405, 'Method not allowed.')
     if (!signinReady(env)) return fail(409, 'GitHub sign-in is not set up on this host.', { code: 'signin_off' })
     return json({ url: await claimUrl(env, url, owner.id) })
+  }
+  if (parts[1] === 'shares' && parts[3] === 'card' && parts.length === 4) {
+    if (req.method !== 'PUT') return fail(405, 'Method not allowed.')
+    if (!isId(parts[2])) return fail(404, 'No such share.')
+    return (await uploader(env, owner)) || putCard(req, env, owner, parts[2])
   }
   if (parts[1] !== 'shares' || parts.length > 3) return fail(404, 'No such route.')
   const id = parts[2]
@@ -284,6 +292,33 @@ async function putShare(req, env, owner, id) {
   return json({ id, version, bytes: body.byteLength, message })
 }
 
+// The share's preview card, drawn on the owner's Mac when the link is published (the host has no
+// CPU to draw one per visit). Each upload is a key of its own; the row is flipped only if it still
+// names the card read here, then the old key goes. A loser of two at once drops its own key.
+async function putCard(req, env, owner, id) {
+  const row = await getShare(env, id)
+  if (!row || row.owner_id !== owner.id || row.deleted_at) return fail(404, 'No such share.')
+  if (Number(req.headers.get('content-length')) > MAX_CARD) return fail(413, 'A preview card is at most 300 KiB.', { code: 'too_big' })
+  const body = await req.arrayBuffer()
+  if (body.byteLength > MAX_CARD) return fail(413, 'A preview card is at most 300 KiB.', { code: 'too_big' })
+  const magic = new Uint8Array(body, 0, Math.min(3, body.byteLength))
+  if (magic[0] !== 0xff || magic[1] !== 0xd8 || magic[2] !== 0xff) return fail(400, 'The body must be a JPEG.')
+  if (!await room(env.DB, 'kv_write')) return fail(507, 'The host\'s daily upload budget is used up.', { code: 'budget' })
+  const key = `card:${id}:${newId()}`
+  await putCounted(env, key, body)
+  const flipped = await env.DB.prepare('UPDATE shares SET card_key = ? WHERE id = ? AND card_key IS ? AND deleted_at IS NULL').bind(key, id, row.card_key ?? null).run()
+  if (!flipped.meta?.changes) {
+    await dropKey(env, key)
+    return fail(409, 'Another update of this share landed first. Try again.', { code: 'race' })
+  }
+  if (row.card_key) await dropKey(env, row.card_key)
+  return json({ id, card: cardPath(key) })
+}
+
+// The card's address under the share: the key's random part names the version, so a new card is a
+// new URL and chats that cached the old one fetch it again.
+const cardPath = key => `card.jpg?v=${key.split(':').pop()}`
+
 async function deleteShare(env, owner, id) {
   const row = await getShare(env, id)
   if (!row || row.owner_id !== owner.id) return fail(404, 'No such share.')
@@ -298,6 +333,7 @@ async function deleteShare(env, owner, id) {
   await env.DB.prepare('DELETE FROM comments WHERE share_id = ?').bind(id).run()
   await env.DB.prepare('DELETE FROM presence WHERE share_id = ?').bind(id).run()
   if (await dropKey(env, key)) await env.DB.prepare('DELETE FROM kv_trash WHERE key = ?').bind(key).run()
+  if (row.card_key) await dropKey(env, row.card_key)
   return json({ id })
 }
 
@@ -314,7 +350,9 @@ async function apex(env, url, id) {
   const row = await env.DB.prepare('SELECT s.*, o.name AS owner_name FROM shares s JOIN owners o ON o.id = s.owner_id WHERE s.id = ?').bind(id).first()
   const gone = unavailable(row)
   if (gone) return gone
-  return ogPage({ title: row.title, owner: row.owner_name, target: shareOrigin(url, env, id) })
+  // The share's own card; else CARD (set by setup when the site is in front of the host), the site's.
+  const card = row.card_key ? shareOrigin(url, env, id) + cardPath(row.card_key) : env.CARD ? new URL(env.CARD, url.origin).href : null
+  return ogPage({ title: row.title, owner: row.owner_name, target: shareOrigin(url, env, id), url: `${url.origin}/${id}`, card, message: row.message, lang: row.lang })
 }
 
 function unavailable(row) {
@@ -322,6 +360,18 @@ function unavailable(row) {
   if (row.deleted_at) return page('removed', { lang: row.lang })
   if (row.expires_at && row.expires_at < Date.now()) return page('expired', { lang: row.lang })
   return null
+}
+
+async function card(env, row) {
+  if (!row.card_key) return page('notfound', { lang: row.lang })
+  let bytes = await env.KV.get(row.card_key, 'arrayBuffer')
+  if (!bytes) {
+    await new Promise(go => setTimeout(go, KV_RETRY_MS))
+    bytes = await env.KV.get(row.card_key, 'arrayBuffer')
+  }
+  if (!bytes) return page('notfound', { lang: row.lang })
+  // Public: link previewers fetch it with no cookie, and a new card is a new ?v=.
+  return new Response(bytes, { headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=86400' } })
 }
 
 // A view of the link: one row per share per day, counted while today's D1 writes last. A view that
@@ -346,6 +396,7 @@ async function share(req, env, url, r) {
   const row = await getShare(env, r.shareId)
   if (r.path === '/_in/auth') return unavailable(row) || ticketIn(req, env, url, row, pathForm)
   if (r.path === '/_in/start') return unavailable(row) || startIn(env, url, row, pathForm)
+  if (r.path === '/card.jpg') return unavailable(row) || await card(env, row)
   if (r.path !== '/') return page('notfound', { lang: row?.lang })
   const gone = unavailable(row)
   if (gone) return gone

@@ -8,6 +8,8 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, r
 import { basename, join, relative } from 'node:path'
 import { metaOf } from '../server.mjs'
 import { buildShare } from './build.mjs'
+import { cardImage } from './card/card.mjs'
+import { loadSharp } from './plugin.mjs'
 import { client, linkOf, readShares, writeShares } from './owner.mjs'
 import { ShareError } from './scope.mjs'
 
@@ -121,6 +123,30 @@ function sources(sessionDir, scope) {
   }
 }
 
+// The site in front of a host on its domain has the preview image chats show for a link.
+const cardOf = host => host.stage === 'domain' ? `https://${host.base}/og-share.jpg` : undefined
+
+/**
+ * The link's preview card (card/card.mjs), drawn here once per publish and sent beside the page, so
+ * the host only serves a file. Sent only when it differs from the one the link has (cardHash). The
+ * page is already live, so a card that can't be drawn or sent leaves the link with the site's card.
+ * Resolves with the hash of the card the link now has, or the one it had.
+ */
+async function sendCard(api, host, id, title, lang, had) {
+  try {
+    const sharp = loadSharp()
+    if (!sharp) return had
+    const me = await api.owner().catch(() => null)
+    const owner = me?.login ? me : { name: host.owner || '' }
+    const jpeg = await cardImage({ title, owner, lang, sharp })
+    const hash = createHash('sha256').update(jpeg).digest('hex').slice(0, 16)
+    if (hash !== had) await api.card(id, jpeg)
+    return hash
+  } catch {
+    return had
+  }
+}
+
 const metaFor = (session, sessionDir, scope, title, extra = {}) => ({
   title, session: String(session.id ?? basename(sessionDir)), projectLabel: basename(session.project || sessionDir), scope, lang: session.lang === 'he' ? 'he' : 'en', ...extra,
 })
@@ -145,16 +171,17 @@ async function built({ sessionDir, scope, info, yes, notes = [] }) {
  */
 export async function publishShare({ sessionDir, session, host, token, scope, title, message, yes, notes, fetch }) {
   const words = messageOf(message) ?? null
-  const { b, review, stop, src } = await built({ sessionDir, scope, info: { title, owner: host.owner || '', version: 1 }, yes, notes })
+  const { b, review, stop, src } = await built({ sessionDir, scope, info: { title, owner: host.owner || '', version: 1, card: cardOf(host) }, yes, notes })
   if (stop) return stop
-  let id, version
+  let id, version, api
   try {
-    const api = client(host, token, fetch ? { fetch } : {})
+    api = client(host, token, fetch ? { fetch } : {})
     id = await api.create()
     ;({ version } = await api.put(id, b.gz, metaFor(session, sessionDir, scope, title, words ? { message: words } : {})))
   } catch (e) { src.drop(); throw e }
   src.keep(id, version)
-  const entry = { id, host: host.name, title, scope, version, publishedAt: new Date().toISOString(), sourceHash: src.hash, ...(words ? { message: words } : {}) }
+  const cardHash = await sendCard(api, host, id, title, session.lang)
+  const entry = { id, host: host.name, title, scope, version, publishedAt: new Date().toISOString(), sourceHash: src.hash, ...(words ? { message: words } : {}), ...(cardHash ? { cardHash } : {}) }
   writeShares(sessionDir, [...readShares(sessionDir).filter(e => e.id !== id), entry])
   return { ok: true, entry, link: linkOf(host, id), review }
 }
@@ -171,14 +198,16 @@ export async function updateShare({ sessionDir, session, host, token, id, note, 
   if (entry.host !== host.name) throw new ShareError(`${id} is on the host "${entry.host}", not "${host.name}"`)
   const text = typeof note === 'string' ? note.trim().slice(0, 300) : ''
   const words = messageOf(message)
-  const { b, review, stop, src } = await built({ sessionDir, scope: entry.scope, info: { title: entry.title, owner: host.owner || '', version: (entry.version || 1) + 1 }, yes, notes })
+  const { b, review, stop, src } = await built({ sessionDir, scope: entry.scope, info: { title: entry.title, owner: host.owner || '', version: (entry.version || 1) + 1, card: cardOf(host) }, yes, notes })
   if (stop) return stop
   let version
+  const api = client(host, token, fetch ? { fetch } : {})
   try {
-    ;({ version } = await client(host, token, fetch ? { fetch } : {}).put(id, b.gz, metaFor(session, sessionDir, entry.scope, entry.title, { ...(text ? { note: text } : {}), ...(words !== undefined ? { message: words } : {}) })))
+    ;({ version } = await api.put(id, b.gz, metaFor(session, sessionDir, entry.scope, entry.title, { ...(text ? { note: text } : {}), ...(words !== undefined ? { message: words } : {}) })))
   } catch (e) { src.drop(); throw e }
   src.keep(id, version)
-  const next = { ...entry, version, publishedAt: new Date().toISOString(), sourceHash: src.hash, ...(text ? { note: text } : {}), ...(words ? { message: words } : {}) }
+  const cardHash = await sendCard(api, host, id, entry.title, session.lang, entry.cardHash)
+  const next = { ...entry, version, publishedAt: new Date().toISOString(), sourceHash: src.hash, ...(text ? { note: text } : {}), ...(words ? { message: words } : {}), ...(cardHash ? { cardHash } : {}) }
   if (!text) delete next.note
   if (words === null) delete next.message
   writeShares(sessionDir, readShares(sessionDir).map(e => e.id === id ? next : e))

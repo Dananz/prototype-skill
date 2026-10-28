@@ -1,0 +1,19 @@
+# The site is public; shared prototypes (/s/, and the short links /<id>, which answer noindex) are
+# private links, kept out of search. Link previewers may read them to show a card in a chat.
+
+User-agent: Twitterbot
+User-agent: facebookexternalhit
+User-agent: Facebot
+User-agent: LinkedInBot
+User-agent: Slackbot
+User-agent: Slackbot-LinkExpanding
+User-agent: Discordbot
+User-agent: TelegramBot
+User-agent: WhatsApp
+Disallow: /api
+Disallow: /auth/
+
+User-agent: *
+Disallow: /s/
+Disallow: /api
+Disallow: /auth/

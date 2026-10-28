@@ -8,7 +8,7 @@ import { ShareError, parseScope, trimMeta, trimSession } from '../app/share/scop
 import { review } from '../app/share/review.mjs'
 import { stampSource, stampsPlugin } from '../app/share/stamps.mjs'
 import { imagesPlugin } from '../app/share/images.mjs'
-import { imageNames, loadSharp } from '../app/share/plugin.mjs'
+import { imageNames, loadSharp, shareTags } from '../app/share/plugin.mjs'
 import { inlineHtml } from '../app/share/inline.mjs'
 import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -463,6 +463,95 @@ test('apex og page escapes the title', async () => {
   const { id } = await publish(env, 'x', meta({ title: '"><script>alert(1)</script>' }))
   const html = await (await call(env, `http://${BASE}/${id}`)).text()
   assert.ok(!html.includes('<script>alert(1)'))
+})
+test('apex og page: description, link, and the card only where the site has one', async () => {
+  const env = await makeEnv()
+  const { id } = await publish(env, 'x', meta({ message: 'Pick one <3' }))
+  const html = await (await call(env, `http://${BASE}/${id}`)).text()
+  assert.match(html, /<meta name="description" content="Pick one &lt;3">/)
+  assert.match(html, /og:description" content="Pick one &lt;3"/)
+  assert.ok(html.includes(`og:url" content="http://${BASE}/${id}"`))
+  assert.match(html, /og:site_name" content="Prototype"/)
+  assert.match(html, /<meta name="robots" content="noindex">/)
+  assert.doesNotMatch(html, /og:image/)
+  assert.match(html, /twitter:card" content="summary"/)
+  const online = await makeEnv({ BASE: 'prtype.dev', PATH_MODE: '1', CARD: '/og-share.jpg' })
+  const { id: two } = await publish(online, 'x', meta({ lang: 'he' }))
+  const he = await (await call(online, `https://prtype.dev/${two}`)).text()
+  assert.match(he, /og:image" content="https:\/\/prtype\.dev\/og-share\.jpg"/)
+  assert.match(he, /twitter:card" content="summary_large_image"/)
+  assert.match(he, /<html lang="he" dir="rtl">/)
+  assert.match(he, /og:description" content="אב טיפוס מאת Dananz"/)
+})
+test('the built page carries its own title, preview tags and noindex', () => {
+  const page = '<head>\n    <title>Prototype</title>\n  </head>'
+  const en = shareTags(page, { title: 'Pricing "v2"', owner: 'Dananz', card: 'https://prtype.dev/og-share.jpg' }, 'en')
+  assert.match(en, /<title>Pricing &quot;v2&quot;<\/title>/)
+  assert.match(en, /<meta name="robots" content="noindex" \/>/)
+  assert.match(en, /og:title" content="Pricing &quot;v2&quot;"/)
+  assert.match(en, /<meta name="description" content="A prototype shared by Dananz" \/>/)
+  assert.match(en, /og:image" content="https:\/\/prtype\.dev\/og-share\.jpg"/)
+  const bare = shareTags(page, { title: 'Pricing', owner: '' }, 'he')
+  assert.doesNotMatch(bare, /og:image|description/)
+  assert.match(shareTags(page, { title: 'Pricing', owner: 'Dananz' }, 'he'), /content="אב טיפוס מאת Dananz"/)
+})
+const JPEG = (n = 64) => { const b = new Uint8Array(n); b.set([0xff, 0xd8, 0xff, 0xe0]); return b }
+const putCard = (env, id, body, headers = auth) => call(env, `http://${env.BASE}/api/shares/${id}/card`, { method: 'PUT', headers: { ...headers, 'content-type': 'image/jpeg' }, body })
+test("a share's own card: uploaded once by its owner, served as a file, named by the short link", async () => {
+  const env = await makeEnv({ BASE: 'prtype.dev', PATH_MODE: '1', CARD: '/og-share.jpg' })
+  const { id } = await publish(env)
+  const first = await putCard(env, id, JPEG())
+  assert.equal(first.status, 200)
+  const { card } = await first.json()
+  assert.match(card, /^card\.jpg\?v=[0-9a-z]+$/)
+  const html = await (await call(env, `https://prtype.dev/${id}`)).text()
+  assert.ok(html.includes(`og:image" content="https://prtype.dev/s/${id}/${card}"`), html)
+  const served = await call(env, `https://prtype.dev/s/${id}/${card}`)
+  assert.equal(served.status, 200)
+  assert.equal(served.headers.get('content-type'), 'image/jpeg')
+  assert.match(served.headers.get('x-robots-tag'), /noindex/)
+  assert.deepEqual(new Uint8Array(await served.arrayBuffer()), JPEG())
+  // A new card is a new key and a new address; the old key goes.
+  const second = await (await putCard(env, id, JPEG(80))).json()
+  assert.notEqual(second.card, card)
+  assert.equal([...env.KV.store.keys()].filter(k => k.startsWith(`card:${id}:`)).length, 1)
+  // Only a JPEG, only so big, only the owner's.
+  assert.equal((await putCard(env, id, new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).status, 400)
+  assert.equal((await putCard(env, id, JPEG(301 * 1024))).status, 413)
+  env.DB.sql.prepare('INSERT INTO owners (id, name, created_at) VALUES (?, ?, ?)').run('o2', 'Other', 1)
+  env.DB.sql.prepare('INSERT INTO owner_tokens (sha256, owner_id, device, created_at) VALUES (?, ?, ?, ?)').run(await hex('other'), 'o2', 'x', 1)
+  assert.equal((await putCard(env, id, JPEG(), { authorization: 'Bearer other' })).status, 403)
+  // Removing the share removes its card.
+  assert.equal((await call(env, `https://prtype.dev/api/shares/${id}`, { method: 'DELETE', headers: auth })).status, 200)
+  assert.ok(![...env.KV.store.keys()].some(k => k.startsWith(`card:${id}:`)))
+  assert.equal((await call(env, `https://prtype.dev/s/${id}/${second.card}`)).status, 410)
+})
+test("without a card of its own, a share has no card.jpg and the short link falls back to the site's", async () => {
+  const env = await makeEnv({ BASE: 'prtype.dev', PATH_MODE: '1', CARD: '/og-share.jpg' })
+  const { id } = await publish(env)
+  assert.equal((await call(env, `https://prtype.dev/s/${id}/card.jpg`)).status, 404)
+  assert.match(await (await call(env, `https://prtype.dev/${id}`)).text(), /og:image" content="https:\/\/prtype\.dev\/og-share\.jpg"/)
+})
+test('the card is drawn as a 1200×630 JPEG, in English and Hebrew, with or without a picture', { skip: !loadSharp() && 'no sharp in the share tools' }, async () => {
+  const { cardImage } = await import('../app/share/card/card.mjs')
+  const sharp = loadSharp()
+  const noFetch = async () => { throw new Error('offline') }
+  for (const [title, owner, lang] of [['Pricing', { login: 'Dananz', name: 'Tomer Danan', avatar: 'https://avatars.githubusercontent.com/u/1' }, 'en'], ['מסך התשלום, שלוש גרסאות', { login: 'Dananz' }, 'he'], ['word '.repeat(60), {}, 'en']]) {
+    const jpeg = await cardImage({ title, owner, lang, sharp, fetch: noFetch })
+    const m = await sharp(jpeg).metadata()
+    assert.deepEqual([m.format, m.width, m.height], ['jpeg', 1200, 630])
+    assert.ok(jpeg.length < 300 * 1024)
+  }
+})
+test('robots.txt keeps crawlers off every page, and lets link previewers in', async () => {
+  for (const [env, url] of [[await makeEnv(), `http://${BASE}/robots.txt`], [await makeEnv({ BASE: 'prtype.dev', PATH_MODE: '1' }), 'https://prtype.dev/robots.txt'], [await makeEnv(), `http://k3x9p2abcd.${BASE}/robots.txt`]]) {
+    const res = await call(env, url)
+    assert.equal(res.status, 200, url)
+    assert.match(res.headers.get('content-type'), /text\/plain/)
+    const text = await res.text()
+    assert.match(text, /User-agent: \*\nDisallow: \/\n/)
+    assert.match(text, /User-agent: Twitterbot[^]*User-agent: WhatsApp\nDisallow: \/api\nDisallow: \/auth\//)
+  }
 })
 test('removed is 410', async () => {
   const env = await makeEnv()
