@@ -183,6 +183,9 @@ export async function continuousRuntimeChecks({ proto, app, local, fail }) {
     console.log('OK: real server delivers successive sends, protects credentials and restores its single subscription after restart')
   } finally {
     proto(['inbox', '--unlisten'])
+    proto(['inbox', '--host-disabled', 'runtime-subscription']) // only the test receiver, no real host task
+    const optedOut = proto(['up'], { stdout: true })
+    if (!optedOut.includes('explicit user opt-out') || optedOut.includes('schedule_task')) fail('startup must preserve explicit opt-out instead of requesting a new task')
     receiver.closeAllConnections(); await new Promise(ok => receiver.close(ok))
     rmSync(temp, { recursive: true, force: true })
   }
