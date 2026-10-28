@@ -94,7 +94,9 @@ function useAccount(): Account & { message: string } {
     }, () => {})
   }, [])
   const signOut = () => { void ask('api/signout', { method: 'POST' }).catch(() => {}).finally(() => setMe(null)) }
-  return { me, comments, signIn, signOut, owner: sharer?.login || owner, sharer, message }
+  // "Report this link": one row for the host's maintainer; the host takes 5 an hour from one place.
+  const report = hosted ? (reason: string) => fetch('api/report', { method: 'POST', headers: { 'X-Proto': '1', 'Content-Type': 'application/json' }, cache: 'no-store', body: JSON.stringify({ reason }) }).then(r => r.ok, () => false) : null
+  return { me, comments, signIn, signOut, owner: sharer?.login || owner, sharer, message, report }
 }
 
 /**

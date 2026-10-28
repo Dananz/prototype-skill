@@ -56,13 +56,16 @@
 //   proto kit screen <name> <slug>[/<letter>] [--sources <file,…>]   a Current that matches its reference
 //   proto plan <slug>   each placeholder shows its direction's one-line plan from .proto/briefs/<slug>.json
 //   proto fonts [--hebrew]   the title-and-body pairings (references/fonts.json) and the faces never used for a title
-//   proto share setup [--name <owner>] [--plan-checked] [--account <id>]   the share host online (workers.dev),
-//             on the separate prtype.dev Cloudflare account; again to update or repair it (only when the user asks)
+//   proto share setup [--name <owner>] [--plan-checked] [--account <id>]   the maintainer's: deploys the share host
+//             (workers.dev) on the separate prtype.dev Cloudflare account; again to update or repair it (only when the user asks)
 //   proto share setup --domain prtype.dev   the host behind prtype.dev: short links, GitHub sign-in to comment
 //   proto share setup --local [--name <owner>]   a share host on this Mac (wrangler dev); links open only here
 //   proto share setup --github [--client-id <id>] [--restart]   the local host's GitHub OAuth App (secret on stdin)
-//   proto share signin [--no-open] [--again]   sign in with GitHub as the host's owner (a new link needs it once the host
-//             runs sign-in): prints and opens the link, waits up to five minutes
+//   proto share signin [--no-open] [--again]   sign in with GitHub to share (prtype.dev with no setup; a new link needs
+//             it): prints and opens the link, waits up to five minutes, keeps this Mac's token in the Keychain
+//   proto share signout      revoke this Mac's token on the host and forget it here
+//   proto share admin users [--pending] | approve <login> | ban <login> | rm <id> | reports   the host's maintainer:
+//             who is waiting, let them in or ban them, take any link down, read "Report this link"
 //   proto share <slug>[/<n>…] | --all [--title "…"] [--message "…"] [--yes] [--host local|online]   build, review,
 //             publish, print the link; --message: what viewers read first, at most 280 characters
 //             (only when the user asks; read the review's warnings to them before --yes)
@@ -2495,9 +2498,10 @@ const commands = {
   stack: () => { const d = detectStack(projectRoot()); console.log(`${d.stack} (${d.why})`) },
   fonts,
   kit: () => !args[0] ? kitStatus() : args[0] === 'save' ? kitSave() : args[0] === 'screen' ? kitScreen() : die(`proto kit ${args[0]}? It is proto kit, proto kit save or proto kit screen`),
-  // setup and stop are about the host, not a session: they run from any folder.
+  // setup, stop, signin, signout and admin are about the host and this Mac, not a session: they run
+  // from any folder.
   share: () => import('./share.mjs').then(m => {
-    const free = ['setup', 'stop'].includes(args[0])
+    const free = ['setup', 'stop', 'signin', 'signout', 'admin'].includes(args[0])
     return m.main(args, flags, { sessionDir: free ? null : sessionDir(), session: free ? null : need(sessionDir()), die })
   }),
 }

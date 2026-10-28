@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { crc32, deflateSync, gunzipSync } from 'node:zlib'
 import { createRequire } from 'node:module'
 import { shareCommentsChecks } from './share-comments-checks.mjs'
+import { SHARE_CSP } from '../host/lib/pages.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // PROTO_SHARE_TOOLS is how part 3 hands the same folder to commands it runs under another HOME.
@@ -168,7 +169,8 @@ async function until(get, ms = 10_000) {
  * The share as a host serves it, on a throwaway server: the page at / and, as in path mode, at
  * /s/<id>/, its state at api/state, and the viewer's sign-in routes as the host answers them
  * (api/config, api/me, api/signout; a cookie `v=<login>` is a signed-in viewer). Every path asked
- * for is kept, so a check can tell that nothing reached for the session's server.
+ * for is kept, so a check can tell that nothing reached for the session's server. The page carries
+ * the host's Content-Security-Policy and Referrer-Policy.
  */
 async function host(html) {
   const state = { version: 1, paths: [], comments: true, list: [] }
@@ -183,8 +185,10 @@ async function host(html) {
     if (at === '/api/config') return json(res, { comments: state.comments, owner: 'Smoke' })
     if (at === '/api/me') return json(res, login ? { login, name: 'Octo Smoke', avatar: login === 'noface' ? null : `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#0ea5e9"/></svg>')}` } : null)
     if (at === '/api/comments' && req.method === 'GET') return json(res, { comments: state.list, removed: [], now: Date.now() })
+    if (at === '/api/report' && req.method === 'POST') return json(res, { ok: true })
     if (at === '/api/signout' && req.method === 'POST') return json(res, { ok: true }, { 'set-cookie': `v=; Path=${path.replace(/api\/signout$/, '')}; Max-Age=0` })
-    if (at === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html) }
+    // The host's own lock, so the viewer is checked under the policy it gets online.
+    if (at === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': SHARE_CSP, 'referrer-policy': 'no-referrer' }); return res.end(html) }
     res.writeHead(404); res.end()
   })
   await new Promise(ok => server.listen(0, '127.0.0.1', ok))
@@ -442,6 +446,18 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
         assert(await until(async () => !await full(), 3000), `popups: a second Esc from the design (after the ${name}) did not go back to the desk`)
         await sleep(400)
       }
+      // Report this link, from About: the form, then the thanks once the host took it.
+      await signedIn.press(...await spot('[aria-label="About this link"]'))
+      assert(await until(() => signedIn.run(`!!document.querySelector('[data-report]')`), 3000), 'report: About has no Report this link')
+      await signedIn.press(...await spot('[data-report]'))
+      assert(await until(() => signedIn.run(`!!document.querySelector('[data-report-form] textarea')`), 3000), 'report: the form did not open')
+      await signedIn.run(`(() => { document.querySelector('[data-report-form] textarea').focus(); return document.execCommand('insertText', false, 'This page asks for a password') })()`)
+      if (process.env.PROTO_SHARE_LINK_SHOTS) { await sleep(400); await signedIn.screenshot(join(process.env.PROTO_SHARE_LINK_SHOTS, 'viewer-report-form.png')) }
+      await signedIn.press(...await spot('[data-report-send]'))
+      assert(await until(() => signedIn.run(`!!document.querySelector('[data-report-sent]')`), 5000) && site.state.paths.includes('POST /s/smk123/api/report'), 'report: the host did not take the report')
+      if (process.env.PROTO_SHARE_LINK_SHOTS) { await sleep(400); await signedIn.screenshot(join(process.env.PROTO_SHARE_LINK_SHOTS, 'viewer-report-sent.png')) }
+      await signedIn.key('Escape')
+      await sleep(400)
       await openFull()
       await signedIn.press(...await spot('[data-account]'))
       assert(await until(() => signedIn.run(`!!document.querySelector('[data-account-menu]')`), 3000), 'popups: the account menu did not open')

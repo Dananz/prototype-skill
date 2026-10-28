@@ -15,8 +15,12 @@ import { useTalk } from './comments'
 export type Appearance = 'system' | 'light' | 'dark'
 /** The viewer signed in with GitHub, as the host's api/me answers. */
 export type Me = { login: string; name: string | null; avatar: string | null }
-/** Who is looking. me: undefined until the host answers. signIn: where Sign in goes, or null when there is no host to sign in to. */
-export type Account = { me: Me | null | undefined; comments: boolean; signIn: string | null; signOut: () => void; owner: string; sharer?: Me | null }
+/**
+ * Who is looking. me: undefined until the host answers. signIn: where Sign in goes, or null when there
+ * is no host to sign in to. report: sends "Report this link" to the host (true once it took it), or
+ * null when there is no host (a share opened from a file).
+ */
+export type Account = { me: Me | null | undefined; comments: boolean; signIn: string | null; signOut: () => void; owner: string; sharer?: Me | null; report?: ((reason: string) => Promise<boolean>) | null }
 type Facts = { owner: string; avatar?: string | null; version: number; updatedAt: string }
 const dir = rtl ? 'rtl' : 'ltr'
 const TINTS = ['bg-zinc-900 text-white dark:bg-white dark:text-zinc-900', 'bg-amber-500 text-white', 'bg-violet-500 text-white', 'bg-teal-500 text-white', 'bg-sky-500 text-white', 'bg-rose-500 text-white']
@@ -34,7 +38,7 @@ export function Header({ protos, cur, choose, wide, facts, appearance, setAppear
       <div className="flex-1" />
       {center && <div data-header-center className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">{center}</div>}
       {wide && !center && <p className="hidden text-[12px] text-zinc-500 md:block dark:text-zinc-400">{t('Drag to move · pinch or {key} scroll to zoom', { key: isMac ? '⌘' : 'Ctrl' })}</p>}
-      <About facts={facts} appearance={appearance} setAppearance={setAppearance} root={root} comments={account.comments} />
+      <About facts={facts} appearance={appearance} setAppearance={setAppearance} root={root} comments={account.comments} report={account.report ?? null} />
       <Who account={account} wide={wide} root={root} />
     </header>
   )
@@ -101,8 +105,11 @@ function Protos({ protos, cur, choose, compact, owner, avatar, signed, updated, 
   )
 }
 
-/** About this link: who shared it, when, which version, that it is read-only, and this viewer's theme. */
-function About({ facts, appearance, setAppearance, root, comments }: { facts: Facts; appearance: Appearance; setAppearance: (a: Appearance) => void; root: RefObject<HTMLDivElement | null>; comments: boolean }) {
+/**
+ * About this link: who shared it, when, which version, that it is read-only, and this viewer's theme.
+ * At its foot, quietly, Report this link: a short reason the host's maintainer reads.
+ */
+function About({ facts, appearance, setAppearance, root, comments, report }: { facts: Facts; appearance: Appearance; setAppearance: (a: Appearance) => void; root: RefObject<HTMLDivElement | null>; comments: boolean; report: ((reason: string) => Promise<boolean>) | null }) {
   const [open, setOpen] = useState(false)
   useClosable(open, setOpen)
   const rows: [string, string][] = [
@@ -138,10 +145,45 @@ function About({ facts, appearance, setAppearance, root, comments }: { facts: Fa
                 ))}
               </div>
             </div>
+            {report && <Report report={report} />}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
+  )
+}
+
+const REASON_MAX = 500
+
+/** "Report this link": a text link that opens a short reason, sent once. */
+function Report({ report }: { report: (reason: string) => Promise<boolean> }) {
+  const [step, setStep] = useState<'closed' | 'open' | 'busy' | 'sent' | 'failed'>('closed')
+  const [reason, setReason] = useState('')
+  const quiet = 'inline-flex items-center gap-1.5 text-[12px] text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
+  if (step === 'sent') return <p role="status" data-report-sent className="mt-3 border-t border-black/[.06] pt-3 text-[12px] text-zinc-500 dark:border-white/10 dark:text-zinc-400">{t('Thanks. The host’s maintainer will look at this link.')}</p>
+  if (step === 'closed') return (
+    <div className="mt-3 border-t border-black/[.06] pt-3 dark:border-white/10">
+      <button type="button" data-report onClick={() => setStep('open')} className={quiet}><Icon name="flag" className="size-3.5" />{t('Report this link')}</button>
+    </div>
+  )
+  const send = async () => {
+    if (!reason.trim()) return
+    setStep('busy')
+    setStep(await report(reason.trim()).catch(() => false) ? 'sent' : 'failed')
+  }
+  return (
+    <div data-report-form className="mt-3 space-y-2 border-t border-black/[.06] pt-3 dark:border-white/10">
+      <label className="block text-[12px] font-medium text-zinc-700 dark:text-zinc-300" htmlFor="proto-report">{t('What is wrong with this link?')}</label>
+      <textarea id="proto-report" dir="auto" rows={3} maxLength={REASON_MAX} value={reason} onChange={e => setReason(e.target.value)} autoFocus
+        placeholder={t('For example: phishing, malware, someone else’s private work')}
+        className="block w-full resize-none rounded-lg bg-zinc-900/[.04] px-2.5 py-2 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-sky-500/50 dark:bg-white/[.06] dark:text-zinc-100" />
+      {step === 'failed' && <p role="alert" className="text-[12px] text-rose-600 dark:text-rose-400">{t('Couldn’t send the report. Try again in a while.')}</p>}
+      <div className="flex items-center justify-end gap-3">
+        <button type="button" onClick={() => { setStep('closed'); setReason('') }} className={quiet}>{t('Cancel')}</button>
+        <button type="button" data-report-send disabled={!reason.trim() || step === 'busy'} onClick={() => void send()}
+          className="h-7 rounded-md bg-zinc-900 px-3 text-[12px] font-medium text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900">{t('Send report')}</button>
+      </div>
+    </div>
   )
 }
 

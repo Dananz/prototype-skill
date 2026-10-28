@@ -6,8 +6,8 @@
 // local host). Only statuses and the owner's own replies ever go to the host; Claude's replies stay here.
 import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { appendFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { appendFileSync, chmodSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { homedir, hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { ShareError } from './scope.mjs'
 import { fromComment, trayRow } from './viewer-text.mjs'
@@ -29,12 +29,19 @@ const configDir = () => join(homedir(), '.config', 'prototype')
 /**
  * Host = { name, url, stage, base, pathMode, default, owner }. stage is 'local' (wrangler dev on
  * this Mac), 'workers' (online, on its workers.dev name) or 'domain' (online, on prtype.dev). An
- * online host also keeps its Cloudflare ids (accountId, worker, kvId, dbId) and hostVersion; never
- * a secret.
+ * online host deployed from this Mac also keeps its Cloudflare ids (accountId, worker, kvId, dbId)
+ * and hostVersion; never a secret.
  */
 export const readHosts = () => readJson(join(configDir(), 'hosts.json'), []).filter(h => h && typeof h.name === 'string')
-export const defaultHost = () => { const hosts = readHosts(); return hosts.find(h => h.default) || hosts[0] || null }
-export const hostNamed = name => readHosts().find(h => h.name === name) || null
+/**
+ * The host every user shares to with no setup: prtype.dev, run by the maintainer, one origin per
+ * share. Named 'online' on purpose, so its token is the Keychain item a past setup made and every
+ * session's shares.json (host: "online") still finds it.
+ */
+export const BUILTIN = Object.freeze({ name: 'online', url: 'https://prtype.dev', stage: 'domain', base: 'prtype.dev', pathMode: false, default: true, builtin: true })
+// A hosts.json default (a local host, a self-hosted one) wins; with none named, the built-in host.
+export const defaultHost = () => { const hosts = readHosts(); return hosts.find(h => h.default) || hosts[0] || { ...BUILTIN } }
+export const hostNamed = name => readHosts().find(h => h.name === name) || (name === BUILTIN.name ? { ...BUILTIN } : null)
 
 // The Keychain on macOS. PROTO_SHARE_TOKEN_STORE=file sends tokens to the file store instead: the
 // tests set it, since `security` writes to the login keychain whatever HOME says.
@@ -50,6 +57,37 @@ export function getToken(name) {
   try { return readFileSync(tokenFile(name), 'utf8').trim() || null } catch { return null }
 }
 
+/**
+ * The `security` call that stores a token: the command goes in on stdin (`security -i`), so the
+ * token never shows in `ps` the way an argument would. Tokens are base64url, so nothing needs quoting.
+ */
+export function keychainAdd(name, token) {
+  if (!/^[A-Za-z0-9_-]+$/.test(token) || !/^[A-Za-z0-9_-]+$/.test(name)) throw new ShareError('The owner token or host name has characters the Keychain command cannot take')
+  return { args: ['-i'], input: `add-generic-password -U -a prototype -s ${service(name)} -w ${token}\n` }
+}
+
+// Here, not in scripts/: a session's server writes the token too, when the page signs in. A token
+// written ends whatever "no token" clientFor remembered.
+export function setToken(name, token) {
+  if (inKeychain()) {
+    const { args, input } = keychainAdd(name, token)
+    const r = spawnSync('security', args, { input, encoding: 'utf8' })
+    if (r.status !== 0) throw new ShareError(`Could not save the owner token in the Keychain: ${r.stderr.trim()}`)
+  } else {
+    mkdirSync(configDir(), { recursive: true })
+    writeFileSync(tokenFile(name), token + '\n', { mode: 0o600 })
+    chmodSync(tokenFile(name), 0o600)
+  }
+  forget(name)
+}
+
+/** Takes this Mac's token for a host out of the store (signout). Says whether there was one. */
+export function deleteToken(name) {
+  forget(name)
+  if (inKeychain()) return spawnSync('security', ['delete-generic-password', '-s', service(name)], { stdio: 'ignore' }).status === 0
+  try { rmSync(tokenFile(name)); return true } catch { return false }
+}
+
 const portOf = host => Number(new URL(host.url).port || 80)
 export const isLocal = host => !host || host.stage === 'local'
 /**
@@ -59,33 +97,59 @@ export const isLocal = host => !host || host.stage === 'local'
 export const apiOrigin = host => isLocal(host) ? `http://127.0.0.1:${portOf(host)}` : `https://${host.base}`
 
 /**
- * The link a share opens on. On this Mac: one origin per share where *.localhost resolves, else the
- * path form on 127.0.0.1. Online (path mode on one origin): https://<base>/s/<id>/.
+ * The link a share opens on: one origin per share where it can, https://<id>.<base>/ online and
+ * http://<id>.localhost:<port>/ on this Mac (where *.localhost resolves); else the path form,
+ * https://<base>/s/<id>/ or http://127.0.0.1:<port>/s/<id>/.
  */
 export function linkOf(host, id) {
-  if (!isLocal(host)) return `https://${host.base}/s/${id}/`
+  if (!isLocal(host)) return host.pathMode === false ? `https://${id}.${host.base}/` : `https://${host.base}/s/${id}/`
   const port = portOf(host)
   return host.pathMode ? `http://127.0.0.1:${port}/s/${id}/` : `http://${id}.localhost:${port}/`
 }
 
-/** The link to send: on prtype.dev the short https://prtype.dev/<id>, which opens /s/<id>/; else linkOf. */
+/** The link to send: on prtype.dev the short https://prtype.dev/<id>, which opens the share; else linkOf. */
 export const shortLinkOf = (host, id) => host?.stage === 'domain' ? `https://${host.base}/${id}` : linkOf(host, id)
 
-/** The command that sets up (or repairs) a host like this one: --local for the host on this Mac. */
-export const setupHint = host => host?.stage === 'local' ? 'proto share setup --local' : 'proto share setup'
+/**
+ * What makes a host like this one usable: --local sets up the host on this Mac; the built-in host
+ * needs only a GitHub sign-in; any other online host is set up (or repaired) by its maintainer.
+ */
+export const setupHint = host => host?.stage === 'local' ? 'proto share setup --local' : host?.builtin ? 'proto share signin' : 'proto share setup'
 
-/** Whether the host answers at all (its /_health), within two seconds. */
-export async function hostUp(host, { fetch = globalThis.fetch } = {}) {
-  try { return (await fetch(`${apiOrigin(host)}/_health`, { signal: AbortSignal.timeout(2000) })).ok } catch { return false }
-}
-
-/** What a new link answers until the owner has signed in with GitHub (the host's 403 sign_in). */
+/** What a new link answers until the owner has signed in with GitHub (the host's 403 sign_in, or no token). */
 export const SIGN_IN_FIRST = 'Sign in with GitHub first: proto share signin'
 
-// What a refusal says. The budget's own words are the host's (when it resets, what is biggest); a
-// token the host doesn't take as its owner's is repaired by setup.
+/**
+ * The owner API version this skill speaks. A host sends its own (x-proto-api) and the oldest client
+ * it still takes (x-proto-api-min) on /_health; a host without them is older than both, and taken.
+ */
+export const API = 2
+/** The words for a host that needs a newer skill than this one, from its /_health headers; null when it takes this one. */
+export function apiTooOld(host, headers) {
+  const min = Number(headers?.get?.('x-proto-api-min'))
+  return Number.isFinite(min) && min > API ? `Update the skill to share: the share host "${host.name}" needs owner API ${min}, and this skill speaks ${API}` : null
+}
+
+/** The host's /_health within two seconds: { up, update }, update being apiTooOld's words. */
+export async function hostHealth(host, { fetch = globalThis.fetch } = {}) {
+  try {
+    const res = await fetch(`${apiOrigin(host)}/_health`, { signal: AbortSignal.timeout(2000) })
+    return { up: res.ok, update: res.ok ? apiTooOld(host, res.headers) : null }
+  } catch { return { up: false, update: null } }
+}
+
+/** Whether the host answers at all (its /_health), within two seconds. */
+export async function hostUp(host, options) { return (await hostHealth(host, options)).up }
+
+// What a refusal says. The budget's and the per-user quota's words are the host's (when it resets,
+// what is biggest); a token the host doesn't take as its owner's is repaired by setup.
 function refusal(host, status, data) {
-  if (data?.code === 'budget' && data.error) return data.error
+  if ((data?.code === 'budget' || data?.code === 'quota') && data.error) return data.error
+  if (data?.code === 'quota') return `You've reached your share limit on the host "${host.name}": proto share rm <id> frees a link`
+  if (data?.code === 'pending') return `Waiting for the maintainer to approve ${data.login ? `@${data.login}` : 'your GitHub account'}: sharing opens once they do`
+  if (data?.code === 'banned') return `This GitHub account can't share on the host "${host.name}" any more`
+  if (data?.code === 'admin') return `Only an admin of the share host "${host.name}" can do that`
+  if (data?.code === 'rate') return `Too many tries from this network for the share host "${host.name}": wait an hour and try again`
   if (data?.code === 'not_owner') return `This Mac's token isn't the host's owner: ${setupHint(host)}`
   if (data?.code === 'sign_in') return SIGN_IN_FIRST
   if (data?.code === 'signin_off') return `GitHub sign-in isn't set up on the share host "${host.name}": ${isLocal(host) ? 'proto share setup --github' : 'proto share setup --domain prtype.dev'}`
@@ -97,22 +161,27 @@ function refusal(host, status, data) {
  * The owner API. A refusal throws a ShareError with the host's `status` and `code`; a host that
  * can't be reached throws one with neither. `fetch` is for the tests (the Worker in memory).
  */
-export function client(host, token, { fetch = globalThis.fetch, timeout = 60_000 } = {}) {
+// One call to a host's API, with the owner token or (token null: the sign-in calls) without.
+// Resolves { status, data } for a 2xx.
+async function request(host, token, method, path, { body, headers = {}, fetch = globalThis.fetch, timeout = 60_000 } = {}) {
   const origin = apiOrigin(host)
-  const call = async (method, path, { body, headers = {} } = {}) => {
-    let res
-    try {
-      res = await fetch(origin + path, { method, body, headers: { authorization: `Bearer ${token}`, ...headers }, signal: AbortSignal.timeout(timeout) })
-    } catch (e) {
-      throw Object.assign(new ShareError(`Could not reach the share host "${host.name}" at ${origin}: ${e?.cause?.code || e?.message || e}`), { unreachable: true })
-    }
-    const text = await res.text()
-    let data = null
-    try { data = JSON.parse(text) } catch { /* an HTML error page */ }
-    if (!res.ok) throw Object.assign(new ShareError(refusal(host, res.status, data)), { status: res.status, code: data?.code, data })
-    return data
+  let res
+  try {
+    res = await fetch(origin + path, { method, body, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...headers }, signal: AbortSignal.timeout(timeout) })
+  } catch (e) {
+    throw Object.assign(new ShareError(`Could not reach the share host "${host.name}" at ${origin}: ${e?.cause?.code || e?.message || e}`), { unreachable: true })
   }
-  const json = { 'content-type': 'application/json' }
+  const text = await res.text()
+  let data = null
+  try { data = JSON.parse(text) } catch { /* an HTML error page */ }
+  if (!res.ok) throw Object.assign(new ShareError(refusal(host, res.status, data)), { status: res.status, code: data?.code, data })
+  return { status: res.status, data }
+}
+const json = { 'content-type': 'application/json' }
+
+export function client(host, token, { fetch = globalThis.fetch, timeout = 60_000 } = {}) {
+  const call = async (method, path, options = {}) => (await request(host, token, method, path, { ...options, fetch, timeout })).data
+  const login = l => encodeURIComponent(String(l).replace(/^@/, ''))
   return {
     host,
     create: async () => (await call('POST', '/api/shares')).id,
@@ -139,7 +208,78 @@ export function client(host, token, { fetch = globalThis.fetch, timeout = 60_000
     comments: since => call('GET', `/api/owner/comments${since ? `?since=${Number(since)}` : ''}`),
     /** One comment's status, the owner's reply or hidden; `share` settles a comment id two shares have. */
     patch: (id, body, share) => call('PATCH', `/api/owner/comments/${encodeURIComponent(id)}`, { body: JSON.stringify({ ...body, ...(share ? { share } : {}) }), headers: json }),
+    /** Revokes this Mac's token on the host (signout). */
+    signout: () => call('POST', '/api/owner/signout'),
+    // The maintainer's calls (role admin; anyone else is refused with `admin`).
+    admin: {
+      /** The host's users, all or those of one status (pending, active, banned). */
+      users: status => call('GET', `/api/admin/users${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+      approve: l => call('POST', `/api/admin/users/${login(l)}/approve`),
+      /** Bans a user: their tokens revoked, their links taken down. */
+      ban: l => call('POST', `/api/admin/users/${login(l)}/ban`),
+      /** Takes any share down (its link then says it was removed). */
+      takedown: id => call('DELETE', `/api/admin/shares/${encodeURIComponent(id)}`),
+      reports: () => call('GET', '/api/admin/reports'),
+    },
   }
+}
+
+// ---------- signing in with no token (a host-mediated GitHub web flow) ----------
+// The host hands out a sign-in link and a poll secret only this process holds; the person signs in
+// with GitHub in the browser; this side asks every two seconds until the host mints this device's
+// token, which it answers once. Both the CLI (proto share signin) and the session's server (the
+// page's Sign in with GitHub) run it, so the token lands in the same store either way.
+
+const SIGNIN_WAIT_MS = 5 * 60e3
+
+/** { code, poll, url, exp }: a sign-in to open at `url`, ten minutes. Refused 429 `rate`, 503 `signin_off`. */
+export async function signinStart(host, { fetch = globalThis.fetch, device = hostname() } = {}) {
+  return (await request(host, null, 'POST', '/api/signin/start', { body: JSON.stringify({ device }), headers: json, fetch, timeout: 15_000 })).data
+}
+
+/** One poll: { state: 'waiting' }, or once signed in { token, login, name, avatar, status }. 410 `expired`, 404 unknown. */
+export async function signinPoll(host, code, poll, { fetch = globalThis.fetch } = {}) {
+  const { status, data } = await request(host, null, 'POST', '/api/signin/poll', { body: JSON.stringify({ code, poll }), headers: json, fetch, timeout: 15_000 })
+  return status === 202 || !data?.token ? { state: 'waiting' } : data
+}
+
+/**
+ * The whole sign-in: starts it, hands the link to `onUrl` (print it, open it, give it to the page),
+ * then polls every `every` ms until the host answers the token, the link expires or `wait` passes.
+ * The token is stored under the host's name. Resolves { login, name, avatar, status }; throws a
+ * ShareError that says what to do. A poll the network drops is asked again; `stopped()` true ends it
+ * quietly (resolves null): another sign-in took over.
+ */
+// PROTO_SHARE_SIGNIN_EVERY_MS and PROTO_SHARE_SIGNIN_WAIT_MS shorten both for the tests.
+export async function signIn(host, { fetch = globalThis.fetch, onUrl = () => {}, every = Number(process.env.PROTO_SHARE_SIGNIN_EVERY_MS) || 2000, wait = Number(process.env.PROTO_SHARE_SIGNIN_WAIT_MS) || SIGNIN_WAIT_MS, sleep = ms => new Promise(r => setTimeout(r, ms)), stopped = () => false, device } = {}) {
+  const start = await signinStart(host, { fetch, device })
+  if (typeof start?.url !== 'string' || typeof start.code !== 'string' || typeof start.poll !== 'string') throw new ShareError(`The share host "${host.name}" answered a sign-in without its link`)
+  await onUrl(start.url, start)
+  // Not capped at the link's `exp`: the host still answers a sign-in finished just before it, and
+  // says 410 expired once it won't.
+  const end = Date.now() + wait
+  while (Date.now() < end) {
+    await sleep(every)
+    if (stopped()) return null
+    let r
+    try { r = await signinPoll(host, start.code, start.poll, { fetch }) } catch (e) {
+      if (e?.unreachable || e?.status === 429 || e?.status >= 500) continue
+      if (e?.status === 410) throw Object.assign(new ShareError('The sign-in link expired: run proto share signin again'), { code: 'expired' })
+      throw e
+    }
+    if (stopped()) return null
+    if (r.state === 'waiting') continue
+    setToken(host.name, r.token)
+    return { login: r.login ?? null, name: r.name ?? null, avatar: r.avatar ?? null, status: r.status ?? 'active' }
+  }
+  throw Object.assign(new ShareError('No sign-in within five minutes: run proto share signin again'), { code: 'expired' })
+}
+
+/** What a finished sign-in says: who, or that the maintainer still has to let them in. */
+export function signedInLine(who) {
+  if (who.status === 'pending') return `signed in as @${who.login}. Waiting for the maintainer to approve @${who.login}: sharing opens once they do`
+  if (who.status === 'banned') return `signed in as @${who.login}, but this GitHub account can't share on this host`
+  return `signed in as @${who.login}`
 }
 
 // One client per host name for a process, its token read once: the Keychain is a process spawn.

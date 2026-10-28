@@ -3,7 +3,7 @@
 // is used for one /user read and dropped: only the id, login, name and avatar are kept.
 import { isId } from './ids.mjs'
 import { namesOf } from './routes.mjs'
-import { page } from './pages.mjs'
+import { confirmPage, page } from './pages.mjs'
 import { redirect } from './http.mjs'
 import { b64url, cookie, nonceCookie, readCookies, sign, stateCookie, verify, viewerCookie } from './cookies.mjs'
 
@@ -103,14 +103,23 @@ async function toGitHub(env, url, carry) {
   return redirect(go.href, [cookie(sc.name, state, { path: sc.path, maxAge: STATE_MS / 1000, secure: sc.secure })])
 }
 
-/** GET <apex>/auth/github?share=<id>&back=<path>&nonce=<from /_in/start>[&via=<host>], or ?claim=<signed> */
+// GET <apex>/auth/github?signin=<code>: a sign-in POST /api/signin/start began, still open and not
+// yet used. The state carries the code on to the callback.
+async function signinStart(env, url, code) {
+  const row = isId(code) ? await env.DB.prepare('SELECT exp, owner_id FROM signins WHERE code = ?').bind(code).first() : null
+  if (!row || row.owner_id || row.exp <= Date.now()) return page('claimfail', {})
+  return toGitHub(env, url, { signin: code })
+}
+
+/** GET <apex>/auth/github?share=<id>&back=<path>&nonce=<from /_in/start>[&via=<host>], ?claim=<signed> or ?signin=<code> */
 export async function authStart(env, url) {
   if (!signinReady(env)) return page('signin', {})
   const q = url.searchParams
-  if (q.has('claim')) {
-    // The claim link is made on BASE; on the other loopback name it goes there as it is.
-    if (url.host.toLowerCase() !== env.BASE.toLowerCase()) return redirect(`${url.protocol}//${env.BASE}/auth/github?claim=${encodeURIComponent(q.get('claim'))}`)
-    return claimStart(env, url, q.get('claim'))
+  for (const kind of ['claim', 'signin']) {
+    if (!q.has(kind)) continue
+    // The claim and sign-in links are made on BASE; on the other loopback name they go there as they are.
+    if (url.host.toLowerCase() !== env.BASE.toLowerCase()) return redirect(`${url.protocol}//${env.BASE}/auth/github?${kind}=${encodeURIComponent(q.get(kind))}`)
+    return kind === 'claim' ? claimStart(env, url, q.get('claim')) : signinStart(env, url, q.get('signin'))
   }
   if (!NONCE.test(q.get('nonce') || '')) return page('signin', {})
   const id = q.get('share') || ''
@@ -163,10 +172,12 @@ export async function authCallback(req, env, url) {
   const q = url.searchParams
   if (!st || typeof st.n !== 'string' || q.get('state') !== st.n) return bad()
   const claim = typeof st.claim === 'string' ? st.claim : null
-  if (claim) bad = () => failed('claimfail')
-  // Declined on GitHub: back to the link, still signed out (the owner's claim has no link: its page).
-  if (q.get('error') || !q.get('code')) return claim ? bad() : redirect(st.origin + st.back, [clear])
-  let user = null
+  const signin = typeof st.signin === 'string' ? st.signin : null
+  if (claim || signin) bad = () => failed('claimfail')
+  // Declined on GitHub: back to the link, still signed out (the owner's claim and sign-in have no
+  // link: their page).
+  if (q.get('error') || !q.get('code')) return claim || signin ? bad() : redirect(st.origin + st.back, [clear])
+  let user = null, raw = null, access = null
   try {
     const t = await fetch(`${oauthBase(env)}/login/oauth/access_token`, {
       method: 'POST',
@@ -177,7 +188,9 @@ export async function authCallback(req, env, url) {
     const tok = await t.json().catch(() => null)
     if (!t.ok || typeof tok?.access_token !== 'string') return bad()
     const u = await fetch(`${apiBase(env)}/user`, { headers: { authorization: `Bearer ${tok.access_token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', 'user-agent': UA } })
-    user = u.ok ? viewerFrom(await u.json().catch(() => null), env) : null
+    raw = u.ok ? await u.json().catch(() => null) : null
+    user = viewerFrom(raw, env)
+    access = tok.access_token
   } catch (e) {
     console.error(e)
     return bad()
@@ -185,6 +198,8 @@ export async function authCallback(req, env, url) {
   if (!user) return bad()
   const now = Date.now()
   if (claim) return claimed(env, st, user, now, clear)
+  // The access token is used here for the org check at most, and dropped with this request.
+  if (signin) return confirmSignin(env, url, signin, user, () => admits(env, raw, user, access), now, clear)
   await env.DB.prepare(
     `INSERT INTO viewers (gh_id, login, name, avatar, seen_at) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(gh_id) DO UPDATE SET login = excluded.login, name = excluded.name, avatar = excluded.avatar, seen_at = excluded.seen_at`,
@@ -205,6 +220,124 @@ async function claimed(env, st, user, now, clear) {
   const done = await env.DB.prepare('UPDATE owners SET gh_id = ?, gh_login = ?, gh_name = ?, gh_avatar = ? WHERE id = ?').bind(user.gh_id, user.login, user.name, user.avatar, st.claim).run()
   if (!done.meta?.changes) return bad()
   const r = page('claimed', { login: user.login })
+  r.headers.append('set-cookie', clear)
+  return r
+}
+
+const DAY_MS = 86_400_000
+const AGE_DAYS = 30 // SIGNUP=open admits GitHub accounts at least this old
+const MAX_ORGS = 10 // each is one subrequest of the callback's 50
+const listOf = v => String(v || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+
+/**
+ * Whether a new user starts active (else pending, for an admin to approve): a login in ALLOW_LOGINS,
+ * a public member of an org in ALLOW_ORGS (GET /orgs/<org>/members/<login> answers 204 to the user's
+ * own token, with no scope beyond the public profile; GitHub sends a non-member asker on to the
+ * public list), or, with SIGNUP=open, a GitHub account at least 30 days old. SIGNUP=invite (the
+ * default) admits no one else.
+ */
+export async function admits(env, raw, user, access, now = Date.now()) {
+  if (listOf(env.ALLOW_LOGINS).includes(user.login.toLowerCase())) return true
+  for (const org of listOf(env.ALLOW_ORGS).slice(0, MAX_ORGS)) {
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,38})$/.test(org)) continue
+    try {
+      const r = await fetch(`${apiBase(env)}/orgs/${org}/members/${encodeURIComponent(user.login)}`, { headers: { authorization: `Bearer ${access}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', 'user-agent': UA } })
+      if (r.status === 204) return true
+    } catch (e) { console.error(e) }
+  }
+  if (env.SIGNUP === 'open') {
+    const born = Date.parse(raw?.created_at)
+    return Number.isFinite(born) && born <= now - AGE_DAYS * DAY_MS
+  }
+  return false
+}
+
+// A sign-in from a Mac without a token, back from GitHub. Nothing is signed in yet: a link someone
+// else started (and sent here) would otherwise hand them a token for this account. The page names the
+// device that asked and shows the code that Mac printed; only the person's Approve, from this browser,
+// finishes it. Whether a new or pending user is let in is settled now, while GitHub's token is in
+// hand, and rides in the signed form token with who they are.
+async function confirmSignin(env, url, code, user, admit, now, clear) {
+  const bad = () => { const r = page('claimfail', {}); r.headers.append('set-cookie', clear); return r }
+  const row = await env.DB.prepare('SELECT exp, owner_id, device, words FROM signins WHERE code = ?').bind(code).first()
+  if (!row || row.owner_id || row.exp <= now) return bad()
+  const known = await env.DB.prepare('SELECT status FROM owners WHERE gh_id = ?').bind(user.gh_id).first()
+  const admitted = !known || known.status === 'pending' ? await admit() : false
+  const nonce = random(16)
+  const form = await sign(env.VIEWER_KEY, 'approve', { c: code, u: user, a: admitted, n: nonce, exp: now + STATE_MS })
+  const ac = approveCookie(url)
+  const r = confirmPage({ device: row.device, login: user.login, words: row.words || '', form, action: '/auth/github/approve' })
+  r.headers.append('set-cookie', clear)
+  r.headers.append('set-cookie', cookie(ac.name, nonce, { path: ac.path, maxAge: STATE_MS / 1000, secure: ac.secure }))
+  return r
+}
+
+// The confirm page's cookie: the form token works only in the browser that saw the page. __Host- over
+// https, so a share on <id>.<base> can neither set nor overwrite it.
+function approveCookie(url) {
+  const secure = url.protocol === 'https:'
+  return { name: secure ? '__Host-gha' : 'gha', path: secure ? '/' : '/auth/github', secure }
+}
+
+/**
+ * POST <apex>/auth/github/approve, the confirm page's form: t (the signed form token) and do
+ * (approve or cancel). The token is bound to the sign-in's code, the GitHub account and this
+ * browser's cookie, lasts 10 minutes, and works once (the row is marked done, or cancelled, once).
+ * The cookie is SameSite=Lax, so a form posted from another site arrives without it.
+ */
+export async function approveSignin(req, env, url) {
+  const ac = approveCookie(url)
+  const clear = cookie(ac.name, '', { path: ac.path, maxAge: 0, secure: ac.secure })
+  const bad = () => { const r = page('claimfail', {}); r.headers.append('set-cookie', clear); return r }
+  if (!signinReady(env) || !/^application\/x-www-form-urlencoded\b/i.test(req.headers.get('content-type') || '')) return bad()
+  const origin = req.headers.get('origin')
+  if (origin && origin !== url.origin) return bad()
+  let f
+  try { f = new URLSearchParams((await req.text()).slice(0, 8192)) } catch { return bad() }
+  const p = await verify(env.VIEWER_KEY, 'approve', f.get('t'))
+  const u = p && viewerFrom({ id: p.u?.gh_id, login: p.u?.login, name: p.u?.name, avatar_url: p.u?.avatar }, env)
+  if (!p || !isId(p.c) || !u || typeof p.n !== 'string') return bad()
+  if (!readCookies(req).some(([name, value]) => name === ac.name && value === p.n)) return bad()
+  const now = Date.now()
+  if (f.get('do') === 'cancel') {
+    // The poll answers 410 from now on; the Mac that asked says the sign-in ended.
+    await env.DB.prepare('UPDATE signins SET exp = 0 WHERE code = ? AND owner_id IS NULL').bind(p.c).run()
+    const r = page('cancelled', {})
+    r.headers.append('set-cookie', clear)
+    return r
+  }
+  if (f.get('do') !== 'approve') return bad()
+  return signedIn(env, p.c, u, p.a === true, now, clear)
+}
+
+// Approved: the user is found by GitHub id or made (so every user has gh_* from birth), new users
+// start active or pending as admits() said, and a pending one who is let in since (a login added to
+// ALLOW_LOGINS) turns active. The signins row is then marked done, once; the token is minted when
+// the client polls, never here.
+async function signedIn(env, code, user, admitted, now, clear) {
+  const bad = () => { const r = page('claimfail', {}); r.headers.append('set-cookie', clear); return r }
+  const row = await env.DB.prepare('SELECT exp, owner_id FROM signins WHERE code = ?').bind(code).first()
+  if (!row || row.owner_id || row.exp <= now) return bad()
+  let owner = await env.DB.prepare('SELECT id, status FROM owners WHERE gh_id = ?').bind(user.gh_id).first()
+  if (!owner) {
+    const status = admitted ? 'active' : 'pending'
+    const id = `o_${[...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('')}`
+    // Two sign-ins of one account at once: one statement, so the second finds the first's row (and
+    // owners_gh refuses a twin where it exists; a fresh local database gets it from upgrade()).
+    await env.DB.prepare(
+      `INSERT INTO owners (id, name, created_at, gh_id, gh_login, gh_name, gh_avatar, role, status) SELECT ?, ?, ?, ?, ?, ?, ?, 'user', ?
+       WHERE NOT EXISTS (SELECT 1 FROM owners WHERE gh_id = ?)`,
+    ).bind(id, user.name || user.login, now, user.gh_id, user.login, user.name, user.avatar, status, user.gh_id).run()
+    owner = await env.DB.prepare('SELECT id, status FROM owners WHERE gh_id = ?').bind(user.gh_id).first()
+  } else {
+    const status = owner.status === 'pending' && admitted ? 'active' : owner.status
+    await env.DB.prepare('UPDATE owners SET gh_login = ?, gh_name = ?, gh_avatar = ?, status = ? WHERE id = ?').bind(user.login, user.name, user.avatar, status, owner.id).run()
+    owner = { ...owner, status }
+  }
+  if (!owner) return bad()
+  const done = await env.DB.prepare('UPDATE signins SET gh_id = ?, owner_id = ?, done_at = ? WHERE code = ? AND owner_id IS NULL AND exp > ?').bind(user.gh_id, owner.id, now, code, now).run()
+  if (!done.meta?.changes) return bad()
+  const r = page(owner.status === 'active' ? 'signedin' : owner.status === 'pending' ? 'waiting' : 'blocked', { login: user.login })
   r.headers.append('set-cookie', clear)
   return r
 }
@@ -235,11 +368,15 @@ export async function ticketIn(req, env, url, share, pathForm) {
   ])
 }
 
-/** The signed-in viewer of this share, { gh_id, login, name, avatar }, or null. */
-export async function viewerOf(req, env, shareId) {
+/**
+ * The signed-in viewer of this share, { gh_id, login, name, avatar }, or null. `only`: the one cookie
+ * name this origin sets (viewerCookie). On a share's own https origin that is __Host-v, which a
+ * sibling share can't set; a plain `v` there could be tossed in from <other>.<base> with Domain=.
+ */
+export async function viewerOf(req, env, shareId, only) {
   if (!env.VIEWER_KEY) return null
   for (const [name, value] of readCookies(req)) {
-    if (name !== 'v' && name !== '__Host-v') continue
+    if (only ? name !== only : name !== 'v' && name !== '__Host-v') continue
     const p = await verify(env.VIEWER_KEY, 'v', value)
     if (!p || p.share !== shareId || !Number.isSafeInteger(p.gh)) continue
     const row = await env.DB.prepare('SELECT gh_id, login, name, avatar FROM viewers WHERE gh_id = ?').bind(p.gh).first()

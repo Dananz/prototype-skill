@@ -7,13 +7,26 @@ they use, their pictures as WebP, and nothing about the owner (no asks, notes, p
 this Mac). It opens in a read-only viewer, a desk of the shared designs with zoom and a phone
 view. Publish only when the user asks for a link.
 
-The host is online on a free Cloudflare account made for it (not the dananz.com one): links are
-`https://prtype.dev/<id>`, which opens `https://prtype.dev/s/<id>/`. A host on this Mac
-(`--local`) is the offline option: its links open only here, while it runs.
+The host is online at prtype.dev, one host for every user of the skill, run by its maintainer on a
+free Cloudflare account. Links are `https://prtype.dev/<id>`, which opens the share on its own
+origin, `https://<id>.prtype.dev/`. A host on this Mac (`--local`) is the offline option: its links
+open only here, while it runs. `proto share file` needs no host at all.
 
-## Setup: online
+## Sharing: sign in once
 
-Only when the user asks. Each step prints one line, and every run can be repeated: it looks things
+Nothing to set up. The first share on a Mac asks for a GitHub sign-in: the page's Share button shows
+Sign in with GitHub, and `proto share` stops with "Sign in with GitHub first: proto share signin".
+Run that only when the user asks to share; the user approves in their browser. The host gives this
+Mac its own token (the Keychain item `prototype-share-online`), and from then on sharing just works.
+`proto share signout` takes it back.
+
+The host is invite-only: a new account waits for the maintainer to approve it ("Waiting for the
+maintainer to approve @login"), unless its login or a GitHub org it is a public member of is on the
+host's allowlist. The token is kept while it waits, so nothing needs repeating once approved.
+
+## Running the host (maintainer only)
+
+Users never run this: it deploys and repairs the prtype.dev host itself. Only when the maintainer asks. Each step prints one line, and every run can be repeated: it looks things
 up before it makes them, so a second run updates the host's code, applies new migrations, repairs a
 lost token, and on another Mac adds that Mac's token.
 
@@ -39,16 +52,17 @@ The first command puts the host on its workers.dev name:
 7. Applies the database migrations (`host/migrations/`), then deploys the host.
 8. Sets the secrets from `~/.prototypes/host/prod.vars` (the prtype.dev OAuth App's
    `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, mode 600) on stdin, and a viewer key once.
-9. Makes the owner (`--name`, else your `gh` login), the one allowed to upload, and this Mac's token
-   in the Keychain.
+9. Makes the owner (`--name`, else your `gh` login), the host's admin, and this Mac's token in the
+   Keychain.
 10. Checks the host answers on this code and takes the token, and makes it the default host.
 
 Viewers can read workers.dev links; comments open with the domain:
 
 `--domain prtype.dev` needs the zone active on the account (it says what to do when it is missing
 or waiting for its nameservers). The site Worker (`site/`, `prtype-site`) owns prtype.dev and hands
-`/s/*`, `/api*`, `/auth/*`, `/_health` and short links to the host over a service binding, so the
-host gets no route of its own. Setup redeploys the host with `BASE=prtype.dev`, sign-in on and the
+`/s/*`, `/api*`, `/auth/*`, `/_health` and short links to the host over a service binding. Shares
+live on `<id>.prtype.dev`: the host's one route is `*.prtype.dev/*`, beside a proxied `*` DNS record
+(both free; Universal SSL covers one level of wildcard), and `prtype.dev/s/<id>/…` answers 301 there. Setup redeploys the host with `BASE=prtype.dev`, sign-in on and the
 workers.dev name kept as a legacy name (its links move to prtype.dev), adds
 `"services": [{ "binding": "HOST", "service": "proto-share" }]` to `site/wrangler.jsonc` (commit
 that change) and deploys the site (building it first when `site/dist` is missing). Then it checks
@@ -81,8 +95,9 @@ with `--restart`; else `proto share stop && proto share setup --local` applies t
 ## Commands
 
 ```
-proto share signin [--no-open] [--again]  sign in with GitHub as the host's owner: prints and opens a
-                                          link (10 minutes, works once), waits up to five minutes
+proto share signin [--no-open] [--again]  sign in with GitHub: prints and opens a link (10 minutes,
+                                          works once), waits up to five minutes, keeps this Mac's token
+proto share signout                       revoke this Mac's token on the host and forget it
 proto share <slug>[/<n>…] | --all [--title "…"] [--message "…"] [--yes] [--host local|online]
                                           build, review, publish, print the link; --message: what
                                           viewers read first (at most 280 characters)
@@ -101,16 +116,19 @@ proto share take <commentId…> | --new [<id>]   send them to the inbox, as the 
 proto share rm <id>                       take a link down; it then says "This link was removed"
 proto share file <slug>[/<n>…] [--out <file.html>]   the same build as one HTML file, comments off
 proto share stop                          stop the local host; the next share starts it again
+proto share admin users [--pending] | approve <login> | ban <login> | rm <id> | reports
+                                          the host's admin only: who signed up, let one in, ban one
+                                          (their tokens revoked, their links taken down), take any
+                                          link down, read "Report this link" reports
 ```
 
 Variants take numbers like every other command (`pricing/2`); a slug alone shares all of its
 variants. The link opens on the first one named.
 
-A new link goes out under the owner's GitHub name. Once the host can run GitHub sign-in (prtype.dev,
-or a local host after `setup --github`), it takes no new link until the owner has signed in once:
-`proto share` then stops with "Sign in with GitHub first: proto share signin". Run that only when
-the user asks to share; the user approves in their browser. The identity is kept on the host, so
-every Mac with the owner's token is signed in. Updates and removals of existing links never need it.
+A new link goes out under the sharer's GitHub name. Each link belongs to whoever published it: only
+they can update it, remove it, or read and answer its comments (anyone else gets "No such share").
+A host from before sign-in whose owner never signed in still asks for `proto share signin` once
+before a new link; updates and removals of existing links never need it.
 
 A share is reviewed before anything leaves:
 
@@ -122,8 +140,9 @@ A share is reviewed before anything leaves:
   with `--yes` only on their word.
 
 A local host that is down is started again. An online host is never started: if it doesn't answer
-`/_health` within 5 s the command says so. A host deployed from older code than the skill says
-"The online host runs older code: proto share setup updates it". If the upload fails, nothing is
+`/_health` within 5 s the command says so. A host that needs a newer skill says
+"Update the skill to share"; on the maintainer's Mac a host deployed from older code than the skill
+says "The online host runs older code: proto share setup updates it". If the upload fails, nothing is
 written on this Mac. `--host` picks a host for one command; `update` and `rm` go to the share's own.
 
 Before it builds, `proto share` brings the session's copy of the app up to date with the skill (a
@@ -166,7 +185,7 @@ acts on them; nothing reaches Claude by itself.
 | The local host: config, database and pages, pid and log | `~/.prototypes/host/` (`wrangler.jsonc`, `state/`, `host.pid`, `host.log`) |
 | The local OAuth App and viewer key | `~/.prototypes/host/.dev.vars` (mode 600) |
 | Which hosts exist, and the default | `~/.config/prototype/hosts.json` (no secrets) |
-| The owner tokens | macOS Keychain items `prototype-share-online` and `prototype-share-local`; elsewhere `~/.config/prototype/token-<host>`, mode 600 |
+| This Mac's sign-in tokens | macOS Keychain items `prototype-share-online` and `prototype-share-local`; elsewhere `~/.config/prototype/token-<host>`, mode 600 |
 | This session's shares | `.proto/shares.json` in the session: `{ id, host, title, scope, version, publishedAt, sourceHash }` |
 | What each version was built from | `.proto/shares/<id>/v<N>/<slug>/`: a copy of the shared prototype's files, kept after `rm` |
 | A file share | `.proto/shares/<slug>.html` unless `--out` says otherwise |
@@ -202,14 +221,21 @@ points at the card.
 
 - A share is at most 20 MiB gzipped (blocked above); over 5 MiB it warns, since a phone opens it
   slowly. Pictures are WebP at quality 82, at most 2560 px wide.
-- Online links: `https://prtype.dev/<id>` (send this one) opens `https://prtype.dev/s/<id>/`. On
-  workers.dev, before the domain: `https://proto-share.<name>.workers.dev/s/<id>/`, which moves to
-  prtype.dev once the domain is set up.
-- Every share is on one origin (path mode, decision 22): one share's scripts could read another's
-  localStorage and call its API. That is accepted only because the owner is the only one who
-  publishes: the host takes uploads from its owner alone (`not_owner` otherwise). Viewer cookies
-  are per share (`Path=/s/<id>/`).
-- The host refuses work at 90% of each of the Free plan's daily caps, which reset at 00:00 UTC:
+- Online links: `https://prtype.dev/<id>` (send this one) opens `https://<id>.prtype.dev/`. Links
+  made before that, `https://prtype.dev/s/<id>/`, still open (301); viewers sign in again once.
+- Every share is on its own origin (decision 23), since anyone signed in can publish: one share's
+  scripts can't read another's storage or act as its viewer. Viewer cookies are `__Host-v` on the
+  share's own name; every cookie on prtype.dev is `__Host-`, so a share can't set one there.
+- A shared page can't send or load anything from another origin, online or local: remote images,
+  scripts and API calls don't load (Google Fonts and viewers' GitHub avatars do), and forms post
+  only to the share. The review warns about such URLs before publishing.
+- An upload whose page has a password or card number field (in its first 2 MiB) is flagged for the
+  maintainer in `proto share admin reports` as `auto`. It still publishes.
+- Each user may hold 25 live links and 75 MB, and upload 30 times a day (a share, an update and a
+  card each count), and start at most 60 new links a day; past that the host says which limit and
+  when it resets. The maintainer's account has no per-user limits, only the host's.
+- The host refuses work at 90% of each of the Free plan's daily caps, which reset at 00:00 UTC
+  (every user shares them):
   900 uploads (KV writes), 900 deletes (past that, old versions wait for the hourly clean-up),
   90,000 database writes (past that, a viewer's comment is refused until the reset), 900 MB stored. `proto share ls` ends
   with today's count: `today: 3/900 uploads, 0/900 deletes, 412/90,000 writes, 18 MB/900 MB stored`.
@@ -217,8 +243,9 @@ points at the card.
   resolve, setup notices and links take the path form `http://127.0.0.1:<port>/s/<id>/`.
 - New links expire 30 days after publication. Updating a link renews it for another 30 days,
   including an expired link, and keeps its comments. Existing links without an expiry stay as
-  they are until updated. Expiry blocks viewing, sign-in and viewer APIs; it does not erase the
-  hosted page, comments or local source snapshots. `proto share rm <id>` removes the hosted page
+  they are until updated. Expiry blocks viewing, sign-in and viewer APIs. Thirty days after it
+  expires, the hosted page and card are deleted to free room for everyone; the comments, the link's
+  "removed" page and the local source snapshots stay, and an update still brings it back. `proto share rm <id>` removes the hosted page
   and comments. An already opened or downloaded copy cannot be recalled.
 - No passwords, person links or configurable expiry yet.
 
@@ -234,17 +261,19 @@ points at the card.
 | "the site Worker has no HOST binding live" | `site/wrangler.jsonc` needs `"services": [{ "binding": "HOST", "service": "proto-share" }]`; run `proto share setup --domain prtype.dev` again (it deploys the site). |
 | "The host's daily upload budget is used up" | It resets at 00:00 UTC (the message says the time in Israel). Past the stored-bytes cap it names the biggest shares: `proto share rm <id>` frees room. |
 | "Sign in with GitHub first: proto share signin" | `proto share signin`; the user approves in the browser tab it opens (the link works once, for 10 minutes). |
+| "Waiting for the maintainer to approve @login" | Nothing to do on this Mac: the maintainer runs `proto share admin approve <login>`, then share again. |
+| "You've uploaded 30 times today" / "You have 25 live links" / "Your links hold at most 75 MB" | The user's own limit: `proto share rm <id>` frees links and room; uploads reset at 00:00 UTC. |
+| "Update the skill to share" | The host needs a newer skill: update it (`proto up` in a clean clone updates itself). |
 | "GitHub sign-in isn't set up on the share host" | Online: `proto share setup --domain prtype.dev`. On this Mac: `proto share setup --github`. A host without sign-in needs none to share. |
-| "This Mac's token isn't the host's owner" | `proto share setup` again: it makes this Mac's token for the host's owner. |
 | "The online host runs older code" | `proto share setup` deploys the skill's host code and applies new migrations. |
 | "The online share host isn't answering" | Check the network; `proto share setup` repairs a broken deploy. |
-| A new Mac, or a lost token | `proto share setup` on that Mac: it finds the host and adds a token for this machine (a replaced one is revoked). |
+| A new Mac, or a lost token | `proto share signin` on that Mac. |
 | "Ports 8787 to 8799 are all taken" | The host takes 8787, else the next free port up to 8799. Free one (`lsof -nP -iTCP:8787 -sTCP:LISTEN`) and share again. Links made on another port stop working when the host moves; share again for a new one. |
 | "Installing the share tools … failed" | Needs the network once. Check it and run the command again; delete `~/.prototypes/share-tools` if a half install is stuck. |
 | The host does not start | Read `~/.prototypes/host/host.log`. `proto share stop`, then share again. |
 | "Pass --name: gh is not logged in" | `proto share setup --local --name "<your name>"`, or `gh auth login` first. The name is what viewers see as "shared by". |
 | A link opens in Chrome but not in Safari | Safari may not resolve `*.localhost` (not yet checked by hand). Open the path form instead, `http://127.0.0.1:<port>/s/<id>/`, which the host always serves. |
-| "No owner token for the host" | The token was lost (Keychain item deleted). `proto share setup` (or `--local` for the host on this Mac) makes a new one. |
+| "No owner token for the host" | The token was lost (Keychain item deleted). Online: `proto share signin`. The host on this Mac: `proto share setup --local`. |
 | A `<id>.localhost` link shows another app | The host listens on 127.0.0.1 and links say `localhost`, so a server of yours on `::1` at the same port can answer them. Open the path form `http://127.0.0.1:<port>/s/<id>/`, or stop that server and share again. |
 | A link says "This link was removed" | It was taken down with `proto share rm`; share again for a new link. |
 | The tray says the host can't be reached | A local host is stopped: `proto share ls` starts it. An online one: check the network. Replies and statuses waiting in the outbox go once it answers. |

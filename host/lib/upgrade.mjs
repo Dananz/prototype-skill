@@ -11,6 +11,8 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS kv_trash (key TEXT PRIMARY KEY, at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS presence (share_id TEXT NOT NULL, gh_id INTEGER NOT NULL, route TEXT, at INTEGER NOT NULL, PRIMARY KEY (share_id, gh_id))`,
+  `CREATE TABLE IF NOT EXISTS signins (code TEXT PRIMARY KEY, poll TEXT NOT NULL, device TEXT NOT NULL, words TEXT, exp INTEGER NOT NULL, gh_id INTEGER, owner_id TEXT, done_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, share_id TEXT NOT NULL, reason TEXT NOT NULL, gh_id INTEGER, created_at INTEGER NOT NULL, source TEXT)`,
 ]
 // ADD COLUMN can't add NOT NULL without a default, hence the defaults.
 const COLUMNS = {
@@ -18,9 +20,16 @@ const COLUMNS = {
     ['gh_id', 'INTEGER'], ['variant', 'TEXT'], ['target', 'TEXT'], ['owner_reply_at', 'INTEGER'],
     ['deleted', 'INTEGER NOT NULL DEFAULT 0'], ['withdrawn', 'INTEGER NOT NULL DEFAULT 0'],
   ],
-  shares: [['html_key', 'TEXT'], ['message', 'TEXT'], ['card_key', 'TEXT']],
-  owners: [['gh_id', 'INTEGER'], ['gh_login', 'TEXT'], ['gh_name', 'TEXT'], ['gh_avatar', 'TEXT']],
+  shares: [['html_key', 'TEXT'], ['message', 'TEXT'], ['card_key', 'TEXT'], ['purged_at', 'INTEGER']],
+  owners: [['gh_id', 'INTEGER'], ['gh_login', 'TEXT'], ['gh_name', 'TEXT'], ['gh_avatar', 'TEXT'], ['role', "TEXT NOT NULL DEFAULT 'user'"], ['status', "TEXT NOT NULL DEFAULT 'active'"]],
+  owner_tokens: [['expires_at', 'INTEGER']],
+  signins: [['words', 'TEXT']],
+  reports: [['source', 'TEXT']],
 }
+// After the columns, since they name gh_id: schema.sql can't create this index, because on a local
+// database from before 0004 (owners without gh_id) the statement would fail and stop the file. The
+// Worker runs upgrade() before its first answer, so every local database has it all the same.
+const AFTER = [`CREATE UNIQUE INDEX IF NOT EXISTS owners_gh ON owners (gh_id) WHERE gh_id IS NOT NULL`]
 
 // Once per isolate: the binding object may be new on every request, so it can't be the key. An
 // isolate serves one host, so one database.
@@ -34,6 +43,7 @@ export function upgraded(env) {
 
 export async function upgrade(db) {
   for (const t of TABLES) await db.prepare(t).run()
+  let roles = false
   for (const [table, columns] of Object.entries(COLUMNS)) {
     const { results } = await db.prepare(`PRAGMA table_info(${table})`).all()
     const have = new Set(results.map(c => c.name))
@@ -41,11 +51,15 @@ export async function upgrade(db) {
       if (have.has(name)) continue
       try {
         await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`).run()
+        if (table === 'owners' && name === 'role') roles = true
       } catch (e) {
         // Another isolate may have added it a moment ago.
         if (!/duplicate column/i.test(String(e?.message || e))) throw e
       }
     }
   }
+  for (const s of AFTER) await db.prepare(s).run()
+  // As 0006 does, once, when the roles first appear: the owner setup named becomes the admin.
+  if (roles) await db.prepare("UPDATE owners SET role = 'admin' WHERE id = (SELECT v FROM meta WHERE k = 'owner_id')").run()
   console.log('proto-share: database schema checked')
 }

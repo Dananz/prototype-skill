@@ -4,37 +4,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
-import { readFileSync } from 'node:fs'
 import worker from '../host/worker.mjs'
 import { apiOrigin, client, linkOf, setupHint, shortLinkOf } from '../app/share/owner.mjs'
 
-const TOKEN = 'owner-token-for-online-tests'
-const hex = async s => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map(b => b.toString(16).padStart(2, '0')).join('')
+import { TOKEN, memoryEnv } from './share-memory-env.mjs'
+export { memoryEnv }
 
-// The Worker's bindings in memory: D1 on node:sqlite from schema.sql, KV on a Map; one owner, o1,
-// named by meta.owner_id as setup leaves it.
-export async function memoryEnv(extra = {}) {
-  const sql = new DatabaseSync(':memory:')
-  sql.exec(readFileSync(new URL('../host/schema.sql', import.meta.url), 'utf8'))
-  sql.prepare('INSERT INTO owners (id, name, created_at) VALUES (?, ?, ?)').run('o1', 'Dananz', 1)
-  sql.prepare('INSERT INTO owner_tokens (sha256, owner_id, device, created_at) VALUES (?, ?, ?, ?)').run(await hex(TOKEN), 'o1', 'test', 1)
-  sql.prepare("INSERT INTO meta (k, v) VALUES ('owner_id', 'o1')").run()
-  const store = new Map()
-  const KV = {
-    store,
-    async get(key, type) { const v = store.get(key); if (v === undefined) return null; return type === 'arrayBuffer' ? v.slice(0) : new TextDecoder().decode(v) },
-    async put(key, value) { store.set(key, value instanceof ArrayBuffer ? value.slice(0) : value instanceof Uint8Array ? value.slice().buffer : new TextEncoder().encode(String(value)).buffer) },
-    async delete(key) { store.delete(key) },
-  }
-  const stmt = (query, args = []) => ({
-    bind: (...a) => stmt(query, a),
-    first: async () => sql.prepare(query).get(...args) ?? null,
-    all: async () => ({ results: sql.prepare(query).all(...args) }),
-    run: async () => { const r = sql.prepare(query).run(...args); return { success: true, meta: { changes: Number(r.changes), rows_written: Number(r.changes) } } },
-  })
-  const DB = { sql, prepare: q => stmt(q), async batch(list) { const out = []; for (const s of list) out.push(await s.run()); return out } }
-  return { KV, DB, BASE: 'prtype.dev', PATH_MODE: '1', SIGNIN: '0', ...extra }
-}
 // A fetch that hands each request to the Worker in memory, as Cloudflare would.
 const workerFetch = env => (url, init) => worker.fetch(new Request(url, init), env)
 
@@ -90,7 +65,7 @@ test('the owner API against an online host: create, put, list, comments, patch, 
   assert.deepEqual(await api.list(), [])
 })
 
-test('an online host\'s refusals read as what to do: the budget in its own words, not_owner names setup', async () => {
+test('an online host\'s refusals read as what to do: the budget in its own words', async () => {
   const env = await memoryEnv()
   const api = client(domain, TOKEN, { fetch: workerFetch(env) })
   const id = await api.create()
@@ -101,12 +76,6 @@ test('an online host\'s refusals read as what to do: the budget in its own words
     assert.equal(e.status, 507)
     assert.equal(e.code, 'budget')
     assert.match(e.message, /^The host's daily upload budget is used up\. It resets at 00:00 UTC/)
-    return true
-  })
-  env.DB.sql.prepare("DELETE FROM meta WHERE k = 'owner_id'").run()
-  await assert.rejects(api.create(), e => {
-    assert.equal(e.status, 403)
-    assert.equal(e.message, 'This Mac\'s token isn\'t the host\'s owner: proto share setup')
     return true
   })
 })
@@ -401,8 +370,9 @@ test('setup --domain on an active zone: the site reaches the host before the hos
     assert.deepEqual(cf.state.deploys, ['host:workers', 'host:workers', 'site', 'host:domain'])
     assert.ok(await cf.state.linksWork(r.tokens.get('online')), 'after --domain the links on prtype.dev do not work')
     const c = configOf(r.home)
-    assert.deepEqual(c.vars, { BASE: 'prtype.dev', PATH_MODE: '1', SIGNIN: '1', LEGACY: 'proto-share.dananz-proto.workers.dev', CARD: '/og-share.jpg', HOST_VERSION: VERSION })
-    assert.equal(c.routes, undefined)
+    // One origin per share on the domain (decision 23): path mode off, the wildcard route on the zone.
+    assert.deepEqual(c.vars, { BASE: 'prtype.dev', PATH_MODE: '0', SIGNIN: '1', LEGACY: 'proto-share.dananz-proto.workers.dev', CARD: '/og-share.jpg', HOST_VERSION: VERSION })
+    assert.deepEqual(c.routes, [{ pattern: '*.prtype.dev/*', zone_name: 'prtype.dev' }])
     assert.equal(c.workers_dev, true)
     const site = read(join(r.siteDir, 'wrangler.jsonc'), 'utf8')
     assert.match(site, /"services": \[\{ "binding": "HOST", "service": "proto-share" \}\]/)
@@ -412,13 +382,18 @@ test('setup --domain on an active zone: the site reaches the host before the hos
     assert.deepEqual(parsed.routes, [{ pattern: 'prtype.dev', custom_domain: true }])
     assert.equal(entry.stage, 'domain')
     assert.equal(entry.url, 'https://prtype.dev')
+    assert.equal(entry.pathMode, false, 'links on the domain are <id>.prtype.dev')
+    assert.equal(r.hosts().find(h => h.name === 'online').pathMode, false)
     assert.equal(entry.workersDev, 'proto-share.dananz-proto.workers.dev')
     assert.deepEqual(cf.sql.prepare("SELECT k, v FROM meta WHERE k IN ('stage', 'base') ORDER BY k").all().map(x => `${x.k}=${x.v}`), ['base=prtype.dev', 'stage=domain'])
     assert.match(r.out.at(-1), /prtype\.dev is live: links are https:\/\/prtype\.dev\/<id>/)
 
     cf.state.deploys.length = 0
+    // The maintainer's entry from before decision 23 (path mode) is corrected by the next setup.
+    r.io.saveHost({ ...r.hosts().find(h => h.name === 'online'), pathMode: true })
     await setupOnline({}, r.io)
     assert.deepEqual(cf.state.deploys, ['host:domain'])
+    assert.equal(r.hosts().find(h => h.name === 'online').pathMode, false)
     assert.equal(configOf(r.home).vars.BASE, 'prtype.dev')
     assert.ok(await cf.state.linksWork(r.tokens.get('online')))
   } finally { r.done() }

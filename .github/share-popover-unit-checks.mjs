@@ -37,6 +37,7 @@ async function makeEnv(extra = {}) {
   sql.prepare('INSERT INTO owners (id, name, created_at) VALUES (?, ?, ?)').run('o1', 'Dananz', 1)
   sql.prepare('INSERT INTO owner_tokens (sha256, owner_id, device, created_at) VALUES (?, ?, ?, ?)').run(await hex(TOKEN), 'o1', 'test', 1)
   sql.prepare("INSERT INTO meta (k, v) VALUES ('owner_id', 'o1')").run()
+  sql.prepare("UPDATE owners SET role = 'admin' WHERE id = 'o1'").run()
   const store = new Map()
   const KV = {
     store,
@@ -85,7 +86,9 @@ test('migration 0004 is the owner identity, the message and presence', () => {
 test('the gate: no new link before the owner signs in with GitHub; the claim link signs them in', async () => {
   const env = await makeEnv()
   // Signed out: GET /api/owner says so, and a new share is refused at create and at upload alike.
-  assert.deepEqual(await (await call(env, '/api/owner', { headers: auth })).json(), { login: null, name: null, avatar: null, signin: true })
+  // The owner setup made is the host's admin (0006): active, and held to no quota.
+  const ADMIN = { status: 'active', role: 'admin', quota: { uploads: 0, uploadsCap: null, shares: 0, sharesCap: null, bytes: 0, bytesCap: null } }
+  assert.deepEqual(await (await call(env, '/api/owner', { headers: auth })).json(), { login: null, name: null, avatar: null, signin: true, ...ADMIN })
   const refused = await call(env, '/api/shares', { method: 'POST', headers: auth })
   assert.equal(refused.status, 403)
   assert.equal((await refused.json()).code, 'sign_in')
@@ -104,7 +107,7 @@ test('the gate: no new link before the owner signs in with GitHub; the claim lin
   assert.match(done.text, /Signed in as dana-test/)
   assert.match(done.text, /You can close this tab/)
   assert.deepEqual(ownerRow(env), { gh_id: 4242, gh_login: 'dana-test', gh_name: 'Dana', gh_avatar: 'https://avatars.githubusercontent.com/u/4242' })
-  assert.deepEqual(await (await call(env, '/api/owner', { headers: auth })).json(), { login: 'dana-test', name: 'Dana', avatar: 'https://avatars.githubusercontent.com/u/4242', signin: true })
+  assert.deepEqual(await (await call(env, '/api/owner', { headers: auth })).json(), { login: 'dana-test', name: 'Dana', avatar: 'https://avatars.githubusercontent.com/u/4242', signin: true, ...ADMIN })
   // Signed in: a new link goes out.
   const id = await publish(env)
   // Signed out again (another Mac, an old database): updating and removing existing links still work.
@@ -131,7 +134,8 @@ test('a claim link works once, for 10 minutes, as a claim only, and for no one w
       await claimOf({}, 'state'),
       await claimOf({}, 'ticket'),
       await claimOf({ owner: 'o2' }),
-      url.replace(/.$/, c => c === 'A' ? 'B' : 'A'),
+      // A middle character of the MAC: the last one may carry only padding bits, so changing it may not.
+      url.replace(/\.([\w-]+)$/, (_, mac) => { const i = mac.length >> 1; return `.${mac.slice(0, i)}${mac[i] === 'A' ? 'B' : 'A'}${mac.slice(i + 1)}` }),
       `${ORIGIN}/auth/github?claim=junk`,
     ]) {
       const r = await walkClaim(bad, { fetch: hostFetch(env) })
@@ -320,7 +324,7 @@ test('the session server: owner (cached, refresh asks now), signin, and the list
 
   // Sign-in off on this host: signed out, the flow can't run, signin says why.
   let r = await server.handle('owner', {})
-  assert.deepEqual(r, { status: 200, body: { host: 'local', signedIn: false, login: null, name: null, avatar: null, signin: false } })
+  assert.deepEqual(r, { status: 200, body: { host: 'local', signedIn: false, login: null, name: null, avatar: null, signin: false, status: 'active' } })
   r = await server.handle('signin', {})
   assert.equal(r.status, 409)
   assert.equal(r.body.code, 'signin_off')
@@ -338,7 +342,7 @@ test('the session server: owner (cached, refresh asks now), signin, and the list
   const walked = await walkClaim(r.body.url.replace('localhost:8787', '127.0.0.1:8787'), { fetch: (u, i) => worker.fetch(new Request(u, i), env) })
   assert.equal(walked.status, 200, walked.text)
   r = await server.handle('owner', { refresh: true })
-  assert.deepEqual(r.body, { host: 'local', signedIn: true, login: 'dana-test', name: 'Dana', avatar: 'https://avatars.githubusercontent.com/u/4242', signin: true })
+  assert.deepEqual(r.body, { host: 'local', signedIn: true, login: 'dana-test', name: 'Dana', avatar: 'https://avatars.githubusercontent.com/u/4242', signin: true, status: 'active' })
 
   // A link of this session, with a message, a view and someone in it now.
   const api = client(HOST, TOKEN)

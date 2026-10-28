@@ -89,4 +89,10 @@ export default {
   'Got it': 'הבנתי',
   'Reply to {owner}': 'השב ל-{owner}',
   'Reply to {owner}…': 'השב ל-{owner}…',
+  'Report this link': 'דווח על הקישור',
+  'What is wrong with this link?': 'מה הבעיה בקישור הזה?',
+  'For example: phishing, malware, someone else’s private work': 'לדוגמה: פישינג, נוזקה, עבודה פרטית של מישהו אחר',
+  'Send report': 'שלח דיווח',
+  'Couldn’t send the report. Try again in a while.': 'לא הצלחנו לשלוח את הדיווח. נסה שוב בעוד כמה דקות.',
+  'Thanks. The host’s maintainer will look at this link.': 'תודה. מי שמתחזק את המארח יבדוק את הקישור.',
 } satisfies Record<string, string>

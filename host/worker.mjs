@@ -1,13 +1,15 @@
 import { newId, isId } from './lib/ids.mjs'
 import { ownerOf } from './lib/auth.mjs'
 import { namesOf, route } from './lib/routes.mjs'
-import { page, ogPage, ROBOTS } from './lib/pages.mjs'
+import { page, ogPage, ROBOTS, SHARE_CSP } from './lib/pages.mjs'
 import { json, fail } from './lib/http.mjs'
 import { upgraded } from './lib/upgrade.mjs'
-import { authCallback, authStart, claimUrl, signinReady, startIn, ticketIn } from './lib/github.mjs'
+import { approveSignin, authCallback, authStart, claimUrl, signinReady, startIn, ticketIn } from './lib/github.mjs'
 import { ownerComments, viewerApi } from './lib/comments.mjs'
-import { dropKey, metered, putCounted, queueKey, room, today, uploadRefused, usage } from './lib/budget.mjs'
+import { claim, dropKey, metered, putClaimed, queueKey, reserveStore, room, today, usage } from './lib/budget.mjs'
 import { cron } from './lib/cron.mjs'
+import { flagged } from './lib/scan.mjs'
+import { admin, banned, createRefused, liveCap, pending, quotaOf, reserveUpload, signinBegin, signinPoll, signout } from './lib/users.mjs'
 
 const MAX_BYTES = 20 * 1024 * 1024
 // A preview card is a 1200×630 JPEG of about 50 KB; chat apps skip images much past 300 KB.
@@ -36,6 +38,10 @@ const pathsServed = env => env.PATH_MODE === '1' || namesOf(env.BASE).local
 // per-share names, and a stray <id>.<base> must not become a second way in.
 const pathsOnly = env => env.PATH_MODE === '1' && !namesOf(env.BASE).local
 
+// The owner API version this host speaks, and the oldest client it takes (/_health's headers).
+const API = 2
+const API_MIN = 2
+
 const getShare = (env, id) => env.DB.prepare('SELECT * FROM shares WHERE id = ?').bind(id).first()
 
 // Every answer is nosniff and noindex, redirects and errors included.
@@ -63,8 +69,11 @@ function crashed(req, env) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const m = metered(env)
+    // Work the answer doesn't wait for (an upload's scan), each with its D1 writes counted too.
+    const jobs = []
+    m.env.later = job => jobs.push(job)
     let res
     try {
       res = await serve(req, m.env)
@@ -73,6 +82,18 @@ export default {
       res = crashed(req, env)
     }
     try { await m.flush() } catch (e) { console.error(e) }
+    if (jobs.length) {
+      const done = (async () => {
+        for (const job of jobs) {
+          const j = metered(env)
+          try { await job(j.env) } catch (e) { console.error(e) }
+          try { await j.flush() } catch (e) { console.error(e) }
+        }
+      })()
+      // Without a context (the unit checks) the jobs finish before the answer.
+      if (ctx?.waitUntil) ctx.waitUntil(done)
+      else await done
+    }
     return hardened(res)
   },
   async scheduled(event, env) {
@@ -95,15 +116,23 @@ async function serve(req, env) {
     const headers = { 'content-type': 'text/plain', 'cache-control': 'no-store' }
     // Which code runs here, for the CLI to tell a host older than the skill.
     if (env.HOST_VERSION) headers['x-proto-host'] = env.HOST_VERSION
+    headers['x-proto-api'] = String(API)
+    headers['x-proto-api-min'] = String(API_MIN)
     return new Response('ok', { headers })
   }
   await upgraded(env)
   if (r.at === 'api') return await api(req, env, url, r.path)
   if (r.at === 'auth') {
-    if (req.method !== 'GET') return new Response(null, { status: 405, headers: { allow: 'GET' } })
+    // The sign-in's confirm page posts its Approve or Cancel; the rest of the flow is GETs.
+    const method = r.path === '/auth/github/approve' ? 'POST' : 'GET'
+    if (req.method !== method) return new Response(null, { status: 405, headers: { allow: method } })
+    if (method === 'POST') return await approveSignin(req, env, url)
     return r.path === '/auth/github' ? await authStart(env, url) : await authCallback(req, env, url)
   }
   if (r.at === 'apex') return await apex(env, url, r.shareId)
+  // One origin per share (decision 23): a path-mode link from before moves to the share's own name.
+  // Its viewer cookie was scoped to the path, so the viewer signs in there once more.
+  if (r.at === 'share' && onBase(url, env) && !pathsServed(env)) return new Response(null, { status: 301, headers: { location: `${url.protocol}//${r.shareId}.${env.BASE}${r.path || '/'}${url.search}`, 'cache-control': 'no-store' } })
   if (r.at === 'share' && (onBase(url, env) ? pathsServed(env) : !pathsOnly(env))) return await share(req, env, url, r)
   return page('notfound', {})
 }
@@ -124,12 +153,21 @@ function moved(url, env) {
 }
 
 async function api(req, env, url, path) {
+  const parts = path.split('/').filter(Boolean) // ['api', 'shares', id?] or ['api', 'owner', 'comments', id?]
+  // Signing in from a Mac that has no token yet: the poll secret stands in for one.
+  if (parts[1] === 'signin' && parts.length === 3 && ['start', 'poll'].includes(parts[2])) {
+    if (req.method !== 'POST') return fail(405, 'Method not allowed.')
+    return parts[2] === 'start' ? signinBegin(req, env, url) : signinPoll(req, env)
+  }
   const owner = await ownerOf(req, env)
   if (!owner) return fail(401, 'A valid owner token is needed.', { code: 'token' })
-  const parts = path.split('/').filter(Boolean) // ['api', 'shares', id?] or ['api', 'owner', 'comments', id?]
+  if (parts[1] === 'owner' && parts.length === 2) return req.method === 'GET' ? json({ ...ownerShape(owner), signin: signinReady(env), status: owner.status, role: owner.role, quota: await quotaOf(env, owner) }) : fail(405, 'Method not allowed.')
+  if (parts[1] === 'owner' && parts[2] === 'signout' && parts.length === 3) return req.method === 'POST' ? signout(env, owner) : fail(405, 'Method not allowed.')
+  const blocked = banned(owner)
+  if (blocked) return blocked
+  if (parts[1] === 'admin') return admin(req, env, owner, url, parts)
   if (parts[1] === 'owner' && parts[2] === 'comments' && parts.length <= 4) return ownerComments(req, env, owner, url, parts[3])
   if (parts[1] === 'owner' && parts[2] === 'usage' && parts.length === 3) return req.method === 'GET' ? json(await usage(env.DB)) : fail(405, 'Method not allowed.')
-  if (parts[1] === 'owner' && parts.length === 2) return req.method === 'GET' ? json({ ...ownerShape(owner), signin: signinReady(env) }) : fail(405, 'Method not allowed.')
   if (parts[1] === 'owner' && parts[2] === 'claim' && parts.length === 3) {
     if (req.method !== 'POST') return fail(405, 'Method not allowed.')
     if (!signinReady(env)) return fail(409, 'GitHub sign-in is not set up on this host.', { code: 'signin_off' })
@@ -138,15 +176,14 @@ async function api(req, env, url, path) {
   if (parts[1] === 'shares' && parts[3] === 'card' && parts.length === 4) {
     if (req.method !== 'PUT') return fail(405, 'Method not allowed.')
     if (!isId(parts[2])) return fail(404, 'No such share.')
-    return (await uploader(env, owner)) || putCard(req, env, owner, parts[2])
+    return putCard(req, env, owner, parts[2])
   }
   if (parts[1] !== 'shares' || parts.length > 3) return fail(404, 'No such route.')
   const id = parts[2]
-  if ((id === undefined && req.method === 'POST') || (id !== undefined && req.method === 'PUT')) {
-    const refused = await uploader(env, owner)
+  if (id === undefined && req.method === 'POST') {
+    const refused = pending(owner) || (needsSignIn(env, owner) && signInFirst()) || await createRefused(env, owner)
     if (refused) return refused
   }
-  if (id === undefined && req.method === 'POST' && needsSignIn(env, owner)) return signInFirst()
   if (id === undefined) {
     if (req.method === 'POST') return createShare(env)
     if (req.method === 'GET') return listShares(env, owner)
@@ -158,14 +195,10 @@ async function api(req, env, url, path) {
   return fail(405, 'Method not allowed.')
 }
 
-// Path mode puts every share on one origin, which is safe only while the owner alone publishes
-// (spec: Security). Setup names that owner in meta.owner_id; until it does, a host off this Mac takes
-// no uploads at all. The host on this Mac has one owner by construction and keeps phase 0's rule.
-async function uploader(env, owner) {
-  const row = await env.DB.prepare("SELECT v FROM meta WHERE k = 'owner_id'").first()
-  if (row ? row.v === owner.id : namesOf(env.BASE).local) return null
-  return fail(403, 'This host takes uploads from its owner only.', { code: 'not_owner' })
-}
+// Who uploads: any active user (users.mjs), each share on its own origin so one user's page can't
+// act on another's link (decision 23). A pending user waits for approval before a new share; a
+// banned one does nothing but read who they are and sign out (api above). Updates, cards and removes
+// of a user's own shares are never held back by pending.
 
 // The owner as the Share popover shows them: their GitHub login, name and avatar, each null before
 // they sign in. GET /api/owner adds `signin`: whether this host can run the sign-in at all.
@@ -174,7 +207,8 @@ const ownerShape = o => ({ login: o.gh_login ?? null, name: o.gh_name ?? null, a
 // A new share goes out under the owner's GitHub name: once the host can run sign-in, it takes none
 // until the owner has signed in. Updates and removes of existing shares never ask, so live links keep
 // working. A host without sign-in (a local one before setup --github, workers.dev) can't run the
-// flow, so it doesn't ask either.
+// flow, so it doesn't ask either. Only an owner from before users (setup's, with no gh_id) is ever
+// asked: a user who signed in with GitHub has it from birth.
 const needsSignIn = (env, owner) => signinReady(env) && !owner.gh_id
 const signInFirst = () => fail(403, 'Sign in with GitHub before sharing a new link.', { code: 'sign_in' })
 
@@ -249,7 +283,10 @@ async function putShare(req, env, owner, id) {
   if (Number(req.headers.get('content-length')) > MAX_BYTES) return fail(413, 'A share is at most 20 MiB gzipped.', { code: 'too_big' })
   const meta = readMeta(req.headers.get('x-share-meta'))
   if (!meta) return fail(400, 'x-share-meta must be base64url JSON with title, session, projectLabel, scope and lang (message at most 280 characters, note at most 300).')
-  if (!first && needsSignIn(env, owner)) return signInFirst()
+  if (!first) {
+    const refused = pending(owner) || (needsSignIn(env, owner) && signInFirst())
+    if (refused) return refused
+  }
   const body = await req.arrayBuffer()
   if (body.byteLength > MAX_BYTES) return fail(413, 'A share is at most 20 MiB gzipped.', { code: 'too_big' })
   const magic = new Uint8Array(body, 0, Math.min(2, body.byteLength))
@@ -262,11 +299,16 @@ async function putShare(req, env, owner, id) {
   const old = await getShare(env, id)
   if (old && (old.owner_id !== owner.id || old.deleted_at)) return fail(404, 'No such share.')
   const version = old ? old.version + 1 : 1
-  const refused = await uploadRefused(env, id, body.byteLength)
-  if (refused) return refused
+  // Taken before the put, each in the statement that checks it: the user's upload and bytes, then the
+  // host's write and bytes. Whatever fails after gives back what it took (the write excepted: spent).
+  const quota = await reserveUpload(env, owner, { id, fresh: !old, bytes: body.byteLength })
+  if (quota.refused) return quota.refused
+  const store = await reserveStore(env, id, body.byteLength, owner.id)
+  if (store.refused) { await quota.failed(); return store.refused }
+  const failed = async () => { await store.release(); await quota.failed() }
   const now = Date.now()
   const key = newKey(id, version)
-  await putCounted(env, key, body)
+  try { await putClaimed(env, key, body) } catch (e) { await failed(); throw e }
   // An update keeps the message unless it says otherwise; its note is this version's alone.
   const message = meta.message.absent ? (old?.message ?? null) : meta.message.value
   const note = old ? (meta.note.value ?? null) : null
@@ -275,23 +317,34 @@ async function putShare(req, env, owner, id) {
   const row = [meta.session, meta.projectLabel, meta.title, JSON.stringify(meta.scope), version, body.byteLength, meta.lang, now, key, message, note, expiresAt]
   const flipped = old
     ? await env.DB.prepare(
-      `UPDATE shares SET session = ?, project_label = ?, title = ?, scope = ?, version = ?, bytes = ?, lang = ?, updated_at = ?, html_key = ?, message = ?, note = ?, expires_at = ?
+      `UPDATE shares SET session = ?, project_label = ?, title = ?, scope = ?, version = ?, bytes = ?, lang = ?, updated_at = ?, html_key = ?, message = ?, note = ?, expires_at = ?, purged_at = NULL
        WHERE id = ? AND version = ? AND deleted_at IS NULL`,
     ).bind(...row, id, old.version).run()
+    // A new share is inserted only while the user has fewer live links than their cap: new shares at
+    // once can't all pass the count read before the put.
     : await env.DB.prepare(
       `INSERT INTO shares (session, project_label, title, scope, version, bytes, lang, updated_at, html_key, message, note, expires_at, id, owner_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
-    ).bind(...row, id, owner.id, now).run()
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE (SELECT COUNT(*) FROM shares WHERE owner_id = ? AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at > ?)) < ? ON CONFLICT(id) DO NOTHING`,
+    ).bind(...row, id, owner.id, now, owner.id, now, liveCap(owner)).run()
   if (!flipped.meta?.changes) {
     await dropKey(env, key)
+    await failed()
+    if (!old && !await getShare(env, id)) return fail(507, 'You have 25 live links, the most one person can. proto share rm <id> frees one.', { code: 'quota' })
     return fail(409, 'Another update of this share landed first. Try again.', { code: 'race' })
   }
+  await store.release()
+  await quota.landed()
   if (old) {
     // The update has landed: a failed delete only queues the old key (dropKey never throws on KV).
-    await dropKey(env, keyOf(old))
+    // A purged share's old key is already in kv_trash.
+    if (!old.purged_at) await dropKey(env, keyOf(old))
     // The comments marked done are in this version: the viewer sees "In the latest version".
     await env.DB.prepare("UPDATE comments SET done_in = ?, updated_at = ? WHERE share_id = ? AND status = 'done' AND done_in IS NULL").bind(version, now, id).run()
   }
+  // A page that asks for a password or a card number is flagged for the maintainer, after the answer:
+  // the scan never holds the upload up or fails it (scan.mjs).
+  env.later?.(e => flagged(e, id, version, body))
   return json({ id, version, bytes: body.byteLength, message, expiresAt })
 }
 
@@ -306,12 +359,15 @@ async function putCard(req, env, owner, id) {
   if (body.byteLength > MAX_CARD) return fail(413, 'A preview card is at most 300 KiB.', { code: 'too_big' })
   const magic = new Uint8Array(body, 0, Math.min(3, body.byteLength))
   if (magic[0] !== 0xff || magic[1] !== 0xd8 || magic[2] !== 0xff) return fail(400, 'The body must be a JPEG.')
-  if (!await room(env.DB, 'kv_write')) return fail(507, 'The host\'s daily upload budget is used up.', { code: 'budget' })
+  const quota = await reserveUpload(env, owner)
+  if (quota.refused) return quota.refused
+  if (!await claim(env.DB, 'kv_write')) { await quota.failed(); return fail(507, 'The host\'s daily upload budget is used up.', { code: 'budget' }) }
   const key = `card:${id}:${newId()}`
-  await putCounted(env, key, body)
+  try { await putClaimed(env, key, body) } catch (e) { await quota.failed(); throw e }
   const flipped = await env.DB.prepare('UPDATE shares SET card_key = ? WHERE id = ? AND card_key IS ? AND deleted_at IS NULL').bind(key, id, row.card_key ?? null).run()
   if (!flipped.meta?.changes) {
     await dropKey(env, key)
+    await quota.failed()
     return fail(409, 'Another update of this share landed first. Try again.', { code: 'race' })
   }
   if (row.card_key) await dropKey(env, row.card_key)
@@ -421,7 +477,8 @@ async function share(req, env, url, r) {
       'content-encoding': 'gzip',
       'x-robots-tag': 'noindex',
       'x-content-type-options': 'nosniff',
-      'content-security-policy': "frame-ancestors 'self'",
+      'content-security-policy': SHARE_CSP,
+      'referrer-policy': 'no-referrer',
       'x-frame-options': 'SAMEORIGIN',
       // Expiring pages must check the host even when their version is pinned.
       'cache-control': pinned && !row.expires_at ? 'private, max-age=31536000, immutable' : 'private, no-cache',

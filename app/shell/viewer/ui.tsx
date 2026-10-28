@@ -28,6 +28,7 @@ import done from '@phosphor-icons/core/assets/fill/check-circle-fill.svg?raw'
 import trash from '@phosphor-icons/core/assets/regular/trash.svg?raw'
 import reply from '@phosphor-icons/core/assets/regular/arrow-bend-up-left.svg?raw'
 import close from '@phosphor-icons/core/assets/bold/x-bold.svg?raw'
+import flag from '@phosphor-icons/core/assets/regular/flag.svg?raw'
 import type { Variant } from '../shell'
 import { ERROR_CLASS } from '../building'
 import { SIZE_PATHS } from '../view/sizes'
@@ -40,7 +41,7 @@ export const iconBtn = 'inline-grid size-8 place-items-center rounded-lg text-zi
 /** A popup that opens from its anchor: scales and fades in 150 ms. */
 export const popup = `${card} origin-[var(--transform-origin)] p-1 shadow-2xl outline-none transition-[opacity,scale] duration-150 data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 motion-reduce:transition-none`
 
-const ICONS = { grid, 'caret-down': caretDown, 'caret-left': caretLeft, 'caret-right': caretRight, check, minus, plus, info, reload, eye, x, github, 'sign-out': signOut, center, chat, 'chat-fill': chatFill, 'chat-text': chatText, 'chat-dots': chatDots, send, circle, seen, working, done, trash, reply, close }
+const ICONS = { grid, 'caret-down': caretDown, 'caret-left': caretLeft, 'caret-right': caretRight, check, minus, plus, info, reload, eye, x, github, 'sign-out': signOut, center, chat, 'chat-fill': chatFill, 'chat-text': chatText, 'chat-dots': chatDots, send, circle, seen, working, done, trash, reply, close, flag }
 export type IconName = keyof typeof ICONS
 /** One of Phosphor's own files, at the size the class gives. Carets along the line (and the send arrow) mirror in a right-to-left page. */
 export function Icon({ name, className = 'size-4' }: { name: IconName; className?: string }) {

@@ -17,7 +17,7 @@ import {
   Again, CopyButton, Gate, ICON_BTN, MESSAGE_MAX, Made, MessageField, NoHost, PRIMARY_BTN, Preview, Quick, ReviewBox, SECTION, SMALL, Spinner, TEXT_BTN,
   keyOf, type P, type Step,
 } from './share-link-sheet'
-import { isNow, loadList, loadOwner, mustSignIn, nowIn, route, shareState, signedOut, type LinkViewer, type Owner, type ShareRow } from './share-state'
+import { isNow, loadList, loadOwner, mustSignIn, mustWait, notLetIn, nowIn, route, shareState, signedOut, type LinkViewer, type Owner, type ShareRow } from './share-state'
 
 type Pick3 = 'variant' | 'proto' | 'all'
 export type PopProps = {
@@ -242,6 +242,7 @@ function NewLink({ p, onBack, message, setMessage }: { p: PopProps; onBack: () =
     else if (r.status === 200 && r.body.needsYes) setStep({ phase: 'review', review: r.body.review })
     else if (r.status === 422) setStep({ phase: 'blocked', review: r.body.review })
     else if (r.status === 409 && r.body.code === 'sign_in') { setStep(null); signedOut() }
+    else if (r.status === 409 && (r.body.code === 'pending' || r.body.code === 'banned')) { setStep(null); notLetIn() }
     else if (r.status === 409 && (r.body.code === 'no_host' || r.body.code === 'no_token')) { setStep(null); void loadList() }
     else setStep(failed(r))
   }
@@ -323,7 +324,7 @@ function SharePop(p: PopProps) {
   const shown = !!at
   const place = at ? (rtl ? { top: at.bottom + 6, left: Math.max(8, at.left) } : { top: at.bottom + 6, right: Math.max(8, innerWidth - at.right) }) : undefined
   const listed = s.listed
-  const body = listed?.host && mustSignIn(s.owner) ? <div className="p-4"><Gate signin={s.owner?.signin !== false} /></div>
+  const body = listed?.host && (mustSignIn(s.owner) || mustWait(s.owner)) ? <div className="p-4"><Gate signin={s.owner?.signin !== false} owner={s.owner} /></div>
     : !listed && !s.listErr ? <p className={`flex items-center gap-2 px-4 py-6 ${SMALL}`}><Spinner />{t('Looking for the share host…')}</p>
     : !listed ? <div className="space-y-3 p-4"><p data-link-error role="alert" className="rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-800 dark:text-rose-200">{s.listErr}</p><Again busy={s.loading} onRetry={() => void loadList()} /></div>
     : !listed.host ? <div className="p-3"><NoHost busy={s.loading} onRetry={() => void loadList()} cmd={listed.setup || 'proto share setup'} /></div>

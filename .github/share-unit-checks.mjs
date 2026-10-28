@@ -296,8 +296,9 @@ async function makeEnv(extra = {}) {
   // test signs the owner out first).
   sql.prepare('INSERT INTO owners (id, name, created_at, gh_id, gh_login, gh_name, gh_avatar) VALUES (?, ?, ?, ?, ?, ?, ?)').run('o1', 'Dananz', 1, 1001, 'dananz', 'Tomer', 'https://avatars.githubusercontent.com/u/1001')
   sql.prepare('INSERT INTO owner_tokens (sha256, owner_id, device, created_at) VALUES (?, ?, ?, ?)').run(await hex(TOKEN), 'o1', 'test', 1)
-  // Setup names the one owner who may upload; a host off this Mac takes uploads from no one else.
+  // The owner setup made, and so the admin, as migration 0006 makes it.
   sql.prepare("INSERT INTO meta (k, v) VALUES ('owner_id', 'o1')").run()
+  sql.prepare("UPDATE owners SET role = 'admin' WHERE id = 'o1'").run()
   const store = new Map()
   // Every D1 query and KV call is one of a Worker invocation's 50 subrequests on Free: `ops` counts them.
   const ops = { n: 0 }
@@ -372,7 +373,10 @@ test('publish and serve', async () => {
   assert.equal(res.headers.get('content-encoding'), 'gzip')
   assert.equal(res.headers.get('content-type'), 'text/html; charset=utf-8')
   assert.equal(res.headers.get('x-robots-tag'), 'noindex')
-  assert.equal(res.headers.get('content-security-policy'), "frame-ancestors 'self'")
+  // The lock: nothing goes to another origin (the multiuser checks hold the whole policy).
+  assert.match(res.headers.get('content-security-policy'), /(^|; )connect-src 'self'(;|$)/)
+  assert.match(res.headers.get('content-security-policy'), /(^|; )frame-ancestors 'self'(;|$)/)
+  assert.equal(res.headers.get('referrer-policy'), 'no-referrer')
   assert.equal(res.headers.get('x-frame-options'), 'SAMEORIGIN')
   assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
   assert.equal(res.headers.get('cache-control'), 'private, no-cache')
@@ -445,10 +449,12 @@ test('path mode', async () => {
   noCors(res)
   const state = await call(env, `http://${BASE}/s/${id}/api/state`, { headers: { 'x-proto': '1' } })
   assert.equal((await state.json()).version, 1)
-  // One origin per share in production refuses the path form there.
+  // One origin per share in production: the path form there moves to the share's own name.
   const off = await makeEnv({ PATH_MODE: '0', BASE: 'prtype.dev' })
   const prod = await publish(off)
-  assert.equal((await call(off, `https://prtype.dev/s/${prod.id}/`)).status, 404)
+  const moved = await call(off, `https://prtype.dev/s/${prod.id}/`, { redirect: 'manual' })
+  assert.equal(moved.status, 301)
+  assert.equal(moved.headers.get('location'), `https://${prod.id}.prtype.dev/`)
   assert.equal((await call(off, `https://${prod.id}.prtype.dev/`)).status, 200)
   // And a public host in path mode serves the path form only.
   const on = await makeEnv({ PATH_MODE: '1', BASE: 'prtype.dev' })
@@ -560,7 +566,7 @@ test("a share's own card: uploaded once by its owner, served as a file, named by
   assert.equal((await putCard(env, id, JPEG(301 * 1024))).status, 413)
   env.DB.sql.prepare('INSERT INTO owners (id, name, created_at) VALUES (?, ?, ?)').run('o2', 'Other', 1)
   env.DB.sql.prepare('INSERT INTO owner_tokens (sha256, owner_id, device, created_at) VALUES (?, ?, ?, ?)').run(await hex('other'), 'o2', 'x', 1)
-  assert.equal((await putCard(env, id, JPEG(), { authorization: 'Bearer other' })).status, 403)
+  assert.equal((await putCard(env, id, JPEG(), { authorization: 'Bearer other' })).status, 404)
   // Removing the share removes its card.
   assert.equal((await call(env, `https://prtype.dev/api/shares/${id}`, { method: 'DELETE', headers: auth })).status, 200)
   assert.ok(![...env.KV.store.keys()].some(k => k.startsWith(`card:${id}:`)))
@@ -691,7 +697,9 @@ test('production keeps one name', async () => {
   const { id } = await publish(env)
   const target = async (url, e = env) => /http-equiv="refresh" content="0;url=([^"]+)"/.exec(await (await call(e, url)).text())[1]
   assert.equal(await target(`https://prtype.dev/${id}`), `https://${id}.prtype.dev/`)
-  for (const url of [`https://prtype.dev/s/${id}/`, `http://127.0.0.1:8787/s/${id}/`, `http://localhost:8787/api/shares`]) assert.equal((await call(env, url, { headers: auth })).status, 404, url)
+  for (const url of [`http://127.0.0.1:8787/s/${id}/`, `http://localhost:8787/api/shares`]) assert.equal((await call(env, url, { headers: auth })).status, 404, url)
+  // The path form moves to the share's own name (links from before decision 23).
+  assert.equal((await call(env, `https://prtype.dev/s/${id}/`, { redirect: 'manual' })).headers.get('location'), `https://${id}.prtype.dev/`)
   const paths = await makeEnv({ BASE: 'prtype.dev', PATH_MODE: '1' })
   const p = await publish(paths)
   assert.equal(await target(`https://prtype.dev/${p.id}`, paths), `https://prtype.dev/s/${p.id}/`)
@@ -1277,7 +1285,9 @@ function shapeOf(sql) {
   }
   return out
 }
-const fromSchema = () => { const sql = new DatabaseSync(':memory:'); sql.exec(readFileSync(new URL('../host/schema.sql', import.meta.url), 'utf8')); return sql }
+// A local database: schema.sql, then the Worker's upgrade(), which runs before the host's first answer
+// (it adds what schema.sql can't name on an old database, such as the owners_gh index).
+const fromSchema = async () => { const sql = new DatabaseSync(':memory:'); sql.exec(readFileSync(new URL('../host/schema.sql', import.meta.url), 'utf8')); await upgrade(d1Of(sql)); return sql }
 const fromMigrations = () => { const sql = new DatabaseSync(':memory:'); for (const [, text] of migrations()) sql.exec(text); return sql }
 
 test('migrations: numbered from 0001, and 0001 is the phase 0 and 1 schema', () => {
@@ -1289,15 +1299,15 @@ test('migrations: numbered from 0001, and 0001 is the phase 0 and 1 schema', () 
   assert.match(list[2][0], /^0003_html_key\.sql$/)
   assert.match(list[3][0], /^0004_owner_presence\.sql$/)
 })
-test('migrations applied in order make what schema.sql makes', () => {
+test('migrations applied in order make what schema.sql makes', async () => {
   const shape = shapeOf(fromMigrations())
-  assert.deepEqual(shape, shapeOf(fromSchema()))
+  assert.deepEqual(shape, shapeOf(await fromSchema()))
   assert.ok(shape.kv_trash && shape.meta, 'the online tables are there')
   assert.deepEqual(shape.kv_trash.cols, ['at INTEGER 1  0', 'key TEXT 0  1'])
   assert.deepEqual(shape.meta.cols, ['k TEXT 0  1', 'v TEXT 1  0'])
 })
 test('a phase 0 database plus upgrade() makes what schema.sql makes', async () => {
-  const sql = fromSchema()
+  const sql = await fromSchema()
   // Phase 0's tables, as the first local hosts made them: comments without the phase 1 columns, and
   // none of the tables added since.
   sql.exec(`DROP TABLE comments; DROP TABLE viewers; DROP TABLE caps; DROP TABLE tickets; DROP TABLE kv_trash; DROP TABLE meta;
@@ -1309,7 +1319,7 @@ test('a phase 0 database plus upgrade() makes what schema.sql makes', async () =
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (share_id, id));
     CREATE INDEX comments_owner_poll ON comments (share_id, updated_at);`)
   await upgrade(d1Of(sql))
-  assert.deepEqual(shapeOf(sql), shapeOf(fromSchema()))
+  assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
 })
 test('every migration runs twice, and none drops anything', () => {
   const sql = new DatabaseSync(':memory:')
@@ -1361,20 +1371,24 @@ test('public path mode: the short link, the share under /s/<id>/, no subdomains,
   assert.equal((await (await pubCall(env, `/s/${id}/api/me`, { headers: { ...XP, cookie: s.jar } })).json()).login, 'dana-test')
 })
 
-test('uploads: only the owner setup named; none at all before setup names one, off this Mac', async () => {
+test('uploads: any active user, each to their own shares; pending and banned refused; meta.owner_id is no gate', async () => {
   const env = await pubEnv()
   const other = 'second-owner-token'
   env.DB.sql.prepare('INSERT INTO owners (id, name, created_at) VALUES (?, ?, ?)').run('o2', 'Mallory', 1)
   env.DB.sql.prepare('INSERT INTO owner_tokens (sha256, owner_id, device, created_at) VALUES (?, ?, ?, ?)').run(await hex(other), 'o2', 'x', 1)
   const { id } = await publish(env)
-  const notOwner = async res => { assert.equal(res.status, 403); const b = await res.json(); assert.equal(b.code, 'not_owner'); assert.equal(b.error, 'This host takes uploads from its owner only.'); noCors(res) }
   const theirs = { authorization: `Bearer ${other}` }
-  await notOwner(await pubCall(env, '/api/shares', { method: 'POST', headers: theirs }))
-  await notOwner(await pubCall(env, `/api/shares/${id}`, { method: 'PUT', headers: { ...theirs, 'x-share-meta': meta() }, body: gzipSync('x') }))
+  // Another active user publishes their own, and can't touch this one (404, as for no share at all).
+  assert.equal((await pubCall(env, '/api/shares', { method: 'POST', headers: theirs })).status, 200)
+  assert.equal((await pubCall(env, `/api/shares/${id}`, { method: 'PUT', headers: { ...theirs, 'x-share-meta': meta() }, body: gzipSync('x') })).status, 404)
+  const refused = async (res, code) => { assert.equal(res.status, 403); assert.equal((await res.json()).code, code); noCors(res) }
+  env.DB.sql.prepare("UPDATE owners SET status = 'pending' WHERE id = 'o2'").run()
+  await refused(await pubCall(env, '/api/shares', { method: 'POST', headers: theirs }), 'pending')
+  env.DB.sql.prepare("UPDATE owners SET status = 'banned' WHERE id = 'o2'").run()
+  await refused(await pubCall(env, '/api/shares', { method: 'GET', headers: theirs }), 'banned')
+  // meta.owner_id no longer decides who uploads.
   env.DB.sql.prepare("DELETE FROM meta WHERE k = 'owner_id'").run()
-  await notOwner(await pubCall(env, '/api/shares', { method: 'POST', headers: auth }))
-  await notOwner(await pubPut(env, id, 'again'))
-  // The host on this Mac keeps phase 0's rule: its one owner, with or without the setting.
+  assert.equal((await pubPut(env, id, 'again')).status, 200)
   const local = await makeEnv()
   local.DB.sql.prepare("DELETE FROM meta WHERE k = 'owner_id'").run()
   assert.equal((await publish(local)).put.status, 200)
