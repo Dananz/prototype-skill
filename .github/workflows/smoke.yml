@@ -27,6 +27,8 @@ jobs:
         run: node --test .github/listener-lifecycle-checks.mjs
       - name: Share unit checks
         run: node --test .github/share-unit-checks.mjs
+      - name: Self-update
+        run: node --test .github/self-update-checks.mjs
       - name: Chrome profile cleanup
         run: node --test .github/chrome-sweep-checks.mjs
       - name: CLI starts

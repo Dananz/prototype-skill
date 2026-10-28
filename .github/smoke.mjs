@@ -89,6 +89,7 @@ process.on('uncaughtException', e => fail(`uncaught: ${e?.stack || e}`))
 // proto up's sweep of idle sessions would reach this machine's real ones (and their tailnet
 // rules); the run's own session is all it should touch.
 process.env.PROTO_NO_GC ??= '1'
+process.env.PROTO_NO_UPDATE ??= '1'
 // The run's session never asks a share host anything on its own (it could reach the owner's real
 // host and Keychain); share-tray-checks runs its own server under a temporary HOME for that.
 process.env.PROTO_SHARE_POLL_MS ??= '0'

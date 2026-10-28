@@ -50,7 +50,7 @@ const project = join(scratch, 'proto-popover')
 const app = join(project, '.prototypes', 'smoke')
 mkdirSync(project, { recursive: true })
 writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'proto-popover', private: true, dependencies: { react: '^19.2.0' } }))
-const env = { ...process.env, PROTO_NO_GC: '1', PROTO_SHARE_POLL_MS: '0' }
+const env = { ...process.env, PROTO_NO_GC: '1', PROTO_NO_UPDATE: '1', PROTO_SHARE_POLL_MS: '0' }
 const proto = (args, ok = true) => {
   console.log(`$ proto ${args.join(' ')}`)
   const r = spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), ...args, '--project', project, '--session', 'smoke'], { encoding: 'utf8', env, timeout: 600_000 })

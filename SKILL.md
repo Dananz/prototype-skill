@@ -153,6 +153,11 @@ Expo projects, Vue for Vue or Nuxt, React for anything else), it runs a Vite dev
 publishes it on the tailnet with `tailscale serve` when available, so that link opens on
 the user's phone too. Without Tailscale, use the printed local URL.
 
+`proto up` also keeps the skill current, checking at most every six hours. A plain git clone
+on `main` updates itself and prints `skill: updated the prototype skill …`: re-read this file
+before going on. A plugin install that fell behind prints `skill: a newer prototype skill is
+out …` with the update command: run it and tell the user once. `PROTO_NO_UPDATE=1` turns this off.
+
 ## 1b. A new thing from scratch: ask first
 
 When the request builds something that doesn't exist yet and says little about it ("a website for my

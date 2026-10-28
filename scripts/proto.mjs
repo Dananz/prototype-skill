@@ -100,6 +100,7 @@ import { idOf, letterOf, numberOf } from '../app/numbers.mjs'
 import { report as reportShared } from '../app/share/owner.mjs'
 import { sharedLines } from '../app/share/viewer-text.mjs'
 import { BASE, SHELL, STACKS, syncApp } from './app-sync.mjs'
+import { skillUpdate } from './self-update.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 // The languages the page speaks (app/shell/i18n.ts). --lang sets the session's: the language the
@@ -401,6 +402,13 @@ function install(dir) {
 
 // ---------- commands ----------
 async function up() {
+  // A newer skill first: a clone that moved runs `up` again on the new code (PROTO_NO_UPDATE=1 skips it).
+  const fresh = skillUpdate(SKILL)
+  for (const line of fresh.lines) console.log(line)
+  if (fresh.updated) {
+    const again = spawnSync(process.execPath, process.argv.slice(1), { stdio: 'inherit', env: { ...process.env, PROTO_NO_UPDATE: '1' } })
+    process.exit(again.status ?? 1)
+  }
   // Reconcile before app sync changes source mtimes or GC can discard task identity.
   const dir = sessionDir()
   if (existsSync(sessionFile(dir))) locked(dir, () => reconcileListener(dir, { touch: true }))
