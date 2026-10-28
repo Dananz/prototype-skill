@@ -215,7 +215,12 @@ points at the card.
   with today's count: `today: 3/900 uploads, 0/900 deletes, 412/90,000 writes, 18 MB/900 MB stored`.
 - Local links: `http://<id>.localhost:<port>/`, one origin per share. Where `*.localhost` doesn't
   resolve, setup notices and links take the path form `http://127.0.0.1:<port>/s/<id>/`.
-- No passwords, person links or expiry yet.
+- New links expire 30 days after publication. Updating a link renews it for another 30 days,
+  including an expired link, and keeps its comments. Existing links without an expiry stay as
+  they are until updated. Expiry blocks viewing, sign-in and viewer APIs; it does not erase the
+  hosted page, comments or local source snapshots. `proto share rm <id>` removes the hosted page
+  and comments. An already opened or downloaded copy cannot be recalled.
+- No passwords, person links or configurable expiry yet.
 
 ## Troubleshooting
 

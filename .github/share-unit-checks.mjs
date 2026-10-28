@@ -377,7 +377,7 @@ test('publish and serve', async () => {
   assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
   assert.equal(res.headers.get('cache-control'), 'private, no-cache')
   noCors(res)
-  assert.equal((await call(env, `http://${id}.${BASE}/?v=1`)).headers.get('cache-control'), 'private, max-age=31536000, immutable')
+  assert.equal((await call(env, `http://${id}.${BASE}/?v=1`)).headers.get('cache-control'), 'private, no-cache')
   assert.equal((await call(env, `http://${id}.${BASE}/?v=2`)).headers.get('cache-control'), 'private, no-cache')
   const list = await (await call(env, `http://${BASE}/api/shares`, { headers: auth })).json()
   assert.equal(list.length, 1)
@@ -391,6 +391,46 @@ test('put refuses what is not a share', async () => {
   const { id } = await (await call(env, `http://${BASE}/api/shares`, { method: 'POST', headers: auth })).json()
   assert.equal((await call(env, url(id), { method: 'PUT', headers: auth, body: gzipSync('x') })).status, 400)
   assert.equal((await call(env, url(id), { method: 'PUT', headers: { ...auth, 'x-share-meta': meta() }, body: Buffer.from('plain') })).status, 400)
+})
+test('links expire 30 days after publication or update, including pinned pages and viewer APIs', async t => {
+  let now = Date.now()
+  t.mock.method(Date, 'now', () => now)
+  const env = await makeEnv({ PATH_MODE: '1' })
+  const { id } = await publish(env)
+  const expiry = () => env.DB.sql.prepare('SELECT expires_at FROM shares WHERE id = ?').get(id).expires_at
+  const lifetime = 30 * 86_400_000
+  assert.equal(expiry(), now + lifetime)
+  assert.equal((await (await call(env, `http://${BASE}/api/shares`, { headers: auth })).json())[0].expiresAt, expiry())
+  const urls = [`http://${BASE}/${id}`, `http://${BASE}/s/${id}/`, `http://${BASE}/s/${id}/?v=1`, `http://${id}.${BASE}/`, `http://${BASE}/s/${id}/_in/start`]
+  now += lifetime - 1
+  assert.equal((await call(env, urls[1])).status, 200)
+  assert.equal((await call(env, urls[2])).headers.get('cache-control'), 'private, no-cache')
+  now++
+  for (const url of urls) {
+    const res = await call(env, url)
+    assert.equal(res.status, 410, url)
+    assert.match(await res.text(), /This link has expired/)
+  }
+  for (const route of ['state', 'comments', 'config', 'me', 'here']) {
+    const res = await call(env, `http://${BASE}/s/${id}/api/${route}`, { headers: { 'x-proto': '1' } })
+    assert.equal(res.status, 410, route)
+    assert.equal((await res.json()).code, 'expired')
+  }
+  const update = await call(env, `http://${BASE}/api/shares/${id}`, { method: 'PUT', headers: { ...auth, 'x-share-meta': meta() }, body: gzipSync('updated') })
+  assert.equal(update.status, 200)
+  assert.equal(expiry(), now + lifetime)
+  assert.equal((await call(env, urls[1])).status, 200)
+  now += 86_400_000
+  await call(env, `http://${BASE}/api/shares/${id}`, { method: 'PUT', headers: { ...auth, 'x-share-meta': meta() }, body: gzipSync('updated again') })
+  assert.equal(expiry(), now + lifetime, 'updating a live link also renews it')
+})
+test('existing links without expiry stay available until updated', async () => {
+  const env = await makeEnv()
+  const { id } = await publish(env)
+  env.DB.sql.prepare('UPDATE shares SET expires_at = NULL WHERE id = ?').run(id)
+  assert.equal((await call(env, `http://${id}.${BASE}/?v=1`)).headers.get('cache-control'), 'private, max-age=31536000, immutable')
+  await call(env, `http://${BASE}/api/shares/${id}`, { method: 'PUT', headers: { ...auth, 'x-share-meta': meta() }, body: gzipSync('updated') })
+  assert.ok(env.DB.sql.prepare('SELECT expires_at FROM shares WHERE id = ?').get(id).expires_at > Date.now())
 })
 test('path mode', async () => {
   const env = await makeEnv({ PATH_MODE: '1' })

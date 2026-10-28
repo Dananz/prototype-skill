@@ -88,7 +88,7 @@ export async function viewerApi(req, env, url, share, path, pathForm) {
   if (req.headers.get('x-proto') !== '1') return fail(400, 'X-Proto: 1 is required.', { code: 'x_proto' })
   if (!share) return fail(404, 'No such share.', { code: 'no_share' })
   if (share.deleted_at) return fail(410, 'This share was removed.', { code: 'removed' })
-  if (share.expires_at && share.expires_at < Date.now()) return fail(410, 'This link has expired.', { code: 'expired' })
+  if (share.expires_at && share.expires_at <= Date.now()) return fail(410, 'This link has expired.', { code: 'expired' })
   const m = req.method
   const only = () => fail(405, 'Method not allowed.', { code: 'method' })
   if (path === '/api/state') return m === 'GET' ? json(stateOf(share)) : only()
