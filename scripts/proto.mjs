@@ -2498,9 +2498,10 @@ const commands = {
   stack: () => { const d = detectStack(projectRoot()); console.log(`${d.stack} (${d.why})`) },
   fonts,
   kit: () => !args[0] ? kitStatus() : args[0] === 'save' ? kitSave() : args[0] === 'screen' ? kitScreen() : die(`proto kit ${args[0]}? It is proto kit, proto kit save or proto kit screen`),
-  // setup and stop are about the host, not a session: they run from any folder.
+  // setup, stop, signin, signout and admin are about the host and this Mac, not a session: they run
+  // from any folder.
   share: () => import('./share.mjs').then(m => {
-    const free = ['setup', 'stop'].includes(args[0])
+    const free = ['setup', 'stop', 'signin', 'signout', 'admin'].includes(args[0])
     return m.main(args, flags, { sessionDir: free ? null : sessionDir(), session: free ? null : need(sessionDir()), die })
   }),
 }
