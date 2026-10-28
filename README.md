@@ -57,7 +57,8 @@ Then ask for a prototype:
 /prototype 3 empty states for the inbox
 ```
 
-Turn on auto-update under `/plugin` → Marketplaces → `prototype-skill`.
+Turn on auto-update under `/plugin` → Marketplaces → `prototype-skill`. Without it, `proto up`
+notices when a newer version is out and asks the agent to run `claude plugin update`.
 
 <details>
 <summary>Install without the plugin system</summary>
@@ -66,7 +67,8 @@ Turn on auto-update under `/plugin` → Marketplaces → `prototype-skill`.
 git clone https://github.com/Dananz/prototype-skill ~/.claude/skills/prototype
 ```
 
-Update with `git -C ~/.claude/skills/prototype pull --ff-only`. On Windows, use
+`proto up` keeps the clone current on its own when it can reach GitHub (a clean checkout of
+`main`, checked every six hours). To update by hand, run `git -C ~/.claude/skills/prototype pull --ff-only`. On Windows, use
 `"$HOME\.claude\skills\prototype"` as the clone destination in PowerShell.
 </details>
 
@@ -88,7 +90,9 @@ Then invoke the skill, or select it in the skill picker:
 $prototype 3 alternatives for the checkout page
 ```
 
-Update with `git -C ~/.agents/skills/prototype pull --ff-only`. Restart Codex if the skill
+`proto up` keeps the clone current on its own when it can reach GitHub and write to the skill
+folder (a sandbox may block either). To update by hand, run
+`git -C ~/.agents/skills/prototype pull --ff-only`. Restart Codex if the skill
 does not appear. For a project-only install, use `<project>/.agents/skills/prototype`.
 
 <details>
