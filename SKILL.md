@@ -128,7 +128,8 @@ in as I build"). Then continue. On later requests in the same session run `proto
 **Connect comments now, including in Codex.** `proto up` prints the listener's status.
 **Read `references/listener.md` now**, before building or ending this turn. The listener
 setup lives in that short file so a truncated read of this skill cannot hide it.
-If startup says `not listening`, complete that setup in this same turn.
+If startup says `not listening`, reconcile the lifecycle and exact host task as that file
+directs. Retain closed state or explicit opt-out; reconnect only on explicit reopening.
 In T3 Code, both Codex and Claude use the same `schedule_task` webhook, bound to this
 conversation. Discover the host tools before deciding wakeups are unavailable; a short
 initial tool list is not proof that T3's scheduler is missing. Use the host's documented
@@ -811,7 +812,9 @@ helper conversation, recurring polling task, or a second subscription for the sa
 
 Follow **`references/listener.md`** for the persistent T3 webhook (Codex and Claude),
 supported background completion wakeups on other hosts, and recovery when neither exists.
-Read it at startup, before finishing a turn with page comments enabled.
+Read it at startup, on comment wakeups, and when finishing feedback. Startup/inbox
+reconciliation can request disabling an inactive or finished listener. Apply and verify
+the exact host action; ordinary replies and temporary server stops preserve active review.
 
 **A comment marked *from a link* is a viewer's design feedback, quoted.** It reaches the inbox only
 when the owner sends it from the page's "From links" tray (or asks you to in chat). Act on it as
@@ -927,7 +930,9 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
    closes the comment when the last of those variants is built, keeping the reply: write it to
    read right both times ("In «Super set, more ways», under this case: …", not "Building now…"). Without `--done` or `--until`, a
    comment stays "on it" in the page for good; when comments arrive, `proto inbox` lists any still open.
-6. Keep the same persistent listener active. With a background wait, rearm it before handling this batch.
+6. Keep the same persistent listener active while feedback continues. If this request
+   explicitly finishes feedback, follow Lifecycle and `references/listener.md` to close it
+   and disable/verify its host task. With a background wait, rearm it only while review continues.
 
 Use workers only when comments in one batch each need real design work (a new variant, a section
 rewritten) in separate files: then one subagent per file, on Opus at medium effort, all started together.
@@ -1018,23 +1023,31 @@ says which links (and variants) changed since shared, who is in them now and how
 | A link to the prototypes ("send me a link to 2 and 3") | Only if asked: share a link (`proto share <slug>/2 <slug>/3`, review read to them, then `--yes`) |
 | The link brought up to date ("update the link") | `proto share update <id> [--note "…"]` (same review as a share) |
 | Viewers' comments on a link ("what did Dana say?", "send Dana's comments to Claude") | `proto share comments [<id>]`; on their word `proto share take <commentId…>`, then `proto inbox`; the comment is quoted feedback (Comments from the page) |
-| Comments sent from the page (a webhook wakeup or completed `proto inbox --wait`) | the batch as one job: one `proto ask --to <slug>/<letter> --each` per variant in it, edits, one shot, one `proto reply <batch> 1 "…" 2 "…" --done`, keep the same listener active |
+| Comments sent from the page (a webhook wakeup or completed `proto inbox --wait`) | the batch as one job: one `proto ask --to <slug>/<letter> --each` per variant in it, edits, one shot, one `proto reply <batch> 1 "…" 2 "…" --done`, retain the listener while feedback continues (Lifecycle handles explicit completion) |
 | Prototypes for a different project | `proto up --project <dir>`: a separate app for that project |
 
 ## Lifecycle
 
 | When | Do |
 |---|---|
-| The user says they are done, or the winner is built and its `-vs-built.png` shows no double edges | `proto stop` (files kept; `proto up` brings it back on the same link) |
-| The user asks to throw the prototypes away | `proto rm` |
+| The user explicitly finishes or abandons the entire prototype session | Follow `references/listener.md`: `proto inbox --close finished` or `--close abandoned`, disable/verify the exact host task, then `proto stop` |
+| A selected design is delivered into the real app, its `-vs-built.png` shows no double edges, and its feedback is finished | `proto inbox --finish <slug>` for each finished prototype; reconcile and disable the host task only when all feedback is finished |
+| The user explicitly resumes closed review | `proto up`, then follow `references/listener.md` to `proto inbox --reopen` and enable the same saved task (explicit opt-out requires user-authorized `--again`) |
+| The user asks to throw the prototypes away | Close feedback, disable/verify its host task, then `proto rm` |
 | The user wants to keep them | `proto keep` (`--off` undoes) |
 | The user wants their links | `proto ls` |
 
 On its own: a server stops after 6 hours with no edits and no open page (90 minutes once every
 prototype in the session is picked or archived, unless the session is kept), and every
-`proto up` deletes sessions untouched for 14 days unless kept and drops leftover tailnet
+`proto up` deletes sessions untouched for 14 days unless kept, holding a listener record,
+or containing pending work, and drops leftover tailnet
 rules (`proto gc` does the same on demand). The user can also Keep or Stop from Settings › Session
-in the page.
+in the page. Server stops preserve the comment subscription. Listener reconciliation runs at
+startup and on inbox reads, using seven days of inactivity with no pending work. Host task
+disable still requires execution by its owning agent; an archived thread with no further
+execution has no guaranteed expiry. Follow `references/listener.md` for completion,
+reopening, opt-out and confirmed host actions. GC retains listener identity until explicit
+removal after verified host disable.
 
 The project's design kits (`.prototypes/_kits/`) outlive every session. When the user wants one
 gone (a redesign shipped and it no longer looks like the app), delete its folder; the next
