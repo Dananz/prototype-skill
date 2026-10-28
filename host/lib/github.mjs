@@ -115,7 +115,7 @@ export async function authStart(env, url) {
   if (!NONCE.test(q.get('nonce') || '')) return page('signin', {})
   const id = q.get('share') || ''
   const row = isId(id) ? await env.DB.prepare('SELECT lang, deleted_at, expires_at FROM shares WHERE id = ?').bind(id).first() : null
-  if (!row || row.deleted_at || (row.expires_at && row.expires_at < Date.now())) return page('notfound', { lang: row?.lang })
+  if (!row || row.deleted_at || (row.expires_at && row.expires_at <= Date.now())) return page('notfound', { lang: row?.lang })
   // GitHub matches redirect_uri exactly, so the flow runs on the one name the OAuth App knows
   // (BASE). A visitor on the other loopback name is sent there, with where they came from.
   if (url.host.toLowerCase() !== env.BASE.toLowerCase()) {

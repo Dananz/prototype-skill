@@ -15,6 +15,7 @@ const MAX_CARD = 300 * 1024
 const MAX_MESSAGE = 280
 const MAX_NOTE = 300
 const DAY_MS = 86_400_000
+const SHARE_LIFETIME_MS = 30 * DAY_MS
 // The owner list's faces: the latest 8 viewers of each link, from the last 30 days.
 const FACES = 8
 const FACES_DAYS = 30
@@ -194,7 +195,7 @@ async function createShare(env) {
 // their views, and their latest faces.
 async function listShares(env, owner) {
   const { results } = await env.DB.prepare(
-    'SELECT id, title, version, bytes, updated_at, message FROM shares WHERE owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC, id',
+    'SELECT id, title, version, bytes, updated_at, expires_at, message FROM shares WHERE owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC, id',
   ).bind(owner.id).all()
   const views = new Map(), faces = new Map()
   if (results.length) {
@@ -214,7 +215,7 @@ async function listShares(env, owner) {
     }
   }
   return json(results.map(s => ({
-    id: s.id, title: s.title, version: s.version, bytes: s.bytes, updatedAt: s.updated_at,
+    id: s.id, title: s.title, version: s.version, bytes: s.bytes, updatedAt: s.updated_at, expiresAt: s.expires_at ?? null,
     message: s.message ?? null, views: views.get(s.id) ?? 0, viewers: faces.get(s.id) ?? [],
   })))
 }
@@ -269,15 +270,17 @@ async function putShare(req, env, owner, id) {
   // An update keeps the message unless it says otherwise; its note is this version's alone.
   const message = meta.message.absent ? (old?.message ?? null) : meta.message.value
   const note = old ? (meta.note.value ?? null) : null
-  const row = [meta.session, meta.projectLabel, meta.title, JSON.stringify(meta.scope), version, body.byteLength, meta.lang, now, key, message, note]
+  // Each publication renews the link. Existing links gain an expiry only when updated.
+  const expiresAt = now + SHARE_LIFETIME_MS
+  const row = [meta.session, meta.projectLabel, meta.title, JSON.stringify(meta.scope), version, body.byteLength, meta.lang, now, key, message, note, expiresAt]
   const flipped = old
     ? await env.DB.prepare(
-      `UPDATE shares SET session = ?, project_label = ?, title = ?, scope = ?, version = ?, bytes = ?, lang = ?, updated_at = ?, html_key = ?, message = ?, note = ?
+      `UPDATE shares SET session = ?, project_label = ?, title = ?, scope = ?, version = ?, bytes = ?, lang = ?, updated_at = ?, html_key = ?, message = ?, note = ?, expires_at = ?
        WHERE id = ? AND version = ? AND deleted_at IS NULL`,
     ).bind(...row, id, old.version).run()
     : await env.DB.prepare(
-      `INSERT INTO shares (session, project_label, title, scope, version, bytes, lang, updated_at, html_key, message, note, id, owner_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
+      `INSERT INTO shares (session, project_label, title, scope, version, bytes, lang, updated_at, html_key, message, note, expires_at, id, owner_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
     ).bind(...row, id, owner.id, now).run()
   if (!flipped.meta?.changes) {
     await dropKey(env, key)
@@ -289,7 +292,7 @@ async function putShare(req, env, owner, id) {
     // The comments marked done are in this version: the viewer sees "In the latest version".
     await env.DB.prepare("UPDATE comments SET done_in = ?, updated_at = ? WHERE share_id = ? AND status = 'done' AND done_in IS NULL").bind(version, now, id).run()
   }
-  return json({ id, version, bytes: body.byteLength, message })
+  return json({ id, version, bytes: body.byteLength, message, expiresAt })
 }
 
 // The share's preview card, drawn on the owner's Mac when the link is published (the host has no
@@ -358,7 +361,7 @@ async function apex(env, url, id) {
 function unavailable(row) {
   if (!row) return page('notfound', {})
   if (row.deleted_at) return page('removed', { lang: row.lang })
-  if (row.expires_at && row.expires_at < Date.now()) return page('expired', { lang: row.lang })
+  if (row.expires_at && row.expires_at <= Date.now()) return page('expired', { lang: row.lang })
   return null
 }
 
@@ -420,7 +423,8 @@ async function share(req, env, url, r) {
       'x-content-type-options': 'nosniff',
       'content-security-policy': "frame-ancestors 'self'",
       'x-frame-options': 'SAMEORIGIN',
-      'cache-control': pinned ? 'private, max-age=31536000, immutable' : 'private, no-cache',
+      // Expiring pages must check the host even when their version is pinned.
+      'cache-control': pinned && !row.expires_at ? 'private, max-age=31536000, immutable' : 'private, no-cache',
     },
   })
 }
