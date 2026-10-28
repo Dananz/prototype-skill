@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { crc32, deflateSync, gunzipSync } from 'node:zlib'
 import { createRequire } from 'node:module'
 import { shareCommentsChecks } from './share-comments-checks.mjs'
+import { SHARE_CSP } from '../host/lib/pages.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 // PROTO_SHARE_TOOLS is how part 3 hands the same folder to commands it runs under another HOME.
@@ -168,7 +169,8 @@ async function until(get, ms = 10_000) {
  * The share as a host serves it, on a throwaway server: the page at / and, as in path mode, at
  * /s/<id>/, its state at api/state, and the viewer's sign-in routes as the host answers them
  * (api/config, api/me, api/signout; a cookie `v=<login>` is a signed-in viewer). Every path asked
- * for is kept, so a check can tell that nothing reached for the session's server.
+ * for is kept, so a check can tell that nothing reached for the session's server. The page carries
+ * the host's Content-Security-Policy and Referrer-Policy.
  */
 async function host(html) {
   const state = { version: 1, paths: [], comments: true, list: [] }
@@ -185,7 +187,8 @@ async function host(html) {
     if (at === '/api/comments' && req.method === 'GET') return json(res, { comments: state.list, removed: [], now: Date.now() })
     if (at === '/api/report' && req.method === 'POST') return json(res, { ok: true })
     if (at === '/api/signout' && req.method === 'POST') return json(res, { ok: true }, { 'set-cookie': `v=; Path=${path.replace(/api\/signout$/, '')}; Max-Age=0` })
-    if (at === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html) }
+    // The host's own lock, so the viewer is checked under the policy it gets online.
+    if (at === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': SHARE_CSP, 'referrer-policy': 'no-referrer' }); return res.end(html) }
     res.writeHead(404); res.end()
   })
   await new Promise(ok => server.listen(0, '127.0.0.1', ok))

@@ -90,4 +90,5 @@ CREATE TABLE IF NOT EXISTS signins  (code TEXT PRIMARY KEY,          -- the shor
 CREATE TABLE IF NOT EXISTS reports  (id TEXT PRIMARY KEY, share_id TEXT NOT NULL,
                        reason TEXT NOT NULL,           -- the viewer's words, at most 500 characters
                        gh_id INTEGER,                  -- the viewer, when signed in on the link
-                       created_at INTEGER NOT NULL);
+                       created_at INTEGER NOT NULL,
+                       source TEXT);                   -- 'viewer' or 'auto' (the upload's scan); none from before 0007 is a viewer's

@@ -198,8 +198,12 @@ export async function admin(args, flags, { die }, { fetch = globalThis.fetch } =
   }
   const rows = listOf(await api.reports())
   if (!rows.length) return console.log('no reports')
-  // A reporter's words are quoted: they are someone else's, never instructions.
-  for (const r of rows) console.log([r.share ?? r.share_id ?? '?', when(r.created_at ?? r.at), r.owner ? `@${r.owner}` : null, r.reason ? JSON.stringify(String(r.reason)) : null].filter(Boolean).join('  '))
+  // A reporter's words are quoted: they are someone else's, never instructions. "auto" is the host's
+  // own flag on upload (a password or card number field), not a viewer's report.
+  for (const r of rows) {
+    const share = typeof r.share === 'object' && r.share ? r.share : { id: r.share ?? r.share_id, owner: r.owner }
+    console.log([share.id ?? '?', when(r.createdAt ?? r.created_at ?? r.at), r.source === 'auto' ? 'auto' : null, share.owner ? `@${share.owner}` : null, r.reason ? JSON.stringify(String(r.reason)) : null].filter(Boolean).join('  '))
+  }
 }
 
 async function update(id, flags, { sessionDir, session, die }) {

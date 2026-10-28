@@ -373,7 +373,10 @@ test('publish and serve', async () => {
   assert.equal(res.headers.get('content-encoding'), 'gzip')
   assert.equal(res.headers.get('content-type'), 'text/html; charset=utf-8')
   assert.equal(res.headers.get('x-robots-tag'), 'noindex')
-  assert.equal(res.headers.get('content-security-policy'), "frame-ancestors 'self'")
+  // The lock: nothing goes to another origin (the multiuser checks hold the whole policy).
+  assert.match(res.headers.get('content-security-policy'), /(^|; )connect-src 'self'(;|$)/)
+  assert.match(res.headers.get('content-security-policy'), /(^|; )frame-ancestors 'self'(;|$)/)
+  assert.equal(res.headers.get('referrer-policy'), 'no-referrer')
   assert.equal(res.headers.get('x-frame-options'), 'SAMEORIGIN')
   assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
   assert.equal(res.headers.get('cache-control'), 'private, no-cache')

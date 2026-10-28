@@ -28,6 +28,27 @@ const HEAD = {
   'cache-control': 'no-store',
 }
 
+// What a shared page may do (decision: the lock). Everything it loads or sends stays on its own
+// origin, so a page can't post what a visitor types anywhere else; Google Fonts are the one outside
+// source a prototype may use (app/share/review.mjs says so before publishing), and GitHub avatars are the
+// viewer's own faces. Scripts stay inline and may eval: a share is one inline module, and prototypes
+// are code. Its iframes are the page itself (the full view, the device frames).
+export const SHARE_CSP = [
+  "default-src 'self'",
+  "connect-src 'self'",
+  "form-action 'self'",
+  "img-src 'self' data: blob: https://avatars.githubusercontent.com",
+  "media-src 'self' data: blob:",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+  "worker-src 'self' blob:",
+  "frame-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "frame-ancestors 'self'",
+].join('; ')
+
 const STYLE = `:root{color-scheme:light dark;--bg:#fafaf9;--fg:#1c1917;--dim:#78716c}
 @media (prefers-color-scheme:dark){:root{--bg:#0c0a09;--fg:#f5f5f4;--dim:#a8a29e}}
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}

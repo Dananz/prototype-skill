@@ -1,13 +1,14 @@
 import { newId, isId } from './lib/ids.mjs'
 import { ownerOf } from './lib/auth.mjs'
 import { namesOf, route } from './lib/routes.mjs'
-import { page, ogPage, ROBOTS } from './lib/pages.mjs'
+import { page, ogPage, ROBOTS, SHARE_CSP } from './lib/pages.mjs'
 import { json, fail } from './lib/http.mjs'
 import { upgraded } from './lib/upgrade.mjs'
 import { approveSignin, authCallback, authStart, claimUrl, signinReady, startIn, ticketIn } from './lib/github.mjs'
 import { ownerComments, viewerApi } from './lib/comments.mjs'
 import { claim, dropKey, metered, putClaimed, queueKey, reserveStore, room, today, usage } from './lib/budget.mjs'
 import { cron } from './lib/cron.mjs'
+import { flagged } from './lib/scan.mjs'
 import { admin, banned, createRefused, liveCap, pending, quotaOf, reserveUpload, signinBegin, signinPoll, signout } from './lib/users.mjs'
 
 const MAX_BYTES = 20 * 1024 * 1024
@@ -68,8 +69,11 @@ function crashed(req, env) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const m = metered(env)
+    // Work the answer doesn't wait for (an upload's scan), each with its D1 writes counted too.
+    const jobs = []
+    m.env.later = job => jobs.push(job)
     let res
     try {
       res = await serve(req, m.env)
@@ -78,6 +82,18 @@ export default {
       res = crashed(req, env)
     }
     try { await m.flush() } catch (e) { console.error(e) }
+    if (jobs.length) {
+      const done = (async () => {
+        for (const job of jobs) {
+          const j = metered(env)
+          try { await job(j.env) } catch (e) { console.error(e) }
+          try { await j.flush() } catch (e) { console.error(e) }
+        }
+      })()
+      // Without a context (the unit checks) the jobs finish before the answer.
+      if (ctx?.waitUntil) ctx.waitUntil(done)
+      else await done
+    }
     return hardened(res)
   },
   async scheduled(event, env) {
@@ -326,6 +342,9 @@ async function putShare(req, env, owner, id) {
     // The comments marked done are in this version: the viewer sees "In the latest version".
     await env.DB.prepare("UPDATE comments SET done_in = ?, updated_at = ? WHERE share_id = ? AND status = 'done' AND done_in IS NULL").bind(version, now, id).run()
   }
+  // A page that asks for a password or a card number is flagged for the maintainer, after the answer:
+  // the scan never holds the upload up or fails it (scan.mjs).
+  env.later?.(e => flagged(e, id, version, body))
   return json({ id, version, bytes: body.byteLength, message, expiresAt })
 }
 
@@ -458,7 +477,8 @@ async function share(req, env, url, r) {
       'content-encoding': 'gzip',
       'x-robots-tag': 'noindex',
       'x-content-type-options': 'nosniff',
-      'content-security-policy': "frame-ancestors 'self'",
+      'content-security-policy': SHARE_CSP,
+      'referrer-policy': 'no-referrer',
       'x-frame-options': 'SAMEORIGIN',
       // Expiring pages must check the host even when their version is pinned.
       'cache-control': pinned && !row.expires_at ? 'private, max-age=31536000, immutable' : 'private, no-cache',

@@ -231,15 +231,15 @@ export async function admin(req, env, owner, url, parts) {
     if (!row.deleted_at) await tombstone(env, 'id = ?', row.id)
     return json({ id: row.id })
   }
-  // GET /api/admin/reports: the latest 200, newest first.
+  // GET /api/admin/reports: the latest 200, newest first; source 'auto' is the upload's scan (scan.mjs).
   if (parts[2] === 'reports' && parts.length === 3) {
     if (m !== 'GET') return only()
     const { results } = await env.DB.prepare(
-      `SELECT r.id, r.share_id, r.reason, r.created_at, s.title, s.deleted_at, o.gh_login AS owner, v.login AS reporter
+      `SELECT r.id, r.share_id, r.reason, r.created_at, r.source, s.title, s.deleted_at, o.gh_login AS owner, v.login AS reporter
        FROM reports r LEFT JOIN shares s ON s.id = r.share_id LEFT JOIN owners o ON o.id = s.owner_id LEFT JOIN viewers v ON v.gh_id = r.gh_id
        ORDER BY r.created_at DESC, r.id LIMIT 200`,
     ).all()
-    return json(results.map(r => ({ id: r.id, share: { id: r.share_id, title: r.title ?? null, owner: r.owner ?? null, removed: !!r.deleted_at }, reason: r.reason, reporter: r.reporter ?? null, createdAt: r.created_at })))
+    return json(results.map(r => ({ id: r.id, share: { id: r.share_id, title: r.title ?? null, owner: r.owner ?? null, removed: !!r.deleted_at }, reason: r.reason, reporter: r.reporter ?? null, source: r.source === 'auto' ? 'auto' : 'viewer', createdAt: r.created_at })))
   }
   return fail(404, 'No such route.')
 }

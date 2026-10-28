@@ -731,6 +731,8 @@ test('migration 0006 on top of 0001-0005: the schema.sql end state; the owner se
   assert.equal(list[5]?.[0], '0006_users.sql')
   const sql = before0006()
   sql.exec(list[5][1])
+  // The migrations after it change none of what this one checks.
+  for (const [, text] of list.slice(6)) sql.exec(text)
   assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
   assert.deepEqual(sql.prepare('SELECT id, role, status FROM owners ORDER BY id').all().map(r => ({ ...r })), [{ id: 'o_other', role: 'user', status: 'active' }, { id: 'o_tomer', role: 'admin', status: 'active' }])
   assert.equal(sql.prepare("SELECT expires_at FROM owner_tokens WHERE sha256 = 'h1'").get().expires_at, null, 'existing tokens never expire')
@@ -759,4 +761,130 @@ test('schema.sql runs on a local database from before 0004 (owners without gh_id
   assert.doesNotThrow(() => sql.exec(SCHEMA))
   await upgrade(d1Of(sql))
   assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
+})
+
+test('migration 0007 on top of 0001-0006: reports gain source, old reports keep theirs as none; schema.sql and upgrade() agree', async () => {
+  const list = migrations()
+  assert.equal(list[6]?.[0], '0007_report_source.sql')
+  const sql = new DatabaseSync(':memory:')
+  for (const [f, text] of list) if (f < '0007') sql.exec(text)
+  sql.exec("INSERT INTO reports (id, share_id, reason, gh_id, created_at) VALUES ('r1', 'abcdefghij', 'old', NULL, 1)")
+  const local = new DatabaseSync(':memory:')
+  for (const [f, text] of list) if (f < '0007') local.exec(text)
+  sql.exec(list[6][1])
+  assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
+  assert.equal(sql.prepare("SELECT source FROM reports WHERE id = 'r1'").get().source, null)
+  assert.throws(() => sql.exec(list[6][1]), /duplicate column/i)
+  // A running local host from before 0007: upgrade() adds the column.
+  await upgrade(d1Of(local))
+  assert.deepEqual(shapeOf(local), shapeOf(await fromSchema()))
+})
+
+// ---------- the lock (a share page sends nothing elsewhere) and the alert (a page asking for credentials) ----------
+
+const CSP_WANTED = {
+  'default-src': ["'self'"], 'connect-src': ["'self'"], 'form-action': ["'self'"],
+  'img-src': ["'self'", 'data:', 'blob:', 'https://avatars.githubusercontent.com'], 'media-src': ["'self'", 'data:', 'blob:'],
+  'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'], 'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+  'script-src': ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'blob:'], 'worker-src': ["'self'", 'blob:'], 'frame-src': ["'self'"],
+  'base-uri': ["'none'"], 'object-src': ["'none'"], 'frame-ancestors': ["'self'"],
+}
+const cspOf = res => Object.fromEntries((res.headers.get('content-security-policy') || '').split(';').map(d => d.trim().split(/\s+/)).filter(d => d[0]).map(([k, ...v]) => [k, v]))
+
+test('a share page is locked to its own origin, in every mode: subdomain, path and local', async () => {
+  const modes = [
+    ['subdomain', await hostEnv(), 'https://prtype.dev', id => `https://${id}.prtype.dev/`],
+    ['path', await memoryEnv(), 'https://prtype.dev', id => `https://prtype.dev/s/${id}/`],
+    ['local', await memoryEnv({ BASE: 'localhost:8787', PATH_MODE: '0' }), 'http://localhost:8787', id => `http://${id}.localhost:8787/`],
+    ['local path', await memoryEnv({ BASE: 'localhost:8787', PATH_MODE: '0' }), 'http://127.0.0.1:8787', id => `http://127.0.0.1:8787/s/${id}/`],
+  ]
+  for (const [mode, env, api, at] of modes) {
+    const token = await addUser(env, 'u1', 'ann')
+    const { id } = await (await call(env, `${api}/api/shares`, { method: 'POST', headers: bearer(token) })).json()
+    const up = await call(env, `${api}/api/shares/${id}`, { method: 'PUT', headers: { ...bearer(token), 'x-share-meta': meta() }, body: gzipSync('<!doctype html><p>hi') })
+    assert.equal(up.status, 200, `${mode}: ${await up.clone().text()}`)
+    const res = await call(env, at(id))
+    assert.equal(res.status, 200, `${mode}: ${await res.clone().text()}`)
+    assert.deepEqual(cspOf(res), CSP_WANTED, mode)
+    assert.equal(res.headers.get('referrer-policy'), 'no-referrer', mode)
+    assert.equal(res.headers.get('x-frame-options'), 'SAMEORIGIN', mode)
+    // The viewer's own calls stay on the share's origin, which connect-src 'self' allows.
+    assert.equal((await call(env, `${at(id)}api/state`, { headers: XP })).status, 200, `${mode}: the viewer API answers`)
+  }
+})
+
+const reportsOf = env => env.DB.sql.prepare('SELECT id, share_id, reason, gh_id, source FROM reports ORDER BY created_at, id').all().map(r => ({ ...r }))
+const LOGIN = '<!doctype html><script type="module">const f=()=>jsx("input",{type:"password",autoComplete:"current-password"})</script>'
+
+test('an upload whose page asks for a password is flagged once per version, and still publishes', async () => {
+  const env = await hostEnv()
+  const ann = await addUser(env, 'u1', 'ann')
+  const plain = await publish(env, ann, '<!doctype html><p>Pricing: a password manager for teams</p><input type="email">')
+  assert.deepEqual(reportsOf(env), [], 'no credential field, no report')
+  const id = await publish(env, ann, LOGIN)
+  assert.deepEqual(reportsOf(env), [{ id: `auto:${id}:1`, share_id: id, reason: 'Version 1 has a password or card number field.', gh_id: null, source: 'auto' }])
+  assert.equal((await call(env, `https://${id}.prtype.dev/`)).status, 200, 'the page is served all the same')
+  // An update is a new version: one more; the same version is never flagged twice.
+  assert.equal((await put(env, ann, id, LOGIN)).status, 200)
+  const { flagged } = await import('../host/lib/scan.mjs')
+  assert.equal(await flagged(env, id, 2, gzipSync(LOGIN)), true)
+  assert.deepEqual(reportsOf(env).map(r => r.id), [`auto:${id}:1`, `auto:${id}:2`])
+  // The raw HTML forms count too, in any case and quoting; so does a card number field.
+  for (const html of ['<form><INPUT TYPE=Password name=p></form>', "<input type='password'>", '<input autocomplete="cc-number">', '<input name=x autocomplete = current-password>']) {
+    const other = await publish(env, ann, html)
+    assert.ok(reportsOf(env).some(r => r.share_id === other), html)
+  }
+  assert.ok(!reportsOf(env).some(r => r.share_id === plain))
+  // The admin's list says which came from the scan.
+  const listed = await (await call(env, '/api/admin/reports', { headers: bearer(TOKEN) })).json()
+  assert.ok(listed.length >= 2 && listed.every(r => r.source === 'auto'))
+})
+
+test('the scan never fails an upload: a body that isn\'t really gzip, a database that throws, a day out of writes', async () => {
+  const env = await hostEnv()
+  const ann = await addUser(env, 'u1', 'ann')
+  const created = await (await call(env, '/api/shares', { method: 'POST', headers: bearer(ann) })).json()
+  // gzip's magic, then nothing a gzip reader takes: the scan throws inside, the upload lands.
+  const broken = new Uint8Array([0x1f, 0x8b, 1, 2, 3, 4, 5, 6, 7, 8])
+  const errors = console.error
+  console.error = () => {}
+  try {
+    let res = await call(env, `/api/shares/${created.id}`, { method: 'PUT', headers: { ...bearer(ann), 'x-share-meta': meta() }, body: broken })
+    assert.equal(res.status, 200, await res.clone().text())
+    // The report's insert throws: the upload still answers 200.
+    const prepare = env.DB.prepare
+    env.DB.prepare = q => { if (/INSERT INTO reports/.test(q)) throw new Error('D1 is down'); return prepare(q) }
+    res = await put(env, ann, created.id, LOGIN)
+    env.DB.prepare = prepare
+    assert.equal(res.status, 200, await res.clone().text())
+    assert.deepEqual(reportsOf(env), [])
+  } finally { console.error = errors }
+  // Out of today's D1 writes: no report, the upload stands.
+  env.DB.sql.prepare("INSERT INTO budget (day, what, n) VALUES (?, 'd1_write', 90000) ON CONFLICT(day, what) DO UPDATE SET n = 90000").run(today())
+  const { flagged } = await import('../host/lib/scan.mjs')
+  assert.equal(await flagged(env, created.id, 9, gzipSync(LOGIN)), false)
+  assert.deepEqual(reportsOf(env), [])
+})
+
+test('the scan reads at most the first 2 MiB of the page, its D1 write is counted, and a context runs it after the answer', async () => {
+  const { asksCredentials, SCAN_BYTES } = await import('../host/lib/scan.mjs')
+  const pad = 'x'.repeat(SCAN_BYTES)
+  assert.equal(await asksCredentials(gzipSync(`<input type="password">${pad}`)), true)
+  assert.equal(await asksCredentials(gzipSync(`${pad}<input type="password">`)), false, 'past the first 2 MiB is not read')
+  // A match split across two chunks of the stream still counts.
+  assert.equal(await asksCredentials(gzipSync(`${'y'.repeat(65_530)}<input type="password">`)), true)
+
+  const env = await hostEnv()
+  const ann = await addUser(env, 'u1', 'ann')
+  const created = await (await call(env, '/api/shares', { method: 'POST', headers: bearer(ann) })).json()
+  const writes = () => env.DB.sql.prepare("SELECT n FROM budget WHERE day = ? AND what = 'd1_write'").get(today())?.n ?? 0
+  const waited = []
+  const ctx = { waitUntil: p => waited.push(p) }
+  const res = await worker.fetch(new Request(`https://prtype.dev/api/shares/${created.id}`, { method: 'PUT', headers: { ...bearer(ann), 'x-share-meta': meta() }, body: gzipSync(LOGIN) }), env, ctx)
+  assert.equal(res.status, 200)
+  assert.equal(waited.length, 1, 'the scan is handed to waitUntil')
+  const before = writes()
+  await Promise.all(waited)
+  assert.equal(reportsOf(env).length, 1)
+  assert.equal(writes(), before + 1, 'the report row is counted in today\'s D1 writes')
 })

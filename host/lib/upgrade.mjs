@@ -12,7 +12,7 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS presence (share_id TEXT NOT NULL, gh_id INTEGER NOT NULL, route TEXT, at INTEGER NOT NULL, PRIMARY KEY (share_id, gh_id))`,
   `CREATE TABLE IF NOT EXISTS signins (code TEXT PRIMARY KEY, poll TEXT NOT NULL, device TEXT NOT NULL, words TEXT, exp INTEGER NOT NULL, gh_id INTEGER, owner_id TEXT, done_at INTEGER)`,
-  `CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, share_id TEXT NOT NULL, reason TEXT NOT NULL, gh_id INTEGER, created_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, share_id TEXT NOT NULL, reason TEXT NOT NULL, gh_id INTEGER, created_at INTEGER NOT NULL, source TEXT)`,
 ]
 // ADD COLUMN can't add NOT NULL without a default, hence the defaults.
 const COLUMNS = {
@@ -24,6 +24,7 @@ const COLUMNS = {
   owners: [['gh_id', 'INTEGER'], ['gh_login', 'TEXT'], ['gh_name', 'TEXT'], ['gh_avatar', 'TEXT'], ['role', "TEXT NOT NULL DEFAULT 'user'"], ['status', "TEXT NOT NULL DEFAULT 'active'"]],
   owner_tokens: [['expires_at', 'INTEGER']],
   signins: [['words', 'TEXT']],
+  reports: [['source', 'TEXT']],
 }
 // After the columns, since they name gh_id: schema.sql can't create this index, because on a local
 // database from before 0004 (owners without gh_id) the statement would fail and stop the file. The

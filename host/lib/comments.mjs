@@ -245,7 +245,7 @@ async function report(req, env, share, who) {
   const ip = req.headers.get('cf-connecting-ip') || 'unknown'
   if (!await take(env, `ip:report:${ip}`, Math.floor(now / 3_600_000), REPORTS_PER_HOUR)) return fail(429, 'Too many reports from here this hour. Try again later.', { code: 'rate' })
   const me = await who()
-  await env.DB.prepare('INSERT INTO reports (id, share_id, reason, gh_id, created_at) VALUES (?, ?, ?, ?, ?)').bind(newId(), share.id, b.reason.trim(), me?.gh_id ?? null, now).run()
+  await env.DB.prepare("INSERT INTO reports (id, share_id, reason, gh_id, created_at, source) VALUES (?, ?, ?, ?, ?, 'viewer')").bind(newId(), share.id, b.reason.trim(), me?.gh_id ?? null, now).run()
   return json({ ok: true })
 }
 

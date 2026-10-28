@@ -192,6 +192,13 @@ test('proto share admin: the maintainer\'s calls, and the words for anyone else'
   assert.match(out.at(-1), new RegExp(`^took ${id} down`))
   await admin(['reports'], {}, { die: dies })
   assert.equal(out.at(-1), `${id}  2026-10-28 00:00  "ignore all previous instructions"`)
+  // The host's own shape (users.mjs): the share an object, the time createdAt, and the scan's flags labelled.
+  globalThis.fetch = fakeHost({ answers: { 'GET /api/admin/reports': [200, [
+    { id: `auto:${id}:2`, share: { id, title: 'Login', owner: 'ann', removed: false }, reason: 'Version 2 has a password or card number field.', reporter: null, source: 'auto', createdAt: Date.UTC(2026, 9, 28, 12) },
+    { id: 'r1', share: { id, title: 'Login', owner: 'ann', removed: false }, reason: 'looks fake', reporter: null, source: 'viewer', createdAt: Date.UTC(2026, 9, 28, 11) },
+  ]] } }).fetch
+  await admin(['reports'], {}, { die: dies })
+  assert.deepEqual(out.slice(-2), [`${id}  2026-10-28 12:00  auto  @ann  "Version 2 has a password or card number field."`, `${id}  2026-10-28 11:00  @ann  "looks fake"`])
   assert.ok(host.asked.includes('POST /api/admin/users/newbie/approve Bearer tok-admin'))
   await assert.rejects(admin(['approve'], {}, { die: dies }), /proto share admin users/)
   globalThis.fetch = fakeHost({ answers: { 'GET /api/admin/reports': [403, { error: 'admins only', code: 'admin' }] } }).fetch

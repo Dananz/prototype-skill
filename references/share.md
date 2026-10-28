@@ -226,6 +226,11 @@ points at the card.
 - Every share is on its own origin (decision 23), since anyone signed in can publish: one share's
   scripts can't read another's storage or act as its viewer. Viewer cookies are `__Host-v` on the
   share's own name; every cookie on prtype.dev is `__Host-`, so a share can't set one there.
+- A shared page can't send or load anything from another origin, online or local: remote images,
+  scripts and API calls don't load (Google Fonts and viewers' GitHub avatars do), and forms post
+  only to the share. The review warns about such URLs before publishing.
+- An upload whose page has a password or card number field (in its first 2 MiB) is flagged for the
+  maintainer in `proto share admin reports` as `auto`. It still publishes.
 - Each user may hold 25 live links and 75 MB, and upload 30 times a day (a share, an update and a
   card each count), and start at most 60 new links a day; past that the host says which limit and
   when it resets. The maintainer's account has no per-user limits, only the host's.

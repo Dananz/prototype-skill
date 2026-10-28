@@ -16,6 +16,7 @@ const SECRETS = [
   /\b(?:sk|rk)_live_[A-Za-z0-9]{20,}/g,
   /\bsb_secret_[A-Za-z0-9_-]{20,}/g,
 ]
+// The only outside hosts a share link lets a page load from (the host's CSP, host/lib/pages.mjs SHARE_CSP).
 const FONT_HOSTS = new Set(['fonts.googleapis.com', 'fonts.gstatic.com'])
 const PRIVATE_HOST = /^(?:localhost|127\.0\.0\.1|.+\.ts\.net|10\..+|192\.168\..+|172\.(?:1[6-9]|2\d|3[01])\..+)$/
 const URL_RE = /\bhttps?:\/\/([^\s/"'<>()\\?#:]+)(?::\d+)?[^\s"'<>()\\]*/g
@@ -83,7 +84,7 @@ export function review({ html, gzBytes, projectPath, home, projectImports, curre
     if (PRIVATE_HOST.test(host)) privates.set(origin, (privates.get(origin) ?? 0) + 1)
     else if (!FONT_HOSTS.has(host)) origins.add(origin)
   }
-  for (const origin of origins) warn.push({ code: 'outside-url', message: `The share loads something from ${origin}. It will only work while that address is up and reachable by viewers.`, where: origin })
+  for (const origin of origins) warn.push({ code: 'outside-url', message: `The share loads something from ${origin}, and the share link won't load it: remote images, scripts and API calls are blocked there (Google Fonts still load). Inline it, or leave it out.`, where: origin })
   for (const [origin, n] of privates) warn.push({ code: 'private-url', message: `The share points at ${origin} (${n} ${n === 1 ? 'time' : 'times'}), an address only your machine or network can open. Viewers will see it broken.`, where: origin })
   for (const path of new Set([...html.matchAll(ABS_PATH_RE)].map(m => m[1] ?? m[2]))) {
     warn.push({ code: 'private-url', message: `The share loads ${path} by absolute path, which will not exist at the share link. Inline it or use a relative path.`, where: path })
