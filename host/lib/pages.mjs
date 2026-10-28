@@ -40,16 +40,36 @@ export function page(kind, { lang = 'en', title, login = '' } = {}) {
 
 // Link unfurlers read these tags and stop; browsers follow the script (which keeps the #/route of a
 // deep link) or, without script, the meta refresh to the start route. Never a bare 302.
-export function ogPage({ title, owner, target }) {
+// url: the short link itself. card: the preview image's absolute URL, or none (a host without the
+// site in front of it has no image to point at). The description is the message for viewers, if any.
+export function ogPage({ title, owner, target, url, card, message, lang = 'en' }) {
+  const he = lang === 'he'
+  const description = message || (he ? `אב טיפוס מאת ${owner}` : `A prototype shared by ${owner}`)
   const script = `location.replace(${JSON.stringify(target).replace(/</g, '\\u003c')} + location.hash)`
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+  const image = card
+    ? `<meta property="og:image" content="${esc(card)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Prototype logo"><meta name="twitter:card" content="summary_large_image">`
+    : '<meta name="twitter:card" content="summary">'
+  const html = `<!doctype html><html lang="${he ? 'he' : 'en'}" dir="${he ? 'rtl' : 'ltr'}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>${esc(title)}</title>
-<meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}">
-<meta property="og:description" content="A prototype shared by ${esc(owner)}">
+<title>${esc(title)}</title><meta name="description" content="${esc(description)}">
+<meta property="og:type" content="website"><meta property="og:site_name" content="Prototype"><meta property="og:title" content="${esc(title)}">
+<meta property="og:description" content="${esc(description)}">${url ? `<meta property="og:url" content="${esc(url)}">` : ''}
+${image}
 <meta http-equiv="refresh" content="0;url=${esc(target)}">
 <style>${STYLE}</style></head>
-<body><main><h1>${esc(title)}</h1><p>A prototype shared by ${esc(owner)}</p></main>
+<body><main><h1>${esc(title)}</h1><p>${esc(description)}</p></main>
 <script>${script}</script></body></html>`
   return new Response(html, { status: 200, headers: HEAD })
 }
+
+// For crawlers, a host has nothing to index: every page is a private link. Link previewers may read
+// the short links and shares to show a card in a chat; never the API or sign-in.
+const PREVIEWERS = ['Twitterbot', 'facebookexternalhit', 'Facebot', 'LinkedInBot', 'Slackbot', 'Slackbot-LinkExpanding', 'Discordbot', 'TelegramBot', 'WhatsApp']
+export const ROBOTS = `${PREVIEWERS.map(a => `User-agent: ${a}`).join('\n')}
+Disallow: /api
+Disallow: /auth/
+
+User-agent: *
+Disallow: /
+`

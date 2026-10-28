@@ -176,6 +176,28 @@ acts on them; nothing reaches Claude by itself.
 The host is the source of truth for which shares exist: `proto share ls --all` lists them across
 sessions.
 
+## Link previews and search
+
+A link pasted in a chat shows the share's title, "A prototype shared by <owner>" (or the message
+for viewers) and the share's own card: a 1200×630 JPEG with the title, the cube and the owner's
+GitHub picture, name and @login, in Google Sans, mirrored for a Hebrew session. Publish and update
+draw it on this Mac (`app/share/card/`, with sharp from the share tools; the host has no CPU to
+draw one per visit) and send it to `PUT /api/shares/<id>/card` once the page is up. An update sends
+it only when it changed (`cardHash` in `.proto/shares.json`). The host keeps it in KV
+(`shares.card_key`) and serves it at `/s/<id>/card.jpg?v=<version>`. A share with no card of its
+own (no sharp, an upload that failed, a share from before cards) shows the site's card
+(`site/public/og-share.jpg`; the host's `CARD` var, set when setup puts it behind the domain,
+points at it). The built page (`/s/<id>/`, for links copied from the address bar) carries the
+title and owner line, and the site's card, since the page is built before the link has an id.
+Nothing is for search: every host answer is `noindex`, the site's `robots.txt` keeps crawlers off
+`/s/`, `/api` and `/auth/`, and the host's own `robots.txt` keeps them off everything. Link
+previewers (Twitterbot, facebookexternalhit, LinkedInBot, Slackbot, Discordbot, TelegramBot,
+WhatsApp) are let in to read the cards.
+
+The card and `robots.txt` are site files: they go live with a site deploy (`site/README.md`), which
+a re-run of setup skips once the site already reaches the host. Deploy the site before a host that
+points at the card.
+
 ## Limits
 
 - A share is at most 20 MiB gzipped (blocked above); over 5 MiB it warns, since a phone opens it

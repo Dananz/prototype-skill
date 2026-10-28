@@ -78,6 +78,27 @@ export function reachedFiles(entries, dir) {
   return [...seen]
 }
 
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+
+// What a chat shows for a link copied from the address bar (the short link's page on the host has
+// the same): the title, who shared it, the preview image when the host has one, and never in search.
+export function shareTags(html, info, lang) {
+  const he = lang === 'he'
+  const title = info.title || 'Prototype'
+  const description = info.owner ? (he ? `אב טיפוס מאת ${info.owner}` : `A prototype shared by ${info.owner}`) : ''
+  const tags = [
+    '<meta name="robots" content="noindex" />',
+    '<meta property="og:type" content="website" />',
+    '<meta property="og:site_name" content="Prototype" />',
+    `<meta property="og:title" content="${esc(title)}" />`,
+    ...description ? [`<meta name="description" content="${esc(description)}" />`, `<meta property="og:description" content="${esc(description)}" />`] : [],
+    ...info.card
+      ? [`<meta property="og:image" content="${esc(info.card)}" />`, '<meta property="og:image:width" content="1200" />', '<meta property="og:image:height" content="630" />', '<meta name="twitter:card" content="summary_large_image" />']
+      : [],
+  ]
+  return html.replace(/<title>[^<]*<\/title>/, () => [`<title>${esc(title)}</title>`, ...tags].join('\n    '))
+}
+
 /**
  * scope: { protos: [{ id, variants }], start } from parseScope. info: { title, owner, version,
  * updatedAt }, the share's own facts for the viewer (__PROTO_SHARE__). session: the real
@@ -264,5 +285,7 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
       : '<p style="font:16px/1.5 system-ui,sans-serif;padding:24px">This prototype needs JavaScript to open. Turn it on and reload.</p>'}</noscript>`),
   }
 
-  return [swap, tailwindSources, fileNames, icon, noscript, options, stampsPlugin({ protosDir }), imagesPlugin({ sharp, root })]
+  const tags = { name: 'proto-share-tags', transformIndexHtml: html => shareTags(html, info, session.lang) }
+
+  return [swap, tailwindSources, fileNames, icon, noscript, tags, options, stampsPlugin({ protosDir }), imagesPlugin({ sharp, root })]
 }

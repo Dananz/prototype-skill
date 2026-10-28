@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS shares   (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL
                        updated_at INTEGER NOT NULL,
                        deleted_at INTEGER,            -- a tombstone: "This link was removed"
                        html_key TEXT,                 -- the live version's KV key; NULL: html:<id>:<version>
-                       message TEXT);                 -- the owner's words for viewers, at most 280 characters
+                       message TEXT,                  -- the owner's words for viewers, at most 280 characters
+                       card_key TEXT);                -- the preview card's KV key; NULL: none of its own
 CREATE TABLE IF NOT EXISTS links    (id TEXT PRIMARY KEY, share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
                        kind TEXT NOT NULL CHECK (kind IN ('open','person')), name TEXT,
                        revoked_at INTEGER, created_at INTEGER NOT NULL, last_seen_at INTEGER);

@@ -69,9 +69,11 @@ export const redact = (text, secrets) => secrets.filter(Boolean).reduce((t, s) =
 
 /**
  * The online host's wrangler config. Free only: KV and D1, vars, one cron, workers.dev, logs. No
- * route of its own: on prtype.dev the site Worker reaches it through its service binding.
+ * route of its own: on prtype.dev the site Worker reaches it through its service binding. card: the
+ * site is in front of the host, so its preview image (site/public/og-share.jpg) is there for the
+ * short links' cards.
  */
-export function onlineConfig({ accountId, kvId, dbId, base, signin = false, legacy = '', hostVersion, skill = SKILL }) {
+export function onlineConfig({ accountId, kvId, dbId, base, signin = false, legacy = '', card = false, hostVersion, skill = SKILL }) {
   return {
     name: WORKER,
     account_id: accountId,
@@ -81,7 +83,7 @@ export function onlineConfig({ accountId, kvId, dbId, base, signin = false, lega
     preview_urls: false,
     kv_namespaces: [{ binding: 'KV', id: kvId }],
     d1_databases: [{ binding: 'DB', database_name: WORKER, database_id: dbId, migrations_dir: join(skill, 'host', 'migrations') }],
-    vars: { BASE: base, PATH_MODE: '1', SIGNIN: signin ? '1' : '0', LEGACY: legacy, HOST_VERSION: hostVersion },
+    vars: { BASE: base, PATH_MODE: '1', SIGNIN: signin ? '1' : '0', LEGACY: legacy, CARD: card ? '/og-share.jpg' : '', HOST_VERSION: hostVersion },
     triggers: { crons: [CRON] },
     // Workers Logs carry each request's CPU time (Task 0 item 8); Free keeps 200,000 events a day.
     observability: { enabled: true },
@@ -300,7 +302,7 @@ export async function setupOnline(flags, io) {
   // 6. The config, on workers.dev or behind the site on the domain (sign-in on, the old name kept),
   // and the migrations, which don't depend on which.
   const configFile = join(onlineDir(), 'wrangler.jsonc')
-  const configFor = base => writeOnlineConfig(configFile, { accountId: account.id, kvId: kv.id, dbId: db.uuid, base, signin: base === domain, legacy: base === domain ? workersDev : '', hostVersion: io.hostVersion })
+  const configFor = base => writeOnlineConfig(configFile, { accountId: account.id, kvId: kv.id, dbId: db.uuid, base, signin: base === domain, legacy: base === domain ? workersDev : '', card: base === domain, hostVersion: io.hostVersion })
   configFor(workersDev)
   const applied = must(run(['d1', 'migrations', 'apply', 'DB', '--remote', '-c', configFile]), 'Applying the migrations')
   log(/No migrations to apply/i.test(applied.stdout) ? 'Migrations: up to date' : 'Migrations: applied')

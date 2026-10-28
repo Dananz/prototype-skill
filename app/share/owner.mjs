@@ -125,6 +125,8 @@ export function client(host, token, { fetch = globalThis.fetch, timeout = 60_000
       try { r = await once() } catch (e) { if (e?.code !== 'race') throw e; r = await once() }
       return { version: r.version }
     },
+    /** The link's preview card, a JPEG: { id, card }. */
+    card: (id, jpeg) => call('PUT', `/api/shares/${id}/card`, { body: jpeg, headers: { 'content-type': 'image/jpeg' } }),
     list: () => call('GET', '/api/shares'),
     remove: async id => { await call('DELETE', `/api/shares/${id}`) },
     /** The owner's GitHub identity on this host: { login, name, avatar, signin }, nulls before they sign in. */
