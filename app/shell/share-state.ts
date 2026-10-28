@@ -17,8 +17,11 @@ export type ShareRow = {
   views?: number | null; viewers?: LinkViewer[]; changedVariants?: { key: string; name: string }[]
 }
 export type Listed = { host: { name: string; stage: string; owner: string } | null; hostError: string | null; shares: ShareRow[]; setup?: string }
-/** The owner on the host, as the session server's `owner` answers. signin: whether the host can run GitHub sign-in. */
-export type Owner = { host: string | null; signedIn: boolean; login: string | null; name: string | null; avatar: string | null; signin: boolean }
+/**
+ * The owner on the host, as the session server's `owner` answers. signin: whether the host can run
+ * GitHub sign-in. status: on a host many people share to, whether the maintainer let them in yet.
+ */
+export type Owner = { host: string | null; signedIn: boolean; login: string | null; name: string | null; avatar: string | null; signin: boolean; status?: 'active' | 'pending' | 'banned' }
 export type Answer = { status: number; body: Record<string, any> }
 
 /** One of the session server's share routes, never throwing: status 0 when it can't be reached. */
@@ -75,6 +78,10 @@ export async function loadOwner(refresh = false): Promise<Owner | undefined> {
 }
 /** Whether the owner is known to be signed out of the share host: then a new link starts with signing in. */
 export const mustSignIn = (owner: Owner | undefined) => !!owner && !!owner.host && owner.signedIn === false
+/** Whether the owner is signed in but not let in to share (yet): then a new link shows why instead. */
+export const mustWait = (owner: Owner | undefined) => !!owner?.signedIn && (owner.status === 'pending' || owner.status === 'banned')
+/** A publish refused because the owner isn't let in yet (or any more): asked again, it shows why. */
+export const notLetIn = () => { void loadOwner(true) }
 /** A publish refused because the owner isn't signed in: the owner is signed out, whatever was known. */
 export const signedOut = () => set({ owner: { ...(state.owner ?? { host: 'host', login: null, name: null, avatar: null, signin: true }), signedIn: false } })
 

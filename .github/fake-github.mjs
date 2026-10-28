@@ -8,13 +8,15 @@ const b64url = buf => Buffer.from(buf).toString('base64url')
 
 /**
  * Starts the fake on 127.0.0.1 at a free port. `user` is who signs in (change it with setUser);
- * `calls` records every request, so a test can see what the host sent.
+ * `calls` records every request, so a test can see what the host sent. setOrgs({ org: [login, ...] })
+ * names each org's public members, for GET /orgs/<org>/members/<login>.
  */
 export async function startFakeGitHub({ clientId = 'fake-client-id', clientSecret = 'fake-client-secret', user } = {}) {
   let who = user || { id: 4242, login: 'dana-test', name: 'Dana', avatar_url: 'https://avatars.githubusercontent.com/u/4242' }
   const codes = new Map() // code -> { challenge, redirect }
   const tokens = new Map() // token -> user
   const calls = []
+  let orgs = {}
   const send = (res, status, body, headers = {}) => {
     res.writeHead(status, { 'content-type': 'application/json', ...headers })
     res.end(body === undefined ? '' : JSON.stringify(body))
@@ -54,6 +56,13 @@ export async function startFakeGitHub({ clientId = 'fake-client-id', clientSecre
       if (!u) return send(res, 401, { message: 'Bad credentials' })
       return send(res, 200, u)
     }
+    const member = /^\/orgs\/([^/]+)\/members\/([^/]+)$/.exec(url.pathname)
+    if (req.method === 'GET' && member) {
+      const m = /^Bearer (\S+)$/.exec(req.headers.authorization || '')
+      if (!m || !tokens.get(m[1])) return send(res, 401, { message: 'Bad credentials' })
+      // A public member: 204, no body. Anyone else: 404.
+      return (orgs[member[1].toLowerCase()] || []).some(l => l.toLowerCase() === member[2].toLowerCase()) ? send(res, 204) : send(res, 404, { message: 'Not Found' })
+    }
     send(res, 404, { message: 'Not Found' })
   })
   await new Promise(ok => server.listen(0, '127.0.0.1', ok))
@@ -61,6 +70,7 @@ export async function startFakeGitHub({ clientId = 'fake-client-id', clientSecre
   return {
     url, clientId, clientSecret, calls,
     setUser(u) { who = u },
+    setOrgs(o) { orgs = Object.fromEntries(Object.entries(o).map(([k, v]) => [k.toLowerCase(), v])) },
     close: () => new Promise(ok => server.close(() => ok())),
   }
 }

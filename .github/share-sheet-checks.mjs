@@ -93,17 +93,18 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
     await waitFor(page, '!!document.querySelector("[data-link-tab], [data-link-nohost], [data-link-error]")', 'the sheet did not finish looking for the host')
   }
 
-  // 1. No host yet: the sheet says so in two lines and shows the command.
+  // 1. No hosts.json: the built-in online host, with no token, so the New link view is the GitHub
+  // sign-in (nothing is asked of prtype.dev until it is pressed).
   // A design with colour, so the Opens on preview has something to show (put back at the end).
   const fileA = join(app, 'src', 'protos', 'share-link', 'A.tsx'), designA = readFileSync(fileA, 'utf8')
   writeFileSync(fileA, `export default function A() { return <main style={{ minHeight: '100vh', background: '#2563eb', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 64 }}><h1>MARK-A</h1></main> }\n`)
   let page = await open('share-link/A?theme=light')
   await sheetOpen(page)
-  await waitFor(page, '!!document.querySelector("[data-link-nohost]")', 'no host: the sheet does not say there is no host')
-  assert(await page.run('document.querySelector("[data-link-nohost]").textContent.includes("proto share setup") && !document.querySelector("[data-link-nohost]").textContent.includes("--local")'), 'no host: the setup command is not shown')
-  await shot(page, 'sheet-nohost-desktop-light')
+  await waitFor(page, '!!document.querySelector("[data-share-link] [data-link-gate] [data-link-signin]")', 'no hosts.json: the sheet does not ask to sign in with GitHub')
+  assert(await page.run('!document.querySelector("[data-link-nohost]")'), 'no hosts.json: the sheet says there is no host')
+  await shot(page, 'sheet-signin-desktop-light')
 
-  // 2. A host: Retry finds it, and the New link view shows the prototypes and their variants.
+  // 2. A host on this Mac: the page opened again finds it, and the New link view shows the prototypes and their variants.
   assert(share(['setup', '--local', '--name', 'Smoke']).status === 0, 'setup --local failed')
   const host = JSON.parse(readFileSync(join(home, '.config', 'prototype', 'hosts.json'), 'utf8'))[0]
   const hostPort = Number(new URL(host.url).port)
@@ -111,7 +112,9 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
   const ownerToken = readFileSync(join(home, '.config', 'prototype', 'token-local'), 'utf8').trim()
   const signed = await signOwnerIn(`http://127.0.0.1:${hostPort}`, ownerToken)
   assert(signed.status === 200 && signed.text.includes('Signed in as dana-test'), `owner sign-in: ${signed.status} ${signed.text.slice(0, 200)}`)
-  await click(page, '[data-link-retry]')
+  page.close(); pages.splice(pages.indexOf(page), 1)
+  page = await open('share-link/A?theme=light')
+  await sheetOpen(page)
   await waitFor(page, '!!document.querySelector("[data-link-what=proto]")', 'with a host: the New link view does not show')
   assert(await page.run('document.querySelector("[data-link-what=proto]").getAttribute("aria-checked")==="true"'), 'This prototype is not the default')
   // The preview of the variant the link opens on: drawn, and blue like the design.

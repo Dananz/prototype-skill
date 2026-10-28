@@ -7,7 +7,7 @@
 // on its own: no poll, no refresh when the page asks for the tray, no host listing. The smoke's own
 // session runs that way, so it can never reach the owner's real host or Keychain; what the person
 // does (publish, send, reply) still goes out.
-import { SIGN_IN_FIRST, client, clientFor, defaultHost, dismiss, flush, forget, getToken, hostNamed, hostUp, isLocal, linkOf, mergeTray, outboxFile, pollOnce, queue, readShares, sendComments, setupHint, trayItems, trayView } from './owner.mjs'
+import { SIGN_IN_FIRST, client, clientFor, defaultHost, dismiss, flush, forget, getToken, hostHealth, hostNamed, isLocal, linkOf, mergeTray, outboxFile, pollOnce, queue, readShares, sendComments, setupHint, signIn, trayItems, trayView } from './owner.mjs'
 import { changedSince, changedVariants, messageOf, protosOf, publishShare, removeShare, titleOf, updateShare } from './publish.mjs'
 import { ShareError, parseScope } from './scope.mjs'
 import { spawn } from 'node:child_process'
@@ -78,20 +78,53 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
   // What waited in the outbox when the server last stopped goes now. Nothing is asked when it is empty.
   if (!quiet) { try { if (statSync(outboxFile(root)).size > 0) flush(root).catch(() => {}) } catch { /* empty */ } }
 
-  // The host a share is on, and its token; a 409 or 503 the sheet can show when there is none.
-  const reach = async name => {
+  // The host a share is on (a name only hosts.json knows that isn't there: a 409 the sheet shows),
+  // answering /_health and taking this skill's owner API.
+  const hostOf = async name => {
     const host = name ? hostNamed(name) : defaultHost()
-    if (!host) throw failure(409, `No share host yet. Ask Claude to set one up (${setupHint(null)}).`, { code: 'no_host', setup: setupHint(null) })
-    const token = getToken(host.name)
-    if (!token) throw failure(409, `No owner token for the host "${host.name}" on this Mac: ${setupHint(host)} makes one.`, { code: 'no_token', setup: setupHint(host) })
-    // A token found now ends a "no token" the poll remembered from before setup.
-    if (!clientFor(host.name)) forget(host.name)
-    if (!await hostUp(host)) {
+    if (!host) throw failure(409, `No share host "${name}" on this Mac. Ask Claude to set one up (${setupHint({ stage: name === 'local' ? 'local' : 'domain' })}).`, { code: 'no_host', setup: setupHint({ stage: name === 'local' ? 'local' : 'domain' }) })
+    return host
+  }
+  const up = async host => {
+    const health = await hostHealth(host)
+    if (!health.up) {
       throw failure(503, isLocal(host)
         ? `The share host "${host.name}" isn't running. Ask Claude to share again (it starts the host), or run ${setupHint(host)}.`
-        : `The share host "${host.name}" can't be reached. Check the network; ${setupHint(host)} repairs a broken deploy.`, { code: 'host_down' })
+        : `The share host "${host.name}" can't be reached. Check the network${host.accountId ? `; ${setupHint(host)} repairs a broken deploy` : ''}.`, { code: 'host_down' })
     }
+    if (health.update) throw failure(409, health.update, { code: 'update' })
+  }
+  // The host and its token. No token: the host on this Mac is set up; an online one (the built-in
+  // host first) asks for the GitHub sign-in, before the host is asked anything, so a page that only
+  // opens the popover never reaches the network.
+  const reach = async name => {
+    const host = await hostOf(name)
+    const token = getToken(host.name)
+    if (!token && isLocal(host)) throw failure(409, `No owner token for the host "${host.name}" on this Mac: ${setupHint(host)} makes one.`, { code: 'no_token', setup: setupHint(host) })
+    if (!token) throw failure(409, SIGN_IN_FIRST, { code: 'sign_in' })
+    // A token found now ends a "no token" the poll remembered from before setup.
+    if (!clientFor(host.name)) forget(host.name)
+    await up(host)
     return { host, token }
+  }
+
+  // The page's sign-in with no token: one at a time per host, a second press taking over from the
+  // first (whose tab may be gone). It runs here, where the token is stored; the page only gets the link
+  // and the code the host's confirm page will show (words), for the person to check.
+  const signins = new Map()
+  const signInHere = async host => {
+    const mine = {}
+    signins.set(host.name, mine)
+    const stopped = () => signins.get(host.name) !== mine
+    let link
+    const opened = new Promise((ok, no) => { link = { ok, no } })
+    // The poll waits on a sleep that never holds the server open.
+    const sleep = ms => new Promise(r => setTimeout(r, ms).unref?.())
+    signIn(host, { onUrl: (u, start) => link.ok({ url: u, ...(typeof start?.words === 'string' ? { words: start.words } : {}) }), stopped, sleep })
+      .then(who => { if (who && !stopped()) { owners.delete(host.name); signedInAs.set(host.name, who) } })
+      .catch(e => link.no(e))
+      .finally(() => { if (!stopped()) signins.delete(host.name) })
+    return opened
   }
   const entryOf = id => {
     const e = readShares(root).find(x => x.id === id)
@@ -113,6 +146,8 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
 
   // The owner's GitHub identity per host name: { at, value }. A sign-in or a token found later asks again.
   const owners = new Map()
+  // Who the page's last sign-in with no token was (its status), until the host is asked again.
+  const signedInAs = new Map()
   const signedOut = host => ({ host: host?.name ?? null, signedIn: false, login: null, name: null, avatar: null, signin: false })
   // A publish or an update answered: the link, or the review that stopped it.
   const published = r => {
@@ -176,27 +211,44 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
       const refresh = data.refresh === true
       if (was && !refresh && Date.now() - was.at < OWNER_FRESH) return was.value
       if (quiet && !refresh) return was?.value ?? signedOut(host)
-      // A token made since a call found none (setup just ran) is used at once, as list does.
+      // A token made since a call found none (setup or a sign-in just ran) is used at once, as list does.
       if (!clientFor(host.name) && getToken(host.name)) forget(host.name)
       const api = clientFor(host.name)
+      // No token for an online host is signed out, with the GitHub sign-in that makes one: the
+      // popover shows its sign-in step. Nothing is asked of the host.
+      if (!api && !isLocal(host)) return { ...signedOut(host), signin: true }
       if (!api) return { ...signedOut(host), code: 'no_token', error: `No owner token for the host "${host.name}" on this Mac: ${setupHint(host)} makes one.` }
       let o
       try { o = await api.owner() } catch (e) {
         if (e?.status === 401) forget(host.name)
         return { ...(was?.value ?? signedOut(host)), code: e?.unreachable ? 'host_down' : e?.code || 'host', error: String(e?.message || e) }
       }
-      const value = { host: host.name, signedIn: !!o?.login, login: o?.login ?? null, name: o?.name ?? null, avatar: o?.avatar ?? null, signin: o?.signin === true }
+      // The owner's status on a host with users (active, pending, banned), else what the page's own
+      // sign-in was told; a host from before users says none (its one owner is let in).
+      const status = typeof o?.status === 'string' ? o.status : signedInAs.get(host.name)?.status
+      signedInAs.delete(host.name)
+      const value = { host: host.name, signedIn: !!o?.login, login: o?.login ?? null, name: o?.name ?? null, avatar: o?.avatar ?? null, signin: o?.signin === true, ...(status ? { status } : {}) }
       owners.set(host.name, { at: Date.now(), value })
       return value
     },
-    /** { url }: the GitHub sign-in link for the owner, to open in a new tab (10 minutes, once). */
+    /**
+     * { url }: the GitHub sign-in link to open in a new tab (10 minutes, once). With a token, the
+     * owner's claim; with none (online), the host's sign-in, which this server then waits on and whose
+     * token it stores: the page's owner, asked again, is signed in once GitHub has answered.
+     */
     async signin() {
-      const { host, token } = await reach()
+      const host = await hostOf()
       owners.delete(host.name)
       try {
+        if (!getToken(host.name) && !isLocal(host)) {
+          await up(host)
+          return await signInHere(host)
+        }
+        const { token } = await reach()
         return { url: (await client(host, token).claim()).url }
       } catch (e) {
         if (e?.code === 'signin_off') throw failure(409, e.message, { code: 'signin_off' })
+        if (e?.code === 'rate') throw failure(429, e.message, { code: 'rate' })
         throw e
       }
     },
@@ -213,6 +265,8 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
       } catch (e) {
         // A new link needs the owner signed in with GitHub: the page shows its sign-in step.
         if (e?.code === 'sign_in') { owners.delete(host.name); throw failure(409, SIGN_IN_FIRST, { code: 'sign_in' }) }
+        // Signed in, but not let in (yet): the page shows the waiting line or the ban.
+        if (e?.code === 'pending' || e?.code === 'banned') { owners.delete(host.name); throw failure(409, e.message, { code: e.code }) }
         throw e
       }
     },

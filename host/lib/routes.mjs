@@ -10,7 +10,7 @@ export function route(url, base) {
   const names = (Array.isArray(base) ? base : [base]).map(b => b.toLowerCase())
   if (names.includes(host)) {
     if (path === '/api' || path.startsWith('/api/')) return { at: 'api', path }
-    if (path === '/auth/github' || path === '/auth/github/callback') return { at: 'auth', path }
+    if (path === '/auth/github' || path === '/auth/github/callback' || path === '/auth/github/approve') return { at: 'auth', path }
     const s = /^\/s\/([^/]+)(\/.*)?$/.exec(path)
     if (s && isId(s[1])) return { at: 'share', shareId: s[1], path: s[2] || '' }
     const apex = /^\/([^/]+)\/?$/.exec(path)

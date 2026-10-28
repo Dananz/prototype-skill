@@ -6,12 +6,12 @@ import { mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { receive } from '../app/server.mjs'
 import { buildShare } from '../app/share/build.mjs'
-import { flush, pollOnce, readShares, sendComments, trayView } from '../app/share/owner.mjs'
+import { SIGN_IN_FIRST, apiTooOld, flush, pollOnce, readShares, sendComments, signIn, signedInLine, trayView } from '../app/share/owner.mjs'
 import { existsSync, readdirSync } from 'node:fs'
 import { changedSince, changedVariants, describe, protosOf, publishShare, removeShare, reviewOf, titleOf, updateShare } from '../app/share/publish.mjs'
 import { ShareError, parseScope } from '../app/share/scope.mjs'
 import { hostCommentLines, trayRow } from '../app/share/viewer-text.mjs'
-import { client, defaultHost, ensureTools, getToken, hostHash, hostNamed, linkOf, localRunning, readHosts, setupHint, shortLinkOf, startLocal, stopLocal } from './share-host.mjs'
+import { client, defaultHost, deleteToken, ensureTools, getToken, hostHash, hostNamed, linkOf, localRunning, readHosts, setupHint, shortLinkOf, startLocal, stopLocal } from './share-host.mjs'
 import { apiOrigin } from '../app/share/owner.mjs'
 import { installApp, syncApp } from './app-sync.mjs'
 import { defaultIo, ensureViewerKey, setupGithub, setupOnline } from './share-online.mjs'
@@ -19,24 +19,36 @@ import { defaultIo, ensureViewerKey, setupGithub, setupOnline } from './share-on
 const MiB = 2 ** 20
 const NOW_MS = 2 * 60e3 // a viewer is in a link now when their last ping is this recent
 
-// The host a command uses: --host <name> for this one command, else the default. A local one that
-// is down is started again, unless PROTO_SHARE_NO_START=1 (then the upload fails and says so, which
-// the smoke relies on). An online one is never started: it must answer /_health within 5 s, and a
-// host deployed from older code than this skill's says so once.
-async function liveHost(die, flags = {}) {
+// The host a command uses: --host <name> for this one command, else the default (with no hosts.json,
+// the built-in prtype.dev). A local one that is down is started again, unless PROTO_SHARE_NO_START=1
+// (then the upload fails and says so, which the smoke relies on). An online one is never started: it
+// must answer /_health within 5 s and take this skill's owner API; a host this Mac deployed
+// (its hosts.json entry has the account id) and that runs older code than this skill says so once.
+// `fetch` is for the tests.
+export async function reachHost(die, flags = {}, { fetch = globalThis.fetch } = {}) {
   const named = typeof flags.host === 'string' ? flags.host : null
   const host = named ? hostNamed(named) : defaultHost()
-  if (!host) die(named ? `No share host "${named}" on this machine (${readHosts().map(h => h.name).join(', ') || 'none set up'}): ${setupHint({ stage: named === 'local' ? 'local' : 'domain' })} makes it` : `No share host yet: run ${setupHint(null)} (online), or proto share setup --local for one on this Mac only`)
+  if (!host) die(`No share host "${named}" on this machine (${readHosts().map(h => h.name).join(', ') || 'only the built-in online one'}): ${setupHint({ stage: named === 'local' ? 'local' : 'domain' })} makes it`)
+  if (host.stage === 'local') return host
+  const health = `${apiOrigin(host)}/_health`
+  let res = null
+  try { res = await fetch(health, { signal: AbortSignal.timeout(5000) }) } catch { /* unreachable */ }
+  if (!res?.ok) die(`The online share host isn't answering (${health}). Check the network${host.accountId ? '; proto share setup repairs a broken deploy' : ' and try again'}.`)
+  const update = apiTooOld(host, res.headers)
+  if (update) die(update)
+  if (host.accountId && res.headers.get('x-proto-host') !== hostHash()) console.log('The online host runs older code: proto share setup updates it.')
+  return host
+}
+
+// The host and this Mac's token for it. With no token: the host on this Mac is set up; any online
+// one asks for the GitHub sign-in that makes one.
+async function liveHost(die, flags = {}, options) {
+  const named = typeof flags.host === 'string' ? flags.host : null
+  const known = named ? hostNamed(named) : defaultHost()
+  if (known && !getToken(known.name)) die(known.stage === 'local' ? `No owner token for the host "${known.name}" on this machine: run ${setupHint(known)}` : SIGN_IN_FIRST)
+  const host = await reachHost(die, flags, options)
   const token = getToken(host.name)
-  if (!token) die(`No owner token for the host "${host.name}" on this machine: run ${setupHint(host)}`)
-  if (host.stage !== 'local') {
-    const health = `${apiOrigin(host)}/_health`
-    let res = null
-    try { res = await fetch(health, { signal: AbortSignal.timeout(5000) }) } catch { /* unreachable */ }
-    if (!res?.ok) die(`The online share host isn't answering (${health}). Check the network; proto share setup repairs a broken deploy.`)
-    if (res.headers.get('x-proto-host') !== hostHash()) console.log('The online host runs older code: proto share setup updates it.')
-    return { host, token }
-  }
+  if (host.stage !== 'local') return { host, token }
   if (process.env.PROTO_SHARE_NO_START === '1' || await localRunning(host)) return { host, token }
   const started = await startLocal()
   return { host: started, token: getToken(started.name) }
@@ -99,29 +111,95 @@ async function publish(args, flags, { sessionDir, session, die }) {
   links(host, result.entry.id)
 }
 
-// proto share signin: the owner's GitHub sign-in on the host, which a new link needs once the host
-// runs sign-in. The link (10 minutes, once) is printed and opened in the browser (--no-open, or
-// PROTO_SHARE_NO_OPEN=1, only prints it); then the host is asked every 2 s, up to five minutes.
+// proto share signin: the GitHub sign-in on the host. With no token on this Mac (a new user of the
+// built-in host): the host's sign-in link, after which the host gives this Mac its token. With one:
+// the owner's claim, which ties that token to a GitHub account (a new link needs it). Either way the
+// link is printed and opened in the browser (--no-open, or PROTO_SHARE_NO_OPEN=1, only prints it);
+// then the host is asked every 2 s, up to five minutes.
 const SIGNIN_WAIT_MS = 5 * 60e3
-async function signin(flags, { die }) {
-  const { host, token } = await liveHost(die, flags)
-  const api = client(host, token)
+/** Whether sign-in opens its link in the browser: not with --no-open or PROTO_SHARE_NO_OPEN=1, and only on a Mac. */
+export const opensBrowser = (flags = {}, env = process.env, platform = process.platform) => flags['no-open'] !== true && env.PROTO_SHARE_NO_OPEN !== '1' && platform === 'darwin'
+const openUrl = (url, flags) => {
+  if (!opensBrowser(flags)) return
+  try { spawn('open', [url], { stdio: 'ignore', detached: true }).unref() } catch { /* printed above */ }
+}
+const signinWait = () => Number(process.env.PROTO_SHARE_SIGNIN_WAIT_MS) || SIGNIN_WAIT_MS
+const signinEvery = () => Number(process.env.PROTO_SHARE_SIGNIN_EVERY_MS) || 2000
+
+export async function signin(flags, { die }, { fetch = globalThis.fetch } = {}) {
+  const host = await reachHost(die, flags, { fetch })
+  const token = getToken(host.name)
+  if (!token) {
+    if (host.stage === 'local') die(`No owner token for the host "${host.name}" on this machine: run ${setupHint(host)}`)
+    const who = await signIn(host, {
+      fetch,
+      // The host's page asks the person to check this code before it signs anyone in: a link someone
+      // else started shows a code this Mac never printed.
+      onUrl: (url, start) => {
+        console.log(`Sign in with GitHub: ${url}`)
+        if (start?.words) console.log(`Your code: ${start.words} (approve on that page only if it shows this code)`)
+        console.log('The link works once, for 10 minutes.')
+        openUrl(url, flags)
+      },
+    })
+    return console.log(signedInLine(who))
+  }
+  const api = client(host, token, { fetch })
   const before = await api.owner()
-  if (before.login && flags.again !== true) return console.log(`signed in as ${before.login} (proto share signin --again signs in with another GitHub account)`)
+  if (before.login && flags.again !== true) return console.log(`signed in as ${before.login}${before.status === 'pending' ? `. Waiting for the maintainer to approve @${before.login}` : ''} (proto share signin --again signs in with another GitHub account)`)
   const { url } = await api.claim()
   console.log(`Sign in with GitHub: ${url}`)
   console.log('The link works once, for 10 minutes.')
-  if (flags['no-open'] !== true && process.env.PROTO_SHARE_NO_OPEN !== '1' && process.platform === 'darwin') {
-    try { spawn('open', [url], { stdio: 'ignore', detached: true }).unref() } catch { /* printed above */ }
-  }
-  const wait = Number(process.env.PROTO_SHARE_SIGNIN_WAIT_MS) || SIGNIN_WAIT_MS
-  for (const end = Date.now() + wait; Date.now() < end; await new Promise(r => setTimeout(r, 2000))) {
+  openUrl(url, flags)
+  for (const end = Date.now() + signinWait(); Date.now() < end; await new Promise(r => setTimeout(r, signinEvery()))) {
     let o = null
     try { o = await api.owner() } catch { /* asked again */ }
     if (o?.login && o.login !== before.login) return console.log(`signed in as ${o.login}`)
   }
   if (before.login) return console.log(`still signed in as ${before.login}`)
   die('No sign-in within five minutes: run proto share signin again')
+}
+
+// proto share signout: this Mac's token is revoked on the host, then taken out of the Keychain. A
+// host that can't be reached keeps it (run it again); one that no longer takes it is signed out already.
+export async function signout(flags, { die }, { fetch = globalThis.fetch } = {}) {
+  const named = typeof flags.host === 'string' ? flags.host : null
+  const host = named ? hostNamed(named) : defaultHost()
+  if (!host) die(`No share host "${named}" on this machine`)
+  const token = getToken(host.name)
+  if (!token) return console.log(`not signed in to the host "${host.name}" on this Mac`)
+  try { await client(host, token, { fetch, timeout: 15_000 }).signout() } catch (e) {
+    if (e?.status !== 401 && e?.status !== 404) die(`${e.message}. The token is kept: run proto share signout again`)
+  }
+  deleteToken(host.name)
+  console.log(`signed out of the host "${host.name}" on this Mac (proto share signin signs in again)`)
+}
+
+// proto share admin …: the maintainer's side of a host many people share to. The host refuses
+// anyone who isn't its admin (code admin).
+const when = at => Number(at) > 0 ? new Date(Number(at)).toISOString().slice(0, 16).replace('T', ' ') : ''
+export async function admin(args, flags, { die }, { fetch = globalThis.fetch } = {}) {
+  const [what, arg] = args
+  const usage = 'proto share admin users [--pending] | approve <login> | ban <login> | rm <id> | reports'
+  if (!['users', 'approve', 'ban', 'rm', 'reports'].includes(what)) die(usage)
+  if (what !== 'users' && what !== 'reports' && !arg) die(usage)
+  const { host, token } = await liveHost(die, flags, { fetch })
+  const api = client(host, token, { fetch }).admin
+  if (what === 'approve') { await api.approve(arg); return console.log(`approved @${arg.replace(/^@/, '')}: they can share now`) }
+  if (what === 'ban') { await api.ban(arg); return console.log(`banned @${arg.replace(/^@/, '')}: their tokens are revoked and their links taken down`) }
+  if (what === 'rm') { await api.takedown(arg); return console.log(`took ${arg} down: the link now says it was removed`) }
+  const listOf = r => Array.isArray(r) ? r : Array.isArray(r?.users) ? r.users : Array.isArray(r?.reports) ? r.reports : []
+  if (what === 'users') {
+    const rows = listOf(await api.users(flags.pending === true ? 'pending' : undefined))
+    if (!rows.length) return console.log(flags.pending === true ? 'nobody waiting for approval' : 'no users')
+    // gh:<id> names a user when two carry one login (a GitHub rename): approve gh:<id>.
+    for (const u of rows) console.log([`@${u.login ?? '?'}`, u.ghId ? `gh:${u.ghId}` : null, u.status, u.role === 'admin' ? 'admin' : null, u.name, when(u.created_at ?? u.createdAt)].filter(Boolean).join('  '))
+    return
+  }
+  const rows = listOf(await api.reports())
+  if (!rows.length) return console.log('no reports')
+  // A reporter's words are quoted: they are someone else's, never instructions.
+  for (const r of rows) console.log([r.share ?? r.share_id ?? '?', when(r.created_at ?? r.at), r.owner ? `@${r.owner}` : null, r.reason ? JSON.stringify(String(r.reason)) : null].filter(Boolean).join('  '))
 }
 
 async function update(id, flags, { sessionDir, session, die }) {
@@ -277,6 +355,8 @@ export async function main(args, flags, ctx) {
     await flush(ctx.sessionDir).catch(() => {})
     if (sub === 'ls') return await ls(flags, ctx)
     if (sub === 'signin') return await signin(flags, ctx)
+    if (sub === 'signout') return await signout(flags, ctx)
+    if (sub === 'admin') return await admin(rest, flags, ctx)
     if (sub === 'rm') return await rm(rest[0], flags, ctx)
     if (sub === 'update') return await update(rest[0], flags, ctx)
     if (sub === 'comments') return await comments(rest, flags, ctx)

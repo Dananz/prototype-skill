@@ -7,6 +7,12 @@ const COPY = {
   signin: { status: 400, en: ['Sign-in didn\'t finish', 'Go back to the link and try again.'], he: ['ההתחברות לא הושלמה', 'אפשר לחזור לקישור ולנסות שוב.'] },
   // The owner's sign-in (proto share signin, the Share popover): {login} is filled in, escaped.
   claimed: { status: 200, en: ['Signed in as {login}', 'You can close this tab.'], he: ['התחברת בתור {login}', 'אפשר לסגור את הלשונית.'] },
+  // Sign-in from a Mac without a token (proto share signin, the Share popover): the client polls and
+  // takes its token on its own, so the tab has nothing left to do.
+  signedin: { status: 200, en: ['Signed in as @{login}', 'You can close this tab.'], he: ['התחברת בתור @{login}', 'אפשר לסגור את הלשונית.'] },
+  waiting: { status: 200, en: ['Thanks, @{login}', 'Sharing opens once the maintainer approves you. You can close this tab.'], he: ['תודה, @{login}', 'השיתוף ייפתח אחרי שהמתחזק יאשר את החשבון. אפשר לסגור את הלשונית.'] },
+  blocked: { status: 403, en: ['@{login} can\'t share here', 'This account was blocked on this host.'], he: ['@{login} לא יכול לשתף כאן', 'החשבון הזה נחסם במארח הזה.'] },
+  cancelled: { status: 200, en: ['Sign-in cancelled', 'Nothing was signed in. You can close this tab.'], he: ['ההתחברות בוטלה', 'שום דבר לא חובר. אפשר לסגור את הלשונית.'] },
   claimfail: { status: 400, en: ['Sign-in didn\'t finish', 'The sign-in link works once, for 10 minutes. Ask for a new one and try again.'], he: ['ההתחברות לא הושלמה', 'קישור ההתחברות עובד פעם אחת, למשך 10 דקות. אפשר לבקש קישור חדש ולנסות שוב.'] },
   error: { status: 500, en: ['Something went wrong', 'Try again in a moment.'], he: ['משהו השתבש', 'כדאי לנסות שוב בעוד רגע.'] },
 }
@@ -36,6 +42,25 @@ export function page(kind, { lang = 'en', title, login = '' } = {}) {
 <title>${esc(title || head)}</title><style>${STYLE}</style></head>
 <body><main><h1>${esc(head)}</h1><p>${esc(body)}</p></main></body></html>`
   return new Response(html, { status: c.status, headers: HEAD })
+}
+
+// The sign-in's last step (github.mjs confirmSignin): which device asked, as whom, and the code that
+// Mac shows, then Approve or Cancel. A plain form posted to the apex; the signed token rides in it.
+export function confirmPage({ device, login, words, form, action }) {
+  const btn = 'font:inherit;font-size:15px;padding:10px 18px;border-radius:10px;cursor:pointer'
+  const html = `<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Sign in ${esc(device)}?</title><style>${STYLE}
+code{display:block;margin:1rem 0;font:600 1.75rem/1.2 ui-monospace,monospace;letter-spacing:.12em;color:var(--fg)}
+form{display:flex;gap:.75rem;justify-content:center;margin-top:1.25rem}</style></head>
+<body><main><h1>Sign in ${esc(device)} as @${esc(login)}?</h1>
+<p>Check that this code matches what you see on your Mac. If it doesn't, or you didn't start this, cancel.</p>
+<code data-words>${esc(words)}</code>
+<form method="post" action="${esc(action)}"><input type="hidden" name="t" value="${esc(form)}">
+<button name="do" value="cancel" style="${btn};border:1px solid var(--dim);background:transparent;color:var(--fg)">Cancel</button>
+<button name="do" value="approve" style="${btn};border:0;background:var(--fg);color:var(--bg);font-weight:600">Approve</button></form>
+</main></body></html>`
+  return new Response(html, { status: 200, headers: HEAD })
 }
 
 // Link unfurlers read these tags and stop; browsers follow the script (which keeps the #/route of a

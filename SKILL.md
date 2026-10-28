@@ -989,14 +989,13 @@ Publish only when the user asks for a link; never on your own. Read `references/
 A clean review publishes at once; otherwise it stops. A block (a secret, a path on this Mac) is
 fixed in the prototype; warnings (the project's own code, real screens, outside URLs, size) are
 read to the user in their words, and only on their yes run it again with `--yes`. Give them the
-printed link as it is. Once `proto share setup` has run, links go online by default
-(`https://prtype.dev/<id>` once `--domain prtype.dev` is set up, before that a workers.dev link);
-with only a local host (`proto share setup --local`) the link opens only on this Mac, so say so.
-Never run `proto share setup` unless the user asks: it deploys to their Cloudflare account, and the
-first time (or when its login expired) it opens a browser for them to approve. `proto share file <slug>/<n>` writes the same page as one HTML
+printed link as it is. Links go online to `https://prtype.dev/<id>` with no setup; with a local
+host as the default (`proto share setup --local`) the link opens only on this Mac, so say so.
+Never run `proto share setup` unless the user asks: it is the maintainer's deploy to their
+Cloudflare account, and the first time (or when its login expired) it opens a browser for them to approve. `proto share file <slug>/<n>` writes the same page as one HTML
 file they can send themselves. `--message "…"` adds what viewers read first (when the user gives
 one). If it stops with "Sign in with GitHub first", run `proto share signin` and let the user approve
-in their browser. `proto share update <id> [--note "…"]` publishes the session's
+in their browser; if it says it is waiting for the maintainer to approve them, tell the user so and stop. `proto share update <id> [--note "…"]` publishes the session's
 current version to the same link (its comments kept), only when the user asks; `proto share ls`
 says which links (and variants) changed since shared, who is in them now and how many comments are new.
 

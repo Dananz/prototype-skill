@@ -7,17 +7,17 @@
 // wranglerEnv(), never the one Tomer's other projects use.
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { connect, createServer } from 'node:net'
 import { homedir, hostname } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ShareError } from '../app/share/scope.mjs'
-import { client, defaultHost, getToken, hostNamed, inKeychain, linkOf, readHosts, service, setupHint, shortLinkOf, tokenFile } from '../app/share/owner.mjs'
+import { client, defaultHost, deleteToken, getToken, hostNamed, keychainAdd, linkOf, readHosts, setToken, setupHint, shortLinkOf } from '../app/share/owner.mjs'
 
-// The owner side (hosts, the token, the owner API, links) is in app/share/owner.mjs, where a
-// session's server reaches it too.
-export { client, defaultHost, getToken, hostNamed, linkOf, readHosts, setupHint, shortLinkOf }
+// The owner side (hosts, the token and where it is stored, the owner API, links) is in
+// app/share/owner.mjs, where a session's server reaches it too.
+export { client, defaultHost, deleteToken, getToken, hostNamed, keychainAdd, linkOf, readHosts, setToken, setupHint, shortLinkOf }
 
 export const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 const PINS = { wrangler: '4.149.0', sharp: '0.35.5' }
@@ -90,29 +90,6 @@ export function saveHost(host) {
   hosts.push({ ...host, default: host.default || !hosts.some(h => h.default) })
   mkdirSync(configDir(), { recursive: true })
   writeFileSync(join(configDir(), 'hosts.json'), JSON.stringify(hosts, null, 2) + '\n')
-}
-
-// ---------- the owner token ----------
-
-/**
- * The `security` call that stores a token: the command goes in on stdin (`security -i`), so the
- * token never shows in `ps` the way an argument would. Tokens are base64url, so nothing needs quoting.
- */
-export function keychainAdd(name, token) {
-  if (!/^[A-Za-z0-9_-]+$/.test(token) || !/^[A-Za-z0-9_-]+$/.test(name)) throw new ShareError('The owner token or host name has characters the Keychain command cannot take')
-  return { args: ['-i'], input: `add-generic-password -U -a prototype -s ${service(name)} -w ${token}\n` }
-}
-
-export function setToken(name, token) {
-  if (inKeychain()) {
-    const { args, input } = keychainAdd(name, token)
-    const r = spawnSync('security', args, { input, encoding: 'utf8' })
-    if (r.status !== 0) throw new ShareError(`Could not save the owner token in the Keychain: ${r.stderr.trim()}`)
-    return
-  }
-  mkdirSync(configDir(), { recursive: true })
-  writeFileSync(tokenFile(name), token + '\n', { mode: 0o600 })
-  chmodSync(tokenFile(name), 0o600)
 }
 
 // ---------- the local host ----------

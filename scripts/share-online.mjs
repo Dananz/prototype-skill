@@ -68,12 +68,15 @@ export const redact = (text, secrets) => secrets.filter(Boolean).reduce((t, s) =
 // ---------- the generated config ----------
 
 /**
- * The online host's wrangler config. Free only: KV and D1, vars, one cron, workers.dev, logs. No
- * route of its own: on prtype.dev the site Worker reaches it through its service binding. card: the
- * site is in front of the host, so its preview image (site/public/og-share.jpg) is there for the
- * short links' cards.
+ * The online host's wrangler config. Free only: KV and D1, vars, one cron, workers.dev, logs. card:
+ * the site is in front of the host (the domain stage), so its preview image (site/public/og-share.jpg)
+ * is there for the short links' cards. subdomains: each share on its own origin (decision 23, the
+ * domain stage): path mode off and the host's one route <id>.<base>, a wildcard route on the zone
+ * (Free; custom domains take no wildcard). The site Worker still reaches the host for the apex through
+ * its service binding. On workers.dev there are no per-share names: path mode, no route.
  */
-export function onlineConfig({ accountId, kvId, dbId, base, signin = false, legacy = '', card = false, hostVersion, skill = SKILL }) {
+export function onlineConfig({ accountId, kvId, dbId, base, signin = false, legacy = '', card = false, subdomains = false, hostVersion, skill = SKILL }) {
+  const routed = subdomains
   return {
     name: WORKER,
     account_id: accountId,
@@ -83,19 +86,27 @@ export function onlineConfig({ accountId, kvId, dbId, base, signin = false, lega
     preview_urls: false,
     kv_namespaces: [{ binding: 'KV', id: kvId }],
     d1_databases: [{ binding: 'DB', database_name: WORKER, database_id: dbId, migrations_dir: join(skill, 'host', 'migrations') }],
-    vars: { BASE: base, PATH_MODE: '1', SIGNIN: signin ? '1' : '0', LEGACY: legacy, CARD: card ? '/og-share.jpg' : '', HOST_VERSION: hostVersion },
+    vars: { BASE: base, PATH_MODE: routed ? '0' : '1', SIGNIN: signin ? '1' : '0', LEGACY: legacy, CARD: card ? '/og-share.jpg' : '', HOST_VERSION: hostVersion },
+    ...(routed ? { routes: shareRoutes(base) } : {}),
     triggers: { crons: [CRON] },
     // Workers Logs carry each request's CPU time (Task 0 item 8); Free keeps 200,000 events a day.
     observability: { enabled: true },
   }
 }
 
+// The per-share origins' route: every <id>.<base> to this Worker, on the zone <base>.
+const shareRoutes = base => [{ pattern: `*.${base}/*`, zone_name: base }]
+
 const ALLOWED = new Set(['name', 'account_id', 'main', 'compatibility_date', 'workers_dev', 'preview_urls', 'kv_namespaces', 'd1_databases', 'vars', 'triggers', 'observability'])
 const D1_KEYS = new Set(['binding', 'database_name', 'database_id', 'migrations_dir'])
 
-/** Throws unless the config binds only what the Free plan has (KV, D1, one cron) and nothing paid. */
+/**
+ * Throws unless the config binds only what the Free plan has (KV, D1, one cron) and nothing paid.
+ * routes: exactly the per-share wildcard on BASE's zone, nothing else (no custom domain).
+ */
 export function assertFreeConfig(config) {
-  const extra = Object.keys(config).filter(k => !ALLOWED.has(k))
+  const routeOk = config.routes === undefined || JSON.stringify(config.routes) === JSON.stringify(shareRoutes(config.vars?.BASE))
+  const extra = Object.keys(config).filter(k => !ALLOWED.has(k) && !(k === 'routes' && routeOk))
   if (extra.length) throw new ShareError(`The host's config has ${extra.join(', ')}, which a free host doesn't use (only KV, D1, vars, one cron and workers.dev)`)
   for (const d of config.d1_databases || []) {
     const bad = Object.keys(d).filter(k => !D1_KEYS.has(k))
@@ -302,7 +313,7 @@ export async function setupOnline(flags, io) {
   // 6. The config, on workers.dev or behind the site on the domain (sign-in on, the old name kept),
   // and the migrations, which don't depend on which.
   const configFile = join(onlineDir(), 'wrangler.jsonc')
-  const configFor = base => writeOnlineConfig(configFile, { accountId: account.id, kvId: kv.id, dbId: db.uuid, base, signin: base === domain, legacy: base === domain ? workersDev : '', card: base === domain, hostVersion: io.hostVersion })
+  const configFor = base => writeOnlineConfig(configFile, { accountId: account.id, kvId: kv.id, dbId: db.uuid, base, signin: base === domain, legacy: base === domain ? workersDev : '', card: base === domain, subdomains: base === domain, hostVersion: io.hostVersion })
   configFor(workersDev)
   const applied = must(run(['d1', 'migrations', 'apply', 'DB', '--remote', '-c', configFile]), 'Applying the migrations')
   log(/No migrations to apply/i.test(applied.stdout) ? 'Migrations: up to date' : 'Migrations: applied')
@@ -360,7 +371,8 @@ export async function setupOnline(flags, io) {
   } else await upCheck(io, workersDev, null) // a legacy name: its /api answers 410, so the token is checked on the domain
 
   // The domain: the site Worker on it hands the share paths to this one (HOST), so the site's
-  // config gains the binding and is deployed again, built fresh. The host gets no route of its own.
+  // config gains the binding and is deployed again, built fresh. The host's own route is the shares'
+  // wildcard, <id>.<domain> (onlineConfig).
   const siteConfig = join(io.siteDir, 'wrangler.jsonc')
   const edited = bindSite(siteConfig)
   if (edited) log(`Site: ${siteConfig} binds HOST to ${WORKER} (commit that change)`)
@@ -379,7 +391,8 @@ export async function setupOnline(flags, io) {
   }
   await domainChecks(io, domain, workersDev, token)
   await remember('domain', domain)
-  const live = { ...entry, url: `https://${domain}`, stage: 'domain', base: domain }
+  // Each share on its own name there: an entry from before (pathMode true) is corrected here.
+  const live = { ...entry, url: `https://${domain}`, stage: 'domain', base: domain, pathMode: false }
   io.saveHost(live)
   log(`${domain} is live: links are https://${domain}/<id>; viewers sign in with GitHub to comment.`)
   return live

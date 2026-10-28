@@ -191,15 +191,16 @@ test('skill installed through a symlink in a path with spaces can locate its res
 }))
 
 // proto share with no host set up: a fresh HOME has no ~/.config/prototype/hosts.json, so the
-// command stops before building anything and says how to make one. The file token store keeps the
-// check away from the login Keychain.
+// built-in online host is the one, and with no token the command stops before building anything
+// (and before asking the host) and asks for the GitHub sign-in. The file token store keeps the check
+// away from the login Keychain.
 test('share without a host', () => fixture(({ project, call, session }) => {
   session('sharer')
   const home = join(project, 'home')
   mkdirSync(home)
   const r = call(['share', 'pricing/2', '--session', 'sharer'], { HOME: home, PROTO_SHARE_TOKEN_STORE: 'file' })
   assert.equal(r.status, 1, r.stdout + r.stderr)
-  assert.match(r.stderr, /No share host yet: run proto share setup \(online\), or proto share setup --local/)
+  assert.match(r.stderr, /Sign in with GitHub first: proto share signin/)
 }))
 
 test('share help lists share', () => fixture(({ call }) => {

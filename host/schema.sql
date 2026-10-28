@@ -7,10 +7,13 @@
 CREATE TABLE IF NOT EXISTS owners   (id TEXT PRIMARY KEY, name TEXT NOT NULL, notify_url TEXT,
                        created_at INTEGER NOT NULL,
                        gh_id INTEGER, gh_login TEXT,  -- the owner's GitHub identity, from the claim sign-in; a new share needs it
-                       gh_name TEXT, gh_avatar TEXT);
+                       gh_name TEXT, gh_avatar TEXT,
+                       role TEXT NOT NULL DEFAULT 'user',      -- 'user' or 'admin' (approves, bans, takes down)
+                       status TEXT NOT NULL DEFAULT 'active'); -- 'active', 'pending' (waits for approval) or 'banned'
 CREATE TABLE IF NOT EXISTS owner_tokens (sha256 TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id),
                        device TEXT NOT NULL,          -- "Mac Studio", "M4": one token per machine
-                       created_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER);
+                       created_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER,
+                       expires_at INTEGER);           -- a year after its last use, slid at most daily; NULL: never (older tokens)
 CREATE TABLE IF NOT EXISTS ids      (id TEXT PRIMARY KEY,           -- one id space for shares and links, never reused
                        kind TEXT NOT NULL CHECK (kind IN ('share','link')));
 CREATE TABLE IF NOT EXISTS shares   (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id),
@@ -25,7 +28,8 @@ CREATE TABLE IF NOT EXISTS shares   (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL
                        deleted_at INTEGER,            -- a tombstone: "This link was removed"
                        html_key TEXT,                 -- the live version's KV key; NULL: html:<id>:<version>
                        message TEXT,                  -- the owner's words for viewers, at most 280 characters
-                       card_key TEXT);                -- the preview card's KV key; NULL: none of its own
+                       card_key TEXT,                 -- the preview card's KV key; NULL: none of its own
+                       purged_at INTEGER);            -- expired 30 days: the page and card are gone, the row and comments stay
 CREATE TABLE IF NOT EXISTS links    (id TEXT PRIMARY KEY, share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
                        kind TEXT NOT NULL CHECK (kind IN ('open','person')), name TEXT,
                        revoked_at INTEGER, created_at INTEGER NOT NULL, last_seen_at INTEGER);
@@ -74,5 +78,16 @@ CREATE TABLE IF NOT EXISTS presence (share_id TEXT NOT NULL,      -- a signed-in
                        PRIMARY KEY (share_id, gh_id));
 CREATE TABLE IF NOT EXISTS kv_trash (key TEXT PRIMARY KEY,           -- a KV key whose delete waits for a day with budget left
                        at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS meta     (k TEXT PRIMARY KEY,             -- 'owner_id': the one owner allowed to upload
+CREATE TABLE IF NOT EXISTS meta     (k TEXT PRIMARY KEY,             -- 'owner_id': the owner setup made, the first admin
                        v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS signins  (code TEXT PRIMARY KEY,          -- the short id in the sign-in URL
+                       poll TEXT NOT NULL,             -- SHA-256 of the poll secret only the client holds
+                       device TEXT NOT NULL,           -- the token's device name, once minted
+                       words TEXT,                     -- the code the Mac shows and the confirm page repeats, ABCD-EFGH
+                       exp INTEGER NOT NULL,           -- 10 minutes after the start
+                       gh_id INTEGER, owner_id TEXT,   -- who signed in, once GitHub sent them back
+                       done_at INTEGER);
+CREATE TABLE IF NOT EXISTS reports  (id TEXT PRIMARY KEY, share_id TEXT NOT NULL,
+                       reason TEXT NOT NULL,           -- the viewer's words, at most 500 characters
+                       gh_id INTEGER,                  -- the viewer, when signed in on the link
+                       created_at INTEGER NOT NULL);

@@ -3,9 +3,10 @@
 // text; nothing here renders it. Claude's replies never come here: only statuses and the owner's
 // own words. Every error carries a stable `code` next to its English `error`, for the viewer to
 // put in its own words and language.
-import { isId } from './ids.mjs'
 import { json, fail, bodyOf } from './http.mjs'
 import { signinReady, signOutCookie, viewerOf } from './github.mjs'
+import { viewerCookie } from './cookies.mjs'
+import { isId, newId } from './ids.mjs'
 import { room } from './budget.mjs'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -72,15 +73,19 @@ function readTarget(t) {
 
 // D1 counters: one row per viewer per hour and per share per day. The conditional upsert counts and
 // checks in one statement, so two requests at once can't both slip under the cap.
-async function take(env, what, slot, cap) {
+export async function take(env, what, slot, cap) {
   const r = await env.DB.prepare('INSERT INTO caps (what, slot, n) VALUES (?, ?, 1) ON CONFLICT(what, slot) DO UPDATE SET n = caps.n + 1 WHERE caps.n < ?').bind(what, slot, cap).run()
   return (r.meta?.changes ?? 0) > 0
 }
-const giveBack = (env, what, slot) => env.DB.prepare('UPDATE caps SET n = n - 1 WHERE what = ? AND slot = ? AND n > 0').bind(what, slot).run()
+export const giveBack = (env, what, slot) => env.DB.prepare('UPDATE caps SET n = n - 1 WHERE what = ? AND slot = ? AND n > 0').bind(what, slot).run()
 
-/** Drops the counters of past hours and days; posts call it now and then (1 in 50). */
+/**
+ * Drops the counters of past hours and days; posts call it now and then (1 in 50), and the cron.
+ * Hourly: gh:<id> (comments), ip:<what>:<ip> (sign-in starts, reports), held:<who> (bytes of
+ * uploads in flight). Daily: share:<id>, up:<owner> (uploads), new:<owner> (new ids).
+ */
 export function pruneCaps(env, now = Date.now()) {
-  return env.DB.prepare("DELETE FROM caps WHERE (what LIKE 'gh:%' AND slot < ?) OR (what LIKE 'share:%' AND slot < ?)").bind(Math.floor(now / 3_600_000), Math.floor(now / 86_400_000)).run()
+  return env.DB.prepare("DELETE FROM caps WHERE ((what LIKE 'gh:%' OR what LIKE 'ip:%' OR what LIKE 'held:%') AND slot < ?) OR ((what LIKE 'share:%' OR what LIKE 'up:%' OR what LIKE 'new:%') AND slot < ?)").bind(Math.floor(now / 3_600_000), Math.floor(now / 86_400_000)).run()
 }
 
 /** Every route under <share origin>/api/. `share` has the owner's name joined in (owner_name). */
@@ -91,22 +96,25 @@ export async function viewerApi(req, env, url, share, path, pathForm) {
   if (share.expires_at && share.expires_at <= Date.now()) return fail(410, 'This link has expired.', { code: 'expired' })
   const m = req.method
   const only = () => fail(405, 'Method not allowed.', { code: 'method' })
+  // Only the viewer cookie this origin sets is read (viewerOf).
+  const who = () => viewerOf(req, env, share.id, viewerCookie(url, share.id, pathForm).name)
+  if (path === '/api/report') return m === 'POST' ? report(req, env, share, who) : only()
   if (path === '/api/state') return m === 'GET' ? json(stateOf(share)) : only()
-  if (path === '/api/here') return m === 'POST' ? here(req, env, share) : only()
+  if (path === '/api/here') return m === 'POST' ? here(req, env, share, who) : only()
   if (path === '/api/config') return m === 'GET' ? json({ comments: signinReady(env) && share.comments === 1, owner: share.owner_name }) : only()
   if (path === '/api/me') {
     if (m !== 'GET') return only()
-    const me = await viewerOf(req, env, share.id)
+    const me = await who()
     return json(me ? { login: me.login, name: me.name, avatar: me.avatar } : null)
   }
   if (path === '/api/signout') return m === 'POST' ? json({ ok: true }, 200, { 'set-cookie': signOutCookie(url, share.id, pathForm) }) : only()
   if (path === '/api/comments') {
-    if (m === 'GET') return listComments(req, env, url, share)
-    if (m === 'POST') return createComment(req, env, share)
+    if (m === 'GET') return listComments(req, env, url, share, who)
+    if (m === 'POST') return createComment(req, env, share, who)
     return only()
   }
   const one = /^\/api\/comments\/([^/]+)$/.exec(path)
-  if (one) return m === 'DELETE' ? deleteComment(req, env, share, one[1]) : only()
+  if (one) return m === 'DELETE' ? deleteComment(req, env, share, one[1], who) : only()
   return fail(404, 'No such route.', { code: 'no_route' })
 }
 
@@ -123,8 +131,8 @@ const ROUTE = /^[^\u0000-\u001f\u007f]{0,200}$/
 // POST /api/here { route }: a signed-in viewer is on the link now (the owner's "who is in it now").
 // The row is read first and written only when its last ping is older than 50 s, and not at all
 // once today's D1 writes are used up (204 either way: the page has nothing to show for it).
-async function here(req, env, share) {
-  const me = await viewerOf(req, env, share.id)
+async function here(req, env, share, who) {
+  const me = await who()
   if (!me) return fail(401, 'Sign in with GitHub first.', { code: 'signin' })
   const b = await bodyOf(req)
   if (b instanceof Response) return b
@@ -141,8 +149,8 @@ async function here(req, env, share) {
 // ?since=<ms> returns what changed since then (by updated_at, so status flips and replies come
 // too), plus the ids that left the link. `now` is the host's clock, to pass back as the next since;
 // >= repeats a comment at the boundary at worst, which the page merges by id.
-async function listComments(req, env, url, share) {
-  const me = await viewerOf(req, env, share.id)
+async function listComments(req, env, url, share, who) {
+  const me = await who()
   const s = Number(url.searchParams.get('since'))
   const since = Number.isFinite(s) && s > 0 ? s : 0
   const now = Date.now()
@@ -157,8 +165,8 @@ async function listComments(req, env, url, share) {
   })
 }
 
-async function createComment(req, env, share) {
-  const me = await viewerOf(req, env, share.id)
+async function createComment(req, env, share, who) {
+  const me = await who()
   if (!me) return fail(401, 'Sign in with GitHub to comment.', { code: 'signin' })
   if (!(signinReady(env) && share.comments === 1)) return fail(403, 'Comments are off for this link.', { code: 'comments_off' })
   const b = await bodyOf(req)
@@ -223,11 +231,29 @@ async function createComment(req, env, share) {
   return json(viewerShape(row, me), 201)
 }
 
+const MAX_REASON = 500
+const REPORTS_PER_HOUR = 5 // per IP
+
+// POST /api/report { reason }: "Report this link", from anyone on it, signed in or not. One row for
+// the admins' list (proto share admin reports); 5 an hour per IP, counted before the row is written.
+async function report(req, env, share, who) {
+  const b = await bodyOf(req)
+  if (b instanceof Response) return b
+  if (typeof b.reason !== 'string' || !b.reason.trim() || b.reason.length > MAX_REASON) return fail(400, 'reason is text of at most 500 characters.', { code: 'invalid' })
+  if (!await room(env.DB, 'd1_write', COMMENT_ROWS)) return fail(429, "The host's daily budget is used up. Try again tomorrow.", { code: 'budget' })
+  const now = Date.now()
+  const ip = req.headers.get('cf-connecting-ip') || 'unknown'
+  if (!await take(env, `ip:report:${ip}`, Math.floor(now / 3_600_000), REPORTS_PER_HOUR)) return fail(429, 'Too many reports from here this hour. Try again later.', { code: 'rate' })
+  const me = await who()
+  await env.DB.prepare('INSERT INTO reports (id, share_id, reason, gh_id, created_at) VALUES (?, ?, ?, ?, ?)').bind(newId(), share.id, b.reason.trim(), me?.gh_id ?? null, now).run()
+  return json({ ok: true })
+}
+
 // Deleting is for second thoughts: only while the comment is new. Once the owner has sent it to
 // Claude it can only leave the link (withdrawn, the viewer's own flag, which the owner's hide and
 // unhide leave alone), so the owner's batch still makes sense.
-async function deleteComment(req, env, share, raw) {
-  const me = await viewerOf(req, env, share.id)
+async function deleteComment(req, env, share, raw, who) {
+  const me = await who()
   if (!me) return fail(401, 'Sign in with GitHub first.', { code: 'signin' })
   const id = raw.toLowerCase()
   const c = UUID.test(id) ? await env.DB.prepare('SELECT gh_id, deleted FROM comments WHERE share_id = ? AND id = ?').bind(share.id, id).first() : null

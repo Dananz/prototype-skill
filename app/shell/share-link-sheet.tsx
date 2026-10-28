@@ -16,7 +16,7 @@ import { captureRoute } from './share-capture'
 import { drawQr } from './share-link-qr'
 import { VIRTUAL_THRESHOLD } from './virtual'
 import { Icon } from './comments/ui'
-import { loadOwner, mustSignIn, putListed, route, shareState, signedOut, type Listed, type ShareRow } from './share-state'
+import { loadOwner, mustSignIn, mustWait, notLetIn, putListed, route, shareState, signedOut, type Listed, type Owner, type ShareRow } from './share-state'
 
 export type P = { id: string; title: string; archived: boolean; screen?: [number, number]; variants: { id: string; name: string }[] }
 export type LinkProps = {
@@ -200,20 +200,23 @@ export function MessageField({ value, onChange, rows = 2 }: { value: string; onC
 }
 
 /**
- * Sign in with GitHub for this share host: the claim page opens in a new tab (opened in the press
+ * Sign in with GitHub for this share host: the sign-in page opens in a new tab (opened in the press
  * itself, so no popup blocker stops it, then sent on once the server answers), and the owner is
- * asked again every two seconds, for five minutes, until GitHub has answered.
+ * asked again every two seconds, for five minutes, until GitHub has answered. With no token yet the
+ * session server waits on the host itself and stores the token; the owner then reads signed in.
  */
 export function useSignIn() {
   const [phase, setPhase] = useState<'idle' | 'wait' | 'error'>('idle')
   const [error, setError] = useState('')
   const [url, setUrl] = useState('')
+  // The code the host's confirm page shows: the person approves only when the two match.
+  const [words, setWords] = useState('')
   const timer = useRef(0)
   useEffect(() => () => clearInterval(timer.current), [])
   const go = async () => {
     let tab: Window | null = null
     try { tab = window.open('', '_blank') } catch { /* blocked: the link below opens it */ }
-    setPhase('wait'); setError(''); setUrl('')
+    setPhase('wait'); setError(''); setUrl(''); setWords('')
     const r = await route('signin')
     if (r.status !== 200 || typeof r.body.url !== 'string') {
       tab?.close()
@@ -222,6 +225,7 @@ export function useSignIn() {
       return
     }
     setUrl(r.body.url)
+    if (typeof r.body.words === 'string') setWords(r.body.words)
     if (tab) { try { tab.opener = null } catch { /* another origin already */ } tab.location.href = r.body.url }
     const end = Date.now() + 5 * 60e3
     clearInterval(timer.current)
@@ -231,19 +235,40 @@ export function useSignIn() {
     }, 2000)
   }
   const cancel = () => { clearInterval(timer.current); setPhase('idle') }
-  return { phase, error, url, go, cancel }
+  return { phase, error, url, words, go, cancel }
 }
 
-/** Signed out of the share host: why a link needs GitHub, and the way to sign in. */
-export function Gate({ signin = true }: { signin?: boolean }) {
+/**
+ * Signed in, but the maintainer hasn't let this GitHub account in yet (or banned it): who, why the
+ * New link view waits, and Check again (the owner asked of the host now).
+ */
+function Waiting({ owner }: { owner: Owner }) {
+  const [busy, setBusy] = useState(false)
+  const pending = owner.status === 'pending'
+  const again = () => { setBusy(true); void loadOwner(true).finally(() => setBusy(false)) }
+  return (
+    <div data-link-pending={pending ? '' : undefined} data-link-banned={pending ? undefined : ''} className="space-y-4 px-1 py-1">
+      <span className="grid size-10 place-items-center rounded-xl bg-zinc-900/[.05] dark:bg-white/[.07]"><Icon name="github-fill" className="size-[22px]" /></span>
+      <div>
+        <p className="text-[15px] font-semibold">{pending ? t('Waiting for approval') : t('Sharing is off for this account')}</p>
+        <p role="status" className={`mt-1 leading-5 ${SMALL}`}>{pending ? t('Thanks, @{login}. Sharing opens once the maintainer approves you.', { login: owner.login ?? '' }) : t('This GitHub account can’t share on this host.')}</p>
+      </div>
+      {pending && <Again busy={busy} onRetry={again} />}
+    </div>
+  )
+}
+
+/** Signed out of the share host: why a link needs GitHub, and the way to sign in (or, signed in, why it waits). */
+export function Gate({ signin = true, owner }: { signin?: boolean; owner?: Owner }) {
   const s = useSignIn()
   const waiting = s.phase === 'wait'
+  if (owner && mustWait(owner)) return <Waiting owner={owner} />
   return (
     <div data-link-gate className="space-y-4 px-1 py-1">
       <span className="grid size-10 place-items-center rounded-xl bg-zinc-900/[.05] dark:bg-white/[.07]"><Icon name="github-fill" className="size-[22px]" /></span>
       <div>
         <p className="text-[15px] font-semibold">{t('Sign in to share')}</p>
-        <p className={`mt-1 leading-5 ${SMALL}`}>{t('Links go out under your GitHub name, so viewers know who sent them, and only you can update or remove them. You sign in once for each share host.')}</p>
+        <p className={`mt-1 leading-5 ${SMALL}`}>{t('Links go out under your GitHub name, so viewers know who sent them, and only you can update or remove them.')}</p>
       </div>
       {signin ? (
         <>
@@ -251,6 +276,12 @@ export function Gate({ signin = true }: { signin?: boolean }) {
             className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 text-[13px] font-semibold text-white hover:bg-zinc-700 disabled:opacity-70 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">
             {waiting ? <Spinner /> : <Icon name="github-fill" className="size-[18px]" />}{waiting ? t('Waiting for GitHub…') : t('Sign in with GitHub')}
           </button>
+          {waiting && s.words && (
+            <div data-link-signin-words className="rounded-xl bg-zinc-900/[.04] px-3 py-2.5 dark:bg-white/[.06]">
+              <p className={`leading-5 ${SMALL}`}>{t('Approve on the GitHub sign-in page only if it shows this code:')}</p>
+              <p dir="ltr" className="mt-1 font-mono text-[17px] font-semibold tracking-[.12em]">{s.words}</p>
+            </div>
+          )}
           {waiting && s.url && (
             <p className={`flex items-center gap-2 ${SMALL}`}>
               <a data-link-signin-url href={s.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-zinc-900 dark:hover:text-white">{t('Open the sign-in page again')}</a>
@@ -398,12 +429,13 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
     else if (r.status === 200 && r.body.needsYes) setStep({ phase: 'review', review: r.body.review })
     else if (r.status === 422) setStep({ phase: 'blocked', review: r.body.review })
     else if (r.status === 409 && r.body.code === 'sign_in') { setStep(null); signedOut() }
+    else if (r.status === 409 && (r.body.code === 'pending' || r.body.code === 'banned')) { setStep(null); notLetIn() }
     else if (r.status === 409 && (r.body.code === 'no_host' || r.body.code === 'no_token')) { setStep(null); setListed(l => ({ ...(l ?? { hostError: null, shares: [] }), host: null, setup: r.body.setup ?? l?.setup })) }
     else setStep({ phase: r.status === 503 ? 'down' : 'error', error: r.body.error || t('The session server answered {status}.', { status: r.status }) })
   }
   const noHost = !!listed && !listed.host
   // Signed out of the host: the New link view is the sign-in step (Your links still list and update).
-  const gated = !noHost && mustSignIn(owner)
+  const gated = !noHost && (mustSignIn(owner) || mustWait(owner))
   const mine = listed?.shares ?? []
   const big = all.length > VIRTUAL_THRESHOLD
   const busy = step?.phase === 'busy'
@@ -445,7 +477,7 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
     </div>
   )
 
-  const newView = made ? <Made link={made.link} title={made.title} message={made.message} /> : gated ? <Gate signin={owner?.signin !== false} /> : (
+  const newView = made ? <Made link={made.link} title={made.title} message={made.message} /> : gated ? <Gate signin={owner?.signin !== false} owner={owner} /> : (
     <fieldset disabled={busy} className="m-0 min-w-0 space-y-5 border-0 p-0">
       <section>
         <h3 className={SECTION}>{t('What to share')}</h3>
