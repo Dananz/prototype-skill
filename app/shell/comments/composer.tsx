@@ -1,3 +1,4 @@
+import { imageIn, carriesImage, imageUrl } from './images'
 // Writing a comment on one element, or on a moment or a range of the design's motion (in the motion
 // dock). `@` offers whole-variant mentions; Tag another element keeps the existing visual picker; the camera captures the design around the
 // element (all of it, on a moment) and opens the editor, and a region dragged out on the design brings its own picture; an image pasted (Ctrl+V) or dropped on the
@@ -51,28 +52,6 @@ export const endRange = (el: HTMLElement) => { const x = document.createRange();
 // through a canvas, so whatever it was (a GIF, a BMP from a screenshot tool) it is sent as a PNG
 // the server keeps (it takes png, jpeg and webp only), at most MAX_SIDE px a side; one still too
 // big for localStorage is sent as a JPEG.
-const MAX_SIDE = 2000
-const imageIn = (dt: DataTransfer | null) => {
-  if (!dt) return null
-  for (const f of dt.files) if (f.type.startsWith('image/')) return f
-  for (const i of dt.items) if (i.kind === 'file' && i.type.startsWith('image/')) return i.getAsFile()
-  return null
-}
-const carriesImage = (dt: DataTransfer | null) => !!dt && [...dt.items].some(i => i.kind === 'file' && i.type.startsWith('image/'))
-async function imageUrl(file: File): Promise<string | null> {
-  const src = URL.createObjectURL(file)
-  try {
-    const img = new Image()
-    img.src = src
-    await img.decode()
-    const k = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight))
-    const c = document.createElement('canvas')
-    c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k))
-    c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
-    const png = c.toDataURL('image/png')
-    return png.length < 3_000_000 ? png : c.toDataURL('image/jpeg', 0.9)
-  } catch { return null } finally { URL.revokeObjectURL(src) }
-}
 
 type Props = {
   /** The element it is on; a comment on the motion has a time instead. */
@@ -128,6 +107,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const nudge = store.get().nudge
   const pending = store.get().pendingTag
   const ed = useRef<HTMLDivElement>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
   const [tags, setTags] = useState<Target[]>(initial?.tags ?? [])
   const tagsRef = useRef(tags)
   tagsRef.current = tags
@@ -199,7 +179,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
 
   const submit = () => {
     const body = readEditor(ed.current!)
-    if (!body.some(s => typeof s !== 'string' || s.trim()) && !tags.length) return
+    if (!body.some(s => typeof s !== 'string' || s.trim()) && !tags.length && !shots.length) return
     act.save({ body, tags, shots, shot: undefined, pasted: undefined }, target, id, time)
   }
   const shoot = async () => {
@@ -229,7 +209,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const attach = async (file: File) => {
     if (shotsRef.current.length >= MAX_SHOTS) return
     setCapturing(t('Adding…'))
-    try { const url = await imageUrl(file); if (url) setShots(s => s.length < MAX_SHOTS ? [...s, { src: url, pasted: true }] : s) } finally { setCapturing(null); refocus() }
+    try { const url = await imageUrl(file); if (url && shotsRef.current.length < MAX_SHOTS) { shotsRef.current = [...shotsRef.current, { src: url, pasted: true }]; setShots(shotsRef.current) } } finally { setCapturing(null); refocus() }
   }
 
   const [height, setHeight] = useState(260)
@@ -334,12 +314,13 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
         )}
         <div className="flex items-center gap-1 px-2 pb-2 pt-1">
           <button onClick={() => { setMention(null); saveRange(); act.tagPick() }} title={t('Tag another element on the design')} aria-label={t('Tag another element')} className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="target" /></button>
+          <button type="button" aria-label="Attach an image" disabled={full} onClick={() => fileInput.current?.click()} className={`${IB} h-8 min-w-8 px-1.5 disabled:opacity-40`} title="Attach an image"><Icon name="image" /></button><input ref={fileInput} aria-label="Image files" type="file" accept="image/*" multiple hidden disabled={full} onChange={e => { const files = [...(e.target.files ?? [])]; e.target.value = ''; void (async () => { for (const f of files) await attach(f) })() }} />
           <button onClick={shoot} disabled={full} title={full ? t('{n} pictures is the most one comment takes; remove one to add another', { n: MAX_SHOTS }) : t('Add a screenshot of this part of the design, then draw on it (or paste an image: {mod} V, or drop one here; each adds a picture)', { mod: MOD })} aria-label={t('Attach a screenshot')} className={`${IB} h-8 min-w-8 px-1.5 disabled:opacity-40`}><Icon name="camera" /></button>
           {editing && <button onClick={() => id && act.remove(id)} title={t('Delete')} aria-label={t('Delete comment')} className={`${IB} h-8 min-w-8 px-1.5 hover:text-rose-600`}><Icon name="trash" /></button>}
           <span className="ms-auto" />
           {docked && <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>}
           {/* Sent as it is added (Settings), it says so: Send, with the plane. */}
-          <button data-shoot="composer-add" onClick={submit} disabled={empty && !tags.length} title={live && !editing ? t('Send to {agent}', { agent }) : t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={editing ? 'check' : live ? 'send' : 'plus'} className="size-3.5" />{editing ? t('Save') : live ? t('Send') : t('Add')}</button>
+          <button data-shoot="composer-add" onClick={submit} disabled={empty && !tags.length && !shots.length} title={live && !editing ? t('Send to {agent}', { agent }) : t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={editing ? 'check' : live ? 'send' : 'plus'} className="size-3.5" />{editing ? t('Save') : live ? t('Send') : t('Add')}</button>
         </div>
       </div>
   )

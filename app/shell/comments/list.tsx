@@ -103,6 +103,7 @@ function Thread({ r }: { r: Row }) {
       {r.turns.slice(1).map(t => (
         <span key={t.item.id} data-shoot="comment-turn" data-turn={t.item.sent ? `${t.item.sent.batch}/${t.item.sent.i}` : undefined} className="mt-2 block space-y-1.5">
           <span className="flex justify-end"><Body c={t.item} className="block max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-se-sm bg-proto-primary-soft px-2 py-1 text-[11px] leading-4 text-zinc-800 ring-1 ring-proto-primary-ring/40 dark:text-zinc-100" /></span>
+          {!!shotsOf(t.item).length && <PictureStrip>{shotsOf(t.item).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</PictureStrip>}
           {t.reply && <span data-shoot="comment-reply" className="block"><Reply text={t.reply.text} by={t.reply.by} small /></span>}
         </span>
       ))}
@@ -157,7 +158,7 @@ function AnswerBox({ r, empty, update }: { r: Row; empty: { open: boolean; note:
     <span data-shoot="comment-answer-box" className="mt-2 block rounded-xl border border-black/10 bg-white p-1.5 dark:border-white/15 dark:bg-zinc-900">
       <span {...field.props} aria-label={t('Answer {agent}', { agent })} data-placeholder={t('Answer {agent}…', { agent })}
         className={`block max-h-32 min-h-9 w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-1.5 py-1 text-[12.5px] leading-[18px] text-zinc-900 outline-none dark:text-zinc-100 ${PLACEHOLDER}`} />
-      {field.menu}
+      {field.attachments}{field.menu}
       {error && <span role="alert" className="block px-1.5 pb-1 text-[11px] text-rose-600 dark:text-rose-400">{error}</span>}
       <span className="flex items-center justify-end gap-1">
         <button onClick={cancel} className="h-7 rounded-lg px-2 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>

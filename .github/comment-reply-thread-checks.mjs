@@ -24,6 +24,7 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
   const regressions = []
   const capture = async name => {
     if (!evidence) return
+    await page.run(`document.querySelector('[data-shoot=island-open][aria-expanded=false]')?.click()` )
     await page.run('new Promise(r => setTimeout(r, 500))')
     await page.screenshot(join(evidence, `${phase}-${layout}-${name}.png`))
   }

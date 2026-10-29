@@ -1,8 +1,10 @@
+import { imageIn, carriesImage, imageUrl } from './images'
+import { MAX_SHOTS, type Shot } from './types'
 // A comment box that can tag: what is typed, with a chip in it wherever a tag was written. `@` opens
 // a menu of the prototype's variants and, last, Tag an element, which picks one on the design and
 // brings it back where the @ was. The box's owner holds its state (useTagField), so the box itself
 // can come and go (the island's side panel folds while an element is picked) and keep what was in it.
-import { useEffect, useId, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { uiBox } from '../portals'
 import { t } from '../i18n'
@@ -46,6 +48,32 @@ export function useTagField(opts: Opts) {
   const optsRef = useRef(opts)
   optsRef.current = opts
   const input = useRef<HTMLDivElement | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [shots, setShots] = useState<Shot[]>(opts.initial?.shots ?? [])
+  const shotsRef = useRef(shots)
+  shotsRef.current = shots
+  const [adding, setAdding] = useState(false)
+  const importing = useRef(false)
+  const [imageError, setImageError] = useState('')
+  const generation = useRef(0)
+  const read = (): Note => ({ ...(input.current ? noteOf(input.current, tagsRef.current) : { body: [], tags: [] }), shots: shotsRef.current })
+  const attach = async (files: File[]) => {
+    if (importing.current) return
+    importing.current = true
+    const gen = generation.current
+    setAdding(true); setImageError('')
+    try {
+      for (const file of files.filter(f => f.type.startsWith('image/'))) {
+        if (shotsRef.current.length >= MAX_SHOTS) { setImageError(`Up to ${MAX_SHOTS} images per comment`); break }
+        const src = await imageUrl(file)
+        if (gen !== generation.current) return
+        if (!src) { setImageError('Could not read image'); continue }
+        shotsRef.current = [...shotsRef.current, { src, pasted: true }]
+        setShots(shotsRef.current)
+        optsRef.current.onChange?.(read())
+      }
+    } finally { importing.current = false; setAdding(false) }
+  }
   const [tags, setTags] = useState<Target[]>(opts.initial?.tags ?? [])
   const tagsRef = useRef(tags)
   tagsRef.current = tags
@@ -89,7 +117,7 @@ export function useTagField(opts: Opts) {
     // shows; lines started with Enter are kept.
     if (!el.textContent && el.childNodes.length === 1 && el.firstChild!.nodeName === 'BR') el.replaceChildren()
     setEmpty(!el.innerText.trim())
-    optsRef.current.onChange?.(noteOf(el, tagsRef.current))
+    optsRef.current.onChange?.(read())
   }
   const caret = useRef<{ node: Node; offset: number } | null>(null)
   const saveCaret = () => {
@@ -168,6 +196,7 @@ export function useTagField(opts: Opts) {
       if ((e.key === 'Enter' || e.key === 'Tab') && !e.metaKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); choose(options[Math.min(mention.index, options.length - 1)]); return }
     }
     if (mention && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMention(null); return }
+    if (importing.current && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); return }
     optsRef.current.onKey?.(e)
     if (e.defaultPrevented) return
     // Enter alone starts a new line, as it does in a text field.
@@ -180,8 +209,10 @@ export function useTagField(opts: Opts) {
     onInput: () => { saveCaret(); changed(); watchMention() },
     onKeyDown, onKeyUp: saveCaret, onMouseUp: saveCaret,
     onBlur: () => { saveCaret(); setMention(null) },
-    // Pasted, only the words come in: no styles, links or pictures from where they were.
-    onPaste: (e: ClipboardEvent<HTMLDivElement>) => { e.preventDefault(); document.execCommand('insertText', false, e.clipboardData.getData('text/plain')) },
+    // Plain text keeps its words; image files become attachments.
+    onDrop: (e: DragEvent<HTMLDivElement>) => { if (carriesImage(e.dataTransfer)) { e.preventDefault(); e.stopPropagation(); void attach([...e.dataTransfer.files]) } },
+    onDragOver: (e: DragEvent<HTMLDivElement>) => { if (carriesImage(e.dataTransfer)) e.preventDefault() },
+    onPaste: (e: ClipboardEvent<HTMLDivElement>) => { e.preventDefault(); const image = imageIn(e.clipboardData); if (image) { void attach([image]); return }; document.execCommand('insertText', false, e.clipboardData.getData('text/plain')) },
   }
 
   // The menu, over the page (outside whatever clips the box): above the box, or below it when there
@@ -208,12 +239,20 @@ export function useTagField(opts: Opts) {
       </button>}
     </div>, uiBox()) : null
 
+  const attachButton = <><button type="button" aria-label="Attach an image" disabled={adding || shots.length >= MAX_SHOTS} onClick={() => fileInput.current?.click()} className="inline-flex items-center gap-1 rounded px-1 py-1 text-xs text-zinc-500 disabled:opacity-40" title="Attach an image"><Icon name="image" className="size-4" /></button><input ref={fileInput} type="file" aria-label="Image files" accept="image/*" multiple disabled={adding || shots.length >= MAX_SHOTS} hidden onChange={e => { const files = [...(e.target.files ?? [])]; e.target.value = ''; void attach(files) }} /></>
+  const pictures = (shots.length > 0 || adding || imageError) ? <span className="flex flex-wrap items-center gap-1 px-2 py-1">
+      {shots.map((shot, i) => <span key={i} className="relative inline-block"><img src={shot.src} alt="Attached image" className="h-12 w-16 rounded object-cover" /><button type="button" aria-label="Remove image" className="absolute end-0 top-0 rounded bg-zinc-900 px-1 text-white" onClick={() => { shotsRef.current = shotsRef.current.filter((_, k) => k !== i); setShots(shotsRef.current); optsRef.current.onChange?.(read()) }}>×</button></span>)}
+
+      {adding && <span role="status" className="text-xs">Adding…</span>}{imageError && <span role="alert" className="text-xs text-rose-500">{imageError}</span>}
+  </span> : null
   return {
-    props, menu, empty, picking,
+    props, menu, adding, empty: adding || (empty && !shots.length), picking,
+    attachButton, pictures,
+    attachments: <>{pictures}<span className="flex px-2 py-1">{attachButton}</span></>,
     el: () => input.current,
     focus: () => input.current?.focus({ preventScroll: true }),
-    read: (): Note => input.current ? noteOf(input.current, tagsRef.current) : { body: [], tags: [] },
-    clear: () => { input.current?.replaceChildren(); caret.current = null; tagsRef.current = []; setTags([]); setEmpty(true); setMention(null) },
+    read,
+    clear: () => { generation.current++; shotsRef.current = []; setShots([]); setImageError(''); input.current?.replaceChildren(); caret.current = null; tagsRef.current = []; setTags([]); setEmpty(true); setMention(null) },
   }
 }
 
