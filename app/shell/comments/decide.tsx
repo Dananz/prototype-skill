@@ -108,7 +108,7 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
       </div>
       <div {...field.props} data-placeholder={NOTE[ask].hint} aria-label={t('Note for {action}', { action: NOTE[ask].title(v) })}
         className={`block max-h-40 min-h-[76px] w-full overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-zinc-900/[.04] px-3 py-2 text-[13px] leading-5 outline-none ring-1 ring-inset ring-transparent focus:ring-proto-primary-ring dark:bg-white/[.06] [@media(pointer:coarse)]:text-base ${PLACEHOLDER}`} />
-      {field.attachments}{field.menu}
+      {field.pictures}{field.menu}
       {oops}
       <div className="mt-2 flex items-center justify-end gap-1.5">
         <button onClick={() => { if (!sending.current) { setAsk(null); field.clear(); setError('') } }} className="h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>
@@ -184,7 +184,7 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
           <div {...field.props} contentEditable={!!choice && !busy} aria-disabled={!choice || busy || undefined}
             aria-label={choice ? t('Note for {action}', { action: NOTE[choice].title(v) }) : t('Note')} data-placeholder={choice ? NOTE[choice].hint : t('Choose what to do first')}
             className={`block max-h-32 min-h-[56px] w-full overflow-y-auto whitespace-pre-wrap break-words rounded-t-lg bg-transparent px-2.5 pb-1 pt-2.5 text-[13px] leading-5 outline-none aria-disabled:opacity-50 [@media(pointer:coarse)]:text-base ${PLACEHOLDER}`} />
-          {field.attachments}{field.menu}
+          {field.pictures}{field.menu}
           <div className="flex items-center justify-between gap-2 py-1.5 pe-1.5 ps-2.5">
             <span className="flex items-center gap-1 text-[11px] text-zinc-500">{[MOD, 'Enter'].map(k => <kbd key={k} className="rounded border border-black/15 bg-zinc-900/[.04] px-1.5 py-px font-sans text-[10px] font-medium leading-4 text-zinc-600 dark:border-white/15 dark:bg-white/[.07] dark:text-zinc-300">{k}</kbd>)}{t('sends')}</span>
             <button data-send onClick={() => choice && send(choice, field.read())} disabled={!choice || busy || field.adding} className={`inline-flex h-8 shrink-0 items-center rounded-md px-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}>{sendLabel}</button>
