@@ -5,7 +5,10 @@
 // colour of the news. A wide screen keeps it on an edge of the stage (island-drag.ts): flat on the
 // foot or the top, or upright on the side (the right, the left in Hebrew), where it rests as a small tab, widens into a rail under the
 // pointer and opens as the full-height panel. A phone has it as the top row of one bar with the
-// pill, flush with the screen's foot, and its count opens the list in it.
+// pill, flush with the screen's foot, and its count opens the list in it. Docked (Settings, the
+// classic layout), a wide screen has it as the side panel's Comments tab instead: the list, and the
+// same bar at its foot.
+import { createPortal } from 'react-dom'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { rtl, t, tn } from '../i18n'
 import { useAgentName, useCtx } from './ctx'
@@ -87,13 +90,14 @@ function useShown(news: News | null) {
 
 const NEWS_ICON: Record<Kind, string> = { working: 'spinner', done: 'check', reply: 'comment' }
 
-export function Island() {
+export function Island({ dock }: { dock: HTMLElement }) {
   const { act, copyStore, host } = useCtx()
   const copying = useSyncExternalStore(copyStore.subscribe, () => copyStore.get().on)
   const agent = useAgentName()
   const { s, rows, drafts, stalled } = useRows()
   const prefs = useIslandPrefs()
   const phone = usePhone()
+  const docked = !!prefs.docked && !phone
   const { news, unread, read } = useNews(rows, agent, prefs.news, !!s.inbox)
   const { shown, leaving } = useShown(news)
   const [focus, setFocus] = useState(false)
@@ -102,7 +106,7 @@ export function Island() {
   // edge, the panel it is in) open again and the cursor after it.
   const field = useTagField({
     owner: 'island',
-    reopen: () => { if (!phone && side) act.openIsland(true); return side ? 160 : 0 },
+    reopen: () => { if (docked) return 0; if (!phone && side) act.openIsland(true); return side ? 160 : 0 },
     onKey: e => {
       // Mod Enter adds and sends, as in the element composer; with nothing typed it sends the drafts.
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); if (act1 === 'add') { add(); if (!s.live) void act.send() } else if (act1 === 'send' && !s.sending) void act.send() }
@@ -113,7 +117,8 @@ export function Island() {
   const card = useRef<HTMLDivElement>(null)
   const lastPanel = useRef(0)
   const cap = useRef<HTMLDivElement>(null)
-  const open = s.island
+  // Docked, the list is always shown, in the panel.
+  const open = s.island || docked
   // Typing on a phone, the bar rides the keyboard and the pill row under it steps aside (shell.ts).
   const kb = useKeyboard(phone && focus)
   useEffect(() => {
@@ -131,13 +136,13 @@ export function Island() {
     if (!s.focusAsk) return
     act.askDone()
     // Upright, the box is in the panel: it opens first, and the cursor goes in once it has grown.
-    const upright = !phone && side && !s.island
+    const upright = !phone && side && !s.island && !docked
     if (upright) act.openIsland(true)
     window.setTimeout(() => field.focus(), upright ? 140 : 0)
   }, [s.focusAsk, act])
   useEffect(() => () => act.wholeFocus(false), [act])
   // Opened, the list has been seen.
-  useEffect(() => { if (s.island || s.sheet) read() }, [s.island, s.sheet])
+  useEffect(() => { if (open || s.sheet) read() }, [open, s.sheet])
 
   // On a wide screen it rests on an edge of the stage (island-drag.ts). `side` turns with the drag,
   // ahead of the preferences, so the card stands upright while it is still held.
@@ -165,7 +170,7 @@ export function Island() {
   // still-large card for a frame and the pointer over it reads as a hover.
   const folding = closing || (wasOpen.current && !open && !!side)
   useEdgeDrag({
-    card, on: !phone && !!s.place && !copying, place: prefs.place, along: prefs.along, full: !!side && open,
+    card, on: !phone && !docked && !!s.place && !copying, place: prefs.place, along: prefs.along, full: !!side && open,
     onSide: next => { setSide(next); setRail(false) },
     // Picked up, the open list folds out of the way.
     onHold: on => { setRail(false); if (on && s.island) act.openIsland(false) },
@@ -189,7 +194,7 @@ export function Island() {
     const ro = new ResizeObserver(f)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [phone, !!s.place])
+  }, [phone, docked, !!s.place])
   // One button beside the box goes through every state, its width gliding between them: hidden, the
   // add arrow while there is text, the Send n pill while drafts wait, hidden again. Leaving, it keeps
   // what it showed until it has shrunk away; the pill's width is measured off a hidden copy.
@@ -200,8 +205,8 @@ export function Island() {
   const sendLabel = s.sending ? t('Sending…') : tn(drafts, 'Send {n}', 'Send {n}')
   const pillRef = useRef<HTMLSpanElement>(null)
   const [pillW, setPillW] = useState(0)
-  useLayoutEffect(() => { if (pillRef.current) setPillW(pillRef.current.offsetWidth) }, [sendLabel, phone, !!s.place])
-  if (!s.place || (copying && !phone)) return null
+  useLayoutEffect(() => { if (pillRef.current) setPillW(pillRef.current.offsetWidth) }, [sendLabel, phone, docked, !!s.place])
+  if (!docked && (!s.place || (copying && !phone))) return null
 
   const add = () => { const n = field.read(); if (act.commentWhole(n.body, n.tags, n.shots)) field.clear() }
   const typing = focus || !empty
@@ -301,7 +306,7 @@ export function Island() {
         </button>
       </div>
       {/* Upright, the panel has its own fold button and the count is its header's. */}
-      {(phone || !side) && <button type="button" data-shoot="island-open" onClick={() => { read(); openList() }} aria-expanded={open} aria-label={open ? t('Collapse the comments') : tn(total, 'Open {n} comment', 'Open all {n} comments')}
+      {(phone || (!side && !docked)) && <button type="button" data-shoot="island-open" onClick={() => { read(); openList() }} aria-expanded={open} aria-label={open ? t('Collapse the comments') : tn(total, 'Open {n} comment', 'Open all {n} comments')}
         className={`flex shrink-0 items-center rounded-full ${phone ? 'size-10 justify-center gap-0.5 text-sm' : 'h-8 gap-1.5 px-2 text-xs'} text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10`}>
         {/* Wide, the count is the comments icon with its badge, as on the side tab. A phone has no room
             for it: the count itself takes the news colour, lined up over the pill's end button. */}
@@ -311,6 +316,19 @@ export function Island() {
     </div>
   )
 
+  // Docked, the panel's Comments tab: the list, what needs saying, and the same bar at its foot. The
+  // panel's tab already names it, so no title; who is listening goes under the bar.
+  if (docked) return createPortal(
+    <div data-island data-comment-ui="" data-docked data-shoot="comments" className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 pt-3"><CommentList /></div>
+      <div className="shrink-0 space-y-2 px-2 pb-2 empty:hidden"><Notices /></div>
+      <div className="shrink-0 border-t border-black/[.07] dark:border-white/10">
+        {s.place ? bar : <p className="px-3 py-3 text-center text-xs text-zinc-400">{t('Open a variant to comment on it.')}</p>}
+        {field.pictures}
+        <div className="flex justify-center pb-2"><Listening on={!!s.inbox?.listening} stalled={stalled > 0} /></div>
+      </div>
+      {field.menu}
+    </div>, dock)
   // A phone opens the list in the bar itself, above the same row, over a dimmed page; a tap on the
   // page folds it again. The bar is solid, in the page's light or dark, flush with the screen's
   // sides and foot: its padding is the pill row's room (the pill draws over it, shell.ts), only

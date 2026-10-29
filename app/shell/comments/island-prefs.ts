@@ -10,6 +10,9 @@ export type IslandPrefs = {
   place: Edge; along: number; news: 'all' | 'replies' | 'off'
   /** Sizes dragged by hand, in px: the open list's height and width on the foot or the top, and the panel's width on the right. */
   listH?: number; listW?: number; sideW?: number
+  /** The classic layout on a wide screen: the comments are a tab of the side panel, docked to the
+   *  stage's end, and the top bar has a Comment button. A phone keeps its bar either way. */
+  docked?: boolean
 }
 const KEY = 'proto-island'
 const EDGES: Edge[] = ['bottom', 'top', 'right']
@@ -23,6 +26,7 @@ const read = (): IslandPrefs => {
       // Before edges, a flat island kept a free offset `at`: its sideways part still holds.
       along: Number.isFinite(s?.along) ? s.along : Number.isFinite(s?.at?.x) ? s.at.x : 0,
       news: s?.news === 'replies' || s?.news === 'off' ? s.news : 'all',
+      ...(s?.docked === true ? { docked: true } : {}),
       ...Object.fromEntries((['listH', 'listW', 'sideW'] as const).filter(k => Number.isFinite(s?.[k])).map(k => [k, s[k]])),
     }
   } catch { return DEFAULT }

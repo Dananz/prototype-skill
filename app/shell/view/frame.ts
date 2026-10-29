@@ -50,7 +50,9 @@ export type Frame = {
 export function openFrame(host: HTMLElement, url: string, on: { route: (path: string) => void; bind: (d: Document) => () => void; bound: () => void }): Frame {
   const el = document.createElement('iframe')
   el.title = t('This page at another size')
-  el.className = 'absolute start-0 top-0 block origin-top-left border-0 bg-white dark:bg-zinc-950'
+  // Pinned by its left, where it scales from: by its start, in Hebrew a scaled-down frame is pinned
+  // by its unscaled right edge and slides off the stage's left.
+  el.className = 'absolute left-0 top-0 block origin-top-left border-0 bg-white dark:bg-zinc-950'
   host.append(el)
   let d: Document | null = null, unbind = () => {}, closed = false
   const page = () => { try { const n = el.contentDocument; return n && n.URL !== 'about:blank' ? n : null } catch { return null } }

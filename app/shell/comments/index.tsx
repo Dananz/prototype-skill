@@ -58,8 +58,9 @@ export function createComments(host: Host, sessionId: string) {
     mountCopy(bar: HTMLElement, sheet: HTMLElement) { createRoot(bar).render(wrap(<><CopyBar /><CopySheet container={sheet} /></>)) },
     /** Something drawn in a root of its own (the motion dock) with the comment layer's context. */
     wrap,
-    /** The floating comments island over the stage (island.tsx): its bar, its news and, opened, the list. */
-    mountIsland(el: HTMLElement) { createRoot(el).render(wrap(<Island />)) },
+    /** The floating comments island over the stage (island.tsx): its bar, its news and, opened, the list.
+     *  Docked (Settings), a wide screen draws it in the side panel's Comments tab, `dock`, instead. */
+    mountIsland(el: HTMLElement, dock: HTMLElement) { createRoot(el).render(wrap(<Island dock={dock} />)) },
     mountSheet(el: HTMLElement) { createRoot(el).render(wrap(<PhoneSheet />)) },
     /** The bar's Pick, More and Build menu, mounted once; the returned function draws it with new props. */
     mountDecide(el: HTMLElement) { const root = createRoot(el); return (p: DecidePopProps) => root.render(wrap(<DecidePop {...p} />)) },

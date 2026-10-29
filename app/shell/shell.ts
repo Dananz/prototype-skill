@@ -25,6 +25,7 @@ import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
 import { describe as describeComment, targetMount, wholeTarget as wholeComment } from './comments/dom'
 import { plain as commentText } from './comments/ui'
 import { createComments, type MenuRow, type Subject } from './comments/index'
+import { islandPrefs } from './comments/island-prefs'
 import { createMotion } from './motion/index'
 import { motion } from './motion/registry'
 import type { Action } from './comments/types'
@@ -1228,8 +1229,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
       ${switcher}
       <div class="ms-auto flex shrink-0 items-center gap-1">
-        ${stepper}${stepper && (view === 'variant' || viewOk() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${replayBtn()}${deviceBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${shareBtn()}${moreBtn()}
+        ${stepper}${stepper && (view === 'variant' || viewOk() || railOn() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
+        ${replayBtn()}${deviceBtn()}${commentBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${shareBtn()}${moreBtn()}
       </div></div>`)
     menus = { protos: drill(), session: '' }
 
@@ -2250,6 +2251,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // The comments island floats over the stage and opens into the list; a phone has it as the top
   // row of the pill's bar, and opens the list in it.
   const islandHost = zone.querySelector<HTMLElement>('[data-island-host]')!
+  // Docked (Settings, the classic layout), a wide screen has the comments as the side panel's tab
+  // instead, and a Comment button in the bar.
+  const railOn = () => !!commentHost() && !phoneMq.matches && !!islandPrefs.get().docked
+  /** Opens the side panel on its Comments tab, where a new comment lands. */
+  function openRail() {
+    selectPanelTab('comments')
+    if (!hintsOpen) { hintsOpen = true; remember('proto-hints', '1') }
+    paintHints()
+  }
   // The phone's bar folds to the comment bar while the design scrolls down, and comes back on a
   // scroll up, at the top, or a tap on the bar.
   const fold = (on: boolean) => zone.toggleAttribute('data-fold', on)
@@ -2354,7 +2364,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       }))
     },
     show: () => {
-      comments.act.openIsland(true)
+      if (railOn()) openRail()
+      else comments.act.openIsland(true)
     },
     // While a device view is on, comments are on the design in its frame, about that layout.
     // The stage's own artboard is the stage's layout: what is written there carries no other.
@@ -2527,6 +2538,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // A design declares its motion as it renders, after the chrome was drawn for it: draw it again,
   // once that's done, so the menu and the bar learn of it.
   motion.subscribe(() => queueMicrotask(() => { const k = String(hasMotion()); if (k !== motionKey) { motionKey = k; render() } }))
+  // Docked, the bar's Comment: an icon at rest, filled while picking what to comment on, and
+  // hovered then, the way out.
+  const commentBtn = () => {
+    if (!railOn()) return ''
+    const on = comments.counts().picking
+    return `<button data-act="comment:toggle" data-shoot="comment" aria-pressed="${on}" aria-label="${t('Comment')}" title="${on ? t('Stop selecting · Esc') : t('Comments on this design · C')}" class="group/c relative hidden h-9 min-w-9 items-center justify-center rounded-lg sm:inline-flex ${on ? 'bg-proto-primary px-2 text-proto-primary-fg shadow-sm shadow-proto-primary/30 ring-4 ring-proto-primary/20 hover:bg-proto-primary-hover' : 'text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'}">${ic('comment', `size-4 transition-opacity ${on ? 'group-hover/c:opacity-0' : ''}`)}${on ? `<span class="absolute grid place-items-center opacity-0 transition-opacity group-hover/c:opacity-100">${ic('x')}</span>` : ''}</button>`
+  }
   const motionBtn = () => !hasMotion() || st.focus ? ''
     : `<button data-act="motion" data-shoot="motion" aria-pressed="${st.motion}" aria-label="${t('Motion')}" title="${st.motion ? t('Hide the motion timeline') : t('Show the motion timeline: scrub it, see its curves, comment on a moment')}" class="hidden h-9 min-w-9 items-center justify-center rounded-lg sm:inline-flex ${st.motion ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'}">${ic('curves')}</button>`
   // The chrome shows counts (the bar's button, the pill, the tree): repaint it when they change.
@@ -2714,6 +2732,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function commentWhole(proto?: string, variant?: string) {
     if (proto && variant && !(st.place.view === 'variant' && st.place.proto === proto && st.place.variant === variant)) go({ view: 'variant', proto, variant })
     comments.act.openSheet(false)
+    if (railOn()) openRail()
     comments.act.askWhole()
   }
 
@@ -2810,6 +2829,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     comments.copy.off()
     comments.commentOn(el)
     if (phoneMq.matches) comments.act.openSheet(true)
+    else if (railOn()) openRail()
   }
   const drawCtx = comments.mountContext(root.querySelector<HTMLElement>('[data-ctx]')!)
   function ctxRows(on: CtxOn): { title?: string; sub?: string; rows: MenuRow[] } | null {
@@ -2896,7 +2916,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const drawTweaks = createTweakControls(tweakBody)
   const drawTweaksDrawer = createTweaksDrawer(hintBox.querySelector<HTMLElement>('[data-tweaks-sheet]')!)
   function selectPanelTab(next: typeof tab) { tab = next }
-  comments.mountIsland(islandHost)
+  comments.mountIsland(islandHost, cbody)
+  // Turning the docked layout on or off in Settings redraws the bar and the panel.
+  let dockedPref = !!islandPrefs.get().docked
+  islandPrefs.subscribe(() => {
+    if (!!islandPrefs.get().docked === dockedPref) return
+    dockedPref = !dockedPref
+    if (dockedPref && wideMq.matches) { selectPanelTab('comments'); hintsOpen = true; remember('proto-hints', '1') }
+    render()
+  })
 
   function paintHints() { syncComments(); motionDock.sync(); paintPanel(); paintTweaks(); syncSpot() }
   // Starting to comment opens the Comments tab beside the design, where the new one lands. Only
@@ -2904,11 +2932,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function toggleComment() {
     comments.copy.off()
     comments.act.toggle()
+    if (comments.counts().picking && railOn() && wideMq.matches) openRail()
   }
   function paintPanel() {
     const list = hintList(), fields = tweakList()
     paintTry(list)
-    const tabs: ('comments' | 'try' | 'tweaks')[] = list.length && !phoneMq.matches ? ['try'] : []
+    const tabs: ('comments' | 'try' | 'tweaks')[] = [...(railOn() ? ['comments' as const] : []), ...(list.length && !phoneMq.matches ? ['try' as const] : [])]
     const shownTab = tabs.includes(tab) ? tab : tabs[0]
     const panelWidth = tabs.length > 2 ? 320 : HINTS_W
     const docked = tabs.length > 0 && hintsOpen && wideMq.matches
