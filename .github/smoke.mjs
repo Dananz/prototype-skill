@@ -17,6 +17,7 @@ import { designKit } from './design-kit.mjs'
 import { speedChecks } from './speed-checks.mjs'
 import { commentParentChecks } from './comment-parent-checks.mjs'
 import { commentWholeChecks } from './comment-whole-checks.mjs'
+import { commentGoneChecks } from './comment-gone-checks.mjs'
 import { commentScrollChecks } from './comment-scroll-checks.mjs'
 import { commentUsesChecks } from './comment-uses-checks.mjs'
 import { commentRoutesChecks } from './comment-routes-checks.mjs'
@@ -223,6 +224,13 @@ if (process.argv.includes('--zoom-reset-only')) {
   console.log('OK: focused zoom reset checks')
   process.exit(0)
 }
+if (process.argv.includes('--comment-gone-only')) {
+  await commentGoneChecks({ proto, app, openPage, fail, shots: process.env.PROTO_GONE_SHOTS })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused gone-target comment checks')
+  process.exit(0)
+}
 if (process.argv.includes('--comment-whole-only')) {
   await commentWholeChecks({ proto, app, openPage, fail })
   proto(['rm'])
@@ -315,6 +323,7 @@ await tweaksChecks({ proto, app, local, openPage, fail })
 
 await commentParentChecks({ proto, app, openPage, fail })
 await commentWholeChecks({ proto, app, openPage, fail })
+await commentGoneChecks({ proto, app, openPage, fail })
 await commentScrollChecks({ proto, app, openPage, fail })
 await commentUsesChecks({ proto, app, openPage, fail })
 await commentRoutesChecks({ proto, app, openPage, fail })

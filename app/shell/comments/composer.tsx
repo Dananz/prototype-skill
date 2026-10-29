@@ -241,6 +241,10 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   }, [docked])
   const W = 312
   const lay = host.layer.getBoundingClientRect()
+  // What it is on can go mid-sentence (a menu closes, a row re-renders): it stays where it was.
+  const kept = useRef<Box | null>(null)
+  if (place && !place.via) kept.current = place
+  place = kept.current ?? place
   let style: CSSProperties = docked ? {} : { maxHeight: 'calc(100% - 16px)', overflowY: 'auto' }
   if (!sheet && !docked && place) {
     const right = place.x + place.w + 12 + W < lay.width - 8
