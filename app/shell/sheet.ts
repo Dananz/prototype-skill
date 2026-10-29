@@ -77,7 +77,64 @@ function Sheet(p: SheetProps) {
                 h('span', { className: 'shrink-0 text-xs tabular-nums text-zinc-400' }, String(p.favs.count))) : null))))))
 }
 
-export type MenuSheetProps = { open: boolean; title: string; html: string; onClose: () => void; onContentReady?: (root: HTMLElement) => void | (() => void) }
+export type StateSheetRow = { id: string; name: string; note?: string; noteCls?: string; dot: string; on: boolean; playing: boolean }
+export type StateSheetTool = { id: string; name: string; icon: string; detail?: string; on: boolean }
+export type StatesSheetProps = {
+  open: boolean
+  /** The variant's number and name, said in its title. */
+  label: string
+  name: string
+  rows: StateSheetRow[]
+  tools: StateSheetTool[]
+  onClose: () => void
+  onState: (id: string) => void
+  onTool: (id: string) => void
+}
+
+const html = (s: string) => h('span', { className: 'contents', dangerouslySetInnerHTML: { __html: s } })
+
+// The variant's states on a phone, opened from the state line in the pill: what the desktop
+// sidebar lists under the variants (each state with its note), and Autoplay, All states and
+// Compare at its foot. The same drawer as the variant sheet.
+function StatesSheet(p: StatesSheetProps) {
+  const row = (r: StateSheetRow): ReactNode => h('button', {
+    key: r.id || 'rest', type: 'button', 'aria-current': r.on, 'data-shoot': `sheet-state-${r.id || 'rest'}`, onClick: () => p.onState(r.id),
+    className: `flex w-full items-start gap-2.5 rounded-xl px-3 py-2.5 text-start outline-none focus-visible:bg-zinc-900/[.06] dark:focus-visible:bg-white/10 ${r.on ? 'bg-zinc-900/[.05] dark:bg-white/[.08]' : 'active:bg-zinc-900/[.04] dark:active:bg-white/5'}`,
+  },
+    html(r.dot),
+    h('span', { className: 'min-w-0 flex-1' },
+      h('span', { className: `flex items-center gap-1.5 text-[13px] leading-5 ${r.on ? 'font-medium text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'}` },
+        h('span', { dir: 'auto', className: 'truncate' }, r.name),
+        r.playing ? html(ic('play', 'size-3 text-sky-500')) : null),
+      r.note ? h('span', { dir: 'auto', className: `mt-0.5 block text-[11px] leading-[15px] ${r.noteCls ?? 'text-zinc-500'}` }, r.note) : null))
+
+  return h(Drawer.Root, { open: p.open, onOpenChange: (open: boolean) => { if (!open) p.onClose() } },
+    h(Drawer.Portal, { container: uiBox() },
+      h(Drawer.Backdrop, { className: '[--backdrop-opacity:0.3] [--bleed:3rem] dark:[--backdrop-opacity:0.6] fixed inset-0 z-[200] min-h-dvh bg-black opacity-[calc(var(--backdrop-opacity)*(1-var(--drawer-swipe-progress)))] transition-opacity duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:duration-0 data-ending-style:opacity-0 data-starting-style:opacity-0 data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] supports-[-webkit-touch-callout:none]:absolute' }),
+      h(Drawer.Viewport, { className: 'fixed inset-0 z-[200] flex items-end justify-center' },
+        h(Drawer.Popup, { 'data-shoot': 'states-sheet', className: '-mb-[3rem] w-full max-h-[calc(75vh+3rem)] overflow-y-auto overscroll-contain rounded-t-3xl bg-white pb-[calc(0.75rem+env(safe-area-inset-bottom,0px)+3rem)] pt-2 text-[13px] text-zinc-900 shadow-2xl shadow-black/20 outline-none touch-auto [transform:translateY(var(--drawer-swipe-movement-y))] transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:select-none data-ending-style:[transform:translateY(calc(100%-3rem+2px))] data-starting-style:[transform:translateY(calc(100%-3rem+2px))] data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] dark:bg-zinc-900 dark:text-zinc-100' },
+          h('div', { className: 'mx-auto mb-1 h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700' }),
+          h(Drawer.Content, { className: 'px-2' },
+            h('div', { className: 'flex items-center justify-between pb-1 ps-3' },
+              h(Drawer.Title, { className: 'flex min-w-0 items-center gap-1.5 text-[15px] font-semibold' },
+                h('span', { className: 'shrink-0' }, t('States of {variant}', { variant: p.label })),
+                h('span', { dir: 'auto', className: 'min-w-0 truncate font-normal text-zinc-500' }, `· ${p.name}`)),
+              h(Drawer.Close, { 'aria-label': t('Close'), className: 'grid size-9 place-items-center rounded-full text-zinc-500 active:bg-zinc-900/5 dark:active:bg-white/10' }, X)),
+            h('div', { className: 'space-y-0.5 pb-1' }, p.rows.map(row)),
+            p.tools.length ? h('div', { className: 'mt-1 grid grid-cols-3 gap-1.5 border-t border-black/[.06] px-1 pt-2.5 dark:border-white/10' },
+              p.tools.map(tl => h('button', {
+                key: tl.id, type: 'button', 'aria-pressed': tl.on, 'data-shoot': `sheet-tool-${tl.id}`, onClick: () => p.onTool(tl.id),
+                className: `flex h-16 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[12px] ${tl.on ? 'bg-sky-500/15 font-medium text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.04] text-zinc-600 active:bg-zinc-900/[.08] dark:bg-white/[.05] dark:text-zinc-300 dark:active:bg-white/10'}`,
+              }, html(tl.icon), h('span', { className: 'max-w-full truncate' }, tl.name, tl.detail ? h('span', { className: 'text-zinc-400' }, ` ${tl.detail}`) : null)))) : null)))))
+}
+
+/** Mounts the states sheet once; call the returned function with new props to open, close or refresh it. */
+export function createStatesSheet(host: HTMLElement) {
+  const root = createRoot(host)
+  return (props: StatesSheetProps) => root.render(h(StatesSheet, props))
+}
+
+export type MenuSheetProps ={ open: boolean; title: string; html: string; onClose: () => void; onContentReady?: (root: HTMLElement) => void | (() => void) }
 
 // The phone's menus (the prototypes, the session) in the same sheet. Their content is the
 // shell's own menu HTML, and the sheet renders inside the shell's root, so its buttons reach

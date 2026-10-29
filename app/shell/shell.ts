@@ -20,7 +20,7 @@ import { hints, fillField, type Hint } from './hints'
 import { tweaks, isChanged } from './tweaks'
 import { createTweakControls, createTweaksDrawer } from './tweaks-ui'
 import { copy } from './copy'
-import { createSheet, createMenuSheet, createTrySheet } from './sheet'
+import { createSheet, createMenuSheet, createStatesSheet, createTrySheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
 import { describe as describeComment, targetMount, wholeTarget as wholeComment } from './comments/dom'
 import { plain as commentText } from './comments/ui'
@@ -217,6 +217,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     drawer: false,
     // The phone's variant sheet, opened from the bottom pill.
     sheet: false,
+    // The phone's states sheet, opened from the state line under the pill's name.
+    states: false,
     // The phone's bar opens its menus as sheets: the prototypes, or the session.
     menu: '' as '' | 'protos' | 'session',
     // On a phone the grid's phone cards open at half size; Fit leaves them tiny there.
@@ -534,6 +536,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     </div>
     <div data-drawer></div>
     <div data-sheet></div>
+    <div data-states-sheet></div>
     <div data-menu-sheet></div>
     <div data-comments-sheet></div>
     <div data-decide></div>
@@ -552,6 +555,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const hintBox = root.querySelector<HTMLElement>('[data-hints]')!
   const pill = root.querySelector<HTMLElement>('[data-pill]')!
   const paintSheet = createSheet(root.querySelector<HTMLElement>('[data-sheet]')!)
+  const paintStates = createStatesSheet(root.querySelector<HTMLElement>('[data-states-sheet]')!)
   const paintMenu = createMenuSheet(root.querySelector<HTMLElement>('[data-menu-sheet]')!)
   const cardHost = root.querySelector<HTMLElement>('[data-scale-card]')!
 
@@ -988,6 +992,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     st.pairAt = null
     st.drill = null
     st.sheet = false
+    st.states = false
     trySheet = 'closed'
     tweaksOpen = false
     closeCard(true)
@@ -1362,7 +1367,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const at = vs.findIndex(v => v.id === vid)
     const tryN = pillOn() && phoneMq.matches ? tryCount(hintList()) : 0
     const joined = !!commentHost()
-    const key = pillOn() ? JSON.stringify([p!.id, vid, vs.map(v => [v.id, v.name]), editing(p!.id, vid), st.sheet, pillComments(), copyCounts().on, trySheet, tweakList().length, tweaksOpen, tweakList().filter(isChanged).length, joined, viewOk() && shownSize(), !!p && favOf(p, vid)]) : ''
+    // The variant's states, said under its name: which one shows (or the tool that is on), and the way to the others.
+    const pv = st.place.view === 'variant' ? st.place : null
+    const sts = p && pv ? statesOf(p, pv.variant) : []
+    const stateOn = pv && sts.length ? pv.tool === 'play' ? st.playing : pv.tool === 'all' ? null : pv.state ?? '' : null
+    const key = pillOn() ? JSON.stringify([p!.id, vid, vs.map(v => [v.id, v.name]), editing(p!.id, vid), st.sheet, st.states, sts.map(x => [x.id, x.name]), pv?.state, pv?.tool, st.playing, pillComments(), copyCounts().on, trySheet, tweakList().length, tweaksOpen, tweakList().filter(isChanged).length, joined, viewOk() && shownSize(), !!p && favOf(p, vid)]) : ''
     if (key !== pillKey) {
       pillKey = key
       if (!key) { pill.innerHTML = ''; closeCard(true) }
@@ -1389,11 +1398,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const end = tweakList().length ? `<button data-act="tweaks" data-shoot="tweaks" aria-label="${t('Tweaks')}" aria-haspopup="dialog" aria-expanded="${tweaksOpen}" class="${btn} relative ${tweaksOpen ? '!bg-sky-700 !text-white' : ''}">${ic('tweaks', 'size-5')}${tweakList().some(isChanged) ? `<span class="absolute end-0 top-0 grid min-w-3.5 rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : ''}</button>`
           : viewOk() ? `<button data-pill-layout data-shoot="pill-layout" aria-label="${t('Layout')}" aria-haspopup="dialog" aria-expanded="false" class="${btn} transition-colors">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth), st.view.land), 'size-5')}</button>`
           : v ? `<button data-act="fav:${esc(p!.id)}:${esc(v.id)}" data-shoot="pill-fav" aria-pressed="${fav}" aria-label="${fav ? t('Unfavorite') : t('Favorite')}" class="${btn} ${fav ? '!text-amber-400' : ''}">${ic(fav ? 'star-fill' : 'star', 'size-5')}</button>` : ''
+        const sOn = stateOn === null ? undefined : sts.find(x => x.id === stateOn)
+        const stateText = pv?.tool === 'all' ? t('All states') : pv?.tool === 'compare' ? t('Compare with {variant}', { variant: variantRef(p!, otherOf(p!, pv.variant)) }) : sOn?.name ?? t('At rest')
+        const stateN = pv?.tool ? '' : `${sts.indexOf(sOn!) + 2}/${sts.length + 1}`
+        const stateLine = v && sts.length ? `<button data-act="states" data-pill-state data-shoot="pill-state" aria-haspopup="dialog" aria-expanded="${st.states}" aria-label="${t('States: {state}. Show all states', { state: esc(stateText) })}" class="mx-auto flex h-[18px] min-w-0 max-w-full items-center gap-1 rounded-full px-2 text-[11px] leading-none text-sky-700 dark:text-sky-300 ${k.press}">${pv?.tool === 'play' ? ic('play', 'size-2.5 shrink-0') : ''}<span data-pill-state-name dir="auto" class="min-w-0 truncate">${esc(stateText)}</span>${stateN ? `<span class="shrink-0 tabular-nums ${k.n}">${stateN}</span>` : ''}${ic('caret-up', `size-2.5 shrink-0 ${k.n}`)}</button>` : ''
         const pillRow = (flush: boolean) => `<div data-ruler hidden class="pointer-events-none absolute left-1/2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-white/95 shadow-lg ring-1 ring-black/[.08] dark:bg-zinc-800/95 dark:ring-white/10 ${flush ? 'bottom-[calc(100%+var(--isl-h,0px)+.75rem)]' : 'bottom-full mb-2'} [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)]"></div>
             ${menuBtn}${sep}
             <button data-act="variant:${prev.id}" aria-label="${t('Previous variant: {label} {name}', { label: variantRef(p!, prev.id), name: prev.name })}" class="${btn}">${ic('left')}</button>
-            <div data-pill-handle role="button" tabindex="0" aria-label="${v ? t('{label} {name}, {current} of {total}. ', { label: variantRef(p!, v.id), name: esc(v.name), current: at + 1, total: vs.length }) : ''}${t('Show all variants')}" class="flex h-10 ${flush ? 'flex-1' : end ? 'w-28' : 'w-40'} min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 ${k.press}">
-              ${name}
+            <div class="flex h-10 ${flush ? 'flex-1' : end ? 'w-28' : 'w-40'} min-w-0 flex-col">
+              <div data-pill-handle role="button" tabindex="0" aria-label="${v ? t('{label} {name}, {current} of {total}. ', { label: variantRef(p!, v.id), name: esc(v.name), current: at + 1, total: vs.length }) : ''}${t('Show all variants')}" class="flex ${stateLine ? 'h-[22px]' : 'h-10'} min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 ${k.press}">
+                ${name}
+              </div>${stateLine}
             </div>
             <button data-act="variant:${next.id}" aria-label="${t('Next variant: {label} {name}', { label: variantRef(p!, next.id), name: next.name })}" class="${btn}">${ic('right')}</button>
             ${end ? `${sep}${end}` : ''}`
@@ -1431,6 +1446,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onClose: () => { st.sheet = false; render() },
       onPick: id => { st.sheet = false; if (p) go(keepIn(p, id)); render() },
       onLobby: () => { st.sheet = false; if (p) go({ view: 'proto', proto: p.id }); render() },
+    })
+    const sv = p && pv ? p.variants.find(x => x.id === pv.variant) : undefined
+    paintStates({
+      open: st.states && !!key && !!sv && sts.length > 0,
+      label: sv ? variantRef(p!, sv.id) : '',
+      name: sv?.name ?? '',
+      rows: sv ? [undefined, ...sts].map(x => ({ id: x?.id ?? '', name: x?.name ?? t('At rest'), note: x?.about?.[sv.id], noteCls: x ? noteCls(p!, sv.id, x) : undefined, dot: dot(p!, sv.id, x, stateOn === (x?.id ?? '')), on: stateOn === (x?.id ?? ''), playing: pv?.tool === 'play' && st.playing === (x?.id ?? '') })) : [],
+      tools: sv ? (['play', 'all', 'compare'] as Tool[]).filter(tl => toolOk(p!, sv.id, tl)).map(tl => ({ id: tl, name: TOOLS[tl].name, icon: ic(pv?.tool === tl && tl === 'play' ? 'pause' : TOOLS[tl].icon, 'size-5'), detail: tl === 'compare' ? variantRef(p!, otherOf(p!, sv.id)) : undefined, on: pv?.tool === tl })) : [],
+      onClose: () => { st.states = false; render() },
+      onState: id => { st.states = false; if (p && sv) act('pvs', p.id, sv.id, id); render() },
+      onTool: id => { st.states = false; if (p && sv) act('tool', p.id, sv.id, id); render() },
     })
   }
 
@@ -1582,8 +1608,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   })
   // The phone's sheets and the menu belong to the phone layout; widening past it closes them.
   matchMedia('(min-width: 640px)').addEventListener('change', e => {
-    if (!e.matches || !(st.menu || st.sheet || card || trySheet !== 'closed')) return
-    st.menu = ''; st.sheet = false; trySheet = 'closed'; closeCard(true); render()
+    if (!e.matches || !(st.menu || st.sheet || st.states || card || trySheet !== 'closed')) return
+    st.menu = ''; st.sheet = false; st.states = false; trySheet = 'closed'; closeCard(true); render()
   })
 
   // The variant labels around the finger, above the pill, while it drags.
@@ -1597,6 +1623,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const i = Math.min(d.ids.length - 1, Math.max(0, Math.round(d.pos))), v = d.proto.variants.find(x => x.id === d.ids[i])!
     const set = (sel: string, text: string) => { const el = pill.querySelector(sel); if (el) el.textContent = text }
     set('[data-pill-id]', variantRef(d.proto, v.id)); set('[data-pill-name]', v.name); set('[data-pill-n]', `${i + 1}/${d.ids.length}`)
+    // The state line is the shown variant's; another variant's states would be different ones.
+    pill.querySelector<HTMLElement>('[data-pill-state]')?.classList.toggle('invisible', v.id !== d.ids[Math.max(0, d.base)])
   }
 
   // The stage follows pos: this design moves off by its distance from pos, and the variants on
@@ -1854,6 +1882,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'try': { const to = trySheet === 'open' ? 'closed' : 'open'; trySheet = to; setTry(null); return setTrySheet(to) }
       case 'copymode': return comments.copy.toggle()
       case 'motion': st.motion = !st.motion; return render()
+      case 'states': st.states = true; return render()
       // A state leaf: that variant in that state. Comparing keeps comparing.
       case 'pvs': {
         const keep = here?.tool === 'compare' && here.proto === arg && here.variant === arg2
@@ -2090,7 +2119,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (st.focus) return act('unfocus', '', '')
       if (st.place.view === 'variant' && st.place.tool) return go(untool(st.place))
     }
-    if (e.metaKey || e.ctrlKey || e.altKey || st.sheet || trySheet === 'open' || t.closest?.(INTERACTIVE) || t.closest?.('[data-vlist]')) return
+    if (e.metaKey || e.ctrlKey || e.altKey || st.sheet || st.states || trySheet === 'open' || t.closest?.(INTERACTIVE) || t.closest?.('[data-vlist]')) return
     // Esc on a variant goes up to its prototype's variants, unless the design used it first (a
     // design closing its own menu calls preventDefault). Its handlers may run after this one,
     // so the check waits a tick.
@@ -2357,7 +2386,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       return !t.closest('[data-settings-drawer]') || (e.type !== 'pointerup' && e.type !== 'touchend')
     }
     const k = e as KeyboardEvent
-    return (e.type === 'keydown' || e.type === 'keyup') && k.key === 'c' && !k.metaKey && !k.ctrlKey && !k.altKey && !st.sheet && !!commentHost() && !t?.closest(INTERACTIVE)
+    return (e.type === 'keydown' || e.type === 'keyup') && k.key === 'c' && !k.metaKey && !k.ctrlKey && !k.altKey && !st.sheet && !st.states && !!commentHost() && !t?.closest(INTERACTIVE)
   })
 
   // ---------- the device view: this page at another layout's size, in the stage (view/) ----------
