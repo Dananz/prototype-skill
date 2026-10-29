@@ -24,9 +24,10 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
   const regressions = []
   const capture = async name => {
     if (!evidence) return
-    await page.run(`document.querySelector('[data-shoot=island-open][aria-expanded=false]')?.click()` )
+    const opened = await page.run(`(() => { const b = document.querySelector('[data-shoot=island-open][aria-expanded=false]'); b?.click(); return !!b })()`)
     await page.run('new Promise(r => setTimeout(r, 500))')
     await page.screenshot(join(evidence, `${phase}-${layout}-${name}.png`))
+    if (opened) { await page.run(`document.querySelector('[data-shoot=island-open][aria-expanded=true]')?.click()`); await page.run('new Promise(r => setTimeout(r, 500))') }
   }
   try {
     // A comment on the whole variant, written and sent from the page.

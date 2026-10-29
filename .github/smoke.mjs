@@ -232,6 +232,16 @@ if (process.argv.includes('--comment-gone-only')) {
   console.log('OK: focused gone-target comment checks')
   process.exit(0)
 }
+if (process.argv.includes('--comment-core-only')) {
+  await commentWholeChecks({ proto, app, openPage, fail })
+  await commentImagesChecks({ proto, app, openPage, fail })
+  await commentPicturesChecks({ proto, app, openPage, fail })
+  await commentReplyThreadChecks({ proto, app, local, openPage, fail })
+  await pickNoteChecks({ proto, app, local, openPage, fail, keepShots })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  process.exit(0)
+}
 if (process.argv.includes('--comment-thread-only')) {
   await commentReplyThreadChecks({ proto, app, local, openPage, fail, evidence: process.env.PROTO_IMAGE_EVIDENCE || '', phase: process.env.PROTO_IMAGE_EVIDENCE_PHASE || 'after' })
   proto(['rm'])

@@ -85,6 +85,10 @@ export async function commentImagesChecks({ proto, app, openPage, fail }) {
       if (!sent) fail(`${layout}: image-only comment did not reach the inbox`)
     } finally { page.close() }
   }
+  if (!before) {
+    const inbox = proto(['inbox'], { stdout: true })
+    if (!inbox.includes('imagesfx/A') || (inbox.match(/   image: /g) ?? []).length < 2) fail('image-only comments did not retain their inbox pictures')
+  }
   proto(['archive', 'imagesfx'])
   console.log('OK: image picker, removal, and paste on desktop and phone')
 }
