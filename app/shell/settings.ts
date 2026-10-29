@@ -123,8 +123,12 @@ function Settings(p: Props) {
         value === 'auto' ? icon('translate') : null, value === 'auto' ? t('Conversation') : LANG_NAMES[value]))),
       h('p', { className: muted }, langChoice === 'auto' ? t('Follows the language you talk to the agent in, now {name}.', { name: LANG_NAMES[sessionLang()] }) : t('Always {name} in this browser.', { name: LANG_NAMES[langChoice] }))))
     : category === 'feedback' ? h('div', { className: 'space-y-5 pb-6' }, toggle('live', t('Send each comment as you add it'), t('Send new comments immediately. Turn off to collect drafts and send them together.'), p.live, p.onLive),
+      // The classic layout, from before the island: the comments docked as the side panel's tab.
+      h('div', { className: 'space-y-3 border-t border-black/[.06] pt-5 dark:border-white/10' },
+        h('p', { className: 'text-[11px] font-medium uppercase tracking-wide text-zinc-400' }, t('Legacy')),
+        toggle('docked', t('Docked comments panel'), rtl ? t('Comments docked on the left, with a Comment button in the top bar. Wide screens only.') : t('Comments docked on the right, with a Comment button in the top bar. Wide screens only.'), !!island.docked, on => islandPrefs.set({ docked: on }))),
       // The comments island (comments/island.tsx): where it rests on a wide screen, and which news grows it.
-      h('div', { 'data-setting-island': '', className: 'space-y-3 border-t border-black/[.06] pt-5 dark:border-white/10' },
+      island.docked ? null : h('div', { 'data-setting-island': '', className: 'space-y-3 border-t border-black/[.06] pt-5 dark:border-white/10' },
         h('div', null, h('p', { className: 'text-[13px] font-medium' }, t('Comments island')), h('p', { className: muted }, t('Which edge of the stage it rests on, on a wide screen. Drag it to another edge to move it; on a side it stands upright. Double-click its edge to bring it back to the foot.'))),
         choices(t('Comments island'), (['bottom', 'top', 'right'] as const).map(value => choice('island', value, { bottom: t('Bottom'), top: t('Top'), right: rtl ? t('Left') : t('Right') }[value], island.place === value, () => islandPrefs.set({ place: value, along: 0 }), { bottom: 'chev', top: 'caret-up', right: 'right' }[value]))),
         h('div', { className: 'pt-2' }, h('p', { className: 'text-[13px] font-medium' }, t('Notifications')), h('p', { className: muted }, t('Which news from the agent grows the island for a moment.'))),

@@ -137,4 +137,9 @@ export default {
   'Which news from the agent grows the island for a moment.': 'אילו עדכונים מהסוכן מגדילים את האי לרגע.',
   'Replies': 'תשובות',
   'Off': 'כבוי',
+  'Legacy': 'תצוגה קודמת',
+  'Docked comments panel': 'חלונית הערות מעוגנת',
+  'Comments docked on the right, with a Comment button in the top bar. Wide screens only.': 'ההערות מעוגנות מימין, עם כפתור הערה בסרגל העליון. במסכים רחבים בלבד.',
+  'Comments docked on the left, with a Comment button in the top bar. Wide screens only.': 'ההערות מעוגנות משמאל, עם כפתור הערה בסרגל העליון. במסכים רחבים בלבד.',
+  'Open a variant to comment on it.': 'פתח וריאנט כדי להעיר עליו.',
 } satisfies Record<string, string>
