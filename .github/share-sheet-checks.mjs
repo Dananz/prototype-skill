@@ -95,9 +95,10 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
 
   // 1. No hosts.json: the built-in online host, with no token, so the New link view is the GitHub
   // sign-in (nothing is asked of prtype.dev until it is pressed).
-  // A design with colour, so the Opens on preview has something to show (put back at the end).
+  // A design with colour, so the Opens on preview has something to show (put back at the end), and a
+  // font by absolute path, so the share has a review to ask Claude about.
   const fileA = join(app, 'src', 'protos', 'share-link', 'A.tsx'), designA = readFileSync(fileA, 'utf8')
-  writeFileSync(fileA, `export default function A() { return <main style={{ minHeight: '100vh', background: '#2563eb', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 64 }}><h1>MARK-A</h1></main> }\n`)
+  writeFileSync(fileA, `export default function A() { return <main style={{ minHeight: '100vh', background: '#2563eb', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 64 }}><style>{"@font-face{font-family:Smoke;src:url(/fonts/Smoke-Regular.woff2)}"}</style><h1>MARK-A</h1></main> }\n`)
   let page = await open('share-link/A?theme=light')
   await sheetOpen(page)
   await waitFor(page, '!!document.querySelector("[data-share-link] [data-link-gate] [data-link-signin]")', 'no hosts.json: the sheet does not ask to sign in with GitHub')
@@ -131,8 +132,24 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
   await waitFor(page, '!!document.querySelector("[data-link-url]") || !!document.querySelector("[data-link-anyway]") || !!document.querySelector("[data-link-error]")', 'create: nothing came back', 300_000)
   if (await page.run('!!document.querySelector("[data-link-anyway]")')) {
     await shot(page, 'sheet-review-desktop-light')
+    // Ask Claude to fix this: the owner's words and the findings reach the inbox as a share-fix
+    // request on the variant the link opens on; the box says it was sent and Create link anyway stays.
+    const inNew = () => existsSync(join(inboxDir, 'new')) ? readdirSync(join(inboxDir, 'new')).filter(b => !batchesBefore.has(b) && !b.startsWith('.')) : []
+    const had = new Set(inNew())
+    await click(page, '[data-link-ask]')
+    await waitFor(page, '!!document.querySelector("[data-link-ask-box] textarea")', 'ask: no box for the words')
+    await type(page, '[data-link-ask-box] textarea', 'Use a hosted font, not uploaded files')
+    await shot(page, 'sheet-review-ask-desktop-light')
+    await click(page, '[data-link-ask-send]')
+    await waitFor(page, '!!document.querySelector("[data-link-asked]")', `ask: not sent (${await page.run('document.querySelector("[data-link-ask-box] [role=alert]")?.textContent||""')})`)
+    const fix = await until(() => inNew().find(b => !had.has(b)), 15_000)
+    assert(fix, 'ask: no batch in the inbox')
+    const c = JSON.parse(readFileSync(join(inboxDir, 'new', fix, 'batch.json'), 'utf8')).comments[0]
+    assert(c.action === 'share-fix' && c.route === 'share-link/A' && c.text.includes('Use a hosted font') && c.text.includes('The share review found:\n- '), `ask: the batch is ${JSON.stringify(c).slice(0, 300)}`)
+    rmSync(join(inboxDir, 'new', fix), { recursive: true, force: true })
+    await shot(page, 'sheet-review-asked-desktop-light')
     await click(page, '[data-link-anyway]')
-  }
+  } else console.log('share sheet: no review on this share, so Ask Claude to fix this was not checked')
   await waitFor(page, '!!document.querySelector("[data-link-url]")', `create: no link (${await page.run('document.querySelector("[data-link-error]")?.textContent||""')})`, 300_000)
   const link = await page.run('document.querySelector("[data-link-url]").value')
   assert(/^http:\/\/127\.0\.0\.1:\d+\/s\/\w+\/$|^http:\/\/\w+\.localhost:\d+\/$/.test(link), `create: the link is ${link}`)

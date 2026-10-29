@@ -63,6 +63,7 @@ export default {
   'Optional: why this one, or what to change in it': 'אופציונלי: למה דווקא זה, או מה לשנות בו',
   'Picked {v}': 'נבחר {v}',
   'Needs explanation: {v}': 'דרוש הסבר: {v}',
+  'Fix before sharing {v}': 'לתקן לפני השיתוף {v}',
   'What is hard to figure out? Optional.': 'מה קשה להבין? אופציונלי.',
   'Asked for an explanation of {v}': 'התבקש הסבר עבור {v}',
   'Generate copy options for {v}': 'צור אפשרויות נוסח עבור {v}',
