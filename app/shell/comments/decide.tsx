@@ -51,7 +51,7 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
   const menu = useRef<HTMLDivElement>(null)
 
   const send = async (a: Action, words: Note = { body: [], tags: [] }) => {
-    if (sending.current) return
+    if (sending.current || field.adding) return
     sending.current = true
     const flip = a === 'pick' || a === 'unpick'
     setBusy(true); setError('')
@@ -108,11 +108,11 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
       </div>
       <div {...field.props} data-placeholder={NOTE[ask].hint} aria-label={t('Note for {action}', { action: NOTE[ask].title(v) })}
         className={`block max-h-40 min-h-[76px] w-full overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-zinc-900/[.04] px-3 py-2 text-[13px] leading-5 outline-none ring-1 ring-inset ring-transparent focus:ring-proto-primary-ring dark:bg-white/[.06] [@media(pointer:coarse)]:text-base ${PLACEHOLDER}`} />
-      {field.menu}
+      {field.attachments}{field.menu}
       {oops}
       <div className="mt-2 flex items-center justify-end gap-1.5">
         <button onClick={() => { if (!sending.current) { setAsk(null); field.clear(); setError('') } }} className="h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>
-        <button onClick={() => send(ask, field.read())} disabled={busy} title={`${MOD} Enter`} className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-50 ${PRIMARY}`}><Icon name={ask === 'pick' ? 'check' : 'send'} className="size-3.5" />{busy ? t('Sending…') : ask === 'pick' ? t('Pick {v}', { v }) : t('Send')}</button>
+        <button onClick={() => send(ask, field.read())} disabled={busy || field.adding} title={`${MOD} Enter`} className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-50 ${PRIMARY}`}><Icon name={ask === 'pick' ? 'check' : 'send'} className="size-3.5" />{busy ? t('Sending…') : ask === 'pick' ? t('Pick {v}', { v }) : t('Send')}</button>
       </div>
       <div className={sheet ? 'mt-1 px-1' : 'mx-1 mt-2 border-t border-black/[.06] pt-2 dark:border-white/10'}>{status}</div>
     </div>
@@ -145,11 +145,11 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
       <div className="px-1">
         <p className="flex min-w-0 items-center gap-1.5 px-1 pb-2 text-xs text-zinc-500"><b className="font-semibold text-zinc-700 dark:text-zinc-200">{v}</b><span dir="auto" className="truncate">{subject.name}</span></p>
         <div className="flex gap-1.5">
-          <button onClick={() => send(picked ? 'unpick' : 'pick')} disabled={busy} aria-pressed={picked} aria-label={pickTitle} className={`shrink-0 px-3 ${picked ? `${btn} bg-emerald-500/10 text-emerald-700 ring-emerald-500/30 dark:text-emerald-300` : quiet}`}><Icon name={picked ? 'picked' : 'pick'} className="size-4" />{picked ? t('Picked') : t('Pick')}</button>
+          <button onClick={() => send(picked ? 'unpick' : 'pick')} disabled={busy || field.adding} aria-pressed={picked} aria-label={pickTitle} className={`shrink-0 px-3 ${picked ? `${btn} bg-emerald-500/10 text-emerald-700 ring-emerald-500/30 dark:text-emerald-300` : quiet}`}><Icon name={picked ? 'picked' : 'pick'} className="size-4" />{picked ? t('Picked') : t('Pick')}</button>
           <button onClick={() => setAsk('more')} className={`flex-1 px-2 ${quiet}`}><Icon name="more" className="size-4" />{t('More like this')}</button>
           <button onClick={() => setAsk('build')} className={`shrink-0 px-3 ${quiet}`}><Icon name="code" className="size-4" />{t('Build it')}</button>
         </div>
-        {!picked && <button data-pick-note onClick={() => { field.clear(); setError(''); setAsk('pick') }} disabled={busy}
+        {!picked && <button data-pick-note onClick={() => { field.clear(); setError(''); setAsk('pick') }} disabled={busy || field.adding}
           className="mt-1.5 flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-start text-[13px] text-zinc-700 hover:bg-zinc-900/[.04] disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-white/[.06]"><Icon name="check" className="size-4" /><span className="flex-1">{t('Pick with a note…')}</span></button>}
         {extras}
         {oops}
@@ -176,18 +176,18 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
       <div className="px-0.5 pt-1">
         <div className="grid grid-cols-3 gap-1.5">
           {picked
-            ? <button role="menuitem" onClick={() => send('unpick')} disabled={busy} aria-pressed title={pickTitle} className={`${tile} bg-emerald-500/10 text-emerald-700 ring-emerald-500/30 dark:text-emerald-300`}><Icon name="picked" className="size-5" />{t('Picked')}<span className="-mt-1 text-[10px] font-normal opacity-70">{t('Undo')}</span></button>
-            : <button role="menuitemradio" data-pick-note aria-checked={choice === 'pick'} onClick={() => setChoice('pick')} disabled={busy} title={pickTitle} className={`${tile} ${choice === 'pick' ? tileOn : tileOff}`}><Icon name="pick" className="size-5" />{t('Pick')}</button>}
-          {choices.map(c => <button key={c.id} role="menuitemradio" aria-checked={choice === c.id} onClick={() => setChoice(c.id)} disabled={busy} className={`${tile} ${choice === c.id ? tileOn : tileOff}`}><Icon name={c.icon} className="size-5" />{c.label}</button>)}
+            ? <button role="menuitem" onClick={() => send('unpick')} disabled={busy || field.adding} aria-pressed title={pickTitle} className={`${tile} bg-emerald-500/10 text-emerald-700 ring-emerald-500/30 dark:text-emerald-300`}><Icon name="picked" className="size-5" />{t('Picked')}<span className="-mt-1 text-[10px] font-normal opacity-70">{t('Undo')}</span></button>
+            : <button role="menuitemradio" data-pick-note aria-checked={choice === 'pick'} onClick={() => setChoice('pick')} disabled={busy || field.adding} title={pickTitle} className={`${tile} ${choice === 'pick' ? tileOn : tileOff}`}><Icon name="pick" className="size-5" />{t('Pick')}</button>}
+          {choices.map(c => <button key={c.id} role="menuitemradio" aria-checked={choice === c.id} onClick={() => setChoice(c.id)} disabled={busy || field.adding} className={`${tile} ${choice === c.id ? tileOn : tileOff}`}><Icon name={c.icon} className="size-5" />{c.label}</button>)}
         </div>
         <div className="mt-2 rounded-lg ring-1 ring-inset ring-black/10 focus-within:ring-2 focus-within:ring-proto-primary-ring dark:ring-white/15">
           <div {...field.props} contentEditable={!!choice && !busy} aria-disabled={!choice || busy || undefined}
             aria-label={choice ? t('Note for {action}', { action: NOTE[choice].title(v) }) : t('Note')} data-placeholder={choice ? NOTE[choice].hint : t('Choose what to do first')}
             className={`block max-h-32 min-h-[56px] w-full overflow-y-auto whitespace-pre-wrap break-words rounded-t-lg bg-transparent px-2.5 pb-1 pt-2.5 text-[13px] leading-5 outline-none aria-disabled:opacity-50 [@media(pointer:coarse)]:text-base ${PLACEHOLDER}`} />
-          {field.menu}
+          {field.attachments}{field.menu}
           <div className="flex items-center justify-between gap-2 py-1.5 pe-1.5 ps-2.5">
             <span className="flex items-center gap-1 text-[11px] text-zinc-500">{[MOD, 'Enter'].map(k => <kbd key={k} className="rounded border border-black/15 bg-zinc-900/[.04] px-1.5 py-px font-sans text-[10px] font-medium leading-4 text-zinc-600 dark:border-white/15 dark:bg-white/[.07] dark:text-zinc-300">{k}</kbd>)}{t('sends')}</span>
-            <button data-send onClick={() => choice && send(choice, field.read())} disabled={!choice || busy} className={`inline-flex h-8 shrink-0 items-center rounded-md px-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}>{sendLabel}</button>
+            <button data-send onClick={() => choice && send(choice, field.read())} disabled={!choice || busy || field.adding} className={`inline-flex h-8 shrink-0 items-center rounded-md px-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}>{sendLabel}</button>
           </div>
         </div>
       </div>

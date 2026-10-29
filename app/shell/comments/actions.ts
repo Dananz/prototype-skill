@@ -7,12 +7,14 @@ import { climb, describe, designStorage, find, inFrame, region, reveal, openerOf
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import { progress, threadOf, type Store } from './store'
-import type { Action, Draft, Item, Note, Place, Seg, Target, Time, Source } from './types'
+import type { Action, Draft, Item, Note, Place, Seg, Target, Time, Source, Shot } from './types'
 import { noteSays, shotsOf } from './types'
 import { inScope, routeOf } from './types'
 import { sameView } from '../view/sizes'
 import { t } from '../i18n'
 import { variantRef } from '../variants'
+
+const noteImages = (note: Note) => note.shots?.length ? { images: note.shots.map(s => ({ dataUrl: s.src, name: 'attached by the user' })) } : {}
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 const hasWords = (d: Draft) => d.body.some(s => typeof s !== 'string' || s.trim()) || d.tags.length > 0 || shotsOf(d).length > 0
@@ -135,13 +137,13 @@ export function createActions(store: Store, host: Host) {
      * once with no composer in between, so a comment half-written on an element is left as it is.
      * `tags`: what it tagged (elements, other variants), each mentioned after the words.
      */
-    commentWhole(segs: Seg[], tags: Target[] = []) {
+    commentWhole(segs: Seg[], tags: Target[] = [], shots: Shot[] = []) {
       const p = get().place, t = act.wholeTarget()
       // Its words trimmed at both ends; the tags stay where they were written among them.
       const body = segs.map((s, i) => typeof s === 'string' && i === 0 ? s.trimStart() : s).map((s, i, all) => typeof s === 'string' && i === all.length - 1 ? s.trimEnd() : s).filter(s => s !== '')
-      if (!p || !t || !body.some(s => typeof s !== 'string' || s.trim())) return false
+      if (!p || !t || (!body.some(s => typeof s !== 'string' || s.trim()) && !shots.length)) return false
       const n = Math.max(0, ...get().items.filter(i => i.proto === p.proto && i.variant === p.variant).map(i => i.n)) + 1
-      const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, body, tags, target: t, at: Date.now() }
+      const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, body, tags, shots, target: t, at: Date.now() }
       set(s => ({ items: [...s.items, item] }))
       if (get().live) void act.send()
       return true
@@ -272,9 +274,9 @@ export function createActions(store: Store, host: Host) {
       const sent = await host.send({
         theme: host.dark() ? 'dark' : 'light',
         viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 },
-        comments: [{ route: `${to.proto}/${to.variant}`, text: words ? `${say}: ${words}` : say, action, ...(words && note.tags.length ? { tags: note.tags } : {}), ...(action === 'pick' && words ? { note: words } : {}) }],
+        comments: [{ route: `${to.proto}/${to.variant}`, text: words ? `${say}: ${words}` : say, action, ...noteImages(note), ...(words && note.tags.length ? { tags: note.tags } : {}), ...(action === 'pick' && words ? { note: words } : {}) }],
       })
-      const item: Item = { id: uid(), proto: to.proto, variant: to.variant, n: 0, body: words ? note.body : [], tags: words ? note.tags : [], action, at: Date.now(), sent: { batch: sent.id, i: 1 } }
+      const item: Item = { id: uid(), proto: to.proto, variant: to.variant, n: 0, shots: note.shots, body: words ? note.body : [], tags: words ? note.tags : [], action, at: Date.now(), sent: { batch: sent.id, i: 1 } }
       set(s => ({ items: s.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? s.items : [...s.items, item] }))
       const r = sent.results[0]
       if (!r?.failed) return
@@ -293,9 +295,9 @@ export function createActions(store: Store, host: Host) {
       const sent = await host.send({
         theme: host.dark() ? 'dark' : 'light',
         viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 },
-        comments: [{ route: proto, text: words ? `${say}: ${words}` : say, action: 'more-variants', count: n, ...(words && note.tags.length ? { tags: note.tags } : {}) }],
+        comments: [{ route: proto, text: words ? `${say}: ${words}` : say, action: 'more-variants', count: n, ...noteImages(note), ...(words && note.tags.length ? { tags: note.tags } : {}) }],
       })
-      const item: Item = { id: uid(), proto, variant: '', n: 0, body: words ? note.body : [], tags: words ? note.tags : [], action: 'more-variants', count: n, at: Date.now(), sent: { batch: sent.id, i: 1 } }
+      const item: Item = { id: uid(), proto, variant: '', n: 0, shots: note.shots, body: words ? note.body : [], tags: words ? note.tags : [], action: 'more-variants', count: n, at: Date.now(), sent: { batch: sent.id, i: 1 } }
       set(s => ({ items: s.items.some(i => i.sent?.batch === sent.id && i.sent.i === 1) ? s.items : [...s.items, item] }))
     },
     /**
@@ -339,6 +341,7 @@ export function createActions(store: Store, host: Host) {
           route: root.variant ? routeOf(root) : root.proto,
           text: words,
           ...(note.tags.length ? { tags: note.tags } : {}),
+          ...noteImages(note),
           ...(root.target?.point ? { point: root.target.point } : {}),
           ...(root.target?.region ? { region: root.target.region } : {}),
           ...(root.target ? { target: root.target } : {}),
@@ -348,7 +351,7 @@ export function createActions(store: Store, host: Host) {
         }],
       })
       const item: Item = {
-        id: uid(), proto: root.proto, variant: root.variant, ...(root.state ? { state: root.state } : {}), n: root.n, body: note.body, tags: note.tags,
+        id: uid(), proto: root.proto, variant: root.variant, ...(root.state ? { state: root.state } : {}), n: root.n, body: note.body, tags: note.tags, shots: note.shots,
         ...(root.target ? { target: root.target } : {}), ...(root.time ? { time: root.time } : {}),
         at: Date.now(), sent: { batch: sent.id, i: 1 }, re: { id: root.id, batch: re.batch, i: re.n },
       }

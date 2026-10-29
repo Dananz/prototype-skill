@@ -82,6 +82,22 @@ export async function commentWholeChecks({ proto, app, openPage, fail }) {
     })()`)
     if (row !== 'ok') fail(`comment whole: ${row}`)
 
+    const attached = await page.run(`(async () => {
+      ${helpers}
+      const canvas = document.createElement('canvas'); canvas.width = 40; canvas.height = 30
+      canvas.getContext('2d').fillRect(0, 0, 40, 30)
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/png'))
+      const dt = new DataTransfer(); dt.items.add(new File([blob], 'reference.png', { type: 'image/png' }))
+      box().dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+      if (!await until(() => document.querySelector('img[alt="Attached image"]'))) return 'pasted image has no preview'
+      if (!await until(() => document.querySelector('[data-shoot=whole-add]'))) return 'an image alone cannot be added'
+      document.querySelector('[data-shoot=whole-add]').click()
+      if (!await until(() => saved().some(i => i.variant === 'B' && i.shots?.length === 1))) return 'image-only whole comment lost its attachment'
+      if (document.querySelector('img[alt="Attached image"]')) return 'attachment draft did not clear after adding'
+      return 'ok'
+    })()`)
+    if (attached !== 'ok') fail(`comment whole image: ${attached}`)
+
     let heard = ''
     for (let i = 0; i < 40 && !/the whole variant/.test(heard); i++) { heard += proto(['inbox'], { stdout: true }); if (!/the whole variant/.test(heard)) await new Promise(r => setTimeout(r, 250)) }
     if (!/Give the whole page more air/.test(heard) || !/on: the whole variant \(its root </.test(heard)) fail(`comment whole: the inbox did not say it is on the whole variant:\n${heard}`)

@@ -357,7 +357,7 @@ export function receive(data, root = dir, { check = false } = {}) {
   while (['new', 'taken', '.incoming'].some(sub => existsSync(join(inbox, sub, id))))
   const files = []
   const list = comments.map((c, i) => {
-    if (typeof c?.text !== 'string' || !c.text.trim()) throw bad(i, ' has no text')
+    if (typeof c?.text !== 'string') throw bad(i, ' has no text')
     if (typeof c.route !== 'string' || !/^[a-z0-9][a-z0-9-]*(\/[A-Z]{1,2}(\/[\w-]+)?)?$/.test(c.route)) throw bad(i, ': route is <slug>[/<letter>[/<state>]]')
     const time = timeOf(c)
     if (time === false) throw bad(i, `: a moment of the motion is at (and to, for a range) in ms inside the take, and take, its length in ms (up to ${MAX_TAKE})`)
@@ -396,6 +396,7 @@ export function receive(data, root = dir, { check = false } = {}) {
       files.push([file, Buffer.from(m[2], 'base64')])
       return { file, name: clip(img?.name, 100) }
     }).filter(Boolean)
+    if (!c.text.trim() && !images.length) throw bad(i, ' has no text or images')
     return {
       n: i + 1, route: c.route, text: c.text.trim().slice(0, 4000),
       ...(c.action ? { action: c.action } : {}),

@@ -203,7 +203,7 @@ export function Island() {
   useLayoutEffect(() => { if (pillRef.current) setPillW(pillRef.current.offsetWidth) }, [sendLabel, phone, !!s.place])
   if (!s.place || (copying && !phone)) return null
 
-  const add = () => { const n = field.read(); if (act.commentWhole(n.body, n.tags)) field.clear() }
+  const add = () => { const n = field.read(); if (act.commentWhole(n.body, n.tags, n.shots)) field.clear() }
   const typing = focus || !empty
   const working = rows.some(r => r.state === 'seen' && !r.stopped)
   const live = news && !open ? news : null
@@ -284,6 +284,7 @@ export function Island() {
           className={`max-h-[116px] w-full overflow-y-auto whitespace-pre-wrap break-words outline-none ${phone ? 'min-h-10 rounded-[20px] px-4 py-2 text-base leading-6' : 'min-h-8 rounded-2xl px-3 py-1.5 text-[13px] leading-5 [@media(pointer:coarse)]:text-base'} bg-zinc-900/[.05] dark:bg-white/[.08] ${phone ? '' : 'focus:ring-2 focus:ring-proto-primary-ring'}`} />
         {empty && <span aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 truncate text-start text-zinc-400 ${phone ? 'px-4 py-2 text-base leading-6' : 'px-3 py-1.5 text-[13px] leading-5 [@media(pointer:coarse)]:text-base'}`}>{placeholder}</span>}
       </div>
+      {field.attachButton}
       <div inert={!act1} className="relative shrink-0"
         style={{ width: act1 === 'send' ? pillW : act1 ? (phone ? 40 : 32) : 0, marginInlineStart: act1 ? 0 : phone ? -8 : -6, transition: `width .42s ${SOFT}, margin .42s ${SOFT}` }}>
         <span ref={pillRef} aria-hidden className={`invisible absolute flex items-center gap-1.5 whitespace-nowrap px-3 font-semibold ${phone ? 'text-sm' : 'text-xs'}`}><Icon name="send" className="size-3.5" />{sendLabel}</span>
@@ -322,6 +323,7 @@ export function Island() {
       {list}
       {newsRow}
       {bar}
+      {field.pictures}
     </div>
     {field.menu}
   </>)
@@ -385,7 +387,7 @@ export function Island() {
                 className="-me-1.5 grid size-7 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"><Icon name="fold-right" className="size-3.5" /></button>)}
               {newsRow}
               <div className="border-t border-black/[.06] dark:border-white/[.06]">{bar}</div>
-              {field.menu}
+              {field.pictures}{field.menu}
               {open && !folding && edgeHandle('sideW', 'start')}
             </div>
           // The tab and the rail are one set of buttons, placed from the foot: under the pointer the
@@ -418,7 +420,7 @@ export function Island() {
       {list}
       {newsRow}
       {bar}
-      {field.menu}
+      {field.pictures}{field.menu}
     </div>
   )
 }

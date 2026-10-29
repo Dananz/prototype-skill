@@ -142,9 +142,9 @@ export type Mode =
 /** Where the page is, when it is on a single variant that can be commented on; view: the device
  *  view's layout while one is on, where comments are written and their pins shown. */
 /** What a short note says (a decision's, a reply's): its words, with chips where tags were written. */
-export type Note = { body: Seg[]; tags: Target[] }
-/** Whether a note says anything: words, or a tag. */
-export const noteSays = (n: Note) => n.body.some(s => typeof s !== 'string' || s.trim())
+export type Note = { body: Seg[]; tags: Target[]; shots?: Shot[] }
+/** Whether a note says anything: words, a tag, or an attached image. */
+export const noteSays = (n: Note) => n.body.some(s => typeof s !== 'string' || s.trim()) || !!n.shots?.length
 
 export type Place = { proto: string; variant: string; state?: string; phone: boolean; title: string; compare?: true; view?: ViewSize }
 
