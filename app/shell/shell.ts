@@ -1919,7 +1919,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'size': if (st.open === 'device') st.open = null; return pickSize(arg as Size)
       case 'turn': return patchView({ land: !st.view.land, zoom: 0 })
       case 'center': return setScale(0)
-      case 'replay': return replay()
+      case 'replay': return replayDesign()
       case 'scalestep': { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || 50) + Number(arg)) / 5) * 5))) }
       case 'theme': return setTheme(arg === 'dark')
       case 'focus': if (st.place.view !== 'variant') return; st.focus = true; st.open = null; dock.hold = performance.now() + 1600; edge.hover = {}; render(); return fit()
@@ -2474,7 +2474,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   /** A variant shown on its own (not through a tool) can be loaded again: its entrance plays again. */
   function canReplay() { return st.place.view === 'variant' && !st.place.tool }
-  function replay() {
+  function replayDesign() {
     if (!canReplay()) return
     if (card && card.phase !== 'exit') closeCard()
     bar.querySelector('[data-act="replay"] svg')?.animate([{ transform: 'rotate(0)' }, { transform: 'rotate(360deg)' }], { duration: 450, easing: 'cubic-bezier(.2,0,0,1)' })
