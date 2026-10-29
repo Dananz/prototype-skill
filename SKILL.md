@@ -534,7 +534,8 @@ so the user sees them land:
 **Show what's behind the clicks.** Whenever a variant has states a reviewer would otherwise
 have to find (a menu, a drawer, a step, an empty state, anything one variant adds), list them in
 `meta.ts` next to `variants`. The sidebar then lists the open variant's states under its
-columns, each with its line, beside Autoplay, All states and Compare:
+columns, each with its line, beside Autoplay, All states and Compare. On a phone, the pill says
+which state is showing under the variant's name, and a tap on it opens the same list as a sheet:
 
 ```
 "about": {
