@@ -38,7 +38,7 @@ import { followSession, rtl, t, tn, day } from './i18n'
 import { createShare } from './share'
 import { createShareLink } from './share-link'
 import { mountSharePop } from './share-popover'
-import { badge as shareBadge, shareState, watchShares } from './share-state'
+import { badge as shareBadge, setShareAsk, shareState, watchShares } from './share-state'
 import type { LinkTray } from './comments/types'
 import * as transport from './transport'
 import { framed, frameClicks, frameMenus, offerTheme, openFrame, frameUrl, type Frame } from './view/frame'
@@ -2628,6 +2628,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     let was = 'false:0'
     shareState.subscribe(() => { const b = shareBadge(), now = `${b.behind}:${b.now}`; if (now !== was) { was = now; render() } })
     setTimeout(watchShares)
+    // Fix before sharing, from a share review: a request to the agent on the variant the link opens
+    // on (else the one on screen), waiting in the comments like any decision.
+    setShareAsk({
+      agent: agentName(session.agent),
+      send: async (on, text) => { const to = on ?? shareHere(); if (!to?.variant) throw new Error(t('Open a variant first')); await comments.act.decide(to, 'share-fix', { body: [text], tags: [] }) },
+    })
   }
   const drawSettings = createSettings()
   function paintSettings() {

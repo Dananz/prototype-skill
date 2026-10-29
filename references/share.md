@@ -139,6 +139,11 @@ A share is reviewed before anything leaves:
   tailnet, which won't load for viewers), a share over 5 MiB. Read them to the user; run again
   with `--yes` only on their word.
 
+In the page, the review box (blocked or warnings) also offers **Ask Claude to fix this**: the user
+writes what to change, and it reaches `proto inbox` as an `action: share-fix` request with the
+findings quoted. Fix the prototype (never the review), check it with `proto share file`, reply
+`--done`; the user makes the link again.
+
 A local host that is down is started again. An online host is never started: if it doesn't answer
 `/_health` within 5 s the command says so. A host that needs a newer skill says
 "Update the skill to share"; on the maintainer's Mac a host deployed from older code than the skill

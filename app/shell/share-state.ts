@@ -24,6 +24,16 @@ export type Listed = { host: { name: string; stage: string; owner: string } | nu
 export type Owner = { host: string | null; signedIn: boolean; login: string | null; name: string | null; avatar: string | null; signin: boolean; status?: 'active' | 'pending' | 'banned' }
 export type Answer = { status: number; body: Record<string, any> }
 
+/**
+ * Fix before sharing: the shell's way to send the agent a request from a share review (a comment
+ * with action share-fix, on the variant given or the one on screen), and the agent's name for the
+ * button. Null until the shell sets it (a shared page has none).
+ */
+export type ShareAsk = { agent: string; send: (on: { proto: string; variant: string } | null, text: string) => Promise<void> }
+let asker: ShareAsk | null = null
+export const setShareAsk = (a: ShareAsk | null) => { asker = a }
+export const shareAsk = () => asker
+
 /** One of the session server's share routes, never throwing: status 0 when it can't be reached. */
 export async function route(name: string, body: Record<string, unknown> = {}): Promise<Answer> {
   try {

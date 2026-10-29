@@ -16,7 +16,7 @@ import { captureRoute } from './share-capture'
 import { drawQr } from './share-link-qr'
 import { VIRTUAL_THRESHOLD } from './virtual'
 import { Icon } from './comments/ui'
-import { loadOwner, mustSignIn, mustWait, notLetIn, putListed, route, shareState, signedOut, type Listed, type Owner, type ShareRow } from './share-state'
+import { loadOwner, mustSignIn, mustWait, notLetIn, putListed, route, shareAsk, shareState, signedOut, type Listed, type Owner, type ShareRow } from './share-state'
 
 export type P = { id: string; title: string; archived: boolean; screen?: [number, number]; variants: { id: string; name: string }[] }
 export type LinkProps = {
@@ -117,7 +117,54 @@ export function Quick({ value, onChange, options }: { value: What; onChange: (w:
   )
 }
 
-export function ReviewBox({ review, blocked, children }: { review: Review; blocked: boolean; children?: ReactNode }) {
+/** What a review found, as the agent reads it under the owner's words. */
+export const findingsOf = (review: Review) => [
+  ...review.block.map(b => `- ${b.message}${b.where ? ` (${b.where})` : ''}`),
+  ...review.notes.map(n => `- ${n}`),
+].join('\n')
+
+/**
+ * Fix before sharing: the owner tells the agent what to change about what the review found (use a
+ * hosted font, drop a file), sent as a request of its own with the findings quoted. It waits with
+ * the agent like a comment; the owner makes the link again once it is done.
+ */
+function AskFix({ review, on, open, setOpen }: { review: Review; on?: { proto: string; variant: string }; open: boolean; setOpen: (on: boolean) => void }) {
+  const ask = shareAsk()
+  const [note, setNote] = useState('')
+  const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle')
+  const [err, setErr] = useState('')
+  const box = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => { if (open) box.current?.focus() }, [open])
+  if (!ask) return null
+  if (state === 'sent') return <p data-link-asked className="flex items-start gap-2 font-medium"><Icon name="check" className="mt-px size-4" /><span>{t('Sent to {agent}. Make the link again once it is done.', { agent: ask.agent })}</span></p>
+  if (!open) return <button type="button" data-link-ask onClick={() => setOpen(true)} className={`${TEXT_BTN} -ms-2 !text-current`}><Icon name="comment" className="size-4" />{t('Ask {agent} to fix this', { agent: ask.agent })}</button>
+  const send = async () => {
+    setState('sending'); setErr('')
+    const words = note.trim()
+    try {
+      await ask.send(on ?? null, `${words || 'Fix what the review found'}\n\nThe share review found:\n${findingsOf(review)}`)
+      setState('sent'); setOpen(false)
+    } catch (e) { setState('idle'); setErr(e instanceof Error ? e.message : t('Could not send')) }
+  }
+  return (
+    <div data-link-ask-box className="space-y-2">
+      <textarea ref={box} dir="auto" rows={2} value={note} onChange={e => setNote(e.target.value)} disabled={state === 'sending'}
+        onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void send() } }}
+        placeholder={t('What should {agent} change? For example: use a hosted font instead of uploading these files', { agent: ask.agent })}
+        aria-label={t('Ask {agent} to fix this', { agent: ask.agent })}
+        className="block w-full resize-none rounded-lg bg-white/70 px-2.5 py-2 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-500 focus:ring-2 focus:ring-proto-primary-ring dark:bg-black/25 dark:text-zinc-100 dark:placeholder:text-zinc-400" />
+      {err && <p role="alert" className="text-rose-700 dark:text-rose-300">{err}</p>}
+      <div className="flex justify-end gap-1">
+        <button type="button" onClick={() => { setOpen(false); setErr('') }} className={`${TEXT_BTN} !text-current`}>{t('Cancel')}</button>
+        <button type="button" data-link-ask-send disabled={state === 'sending'} onClick={() => void send()} className={PRIMARY_BTN}>{state === 'sending' ? <Spinner /> : <Icon name="send" className="size-4" />}{t('Send to {agent}', { agent: ask.agent })}</button>
+      </div>
+    </div>
+  )
+}
+
+export function ReviewBox({ review, blocked, on, children }: { review: Review; blocked: boolean; on?: { proto: string; variant: string }; children?: ReactNode }) {
+  // While the owner writes to the agent, its Send is the one action: Back and Create anyway wait.
+  const [asking, setAsking] = useState(false)
   return (
     <div data-link-review className={`space-y-2 rounded-xl p-3 text-xs ${blocked ? 'bg-rose-500/10 text-rose-800 dark:text-rose-200' : 'bg-amber-500/10 text-amber-900 dark:text-amber-100'}`}>
       <p className="flex items-center gap-2 font-medium"><Icon name="warning" className="size-4" />{blocked ? t('This can’t be shared yet') : t('Check before it goes out')}<span className="ms-auto font-normal tabular-nums opacity-70">{t('{size} MiB', { size: review.sizeMiB })}</span></p>
@@ -125,7 +172,8 @@ export function ReviewBox({ review, blocked, children }: { review: Review; block
         {review.block.map((b, i) => <li key={`b${i}`}>{b.message}{b.where && <code dir="ltr" className="ms-1 break-all rounded bg-black/5 px-1 font-mono text-[11px] dark:bg-white/10">{b.where}</code>}</li>)}
         {review.notes.map((n, i) => <li key={`n${i}`}>{n}</li>)}
       </ul>
-      {children}
+      <AskFix review={review} on={on} open={asking} setOpen={setAsking} />
+      {!asking && children}
     </div>
   )
 }
@@ -508,7 +556,7 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
         <MessageField value={message} onChange={setMessage} />
       </section>
       {(step?.phase === 'review' || step?.phase === 'blocked') && step.review && (
-        <ReviewBox review={step.review} blocked={step.phase === 'blocked'}>
+        <ReviewBox review={step.review} blocked={step.phase === 'blocked'} on={startKey ? { proto: startProto, variant: startVariant } : undefined}>
           <div className="flex justify-end gap-1">
             <button type="button" onClick={() => setStep(null)} className={TEXT_BTN}>{t('Back')}</button>
             {step.phase === 'review' && <button type="button" data-link-anyway onClick={() => void create(true)} className={PRIMARY_BTN}>{t('Create link anyway')}</button>}
