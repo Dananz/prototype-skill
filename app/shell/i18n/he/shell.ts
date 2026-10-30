@@ -215,8 +215,8 @@ export default {
   'Before: {asks}': 'לפני: {asks}',
   'Saved by hand': 'נשמרה ידנית',
   '{v}, earlier': '{v}, קודם',
-  'v{n}': 'ג{n}',
+  'v{n}': 'גרסה {n}',
   'Close history': 'סגור היסטוריה',
-  'History · v{n}': 'היסטוריה · ג{n}',
+  'History · v{n}': 'היסטוריה · גרסה {n}',
   'As picked': 'כפי שנבחר',
 } satisfies Record<string, string>
