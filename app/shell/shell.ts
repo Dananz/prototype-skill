@@ -2751,7 +2751,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // and the design in it stay as they are (an open menu, what was typed), as on the stage.
   const frameable = () => !framed && q.get('hints') !== '0' && st.place.view !== 'session' && cur()?.kind !== 'phone'
   const viewOk = () => frameable() && !st.focus && (!phoneMq.matches || pillOn())
-  const fillOk = () => frameable() && !phoneMq.matches && st.place.view === 'variant' && !st.place.tool
+  // With the tree on the design sits on the map as its board, mounted in the page (no artboard frame):
+  // the map's own mount hands over to it, so it doesn't load twice.
+  const fillOk = () => frameable() && !phoneMq.matches && !treeOn && st.place.view === 'variant' && !st.place.tool
   const native = (): Size | null => {
     // a desktop window keeps the desktop layout even when the side panels narrow the stage (view/index.tsx FILL_MIN_W)
     if (fillOk()) return nativeOf(innerWidth >= FILL_MIN_W ? Math.max(layers.clientWidth || innerWidth, FILL_MIN_W) : layers.clientWidth || innerWidth)
