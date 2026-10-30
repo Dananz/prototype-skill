@@ -3,7 +3,7 @@
 // stack shares them.
 import type { Proto, State, Variant, Version } from '../shell/shell'
 
-export type Meta = { title: string; ask?: string; kind?: 'web' | 'phone'; created?: string; archived?: boolean; from?: string; slot?: string; also?: string[]; picked?: string; favorites?: string[]; count?: number; screen?: [number, number]; variants?: Record<string, string>; about?: Record<string, string>; states?: State[] }
+export type Meta = { title: string; ask?: string; kind?: 'web' | 'phone'; created?: string; archived?: boolean; from?: string; slot?: string; also?: string[]; picked?: string; favorites?: string[]; count?: number; screen?: [number, number]; variants?: Record<string, string>; about?: Record<string, string>; states?: State[]; theme?: string }
 
 const order = (a: Variant, b: Variant) => a.id.length - b.id.length || a.id.localeCompare(b.id)
 
@@ -30,7 +30,8 @@ export const protosOf = (metas: Record<string, Meta>, files: Record<string, () =
       .filter(f => f.parts[2] === id && /^[A-Z]{1,2}\.\w+$/.test(f.parts[3]))
       .map(f => {
         const vid = f.parts[3].replace(/\.\w+$/, '')
-        return { id: vid, name: meta.variants?.[vid] ?? vid, load: f.load, file: `/src${f.file.slice(1)}` }
+        // theme: the scope of the project's theme.css this prototype's look comes from (app/theme-merge.mjs).
+        return { id: vid, name: meta.variants?.[vid] ?? vid, load: f.load, file: `/src${f.file.slice(1)}`, ...(typeof meta.theme === 'string' && meta.theme ? { theme: meta.theme } : {}) }
       })
       .sort(order)
     // from: "home/B" (built from variant B of home) or "home" (from the prototype as a whole).

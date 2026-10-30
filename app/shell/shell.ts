@@ -46,7 +46,7 @@ import { framed, frameClicks, frameMenus, offerTheme, openFrame, frameUrl, type 
 import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
 import { dims, FILL_MIN_W, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
 
-export type Variant = { id: string; name: string; file: string; load: () => Promise<unknown> }
+export type Variant = { id: string; name: string; file: string; load: () => Promise<unknown>; theme?: string }
 /** A variant as it was before a change the user asked for (app/history.mjs): n counts from 1, oldest
  *  first; before: the asks it came before; note: why it was kept by hand. */
 export type Version = { n: number; at: string; note: string; before: { text: string; at: string }[]; file: string; load: () => Promise<unknown> }
@@ -682,6 +682,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       // Copy choices are kept per variant, so every place it is mounted reads the same words.
       copy.bind(host, routeOfFile(v.file))
       host.dataset.route = routeOfFile(v.file)
+      // Its look, when its prototype came from a session or kit whose theme differs (app/theme-merge.mjs).
+      if (v.theme) host.dataset.protoTheme = v.theme; else delete host.dataset.protoTheme
       if (s) host.dataset.commentState = s.id
       markBuilding(host)
       const here = () => !gone && live.has(host) && generations.get(host) === generation
