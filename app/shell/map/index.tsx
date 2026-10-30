@@ -202,8 +202,9 @@ function MapView({ api }: { api: MapApi }) {
     const up = (ev: PointerEvent) => {
       removeEventListener('pointermove', move); removeEventListener('pointerup', up)
       setDrag(null)
-      const key = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-map-board]')?.dataset.mapBoard
-      const to = world.boards.find(b => b.key === key && b.kind === 'screen' && b.slug !== from.slug)
+      // The screen under the pointer, found in the world (a label or a pill over it doesn't hide it).
+      const p = at(ev)
+      const to = world.boards.find(b => b.kind === 'screen' && b.slug !== from.slug && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h)
       if (to) setNote({ kind: 'link', a: from, b: to })
     }
     addEventListener('pointermove', move); addEventListener('pointerup', up)
