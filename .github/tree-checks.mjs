@@ -56,6 +56,21 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-tree-filter="mine"]').click()`)
     await until(page, `!document.querySelector('[data-tree-row="exp:tlogo"]') && !!document.querySelector('[data-tree-row="screen:thome"]')`, 'This conversation should leave out tlogo')
     await page.run(`document.querySelector('[data-tree-filter="all"]').click()`)
+    // Favorites: the star filter keeps what has a starred option; a star given now redraws the tree.
+    await page.run(`document.querySelector('[data-tree-filter="favs"]').click()`)
+    await until(page, `!document.querySelector('[data-tree-row="screen:thome"]')`, 'Favorites with no star should leave thome out')
+    proto(['fav', 'tlogo/2'])
+    await until(page, `!!document.querySelector('[data-tree-row="opt:tlogo/B"]') && !document.querySelector('[data-tree-row="opt:tlogo/A"]')`, 'a star given on disk should bring its option into Favorites, alone')
+    await page.run(`document.querySelector('[data-tree-filter="all"]').click()`)
+    proto(['fav', 'tlogo/2', '--off'])
+    // The project's name opens Settings on Session, its mark carries the live dot.
+    assert(await page.run(`document.querySelector('[data-tree-live]')?.dataset.treeLive === 'on'`), 'the mark should carry a live dot')
+    await page.run(`document.querySelector('[data-tree-session]').click()`)
+    await until(page, `document.querySelector('[data-settings-category=session]')?.getAttribute('aria-current') === 'page'`, 'the project name should open Settings on Session')
+    await page.run(`document.querySelector('[data-settings-category=shortcuts]').click()`)
+    await until(page, `/Map\\s*M/.test(document.querySelector('[data-settings-dialog]')?.textContent ?? '') && /Jump to a screen/.test(document.querySelector('[data-settings-dialog]').textContent)`, 'Shortcuts should list M and Jump with the tree on')
+    await page.run(`document.querySelector('[data-settings-close]').click()`)
+    await until(page, `!document.querySelector('[data-settings-dialog]')`, 'Settings should close')
 
     // A design changed on disk (another conversation's screen) is drawn without a reload.
     await page.run(`window.__treeMark = 1`)

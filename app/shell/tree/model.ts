@@ -20,7 +20,7 @@ export type TreeNode = {
   count?: number
   children: TreeNode[]
 }
-export type Filter = 'all' | 'open' | 'mine'
+export type Filter = 'all' | 'open' | 'mine' | 'favs'
 
 /** Its parent, unless the chain up from it loops or names a prototype that isn't there. */
 function parentOf(p: Proto, byId: Map<string, Proto>): Proto | null {
@@ -63,9 +63,10 @@ export function treeOf(protos: Proto[], designs: Design[], o: { filter: Filter; 
   const explore = (p: Proto, kind: 'screen' | 'exploration', pinned = ''): TreeNode | null => {
     const s = state(p)
     const below = (kids.get(p.id) ?? []).map(k => explore(k, 'exploration')).filter((n): n is TreeNode => !!n)
-    const keep = o.filter === 'open' ? NEEDS.includes(s) || below.length > 0 : mine(p) || below.length > 0
+    const favs = o.filter === 'favs'
+    const keep = o.filter === 'open' ? NEEDS.includes(s) || below.length > 0 : favs ? p.favorites.length > 0 || below.length > 0 : mine(p) || below.length > 0
     if (!keep) return null
-    const options: TreeNode[] = p.variants.map(v => ({
+    const options: TreeNode[] = p.variants.filter(v => !favs || p.favorites.includes(v.id)).map(v => ({
       kind: 'option', key: `opt:${p.id}/${v.id}`, label: v.name, route: `${p.id}/${v.id}`,
       ...(p.picked === v.id ? { picked: true } : {}), ...(became.has(`${p.id}/${v.id}`) ? { became: became.get(`${p.id}/${v.id}`) } : {}), children: [],
     }))

@@ -69,6 +69,15 @@ test('mine: only what this conversation made, and the designs that hold it', () 
   assert.ok(!ks.includes('exp:cta-copy') && !ks.includes('screen:signup') && !ks.includes('exp:logo'))
 })
 
+test('favs: only what has a favorite, its starred options, and what holds it', () => {
+  const list = protos.map(p => ({ ...p, favorites: p.id === 'cta-copy' ? ['B'] : [] }))
+  const { nodes } = treeOf(list, designs, { filter: 'favs', me: null, building: none })
+  const ks = keys(nodes)
+  assert.ok(ks.includes('design:acme') && ks.includes('screen:home') && ks.includes('exp:hero-cta') && ks.includes('exp:cta-copy'))
+  assert.ok(ks.includes('opt:cta-copy/B') && !ks.includes('opt:cta-copy/A'))
+  assert.ok(!ks.includes('screen:about') && !ks.includes('exp:logo') && !ks.includes('section:archive'))
+})
+
 test('a flow naming a missing slug yields no node', () => {
   const d = [{ ...designs[0], flows: [{ name: 'Main', screens: ['home', 'ghost'] }] }]
   const { nodes } = treeOf(protos, d, { filter: 'all', me: null, building: none })

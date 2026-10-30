@@ -19,6 +19,8 @@ export default {
   'Nothing waits for you': 'שום דבר לא מחכה לך',
   'Nothing from this conversation yet': 'עוד אין כלום מהשיחה הזו',
   'No prototypes yet': 'עוד אין פרוטוטייפים',
+  'Favorites': 'מועדפים',
+  'No favorites yet': 'עוד אין מועדפים',
   'Built on #{was}, and #{now} is picked now': 'נבנה על #{was}, ועכשיו בחרת #{now}',
   'Waiting for your pick': 'מחכה לבחירה שלך',
   'Waiting for the pick above it': 'מחכה לבחירה בסבב שמעליו',
@@ -80,4 +82,10 @@ export default {
   'in a screen': 'בתוך מסך',
   'Move': 'הזזה',
   'States, Autoplay, Compare': 'מצבים, הפעלה אוטומטית, השוואה',
+  // The map's board mark (map/index.tsx).
+  'Editing': 'בעריכה',
+  // Settings' shortcuts with the tree on.
+  'Jump to a screen': 'קפיצה למסך',
+  'Zoom out past the screen to the map': 'התרחקות מהמסך אל המפה',
+  'Pinch': 'צביטה',
 }

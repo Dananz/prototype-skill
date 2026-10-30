@@ -122,6 +122,8 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     proto(['add', 'mother', '--title', 'Map other', '--variants', 'A:One'])
     proto(['design', 'mother/A', '--title', 'Map Other', '--id', 'mother-d'])
     await until(page, `!!document.querySelector('[data-map-design]')`, 'two designs should bring the design filter')
+    await until(page, `!!document.querySelector('[data-map-board="screen:mother"] [data-map-building]')`, 'a screen the agent is still building should say so on its board')
+    assert(await page.run(`!document.querySelector('[data-map-board="screen:mhome"] [data-map-building]')`), 'a finished screen should carry no building mark')
     await page.run(`(() => { const s = document.querySelector('[data-map-design]'); s.value = 'macme'; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
     await until(page, `!document.querySelector('[data-map-board="screen:mother"]') && !!document.querySelector('[data-map-board="screen:mhome"]')`, 'the filter should show one design')
     await page.run(`(() => { const s = document.querySelector('[data-map-design]'); s.value = ''; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
@@ -139,5 +141,5 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`location.pathname === '/'`), `Enter on a button should not open the selected screen (at ${await page.run('location.pathname')})`)
   } finally { page.close() }
   for (const s of ['mhome', 'mabout', 'mloose', 'mother']) proto(['archive', s])
-  console.log('OK: the map: designs, screens live, options, loose explorations, link lines, notes on lines and flows, dragged links, Build it, the design filter, open and back with M')
+  console.log('OK: the map: designs, screens live, options, loose explorations, link lines, notes on lines and flows, dragged links, Build it, the building mark, the design filter, open and back with M')
 }

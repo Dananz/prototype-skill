@@ -18,6 +18,8 @@ export type MapInput = {
   readOnly?: boolean
   /** Counts edits to the prototypes' files: the links are read again. */
   edits?: number
+  /** What the agent is writing now: `route:building` or `route:editing`, space-separated. */
+  working?: string
 }
 export type MapApi = {
   get(): MapInput; subscribe(fn: () => void): () => void
@@ -88,6 +90,7 @@ function MapView({ api }: { api: MapApi }) {
   const given = useMemo(() => input.designs.some(d => d.links) ? Object.assign({}, ...input.designs.map(d => d.links ?? {})) as Record<string, string[]> : null, [input.designs])
   const links = useLinks(world.boards, input.edits ?? 0, given, input.hidden)
   const ro = !!input.readOnly
+  const busy = useMemo(() => new Map((input.working ?? '').split(' ').filter(Boolean).map(w => w.split(':') as [string, string])), [input.working])
   const view = useRef<HTMLDivElement>(null), layer = useRef<HTMLDivElement>(null)
   const cam = useRef<Cam>(api.camera ?? { x: 0, y: 0, z: 0.2 })
   const [, redraw] = useState(0)
@@ -268,6 +271,15 @@ function MapView({ api }: { api: MapApi }) {
                   <Preview v={variantOf(b)} live={live.has(b.key) && !input.hidden} mount={api.mount} />
                 </div>
                 {!live.has(b.key) && <div className={'absolute inset-0 grid place-items-center bg-zinc-50 text-zinc-400 dark:bg-zinc-900'} style={{ fontSize: 'calc(13px * var(--lz))' }}><span dir="auto" className={b.pile ? 'invisible' : ''}>{b.title}</span></div>}
+                {busy.has(b.route) && !b.pile && b.kind === 'option' && (
+                  // An option's card is small: a dot, its name in the title, so the card's own name stays readable.
+                  <span data-map-building={busy.get(b.route)} title={busy.get(b.route) === 'building' ? t('Building') : t('Editing')} className="absolute end-[calc(8px*var(--iz))] top-[calc(8px*var(--iz))] size-[calc(8px*var(--iz))] animate-pulse rounded-full bg-emerald-500 shadow-[0_0_0_calc(2px*var(--iz))_white] dark:shadow-[0_0_0_calc(2px*var(--iz))_rgb(24_24_27)]" style={{ zIndex: 2 }} />
+                )}
+                {busy.has(b.route) && !b.pile && b.kind === 'screen' && (
+                  <span data-map-building={busy.get(b.route)} className="absolute start-[calc(8px*var(--iz))] top-[calc(8px*var(--iz))] inline-flex items-center gap-[calc(6px*var(--iz))] rounded-full bg-zinc-900/80 px-[calc(8px*var(--lz))] py-[calc(3px*var(--lz))] font-medium text-white shadow backdrop-blur" style={{ fontSize: 'calc(11px * var(--lz))', zIndex: 2 }}>
+                    <span className="size-[calc(6px*var(--lz))] animate-pulse rounded-full bg-emerald-400" />{busy.get(b.route) === 'building' ? t('Building') : t('Editing')}
+                  </span>
+                )}
               </div>
             )
           })}

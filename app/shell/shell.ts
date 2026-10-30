@@ -597,8 +597,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const w = workOf()
     return {
       protos: all, designs, place: placeRoute(), me: session.conversation ?? null,
-      building: new Set(Object.keys(session.building ?? {})), counts: by,
+      building: new Set(Object.keys(session.building ?? {}).filter(k => buildingUntil(k) > Date.now())), counts: by,
       work: w ? t('Working on {name}', { name: `${w.p.title} ${variantLabel(w.p, w.v.id)}` }) : '',
+      up: st.live && !st.stopped,
       live: st.stopped ? t('Server stopped') : [st.live ? t('Live') : t('Reconnecting'), st.lastEdit ? t('edited {when}', { when: ago(st.lastEdit) }) : ''].filter(Boolean).join(' · '),
     }
   }
@@ -606,7 +607,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function paintTree() {
     if (!treeOn) return
     const next = treeInput(), was = treeSnap
-    const key = (x: TreeInput | null) => x && JSON.stringify({ ...x, protos: x.protos.map(p => [p.id, p.title, p.picked, p.archived, p.from, p.session, p.variants.map(v => v.id + v.name)]), building: [...x.building] })
+    const key = (x: TreeInput | null) => x && JSON.stringify({ ...x, protos: x.protos.map(p => [p.id, p.title, p.picked, p.archived, p.from, p.session, p.favorites, p.variants.map(v => v.id + v.name)]), building: [...x.building] })
     if (key(next) === key(was)) return
     treeSnap = next
     treeWatchers.forEach(f => f())
@@ -686,7 +687,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     mapHost.hidden = !show
     layers.style.visibility = show ? 'hidden' : ''
     if (!show && !mapMounted) return
-    const next: MapInput = { protos: all, designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits }
+    const work = all.flatMap(p => p.variants.filter(v => editing(p.id, v.id)).map(v => `${p.id}/${v.id}:${building(p.id, v.id) ? 'building' : 'editing'}`)).join(' ')
+    const next: MapInput = { protos: all, designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits, working: work }
     if (mapSnap && (Object.keys(next) as (keyof MapInput)[]).every(k => next[k] === mapSnap![k])) return
     mapSnap = next
     if (!mapMounted && show) { mapMounted = true; mountMap(mapHost, mapApi) }
