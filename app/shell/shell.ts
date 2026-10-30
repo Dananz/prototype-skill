@@ -201,8 +201,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let all = opts.protos
   let designs = opts.designs ?? []
   // The tree sidebar draws them and listens for changes (tree/index.tsx).
-  const designWatchers = new Set<() => void>()
-  const designsChanged = () => { designWatchers.forEach(f => f()); paintTree() }
   const shown = (list: Proto[]) => favOnly ? list.map(p => p.favorites.length ? { ...p, variants: p.variants.filter(v => p.favorites.includes(v.id)) } : p) : list
   let protos = shown(all)
   // The page inside a device view (view/frame.ts) shares this browser's storage with the page
@@ -624,10 +622,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // With the project tree on, a link asks first (a chip over the stage), and one to a screen not
     // built yet offers to ask the agent for it.
     if (!target) return treeOn && from ? showChip({ from, to, route: '' }) : sayGo(t('{name} is not built yet', { name: to }))
-    const here = st.place.view === 'session' ? null : st.place.proto
-    const screensOf = (d: Design) => d.flows.flatMap(f => f.screens)
-    const mine = here ? designs.find(d => screensOf(d).some(x => x.split('/')[0] === here)) : null
-    const entry = mine ? screensOf(mine).find(x => x.split('/')[0] === to) : to
+    // The design of the screen on screen (a pinned one, or the one an exploration is built on).
+    const pl = st.place
+    const w = pl.view === 'variant' ? whereOf(all, designs, { proto: pl.proto, variant: pl.variant }) : null
+    const mine = w?.design ? designs.find(d => d.id === w.design!.id) : null
+    const entry = mine ? mine.flows.flatMap(f => f.screens).find(x => x.split('/')[0] === to) : to
     if (!entry) return sayGo(t('{name} is not a screen of this design', { name: to }))
     const route = `${to}/${entry.split('/')[1] || target.picked || target.variants[0]?.id || 'A'}`
     if (treeOn && from) return showChip({ from, to, route })
@@ -656,7 +655,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const mapWatchers = new Set<() => void>()
   let mapSnap: MapInput | null = null, mapMounted = false, lastFocus = ''
   let mapLines: 'all' | 'selected' = localStorage.getItem('proto-map-lines') === 'all' ? 'all' : 'selected'
-  let mapDesign = ''
+  let mapDesign = '', mapEdits = 0
   const onMap = () => treeOn && !framed && st.place.view !== 'variant'
   const mapApi: MapApi = {
     get: () => mapSnap!, subscribe: f => { mapWatchers.add(f); return () => { mapWatchers.delete(f) } },
@@ -671,7 +670,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     mapHost.hidden = !show
     layers.style.visibility = show ? 'hidden' : ''
     if (!show && !mapMounted) return
-    const next: MapInput = { protos: all, designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign }
+    const next: MapInput = { protos: all, designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits }
     if (mapSnap && (Object.keys(next) as (keyof MapInput)[]).every(k => next[k] === mapSnap![k])) return
     mapSnap = next
     if (!mapMounted && show) { mapMounted = true; mountMap(mapHost, mapApi) }
@@ -2360,7 +2359,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (settingsOpen || shareOpen || linkOpen) return
     if (resetViewKey(e)) return
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); return act('side', (wide() ? st.side : st.drawer) ? '0' : '1', '') }
-    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k' && treeOn && !framed) { e.preventDefault(); return openJump() }
+    // ⌘K is Jump's unless the design took it (its own palette, a field that uses it).
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k' && treeOn && !framed && !e.defaultPrevented && !t.closest?.('[data-mount] input, [data-mount] textarea, [data-mount] [contenteditable]')) { e.preventDefault(); return openJump() }
     // Cmd or Ctrl Enter sends what's ready to Claude, from anywhere but a field of the design's own.
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
     if (e.key === 'Escape') {
@@ -3607,7 +3607,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // New prototypes and new variants are followed; edits to existing ones only light the
     // editing dot, so the view never jumps while someone is looking at something.
     /** Designs added or changed on disk (proto design, add --design). */
-    setDesigns(next: Design[]) { designs = next; designsChanged() },
+    // Everything that reads the designs draws again: the tree, the map, the crumb, the strip, a link's chip.
+    setDesigns(next: Design[]) { designs = next; render() },
     setProtos(next: Proto[]) {
       const before = new Map(protos.map(p => [p.id, new Set(p.variants.map(v => v.id))]))
       // Stars changed elsewhere (`proto fav`, another tab): an overview's cards are its layer, so it is drawn again below.
@@ -3705,6 +3706,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       }
       if (retrying) show(false)
       motionDock.edited(paths, st.place.view === 'variant' ? st.place.proto : null)
+      if (paths.some(p => p.includes('/src/protos/'))) mapEdits++
       render()
       clearTimeout(editTimer)
       editTimer = window.setTimeout(() => { st.editing = null; render() }, 10_000)

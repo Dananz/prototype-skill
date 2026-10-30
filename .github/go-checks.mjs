@@ -19,9 +19,15 @@ export async function goChecks({ proto, app, local, openPage, fail }) {
   proto(['design', 'goelse/A', '--title', 'Go other', '--id', 'goother'])
   variant('gohome', 'C', `<h1>Home</h1><Go to="goabout" data-shoot="to-about">About</Go> <Go to="nowhere" data-shoot="to-none">Nowhere</Go> <Go to="goelse" data-shoot="to-other">Else</Go>`)
   for (const l of ['A', 'B']) variant('goabout', l, `<h1>About ${l}</h1>`)
-  for (const l of ['A', 'B']) variant('gohome', l, `<h1>Home ${l}</h1>`)
+  variant('gohome', 'A', `<h1>Home A</h1><Go to="gopricing" data-shoot="to-pricing">Pricing</Go>`)
+  variant('gohome', 'B', `<h1>Home B</h1>`)
   variant('goelse', 'A', '<h1>Else</h1>')
   for (const s of ['gohome', 'goabout', 'goelse']) proto(['done', s])
+  // A second design from gohome/A pins it: its links are walked in that design, not the first.
+  proto(['design', 'gohome/A', '--title', 'Go Beta', '--id', 'gobeta'])
+  proto(['add', 'gopricing', '--title', 'Go pricing', '--design', 'gobeta', '--variants', 'A:One'])
+  variant('gopricing', 'A', '<h1>Pricing</h1>')
+  proto(['done', 'gopricing'])
 
   const page = await openPage(`${local}gohome/C`)
   const click = sel => page.run(`(() => { const doc = document.querySelector('[data-view]:not([hidden]) iframe')?.contentDocument ?? document; const el = doc.querySelector('${sel}'); el?.click(); return !!el })()`)
@@ -45,6 +51,16 @@ export async function goChecks({ proto, app, local, openPage, fail }) {
     await until(page, `/goelse is not a screen of this design/.test(document.querySelector('[data-go-note]')?.textContent ?? '')`, 'a link outside the design should say so')
     assert(await page.run(`location.pathname === '/gohome/C'`), 'a link outside the design should stay')
 
+    // gohome/A is the pinned screen of the second design: its link walks that design.
+    await page.run(`history.pushState(null, '', '/gohome/A'); dispatchEvent(new PopStateEvent('popstate'))`)
+    await until(page, `!!document.querySelector('[data-shoot="to-pricing"]')`, 'the pinned screen should draw')
+    await wait(400)
+    await click('[data-shoot="to-pricing"]')
+    await until(page, `location.pathname === '/gopricing/A'`, 'a link on a pinned screen should walk its own design')
+    await page.run(`history.pushState(null, '', '/gohome/C'); dispatchEvent(new PopStateEvent('popstate'))`)
+    await until(page, `!!document.querySelector('[data-shoot="to-about"]')`, 'back on gohome/C')
+    await wait(400)
+
     // From the phone frame: the link inside the device view's iframe walks the top page.
     await page.run(`document.querySelector('[data-bar] [data-act="open:device"]')?.click()`)
     await until(page, `!!document.querySelector('[data-act="size:phone"]')`, 'the layout menu should offer the phone')
@@ -53,6 +69,6 @@ export async function goChecks({ proto, app, local, openPage, fail }) {
     await click('[data-shoot="to-about"]')
     await until(page, `location.pathname === '/goabout/B'`, 'a link inside the phone frame should walk the page')
   } finally { page.close() }
-  for (const s of ['gohome', 'goabout', 'goelse']) proto(['archive', s])
+  for (const s of ['gohome', 'goabout', 'goelse', 'gopricing']) proto(['archive', s])
   console.log('OK: Go links walk a design: picks, stand-ins, missing and outside screens, inside a device frame')
 }

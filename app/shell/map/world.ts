@@ -34,6 +34,8 @@ export function worldOf(protos: Proto[], designs: Design[], spread: Set<string> 
   const boards: Board[] = [], labels: Label[] = []
   const onScreen = new Set<string>()
   for (const d of designs) for (const f of d.flows) for (const x of f.screens) onScreen.add(x.split('/')[0])
+  // A screen's rounds hang under its unpinned entry; when it is only pinned (a share pins them all), under that.
+  const unpinned = new Set(designs.flatMap(d => d.flows.flatMap(f => f.screens.filter(x => !x.includes('/')))))
 
   // An exploration as a round: its title, then a stack (its pick on top) or its options in a row.
   const round = (p: Proto, x: number, y: number, own = false): number => {
@@ -83,7 +85,7 @@ export function worldOf(protos: Proto[], designs: Design[], spread: Set<string> 
           boards.push({ key: `screen:${p.id}${pin ? `/${pin}` : ''}`, kind: 'screen', route: `${p.id}/${letter}`, slug: p.id, letter, title: p.title, x, y, w: fw, h: fh, scale: 1, design: d.id, flow: f.name, ...(!pin && !p.picked ? { standIn: true } : {}) })
           // Its own options as a round under it, then the explorations built on it.
           let ry = y + rowH + BELOW, rw = fw
-          for (const r of pin ? [] : [p, ...under(p.id)]) { const used = round(r, x, ry, r === p); rw = Math.max(rw, used); ry += roundH(r) + BELOW }
+          for (const r of pin && unpinned.has(p.id) ? [] : [p, ...under(p.id)]) { const used = round(r, x, ry, r === p); rw = Math.max(rw, used); ry += roundH(r) + BELOW }
           below = Math.max(below, ry - (y + rowH))
           x += rw + GAP
         }

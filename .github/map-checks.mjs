@@ -54,6 +54,18 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-map-lines]').click()`)
     await until(page, `document.querySelector('[data-map-lines]').getAttribute('aria-pressed') === 'false'`, 'the lines switch should turn to all')
     await until(page, `localStorage.getItem('proto-map-lines') === 'all'`, 'the lines mode should be kept')
+    // An edit to a screen's variant is a hot update, never a reload (the links are read by the server).
+    await page.run(`window.__mapMark = 1`)
+    variant('mhome', 'B', `<h1 data-shoot="mhome-live">Home again</h1><Go to="mabout">About</Go>`)
+    await wait(2500)
+    assert(await page.run(`window.__mapMark === 1`), 'editing a screen reloaded the page')
+    // A design changed on disk is drawn on the map at once.
+    proto(['design', 'macme', '--flow', 'Extra', '--screens', 'mabout'])
+    await until(page, `!!document.querySelector('[data-map-label="flow:macme:Extra"]')`, 'a new flow should reach the map without a reload')
+    assert(await page.run(`window.__mapMark === 1`), 'a design change reloaded the page')
+    proto(['design', 'macme', '--flow', 'Main', '--screens', 'mabout'])
+    await until(page, `!document.querySelector('[data-map-label="flow:macme:Extra"]')`, 'the screen moved back')
+
     // A note on a link line, and on a flow, reaches the agent.
     let had = new Set(batches())
     await page.run(`document.querySelector('[data-map-line-hit="mhome>mabout"]').dispatchEvent(new MouseEvent('click', { bubbles: true }))`)
@@ -113,6 +125,10 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.body.focus(); dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }))`)
     await until(page, `!document.querySelector('[data-map-host]').hidden`, 'M should go back to the map')
     await until(page, `!!document.querySelector('[data-map-board="screen:mhome"] [data-shoot="mhome-live"]')`, 'coming back the map flies out from the screen, which draws live')
+    // Enter on a focused button is the button's, not the map's (a screen is selected on the way back).
+    await page.run(`(() => { const b = document.querySelector('[data-map-fit]'); b.focus(); b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })) })()`)
+    await wait(800)
+    assert(await page.run(`location.pathname === '/'`), `Enter on a button should not open the selected screen (at ${await page.run('location.pathname')})`)
   } finally { page.close() }
   for (const s of ['mhome', 'mabout', 'mloose', 'mother']) proto(['archive', s])
   console.log('OK: the map: designs, screens live, options, loose explorations, link lines, notes on lines and flows, dragged links, Build it, the design filter, open and back with M')

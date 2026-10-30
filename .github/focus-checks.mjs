@@ -19,7 +19,7 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
   proto(['design', 'fhome/B', '--title', 'Focus Acme', '--id', 'facme'])
   proto(['add', 'fabout', '--title', 'Focus about', '--design', 'facme', '--variants', 'A:One'])
   variant('fhome', 'B', `<h1>Home</h1><Go to="fabout" data-shoot="f-to-about">About</Go> <Go to="fnone" data-shoot="f-to-none">Nowhere</Go>`)
-  variant('fhome', 'A', '<h1>Home A</h1>')
+  variant('fhome', 'A', '<h1>Home A</h1><input data-shoot="f-field" />')
   variant('fabout', 'A', '<h1 data-shoot="f-about">About</h1>')
   for (const s of ['fhome', 'fabout']) proto(['done', s])
 
@@ -44,6 +44,15 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await until(page, `location.pathname === '/fabout/A'`, "the crumb's next should open the next screen")
     await page.run(`document.querySelector('[data-crumb-step="-1"]').click()`)
     await until(page, `location.pathname === '/fhome/B'`, "the crumb's previous should go back")
+
+    // ⌘K in a design's own field, which the design takes, is the design's.
+    await page.run(`history.pushState(null, '', '/fhome/A'); dispatchEvent(new PopStateEvent('popstate'))`)
+    await until(page, `!!document.querySelector('[data-shoot="f-field"]')`, 'home A should draw its field')
+    await page.run(`(() => { const f = document.querySelector('[data-shoot="f-field"]'); f.addEventListener('keydown', e => e.preventDefault()); f.focus(); f.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true, cancelable: true })) })()`)
+    await wait(400)
+    assert(await page.run(`!document.querySelector('[data-jump]')`), '⌘K taken by the design should not open Jump')
+    await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
+    await until(page, `!!document.querySelector('[data-shoot="f-to-about"]')`, 'back on home B')
 
     // ⌘K: Jump.
     await page.run(`document.body.focus(); dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))`)

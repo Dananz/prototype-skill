@@ -50,6 +50,9 @@ export async function shareMapChecks({ proto, app, openPage, fail }) {
     assert(await page.run(`!document.querySelector('[data-map-handle]')`), 'a viewer cannot drag a link')
     await page.run(`document.querySelector('[data-map-board="screen:smhome/B"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`)
     await until(page, `!document.querySelector('[data-viewer-map]') && document.body.innerText.includes('SM-HOME-B')`, 'a double click should open the screen')
+    // A <Go to> link in the shared screen walks to the other screen.
+    await page.run(`(() => { const doc = [...document.querySelectorAll('iframe')].map(f => f.contentDocument).find(d => d?.querySelector('a')) ?? document; const a = [...doc.querySelectorAll('a')].find(x => x.textContent === 'About'); a?.click(); return !!a })()`)
+    await until(page, `document.body.innerText.includes('SM-ABOUT-A') || [...document.querySelectorAll('iframe')].some(f => f.contentDocument?.body?.innerText.includes('SM-ABOUT-A'))`, 'a link in a shared screen should walk to its target')
     await page.run(`document.querySelector('[data-viewer-map-btn]').click()`)
     await until(page, `!!document.querySelector('[data-viewer-map]')`, 'the Map button should go back to the map')
   } finally { page.close(); server.close() }

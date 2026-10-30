@@ -46,3 +46,9 @@ test('lines between boards leave from an edge', () => {
   assert.match(linePath({ x: 0, y: 0, w: 100, h: 50 }, { x: 300, y: 0, w: 100, h: 50 }), /^M100,25 C/)
   assert.match(linePath({ x: 0, y: 0, w: 100, h: 50 }, { x: 0, y: 400, w: 100, h: 50 }), /^M75,50 C/)
 })
+
+test('a pinned screen with no unpinned entry still shows what is built on it (a share)', () => {
+  const pinned = [{ id: 'acme', title: 'Acme', created: '', flows: [{ name: 'Main', screens: ['home/C', 'about/A'] }] }]
+  const w = worldOf(protos, pinned)
+  assert.ok(w.boards.some(b => b.slug === 'hero'), 'hero, built on home, is drawn under the pinned home')
+})

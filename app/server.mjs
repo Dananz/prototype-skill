@@ -705,6 +705,20 @@ export function prototypeServer(session) {
               res.setHeader('content-type', 'application/json')
               return res.end(JSON.stringify({ markdown: made.markdown, file: `.proto/decisions/${data.proto}.md`, picked: made.picked, open: made.open }))
             }
+            // The map's lines: each screen's <Go to> targets, read here so the page never imports a
+            // variant's source (an import with no importer makes every edit of it a full reload).
+            if (route === '/links') {
+              const routes = Array.isArray(data.routes) ? data.routes.filter(r => typeof r === 'string' && /^[a-z0-9][a-z0-9-]*\/[A-Z]{1,2}$/.test(r)).slice(0, 500) : []
+              import('./links.mjs').then(({ linksIn }) => {
+                const links = Object.fromEntries(routes.map(r => {
+                  const [slug, letter] = r.split('/'), ext = ['tsx', 'jsx', 'vue', 'svelte'].find(x => existsSync(join(dir, 'src', 'protos', slug, `${letter}.${x}`)))
+                  try { return [r, ext ? linksIn(readFileSync(join(dir, 'src', 'protos', slug, `${letter}.${ext}`), 'utf8')) : []] } catch { return [r, []] }
+                }))
+                res.setHeader('content-type', 'application/json')
+                res.end(JSON.stringify({ links }))
+              }, e => fail(500, String(e?.message || e).slice(0, 300)))
+              return
+            }
             if (route === '/fav') {
               let favorites
               try { favorites = fav(data) } catch (e) { return fail(e.status || 500, e.message) }

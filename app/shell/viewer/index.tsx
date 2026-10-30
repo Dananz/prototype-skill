@@ -187,6 +187,19 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
   const bar = useRef<HTMLDivElement>(null)
   // A share with designs opens on their map; a screen opened from it leaves it, the Map button goes back.
   const [mapOn, setMapOn] = useState(designs.length > 0)
+  // A <Go to> link in a shared screen (adapters/go.react.ts) walks to that screen of the share: the
+  // option its design shows, else its first; a screen not in the share stays put.
+  const goTo = useRef<(route: string) => void>(() => {})
+  goTo.current = route => { setMapOn(false); setProtoId(route.split('/')[0]); if (wide) openDesign(route); else setSel(route) }
+  useEffect(() => {
+    const on = (e: Event) => {
+      const to = String((e as CustomEvent).detail?.to ?? ''), p = protos.find(x => x.id === to)
+      const route = designs.flatMap(d => d.flows.flatMap(f => f.screens)).find(x => x.split('/')[0] === to) ?? (p?.variants[0] ? `${to}/${p.variants[0].id}` : '')
+      if (route && p?.variants.some(v => v.id === route.split('/')[1])) goTo.current(route)
+    }
+    addEventListener('proto:go', on)
+    return () => removeEventListener('proto:go', on)
+  }, [designs, protos])
 
   // A design opened full size from the desk, and whether it is on its way back into its preview.
   const [open, setOpen] = useState<string | null>(null)
@@ -358,7 +371,7 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
         </div>
       )}
       <div className="relative min-h-0 flex-1">
-        {mapOn && <ShareMap protos={protos} designs={designs} onOpen={route => { setMapOn(false); setProtoId(route.split('/')[0]); if (wide) openDesign(route); else setSel(route) }} />}
+        {mapOn && <ShareMap protos={protos} designs={designs} onOpen={route => goTo.current(route)} />}
         {designs.length > 0 && !mapOn && (
           <button type="button" data-viewer-map-btn onClick={() => { setOpen(null); setMapOn(true) }} title={t('Map')}
             className="absolute start-3 top-3 z-10 inline-flex h-8 items-center gap-1.5 rounded-full bg-white/95 px-3 text-[12px] font-medium text-zinc-700 shadow ring-1 ring-black/[.06] backdrop-blur dark:bg-zinc-900/95 dark:text-zinc-200 dark:ring-white/10">

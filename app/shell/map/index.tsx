@@ -9,7 +9,6 @@ import { createRoot } from 'react-dom/client'
 import type { Design, Proto, Variant } from '../shell'
 import { t, tn } from '../i18n'
 import { numberOf } from '../variants'
-import { linksIn } from '../../links.mjs'
 import { GAP, linePath, worldOf, type Board, type World } from './world'
 import { Ph } from '../tree/row'
 
@@ -17,6 +16,8 @@ export type MapInput = {
   protos: Proto[]; designs: Design[]; place: string; hidden: boolean; lines: 'all' | 'selected'; design: string
   /** A share's viewer: look and open only (no notes, links or Build it); the links come with the designs. */
   readOnly?: boolean
+  /** Counts edits to the prototypes' files: the links are read again. */
+  edits?: number
 }
 export type MapApi = {
   get(): MapInput; subscribe(fn: () => void): () => void
@@ -56,18 +57,17 @@ function Preview({ v, live, mount }: { v: Variant | undefined; live: boolean; mo
 }
 
 /** Each screen's <Go to> targets, read from its variant's source. */
-function useLinks(boards: Board[], protos: Proto[], given: Record<string, string[]> | null) {
+function useLinks(boards: Board[], edits: number, given: Record<string, string[]> | null, hidden: boolean) {
   const [links, setLinks] = useState<Record<string, string[]>>({})
-  const files = useMemo(() => boards.filter(b => b.kind === 'screen').map(b => ({ route: b.route, file: protos.find(p => p.id === b.slug)?.variants.find(v => v.id === b.letter)?.file })), [boards, protos])
+  // Read by the dev server (/__proto/links), again whenever a prototype changes, while the map shows.
+  const routes = useMemo(() => [...new Set(boards.filter(b => b.kind === 'screen').map(b => b.route))].join(','), [boards])
   useEffect(() => {
-    if (given) return
+    if (given || hidden || !routes) return
     let gone = false
-    void Promise.all(files.map(async ({ route, file }) => {
-      if (!file) return [route, []] as const
-      try { const m = await import(/* @vite-ignore */ `${file}?raw`); return [route, linksIn(String(m.default))] as const } catch { return [route, []] as const }
-    })).then(all => { if (!gone) setLinks(Object.fromEntries(all)) })
+    fetch('/__proto/links', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ routes: routes.split(',') }) })
+      .then(r => r.ok ? r.json() : { links: {} }).then((r: { links: Record<string, string[]> }) => { if (!gone) setLinks(r.links ?? {}) }, () => {})
     return () => { gone = true }
-  }, [files, given])
+  }, [routes, edits, given, hidden])
   return given ?? links
 }
 
@@ -84,7 +84,7 @@ function MapView({ api }: { api: MapApi }) {
   const [drag, setDrag] = useState<{ from: Board; x: number; y: number } | null>(null)
   const world: World = useMemo(() => worldOf(input.protos, designs, spread), [input.protos, designs, spread])
   const given = useMemo(() => input.designs.some(d => d.links) ? Object.assign({}, ...input.designs.map(d => d.links ?? {})) as Record<string, string[]> : null, [input.designs])
-  const links = useLinks(world.boards, input.protos, given)
+  const links = useLinks(world.boards, input.edits ?? 0, given, input.hidden)
   const ro = !!input.readOnly
   const view = useRef<HTMLDivElement>(null), layer = useRef<HTMLDivElement>(null)
   const cam = useRef<Cam>(api.camera ?? { x: 0, y: 0, z: 0.2 })
@@ -176,7 +176,9 @@ function MapView({ api }: { api: MapApi }) {
   useEffect(() => {
     if (input.hidden) return
     const key = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.closest?.('input, textarea, [contenteditable]')) return
+      // Typing, or a key for a focused control (a button, a link, a menu), or anywhere outside the map, isn't the map's.
+      const at = e.target instanceof Element ? e.target : null
+      if (at && at !== document.body && (at.closest('input, textarea, select, [contenteditable], button, a, [role]') || !at.closest('[data-map]'))) return
       const c = { x: size.w / 2, y: size.h / 2 }
       if (e.key === '+' || e.key === '=') zoomAt(1.25, c.x, c.y)
       else if (e.key === '-') zoomAt(0.8, c.x, c.y)
