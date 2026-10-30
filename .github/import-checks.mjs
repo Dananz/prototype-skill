@@ -101,9 +101,12 @@ test('pending inbox moves with its owner; answered batches stay', () => projectF
 test("a session's listener config moves with it", () => projectFixture(({ project, app, call }) => {
   legacy(project, 'one', { protos: { home: {} } })
   const two = legacy(project, 'two', { protos: { cart: {} } })
-  put(join(two, '.proto', 'listener.json'), { url: 'https://example.test/hook', id: 'task-2', threadId: 'thread-2' })
+  put(join(two, '.proto', 'inbox', 'listener.json'), { url: 'https://example.test/hook', id: 'task-2', threadId: 'thread-2', session: 'two' })
+  put(join(two, '.proto', 'inbox', 'notified.json'), { b1: 'task-2' })
   ok(call(['up', '--session', 'one', '--no-serve']))
-  assert.equal(json(join(app, '.proto', 'listeners', 'two.json')).id, 'task-2')
+  assert.equal(json(join(app, '.proto', 'inbox', 'listeners', 'two.json')).id, 'task-2')
+  assert.deepEqual(json(join(app, '.proto', 'inbox', 'listeners', 'two-notified.json')), { b1: 'task-2' })
+  assert.equal(existsSync(join(two, '.proto', 'inbox', 'listener.json')), false)
 }))
 
 test('shares keep their session and follow the rename', () => projectFixture(({ project, app, call }) => {

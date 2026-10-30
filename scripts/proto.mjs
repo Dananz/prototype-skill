@@ -95,7 +95,7 @@
 // Optional PROTO_AGENT_PID (or CLAUDE_PID) identifies the long-lived agent for comment recovery.
 
 import { spawn, spawnSync } from 'node:child_process'
-import { listenerFile, listenerStatus, saveListener, reconcileListener, pendingListenerWork } from '../app/listener.mjs'
+import { adoptListener, listenerFile, listenerStatus, saveListener, reconcileListener, pendingListenerWork, wakes } from '../app/listener.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -243,6 +243,7 @@ function replyAgent() {
 function beat(dir) {
   const agent = detectedAgent()
   registerSession(dir, sessionId(), { agent })
+  locked(dir, () => adoptListener(dir, sessionId()))
   if (agent) patchSession(dir, { agent })
   const pid = agentPid()
   if (!pid) return
@@ -402,7 +403,7 @@ async function up() {
   }
   // Reconcile before app sync changes source mtimes or GC can discard task identity.
   const dir = sessionDir()
-  if (existsSync(sessionFile(dir))) locked(dir, () => reconcileListener(dir, { touch: true }))
+  if (existsSync(sessionFile(dir))) locked(dir, () => reconcileListener(dir, { sid: sessionId(), touch: true }))
   // PROTO_NO_GC=1 (the smoke run sets it) leaves every other session and tailnet rule alone.
   if (process.env.PROTO_NO_GC !== '1') await gc(true)
   const project = projectRoot()
@@ -1035,7 +1036,7 @@ async function stop(dir = sessionDir(), reason = 'stopped') {
 
 async function rm(dir = sessionDir()) {
   if (!existsSync(dir)) return die(`nothing at ${tilde(dir)}`)
-  const listener = listenerStatus(dir)
+  const listener = listenerStatus(dir, sessionId())
   if (listener.id && listener.hostEnabled) {
     printListener(dir)
     die('disable the owned host task and confirm with proto inbox --host-disabled <id> before deleting its local identity')
@@ -1703,8 +1704,12 @@ const tell = (id, what) => { if (!told.has(id)) { told.add(id); console.error(`b
 function take(dir) {
   const taken = []
   mkdirSync(join(inboxDir(dir), 'taken'), { recursive: true })
+  const sid = sessionId()
   for (const id of batchesIn(dir, 'new')) {
     const from = join(inboxDir(dir), 'new', id)
+    // Another conversation's comments, while it listens, are left for it (app/listener.mjs wakes()).
+    const owner = readJson(join(from, 'batch.json'), null)?.owner
+    if (owner && owner !== sid && wakes(dir, owner) === owner) continue
     try { moveDir(from, join(inboxDir(dir), 'taken', id)) } catch (e) { if (existsSync(from)) tell(id, `could not be taken (${e?.code ?? e?.message ?? e})`); continue /* else another reader took it */ }
     const file = join(inboxDir(dir), 'taken', id, 'batch.json')
     const b = readJson(file, null)
@@ -2009,7 +2014,7 @@ function intake() {
 }
 
 function printListener(dir) {
-  const persistent = listenerStatus(dir)
+  const persistent = listenerStatus(dir, sessionId())
   if (flags.json) return console.log(JSON.stringify(persistent))
   if (persistent.hostAction) console.log(`host action required: ${JSON.stringify(persistent.hostAction)}; verify ownership in references/listener.md, perform it with the host tool, then confirm with proto inbox --host-${persistent.hostAction.action === 'enable' ? 'enabled' : 'disabled'} ${persistent.id}`)
   if (persistent.lifecycle === 'opted-out') return console.log('not listening: explicit user opt-out retained; only user-authorized proto inbox --reopen --again restores it')
@@ -2036,7 +2041,7 @@ async function inbox() {
   if (flags.json && !flags.status && !flags.reconcile) die('--json requires --status or --reconcile')
   try {
     locked(dir, () => reconcileListener(dir, {
-      close: flags.close, finish: flags.finish, reopen: !!flags.reopen, optIn: !!flags.again, optOut: !!flags.unlisten,
+      sid: sessionId(), close: flags.close, finish: flags.finish, reopen: !!flags.reopen, optIn: !!flags.again, optOut: !!flags.unlisten,
       hostEnabled: flags['host-enabled'] ? true : flags['host-disabled'] ? false : undefined,
       taskId: flags['host-enabled'] || flags['host-disabled'],
       touch: !flags.status && !flags.reconcile,
@@ -2050,16 +2055,16 @@ async function inbox() {
     if (!(url.protocol === 'https:' || url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) || url.username || url.password) die('listener URL must use HTTPS (HTTP is allowed only on loopback)')
     if (typeof config.id !== 'string' || !config.id.trim() || typeof config.threadId !== 'string' || !config.threadId.trim()) die('listener config needs its host task id and owning threadId')
     const refusal = locked(dir, () => {
-      const was = readJson(listenerFile(dir), null), waiter = readJson(waiterFile(dir), null)
+      const was = readJson(listenerFile(dir, sessionId()), null), waiter = readJson(waiterFile(dir), null)
       if (was?.lifecycle && was.lifecycle !== 'active') return 'listener closed or explicitly opted out; explicitly reopen it before registering'
       if (was?.id && (was.id !== config.id || was.url !== config.url || was.threadId !== config.threadId)) return 'one persistent listener is already registered; reuse its exact task and owning thread'
       if (waiter && alive(waiter.pid)) return 'a background waiter is already listening; cancel that harness job before switching to a persistent listener'
-      saveListener(dir, { ...was, url: config.url, id: config.id, threadId: config.threadId, session: sessionId(), lifecycle: 'active', hostEnabled: was?.hostEnabled ?? true, lastActivityAt: new Date().toISOString() })
+      saveListener(dir, { ...was, url: config.url, id: config.id, threadId: config.threadId, session: sessionId(), lifecycle: 'active', hostEnabled: was?.hostEnabled ?? true, lastActivityAt: new Date().toISOString() }, sessionId())
     })
     if (refusal) die(refusal)
     return console.log(`persistent listener registered (${config.id}); reused across comments and server restarts`)
   }
-  const persistent = listenerStatus(dir)
+  const persistent = listenerStatus(dir, sessionId())
   if (flags.wait && persistent.lifecycle !== 'missing') return printListener(dir)
   if (!flags.wait) {
     const lost = orphans(dir)
@@ -2077,7 +2082,7 @@ async function inbox() {
   const minutes = Number(flags.timeout) || 115
   const existing = locked(dir, () => {
     const w = readJson(waiterFile(dir), null)
-    if (readJson(listenerFile(dir), null)) return 'persistent listener already registered; no background waiter needed'
+    if (readJson(listenerFile(dir, sessionId()), null)) return 'persistent listener already registered; no background waiter needed'
     if (w && alive(w.pid) && w.pid !== process.pid) return `already listening (pid ${w.pid}); nothing to do`
     writeJson(waiterFile(dir), { pid: process.pid, at: new Date().toISOString(), until: new Date(Date.now() + minutes * 60e3).toISOString() })
   })

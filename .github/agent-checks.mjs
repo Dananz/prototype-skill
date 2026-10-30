@@ -155,7 +155,8 @@ test('listener status reuses registered subscriptions without exposing credentia
   assert.equal(ready.status, 0, ready.stderr)
   assert.match(ready.stdout, /persistent listener \(existing-task\); listening/)
   assert.doesNotMatch(ready.stdout, /private-wakeup-token|schedule_task/)
-  writeFileSync(join(inbox, 'listener-status.json'), JSON.stringify({ id: 'existing-task', error: 'notification returned HTTP 503' }))
+  // The first command of the conversation adopted the single listener of before (app/listener.mjs).
+  writeFileSync(join(inbox, 'listeners', 'thread-status.json'), JSON.stringify({ id: 'existing-task', error: 'notification returned HTTP 503' }))
   const failed = call(['inbox', '--status'], env)
   assert.match(failed.stdout, /retrying: notification returned HTTP 503/)
   assert.doesNotMatch(failed.stdout, /; listening|schedule_task/)
@@ -164,7 +165,7 @@ test('listener status reuses registered subscriptions without exposing credentia
     assert.equal(conflict.status, 1, `--status must refuse ${flag}`)
     assert.match(conflict.stderr, /--status/)
   }
-  assert.equal(JSON.parse(readFileSync(join(inbox, 'listener.json'), 'utf8')).id, 'existing-task')
+  assert.equal(JSON.parse(readFileSync(join(inbox, 'listeners', 'thread.json'), 'utf8')).id, 'existing-task')
 }))
 
 test('skill installed through a symlink in a path with spaces can locate its resources', () => fixture(({ project, call }) => {

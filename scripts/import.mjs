@@ -171,9 +171,10 @@ export function importSession(app, legacy, { first }) {
     }
 
     // Its listener keeps waking the same conversation (app/listener.mjs reads it per session).
-    for (const [f, to] of [['listener.json', `${sid}.json`], ['listener-status.json', `${sid}-status.json`], ['notified.json', `${sid}-notified.json`]]) {
+    const from = join(dir, '.proto', 'inbox'), to = join(app, '.proto', 'inbox', 'listeners')
+    for (const [f, t] of [['listener.json', `${sid}.json`], ['listener-status.json', `${sid}-status.json`], ['notified.json', `${sid}-notified.json`]]) {
       // Moved, not copied: the legacy folder then holds no listener, so gc can take it in time.
-      if (existsSync(join(dir, '.proto', f))) { mkdirSync(join(app, '.proto', 'listeners'), { recursive: true }); cpSync(join(dir, '.proto', f), join(app, '.proto', 'listeners', to)); renameSync(join(dir, '.proto', f), join(dir, '.proto', `${f}.migrated`)) }
+      if (existsSync(join(from, f))) { mkdirSync(to, { recursive: true }); cpSync(join(from, f), join(to, t)); renameSync(join(from, f), join(from, `${f}.migrated`)) }
     }
 
     write(join(dir, 'session.json'), { ...read(join(dir, 'session.json'), json), migratedTo: PROJECT_DIR })
