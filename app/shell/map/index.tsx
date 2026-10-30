@@ -37,6 +37,8 @@ type Note = { kind: 'line' | 'link'; a: Board; b: Board } | { kind: 'flow'; desi
 type Cam = { x: number; y: number; z: number }
 const MIN_Z = 0.02, MAX_Z = 2, MAX_LIVE = 12
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
+/** Labels keep one size on screen (1 / zoom), shrinking to 60 % when the map is zoomed far out (a phone fitting it all), so they never cover the boards. */
+const labelZ = (z: number) => String(clamp(z / 0.2, 0.6, 1) / z)
 const ease = (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2)
 
 /** A design's variant, drawn inert in its frame while it is on screen and big enough to read. */
@@ -99,6 +101,7 @@ function MapView({ api }: { api: MapApi }) {
     el.style.transform = `translate(${c.x}px, ${c.y}px)`
     ;(el.firstElementChild as HTMLElement).style.zoom = String(c.z)
     el.style.setProperty('--iz', String(1 / c.z))
+    el.style.setProperty('--lz', labelZ(c.z))
     api.camera = { ...c }
   }, [api])
   const set = (c: Cam) => { cam.current = { ...c, z: clamp(c.z, MIN_Z, MAX_Z) }; apply(); redraw(n => n + 1) }
@@ -222,7 +225,7 @@ function MapView({ api }: { api: MapApi }) {
   return (
     <div ref={view} data-map className={'absolute inset-0 touch-none select-none overflow-hidden ' + (input.hidden ? 'hidden' : '')} style={{ cursor: 'grab' }}
       onClick={e => { if (e.target === view.current) setSel(null) }}>
-      <div ref={layer} className="absolute left-0 top-0 origin-top-left" style={{ ['--iz' as string]: String(1 / c.z) }}>
+      <div ref={layer} className="absolute left-0 top-0 origin-top-left" style={{ ['--iz' as string]: String(1 / c.z), ['--lz' as string]: labelZ(c.z) }}>
         <div className="relative" style={{ width: world.w, height: world.h }}>
           <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={world.w} height={world.h}>
             {lines.map(({ a, b, to }) => <g key={`${a.key}>${to}`}>
@@ -237,8 +240,8 @@ function MapView({ api }: { api: MapApi }) {
             // Above its anchor, one size on screen: a design's name over its first flow's, a flow's over its row.
             // Rounds name themselves once their cards are big enough to tell apart; a long name truncates at its round's width.
             (l.kind !== 'round' || (world.boards.find(b => b.slug === l.slug)?.w ?? 0) * c.z > 60) &&
-            <div key={l.key} data-map-label={l.key} className="absolute whitespace-nowrap" style={{ left: l.x, top: l.y, ...(l.w ? { maxWidth: l.w + GAP * 0.8 } : {}), fontSize: `calc(${l.kind === 'design' ? 22 : l.kind === 'flow' ? 15 : 13}px * var(--iz))`,
-              transform: `translateY(calc(-100% - ${l.kind === 'design' || l.kind === 'section' ? 34 : 8}px * var(--iz)))` }}>
+            <div key={l.key} data-map-label={l.key} className="absolute whitespace-nowrap" style={{ left: l.x, top: l.y, ...(l.w ? { maxWidth: l.w + GAP * 0.8 } : {}), fontSize: `calc(${l.kind === 'design' ? 22 : l.kind === 'flow' ? 15 : 13}px * var(--lz))`,
+              transform: `translateY(calc(-100% - ${l.kind === 'design' || l.kind === 'section' ? 34 : 8}px * var(--lz)))` }}>
               {l.kind === 'round'
                 ? <button type="button" data-map-round={l.slug} onClick={() => setSpread(s => { const n = new Set(s); if (n.has(l.slug!)) n.delete(l.slug!); else n.add(l.slug!); return n })}
                     className="flex max-w-full items-center gap-[calc(6px*var(--iz))] rounded-full text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white">
@@ -263,12 +266,12 @@ function MapView({ api }: { api: MapApi }) {
                 <div className="absolute left-0 top-0 origin-top-left" style={{ width: b.w / b.scale, height: b.h / b.scale, zoom: b.scale }}>
                   <Preview v={variantOf(b)} live={live.has(b.key) && !input.hidden} mount={api.mount} />
                 </div>
-                {!live.has(b.key) && <div className={'absolute inset-0 grid place-items-center bg-zinc-50 text-zinc-400 dark:bg-zinc-900'} style={{ fontSize: 'calc(13px * var(--iz))' }}><span dir="auto" className={b.pile ? 'invisible' : ''}>{b.title}</span></div>}
+                {!live.has(b.key) && <div className={'absolute inset-0 grid place-items-center bg-zinc-50 text-zinc-400 dark:bg-zinc-900'} style={{ fontSize: 'calc(13px * var(--lz))' }}><span dir="auto" className={b.pile ? 'invisible' : ''}>{b.title}</span></div>}
               </div>
             )
           })}
           {world.boards.filter(b => (b.pile ?? 0) === 0 && b.w * c.z > (b.kind === 'screen' ? 60 : 110)).map(b => (
-            <div key={`n:${b.key}`} className="pointer-events-none absolute flex items-center gap-[calc(6px*var(--iz))] whitespace-nowrap text-zinc-500" style={{ left: b.x, top: b.y + b.h + 6 / c.z, fontSize: `calc(${b.kind === 'screen' ? 13 : 11}px * var(--iz))`, zIndex: 4 }}>
+            <div key={`n:${b.key}`} className="pointer-events-none absolute flex items-center gap-[calc(6px*var(--iz))] whitespace-nowrap text-zinc-500" style={{ left: b.x, top: b.y + b.h + 6 / c.z, fontSize: `calc(${b.kind === 'screen' ? 13 : 11}px * var(--lz))`, zIndex: 4 }}>
               {b.kind === 'screen' ? <span dir="auto" className="font-medium text-zinc-700 dark:text-zinc-200">{b.title}</span> : <span className="tabular-nums">#{numberOf(b.letter)}</span>}
               {b.picked && <Ph name="checkFill" className="size-[calc(12px*var(--iz))] text-emerald-500" />}
               {b.standIn && <span className="rounded bg-zinc-900/[.06] px-1 dark:bg-white/10">{t('not picked')}</span>}
@@ -299,7 +302,7 @@ function MapView({ api }: { api: MapApi }) {
       {build && one && !note && <BuildBox design={one} boards={world.boards} api={api} onClose={() => setBuild(false)} />}
       {note && <NoteBox key={`${note.kind}:${note.a.key}:${'b' in note ? note.b.key : note.flow}`} note={note} api={api} onClose={() => setNote(null)} />}
       {selBoard && !note && !build && (
-        <div className="absolute bottom-3 start-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl bg-zinc-900 px-3 py-1.5 text-[12px] text-white shadow-lg dark:bg-white dark:text-zinc-900">
+        <div className="absolute inset-x-0 bottom-3 mx-auto flex w-fit max-w-[calc(100%-2rem)] items-center gap-2 rounded-xl max-sm:bottom-14 bg-zinc-900 px-3 py-1.5 text-[12px] text-white shadow-lg dark:bg-white dark:text-zinc-900">
           <span dir="auto" className="font-medium">{selBoard.title}</span>{selBoard.kind === 'option' && <span className="opacity-60">#{numberOf(selBoard.letter)}</span>}
           <button type="button" data-map-open onClick={() => openBoard(selBoard)} className="rounded-md bg-white/15 px-2 py-0.5 dark:bg-zinc-900/10">{t('Open')}</button>
         </div>
@@ -329,7 +332,7 @@ function NoteBox({ note, api, onClose }: { note: Note; api: MapApi; onClose: () 
     } catch { setState('failed') }
   }
   return (
-    <div data-map-note={note.kind} className="absolute inset-x-0 bottom-3 mx-auto w-[min(26rem,calc(100%-2rem))] rounded-2xl bg-white p-3 text-[13px] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
+    <div data-map-note={note.kind} className="absolute inset-x-0 bottom-3 mx-auto max-sm:bottom-14 w-[min(26rem,calc(100%-2rem))] rounded-2xl bg-white p-3 text-[13px] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
       <div className="mb-2 flex items-center gap-2"><span dir="auto" className="min-w-0 flex-1 truncate font-medium">{what}</span>
         <button type="button" aria-label={t('Close')} onClick={onClose} className="grid size-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-900/5 dark:hover:bg-white/10"><Ph name="x" className="size-3.5" /></button></div>
       <textarea ref={field} data-map-note-field dir="auto" rows={2} value={text} onChange={e => setText(e.target.value)}
@@ -362,7 +365,7 @@ function BuildBox({ design, boards, api, onClose }: { design: Design; boards: Bo
     } catch { setState('failed') }
   }
   return (
-    <div data-map-build-box data-map-note="build" className="absolute inset-x-0 bottom-3 mx-auto w-[min(24rem,calc(100%-2rem))] rounded-2xl bg-white p-3 text-[13px] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
+    <div data-map-build-box data-map-note="build" className="absolute inset-x-0 bottom-3 mx-auto max-sm:bottom-14 w-[min(24rem,calc(100%-2rem))] rounded-2xl bg-white p-3 text-[13px] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
       <div className="mb-1 flex items-center gap-2"><span dir="auto" className="min-w-0 flex-1 truncate font-medium">{t('Build {name}', { name: design.title })}</span>
         <button type="button" aria-label={t('Close')} onClick={onClose} className="grid size-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-900/5 dark:hover:bg-white/10"><Ph name="x" className="size-3.5" /></button></div>
       <p className="mb-2 text-zinc-500">{t('The screens you tick, with their links as real navigation.')}</p>
