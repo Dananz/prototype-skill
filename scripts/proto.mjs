@@ -2699,8 +2699,10 @@ function design() {
   if (!d) die(`no design "${id}" (proto design lists them)`)
   let flows = (d.flows || []).map(f => ({ ...f, screens: [...f.screens] })), changed = false
   if (typeof flags.flow === 'string' && typeof flags.screens === 'string') {
-    const move = flags.screens.split(',').map(x => x.trim()).filter(Boolean)
-    flows = flows.map(f => ({ ...f, screens: f.screens.filter(x => !move.includes(entryOf(x).slug) && !move.includes(x)) }))
+    // Each one names a screen already in this design (its entry, or its slug): a pinned one stays pinned.
+    const all = flows.flatMap(f => f.screens)
+    const move = flags.screens.split(',').map(x => x.trim()).filter(Boolean).map(x => all.find(e => e === x) ?? all.find(e => entryOf(e).slug === x) ?? die(`${x} is not a screen of ${id}: add it with proto add ${x} --design ${id}`))
+    flows = flows.map(f => ({ ...f, screens: f.screens.filter(x => !move.includes(x)) }))
     if (!flows.some(f => f.name === flags.flow)) flows.push({ name: flags.flow, screens: [] })
     flows = flows.map(f => f.name === flags.flow ? { ...f, screens: [...f.screens, ...move] } : f)
     changed = true

@@ -4,7 +4,7 @@
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { SHARE_CSP } from '../host/lib/pages.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -25,6 +25,10 @@ export async function shareMapChecks({ proto, app, openPage, fail }) {
   variant('smabout', 'A', '<h1>SM-ABOUT-A</h1>')
   for (const s of ['smhome', 'smabout']) proto(['done', s])
 
+  // A design.ts that is not a design (written by hand, half saved) is skipped, never the build's end.
+  for (const [id, text] of [['smbroken', 'export default null\n'], ['smbroken2', 'export default {"title":"B","flows":[null,{"name":"M","screens":[null,"smhome"]}]}\n']]) {
+    mkdirSync(join(app, 'src', 'designs', id), { recursive: true }); writeFileSync(join(app, 'src', 'designs', id, 'design.ts'), text)
+  }
   const { buildShare } = await import(join(skill, 'app', 'share', 'build.mjs'))
   let html = ''
   try { html = (await buildShare({ sessionDir: app, scope: { protos: [{ id: 'smhome', variants: ['B'] }, { id: 'smabout', variants: ['A'] }], start: 'smhome/B' }, info: { title: 'Share map', owner: 'Smoke', version: 1 } })).html } catch (e) { fail(`share map: buildShare threw: ${e?.stack || e}`) }
@@ -57,5 +61,6 @@ export async function shareMapChecks({ proto, app, openPage, fail }) {
     await until(page, `!!document.querySelector('[data-viewer-map]')`, 'the Map button should go back to the map')
   } finally { page.close(); server.close() }
   for (const s of ['smhome', 'smabout']) proto(['archive', s])
+  for (const id of ['smbroken', 'smbroken2']) rmSync(join(app, 'src', 'designs', id), { recursive: true, force: true })
   console.log('OK: a share of a design opens on its map, links drawn, look and open only, Map to go back')
 }

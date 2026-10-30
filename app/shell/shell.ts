@@ -38,7 +38,7 @@ import { createSettings, type Appearance } from './settings'
 import { mountTree, type TreeInput } from './tree/index'
 import { mountMap, type MapApi, type MapInput } from './map/index'
 import { createJump } from './jump'
-import { jumpItems, whereOf } from './where'
+import { jumpItems, linkState, whereOf } from './where'
 import { followSession, rtl, t, tn, day } from './i18n'
 import { createShare } from './share'
 import { createShareLink } from './share-link'
@@ -642,8 +642,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     goChip.hidden = !chip
     if (!chip) { goChip.innerHTML = ''; return }
     const q = all.find(p => p.id === chip!.to), letter = chip.route.split('/')[1]
+    const ls = q ? linkState(q, letter) : null
     const state = !q ? t('{name} is not built yet', { name: chip.to })
-      : q.picked === letter ? t('Picked #{n}', { n: numberOf(letter) }) : !q.picked ? t('#1 stands in until one is picked') : `#${numberOf(letter)}`
+      : ls!.kind === 'picked' ? t('Picked #{n}', { n: numberOf(letter) }) : ls!.kind === 'stand-in' ? t('#1 stands in until one is picked') : t('#{n} in this design', { n: numberOf(letter) })
     const pill = 'h-8 shrink-0 rounded-full px-3 text-[12px] font-medium'
     goChip.innerHTML = `<div role="status" class="flex items-center gap-2 rounded-full bg-white p-1 ps-3 text-[12px] text-zinc-600 shadow-[0_8px_24px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-300 dark:ring-white/10">
       ${q ? `<span dir="auto" class="truncate">${esc(state)}</span><button data-act="go-chip:go" data-shoot="go-chip-go" class="${pill} bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover">${esc(t('Go to {name}', { name: q.title }))}</button>`

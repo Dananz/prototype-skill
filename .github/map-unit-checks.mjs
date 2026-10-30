@@ -52,3 +52,15 @@ test('a pinned screen with no unpinned entry still shows what is built on it (a 
   const w = worldOf(protos, pinned)
   assert.ok(w.boards.some(b => b.slug === 'hero'), 'hero, built on home, is drawn under the pinned home')
 })
+
+test('a from loop between two loose prototypes still draws both', () => {
+  const ps = [P('x', { from: { proto: 'y', variant: 'A' } }), P('y', { from: { proto: 'x', variant: 'A' } })]
+  const w = worldOf(ps, [])
+  assert.ok(w.boards.some(b => b.slug === 'x') && w.boards.some(b => b.slug === 'y'))
+})
+
+test('a screen listed twice is drawn once (no duplicate keys)', () => {
+  const ds = [{ id: 'acme', title: 'Acme', created: '', flows: [{ name: 'Main', screens: ['home', 'about', 'home'] }, { name: 'Other', screens: ['about'] }] }]
+  const keys = worldOf(protos, ds).boards.map(b => b.key)
+  assert.equal(new Set(keys).size, keys.length)
+})

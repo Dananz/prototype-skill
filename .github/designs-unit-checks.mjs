@@ -26,3 +26,7 @@ test('a prototype keeps the conversation that made it, the one on it now, and ne
   const [p] = protosOf({ './protos/home/meta.ts': { title: 'Home', session: 'one', owner: 'two', next: true, variants: { A: 'One' } } }, { './protos/home/A.tsx': () => Promise.resolve() })
   assert.equal(p.session, 'one'); assert.equal(p.owner, 'two'); assert.equal(p.next, true)
 })
+
+test('a design.ts that is not an object is no design', () => {
+  assert.deepEqual(designsOf({ './designs/broken/design.ts': null, './designs/ok/design.ts': { title: 'Ok', created: '', flows: [null, { name: 'Main', screens: [null, 'home'] }] } }).map(d => [d.id, d.flows]), [['ok', [{ name: 'Main', screens: ['home'] }]]])
+})

@@ -23,7 +23,8 @@ export const frameOf = (p: Proto): [number, number] => p.kind === 'phone' ? p.sc
 const roots = (protos: Proto[]) => {
   const byId = new Map(protos.map(p => [p.id, p]))
   // The screen or loose exploration a prototype hangs under: up its from chain, stopping at a loop.
-  const top = (p: Proto) => { const seen = new Set([p.id]); let at = p; while (at.from && byId.has(at.from.proto) && !seen.has(at.from.proto)) { at = byId.get(at.from.proto)!; seen.add(at.id) } return at }
+  // A chain that loops leaves p its own root (each of two prototypes built on the other is drawn).
+  const top = (p: Proto) => { const seen = new Set([p.id]); let at = p; while (at.from && byId.has(at.from.proto)) { if (seen.has(at.from.proto)) return p; at = byId.get(at.from.proto)!; seen.add(at.id) } return at }
   return { byId, top }
 }
 
@@ -68,11 +69,13 @@ export function worldOf(protos: Proto[], designs: Design[], spread: Set<string> 
     }
     w = Math.max(w, x); y += h + ROW_GAP
   }
+  const placed = new Set<string>()
   for (const d of designs) {
     y += LABEL_H
     labels.push({ key: `design:${d.id}`, kind: 'design', text: d.title, x: 0, y })
     for (const f of d.flows) {
-      const screens = f.screens.map(e => { const [slug, pin = ''] = e.split('/'); return { p: byId.get(slug), pin } }).filter((s): s is { p: Proto; pin: string } => !!s.p)
+      // Each entry once in the whole map: a screen listed twice (or in two flows) is drawn where it comes first.
+      const screens = f.screens.filter(e => !placed.has(e) && !!placed.add(e)).map(e => { const [slug, pin = ''] = e.split('/'); return { p: byId.get(slug), pin } }).filter((s): s is { p: Proto; pin: string } => !!s.p)
       if (!screens.length) continue
       y += LABEL_H
       labels.push({ key: `flow:${d.id}:${f.name}`, kind: 'flow', text: f.name, x: 0, y, count: screens.length })

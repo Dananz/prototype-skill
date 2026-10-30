@@ -6,7 +6,7 @@ import { stripTypeScriptTypes } from 'node:module'
 import { test } from 'node:test'
 
 const code = stripTypeScriptTypes(readFileSync(new URL('../app/shell/where.ts', import.meta.url), 'utf8'))
-const { whereOf, jumpItems, jumpMatch } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
+const { whereOf, jumpItems, jumpMatch, linkState } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
 const P = (id, more = {}) => ({ id, title: more.title ?? id, kind: 'web', screen: [393, 852], archived: false, created: '2026-10-30T10:00:00Z', variants: ['A', 'B'].map(v => ({ id: v, name: `${id} ${v}` })), ...more })
 const protos = [P('home', { title: 'Home', picked: 'B' }), P('about', { title: 'About' }), P('pricing', { title: 'Pricing' }), P('hero', { title: 'Hero CTA', from: { proto: 'home', variant: 'B' } }), P('cta', { title: 'CTA copy', from: { proto: 'hero', variant: 'A' } }), P('logo', { title: 'Logo' }), P('old', { archived: true })]
 const designs = [{ id: 'acme', title: 'Acme', created: '', flows: [{ name: 'Main', screens: ['home', 'about'] }, { name: 'Buy', screens: ['pricing', 'home/A'] }] }]
@@ -50,4 +50,24 @@ test('Jump matches words in any case, names that start with the query first', ()
   assert.deepEqual(jumpMatch(items, 'zzz'), [])
   assert.ok(jumpMatch(items, '').length > 0, 'an empty query lists the screens first')
   assert.equal(jumpMatch(items, '')[0].kind, 'design')
+})
+
+test('a flow lists each screen once and leaves out a gone one; the arrows walk what is left', () => {
+  const ps = [...protos, P('old', { archived: true })]
+  const ds = [{ id: 'acme', title: 'Acme', created: '', flows: [{ name: 'Main', screens: ['home', 'old', 'about', 'home', 'pricing'] }] }]
+  const w = whereOf(ps, ds, { proto: 'pricing', variant: 'A' })
+  assert.deepEqual(w.flow.routes, ['home/B', 'about/A', 'pricing/A'])
+  assert.equal(w.at, 2)
+})
+
+test('a from loop between two prototypes leaves each its own root', () => {
+  const ps = [P('x', { from: { proto: 'y', variant: 'A' } }), P('y', { from: { proto: 'x', variant: 'A' } })]
+  assert.equal(whereOf(ps, [], { proto: 'x', variant: 'A' }).loose, true)
+})
+
+test('what a link chip says about the screen it goes to', () => {
+  assert.equal(linkState(P('a', { picked: 'B' }), 'B').kind, 'picked')
+  assert.equal(linkState(P('a'), 'A').kind, 'stand-in')
+  assert.equal(linkState(P('a'), 'B').kind, 'pinned')
+  assert.equal(linkState(P('a', { picked: 'A' }), 'B').kind, 'pinned')
 })

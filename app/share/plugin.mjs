@@ -142,9 +142,11 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
   const designs = (existsSync(designsDir) ? readdirSync(designsDir) : []).flatMap(id => {
     let d
     try { d = metaOf(readFileSync(join(designsDir, id, 'design.ts'), 'utf8')) } catch { return [] }
+    // One that isn't a design (written by hand, half saved) is left out, never the build's end.
+    if (!d || typeof d !== 'object') return []
     const links = {}
-    const flows = (Array.isArray(d.flows) ? d.flows : []).map(f => ({ name: String(f.name), screens: (Array.isArray(f.screens) ? f.screens : []).flatMap(e => {
-      const [slug, pin] = String(e).split('/')
+    const flows = (Array.isArray(d.flows) ? d.flows : []).filter(f => f && typeof f === 'object' && typeof f.name === 'string').map(f => ({ name: f.name, screens: (Array.isArray(f.screens) ? f.screens : []).filter(e => typeof e === 'string' && e).flatMap(e => {
+      const [slug, pin] = e.split('/')
       if (!kept.has(slug)) return []
       let meta = {}
       try { meta = metaOf(readFileSync(join(protosDir, slug, 'meta.ts'), 'utf8')) } catch { return [] }

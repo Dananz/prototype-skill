@@ -49,6 +49,8 @@ export type DesignMeta = { title?: string; created?: string; session?: string; o
 
 /** The designs: each a set of screens (prototypes, by slug) in flows, oldest first. */
 export const designsOf = (metas: Record<string, DesignMeta>): Design[] => Object.entries(metas)
+  // A design.ts that isn't an object (written by hand, half saved) is no design.
+  .filter(([, meta]) => !!meta && typeof meta === 'object')
   .map(([path, meta]) => {
     const id = path.split('/')[2]
     const [proto, variant = ''] = typeof meta.from === 'string' ? meta.from.split('/') : []

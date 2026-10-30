@@ -110,6 +110,16 @@ test('handoff --design plans building the chosen screens, links as navigation, o
   assert.match(bad.stderr + bad.stdout, /nope is not a screen of acme/)
 }))
 
+test('moving screens between flows keeps a pinned entry pinned and refuses a slug that is no screen here', () => withHome(({ app, run }) => {
+  ok(run('design', 'home/C', '--title', 'Acme'))
+  ok(run('design', 'home/B', '--title', 'Beta'))
+  ok(run('design', 'beta', '--flow', 'Other', '--screens', 'home'))
+  assert.deepEqual(designOf(app, 'beta').flows, [{ name: 'Other', screens: ['home/B'] }])
+  const bad = run('design', 'acme', '--flow', 'Other', '--screens', 'nope')
+  assert.notEqual(bad.status, 0)
+  assert.match(bad.stderr + bad.stdout, /nope is not a screen of acme/)
+}))
+
 test('linksIn finds Go targets', () => {
   assert.deepEqual(linksIn(`<Go to="a" className="x">A</Go><Go className="x" to='b'>B</Go><Go to="a"/>`), ['a', 'b'])
   assert.deepEqual(linksIn(`<Goal to="x" />`), [])

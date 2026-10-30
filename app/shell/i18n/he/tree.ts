@@ -71,4 +71,5 @@ export default {
   'A note from the map on {v}': 'הערה מהמפה על {v}',
   'A link to add on {v}': 'קישור להוספה ב־{v}',
   'Build the design': 'לבנות את העיצוב',
+  '#{n} in this design': '#{n} בעיצוב הזה',
 }
