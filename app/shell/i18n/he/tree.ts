@@ -72,4 +72,8 @@ export default {
   'A link to add on {v}': 'קישור להוספה ב־{v}',
   'Build the design': 'לבנות את העיצוב',
   '#{n} in this design': '#{n} בעיצוב הזה',
+  // The tour (shell.ts paintTour).
+  'Tour': 'סיור',
+  'End': 'סיום',
+  'End the tour': 'לסיים את הסיור',
 }

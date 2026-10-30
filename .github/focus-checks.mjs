@@ -39,6 +39,18 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     assert(beside, 'the menu should open beside the strip, not over it')
     await page.run(`dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
 
+    // Tour walks the flow: from its first screen, a bar with where you are, next with → (or its button), End.
+    await page.run(`history.pushState(null, '', '/fabout/A'); dispatchEvent(new PopStateEvent('popstate'))`)
+    await until(page, `!!document.querySelector('[data-strip] [data-shoot="strip-tour"]')`, 'about should have Tour')
+    await page.run(`document.querySelector('[data-strip] [data-shoot="strip-tour"]').click()`)
+    await until(page, `location.pathname === '/fhome/B' && !document.querySelector('[data-tour]').hidden && document.querySelector('[data-tour]').textContent.includes('1/2')`, 'Tour should start at the flow\'s first screen with its bar')
+    await page.run(`document.body.focus(); dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))`)
+    await until(page, `location.pathname === '/fabout/A' && document.querySelector('[data-tour]').textContent.includes('2/2')`, '→ should go to the next screen of the flow, not the next option')
+    await page.run(`document.querySelector('[data-tour] [data-act="tour:prev"]').click()`)
+    await until(page, `location.pathname === '/fhome/B'`, 'the bar\'s previous should go back a screen')
+    await page.run(`document.querySelector('[data-tour] [data-act="tour:end"]').click()`)
+    await until(page, `document.querySelector('[data-tour]').hidden`, 'End should close the tour')
+
     // The crumb's next arrow walks the flow.
     await page.run(`document.querySelector('[data-crumb-step="1"]').click()`)
     await until(page, `location.pathname === '/fabout/A'`, "the crumb's next should open the next screen")

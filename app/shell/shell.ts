@@ -563,7 +563,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         <div data-copy-bar class="absolute start-0 z-[14]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px))"></div>
         <div data-copy-sheet class="pointer-events-none absolute inset-0 z-[19] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-overlay></div>
-        <div data-go-chip hidden class="absolute inset-x-0 top-3 z-[30] mx-auto w-fit max-w-[90%]"></div>
+        <div data-tour hidden class="peer absolute inset-x-0 top-3 z-[30] mx-auto w-fit max-w-[90%]"></div>
+        <div data-go-chip hidden class="absolute inset-x-0 top-3 z-[30] mx-auto w-fit max-w-[90%] peer-[:not([hidden])]:top-16"></div>
         <div data-go-note role="status" hidden class="pointer-events-none absolute inset-x-0 top-3 z-[30] mx-auto w-fit max-w-[90%] truncate rounded-full bg-zinc-900 px-3 py-1.5 text-[12px] text-white shadow-lg dark:bg-white dark:text-zinc-900"></div>
         <div data-pill></div>
         <div data-scale-card></div>
@@ -633,6 +634,20 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const [proto, variant] = route.split('/')
     go({ view: 'variant', proto, variant })
   })
+  // The tour's bar (act 'tour'): the flow, where you are in it, its arrows and End. Leaving the flow ends it.
+  const tourBar = root.querySelector<HTMLElement>('[data-tour]')!
+  let tour: { design: string; flow: string } | null = null
+  function paintTour() {
+    const pl = st.place, w = pl.view === 'variant' ? whereOf(all, designs, { proto: pl.proto, variant: pl.variant }) : null
+    if (tour && (!treeOn || w?.design?.id !== tour.design || w.flow?.name !== tour.flow || w.exploration)) tour = null
+    tourBar.hidden = !tour
+    if (!tour || !w?.flow) { tourBar.innerHTML = ''; return }
+    const n = w.flow.routes.length, step = (d: -1 | 1, label: string) => `<button data-act="tour:${d < 0 ? 'prev' : 'next'}" aria-label="${label}" title="${label}" ${w.at + d < 0 || w.at + d >= n ? 'disabled' : ''} class="grid size-8 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 disabled:opacity-25 dark:text-zinc-300 dark:hover:bg-white/10">${ic(d < 0 ? (rtl ? 'right' : 'left') : (rtl ? 'left' : 'right'), 'size-3.5')}</button>`
+    tourBar.innerHTML = `<div role="status" class="flex items-center gap-1 rounded-full bg-white p-1 ps-3 text-[12px] text-zinc-600 shadow-[0_8px_24px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-300 dark:ring-white/10">
+      ${ic('signpost', 'size-3.5 text-violet-500')}<span class="ms-1 font-medium text-zinc-900 dark:text-white">${t('Tour')}</span><span class="text-zinc-400">·</span><span dir="auto" class="truncate">${esc(w.flow.name)}</span>
+      ${step(-1, t('Previous screen in the flow'))}<span class="tabular-nums">${w.at + 1}/${n}</span>${step(1, t('Next screen in the flow'))}
+      <button data-act="tour:end" class="h-8 rounded-full px-3 font-medium hover:bg-zinc-900/5 dark:hover:bg-white/10">${t('End')}</button></div>`
+  }
   const goChip = root.querySelector<HTMLElement>('[data-go-chip]')!
   let chip: { from: string; to: string; route: string } | null = null
   function showChip(next: typeof chip) { chip = next; paintChip() }
@@ -690,12 +705,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const pl = st.place, w = pl.view === 'variant' ? whereOf(all, designs, { proto: pl.proto, variant: pl.variant }) : null
     const picking = comments.counts().picking
     const tool = (act: string, shoot: string, icon: string, label: string, key: string, pressed = false) => `<button data-act="${act}" data-shoot="${shoot}" aria-pressed="${pressed}" aria-label="${label}" title="${key ? `${label} · ${key}` : label}" class="${IB} ${pressed ? ON : ''}">${ic(icon)}</button>`
-    const tour = w?.flow && w.flow.routes.length > 1 ? tool('tour', 'strip-tour', 'signpost', t('Walk this flow from its first screen'), '') : ''
+    const tourBtn = w?.flow && w.flow.routes.length > 1 ? tool(tour ? 'tour:end' : 'tour', 'strip-tour', 'signpost', tour ? t('End the tour') : t('Walk this flow from its first screen'), '', !!tour) : ''
     // Decide: the bar's button is a dot and a word; upright it is the pick's check, filled once picked.
     const d = decideOf()
     const decide = d ? `<button data-act="open:decide" data-decide-btn data-shoot="strip-decide" aria-haspopup="menu" aria-expanded="${st.open === 'decide'}" aria-label="${d.picked ? t('Picked') : t('Decide')}" title="${d.picked ? t('Picked') : t('Decide')} · P" class="${IB} ${st.open === 'decide' ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}">${ic(d.picked ? 'picked' : 'pick')}</button>` : ''
     const groups = [
-      [tool('comment:toggle', 'strip-comment', picking ? 'select-on' : 'select', t('Comment'), 'C', picking), tour, decide],
+      [tool('comment:toggle', 'strip-comment', picking ? 'select-on' : 'select', t('Comment'), 'C', picking), tourBtn, decide],
       [deviceBtn()],
       [tweaksBtn(), copyBtn(), motionBtn(), replayBtn()],
     ].map(g => g.filter(Boolean).join('')).filter(Boolean)
@@ -1463,6 +1478,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       </div></div>`)
     menus = { protos: drill(), session: '' }
     paintStrip(deviceBtn, replayBtn)
+    paintTour()
     paintChip()
 
     // The switcher's dropdown: one column per level, scrolled to the last, and what is shown
@@ -2163,10 +2179,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           .then(() => sayGo(t('Asked {agent} to build {name}', { agent: agentName(session.agent), name: c.to })), () => sayGo(t('Could not send it. Try again.')))
         return
       }
+      // Tour: walk the flow of the screen on screen, from its first screen, a bar saying where you are.
       case 'tour': {
-        const w = here ? whereOf(all, designs, here) : null, first = w?.flow?.routes[0]
-        if (!first) return
-        const [proto, variant] = first.split('/')
+        const w = here ? whereOf(all, designs, here) : null, routes = w?.flow?.routes ?? []
+        if (arg === 'end' || !w?.design || !routes.length) { tour = null; return render() }
+        const to = arg === 'next' ? routes[w.at + 1] : arg === 'prev' ? routes[w.at - 1] : routes[0]
+        tour = { design: w.design.id, flow: w.flow!.name }
+        if (!to) return render()
+        const [proto, variant] = to.split('/')
         return go({ view: 'variant', proto, variant })
       }
       // In the columns: a variant (kept open when something was built from it) or a prototype.
@@ -2385,12 +2405,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // Esc on a variant goes up to its prototype's variants, unless the design used it first (a
     // design closing its own menu calls preventDefault). Its handlers may run after this one,
     // so the check waits a tick.
+    if (e.key === 'Escape' && tour) { e.preventDefault(); return act('tour', 'end', '') }
     if (e.key === 'Escape' && st.place.view === 'variant') {
       const from = pathOf(st.place)
       setTimeout(() => { if (!e.defaultPrevented && st.place.view === 'variant' && pathOf(st.place) === from) go({ view: 'proto', proto: st.place.proto }) })
       return
     }
-    if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant') { e.preventDefault(); step(e.key === FWD ? 1 : -1) }
+    // On a tour the arrows walk the flow's screens, not the screen's options.
+    if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant' && tour) { e.preventDefault(); act('tour', e.key === FWD ? 'next' : 'prev', '') }
+    else if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant') { e.preventDefault(); step(e.key === FWD ? 1 : -1) }
     else if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
     else if (e.key === 'C' && commentHost() && st.place.view === 'variant') { e.preventDefault(); commentWhole() }
     // Focus mode and the design's actions are the page outside's, when this page is in its view (viewKey).
