@@ -289,7 +289,6 @@ export function Island({ dock }: { dock: HTMLElement }) {
           className={`max-h-[116px] w-full overflow-y-auto whitespace-pre-wrap break-words outline-none ${phone ? 'min-h-10 rounded-[20px] px-4 py-2 text-base leading-6' : 'min-h-8 rounded-2xl px-3 py-1.5 text-[13px] leading-5 [@media(pointer:coarse)]:text-base'} bg-zinc-900/[.05] dark:bg-white/[.08] ${phone ? '' : 'focus:ring-2 focus:ring-proto-primary-ring'}`} />
         {empty && <span aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 truncate text-start text-zinc-400 ${phone ? 'px-4 py-2 text-base leading-6' : 'px-3 py-1.5 text-[13px] leading-5 [@media(pointer:coarse)]:text-base'}`}>{placeholder}</span>}
       </div>
-      {field.attachButton}
       <div inert={!act1} className="relative shrink-0"
         style={{ width: act1 === 'send' ? pillW : act1 ? (phone ? 40 : 32) : 0, marginInlineStart: act1 ? 0 : phone ? -8 : -6, transition: `width .42s ${SOFT}, margin .42s ${SOFT}` }}>
         <span ref={pillRef} aria-hidden className={`invisible absolute flex items-center gap-1.5 whitespace-nowrap px-3 font-semibold ${phone ? 'text-sm' : 'text-xs'}`}><Icon name="send" className="size-3.5" />{sendLabel}</span>

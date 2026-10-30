@@ -48,7 +48,6 @@ export function useTagField(opts: Opts) {
   const optsRef = useRef(opts)
   optsRef.current = opts
   const input = useRef<HTMLDivElement | null>(null)
-  const fileInput = useRef<HTMLInputElement>(null)
   const [shots, setShots] = useState<Shot[]>(opts.initial?.shots ?? [])
   const shotsRef = useRef(shots)
   shotsRef.current = shots
@@ -239,7 +238,6 @@ export function useTagField(opts: Opts) {
       </button>}
     </div>, uiBox()) : null
 
-  const attachButton = <><button type="button" aria-label="Attach an image" disabled={adding || shots.length >= MAX_SHOTS} onClick={() => fileInput.current?.click()} className="inline-flex items-center gap-1 rounded px-1 py-1 text-xs text-zinc-500 disabled:opacity-40" title="Attach an image"><Icon name="image" className="size-4" /></button><input ref={fileInput} type="file" aria-label="Image files" accept="image/*" multiple disabled={adding || shots.length >= MAX_SHOTS} hidden onChange={e => { const files = [...(e.target.files ?? [])]; e.target.value = ''; void attach(files) }} /></>
   const pictures = (shots.length > 0 || adding || imageError) ? <span className="flex flex-wrap items-center gap-1 px-2 py-1">
       {shots.map((shot, i) => <span key={i} className="relative inline-block"><img src={shot.src} alt="Attached image" className="h-12 w-16 rounded object-cover" /><button type="button" aria-label="Remove image" className="absolute end-0 top-0 rounded bg-zinc-900 px-1 text-white" onClick={() => { shotsRef.current = shotsRef.current.filter((_, k) => k !== i); setShots(shotsRef.current); optsRef.current.onChange?.(read()) }}>×</button></span>)}
 
@@ -247,8 +245,7 @@ export function useTagField(opts: Opts) {
   </span> : null
   return {
     props, menu, adding, empty: adding || (empty && !shots.length), picking,
-    attachButton, pictures,
-    attachments: <>{pictures}<span className="flex px-2 py-1">{attachButton}</span></>,
+    pictures,
     el: () => input.current,
     focus: () => input.current?.focus({ preventScroll: true }),
     read,

@@ -57,18 +57,17 @@ export async function commentImagesChecks({ proto, app, openPage, fail }) {
       const attached = await page.run(`(async () => {
         const until = async f => { for (const end = Date.now() + 8000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
         const box = () => document.querySelector('[data-shoot=whole-input]')
-        const files = () => [...document.querySelectorAll('input[type=file][accept="image/*"]')].find(e => e.closest('[data-island]'))
-        if (!files()) return 'missing image picker'
+        if ([...document.querySelectorAll('input[type=file]')].some(e => e.closest('[data-island]'))) return 'image picker came back'
         const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 180
         const ctx = canvas.getContext('2d'); ctx.fillStyle = '#b5c8dd'; ctx.fillRect(0,0,320,180); ctx.fillStyle = '#26354a'; ctx.font = '24px sans-serif'; ctx.fillText('Reference image', 60, 96)
         const blob = await new Promise(r => canvas.toBlob(r, 'image/png'))
         const dt = new DataTransfer(); dt.items.add(new File([blob], 'reference.png', { type: 'image/png' }))
-        files().files = dt.files; files().dispatchEvent(new Event('change', { bubbles: true }))
-        if (!await until(() => document.querySelector('img[alt="Attached image"]'))) return 'file picker did not attach image'
+        box().dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+        if (!await until(() => document.querySelector('img[alt="Attached image"]'))) return 'paste did not attach image'
         document.querySelector('button[aria-label="Remove image"]').click()
         if (!await until(() => !document.querySelector('img[alt="Attached image"]'))) return 'remove did not clear image'
         box().dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
-        if (!await until(() => document.querySelector('img[alt="Attached image"]'))) return 'paste did not attach image'
+        if (!await until(() => document.querySelector('img[alt="Attached image"]'))) return 'paste did not attach image again'
         return 'ok'
       })()`)
       if (attached !== 'ok') fail(`${layout} image comments: ${attached}`)
@@ -90,5 +89,5 @@ export async function commentImagesChecks({ proto, app, openPage, fail }) {
     if (!inbox.includes('imagesfx/A') || (inbox.match(/   image: /g) ?? []).length < 2) fail('image-only comments did not retain their inbox pictures')
   }
   proto(['archive', 'imagesfx'])
-  console.log('OK: image picker, removal, and paste on desktop and phone')
+  console.log('OK: pasted images, removal, no picker button, on desktop and phone')
 }
