@@ -145,7 +145,16 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`location.pathname === '/'`), 'a first click should only select the board')
     await page.run(`document.querySelector('[data-map-board="screen:mabout"]').click()`)
     await until(page, `location.pathname === '/mabout/A'`, 'a click on the selected board should open it')
+    // A picked exploration folds into a stack, one target: a click anywhere on it spreads it out, opening nothing.
+    proto(['pick', 'mloose', 'B'])
+    await page.run(`document.body.focus(); dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }))`)
+    await until(page, `!!document.querySelector('[data-map-board="opt:mloose/A"][data-map-pile]')`, 'a picked exploration should fold into a stack')
+    await page.run(`document.querySelector('[data-map-board="opt:mloose/A"]').click()`)
+    await until(page, `!document.querySelector('[data-map-board^="opt:mloose/"][data-map-pile]')`, 'a click on the stack should spread it')
+    await wait(400)
+    // (The screen M came back from stays selected; no card of the stack is, which would show its #n in the pill.)
+    assert(await page.run(`location.pathname === '/' && !/#\\d/.test(document.querySelector('[data-map-open]')?.parentElement.textContent ?? '')`), 'spreading a stack should neither open nor select a card')
   } finally { page.close() }
   for (const s of ['mhome', 'mabout', 'mloose', 'mother']) proto(['archive', s])
-  console.log('OK: the map: designs, screens live, options, loose explorations, link lines, notes on lines and flows, dragged links, Build it, the building mark, the design filter, open and back with M, a second click opens')
+  console.log('OK: the map: designs, screens live, options, loose explorations, link lines, notes on lines and flows, dragged links, Build it, the building mark, the design filter, open and back with M, a second click opens, a stack spreads in one click')
 }

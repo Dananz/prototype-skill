@@ -213,6 +213,8 @@ function MapView({ api }: { api: MapApi }) {
     addEventListener('pointermove', move); addEventListener('pointerup', up)
     setDrag({ from, x: from.x + from.w, y: from.y + from.h / 2 })
   }
+  // A folded stack is one target: a click anywhere on it spreads it out (its label folds it again).
+  const spreadOut = (slug: string) => { setSel(k => k?.startsWith(`opt:${slug}/`) ? null : k); setSpread(s => new Set(s).add(slug)) }
   // A click on the selected board and a double click both open it: the second one of a pair is let go.
   const opening = useRef(0)
   const openBoard = (b: Board) => { if (Date.now() - opening.current < 600) return; opening.current = Date.now(); fly(fitTo(b, 1), 380, () => api.open(b.route)) }
@@ -265,7 +267,9 @@ function MapView({ api }: { api: MapApi }) {
           {world.boards.map(b => {
             const on = b.key === sel, here = b.route === input.place
             return (
-              <div key={b.key} data-map-board={b.key} onClick={e => { e.stopPropagation(); if (dragged.current >= 6) return; if (on && e.detail < 2) openBoard(b); else setSel(b.key) }} onDoubleClick={() => openBoard(b)}
+              <div key={b.key} data-map-board={b.key} {...b.pile != null ? { 'data-map-pile': b.pile } : {}}
+                onClick={e => { e.stopPropagation(); if (dragged.current >= 6) return; if (b.pile != null) spreadOut(b.slug); else if (on && e.detail < 2) openBoard(b); else setSel(b.key) }}
+                onDoubleClick={() => { if (b.pile == null) openBoard(b) }}
                 className={'absolute overflow-hidden rounded-[calc(10px*var(--iz))] bg-white shadow-[0_1px_3px_rgb(0_0_0/.08)] dark:bg-zinc-900'}
                 style={{ left: b.x, top: b.y, width: b.w, height: b.h, zIndex: b.pile != null ? 3 - b.pile : undefined, cursor: 'pointer',
                   outline: on || here ? `calc(2px * var(--iz)) solid ${on ? '#0ea5e9' : '#10b981'}` : `calc(1px * var(--iz)) solid rgb(0 0 0 / .08)` }}>
