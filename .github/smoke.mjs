@@ -53,6 +53,7 @@ import { variantLabelsChecks } from './variant-labels-checks.mjs'
 import { favoritesChecks } from './favorites-checks.mjs'
 import { treeChecks } from './tree-checks.mjs'
 import { goChecks } from './go-checks.mjs'
+import { mapChecks } from './map-checks.mjs'
 import { headerChecks } from './header-checks.mjs'
 import { phoneFrameChecks } from './phone-frame-checks.mjs'
 import { phoneOneDesignChecks } from './phone-one-design-checks.mjs'
@@ -218,6 +219,13 @@ if (process.argv.includes('--go-only')) {
   proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused Go checks')
+  process.exit(0)
+}
+if (process.argv.includes('--map-only')) {
+  await mapChecks({ proto, app, local, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused map checks')
   process.exit(0)
 }
 if (process.argv.includes('--tree-only')) {
@@ -399,6 +407,7 @@ await variantLabelsChecks({ proto, app, local, openPage, fail })
 await favoritesChecks({ proto, app, local, openPage, fail })
 await treeChecks({ proto, app, local, openPage, fail })
 await goChecks({ proto, app, local, openPage, fail })
+await mapChecks({ proto, app, local, openPage, fail })
 await headerChecks({ proto, app, local, openPage, fail })
 await phoneFrameChecks({ proto, app, local, openPage, fail })
 await phoneOneDesignChecks({ proto, app, local, openPage, fail })

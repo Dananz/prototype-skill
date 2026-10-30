@@ -42,7 +42,11 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`/not picked/.test(document.querySelector('[data-tree-row="screen:about"]')?.textContent ?? '')`), 'about should say it is not picked')
     await until(page, `!!document.querySelector('[data-tree-row="exp:cta-copy"] [data-mark="stale"]')`, 'the place on screen opens its ancestors, and cta-copy is stale')
     assert(await page.run(`/became Acme/.test(document.querySelector('[data-tree-row="opt:home/C"]')?.textContent ?? '')`), 'home #3 should say it became Acme')
-    assert(await page.run(`document.querySelector('[data-tree-filter="open"]').textContent.trim() === 'Open · 2'`), `the Open filter should count 2: ${await page.run(`document.querySelector('[data-tree-filter="open"]').textContent`)}`)
+    // The full smoke shares the app with other checks' prototypes, so the count is checked by what Open keeps.
+    assert(await page.run(`/^Open · \\d+$/.test(document.querySelector('[data-tree-filter="open"]').textContent.trim())`), 'the Open filter should carry a count')
+    await page.run(`document.querySelector('[data-tree-filter="open"]').click()`)
+    await until(page, `!!document.querySelector('[data-tree-row="screen:about"]') && !!document.querySelector('[data-tree-row="exp:cta-copy"]') && !document.querySelector('[data-tree-row="exp:logo"]')`, 'Open should keep about and cta-copy and leave out the picked logo')
+    await page.run(`document.querySelector('[data-tree-filter="all"]').click()`)
 
     await page.run(`document.querySelector('[data-tree-row="screen:about"] button:not([aria-expanded])').click()`)
     await until(page, `location.pathname === '/about/A'`, 'a screen row should open its shown variant')

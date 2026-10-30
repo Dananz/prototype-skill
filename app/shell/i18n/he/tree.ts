@@ -29,4 +29,8 @@ export default {
   'Expand': 'לפתוח',
   '{name} is not built yet': '{name} עוד לא נבנה',
   '{name} is not a screen of this design': '{name} הוא לא מסך של העיצוב הזה',
+  // The map (map/).
+  'All links': 'כל הקישורים',
+  'Selected only': 'רק של הנבחר',
+  'Fit (0)': 'התאם (0)',
 }

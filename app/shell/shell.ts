@@ -36,6 +36,7 @@ import { createIntake } from './intake/index'
 import type { Intake } from './intake/types'
 import { createSettings, type Appearance } from './settings'
 import { mountTree, type TreeInput } from './tree/index'
+import { mountMap, type MapApi, type MapInput } from './map/index'
 import { followSession, rtl, t, tn, day } from './i18n'
 import { createShare } from './share'
 import { createShareLink } from './share-link'
@@ -550,6 +551,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <header data-bar class="relative z-30 ${framed ? 'hidden' : 'flex'} h-12 shrink-0 items-center gap-1 border-b border-black/[.07] px-2 dark:border-white/10"></header>
       <div data-zone>
         <div data-layers class="absolute inset-0 overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-map-host hidden class="absolute inset-0 z-[4]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-view hidden class="absolute inset-0 z-[5]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
@@ -620,6 +622,30 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (!entry) return sayGo(t('{name} is not a screen of this design', { name: to }))
     go({ view: 'variant', proto: to, variant: entry.split('/')[1] || target.picked || target.variants[0]?.id || 'A' })
   })
+  // The map (map/index.tsx): with the project tree on, it is the overview, in place of the lobbies.
+  const mapHost = root.querySelector<HTMLElement>('[data-map-host]')!
+  const mapWatchers = new Set<() => void>()
+  let mapSnap: MapInput | null = null, mapMounted = false, lastFocus = ''
+  let mapLines: 'all' | 'selected' = localStorage.getItem('proto-map-lines') === 'all' ? 'all' : 'selected'
+  let mapDesign = ''
+  const onMap = () => treeOn && !framed && st.place.view !== 'variant'
+  const mapApi: MapApi = {
+    get: () => mapSnap!, subscribe: f => { mapWatchers.add(f); return () => { mapWatchers.delete(f) } },
+    open: route => { const [proto, variant] = route.split('/'); go({ view: 'variant', proto, variant }) },
+    mount: (el, c) => mount(el, c), camera: null,
+    setLines: mode => { mapLines = mode; remember('proto-map-lines', mode); paintMap() },
+  }
+  function paintMap() {
+    const show = onMap()
+    mapHost.hidden = !show
+    layers.style.visibility = show ? 'hidden' : ''
+    if (!show && !mapMounted) return
+    const next: MapInput = { protos: all, designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign }
+    if (mapSnap && (Object.keys(next) as (keyof MapInput)[]).every(k => next[k] === mapSnap![k])) return
+    mapSnap = next
+    if (!mapMounted && show) { mapMounted = true; mountMap(mapHost, mapApi) }
+    mapWatchers.forEach(f => f())
+  }
   let treeMounted = false
   function mountTreeOnce() {
     if (treeMounted || !treeOn) return
@@ -1383,6 +1409,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     grip.setAttribute('aria-valuenow', String(st.sideW))
     keepScroll(side, st.side && !treeOn ? sideNav(false) : '')
     if (treeOn) { mountTreeOnce(); paintTree() }
+    if (st.place.view === 'variant') lastFocus = `${st.place.proto}/${st.place.variant}`
+    paintMap()
     keepScroll(drawer, st.drawer ? `<div class="fixed inset-0 z-50 lg:hidden"><div data-act="drawer:0" class="absolute inset-0 bg-black/30"></div><div class="absolute inset-y-0 start-0 flex w-[19rem] max-w-[85%] flex-col bg-white shadow-2xl dark:bg-zinc-950">${sideNav(true)}</div></div>` : '')
 
     // Focus mode restyles the zone to cover the page; the mounted design stays put. On a phone
@@ -2253,6 +2281,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else if (e.key === 'r' && canReplay() && !framed) act('replay', '', '')
     else if (e.key === 'f' && st.place.view === 'variant' && !framed) act(st.focus ? 'unfocus' : 'focus', '', '')
     else if (e.key === 'w' && workOf()) act('work', 'go', '')
+    // M: from a screen out to the map, and from the map back into the last screen (continuous zoom's keys).
+    else if (e.key === 'm' && treeOn) st.place.view === 'variant' ? go({ view: 'session' }) : lastFocus && mapApi.open(lastFocus)
     else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches && !framed) act('open', 'decide', '')
     else if (e.key === 's' && st.place.view === 'variant' && !framed) act('fav', st.place.proto, st.place.variant)
   })
