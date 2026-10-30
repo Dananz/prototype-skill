@@ -107,7 +107,6 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const nudge = store.get().nudge
   const pending = store.get().pendingTag
   const ed = useRef<HTMLDivElement>(null)
-  const fileInput = useRef<HTMLInputElement>(null)
   const [tags, setTags] = useState<Target[]>(initial?.tags ?? [])
   const tagsRef = useRef(tags)
   tagsRef.current = tags
@@ -314,7 +313,6 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
         )}
         <div className="flex items-center gap-1 px-2 pb-2 pt-1">
           <button onClick={() => { setMention(null); saveRange(); act.tagPick() }} title={t('Tag another element on the design')} aria-label={t('Tag another element')} className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="target" /></button>
-          <button type="button" aria-label="Attach an image" disabled={full} onClick={() => fileInput.current?.click()} className={`${IB} h-8 min-w-8 px-1.5 disabled:opacity-40`} title="Attach an image"><Icon name="image" /></button><input ref={fileInput} aria-label="Image files" type="file" accept="image/*" multiple hidden disabled={full} onChange={e => { const files = [...(e.target.files ?? [])]; e.target.value = ''; void (async () => { for (const f of files) await attach(f) })() }} />
           <button onClick={shoot} disabled={full} title={full ? t('{n} pictures is the most one comment takes; remove one to add another', { n: MAX_SHOTS }) : t('Add a screenshot of this part of the design, then draw on it (or paste an image: {mod} V, or drop one here; each adds a picture)', { mod: MOD })} aria-label={t('Attach a screenshot')} className={`${IB} h-8 min-w-8 px-1.5 disabled:opacity-40`}><Icon name="camera" /></button>
           {editing && <button onClick={() => id && act.remove(id)} title={t('Delete')} aria-label={t('Delete comment')} className={`${IB} h-8 min-w-8 px-1.5 hover:text-rose-600`}><Icon name="trash" /></button>}
           <span className="ms-auto" />

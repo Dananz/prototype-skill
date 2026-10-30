@@ -158,7 +158,7 @@ function AnswerBox({ r, empty, update }: { r: Row; empty: { open: boolean; note:
     <span data-shoot="comment-answer-box" className="mt-2 block rounded-xl border border-black/10 bg-white p-1.5 dark:border-white/15 dark:bg-zinc-900">
       <span {...field.props} aria-label={t('Answer {agent}', { agent })} data-placeholder={t('Answer {agent}…', { agent })}
         className={`block max-h-32 min-h-9 w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-1.5 py-1 text-[12.5px] leading-[18px] text-zinc-900 outline-none dark:text-zinc-100 ${PLACEHOLDER}`} />
-      {field.attachments}{field.menu}
+      {field.pictures}{field.menu}
       {error && <span role="alert" className="block px-1.5 pb-1 text-[11px] text-rose-600 dark:text-rose-400">{error}</span>}
       <span className="flex items-center justify-end gap-1">
         <button onClick={cancel} className="h-7 rounded-lg px-2 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>
