@@ -27,4 +27,6 @@ export default {
   'Picked #{n}': 'נבחר #{n}',
   'Collapse': 'לכווץ',
   'Expand': 'לפתוח',
+  '{name} is not built yet': '{name} עוד לא נבנה',
+  '{name} is not a screen of this design': '{name} הוא לא מסך של העיצוב הזה',
 }

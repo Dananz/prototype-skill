@@ -24,7 +24,7 @@ export const SHELL = { react: '^19.2.0', 'react-dom': '^19.2.0', '@base-ui/react
 // only; `proto up` never adds them to an existing one, so a running session isn't reinstalled and
 // restarted for packages it never asked for.
 export const STACKS = {
-  react: { deps: {}, craft: { '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', tweaks: 'tweaks.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', slot: 'slot.react.ts', stub: 'react.tsx', plan: 'react-plan.tsx' },
+  react: { deps: {}, craft: { '@phosphor-icons/react': '^2.1.10', motion: '^14.1.0' }, dev: { '@vitejs/plugin-react': '^6.1.0' }, ext: 'tsx', adapter: 'react.tsx', hints: 'hints.react.ts', tweaks: 'tweaks.react.ts', copy: 'copy.react.ts', motion: 'motion.react.ts', slot: 'slot.react.ts', go: 'go.react.ts', stub: 'react.tsx', plan: 'react-plan.tsx' },
   vue: { deps: { vue: '^3.5.0' }, craft: { '@phosphor-icons/vue': '^2.2.1', 'motion-v': '^2.7.0' }, dev: { '@vitejs/plugin-vue': '^6.0.0' }, ext: 'vue', adapter: 'vue.ts', hints: 'hints.vue.ts', tweaks: 'tweaks.vue.ts', copy: 'copy.vue.ts', motion: 'motion.vue.ts', stub: 'vue.vue', plan: 'vue-plan.vue' },
 }
 
@@ -55,6 +55,7 @@ export function appFiles(stack) {
   out.set(join('src', 'copy.ts'), join(APP, 'adapters', kit.copy))
   out.set(join('src', 'motion.ts'), join(APP, 'adapters', kit.motion))
   if (kit.slot) out.set(join('src', 'slot.ts'), join(APP, 'adapters', kit.slot))
+  if (kit.go) out.set(join('src', 'go.ts'), join(APP, 'adapters', kit.go))
   return out
 }
 

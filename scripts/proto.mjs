@@ -367,6 +367,7 @@ function scaffold(dir, project) {
   cpSync(join(APP, 'adapters', kit.copy), join(dir, 'src', 'copy.ts'))
   cpSync(join(APP, 'adapters', kit.motion), join(dir, 'src', 'motion.ts'))
   if (kit.slot) cpSync(join(APP, 'adapters', kit.slot), join(dir, 'src', 'slot.ts'))
+  if (kit.go) cpSync(join(APP, 'adapters', kit.go), join(dir, 'src', 'go.ts'))
   writeJson(join(dir, 'package.json'), {
     name: `prototype-${basename(dir)}`, private: true, type: 'module',
     dependencies: { ...SHELL, ...kit.deps, ...kit.craft }, devDependencies: { ...BASE, ...kit.dev },

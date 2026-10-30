@@ -558,6 +558,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         <div data-copy-bar class="absolute start-0 z-[14]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px))"></div>
         <div data-copy-sheet class="pointer-events-none absolute inset-0 z-[19] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-overlay></div>
+        <div data-go-note role="status" hidden class="pointer-events-none absolute inset-x-0 top-3 z-[30] mx-auto w-fit max-w-[90%] truncate rounded-full bg-zinc-900 px-3 py-1.5 text-[12px] text-white shadow-lg dark:bg-white dark:text-zinc-900"></div>
         <div data-pill></div>
         <div data-scale-card></div>
         <aside data-hints></aside>
@@ -603,6 +604,22 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     treeSnap = next
     treeWatchers.forEach(f => f())
   }
+  // <Go to> in a design (adapters/go.react.ts): to that screen of the design on screen, at its pick
+  // (or the pinned variant, or #1 standing in). One it can't reach is said over the stage.
+  const goNote = root.querySelector<HTMLElement>('[data-go-note]')!
+  let goTimer: ReturnType<typeof setTimeout> | undefined
+  const sayGo = (text: string) => { goNote.textContent = text; goNote.hidden = false; clearTimeout(goTimer); goTimer = setTimeout(() => { goNote.hidden = true }, 4000) }
+  if (!framed) addEventListener('proto:go', e => {
+    const to = String((e as CustomEvent).detail?.to ?? '')
+    const target = all.find(p => p.id === to && !p.archived)
+    if (!target) return sayGo(t('{name} is not built yet', { name: to }))
+    const here = st.place.view === 'session' ? null : st.place.proto
+    const screensOf = (d: Design) => d.flows.flatMap(f => f.screens)
+    const mine = here ? designs.find(d => screensOf(d).some(x => x.split('/')[0] === here)) : null
+    const entry = mine ? screensOf(mine).find(x => x.split('/')[0] === to) : to
+    if (!entry) return sayGo(t('{name} is not a screen of this design', { name: to }))
+    go({ view: 'variant', proto: to, variant: entry.split('/')[1] || target.picked || target.variants[0]?.id || 'A' })
+  })
   let treeMounted = false
   function mountTreeOnce() {
     if (treeMounted || !treeOn) return
