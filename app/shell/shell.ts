@@ -53,7 +53,12 @@ export type Version = { n: number; at: string; note: string; before: { text: str
 /** Something behind clicks in a prototype's variants (a menu, a drawer, a dialog), reached by
  *  clicking its selectors in order. about: one line per variant; only: the variants that have it. */
 export type State = { id: string; name: string; click: string[]; about?: Record<string, string>; only?: string[] }
-export type Proto = { id: string; title: string; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; slot?: string; also: { proto: string; variant: string }[]; picked?: string; favorites: string[]; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[]; versions?: Record<string, Version[]> }
+/** A design: screens (prototypes, by slug) that share one look and link to each other, in flows
+ *  (src/designs/<id>/design.ts, written by `proto design`). from: the variant it was made from. */
+export type Design = { id: string; title: string; created: string; session?: string; owner?: string; from?: { proto: string; variant: string }; flows: { name: string; screens: string[] }[] }
+/** session: the conversation that made it; owner: the one working on it now; next: its pick is
+ *  built into its parent (proto add --next). */
+export type Proto = { id: string; title: string; session?: string; owner?: string; next?: boolean; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; slot?: string; also: { proto: string; variant: string }[]; picked?: string; favorites: string[]; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[]; versions?: Record<string, Version[]> }
 /** A variant of one prototype ("pricing" and "C"). */
 export type Ref = { proto: string; variant: string }
 /** work: the variant being changed now; before: the ones worked on before it (newest first);
@@ -178,7 +183,7 @@ async function replay(host: HTMLElement, steps: string[], alive: () => boolean, 
   return null
 }
 
-export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Proto[]; session: Session }) {
+export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Proto[]; session: Session; designs?: Design[] }) {
   const { mount } = opts
   let session = opts.session
   // Favorites only: each prototype with favorites shows just those, everywhere variants are listed
@@ -188,6 +193,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const favKey = `proto-favs-only:${session.id}`
   let favOnly = localStorage.getItem(favKey) === '1'
   let all = opts.protos
+  let designs = opts.designs ?? []
+  // The tree sidebar draws them and listens for changes (tree/index.tsx).
+  const designWatchers = new Set<() => void>()
+  const designsChanged = () => designWatchers.forEach(f => f())
   const shown = (list: Proto[]) => favOnly ? list.map(p => p.favorites.length ? { ...p, variants: p.variants.filter(v => p.favorites.includes(v.id)) } : p) : list
   let protos = shown(all)
   // The page inside a device view (view/frame.ts) shares this browser's storage with the page
@@ -3387,6 +3396,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   return {
     // New prototypes and new variants are followed; edits to existing ones only light the
     // editing dot, so the view never jumps while someone is looking at something.
+    /** Designs added or changed on disk (proto design, add --design). */
+    setDesigns(next: Design[]) { designs = next; designsChanged() },
     setProtos(next: Proto[]) {
       const before = new Map(protos.map(p => [p.id, new Set(p.variants.map(v => v.id))]))
       // Stars changed elsewhere (`proto fav`, another tab): an overview's cards are its layer, so it is drawn again below.

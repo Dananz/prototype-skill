@@ -154,6 +154,8 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
         `const metas = ${JSON.stringify(metas)}`,
         `const files = {${files.map(f => `\n  ${JSON.stringify(`./protos/${f}`)}: () => import(${JSON.stringify(join(protosDir, f))}).then(m => m.default),`).join('')}\n}`,
         'export const protos = protosOf(metas, files)',
+        // Designs reach a share in phase 5 (the share opening on the map).
+        'export const designs = []',
       ].join('\n')
     },
     [VIRTUAL.session]: () => `export default ${JSON.stringify(trimSession(session))}`,
