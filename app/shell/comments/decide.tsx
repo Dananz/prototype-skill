@@ -14,6 +14,7 @@ import { ACTION, Icon, MOD, PRIMARY, Pulse } from './ui'
 import { BROWSER_HINT, MenuRows, type MenuRow } from './menu'
 import { rtl, t } from '../i18n'
 import { post } from '../transport'
+import { BriefView } from './brief-view'
 
 /** The variant on screen, and whether it is the prototype's pick. */
 export type Subject = { proto: string; variant: string; label: string; name: string; picked: boolean; hints?: boolean; copy?: boolean }
@@ -123,8 +124,9 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
       {paper === 'loading'
         ? <p className="px-2 py-3 text-xs text-zinc-500">{t('Making the brief…')}</p>
         : <>
-          <pre dir="auto" className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-zinc-900/[.04] px-3 py-2 font-sans text-xs leading-5 text-zinc-700 dark:bg-white/[.06] dark:text-zinc-200">{paper.markdown}</pre>
-          <p className="mt-1.5 px-1 text-[11px] text-zinc-500">{t('Kept for {agent} at {file}', { agent, file: paper.file })}</p>
+          <div className="max-h-80 overflow-auto overscroll-contain rounded-xl bg-zinc-900/[.04] px-3 py-2.5 dark:bg-white/[.06]"><BriefView markdown={paper.markdown} /></div>
+          <p className="mt-1.5 px-1 text-[11px] text-zinc-500">{t('Kept for {agent} in this file:', { agent })}</p>
+          <p className="px-1 text-[11px] text-zinc-500"><code dir="ltr" className="font-mono [overflow-wrap:anywhere]">{paper.file}</code></p>
         </>}
       {oops}
     </div>

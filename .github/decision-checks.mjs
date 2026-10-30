@@ -34,7 +34,7 @@ export async function decisionChecks({ proto, app, local, openPage, fail, keepSh
     assert(proto(['history', 'decide/B']).includes('2 earlier versions'), 'proto history does not list both versions')
 
     // Decision brief from the Decide menu: made, kept for the agent, shown in place.
-    await run(`document.querySelector('[data-act="tool:decide:B:history"]').click(); await until(() => !document.querySelector('[data-history]')); (await until(() => document.querySelector('[data-bar] [data-decide-btn]'))).click(); (await until(() => document.querySelector('[data-brief-open]'))).click(); await until(() => document.querySelector('[data-brief] pre')?.textContent.includes('# Decision brief: Decide things')); if (!document.querySelector('[data-brief]').textContent.includes('.proto/decisions/decide.md')) throw new Error('the brief does not say where it is kept')`)
+    await run(`document.querySelector('[data-act="tool:decide:B:history"]').click(); await until(() => !document.querySelector('[data-history]')); (await until(() => document.querySelector('[data-bar] [data-decide-btn]'))).click(); (await until(() => document.querySelector('[data-brief-open]'))).click(); await until(() => document.querySelector('[data-brief-page] h3')?.textContent === 'Decision brief: Decide things'); if (!document.querySelector('[data-brief]').textContent.includes('.proto/decisions/decide.md')) throw new Error('the brief does not say where it is kept'); const shown = document.querySelector('[data-brief-page]').textContent; if (/##|\\*\\*|^#/.test(shown)) throw new Error('the brief shows raw Markdown: ' + shown.slice(0, 200))`)
 
     await page.screenshot(join(keepShots, 'brief-desktop.png'))
     assert(readFileSync(join(app, '.proto/decisions/decide.md'), 'utf8').includes('Nothing is picked yet'), 'brief file missing or wrong')
@@ -49,6 +49,14 @@ export async function decisionChecks({ proto, app, local, openPage, fail, keepSh
     assert(result === 'ok', `phone History: ${result}`)
     await phone.screenshot(join(keepShots, 'history-phone.png'))
   } finally { phone.close() }
+  // The brief on a phone in Hebrew: drawn as a page, each block in its own direction.
+  const he = await openPage(`${local}decide/B?lang=he`, { width: 390, height: 844, phone: true })
+  try {
+    const result = await he.run(`(async () => { ${until} try { (await until(() => document.querySelector('[data-pill-handle]'))).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); (await until(() => document.querySelector('[data-brief-open]'))).click(); const h = await until(() => document.querySelector('[data-brief-page] h3')); if (getComputedStyle(h).direction !== 'ltr' || h.getBoundingClientRect().left - h.parentElement.getBoundingClientRect().left > 4 || h.getBoundingClientRect().width > h.parentElement.getBoundingClientRect().width) throw new Error('the English title is not left to right'); const r = document.createRange(); r.selectNodeContents(h); if (r.getBoundingClientRect().left - h.getBoundingClientRect().left > 4) throw new Error('the English title sits on the right (' + getComputedStyle(h).textAlign + ')'); return 'ok' } catch (e) { return e.message } })()`)
+    assert(result === 'ok', `phone brief: ${result}`)
+    await new Promise(r => setTimeout(r, 500))
+    await he.screenshot(join(keepShots, 'brief-phone-he.png'))
+  } finally { he.close() }
 
   // Comments sent from the page show in the brief with their answers.
   const ok = await fetch(`${local}__proto/comments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comments: [{ route: 'decide/A', text: 'The calm one reads best' }] }) })

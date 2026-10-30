@@ -146,5 +146,5 @@ export default {
   'Decision brief': 'תקציר החלטה',
   'Could not copy': 'לא ניתן להעתיק',
   'Making the brief…': 'מכין את התקציר…',
-  'Kept for {agent} at {file}': 'נשמר עבור {agent} ב-{file}',
+  'Kept for {agent} in this file:': 'נשמר עבור {agent} בקובץ הזה:',
 } satisfies Record<string, string>
