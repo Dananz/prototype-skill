@@ -380,8 +380,13 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
       assert(await page.run(`!!document.querySelector('[data-proto-switch] [data-caret]')`), 'prototype list: the title has no caret')
       const sw = await at('[data-proto-switch]')
       assert(sw, 'prototype list: no title button')
-      await page.press(...sw)
-      const rows = await until(async () => (await page.run(`document.querySelectorAll('[data-proto-row]').length`)) || 0, 3000)
+      // Under a full run's load the press can land while the full view is still closing over the
+      // header: press again while the list hasn't opened.
+      let rows = 0
+      for (let i = 0; i < 3 && !rows; i++) {
+        await page.press(...(await at('[data-proto-switch]')) ?? sw)
+        rows = await until(async () => (await page.run(`document.querySelectorAll('[data-proto-row]').length`)) || 0, 3000)
+      }
       assert(rows === 2, `prototype list: it lists ${rows} prototypes`)
       await page.press(...await at('[data-proto-row="lineage-src"]'))
       await until(async () => (await boards()) === 'lineage-src/A', 3000)
