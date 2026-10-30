@@ -19,6 +19,7 @@ import { commentParentChecks } from './comment-parent-checks.mjs'
 import { commentWholeChecks } from './comment-whole-checks.mjs'
 import { commentGoneChecks } from './comment-gone-checks.mjs'
 import { commentScrollChecks } from './comment-scroll-checks.mjs'
+import { islandSendChecks } from './island-send-checks.mjs'
 import { commentUsesChecks } from './comment-uses-checks.mjs'
 import { commentRoutesChecks } from './comment-routes-checks.mjs'
 import { commentCompareChecks } from './comment-compare-checks.mjs'
@@ -255,6 +256,13 @@ if (process.argv.includes('--comment-images-only')) {
   rmSync(scratch, { recursive: true, force: true })
   process.exit(0)
 }
+if (process.argv.includes('--island-send-only')) {
+  await islandSendChecks({ proto, app, openPage, fail, shots: process.env.PROTO_ISLAND_SEND_SHOTS })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused island send checks')
+  process.exit(0)
+}
 if (process.argv.includes('--comment-whole-only')) {
   await commentWholeChecks({ proto, app, openPage, fail })
   proto(['rm'])
@@ -354,6 +362,7 @@ await tweaksChecks({ proto, app, local, openPage, fail })
 
 await commentParentChecks({ proto, app, openPage, fail })
 await commentWholeChecks({ proto, app, openPage, fail })
+await islandSendChecks({ proto, app, openPage, fail })
 await commentImagesChecks({ proto, app, openPage, fail })
 await commentGoneChecks({ proto, app, openPage, fail })
 await commentScrollChecks({ proto, app, openPage, fail })

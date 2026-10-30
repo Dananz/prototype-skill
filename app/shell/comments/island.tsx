@@ -9,7 +9,7 @@
 // classic layout), a wide screen has it as the side panel's Comments tab instead: the list, and the
 // same bar at its foot.
 import { createPortal } from 'react-dom'
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { rtl, t, tn } from '../i18n'
 import { useAgentName, useCtx } from './ctx'
 import { islandPrefs, useIslandPrefs, type IslandPrefs } from './island-prefs'
@@ -203,9 +203,12 @@ export function Island({ dock }: { dock: HTMLElement }) {
   if (act1) lastAct.current = act1
   const shownAct = act1 ?? lastAct.current
   const sendLabel = s.sending ? t('Sending…') : tn(drafts, 'Send {n}', 'Send {n}')
-  const pillRef = useRef<HTMLSpanElement>(null)
+  // Measured again each time the copy mounts, too: the bar (and the copy with it) is not there while
+  // the side panel is folded to its tab, so the panel opened later kept a width of 0 and had no Send.
+  const pillEl = useRef<HTMLSpanElement | null>(null)
   const [pillW, setPillW] = useState(0)
-  useLayoutEffect(() => { if (pillRef.current) setPillW(pillRef.current.offsetWidth) }, [sendLabel, phone, docked, !!s.place])
+  const pillRef = useCallback((el: HTMLSpanElement | null) => { pillEl.current = el; if (el) setPillW(el.offsetWidth) }, [])
+  useLayoutEffect(() => { if (pillEl.current) setPillW(pillEl.current.offsetWidth) }, [sendLabel, phone, docked, !!s.place])
   if (!docked && (!s.place || (copying && !phone))) return null
 
   const add = () => { const n = field.read(); if (act.commentWhole(n.body, n.tags, n.shots)) field.clear() }
