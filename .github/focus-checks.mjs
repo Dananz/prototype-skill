@@ -51,6 +51,31 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-tour] [data-act="tour:end"]').click()`)
     await until(page, `document.querySelector('[data-tour]').hidden`, 'End should close the tour')
 
+    // The strip as designed: Move and Comment, the three layouts, the states panel (with Compare, since
+    // home has two options), and nothing it had before is lost: the tree's rows keep the variant's menu.
+    await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
+    await until(page, `!!document.querySelector('[data-strip] [data-shoot="strip-states"]')`, 'home B should have the states panel in the strip')
+    for (const sh of ['strip-move', 'strip-comment', 'strip-size-desktop', 'strip-size-tablet', 'strip-size-phone']) assert(await page.run(`!!document.querySelector('[data-strip] [data-shoot="${sh}"]:not([disabled])')`), `the strip should have ${sh}`)
+    await page.run(`document.querySelector('[data-strip] [data-shoot="strip-states"]').click()`)
+    await until(page, `!!document.querySelector('[data-strip-states] [data-act="tool:fhome:B:compare"]')`, 'the states panel should offer Compare')
+    const states = await page.run(`(() => { const p = document.querySelector('[data-strip-states]').getBoundingClientRect(), s = document.querySelector('[data-strip-tools]').getBoundingClientRect(); return p.left >= s.right - 1 || p.right <= s.left + 1 })()`)
+    assert(states, 'the states panel should open beside the strip')
+    await page.run(`document.querySelector('[data-strip-states] [data-act="tool:fhome:B:compare"]').click()`)
+    await until(page, `/compare/.test(location.pathname + location.search) || !!document.querySelector('[data-act="tool:fhome:B:compare"][aria-pressed="true"]')`, 'Compare from the strip should start comparing')
+    await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
+    await until(page, `!!document.querySelector('[data-tree-row="opt:fhome/A"] [data-act="vm:fhome:A"]')`, 'a tree option row should have its ⋯')
+    await page.run(`document.querySelector('[data-tree-row="opt:fhome/A"] [data-act="vm:fhome:A"]').click()`)
+    await until(page, `[...document.querySelectorAll('[data-pop], [role=menu]')].some(m => /Favorite|Share link/.test(m.textContent))`, 'the ⋯ should open the variant\'s menu (favorite, tools, share)')
+    await page.run(`dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+    // On the map the strip stays, the screen's tools off.
+    await page.run(`history.pushState(null, '', '/'); dispatchEvent(new PopStateEvent('popstate'))`)
+    await until(page, `!document.querySelector('[data-map-host]').hidden && !!document.querySelector('[data-strip] [data-shoot="strip-tweaks"][disabled]')`, 'on the map the strip should stay with the screen tools off')
+    const z0 = await page.run(`document.querySelector('[data-map-tools]').textContent.match(/(\\d+)%/)?.[1]`)
+    await page.run(`document.querySelector('[data-map-zoom="in"]').click()`)
+    await until(page, `document.querySelector('[data-map-tools]').textContent.match(/(\\d+)%/)?.[1] !== '${z0}'`, 'the map\'s + should zoom in')
+    await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
+    await until(page, `!!document.querySelector('[data-shoot="f-to-about"]')`, 'back on home B after the map')
+
     // The crumb's next arrow walks the flow.
     await page.run(`document.querySelector('[data-crumb-step="1"]').click()`)
     await until(page, `location.pathname === '/fabout/A'`, "the crumb's next should open the next screen")

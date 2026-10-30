@@ -553,7 +553,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <header data-bar class="relative z-30 ${framed ? 'hidden' : 'flex'} h-12 shrink-0 items-center gap-1 border-b border-black/[.07] px-2 dark:border-white/10"></header>
       <div data-zone>
         <div data-layers class="absolute inset-0 overflow-hidden" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-map-host hidden class="absolute inset-0 z-[4]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-map-host hidden class="absolute inset-0 z-[4]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-view hidden class="absolute inset-0 z-[5]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
@@ -692,31 +692,51 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (!mapMounted && show) { mapMounted = true; mountMap(mapHost, mapApi) }
     mapWatchers.forEach(f => f())
   }
-  // The tool strip (tree mode, a wide page, in a screen): down the stage's start, as in a drawing
-  // app. Its head is how you work on the screen (comment, walk its flow, decide), then the layout,
-  // then the design's own tools. Each is the bar's button drawn upright; its menu opens beside it.
+  // The tool strip (tree mode, a wide page): down the stage's start, as in a drawing app, on the map
+  // too. Its head walks and decides the screen (Tour, Decide), then Move and Comment, the three
+  // layouts (or a phone's scale), the design's own tools (Tweaks, Try it, copy options, motion, its
+  // states with Autoplay, Compare and History), and Fit. On the map the screen's tools are there but
+  // off, so nothing moves between the two. Each opens its menu beside the strip.
   const strip = root.querySelector<HTMLElement>('[data-strip]')!
-  const stripOn = () => treeOn && !framed && !st.focus && !phoneMq.matches && st.place.view === 'variant'
-  function paintStrip(deviceBtn: () => string, replayBtn: () => string) {
+  const stripOn = () => treeOn && !framed && !st.focus && !phoneMq.matches
+  function paintStrip(deviceBtn: () => string, replayBtn: () => string, centerBtn: string) {
     const on = stripOn()
     strip.hidden = !on
     zone.style.setProperty('--strip-w', on ? '4rem' : '0px')
     if (!on) { strip.innerHTML = ''; return }
-    const pl = st.place, w = pl.view === 'variant' ? whereOf(all, designs, { proto: pl.proto, variant: pl.variant }) : null
+    const pl = st.place, inScreen = pl.view === 'variant', p = cur()
+    const w = inScreen ? whereOf(all, designs, { proto: pl.proto, variant: pl.variant }) : null
     const picking = comments.counts().picking
     const tool = (act: string, shoot: string, icon: string, label: string, key: string, pressed = false) => `<button data-act="${act}" data-shoot="${shoot}" aria-pressed="${pressed}" aria-label="${label}" title="${key ? `${label} · ${key}` : label}" class="${IB} ${pressed ? ON : ''}">${ic(icon)}</button>`
-    const tourBtn = w?.flow && w.flow.routes.length > 1 ? tool(tour ? 'tour:end' : 'tour', 'strip-tour', 'signpost', tour ? t('End the tour') : t('Walk this flow from its first screen'), '', !!tour) : ''
+    // A screen's tool, off on the map: the same place, a word on why.
+    const off = (shoot: string, icon: string, label: string) => `<button disabled data-shoot="${shoot}" aria-label="${label}" title="${label} · ${t('in a screen')}" class="${IB} opacity-30">${ic(icon)}</button>`
+    const tourBtn = !inScreen ? off('strip-tour', 'signpost', t('Tour')) : w?.flow && w.flow.routes.length > 1 ? tool(tour ? 'tour:end' : 'tour', 'strip-tour', 'signpost', tour ? t('End the tour') : t('Walk this flow from its first screen'), '', !!tour) : ''
     // Decide: the bar's button is a dot and a word; upright it is the pick's check, filled once picked.
     const d = decideOf()
-    const decide = d ? `<button data-act="open:decide" data-decide-btn data-shoot="strip-decide" aria-haspopup="menu" aria-expanded="${st.open === 'decide'}" aria-label="${d.picked ? t('Picked') : t('Decide')}" title="${d.picked ? t('Picked') : t('Decide')} · P" class="${IB} ${st.open === 'decide' ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}">${ic(d.picked ? 'picked' : 'pick')}</button>` : ''
-    const groups = [
-      [tool('comment:toggle', 'strip-comment', picking ? 'select-on' : 'select', t('Comment'), 'C', picking), tourBtn, decide],
-      [deviceBtn()],
-      [tweaksBtn(), copyBtn(), motionBtn(), replayBtn()],
-    ].map(g => g.filter(Boolean).join('')).filter(Boolean)
+    const decide = !inScreen ? off('strip-decide', 'pick', t('Decide')) : d ? `<button data-act="open:decide" data-decide-btn data-shoot="strip-decide" aria-haspopup="menu" aria-expanded="${st.open === 'decide'}" aria-label="${d.picked ? t('Picked') : t('Decide')}" title="${d.picked ? t('Picked') : t('Decide')} · P" class="${IB} ${st.open === 'decide' ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}">${ic(d.picked ? 'picked' : 'pick')}</button>` : ''
+    // Move is the page as it is (clicks reach the design); Comment picks what to comment on (C).
+    const hands = inScreen && commentHost()
+      ? [tool(picking ? 'comment:toggle' : 'noop', 'strip-move', picking ? 'tap' : 'tap-on', t('Move'), 'Esc', !picking), tool('comment:toggle', 'strip-comment', picking ? 'select-on' : 'select', t('Comment'), 'C', picking)]
+      : [off('strip-move', 'tap', t('Move')), off('strip-comment', 'select', t('Comment'))]
+    // The three layouts, each its own button (the stage's own layout when none is chosen); a phone
+    // prototype has its scale instead, and a chosen layout its zoom (the layout menu).
+    // The zoom: the layout button's menu (its sizes and zoom), drawn as its percentage; Fit is its own button.
+    const zoomBtn = () => deviceBtn().replace(centerBtn, '').replace('data-act="open:device"', 'data-act="open:device" data-strip-zoom').replace('<span data-scale-label', '<span data-keep data-scale-label')
+    const sizes = !inScreen ? ORDER.map(z => off(`strip-size-${z}`, sizeIcon(z), SIZES[z].name))
+      : viewOk() ? [...ORDER.map(z => tool(`size:${z}`, `strip-size-${z}`, sizeIcon(z, z === 'tablet' && st.view.land), `${SIZES[z].name} · ${dims(z, z === 'tablet' && st.view.land).w} × ${dims(z).h}`, '', shownSize() === z)), frameOn() ? zoomBtn() : '']
+      : [zoomBtn()]
+    const sts = inScreen && p ? statesOf(p, pl.variant).length + TOOL_LIST.filter(x => toolOk(p, pl.variant, x)).length : 0
+    const statesBtn = sts ? `<div class="relative">${tool('open:states-pop', 'strip-states', 'grid', t('States, Autoplay, Compare'), '', st.open === 'states-pop')}${pop(st.open === 'states-pop', `<div data-strip-states class="w-72 p-1.5">${variantHere(false)}</div>`, 'start-0 top-0')}</div>` : ''
+    const own = !inScreen ? [off('strip-tweaks', 'tweaks', t('Tweaks')), off('strip-try', 'key', t('Try it')), off('strip-copy', 'text', t('Copy options')), off('strip-motion', 'curves', t('Motion')), off('strip-states', 'grid', t('States, Autoplay, Compare'))]
+      : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), motionBtn(), statesBtn, replayBtn()]
+    const fit = inScreen && frameOn() ? tool('center', 'strip-fit', 'center', t('Center the design'), '⌘0') : ''
+    const groups = [[tourBtn, decide], hands, sizes, own, [fit]].map(g => g.filter(Boolean).join('')).filter(Boolean)
+    // The bar's own buttons drawn upright: their words, carets and counts' text stay out (only the
+    // strip's own buttons, never the rows of a menu opening beside it).
     strip.innerHTML = `<div data-strip-tools class="flex flex-col items-center gap-0.5 rounded-2xl bg-white p-1 shadow-[0_8px_24px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:ring-white/10
-      [&_.relative.flex]:flex-col [&_button>span:not(.absolute)]:!hidden [&_button_kbd]:!hidden [&_button>svg+svg]:!hidden [&_button]:!px-0 [&_button]:!size-9 [&_button]:!rounded-xl
-      [&_[data-pop]]:!top-0 [&_[data-pop]]:!end-auto [&_[data-pop]]:!start-[calc(100%+.75rem)]">${groups.join('<span class="my-1 h-px w-5 bg-zinc-900/10 dark:bg-white/10"></span>')}</div>`
+      [&>div.flex]:flex-col [&>button>span:not(.absolute)]:!hidden [&>div>button>span:not(.absolute):not([data-keep])]:!hidden [&_[data-strip-zoom]>svg]:!hidden [&_[data-strip-zoom]]:!text-[10px] [&>button_kbd]:!hidden [&>div>button_kbd]:!hidden [&>button>svg+svg]:!hidden [&>div>button>svg+svg]:!hidden
+      [&>button]:!size-9 [&>button]:!px-0 [&>button]:!rounded-xl [&>div>button]:!size-9 [&>div>button]:!px-0 [&>div>button]:!rounded-xl [&>div>span]:!hidden
+      [&_[data-pop]]:!top-0 [&_[data-pop]]:!end-auto [&_[data-pop]]:!start-[calc(100%+.75rem)]">${groups.join('<span class="my-1 h-px w-5 shrink-0 bg-zinc-900/10 dark:bg-white/10"></span>')}</div>`
   }
   /** A button of the chrome, in the bar or the strip: what a menu opens from. */
   const chromeEl = (sel: string) => [bar.querySelector<HTMLElement>(sel), strip.querySelector<HTMLElement>(sel)].find(b => !!b?.offsetParent) ?? null
@@ -1477,7 +1497,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${replayBtn()}${deviceBtn()}${commentBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${shareBtn()}${moreBtn()}
       </div></div>`)
     menus = { protos: drill(), session: '' }
-    paintStrip(deviceBtn, replayBtn)
+    paintStrip(deviceBtn, replayBtn, centerBtn)
     paintTour()
     paintChip()
 
@@ -1994,6 +2014,28 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // there, and one level opens as two columns side by side (the last two, unless a line was
   // clicked). Under them, the states and tools of the variant shown. On top, the variant your
   // requests change, said in words.
+  /** The variant shown: its states (each opens it in that state) and its tools (Autoplay, All states,
+   *  Compare, History). In the sidebar under the columns, and in the tool strip's States panel. */
+  function variantHere(boxed = true): string {
+    const p = cur(), pv = st.place.view === 'variant' ? st.place : null
+    const v = p && pv ? p.variants.find(x => x.id === pv.variant) : undefined
+    let here = ''
+    if (p && pv && v) {
+      const sts = statesOf(p, v.id), tool = pv.tool
+      const lit = tool === 'all' ? null : tool === 'play' ? st.playing : pv.state ?? ''
+      const tools = TOOL_LIST.filter(t => toolOk(p, v.id, t))
+      const leaf = (x?: State) => {
+        const id = x?.id ?? '', on = lit === id, note = x?.about?.[v.id]
+        return `<button data-act="pvs:${esc(p.id)}:${v.id}:${esc(id)}" aria-current="${on}" class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-start ${on ? ON : ROWC}">${dot(p, v.id, x, on)}<span class="min-w-0 flex-1"><span class="flex items-center gap-1.5 leading-4 ${on ? 'font-medium text-zinc-900 dark:text-white' : ''}"><span dir="auto" class="truncate">${esc(x?.name ?? t('At rest'))}</span>${on && tool === 'play' ? ic('play', 'size-3 text-sky-500') : ''}</span>${note && x ? `<span dir="auto" class="mt-0.5 block text-[10px] leading-[14px] ${noteCls(p, v.id, x)}">${esc(note)}</span>` : ''}</span></button>`
+      }
+      if (sts.length || tools.length) here = `<div class="${boxed ? 'mt-3 border-t border-black/[.06] pt-2 dark:border-white/[.07]' : ''}">
+          <div class="flex items-center gap-1 px-1.5 pb-1 text-[10px] font-medium text-zinc-400"><b class="text-zinc-500">${variantRef(p!, v.id)}</b><span dir="auto" class="truncate">${esc(v.name)}</span><span class="ms-auto">${sts.length ? tn(sts.length, '{n} state', '{n} states') : ''}</span></div>
+          ${sts.length ? `<div>${leaf()}${sts.map(leaf).join('')}</div>` : ''}
+          ${tools.length ? `<div class="flex flex-wrap gap-1 px-1 pt-1.5">${tools.map(tl => `<button data-act="tool:${esc(p.id)}:${v.id}:${tl}" aria-pressed="${tool === tl}" title="${TOOLS[tl].hint}${tool === tl ? t(' · click to stop') : ''}" class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] ${tool === tl ? 'bg-sky-500/15 font-medium text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${ic(TOOLS[tl].icon, 'size-3')}${TOOLS[tl].name}${toolDetail(p, v.id, tl) ? `<span class="text-zinc-400">${toolDetail(p, v.id, tl)}</span>` : ''}</button>`).join('')}</div>` : ''}
+        </div>`
+    }
+    return here
+  }
   function sideNav(inDrawer: boolean) {
     const cols = columns(), last = Math.max(0, cols.length - 2)
     const at = Math.min(st.pairAt ?? last, last)
@@ -2012,24 +2054,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const split = `<div data-split role="separator" aria-orientation="vertical" aria-label="${t('Resize columns')}" aria-valuemin="${SPLIT_LO * 100}" aria-valuemax="${SPLIT_HI * 100}" aria-valuenow="${Math.round(st.split * 100)}" tabindex="0" title="${t('Drag to resize · double-click to reset')}" class="group/s relative z-10 -mx-[3px] w-1.5 shrink-0 cursor-col-resize touch-none outline-none"><span class="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-black/[.06] transition-colors group-hover/s:w-0.5 group-hover/s:bg-sky-500/50 group-focus-visible/s:w-0.5 group-focus-visible/s:bg-sky-500 [[data-splitting]_&]:w-0.5 [[data-splitting]_&]:bg-sky-500 dark:bg-white/[.07]"></span></div>`
     const box = `<div data-colnav="side" class="my-1 flex max-h-[26rem] overflow-hidden rounded-xl ring-1 ring-black/[.08] dark:ring-white/10">${pair.map((c, k) => `${k ? split : ''}<div ${two && !k ? 'style="flex:0 1 calc(var(--split) * 100%)"' : ''} class="flex min-w-24 flex-col pt-0.5 ${two && !k ? 'bg-zinc-900/[.02] dark:bg-white/[.02]' : 'flex-1'}">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1 pb-1.5">${colRows(c)}</div></div>`).join('')}</div>`
 
-    // The variant shown: its states (each opens it in that state) and its tools.
-    const p = cur(), pv = st.place.view === 'variant' ? st.place : null
-    const v = p && pv ? p.variants.find(x => x.id === pv.variant) : undefined
-    let here = ''
-    if (p && pv && v) {
-      const sts = statesOf(p, v.id), tool = pv.tool
-      const lit = tool === 'all' ? null : tool === 'play' ? st.playing : pv.state ?? ''
-      const tools = TOOL_LIST.filter(t => toolOk(p, v.id, t))
-      const leaf = (x?: State) => {
-        const id = x?.id ?? '', on = lit === id, note = x?.about?.[v.id]
-        return `<button data-act="pvs:${esc(p.id)}:${v.id}:${esc(id)}" aria-current="${on}" class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-start ${on ? ON : ROWC}">${dot(p, v.id, x, on)}<span class="min-w-0 flex-1"><span class="flex items-center gap-1.5 leading-4 ${on ? 'font-medium text-zinc-900 dark:text-white' : ''}"><span dir="auto" class="truncate">${esc(x?.name ?? t('At rest'))}</span>${on && tool === 'play' ? ic('play', 'size-3 text-sky-500') : ''}</span>${note && x ? `<span dir="auto" class="mt-0.5 block text-[10px] leading-[14px] ${noteCls(p, v.id, x)}">${esc(note)}</span>` : ''}</span></button>`
-      }
-      if (sts.length || tools.length) here = `<div class="mt-3 border-t border-black/[.06] pt-2 dark:border-white/[.07]">
-          <div class="flex items-center gap-1 px-1.5 pb-1 text-[10px] font-medium text-zinc-400"><b class="text-zinc-500">${variantRef(p!, v.id)}</b><span dir="auto" class="truncate">${esc(v.name)}</span><span class="ms-auto">${sts.length ? tn(sts.length, '{n} state', '{n} states') : ''}</span></div>
-          ${sts.length ? `<div>${leaf()}${sts.map(leaf).join('')}</div>` : ''}
-          ${tools.length ? `<div class="flex flex-wrap gap-1 px-1 pt-1.5">${tools.map(tl => `<button data-act="tool:${esc(p.id)}:${v.id}:${tl}" aria-pressed="${tool === tl}" title="${TOOLS[tl].hint}${tool === tl ? t(' · click to stop') : ''}" class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] ${tool === tl ? 'bg-sky-500/15 font-medium text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${ic(TOOLS[tl].icon, 'size-3')}${TOOLS[tl].name}${toolDetail(p, v.id, tl) ? `<span class="text-zinc-400">${toolDetail(p, v.id, tl)}</span>` : ''}</button>`).join('')}</div>` : ''}
-        </div>`
-    }
+    const here = variantHere()
 
     const initial = esc((session.name.trim()[0] || 'P').toUpperCase())
     return `<div class="flex h-12 shrink-0 items-center gap-2 ps-3 pe-1.5">
@@ -2169,6 +2194,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'proto': return openProto(arg)
       case 'pv': return go({ view: 'variant', proto: arg, variant: arg2 })
       case 'jump': return openJump()
+      // The strip's Move while it is already on: nothing to change.
+      case 'noop': return
       case 'go-chip': {
         const c = chip
         chip = null; paintChip()

@@ -76,4 +76,8 @@ export default {
   'Tour': 'סיור',
   'End': 'סיום',
   'End the tour': 'לסיים את הסיור',
+  // The tool strip (shell.ts paintStrip).
+  'in a screen': 'בתוך מסך',
+  'Move': 'הזזה',
+  'States, Autoplay, Compare': 'מצבים, הפעלה אוטומטית, השוואה',
 }

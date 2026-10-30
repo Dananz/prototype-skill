@@ -297,6 +297,8 @@ function MapView({ api }: { api: MapApi }) {
         {one && !ro && <button type="button" data-map-build aria-pressed={build} onClick={() => { setNote(null); setBuild(b => !b) }} className="h-7 rounded-lg px-2 font-medium text-zinc-700 hover:bg-zinc-900/5 dark:text-zinc-200 dark:hover:bg-white/10">{t('Build it…')}</button>}
         <button type="button" data-map-lines aria-pressed={input.lines === 'selected'} onClick={() => api.setLines(input.lines === 'all' ? 'selected' : 'all')}
           className="h-7 rounded-lg px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{input.lines === 'all' ? t('All links') : t('Selected only')}</button>
+        <button type="button" data-map-zoom="out" aria-label={t('Zoom out')} title={t('Zoom out') + ' (-)'} onClick={() => zoomAt(0.8, size.w / 2, size.h / 2)} className="grid size-7 place-items-center rounded-lg text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><Ph name="minus" className="size-3.5" /></button>
+        <button type="button" data-map-zoom="in" aria-label={t('Zoom in')} title={t('Zoom in') + ' (+)'} onClick={() => zoomAt(1.25, size.w / 2, size.h / 2)} className="grid size-7 place-items-center rounded-lg text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><Ph name="plus" className="size-3.5" /></button>
         <button type="button" data-map-fit onClick={fitAll} title={t('Fit (0)')} className="h-7 rounded-lg px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{t('Fit')}</button>
         <span className="w-10 text-center tabular-nums text-zinc-400">{Math.round(c.z * 100)}%</span>
       </div>

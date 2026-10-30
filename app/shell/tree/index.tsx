@@ -90,9 +90,9 @@ function Tree({ api }: { api: TreeApi }) {
     if (n.kind === 'option') {
       const num = numberOf(n.route!.split('/')[1])
       return (
-        <Row key={n.key} id={n.key} depth={depth} on={lit} onClick={() => api.go(n.route!)}
+        <Row key={n.key} id={n.key} depth={depth} on={lit} onClick={() => api.go(n.route!)} mv={n.route}
           icon={<span className={'grid size-4 shrink-0 place-items-center rounded text-[10px] font-semibold tabular-nums ' + (n.picked ? 'bg-emerald-500 text-white' : 'bg-zinc-900/[.06] text-zinc-500 dark:bg-white/10')}>{num}</span>}
-          label={<span dir="auto">{n.label}</span>}
+          label={<span className="flex min-w-0 items-center gap-1"><span dir="auto" className="truncate">{n.label}</span>{input.protos.find(p => p.id === n.route!.split('/')[0])?.favorites.includes(n.route!.split('/')[1]) && <Ph name="starFill" className="size-3 shrink-0 text-amber-400" />}</span>}
           end={n.became ? <span className="shrink-0 truncate text-[11px] text-indigo-500" dir="auto">{t('became {name}', { name: n.became })}</span>
             : n.picked ? <span className="shrink-0 text-[11px] text-emerald-600 dark:text-emerald-400">{t('Picked')}</span> : null} />
       )
@@ -102,7 +102,7 @@ function Tree({ api }: { api: TreeApi }) {
     const parent = n.kind === 'exploration' && n.on ? n : null
     return (
       <div key={n.key}>
-        <Row id={n.key} depth={depth} on={lit} open={shut} onCaret={() => flip(n)} onClick={() => { api.go(n.route!); if (!shut) flip(n) }}
+        <Row id={n.key} depth={depth} on={lit} open={shut} onCaret={() => flip(n)} onClick={() => { api.go(n.route!); if (!shut) flip(n) }} mv={n.route}
           icon={n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" /> : <Ph name="shuffle" className={'size-3.5 ' + (n.state === 'waits' ? 'text-zinc-300' : 'text-violet-500')} />}
           label={<span className={n.state === 'waits' ? 'text-zinc-400' : ''}><span dir="auto">{n.label}</span>{parent && <span className="text-[11px] text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
           end={<span className="flex shrink-0 items-center gap-1.5">

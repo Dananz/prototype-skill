@@ -18,10 +18,14 @@ import squaresFour from '@phosphor-icons/core/assets/regular/squares-four.svg?ra
 import path from '@phosphor-icons/core/assets/regular/path.svg?raw'
 import circle from '@phosphor-icons/core/assets/regular/circle.svg?raw'
 import x from '@phosphor-icons/core/assets/regular/x.svg?raw'
+import dots from '@phosphor-icons/core/assets/bold/dots-three-bold.svg?raw'
+import starFill from '@phosphor-icons/core/assets/fill/star-fill.svg?raw'
+import plus from '@phosphor-icons/core/assets/bold/plus-bold.svg?raw'
+import minus from '@phosphor-icons/core/assets/bold/minus-bold.svg?raw'
 import { rtl, t } from '../i18n'
 import type { ExpState } from './model'
 
-const ICONS = { browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle, x }
+const ICONS = { browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle, x, dots, starFill, plus, minus }
 export type PhName = keyof typeof ICONS
 /** A Phosphor icon, drawn from @phosphor-icons/core like the rest of the shell's (ui.ts ic()). */
 export function Ph({ name, className = 'size-4' }: { name: PhName; className?: string }) {
@@ -44,13 +48,15 @@ export function Mark({ state, picked }: { state: ExpState; picked?: number }) {
   return <span data-mark={state} title={label} aria-label={label} className="grid size-4 shrink-0 place-items-center"><Ph name={icon} className={cls} /></span>
 }
 
-export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onClick, strong, medium }: {
+export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onClick, strong, medium, mv }: {
   id: string; depth: number; label: ReactNode; icon?: ReactNode; end?: ReactNode; count?: number; on?: boolean
+  /** A variant's route (slug/letter): the row has its options, on right-click (data-mv) and a ⋯ (the shell's vm). */
+  mv?: string
   /** undefined: no caret (a leaf). */
   open?: boolean; onCaret?: () => void; onClick: () => void; strong?: boolean; medium?: boolean
 }) {
   return (
-    <div data-tree-row={id} data-on={on ? 'true' : undefined}
+    <div data-tree-row={id} data-on={on ? 'true' : undefined} data-mv={mv ? mv.replace('/', ':') : undefined}
       className={'group mx-1.5 flex h-8 items-center gap-1.5 rounded-lg pe-1.5 ' + (on ? 'bg-sky-50 text-sky-900 dark:bg-sky-950/60 dark:text-sky-100' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]')}
       style={{ paddingInlineStart: 2 + depth * 8 }}>
       {open != null
@@ -63,6 +69,9 @@ export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onC
         {icon}<span className="truncate">{label}</span>{count != null && <span className="text-xs font-normal text-zinc-400 tabular-nums">{count}</span>}
       </button>
       {end}
+      {mv && <button type="button" data-act={`vm:${mv.replace('/', ':')}`} aria-label={t('Options')} title={t('Options')}
+        className="grid size-6 shrink-0 place-items-center rounded-md text-zinc-400 opacity-0 hover:bg-zinc-900/[.06] hover:text-zinc-700 focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100 dark:hover:bg-white/10 dark:hover:text-zinc-200 [@media(pointer:coarse)]:opacity-100">
+        <Ph name="dots" className="size-3.5" /></button>}
     </div>
   )
 }
