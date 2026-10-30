@@ -593,7 +593,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const routeOfFile = (file: string) => { const [, , , slug = '', name = ''] = file.split('/'); return `${slug}/${name.replace(/\.\w+$/, '')}` }
   // What a variant is compared with: the one chosen, else the reference (else the next one).
   // What a tool's button adds after its name: the variant compared with, or how many versions there are.
-  const toolDetail = (p: Proto, v: string, tl: Tool) => tl === 'compare' ? variantRef(p, otherOf(p, v)) : tl === 'history' ? String(versionsOf(p, v).length) : undefined
+  const toolDetail = (p: Proto, v: string, tl: Tool) => tl === 'compare' ? variantRef(p, otherOf(p, v)) : tl === 'history' ? `(${versionsOf(p, v).length})` : undefined
   const otherOf = (p: Proto, v: string) => {
     const want = st.vs.get(p.id)
     if (want && want !== v && p.variants.some(x => x.id === want)) return want
