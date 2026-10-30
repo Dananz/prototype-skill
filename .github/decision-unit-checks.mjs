@@ -1,5 +1,5 @@
-// Unit checks for the pieces behind History, Combine parts and Decision brief that need no browser:
-// app/history.mjs (versions kept before each ask), app/brief.mjs (the brief and partsOf), and the
+// Unit checks for the pieces behind History and Decision brief that need no browser:
+// app/history.mjs (versions kept before each ask), app/brief.mjs (the brief), and the
 // proto CLI around them, on a session folder made by hand in a temp dir.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { filesOf, rewriteImports, snapshot, versionLabel, versionsOf } from '../app/history.mjs'
-import { brief, partsOf, writeBrief } from '../app/brief.mjs'
+import { brief, writeBrief } from '../app/brief.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -72,11 +72,6 @@ test('rewriteImports keeps queries and dynamic imports, and leaves package impor
   assert.match(out, /from '\.\/parts'/)
 })
 
-test('partsOf: the variant asked on first, then every other variant tagged, once each', () => {
-  assert.deepEqual(partsOf({ route: 'pricing/B', tags: [{ variantRef: { proto: 'pricing', variant: 'C' } }, { source: { proto: 'pricing', variant: 'C' } }, { source: { proto: 'hero', variant: 'A' } }, { selector: 'h1' }, { variantRef: { proto: 'pricing', variant: 'B' } }] }), ['pricing/B', 'pricing/C', 'hero/A'])
-  assert.deepEqual(partsOf({ route: 'pricing/B/open' }), ['pricing/B'])
-})
-
 test('the brief says what was asked, the pick and why, the rest, the changes and the feedback', () => {
   const s = session()
   try {
@@ -100,7 +95,6 @@ test('the brief says what was asked, the pick and why, the rest, the changes and
       { n: 3, route: 'pricing/C', text: 'deleted one', withdrawn: true },
       { n: 4, route: 'other/A', text: 'not this prototype' },
     ])
-    batch('b22', [{ n: 1, route: 'pricing/B', text: 'Combine parts, starting from #2: header from @3', action: 'combine', tags: [{ variantRef: { proto: 'pricing', variant: 'C', label: '#3', name: 'Plan cards' } }] }], 'new')
 
     b = writeBrief(s.app, 'pricing')
     assert.equal(b.file, join(s.app, '.proto', 'decisions', 'pricing.md'))
@@ -112,11 +106,10 @@ test('the brief says what was asked, the pick and why, the rest, the changes and
     assert.match(b.markdown, /1 earlier version is kept/)
     assert.match(b.markdown, /- \[x\] On #2 · Big price: “Picked B: the price reads from across the room” → “Noted”/)
     assert.match(b.markdown, /- \[ \] On #3 · Plan cards: “cards feel cramped”/)
-    assert.match(b.markdown, /combine parts of #2 · Big price \+ #3 · Plan cards/)
     assert.doesNotMatch(b.markdown, /deleted one|not this prototype/)
     assert.match(b.markdown, /proto handoff pricing\/B/)
-    assert.match(b.markdown, /Still open: 2 comments/)
-    assert.equal(b.open, 2)
+    assert.match(b.markdown, /Still open: 1 comment/)
+    assert.equal(b.open, 1)
   } finally { s.done() }
 })
 

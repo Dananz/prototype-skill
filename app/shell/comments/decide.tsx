@@ -17,7 +17,7 @@ import { post } from '../transport'
 
 /** The variant on screen, and whether it is the prototype's pick. */
 export type Subject = { proto: string; variant: string; label: string; name: string; picked: boolean; hints?: boolean; copy?: boolean }
-type Ask = 'pick' | 'more' | 'build' | 'try-it' | 'copy-options' | 'combine'
+type Ask = 'pick' | 'more' | 'build' | 'try-it' | 'copy-options'
 
 const NOTE: Record<Ask, { title: (v: string) => string; hint: string; done: (v: string) => string }> = {
   pick: { title: v => t('Pick {v}', { v }), hint: t('Optional: why this one, or what to change in it'), done: v => t('Picked {v}', { v }) },
@@ -25,10 +25,7 @@ const NOTE: Record<Ask, { title: (v: string) => string; hint: string; done: (v: 
   'copy-options': { title: v => t('Generate copy options for {v}', { v }), hint: t('Optional: which lines or what tone? Starts with the headline and primary text.'), done: v => t('Asked for copy options for {v}', { v }) },
   more: { title: v => t('More like {v}', { v }), hint: t('Optional: what to keep, what to push further'), done: v => t('Asked for more like {v}', { v }) },
   build: { title: v => t('Build {v}', { v }), hint: t('Optional: anything to know before building it'), done: v => t('Asked to build {v}', { v }) },
-  combine: { title: v => t('Combine parts, starting from {v}', { v }), hint: t('Say which part to take from which variant. Type @ to tag another variant or an element on one.'), done: v => t('Asked for one design from parts of {v} and others', { v }) },
 }
-/** How many other variants a combine note takes parts from (tagged by name, or through an element on one). */
-const othersIn = (subject: Subject, note: Note) => new Set(note.tags.map(x => x.variantRef ?? x.source).filter(r => !!r && `${r.proto}/${r.variant}` !== `${subject.proto}/${subject.variant}`).map(r => `${r!.proto}/${r!.variant}`)).size
 
 export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, commentLabel }: { subject: Subject; sheet?: boolean; onDone?: () => void; onComment?: () => void; rows?: MenuRow[]; lead?: MenuRow[]; commentLabel?: string }) {
   const labelComment = commentLabel ?? t('Comment on this')
@@ -68,8 +65,6 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
   }
   const send = async (a: Action, words: Note = { body: [], tags: [] }) => {
     if (sending.current || field.adding) return
-    // A combine needs the other variants it takes from, tagged in its note.
-    if (a === 'combine' && othersIn(subject, words) < 1) { setError(t('Tag at least one other variant (type @) and say which part to take from it.')); return }
     sending.current = true
     const flip = a === 'pick' || a === 'unpick'
     setBusy(true); setError('')
@@ -167,18 +162,12 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
         {(ready || waiting) && <span className="text-xs text-zinc-500">{ready ? t('Ready') : t('Requested')}</span>}
       </button>
     })}
-    <button role={sheet ? undefined : 'menuitem'} data-request-extra="combine" disabled={busy || pending('combine')}
-      onClick={() => { field.clear(); setError(''); setAsk('combine') }}
-      className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-start text-[13px] hover:bg-zinc-900/[.04] disabled:text-zinc-400 dark:hover:bg-white/[.06]">
-      <Icon name="branch" className="size-4" /><span className="flex-1">{t('Combine parts…')}</span>
-      {pending('combine') && <span className="text-xs text-zinc-500">{t('Requested')}</span>}
-    </button>
     <button role={sheet ? undefined : 'menuitem'} data-brief-open disabled={busy}
       onClick={() => void openBrief()}
       className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-start text-[13px] hover:bg-zinc-900/[.04] disabled:text-zinc-400 dark:hover:bg-white/[.06]">
       <Icon name="text" className="size-4" /><span className="flex-1">{t('Decision brief')}</span>
     </button>
-    {(['try-it', 'copy-options', 'combine'] as const).some(pending) && <p className="px-2 pb-1 text-xs text-zinc-500">{t('Requests wait in Comments. Delete one there to cancel it.')}</p>}
+    {(['try-it', 'copy-options'] as const).some(pending) && <p className="px-2 pb-1 text-xs text-zinc-500">{t('Requests wait in Comments. Delete one there to cancel it.')}</p>}
   </div>
 
   // The choices: a menu down the side of a wide page, three quiet buttons across a phone's sheet.

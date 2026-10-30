@@ -318,7 +318,7 @@ if (process.argv.includes('--decisions-only')) {
   await decisionChecks({ proto, app, local, openPage, fail, keepShots })
   proto(['rm'])
   rmSync(scratch, { recursive: true, force: true })
-  console.log('OK: focused History, Combine parts and Decision brief checks')
+  console.log('OK: focused History and Decision brief checks')
   process.exit(0)
 }
 if (process.argv.includes('--slots-only')) {

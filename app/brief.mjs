@@ -16,11 +16,6 @@ const day = at => String(at || '').slice(0, 16).replace('T', ' ')
 const line = s => String(s ?? '').replace(/\s+/g, ' ').trim()
 const quote = s => `“${line(s)}”`
 
-/** The variants a combine takes parts from: the one it was asked on first (its structure is the
- *  base), then each variant its note tags, by name (@2) or through an element picked on it. */
-export const partsOf = c => [c.route.split('/').slice(0, 2).join('/'), ...(Array.isArray(c.tags) ? c.tags : []).map(t => t?.variantRef ?? t?.source).filter(r => r && typeof r.proto === 'string' && typeof r.variant === 'string').map(r => `${r.proto}/${r.variant}`)]
-  .filter((r, i, all) => all.indexOf(r) === i)
-
 /** Every comment sent from the page on this prototype (its variants, or the prototype), oldest first. */
 function commentsOn(app, slug) {
   const inbox = join(app, '.proto', 'inbox'), out = []
@@ -98,7 +93,7 @@ export function brief(app, slug) {
   else {
     for (const c of comments) {
       const who = c.route.includes('/') ? ref(c.route) : 'the prototype'
-      const what = c.action === 'combine' ? `combine parts of ${partsOf(c).map(ref).join(' + ')}: ${quote(c.text)}` : quote(c.text)
+      const what = quote(c.text)
       const answer = c.reply ? ` → ${quote(c.reply.text)}` : ''
       out.push(`- ${c.done ? '[x]' : '[ ]'} On ${who}: ${what}${answer}`)
     }

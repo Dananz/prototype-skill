@@ -8,7 +8,7 @@ import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, buildUpNeeded, isCurrent } from './assignment.mjs'
 import { snapshot } from './history.mjs'
-import { partsOf, writeBrief } from './brief.mjs'
+import { writeBrief } from './brief.mjs'
 
 const dir = fileURLToPath(new URL('.', import.meta.url))
 const file = join(dir, 'session.json')
@@ -342,7 +342,7 @@ const fromOf = f => ({ share: f.share, version: f.version, viewer: f.viewer, nam
 // the element of the line it changes. More variants is the one made on a prototype (route <slug>),
 // with how many.
 // Fix before sharing is asked from a share review: the owner's words and what the review found.
-const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'copy', 'try-it', 'copy-options', 'share-fix', 'combine'])
+const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'copy', 'try-it', 'copy-options', 'share-fix'])
 
 /**
  * Writes one send from the page as a new batch; images come as data URLs and are stored as files.
@@ -389,13 +389,7 @@ export function receive(data, root = dir, { check = false } = {}) {
       if (c.point !== undefined || c.region !== undefined || c.target !== undefined || time) throw bad(i, ': more-variants has no element, spot, region or moment')
     } else if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
-      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it, copy-options, share-fix or combine, on a variant (<slug>/<letter>)')
-      if (c.action === 'combine') {
-        const parts = partsOf({ route: c.route, tags: (Array.isArray(c.tags) ? c.tags : []).map(element).filter(Boolean) })
-        if (parts.length < 2) throw bad(i, ': combine takes parts of at least two variants: tag the other ones in its note (@ a variant, or an element on one)')
-        const gone = parts.find(r => { const [s2, l2] = r.split('/'); return !hasVariant(s2, l2) })
-        if (gone) throw bad(i, `: there is no variant ${gone} to take a part from`)
-      }
+      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it, copy-options or share-fix, on a variant (<slug>/<letter>)')
       if (c.action === 'pick' || c.action === 'unpick') {
         let meta
         try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { throw bad(i, `: src/protos/${slug}/meta.ts is missing or isn't plain JSON, so a pick can't be marked in it`) }

@@ -105,7 +105,7 @@ import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, buildUpNeeded, isCurrent } from '../app/assignment.mjs'
 import { idOf, letterOf, numberOf } from '../app/numbers.mjs'
 import { snapshot, versionLabel, versionsOf } from '../app/history.mjs'
-import { partsOf, writeBrief } from '../app/brief.mjs'
+import { writeBrief } from '../app/brief.mjs'
 import { report as reportShared } from '../app/share/owner.mjs'
 import { sharedLines } from '../app/share/viewer-text.mjs'
 import { BASE, SHELL, STACKS, syncApp } from './app-sync.mjs'
@@ -1863,11 +1863,6 @@ function actionText(dir, c) {
   if (c.action === 'build' && c.picked) return 'picked in the page and now the working variant; build this variant into the codebase' + suffix
   // New variants from one variant nest under it, as their own prototype; never new letters beside it.
   if (c.action === 'more') return `new variants from this one, nested under it: proto add <new slug> --from ${c.route} --next --title "…" --variants "A:…,B:…"` + suffix
-  // Parts of several variants in one new design: built from all of them, nested under the first.
-  if (c.action === 'combine') {
-    const parts = partsOf(c)
-    return `one new design from parts of ${parts.map(routeShown).join(' + ')} (the note and its @ tags say which part from which; ${routeShown(parts[0])}'s structure is the base): proto add <new slug> --from ${parts.join(',')} --next --title "…" --variants "A:…" --ask "<what it takes from each>", build it, reply --until <new slug>` + suffix
-  }
   return (ACTIONS[c.action] || '') + suffix
 }
 

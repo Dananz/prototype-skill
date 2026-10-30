@@ -463,10 +463,7 @@ nothing is picked yet. Compositions from several parents or `--from-picks` are r
 by default, so choosing one does not insert the combined screen into its first parent; pass
 `--next` when the composition is the first parent's next version ("#4 with #5's behavior", "E's
 layout with B's style"), so a pick in it is built into that parent. Say in
-`--ask` what the new design takes from each. The user can ask for one from the page too:
-**Combine parts…** in a variant's Decide menu, whose note tags the other variants (or elements on
-them) and says which part comes from which; it arrives as `action: combine` (Comments from the
-page) with the `proto add … --from` line to run.
+`--ask` what the new design takes from each.
 
 **Plug a variant into what it was made from.** When the user points at one element of a variant
 and wants variants of it ("five more of this button"), the pick should replace that element
@@ -982,7 +979,6 @@ the text.
 | `intake` | the answers are saved and the questions are marked answered; nothing is built | read the printed answers and the files beside them, decide what was left to you, reply `--done` with the brief you will build from, then plan the directions (step 3) |
 | `copy-options` | queued only; no alternatives generated yet | check that the request is not withdrawn; add `useCopy` to the requested lines in this variant only (headline and primary text/CTA without a note), current words first, verify fit, then reply `--done`; reuse existing options. One with an element and quoted words (highlighted in the page) is for those words only: one `useCopy` line on that element, not the headline and primary text |
 | `share-fix` | nothing; sent from a share review (Ask Claude to fix this), the user's words first, then the findings | change the prototype so those findings are gone, the way the words say (a hosted font instead of uploaded files, an asset inlined, a secret taken out), never by quieting the review; check with `proto share file <route>` (same review, nothing published), then reply `--done` with what changed. The user makes the link again from the page; don't publish it yourself unless they ask |
-| `combine` | nothing; the note says which part to take from which variant, its tags name them (the first variant is the one it was asked on) | the line prints the `proto add <new slug> --from <the variants> --next …` to run: one new design, built from the parts the note names on the first's structure, its `--ask` saying what came from where; build it, then reply with what it took from each and `--until <new slug>` (step 5) |
 | `copy` | nothing (one comment per line changed since the last send, on that line's element; the text says option k of n, their own words, or back to today's words) | put the chosen words first in that line's `useCopy` options and keep the rest; then one `proto reply <batch> "…" --done` for the batch, in one line. The page drops its own choice once the words are first |
 
 ## 7. Only if asked: build it
@@ -1026,7 +1022,6 @@ says which links (and variants) changed since shared, who is in them now and how
 | One design from everything they picked ("a final design from all my picks") | `proto add <new slug> --from-picks …` |
 | A choice in chat ("go with 3", "build 29") | `proto pick <slug> <number>` first, then what they asked |
 | Stars in chat ("star 12 and 40", "show my favorites") | `proto fav <slug>/12 <slug>/40`, or `proto fav` to list them; Favorites only in the page shows just those |
-| Parts of several variants combined, sent from the page (`action: combine`) | the table under Comments from the page |
 | How a variant looked before ("what did 2 look like before the last change?", "compare with the old one") | History: `<slug>/<letter>/~history` in the page; `proto history <slug>/<letter>` lists the versions |
 | A write-up of the decision ("summarize what we picked and why", "a brief for the team", "what's left before we build?") | `proto brief <slug>`: give them the Markdown it prints (kept at `.proto/decisions/<slug>.md`); Decision brief in the Decide menu shows the same |
 | The winner built into the codebase ("build B", "ship it") | `proto pick` if not yet, then `proto handoff <slug>/<letter>` and step 7 |
