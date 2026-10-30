@@ -81,3 +81,12 @@ test('loops and missing parents make roots, and the model returns', () => {
   const loose = find(treeOf(list, [], { filter: 'all', me: null, building: none }).nodes, 'section:loose')
   assert.deepEqual(loose.children.map(n => n.key).sort(), ['exp:a', 'exp:b', 'exp:c'])
 })
+
+test('a pinned screen (slug/letter) shows that variant in its own design', () => {
+  const two = [...designs, { id: 'other', title: 'Other', created: '', from: { proto: 'home', variant: 'B' }, flows: [{ name: 'Main', screens: ['home/B'] }] }]
+  const { nodes } = treeOf(protos, two, { filter: 'all', me: null, building: none })
+  const pinned = find(nodes, 'screen:home/B')
+  assert.ok(pinned, 'the pinned screen should be drawn')
+  assert.equal(pinned.route, 'home/B'); assert.equal(pinned.standIn, undefined)
+  assert.ok(find(nodes, 'screen:home'), 'the unpinned screen stays in the first design')
+})

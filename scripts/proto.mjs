@@ -9,6 +9,10 @@
 //             [--next]   the first parent's next versions: a pick among them is built into it
 //             [--kit[=<name>]] [--current <screen>]   on the project's design kit: its theme, parts and
 //             packages, and with --current that screen's saved Current as A (with its references)
+//             [--design <id> [--flow "<name>"]]   a new screen of that design (its options; #1 stands in until a pick)
+//   proto design <slug>/<number> [--title "…"] [--id <id>]   that pick becomes screen 1 of a new design (a set of
+//             linked screens with one look); proto design <id>: its flows, screens, picks and <Go to> links;
+//             --flow "<name>" --screens a,b (move) | --rename "<flow>:<name>" | --drop <slug>
 //   proto done <slug>/<letter>[ …] | <slug>   that variant is built: the page drops its Building mark, and a comment
 //                                   answered with --until on it is done once nothing it waits on is building
 //   proto shoot [route…] [--theme dark] [--focus] [--copy] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
@@ -104,6 +108,8 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, buildUpNeeded, isCurrent } from '../app/assignment.mjs'
 import { idOf, letterOf, numberOf } from '../app/numbers.mjs'
+import { linksIn } from '../app/links.mjs'
+import { designFile, designIds, designOf, designText, entryOf, freeId, readDesign } from './design.mjs'
 import { snapshot, versionLabel, versionsOf } from '../app/history.mjs'
 import { writeBrief } from '../app/brief.mjs'
 import { report as reportShared } from '../app/share/owner.mjs'
@@ -509,6 +515,13 @@ function add() {
     console.log(`"${slug}" is ${taken.title || slug}, made in another conversation, so this one is "${slug}-${n}" (--join adds to it instead).`)
     slug = `${slug}-${n}`
   }
+  // A new screen of a design (proto design): checked before anything is written.
+  if (flags.design !== undefined) {
+    if (flags.design === true || !readDesign(dir, String(flags.design))) die(`--design: no design "${flags.design}" (proto design <slug>/<number> makes one)`)
+    if (flags.next) die('--design and --next cannot be used together: a redo of a screen is --from <screen>/<letter> --next, which hangs under the screen')
+    const held = designOf(dir, slug)
+    if (held && held !== flags.design) die(`${slug} is already a screen of ${held}; a screen belongs to one design`)
+  }
   const kit = STACKS[s.stack]
   const pdir = join(dir, 'src', 'protos', slug)
   const metaFile = join(pdir, 'meta.ts')
@@ -629,6 +642,7 @@ function add() {
   // How many directions it was started with: the page's More variants asks for that many again.
   if (!existsSync(metaFile) && !meta.count && Object.keys(meta.variants).length) meta.count = Object.keys(meta.variants).length
   writeWhole(metaFile, `// Prototype: ${String(meta.title).replace(/[\r\n\u2028\u2029]+/g, ' ')}. Variant files are named by their letter; names live here.\nexport default ${JSON.stringify(meta, null, 2)}\n`, scratchOf(dir))
+  if (flags.design !== undefined) joinDesign(dir, String(flags.design), slug, typeof flags.flow === 'string' ? flags.flow : null)
   // The parent learns where its slot is held; a pointer already set there is kept.
   if (slotIn) {
     const pf = join(dir, 'src', 'protos', slotIn.parent, 'meta.ts'), ptext = readFileSync(pf, 'utf8')
@@ -2642,6 +2656,80 @@ function useKit(dir, pdir, slug, { name, k, kd }, a) {
   if (a && refs.length) console.log(`check it once: proto shoot ${slug}/A --ref .proto/ref/${slug}/${refs[0]}`)
 }
 
+// ---------- designs ----------
+// proto design <slug>/<number> [--title "…"] [--id <id>]: that pick becomes screen 1 of a new design.
+// proto design <id>: its flows, screens and links. --flow "<name>" --screens a,b | --rename "a:b" | --drop <slug>.
+function writeDesign(dir, id, d) { writeWhole(designFile(dir, id), designText(d), scratchOf(dir)) }
+function joinDesign(dir, id, slug, flow) {
+  const d = readDesign(dir, id)
+  if ((d.flows || []).some(f => f.screens.includes(slug))) return
+  const name = flow || d.flows?.[0]?.name || 'Main'
+  const flows = d.flows?.some(f => f.name === name) ? d.flows : [...(d.flows || []), { name, screens: [] }]
+  writeDesign(dir, id, { ...d, owner: sessionId(), flows: flows.map(f => f.name === name ? { ...f, screens: [...f.screens, slug] } : f) })
+  console.log(`${slug} is a screen of ${d.title} (${id}), flow ${name}`)
+}
+function design() {
+  const dir = sessionDir()
+  need(dir)
+  const target = args[0]
+  if (!target) return designIds(dir).forEach(id => { const d = readDesign(dir, id); console.log(`${id}  ${d.title}  ${(d.flows || []).reduce((n, f) => n + f.screens.length, 0)} screens`) }) || (designIds(dir).length || console.log('no designs yet: proto design <slug>/<number> makes one from a pick'))
+  if (target.includes('/')) {
+    const [slug, given] = target.split('/'), letter = idOf(given) || given
+    const meta = readMeta(dir, slug)
+    if (!meta) die(`no prototype "${slug}"`)
+    if (!meta.variants?.[letter]) die(`${slug} has no variant ${given}`)
+    const title = typeof flags.title === 'string' ? flags.title : meta.title || slug
+    const id = typeof flags.id === 'string' ? flags.id : freeId(dir, title)
+    if (readDesign(dir, id)) die(`there is a design "${id}" already`)
+    // Already a screen of another design: this one pins the variant, so both keep their look.
+    const elsewhere = designOf(dir, slug)
+    const entry = elsewhere ? `${slug}/${letter}` : slug
+    if (!elsewhere) { args.splice(0, args.length, slug, letter); pick() }
+    writeDesign(dir, id, { title, created: new Date().toISOString(), session: sessionId(), owner: sessionId(), from: `${slug}/${letter}`, flows: [{ name: 'Main', screens: [entry] }] })
+    return console.log(`design ${id}: ${title}, from ${slug}/${letter} (#${numberOf(letter)}). New screens: proto add <slug> --design ${id}`)
+  }
+  const id = target, d = readDesign(dir, id)
+  if (!d) die(`no design "${id}" (proto design lists them)`)
+  let flows = (d.flows || []).map(f => ({ ...f, screens: [...f.screens] })), changed = false
+  if (typeof flags.flow === 'string' && typeof flags.screens === 'string') {
+    const move = flags.screens.split(',').map(x => x.trim()).filter(Boolean)
+    flows = flows.map(f => ({ ...f, screens: f.screens.filter(x => !move.includes(entryOf(x).slug) && !move.includes(x)) }))
+    if (!flows.some(f => f.name === flags.flow)) flows.push({ name: flags.flow, screens: [] })
+    flows = flows.map(f => f.name === flags.flow ? { ...f, screens: [...f.screens, ...move] } : f)
+    changed = true
+  }
+  if (typeof flags.rename === 'string') {
+    const [from, to] = flags.rename.split(':')
+    if (!to || !flows.some(f => f.name === from)) die(`--rename "<flow>:<new name>": no flow "${from}"`)
+    flows = flows.map(f => f.name === from ? { ...f, name: to } : f)
+    changed = true
+  }
+  if (typeof flags.drop === 'string') { flows = flows.map(f => ({ ...f, screens: f.screens.filter(x => x !== flags.drop && entryOf(x).slug !== flags.drop) })); changed = true }
+  if (changed) {
+    writeDesign(dir, id, { ...d, owner: sessionId(), flows: flows.filter(f => f.screens.length) })
+    return console.log(`${d.title}: ${flows.filter(f => f.screens.length).map(f => `${f.name} (${f.screens.join(', ')})`).join(' · ')}`)
+  }
+  // Status: each flow's screens with what they show, their links, and links that lead nowhere.
+  console.log(`${d.title} (${id})${d.from ? `, from ${d.from}` : ''}`)
+  const mine = new Set(flows.flatMap(f => f.screens.map(x => entryOf(x).slug))), missing = new Set(), crossing = new Set()
+  const ext = STACKS[readSession(dir).stack]?.ext ?? 'tsx'
+  for (const f of flows) {
+    console.log(f.name)
+    for (const x of f.screens) {
+      const { slug, letter: pinned } = entryOf(x), meta = readMeta(dir, slug)
+      if (!meta || meta.archived) { console.log(`  ${x}  (gone)`); continue }
+      const letter = pinned || meta.picked || Object.keys(meta.variants || {})[0]
+      const file = join(dir, 'src', 'protos', slug, `${letter}.${ext}`)
+      const links = existsSync(file) ? linksIn(readFileSync(file, 'utf8')) : []
+      for (const l of links) if (!readMeta(dir, l)) missing.add(l); else if (!mine.has(l)) crossing.add(l)
+      const says = pinned ? `#${numberOf(letter)} pinned` : meta.picked ? `#${numberOf(letter)} picked` : `#${numberOf(letter)} stands in (not picked)`
+      console.log(`  ${x}  ${says}${links.length ? `  → ${links.join(', ')}` : ''}`)
+    }
+  }
+  if (missing.size) console.log(`links to screens not built: ${[...missing].join(', ')}`)
+  if (crossing.size) console.log(`links outside this design (never followed): ${[...crossing].join(', ')}`)
+}
+
 // ---------- fonts ----------
 // The pairings in references/fonts.json, checked against Google Fonts. --draw picks at random, so
 // two sessions with the same brief don't land on the same faces; no family appears twice in a draw.
@@ -2657,7 +2745,7 @@ function fonts() {
 }
 
 const commands = {
-  up, add, plan, done, pick, fav, work, ask, history, brief: briefCmd, archive, shoot, compare, perf, handoff, snap, intake, inbox, reply, gc: () => gc(false), ls,
+  up, add, design, plan, done, pick, fav, work, ask, history, brief: briefCmd, archive, shoot, compare, perf, handoff, snap, intake, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
   // --project is the project's folder on every command, so the whole app is --all.
   rm: () => flags.all ? removeApp(sessionDir()) : rmMine(),

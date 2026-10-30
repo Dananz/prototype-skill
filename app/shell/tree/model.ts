@@ -60,7 +60,7 @@ export function treeOf(protos: Proto[], designs: Design[], o: { filter: Filter; 
   const mine = (p: Proto) => o.filter !== 'mine' || p.session === o.me
 
   // An exploration and what hangs under it; null when the filter leaves nothing of it.
-  const explore = (p: Proto, kind: 'screen' | 'exploration'): TreeNode | null => {
+  const explore = (p: Proto, kind: 'screen' | 'exploration', pinned = ''): TreeNode | null => {
     const s = state(p)
     const below = (kids.get(p.id) ?? []).map(k => explore(k, 'exploration')).filter((n): n is TreeNode => !!n)
     const keep = o.filter === 'open' ? NEEDS.includes(s) || below.length > 0 : mine(p) || below.length > 0
@@ -70,9 +70,9 @@ export function treeOf(protos: Proto[], designs: Design[], o: { filter: Filter; 
       ...(p.picked === v.id ? { picked: true } : {}), ...(became.has(`${p.id}/${v.id}`) ? { became: became.get(`${p.id}/${v.id}`) } : {}), children: [],
     }))
     return {
-      kind, key: `${kind === 'screen' ? 'screen' : 'exp'}:${p.id}`, label: p.title, route: `${p.id}/${shown(p)}`, state: s,
+      kind, key: `${kind === 'screen' ? 'screen' : 'exp'}:${p.id}${pinned ? `/${pinned}` : ''}`, label: p.title, route: `${p.id}/${pinned || shown(p)}`, state: s,
       ...(kind === 'exploration' && p.from?.variant ? { on: numberOf(p.from.variant) } : {}),
-      ...(kind === 'screen' && !p.picked ? { standIn: true } : {}),
+      ...(kind === 'screen' && !p.picked && !pinned ? { standIn: true } : {}),
       children: [...options, ...below],
     }
   }
@@ -81,7 +81,10 @@ export function treeOf(protos: Proto[], designs: Design[], o: { filter: Filter; 
   const nodes: TreeNode[] = []
   for (const d of designs) {
     const flows = d.flows.map(f => {
-      const screens = f.screens.map(slug => byId.get(slug)).filter((p): p is Proto => !!p).map(p => { onScreen.add(p.id); return explore(p, 'screen') }).filter((n): n is TreeNode => !!n)
+      // A screen is a slug (it shows its pick) or slug/letter (pinned, in a second design from it).
+      const screens = f.screens.map(x => { const [slug, pin = ''] = x.split('/'); return { p: byId.get(slug), pin } })
+        .filter((x): x is { p: Proto; pin: string } => !!x.p && (!x.pin || x.p.variants.some(v => v.id === x.pin)))
+        .map(({ p, pin }) => { onScreen.add(p.id); return explore(p, 'screen', pin) }).filter((n): n is TreeNode => !!n)
       return screens.length ? { kind: 'flow' as const, key: `flow:${d.id}:${f.name}`, label: f.name, count: screens.length, children: screens } : null
     }).filter((n): n is NonNullable<typeof n> => !!n)
     if (flows.length) nodes.push({ kind: 'design', key: `design:${d.id}`, label: d.title, count: flows.reduce((n, f) => n + f.children.length, 0), children: flows })
