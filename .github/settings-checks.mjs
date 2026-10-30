@@ -76,6 +76,8 @@ export async function settingsChecks({ proto, app, local, openPage, fail }) {
     await page.run('navigator.clipboard.writeText = async text => { window.__settingsCopy = text }')
     await click('[data-setting-copy-url]')
     await until('window.__settingsCopy === document.querySelector("[data-setting-copy-url]").previousElementSibling.value', 'copy URL did not copy the public session address')
+    // The clipboard has the text before the copy settles; the button is pressable again only after.
+    await until('!document.querySelector("[data-setting-reconnect]").disabled', 'the restart button stayed disabled after the URL copy')
     await click('[data-setting-reconnect]')
     await until('window.__settingsCopy.includes("proto inbox --wait --session") && window.__settingsCopy.includes("smoke")', 'listener restart did not include the correct session')
     await page.run('navigator.clipboard.writeText = async () => { throw new Error("Denied") }')

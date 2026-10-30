@@ -33,7 +33,10 @@ export async function goChecks({ proto, app, local, openPage, fail }) {
   const click = sel => page.run(`(() => { const doc = document.querySelector('[data-view]:not([hidden]) iframe')?.contentDocument ?? document; const el = doc.querySelector('${sel}'); el?.click(); return !!el })()`)
   try {
     await until(page, `!!document.querySelector('[data-shoot="to-about"]')`, 'the screen with links should draw')
-    await click('[data-shoot="to-about"]')
+    // The first press can land on a link a hot update is just replacing (the full run's last writes): press again until it goes.
+    let presses = 0
+    for (; presses < 20 && await page.run(`location.pathname`) !== '/goabout/A'; presses++) { await click('[data-shoot="to-about"]'); await wait(300) }
+    if (presses > 1) console.log(`go: the first link took ${presses} presses`)
     await until(page, `location.pathname === '/goabout/A'`, 'a link to a screen with no pick should land on #1')
     proto(['pick', 'goabout', 'B'])
     await page.run(`history.pushState(null, '', '/gohome/C'); dispatchEvent(new PopStateEvent('popstate'))`)
