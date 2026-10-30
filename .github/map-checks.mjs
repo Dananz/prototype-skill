@@ -83,6 +83,12 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     c = await sentAfter(had)
     assert(c?.action === 'map-note' && /flow Main of the design macme: Too long/.test(c.text), `a flow note should name the flow: ${JSON.stringify(c)?.slice(0, 200)}`)
 
+    // In a crowded app (the full smoke), narrow the map to this design and fit it: the screens are
+    // big enough to drop a link on, and Build it (one design) is offered.
+    await page.run(`(() => { const s = document.querySelector('[data-map-design]'); if (s) { s.value = 'macme'; s.dispatchEvent(new Event('change', { bubbles: true })) } })()`)
+    await wait(500)
+    await page.run(`document.querySelector('[data-map-fit]').click()`)
+    await wait(800)
     // A line dragged from home's handle to about asks for a link.
     await page.run(`document.querySelector('[data-map-board="screen:mhome"]').click()`)
     await until(page, `!!document.querySelector('[data-map-handle]')`, 'a selected screen should offer a link handle')
@@ -110,6 +116,7 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     c = await sentAfter(had)
     assert(c?.action === 'build-design' && /proto handoff --design macme --screens mhome,mabout/.test(c.text) && /Still open, #1 stands in: mabout/.test(c.text), `Build it should send the plan: ${JSON.stringify(c)?.slice(0, 300)}`)
 
+    await page.run(`(() => { const s = document.querySelector('[data-map-design]'); if (s) { s.value = ''; s.dispatchEvent(new Event('change', { bubbles: true })) } })()`)
     // A second design brings the design filter.
     proto(['add', 'mother', '--title', 'Map other', '--variants', 'A:One'])
     proto(['design', 'mother/A', '--title', 'Map Other', '--id', 'mother-d'])
