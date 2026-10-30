@@ -785,7 +785,11 @@ shows there as "You picked X".
 
 - **Each change the user asks for on it:** run `proto ask "<what they asked, a few words>"`
   before you edit, one line per request, in their terms ("Plus card: make it the obvious
-  choice"), not yours.
+  choice"), not yours. It also keeps the variant as it is then, so **History** in the variant's
+  tools (`<slug>/<letter>/~history`) shows that earlier version beside the variant now, in the
+  same state; nothing changed since the last one, and that version takes the ask too. So always
+  `proto ask` before the edit, never after. `proto history <slug>/<letter>` lists the versions;
+  `--save "…"` keeps one by hand before a rewrite nobody asked for in words.
 - **When their request is about a different variant** ("now let's do D", "B's header, same
   idea"): `proto work <slug>/<letter> --ask "<what they asked>"` first. The strip moves there and
   offers Undo; the old one keeps its history.
@@ -981,6 +985,8 @@ the text.
 
 When the request says to implement the winner (the picked variant), read `references/build.md` and
 follow it: `proto handoff`, build with the project's own components, then the `--as built` overlay.
+Read `proto brief <slug>` first: the user's reason for the pick and the comments still open
+(unticked) are what the build must keep or settle.
 
 ## Only if asked: share snapshots
 
@@ -1016,6 +1022,8 @@ says which links (and variants) changed since shared, who is in them now and how
 | One design from everything they picked ("a final design from all my picks") | `proto add <new slug> --from-picks …` |
 | A choice in chat ("go with 3", "build 29") | `proto pick <slug> <number>` first, then what they asked |
 | Stars in chat ("star 12 and 40", "show my favorites") | `proto fav <slug>/12 <slug>/40`, or `proto fav` to list them; Favorites only in the page shows just those |
+| How a variant looked before ("what did 2 look like before the last change?", "compare with the old one") | History: `<slug>/<letter>/~history` in the page; `proto history <slug>/<letter>` lists the versions |
+| A write-up of the decision ("summarize what we picked and why", "a brief for the team", "what's left before we build?") | `proto brief <slug>`: give them the Markdown it prints (kept at `.proto/decisions/<slug>.md`); Decision brief in the Decide menu shows the same |
 | The winner built into the codebase ("build B", "ship it") | `proto pick` if not yet, then `proto handoff <slug>/<letter>` and step 7 |
 | A pick, More like this or Build it from the page (`action:` in a batch) | the table under Comments from the page |
 | Other copy for some lines ("better headlines", "other button text") | `proto ask "…"`, then `useCopy` on those lines (Offer other copy when asked) |

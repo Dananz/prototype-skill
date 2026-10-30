@@ -210,4 +210,13 @@ export default {
   'The server took too long to respond. Try again.': 'השרת ארך זמן רב מדי להגיב. נסה שוב.',
   'The server didn’t answer. Is it still running?': 'השרת לא ענה. האם הוא עדיין פועל?',
   'Couldn’t do that: {error}': 'לא ניתן לבצע זאת: {error}',
+  'History': 'היסטוריה',
+  'An earlier version beside this one': 'גרסה קודמת לצד הנוכחית',
+  'Before: {asks}': 'לפני: {asks}',
+  'Saved by hand': 'נשמרה ידנית',
+  '{v}, earlier': '{v}, קודם',
+  'v{n}': 'גרסה {n}',
+  'Close history': 'סגור היסטוריה',
+  'History · v{n}': 'היסטוריה · גרסה {n}',
+  'As picked': 'כפי שנבחר',
 } satisfies Record<string, string>

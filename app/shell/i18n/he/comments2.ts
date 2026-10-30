@@ -142,4 +142,9 @@ export default {
   'Comments docked on the right, with a Comment button in the top bar. Wide screens only.': 'ההערות מעוגנות מימין, עם כפתור הערה בסרגל העליון. במסכים רחבים בלבד.',
   'Comments docked on the left, with a Comment button in the top bar. Wide screens only.': 'ההערות מעוגנות משמאל, עם כפתור הערה בסרגל העליון. במסכים רחבים בלבד.',
   'Open a variant to comment on it.': 'פתח וריאנט כדי להעיר עליו.',
+  'Could not make the brief': 'לא ניתן להכין את התקציר',
+  'Decision brief': 'תקציר החלטה',
+  'Could not copy': 'לא ניתן להעתיק',
+  'Making the brief…': 'מכין את התקציר…',
+  'Kept for {agent} in this file:': 'נשמר עבור {agent} בקובץ הזה:',
 } satisfies Record<string, string>

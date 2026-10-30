@@ -13,6 +13,8 @@ import { PLACEHOLDER, useTagField } from './tag-field'
 import { ACTION, Icon, MOD, PRIMARY, Pulse } from './ui'
 import { BROWSER_HINT, MenuRows, type MenuRow } from './menu'
 import { rtl, t } from '../i18n'
+import { post } from '../transport'
+import { BriefView } from './brief-view'
 
 /** The variant on screen, and whether it is the prototype's pick. */
 export type Subject = { proto: string; variant: string; label: string; name: string; picked: boolean; hints?: boolean; copy?: boolean }
@@ -50,6 +52,18 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
   const v = subject.label
   const menu = useRef<HTMLDivElement>(null)
 
+  // The prototype's decision brief, made by the server when asked (app/brief.mjs), shown in place.
+  const [paper, setPaper] = useState<{ markdown: string; file: string } | 'loading' | null>(null)
+  const [copied, setCopied] = useState(false)
+  const openBrief = async () => {
+    setPaper('loading'); setError(''); setCopied(false)
+    try {
+      const res = await post('brief', { proto: subject.proto })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error || t('Could not make the brief'))
+      setPaper({ markdown: body.markdown, file: body.file })
+    } catch (e) { setPaper(null); setError(e instanceof Error ? e.message : t('Could not make the brief')) }
+  }
   const send = async (a: Action, words: Note = { body: [], tags: [] }) => {
     if (sending.current || field.adding) return
     sending.current = true
@@ -99,6 +113,25 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
     </div>
   )
 
+  if (paper) return (
+    <div data-brief className={sheet ? 'px-1' : 'p-2'} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setPaper(null) } }}>
+      <div className="flex items-center gap-1 pb-1.5">
+        <button onClick={() => setPaper(null)} aria-label={t('Back')} className="grid size-8 shrink-0 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white"><Icon name="left" /></button>
+        <Icon name="text" className="size-3.5 text-zinc-400" />
+        <span className="flex-1 text-[13px] font-semibold">{t('Decision brief')}</span>
+        {paper !== 'loading' && <button data-brief-copy onClick={() => { void navigator.clipboard?.writeText(paper.markdown).then(() => setCopied(true), () => setError(t('Could not copy'))) }} className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2.5 text-xs font-medium text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><Icon name={copied ? 'check' : 'more'} className="size-3.5" />{copied ? t('Copied') : t('Copy')}</button>}
+      </div>
+      {paper === 'loading'
+        ? <p className="px-2 py-3 text-xs text-zinc-500">{t('Making the brief…')}</p>
+        : <>
+          <div className="max-h-80 overflow-auto overscroll-contain rounded-xl bg-zinc-900/[.04] px-3 py-2.5 dark:bg-white/[.06]"><BriefView markdown={paper.markdown} /></div>
+          <p className="mt-1.5 px-1 text-[11px] text-zinc-500">{t('Kept for {agent} in this file:', { agent })}</p>
+          <p className="px-1 text-[11px] text-zinc-500"><code dir="ltr" className="font-mono [overflow-wrap:anywhere]">{paper.file}</code></p>
+        </>}
+      {oops}
+    </div>
+  )
+
   if (ask) return (
     <div className={sheet ? 'px-1' : 'p-2'} onKeyDown={keys}>
       <div className="flex items-center gap-1 pb-1.5">
@@ -131,6 +164,11 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
         {(ready || waiting) && <span className="text-xs text-zinc-500">{ready ? t('Ready') : t('Requested')}</span>}
       </button>
     })}
+    <button role={sheet ? undefined : 'menuitem'} data-brief-open disabled={busy}
+      onClick={() => void openBrief()}
+      className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-start text-[13px] hover:bg-zinc-900/[.04] disabled:text-zinc-400 dark:hover:bg-white/[.06]">
+      <Icon name="text" className="size-4" /><span className="flex-1">{t('Decision brief')}</span>
+    </button>
     {(['try-it', 'copy-options'] as const).some(pending) && <p className="px-2 pb-1 text-xs text-zinc-500">{t('Requests wait in Comments. Delete one there to cancel it.')}</p>}
   </div>
 

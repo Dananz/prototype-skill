@@ -7,6 +7,8 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, buildUpNeeded, isCurrent } from './assignment.mjs'
+import { snapshot } from './history.mjs'
+import { writeBrief } from './brief.mjs'
 
 const dir = fileURLToPath(new URL('.', import.meta.url))
 const file = join(dir, 'session.json')
@@ -73,7 +75,12 @@ function work({ proto, variant, undo, ask }) {
     patch.work = { ...t, at }
     patch.before = before.filter((x, i, all) => all.findIndex(y => same(x, y)) === i).slice(0, 3).map(x => ({ proto: x.proto, variant: x.variant }))
   }
-  if (ask) { const key = `${t.proto}/${t.variant}`; patch.asks = { ...s.asks, [key]: [...(s.asks?.[key] || []), { at, text: ask }] } }
+  if (ask) {
+    const key = `${t.proto}/${t.variant}`
+    patch.asks = { ...s.asks, [key]: [...(s.asks?.[key] || []), { at, text: ask }] }
+    // The design as it was picked, kept for History (history.mjs): the note may change it next.
+    try { snapshot(dir, t.proto, t.variant, ask, { at }) } catch { /* the pick still counts */ }
+  }
   if (Object.keys(patch).length) write(patch)
   return !!patch.work
 }
@@ -684,6 +691,13 @@ export function prototypeServer(session) {
             let took
             if (route === '/withdraw') {
               try { took = withdraw(data) } catch (e) { return fail(e.status || 500, e.message) }
+            }
+            // Decision brief in the page: made now, kept at .proto/decisions/<slug>.md, and shown.
+            if (route === '/brief') {
+              const made = typeof data.proto === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(data.proto) ? writeBrief(dir, data.proto) : null
+              if (!made) return fail(404, `no prototype ${String(data.proto ?? '')}`)
+              res.setHeader('content-type', 'application/json')
+              return res.end(JSON.stringify({ markdown: made.markdown, file: `.proto/decisions/${data.proto}.md`, picked: made.picked, open: made.open }))
             }
             if (route === '/fav') {
               let favorites
