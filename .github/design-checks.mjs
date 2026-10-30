@@ -95,3 +95,10 @@ test('linksIn finds Go targets', () => {
   assert.deepEqual(linksIn(`<Go to="a" className="x">A</Go><Go className="x" to='b'>B</Go><Go to="a"/>`), ['a', 'b'])
   assert.deepEqual(linksIn(`<Goal to="x" />`), [])
 })
+
+test('SKILL.md points to references/designs.md, which covers the commands, links and shared parts', () => {
+  const skill = readFileSync(new URL('../SKILL.md', import.meta.url), 'utf8')
+  assert.match(skill, /proto design/); assert.match(skill, /references\/designs\.md/)
+  const ref = readFileSync(new URL('../references/designs.md', import.meta.url), 'utf8')
+  for (const s of ['proto design', '--design', '<Go to=', 'src/designs/<id>/parts.tsx', 'every screen or only this one']) assert.ok(ref.includes(s), `references/designs.md lacks ${s}`)
+})

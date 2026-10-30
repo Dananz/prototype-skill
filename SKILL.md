@@ -792,6 +792,14 @@ favorites ("more like my favorites", "combine my favorites") starts from that li
 
 If `proto up` or `proto shoot` failed, say so with the error instead of leaving things out.
 
+## When a pick grows into a whole design
+
+When the user wants a pick grown into more pages in its look ("make this the design", "now the
+About and Pricing pages"), make it a design: `proto design <slug>/<number> --title "…"`, then each
+new screen with `proto add <slug> --design <id>`, linked in code with `<Go to="<slug>">`. Read
+`references/designs.md` first: screens, flows, links, the stand-in rule and the shared-parts
+question.
+
 ## While the user works on one variant
 
 After a pick the user usually asks for changes to one variant, round after round. A strip at
