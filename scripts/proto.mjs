@@ -112,7 +112,7 @@ import { BASE, SHELL, STACKS, syncApp } from './app-sync.mjs'
 import { skillUpdate } from './self-update.mjs'
 import { legacySessions, locked as lockApp, ownerOf, PROJECT_DIR, projectApp, registerSession, sessionsOf } from './project.mjs'
 import { mergeThemes, resolveTheme } from '../app/theme-merge.mjs'
-import { importSession } from './import.mjs'
+import { importSession, untold } from './import.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 // The languages the page speaks (app/shell/i18n.ts). --lang sets the session's: the language the
@@ -245,6 +245,12 @@ function beat(dir) {
   const agent = detectedAgent()
   // The page runs some commands as the app itself (its share sync): that is no conversation.
   if (sessionId() !== readSession(dir)?.id) registerSession(dir, sessionId(), { agent })
+  // Its old app was moved in by another conversation's `proto up`: say so once, with the new names.
+  for (const x of untold(dir, sessionId())) {
+    const renamed = Object.entries(x.renames || {}).map(([a, b]) => `${a} → ${b}`)
+    const s = readSession(dir)
+    console.log(`this conversation's prototypes moved into the project app (${s.url || s.localUrl || tilde(dir)})${renamed.length ? `; renamed ${renamed.join(', ')}: use the new names` : ''}`)
+  }
   locked(dir, () => adoptListener(dir, sessionId()))
   if (agent) patchSession(dir, { agent })
   const pid = agentPid()
@@ -410,6 +416,7 @@ async function up() {
   if (process.env.PROTO_NO_GC !== '1') await gc(true)
   const project = projectRoot()
   if (!existsSync(sessionFile(dir))) scaffold(dir, project)
+  else if (typeof flags.stack === 'string' && flags.stack !== readSession(dir)?.stack) console.log(`the project app is ${readSession(dir)?.stack}; --stack only applies when it is made`)
   else if (!flags['no-serve']) await update(dir)
   const depsMoved = await importLegacy(dir, project)
   beat(dir)
@@ -464,10 +471,22 @@ async function importLegacy(dir, project) {
   const sid = sessionId(), told = new Set(readJson(join(dir, '.proto', 'imports.json'), []).filter(x => x.skipped).map(x => x.sid))
   const all = legacySessions(project).filter(l => !told.has(String(l.json.id)))
   let deps = false
+  const stack = readSession(dir)?.stack
   for (const l of [...all.filter(l => String(l.json.id) === sid), ...all.filter(l => String(l.json.id) !== sid)]) {
-    if (!flags['no-serve'] && await running(l.json)) await kill(l.json.pid)
-    const r = importSession(dir, l, { first: String(l.json.id) === sid })
-    if (r.skipped) { console.log(`skipped ${r.name}: ${r.skipped}; its app is left as it was`); continue }
+    // One on another stack isn't imported, so its server keeps running.
+    const other = l.json.stack && stack && l.json.stack !== stack
+    if (!other && !flags['no-serve'] && await running(l.json)) await kill(l.json.pid)
+    // One old app that can't be read is left for the next `proto up` (an import resumes where it
+    // stopped); the others come in and the project app starts.
+    let r
+    try { r = importSession(dir, l, { first: String(l.json.id) === sid }) } catch (e) {
+      console.log(`skipped ${l.json.name || l.json.id} for now: ${e.message}; its app is left as it was, and the next proto up tries again`)
+      continue
+    }
+    if (r.already) continue
+    // Its scope, so what it makes from now on keeps its look (add stamps it).
+    if (r.theme) registerSession(dir, r.sid, { name: r.name, theme: r.theme })
+    if (r.skipped) { console.log(`skipped ${r.name}: ${r.skipped}; its app is left as it was, kept in ${tilde(l.dir)}`); continue }
     if (!flags['no-serve'] && l.json.tailnetPort && readSession(dir).tailnetPort !== l.json.tailnetPort && has('tailscale')) run('tailscale', ['serve', `--https=${l.json.tailnetPort}`, 'off'])
     deps ||= r.depsChanged
     const renamed = Object.entries(r.renames).map(([a, b]) => `${a} → ${b}`)
@@ -598,6 +617,8 @@ function add() {
     if (flags.current && fresh.includes('A')) fresh.splice(fresh.indexOf('A'), 1)
     if (readFileSync(join(dir, 'src', 'theme.css'), 'utf8').includes(`[data-proto-theme="kit:${design.name}"]`)) set.theme = `kit:${design.name}`
   }
+  // A conversation whose old app had a look of its own (scripts/import.mjs) keeps it on new prototypes.
+  if (!set.theme && !existsSync(metaFile) && sessionsOf(dir)[sid]?.theme) set.theme = sessionsOf(dir)[sid].theme
   // meta.ts goes last, so the page sees the prototype with all its variants at once. It is read
   // again just before: a pick made in the page meanwhile is written by the dev server, and stays.
   // The variant list goes last, where it is easiest to read.
@@ -1049,11 +1070,13 @@ async function rmMine() {
     printListener(dir)
     die('disable the owned host task and confirm with proto inbox --host-disabled <id> before deleting its local identity')
   }
-  const root = join(dir, 'src', 'protos'), gone = []
+  const root = join(dir, 'src', 'protos'), gone = [], kept = []
   for (const slug of existsSync(root) ? readdirSync(root) : []) {
     let m = null
     try { m = readMeta(dir, slug) } catch { /* not plain JSON: not ours to judge */ }
     if (m?.session !== sid) continue
+    // Made here, but another conversation joined it and works on it now: its work stays.
+    if (ownerOf(m) !== sid) { kept.push(`${slug} (${ownerOf(m)} works on it now)`); continue }
     for (const p of [join(root, slug), join(dir, 'src', 'history', slug), join(dir, '.proto', 'ref', slug), join(dir, '.proto', 'briefs', `${slug}.json`), join(dir, '.proto', 'decisions', `${slug}.md`)]) rmSync(p, { recursive: true, force: true })
     gone.push(slug)
   }
@@ -1065,6 +1088,7 @@ async function rmMine() {
   }))
   locked(dir, () => { const all = sessionsOf(dir); delete all[sid]; writeJson(join(dir, '.proto', 'sessions.json'), all) })
   console.log(`removed ${gone.length} prototype${gone.length === 1 ? '' : 's'} made in this conversation${gone.length ? `: ${gone.join(', ')}` : ''}`)
+  if (kept.length) console.log(`kept ${kept.join(', ')}`)
 }
 
 async function removeApp(dir) {
@@ -1741,7 +1765,9 @@ function handoff() {
 // run in the background: it exits when a batch arrives, which wakes the agent.
 const inboxDir = dir => join(dir, '.proto', 'inbox')
 const batchesIn = (dir, sub) => { try { return readdirSync(join(inboxDir(dir), sub)).filter(f => !f.startsWith('.')).sort() } catch { return [] } }
-const waiterFile = dir => join(inboxDir(dir), 'waiter.json')
+// One background waiter per conversation; another's, alive, means its comments are left for it.
+const waiterFile = (dir, sid = sessionId()) => join(inboxDir(dir), 'waiters', `${sid}.json`)
+const waiting = (dir, sid) => { const w = readJson(waiterFile(dir, sid), null); return !!w && alive(w.pid) }
 
 // A batch that can't be taken or read is said so (on stderr), never skipped without a word, and
 // once: `--wait` takes again every few seconds and would say it each time.
@@ -1750,12 +1776,12 @@ const tell = (id, what) => { if (!told.has(id)) { told.add(id); console.error(`b
 function take(dir) {
   const taken = []
   mkdirSync(join(inboxDir(dir), 'taken'), { recursive: true })
-  const sid = sessionId()
+  const sid = sessionId(), held = {}
   for (const id of batchesIn(dir, 'new')) {
     const from = join(inboxDir(dir), 'new', id)
-    // Another conversation's comments, while it listens, are left for it (app/listener.mjs wakes()).
+    // Another conversation's comments, while it listens or waits, are left for it (app/listener.mjs wakes()).
     const owner = readJson(join(from, 'batch.json'), null)?.owner
-    if (owner && owner !== sid && wakes(dir, owner) === owner) continue
+    if (owner && owner !== sid && (wakes(dir, owner) === owner || waiting(dir, owner))) { held[owner] = (held[owner] || 0) + 1; continue }
     try { moveDir(from, join(inboxDir(dir), 'taken', id)) } catch (e) { if (existsSync(from)) tell(id, `could not be taken (${e?.code ?? e?.message ?? e})`); continue /* else another reader took it */ }
     const file = join(inboxDir(dir), 'taken', id, 'batch.json')
     const b = readJson(file, null)
@@ -1766,6 +1792,7 @@ function take(dir) {
     }
     else tell(id, 'was taken, but its batch.json could not be read')
   }
+  for (const [owner, n] of Object.entries(held)) if (!told.has(`held:${owner}:${n}`)) { told.add(`held:${owner}:${n}`); console.log(`${n} batch${n === 1 ? '' : 'es'} held for ${owner}, the conversation working on ${n === 1 ? 'its prototype' : 'their prototypes'}`) }
   return taken
 }
 

@@ -1,10 +1,11 @@
 // Session apps from before the project app (.prototypes/<session>/) are copied into it on `proto up`,
 // renaming slugs that collide and everything that points at them. CLI only, no install or server.
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { projectFixture } from './project-checks.mjs'
+import { importSession } from '../scripts/import.mjs'
 
 const ok = r => assert.equal(r.status, 0, r.stderr + r.stdout)
 const put = (f, text) => { mkdirSync(join(f, '..'), { recursive: true }); writeFileSync(f, typeof text === 'string' ? text : JSON.stringify(text, null, 2)) }
@@ -36,6 +37,9 @@ test('calling session first keeps slugs, port and tailnet port', () => projectFi
   assert.equal(metaOf(app, 'home').session, 'one')
   assert.equal(metaOf(app, 'home-2').session, 'two')
   assert.match(r.stdout, /imported Session two \(1 prototype, renamed home → home-2\)/)
+  // The old app no longer claims the ports, so stopping or removing it never turns the link off.
+  const old = json(join(project, '.prototypes', 'one', 'session.json'))
+  assert.equal(old.port ?? null, null); assert.equal(old.tailnetPort ?? null, null); assert.equal(old.pid ?? null, null)
 }))
 
 test('references are rewritten', () => projectFixture(({ project, app, call }) => {
@@ -86,7 +90,7 @@ test('history, refs, briefs and decisions follow the rename', () => projectFixtu
   assert.ok(existsSync(join(app, '.proto', 'decisions', 'home-2.md')))
 }))
 
-test('pending inbox moves with its owner; answered batches stay', () => projectFixture(({ project, app, call }) => {
+test('the inbox moves with its owner, answered threads included', () => projectFixture(({ project, app, call }) => {
   legacy(project, 'one', { protos: { home: {} } })
   const two = legacy(project, 'two', { protos: { home: {} }, extra: { createdAt: '2026-10-02T00:00:00.000Z' } })
   put(join(two, '.proto', 'inbox', 'new', 'b-new', 'batch.json'), { id: 'b-new', comments: [{ n: 1, route: 'home/A', text: 'Hi' }] })
@@ -95,7 +99,8 @@ test('pending inbox moves with its owner; answered batches stay', () => projectF
   const b = json(join(app, '.proto', 'inbox', 'new', 'b-new', 'batch.json'))
   assert.equal(b.comments[0].route, 'home-2/A')
   assert.equal(b.owner, 'two')
-  assert.equal(existsSync(join(app, '.proto', 'inbox', 'taken', 'b-done')), false)
+  // The page lists answered threads from taken/: they come along, so nothing it showed goes missing.
+  assert.equal(json(join(app, '.proto', 'inbox', 'taken', 'b-done', 'batch.json')).comments[0].route, 'home-2/A')
 }))
 
 test("a session's listener config moves with it", () => projectFixture(({ project, app, call }) => {
@@ -107,6 +112,9 @@ test("a session's listener config moves with it", () => projectFixture(({ projec
   assert.equal(json(join(app, '.proto', 'inbox', 'listeners', 'two.json')).id, 'task-2')
   assert.deepEqual(json(join(app, '.proto', 'inbox', 'listeners', 'two-notified.json')), { b1: 'task-2' })
   assert.equal(existsSync(join(two, '.proto', 'inbox', 'listener.json')), false)
+  // No copy of the wake URL stays behind in the old folder, where the dev server could serve it.
+  const left = readdirSync(join(two, '.proto', 'inbox'))
+  assert.ok(!left.some(f => readFileSync(join(two, '.proto', 'inbox', f), 'utf8').includes('example.test/hook')), `wake URL left in ${left}`)
 }))
 
 test('shares keep their session and follow the rename', () => projectFixture(({ project, app, call }) => {
@@ -131,6 +139,26 @@ test('themes merge, and a session whose tokens disagree gets its scope', () => p
   assert.equal(metaOf(app, 'home').theme, undefined)
 }))
 
+test("a conversation's new prototypes keep its scope after the import", () => projectFixture(({ project, app, call }) => {
+  legacy(project, 'one', { protos: { home: {} }, theme: '@theme { --color-brand: #111; }' })
+  legacy(project, 'two', { protos: { cart: {} }, theme: '@theme { --color-brand: #222; }', extra: { createdAt: '2026-10-02T00:00:00.000Z' } })
+  ok(call(['up', '--session', 'one', '--no-serve']))
+  ok(call(['add', 'checkout', '--variants', 'A:One', '--session', 'two']))
+  ok(call(['add', 'about', '--variants', 'A:One', '--session', 'one']))
+  assert.equal(metaOf(app, 'checkout').theme, 'two')
+  assert.equal(metaOf(app, 'about').theme, undefined)
+}))
+
+test('a session whose font rule differs gets its scope too', () => projectFixture(({ project, app, call }) => {
+  legacy(project, 'one', { protos: { home: {} }, theme: '.app { --font-sans: "Rubik", "Arial Hebrew"; }' })
+  legacy(project, 'two', { protos: { cart: {} }, theme: '.app { --font-sans: "Inter"; }', extra: { createdAt: '2026-10-02T00:00:00.000Z' } })
+  ok(call(['up', '--session', 'one', '--no-serve']))
+  const css = readFileSync(join(app, 'src', 'theme.css'), 'utf8')
+  assert.match(css, /\[data-proto-theme="two"\] \.app/)
+  assert.equal(metaOf(app, 'cart').theme, 'two')
+  assert.equal(metaOf(app, 'home').theme, undefined)
+}))
+
 test('a session on another stack is skipped and left untouched', () => projectFixture(({ project, app, call }) => {
   legacy(project, 'one', { protos: { home: {} } })
   const vue = legacy(project, 'vue1', { protos: { form: {} }, stack: 'vue' })
@@ -139,6 +167,9 @@ test('a session on another stack is skipped and left untouched', () => projectFi
   assert.match(r.stdout, /skipped Session vue1/)
   assert.equal(existsSync(join(app, 'src', 'protos', 'form')), false)
   assert.equal(json(join(vue, 'session.json')).migratedTo, undefined)
+  // Kept, so gc never removes work no command can reach any more.
+  assert.equal(json(join(vue, 'session.json')).keep, true)
+  assert.match(r.stdout, /kept in .*vue1/)
 }))
 
 test('import runs once, and marks each session it took', () => projectFixture(({ project, app, call }) => {
@@ -148,4 +179,45 @@ test('import runs once, and marks each session it took', () => projectFixture(({
   ok(call(['up', '--session', 'one', '--no-serve']))
   assert.equal(json(join(app, '.proto', 'imports.json')).length, log.length)
   assert.equal(json(join(one, 'session.json')).migratedTo, '_project')
+}))
+
+test('a second import of a session another run already took does nothing', () => projectFixture(({ project, app, call }) => {
+  const one = legacy(project, 'one', { protos: { home: {} } })
+  const listing = { dir: one, json: json(join(one, 'session.json')) }
+  ok(call(['up', '--session', 'one', '--no-serve']))
+  importSession(app, listing, { first: false })
+  assert.equal(existsSync(join(app, 'src', 'protos', 'home-2')), false)
+}))
+
+test('an import cut off before its mark resumes into the same slugs', () => projectFixture(({ project, app, call }) => {
+  const one = legacy(project, 'one', { protos: { home: {} } })
+  ok(call(['up', '--session', 'one', '--no-serve']))
+  const s = json(join(one, 'session.json')); delete s.migratedTo
+  put(join(one, 'session.json'), s)
+  ok(call(['up', '--session', 'one', '--no-serve']))
+  assert.equal(existsSync(join(app, 'src', 'protos', 'home-2')), false)
+  assert.equal(json(join(one, 'session.json')).migratedTo, '_project')
+}))
+
+test('one unreadable old app is skipped, the rest still come in and up still works', () => projectFixture(({ project, app, call }) => {
+  legacy(project, 'one', { protos: { home: {} } })
+  const bad = legacy(project, 'bad', { protos: { cart: {} }, extra: { createdAt: '2026-10-02T00:00:00.000Z' } })
+  put(join(bad, 'src', 'protos', 'cart', 'meta.ts'), 'export default { title: cart, }\n')
+  legacy(project, 'three', { protos: { menu: {} }, extra: { createdAt: '2026-10-03T00:00:00.000Z' } })
+  const r = call(['up', '--session', 'one', '--no-serve'])
+  ok(r)
+  assert.match(r.stdout, /skipped Session bad/)
+  assert.ok(existsSync(join(app, 'src', 'protos', 'menu', 'meta.ts')))
+}))
+
+test("another conversation is told once, on its next command, what the import renamed", () => projectFixture(({ project, call }) => {
+  legacy(project, 'one', { protos: { home: {} } })
+  legacy(project, 'two', { protos: { home: {} }, extra: { createdAt: '2026-10-02T00:00:00.000Z' } })
+  ok(call(['up', '--session', 'one', '--no-serve']))
+  const first = call(['url', '--session', 'two'])
+  ok(first)
+  assert.match(first.stdout, /renamed home → home-2/)
+  const again = call(['url', '--session', 'two'])
+  assert.doesNotMatch(again.stdout, /renamed home → home-2/)
+  assert.doesNotMatch(call(['url', '--session', 'one']).stdout, /moved into the project app/)
 }))

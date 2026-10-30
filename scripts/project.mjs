@@ -2,7 +2,7 @@
 // is listed in its registry, .proto/sessions.json, kept out of session.json because the page
 // hot-reloads that file and the registry changes on every command. Legacy apps (one per session,
 // .prototypes/<session>/) are found here for the import (scripts/import.mjs).
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const PROJECT_DIR = '_project'
@@ -30,6 +30,12 @@ export function locked(app, fn) {
     }
   }
   try { return fn() } finally { if (mine) rmSync(lock, { recursive: true, force: true }) }
+}
+
+/** A long hold (an import copying files) touches the lock, so others don't take it as left by a crash. */
+export function keepLock(app) {
+  const now = new Date()
+  try { utimesSync(join(app, '.proto', 'session.lock'), now, now) } catch { /* not held */ }
 }
 
 export const readProject = app => read(join(app, 'session.json'), null)

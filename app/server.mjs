@@ -261,7 +261,10 @@ const intakeView = () => { const d = intakeNow(); return d && Array.isArray(d.qu
 
 /** Where the inbox stands, for the page: what waits, whether an agent is listening, the batches' states. */
 export function inboxStatus() {
-  const waiter = readJson(join(inbox, 'waiter.json'), null)
+  // A background waiter of any conversation (one file each), or a session app's one from before.
+  let waiters = []
+  try { waiters = readdirSync(join(inbox, 'waiters')).filter(f => f.endsWith('.json')).map(f => readJson(join(inbox, 'waiters', f), null)) } catch { /* none */ }
+  const waiter = [readJson(join(inbox, 'waiter.json'), null), ...waiters].find(w => w && alive(w.pid)) ?? null
   const agent = readJson(join(inbox, 'agent.json'), null)
   const batches = [...list('new').map(id => [id, 'new']), ...list('taken').map(id => [id, 'taken'])].map(([id, where]) => {
     const b = readJson(join(inbox, where, id, 'batch.json'), null)
@@ -478,7 +481,7 @@ export function receive(data, root = dir, { check = false } = {}) {
     ...(list.every(c => c.done) ? { done: true } : {}),
   }
   // The conversation working on its first comment's prototype takes it (app/listener.mjs).
-  const owner = batchOwner(dir, batch)
+  const owner = batchOwner(root, batch)
   if (owner) batch.owner = owner
   const folder = join(inbox, '.incoming', id)
   mkdirSync(folder, { recursive: true })

@@ -49,7 +49,7 @@ export default defineConfig(async ({ mode }) => ({
     fs: {
       allow: [session.project, realpathSync(session.project)],
       // Keep Vite's default sensitive-file exclusions and the server-only wakeup credentials (one per conversation).
-      deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.proto/inbox/listener.json', '**/.proto/inbox/listeners/**'],
+      deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.proto/inbox/listener.json*', '**/.proto/inbox/listeners/**'],
     },
     // The server's own log and pid live in .proto/; changes there are not edits.
     watch: { ignored: ['**/.proto/**'] },

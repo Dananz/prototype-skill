@@ -2,7 +2,7 @@
 // prototypes it makes, and is listed in its registry. CLI only, no install, browser or server.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,6 +47,13 @@ test('up records the conversation that started the app', () => projectFixture(({
   assert.equal(json('session.json').conversation, 'one')
   ok(call(['up', '--session', 'two', '--no-serve']))
   assert.equal(json('session.json').conversation, 'two')
+}))
+
+test('up --stack on an existing project app says it is ignored', () => projectFixture(({ call }) => {
+  ok(call(['up', '--session', 'one', '--no-serve']))
+  const r = call(['up', '--session', 'two', '--no-serve', '--stack', 'vue'])
+  ok(r)
+  assert.match(r.stdout, /the project app is react; --stack only applies when it is made/)
 }))
 
 test('url prints the project app url for any session', () => projectFixture(({ call }) => {
@@ -104,7 +111,7 @@ test('same session adds as today', () => twoSessions(({ app, call }) => {
 }))
 
 // ---------- the project world: gc, rm, ls, shares and kits ----------
-import { utimesSync, writeFileSync, mkdirSync } from 'node:fs'
+import { utimesSync } from 'node:fs'
 import { shareSession } from '../app/share/publish.mjs'
 
 test('gc never deletes the project app', () => projectFixture(({ project, app, call }) => {
@@ -126,6 +133,31 @@ test("rm removes only this conversation's prototypes", () => twoSessions(({ app,
   assert.equal(existsSync(join(app, 'src', 'protos', 'cart')), false)
   assert.equal(existsSync(join(app, 'src', 'history', 'cart')), false)
   assert.equal('two' in JSON.parse(readFileSync(join(app, '.proto', 'sessions.json'), 'utf8')), false)
+}))
+
+test('rm keeps a prototype another conversation joined and works on now', () => twoSessions(({ app, call }) => {
+  ok(call(['add', 'cart', '--variants', 'A:One', '--session', 'two']))
+  ok(call(['add', 'cart', '--join', '--variants', 'B:Two', '--session', 'one']))
+  const r = call(['rm', '--session', 'two'])
+  ok(r)
+  assert.ok(existsSync(join(app, 'src', 'protos', 'cart', 'B.tsx')))
+  assert.match(r.stdout, /kept cart/)
+}))
+
+test("one conversation's waiter neither blocks another's nor takes its comments", () => twoSessions(({ app, call }) => {
+  ok(call(['add', 'cart', '--variants', 'A:One', '--session', 'two']))
+  const inbox = join(app, '.proto', 'inbox')
+  mkdirSync(join(inbox, 'waiters'), { recursive: true })
+  writeFileSync(join(inbox, 'waiters', 'two.json'), JSON.stringify({ pid: process.pid, at: new Date().toISOString() }))
+  mkdirSync(join(inbox, 'new', '20990101T000000-held'), { recursive: true })
+  writeFileSync(join(inbox, 'new', '20990101T000000-held', 'batch.json'), JSON.stringify({ id: '20990101T000000-held', owner: 'two', comments: [{ n: 1, route: 'cart/A', text: 'For two' }] }))
+  const r = call(['inbox', '--session', 'one'])
+  ok(r)
+  assert.ok(existsSync(join(inbox, 'new', '20990101T000000-held')), 'one took the batch two waits for')
+  assert.match(r.stdout, /1 batch held for two/)
+  const w = call(['inbox', '--wait', '--timeout', '.001', '--session', 'one'])
+  ok(w)
+  assert.match(w.stdout, /listening for comments/)
 }))
 
 test('ls shows the project, then each conversation', () => twoSessions(({ call }) => {
@@ -157,3 +189,13 @@ test('a kit whose look differs from the project gets its own scope', () => twoSe
   ok(call(['add', 'pay2', '--kit', '--variants', 'A:One', '--session', 'one']))
   assert.equal(readFileSync(join(app, 'src', 'theme.css'), 'utf8').match(/data-proto-theme="kit:main"/g).length, 1)
 }))
+
+test('a batch received for another app (a viewer comment taken by the CLI) is owned by its prototype', async () => {
+  const { receive } = await import('../app/server.mjs')
+  projectFixture(({ app, call }) => {
+    ok(call(['up', '--session', 'one', '--no-serve']))
+    ok(call(['add', 'home', '--variants', 'A:One', '--session', 'two']))
+    const { batch } = receive({ comments: [{ route: 'home/A', text: 'From a link' }] }, app)
+    assert.equal(batch.owner, 'two')
+  })
+})

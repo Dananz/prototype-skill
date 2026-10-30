@@ -3,8 +3,10 @@
 // value differs gets its own block, [data-proto-theme="<scope>"], which the variant's mount root
 // carries (meta.theme). Tailwind's utilities read tokens through var(), so the block re-colours them
 // there. An `@theme inline` token is written into the utilities themselves, so it can't be scoped: it
-// stays global and is listed. Other rules are kept once per distinct text, statements (@import,
-// @source, @plugin) once and on top. No CSS parser: a brace-aware scan is enough for these files.
+// stays global and is listed. Other rules work the same way by selector: the first theme's rule is
+// global and a later, different rule for that selector moves into the later scope (an at-rule block
+// can't be moved: both stay and it is listed). Statements (@import, @source, @plugin) come once and
+// on top. No CSS parser: a brace-aware scan is enough for these files.
 
 const strip = css => css.replace(/\/\*[\s\S]*?\*\//g, '')
 
@@ -49,19 +51,35 @@ function entries(body) {
   return out
 }
 
+const headOf = rule => rule.slice(0, rule.indexOf('{')).trim()
+// A rule moved into a scope: the page root (:root, html, body) becomes the scope's element, .dark (a
+// class on the page root) stays in front of it, and anything else is looked for inside it.
+function scopeRule(rule, head, scope) {
+  const at = `[data-proto-theme="${scope}"]`
+  const one = sel => /^(:root|html|body)$/.test(sel) ? at : /^(:root|html)[.:[]/.test(sel) ? `${sel} ${at}` : /^\.dark(\s|$)/.test(sel) ? sel.replace(/^\.dark/, `.dark ${at}`) : `${at} ${sel}`
+  return `${head.split(',').map(s => one(s.trim())).join(', ')} ${rule.slice(rule.indexOf('{'))}`
+}
+
 /**
  * @param {string} base the project app's theme.css as it is
  * @param {{ scope: string, css: string }[]} scopes in the order they are merged
  * @returns {{ css: string, conflicts: { token: string, scopes: string[] }[], inline: string[] }}
  */
 export function mergeThemes(base, scopes) {
-  const stmts = [], rules = [], tokens = new Map(), scoped = new Map(), conflicts = new Map(), inline = new Set()
+  const stmts = [], rules = [], tokens = new Map(), scoped = new Map(), conflicts = new Map(), inline = new Set(), ruleFrom = new Map()
   const add = (list, text) => { if (!list.includes(text)) list.push(text) }
   for (const { scope, css } of [{ scope: null, css: base }, ...scopes]) {
     for (const p of pieces(css)) {
       if (p.kind === 'stmt') add(stmts, p.text)
-      else if (p.kind === 'rule') add(rules, p.text)
-      else for (const [name, value] of entries(p.body)) {
+      else if (p.kind === 'rule') {
+        // A selector another theme already styles differently: the later one is scoped, as a token is.
+        const head = headOf(p.text), had = !rules.includes(p.text) && !head.startsWith('[data-proto-theme=') && rules.find(r => headOf(r) === head)
+        if (!scope || !had) { add(rules, p.text); ruleFrom.set(head, ruleFrom.get(head) ?? scope); continue }
+        const who = conflicts.get(head) || [ruleFrom.get(head)].filter(Boolean)
+        if (!who.includes(scope)) who.push(scope)
+        conflicts.set(head, who)
+        if (head.startsWith('@')) { inline.add(head); add(rules, p.text) } else add(rules, scopeRule(p.text, head, scope))
+      } else for (const [name, value] of entries(p.body)) {
         const had = tokens.get(name)
         if (!had) { tokens.set(name, { value, inline: p.inline, from: scope }); continue }
         if (had.value === value) continue

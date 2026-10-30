@@ -101,3 +101,31 @@ test('a scope resolved for a kit has its values in @theme and no scope blocks', 
   assert.doesNotMatch(out, /data-proto-theme/)
   assert.match(resolveTheme(merged, undefined), /--c: #111;/)
 })
+
+// Rules other than @theme: the template puts the font on `.app { --font-sans: … }`, shadcn themes
+// keep variables in :root and .dark. A later scope's different rule for the same selector is scoped,
+// so the first design keeps its look and the later one keeps its own.
+test('same selector, different rule: the first stays global, the later is scoped', () => {
+  const { css, conflicts } = mergeThemes('', [
+    { scope: 's1', css: '.app { --font-sans: "Rubik", "Arial Hebrew"; }\n:root { --radius: 8px; }\n.dark { --bg: #000; }' },
+    { scope: 's2', css: '.app { --font-sans: "Inter"; }\n:root { --radius: 4px; }\n.dark { --bg: #111; }\nh1, .app h2 { font-weight: 700; }' },
+  ])
+  const heads = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(?:^|\n)([^{}@\n][^{}\n]*?)\s*\{/g)].map(m => m[1].trim())
+  assert.equal(heads.filter(h => h === '.app').length, 1, `one global .app rule:\n${css}`)
+  assert.match(css, /\.app\s*\{\s*--font-sans:\s*"Rubik", "Arial Hebrew";\s*\}/)
+  assert.match(css, /\[data-proto-theme="s2"\] \.app\s*\{\s*--font-sans:\s*"Inter";\s*\}/)
+  assert.match(css, /\[data-proto-theme="s2"\]\s*\{\s*--radius:\s*4px;\s*\}/, ':root becomes the scope itself')
+  assert.match(css, /\.dark \[data-proto-theme="s2"\]\s*\{\s*--bg:\s*#111;\s*\}/, '.dark (on the page root) scopes its descendants')
+  assert.match(css, /(?:^|\n)h1, \.app h2\s*\{/, 'a selector nobody had stays global')
+  assert.ok(conflicts.some(c => c.token === '.app' && c.scopes.includes('s2')), JSON.stringify(conflicts))
+  assert.ok(balanced(css))
+})
+
+test('an at-rule block that differs cannot be scoped: kept and reported', () => {
+  const { css, inline } = mergeThemes('', [
+    { scope: 's1', css: '@layer base { body { color: red; } }' },
+    { scope: 's2', css: '@layer base { body { color: blue; } }' },
+  ])
+  assert.match(css, /color: red/); assert.match(css, /color: blue/)
+  assert.ok(inline.includes('@layer base'), JSON.stringify(inline))
+})
