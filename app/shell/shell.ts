@@ -678,8 +678,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const onMap = () => treeOn && !framed && st.place.view !== 'variant'
   // Focus on a wide page with the tree on stays on the map: the design's view sits in place on its
   // board (the map's slot) and the camera carries it. A tool that takes the stage (Compare, History,
-  // Autoplay, All), and a phone, keep the stage of their own.
-  const inPlace = () => treeOn && !framed && !phoneMq.matches && st.place.view === 'variant' && !st.place.tool
+  // Autoplay, All), a chosen device size, and a phone, keep the stage of their own.
+  const inPlace = () => treeOn && !framed && !phoneMq.matches && st.place.view === 'variant' && !st.place.tool && !viewOn()
   let slotEl: HTMLElement | null = null
   /** Puts the current layer where it shows: in the focused board's slot, else in the stage's layers. */
   function placeLayer() {
@@ -698,6 +698,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     setDesign: id => { mapDesign = id; paintMap() },
     ask: async (on, action, text) => { await comments.act.decide(on, action, { body: [text], tags: [] }) },
     slot: el => { slotEl = el; placeLayer() },
+    leave: () => { if (inPlace()) go({ view: 'session' }) },
   }
   function paintMap() {
     const show = onMap() || inPlace()

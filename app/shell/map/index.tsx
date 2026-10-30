@@ -32,6 +32,8 @@ export type MapApi = {
   open(route: string): void
   /** The focused board's slot, where the page puts its view of the design (null when none). */
   slot?(el: HTMLElement | null): void
+  /** Ends Focus where the map is (zoomed out past the focused board). */
+  leave?(): void
   mount(el: HTMLElement, component: unknown): () => void
   /** The camera's last place, kept across Focus so leaving it flies back to where the map was. */
   camera: { x: number; y: number; z: number } | null
@@ -45,6 +47,8 @@ export type MapApi = {
 type Note = { kind: 'line' | 'link'; a: Board; b: Board } | { kind: 'flow'; design: string; flow: string; a: Board }
 type Cam = { x: number; y: number; z: number }
 const MIN_Z = 0.02, MAX_Z = 2
+/** How far under its fit the design in Focus is zoomed out before the map takes over again. */
+const OUT = 0.55
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 /** Labels keep one size on screen (1 / zoom), shrinking to 60 % when the map is zoomed far out (a phone fitting it all), so they never cover the boards. */
 const labelZ = (z: number) => String(clamp(z / 0.2, 0.6, 1) / z)
@@ -167,6 +171,7 @@ function MapView({ api }: { api: MapApi }) {
   // How far the last press moved: a drag that ends on a board doesn't select it.
   const dragged = useRef(0)
   const [size, setSize] = useState({ w: 1, h: 1 })
+  const sizeRef = useRef(size); sizeRef.current = size
 
   const apply = useCallback(() => {
     const c = cam.current, el = layer.current
@@ -194,7 +199,14 @@ function MapView({ api }: { api: MapApi }) {
     requestAnimationFrame(step)
   }
   const fitAll = () => fly(fitTo({ x: 0, y: 0, w: Math.max(world.w, 1), h: Math.max(world.h, 1) }, 0.92))
-  const zoomAt = (f: number, px: number, py: number) => { const c = cam.current, z = clamp(c.z * f, MIN_Z, MAX_Z); set({ z, x: px - (px - c.x) * (z / c.z), y: py - (py - c.y) * (z / c.z) }) }
+  const zoomAt = (f: number, px: number, py: number) => {
+    const c = cam.current, z = clamp(c.z * f, MIN_Z, MAX_Z)
+    set({ z, x: px - (px - c.x) * (z / c.z), y: py - (py - c.y) * (z / c.z) })
+    // Zoomed out well past the design in Focus: that is the map again, right where the camera is.
+    const fb = focusRef.current
+    const sz = sizeRef.current
+    if (fb && f < 1 && z < Math.min(sz.w / fb.w, sz.h / fb.h) * OUT) { before.current = null; was.current = ''; api.leave?.() }
+  }
 
   useLayoutEffect(() => {
     const el = view.current!
@@ -205,7 +217,7 @@ function MapView({ api }: { api: MapApi }) {
   // First sight: back from Focus, the map flies out from the screen to where it was; else it fits.
   const placed = useRef(false)
   // The focus seen last, and the camera before Focus took it (where leaving it flies back to).
-  const was = useRef(''), before = useRef<Cam | null>(null)
+  const was = useRef(''), before = useRef<Cam | null>(null), focusRef = useRef<Board | null>(null)
   useEffect(() => {
     if (placed.current || size.w < 2 || !world.boards.length) return
     placed.current = true
@@ -305,16 +317,22 @@ function MapView({ api }: { api: MapApi }) {
   const variantOf = (b: Board) => input.protos.find(p => p.id === b.slug)?.variants.find(v => v.id === b.letter)
   const selBoard = world.boards.find(b => b.key === sel)
   const focusBoard = input.focus ? world.boards.find(b => b.kind === 'screen' && b.route === input.focus) ?? world.boards.find(b => b.route === input.focus) : undefined
+  focusRef.current = focusBoard ?? null
   // Focus moves the camera: onto the board it takes, and back to where the map was when it ends.
   useEffect(() => {
-    if (!placed.current) return
+    // Hidden (a device size or a tool has the stage) the map has no size to fly in: it waits as it is.
+    if (!placed.current || input.hidden || size.w < 2) return
     const now = input.focus ?? ''
     if (now === was.current) return
     if (!was.current) before.current = { ...cam.current }
     was.current = now
     if (focusBoard) fly(fitTo(focusBoard, 1), 420)
     else if (before.current) { fly(before.current, 450); before.current = null }
-  }, [input.focus, focusBoard?.key]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [input.focus, focusBoard?.key, input.hidden, size.w < 2]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The stage resized (the window, the sidebar, the map shown again) with a design in Focus: it fits again.
+  useEffect(() => {
+    if (placed.current && !input.hidden && size.w >= 2 && focusBoard && was.current === input.focus) set(fitTo(focusBoard, 1))
+  }, [size.w, size.h]) // eslint-disable-line react-hooks/exhaustive-deps
   const slot = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     api.slot?.(slot.current)

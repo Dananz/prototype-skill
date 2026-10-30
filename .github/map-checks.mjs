@@ -146,6 +146,12 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await until(page, `!!document.querySelector('[data-map-slot="mhome/B"] [data-shoot="mhome-live"]')`, 'Focus should draw the screen in place on the map')
     assert(await page.run(`!document.querySelector('[data-map-host]').hidden && document.querySelector('[data-layers]').children.length === 0`), 'Focus should keep the map, with the view in the board, not on a stage of its own')
     assert(await page.run(`!document.querySelector('[data-map-board="screen:mhome"] [data-shoot="mhome-live"]')`), 'the board under Focus should not mount the screen a second time')
+    // Zoomed out well past it (⌘/Ctrl + wheel over the map), Focus ends where the camera is.
+    await page.run(`(() => { const m = document.querySelector('[data-map]'); for (let i = 0; i < 12; i++) m.dispatchEvent(new WheelEvent('wheel', { deltaY: 60, ctrlKey: true, clientX: 300, clientY: 300, bubbles: true, cancelable: true })) })()`)
+    await until(page, `location.pathname === '/' && !document.querySelector('[data-map-slot]')`, 'zooming out past the screen should leave Focus for the map')
+    // M opens the screen last in Focus, and M again leaves it.
+    await page.run(`document.body.focus(); dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }))`)
+    await until(page, `location.pathname === '/mhome/B' && !!document.querySelector('[data-map-slot="mhome/B"]')`, 'M should open the screen last in Focus')
     await page.run(`document.body.focus(); dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }))`)
     await until(page, `location.pathname === '/' && !document.querySelector('[data-map-slot]')`, 'M should leave Focus for the map')
     await slow(page, `!!document.querySelector('[data-map-board="screen:mhome"] img[data-map-still]')`, 'back on the map the screen shows its still')
