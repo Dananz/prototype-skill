@@ -1864,6 +1864,7 @@ const ACTIONS = {
   'copy-options': 'add useCopy for this variant only: headline and primary text by default, or the requested lines; keep current words first, add 2 to 4 alternatives; reply --done after checking fit. On an element with quoted words (highlighted in the page): options for those words only, as one useCopy line on that element (data-copy)',
   copy: 'make this the line\'s text in the variant: put it first in that line\'s useCopy options',
   'share-fix': 'asked from a share review, before the link goes out: change the prototype so the findings quoted in the text are gone, the way the user\'s words say (inline or swap an asset, use a hosted font, take out a secret); never by quieting the review. Check it with proto share file (it prints the same review without publishing), then reply --done saying what changed: the user makes the link again from the page. Do not publish it yourself unless they ask',
+  'build-screen': 'a <Go to="<slug>"> link on this variant leads to a screen not built yet (the text names the slug): add it to the same design and flow with proto add <slug> --design <id> --variants "…" (its first option stands in until a pick), written on the design\'s shared parts, then reply --done naming it',
   intake: 'the answers to your questions: plan the directions from them (a question left to you is yours to decide; say what you picked), then reply --done',
 }
 const FAILED = {

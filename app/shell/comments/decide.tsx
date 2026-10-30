@@ -249,11 +249,14 @@ export function DecidePop({ open, anchor, subject, onClose, at: pointer, onComme
     addEventListener('resize', f)
     return () => removeEventListener('resize', f)
   }, [open])
-  const at = open && !pointer ? anchor()?.getBoundingClientRect() : null
+  const from = open && !pointer ? anchor() : null, at = from?.getBoundingClientRect() ?? null
   if (!open || !subject || (!at && !pointer)) return null
+  // From the tool strip down the stage's side it opens beside its button.
+  const beside = !!from?.closest('[data-strip]')
   // A row's menu opens where it was asked for (its ⋯, or the pointer), kept inside the window; the bar's under its button.
   const place = pointer
     ? { top: Math.max(8, Math.min(pointer.y, innerHeight - 420)), left: Math.max(8, Math.min(pointer.x, innerWidth - 328)) }
+    : beside ? (rtl ? { top: Math.min(at!.top, innerHeight - 420), right: innerWidth - at!.left + 12 } : { top: Math.min(at!.top, innerHeight - 420), left: at!.right + 12 })
     : rtl ? { top: at!.bottom + 6, left: Math.max(8, at!.left) } : { top: at!.bottom + 6, right: Math.max(8, innerWidth - at!.right) }
   // The shell closes it on Esc and on a click outside. A click inside goes no further: a choice
   // redraws the menu under it, and the shell would take a click on a removed button for one outside.

@@ -59,7 +59,7 @@ export type Held = Draft & { target?: Target; time?: Time; proto?: string }
  * it. It goes to Claude as a comment with this and no element; its body is the optional note. A
  * copy choice (copy.tsx) is one too, on the element of the line it changes.
  */
-export type Action = 'pick' | 'unpick' | 'more' | 'more-variants' | 'build' | 'copy' | 'try-it' | 'copy-options' | 'share-fix'
+export type Action = 'pick' | 'unpick' | 'more' | 'more-variants' | 'build' | 'copy' | 'try-it' | 'copy-options' | 'share-fix' | 'build-screen'
 
 export type Item = Draft & {
   id: string

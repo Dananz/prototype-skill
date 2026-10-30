@@ -11,7 +11,7 @@
 // First: it wraps the page listeners every later import, and every design, adds (see quiet.ts).
 import { listen, quiet } from './quiet'
 import { agentName, type Agent } from './agent'
-import { variantLabel, variantRef } from './variants'
+import { numberOf, variantLabel, variantRef } from './variants'
 import { VirtualList, virtualHTML, scrollParent, VIRTUAL_THRESHOLD } from './virtual'
 import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } from './ui'
 import { BUILDING_CLASS, ERROR_CLASS, ownerOfPath, refOfPath } from './building'
@@ -37,6 +37,8 @@ import type { Intake } from './intake/types'
 import { createSettings, type Appearance } from './settings'
 import { mountTree, type TreeInput } from './tree/index'
 import { mountMap, type MapApi, type MapInput } from './map/index'
+import { createJump } from './jump'
+import { jumpItems, whereOf } from './where'
 import { followSession, rtl, t, tn, day } from './i18n'
 import { createShare } from './share'
 import { createShareLink } from './share-link'
@@ -550,16 +552,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div class="flex min-w-0 flex-1 flex-col">
       <header data-bar class="relative z-30 ${framed ? 'hidden' : 'flex'} h-12 shrink-0 items-center gap-1 border-b border-black/[.07] px-2 dark:border-white/10"></header>
       <div data-zone>
-        <div data-layers class="absolute inset-0 overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-layers class="absolute inset-0 overflow-hidden" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-map-host hidden class="absolute inset-0 z-[4]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-view hidden class="absolute inset-0 z-[5]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-island-host class="pointer-events-none absolute inset-0 z-[17]" style="inset-inline-end:var(--hw,0px)"></div>
+        <div data-view hidden class="absolute inset-0 z-[5]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-island-host class="pointer-events-none absolute inset-0 z-[17]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px)"></div>
+        <div data-strip hidden class="absolute start-3 top-3 z-[20]"></div>
         <div data-motion-dock class="absolute start-0 z-[18]" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-copy-bar class="absolute start-0 z-[14]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px))"></div>
         <div data-copy-sheet class="pointer-events-none absolute inset-0 z-[19] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-overlay></div>
+        <div data-go-chip hidden class="absolute inset-x-0 top-3 z-[30] mx-auto w-fit max-w-[90%]"></div>
         <div data-go-note role="status" hidden class="pointer-events-none absolute inset-x-0 top-3 z-[30] mx-auto w-fit max-w-[90%] truncate rounded-full bg-zinc-900 px-3 py-1.5 text-[12px] text-white shadow-lg dark:bg-white dark:text-zinc-900"></div>
         <div data-pill></div>
         <div data-scale-card></div>
@@ -614,14 +618,37 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   if (!framed) addEventListener('proto:go', e => {
     const to = String((e as CustomEvent).detail?.to ?? '')
     const target = all.find(p => p.id === to && !p.archived)
-    if (!target) return sayGo(t('{name} is not built yet', { name: to }))
+    const from = st.place.view === 'variant' ? `${st.place.proto}/${st.place.variant}` : ''
+    // With the project tree on, a link asks first (a chip over the stage), and one to a screen not
+    // built yet offers to ask the agent for it.
+    if (!target) return treeOn && from ? showChip({ from, to, route: '' }) : sayGo(t('{name} is not built yet', { name: to }))
     const here = st.place.view === 'session' ? null : st.place.proto
     const screensOf = (d: Design) => d.flows.flatMap(f => f.screens)
     const mine = here ? designs.find(d => screensOf(d).some(x => x.split('/')[0] === here)) : null
     const entry = mine ? screensOf(mine).find(x => x.split('/')[0] === to) : to
     if (!entry) return sayGo(t('{name} is not a screen of this design', { name: to }))
-    go({ view: 'variant', proto: to, variant: entry.split('/')[1] || target.picked || target.variants[0]?.id || 'A' })
+    const route = `${to}/${entry.split('/')[1] || target.picked || target.variants[0]?.id || 'A'}`
+    if (treeOn && from) return showChip({ from, to, route })
+    const [proto, variant] = route.split('/')
+    go({ view: 'variant', proto, variant })
   })
+  const goChip = root.querySelector<HTMLElement>('[data-go-chip]')!
+  let chip: { from: string; to: string; route: string } | null = null
+  function showChip(next: typeof chip) { chip = next; paintChip() }
+  function paintChip() {
+    const pl = st.place
+    if (chip && (pl.view !== 'variant' || `${pl.proto}/${pl.variant}` !== chip.from)) chip = null
+    goChip.hidden = !chip
+    if (!chip) { goChip.innerHTML = ''; return }
+    const q = all.find(p => p.id === chip!.to), letter = chip.route.split('/')[1]
+    const state = !q ? t('{name} is not built yet', { name: chip.to })
+      : q.picked === letter ? t('Picked #{n}', { n: numberOf(letter) }) : !q.picked ? t('#1 stands in until one is picked') : `#${numberOf(letter)}`
+    const pill = 'h-8 shrink-0 rounded-full px-3 text-[12px] font-medium'
+    goChip.innerHTML = `<div role="status" class="flex items-center gap-2 rounded-full bg-white p-1 ps-3 text-[12px] text-zinc-600 shadow-[0_8px_24px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-300 dark:ring-white/10">
+      ${q ? `<span dir="auto" class="truncate">${esc(state)}</span><button data-act="go-chip:go" data-shoot="go-chip-go" class="${pill} bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover">${esc(t('Go to {name}', { name: q.title }))}</button>`
+        : `<span dir="auto" class="truncate">${esc(state)}</span><button data-act="go-chip:build" data-shoot="go-chip-build" class="${pill} bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover">${esc(t('Ask {agent} to build it', { agent: agentName(session.agent) }))}</button>`}
+      <button data-act="go-chip:close" aria-label="${t('Close')}" class="grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:bg-zinc-900/5 dark:hover:bg-white/10">${ic('x', 'size-3.5')}</button></div>`
+  }
   // The map (map/index.tsx): with the project tree on, it is the overview, in place of the lobbies.
   const mapHost = root.querySelector<HTMLElement>('[data-map-host]')!
   const mapWatchers = new Set<() => void>()
@@ -645,6 +672,48 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     mapSnap = next
     if (!mapMounted && show) { mapMounted = true; mountMap(mapHost, mapApi) }
     mapWatchers.forEach(f => f())
+  }
+  // The tool strip (tree mode, a wide page, in a screen): down the stage's start, as in a drawing
+  // app. Its head is how you work on the screen (comment, walk its flow, decide), then the layout,
+  // then the design's own tools. Each is the bar's button drawn upright; its menu opens beside it.
+  const strip = root.querySelector<HTMLElement>('[data-strip]')!
+  const stripOn = () => treeOn && !framed && !st.focus && !phoneMq.matches && st.place.view === 'variant'
+  function paintStrip(deviceBtn: () => string, replayBtn: () => string) {
+    const on = stripOn()
+    strip.hidden = !on
+    zone.style.setProperty('--strip-w', on ? '4rem' : '0px')
+    if (!on) { strip.innerHTML = ''; return }
+    const pl = st.place, w = pl.view === 'variant' ? whereOf(all, designs, { proto: pl.proto, variant: pl.variant }) : null
+    const picking = comments.counts().picking
+    const tool = (act: string, shoot: string, icon: string, label: string, key: string, pressed = false) => `<button data-act="${act}" data-shoot="${shoot}" aria-pressed="${pressed}" aria-label="${label}" title="${key ? `${label} · ${key}` : label}" class="${IB} ${pressed ? ON : ''}">${ic(icon)}</button>`
+    const tour = w?.flow && w.flow.routes.length > 1 ? tool('tour', 'strip-tour', 'signpost', t('Walk this flow from its first screen'), '') : ''
+    // Decide: the bar's button is a dot and a word; upright it is the pick's check, filled once picked.
+    const d = decideOf()
+    const decide = d ? `<button data-act="open:decide" data-decide-btn data-shoot="strip-decide" aria-haspopup="menu" aria-expanded="${st.open === 'decide'}" aria-label="${d.picked ? t('Picked') : t('Decide')}" title="${d.picked ? t('Picked') : t('Decide')} · P" class="${IB} ${st.open === 'decide' ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}">${ic(d.picked ? 'picked' : 'pick')}</button>` : ''
+    const groups = [
+      [tool('comment:toggle', 'strip-comment', picking ? 'select-on' : 'select', t('Comment'), 'C', picking), tour, decide],
+      [deviceBtn()],
+      [tweaksBtn(), copyBtn(), motionBtn(), replayBtn()],
+    ].map(g => g.filter(Boolean).join('')).filter(Boolean)
+    strip.innerHTML = `<div data-strip-tools class="flex flex-col items-center gap-0.5 rounded-2xl bg-white p-1 shadow-[0_8px_24px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:ring-white/10
+      [&_.relative.flex]:flex-col [&_button>span:not(.absolute)]:!hidden [&_button_kbd]:!hidden [&_button>svg+svg]:!hidden [&_button]:!px-0 [&_button]:!size-9 [&_button]:!rounded-xl
+      [&_[data-pop]]:!top-0 [&_[data-pop]]:!end-auto [&_[data-pop]]:!start-[calc(100%+.75rem)]">${groups.join('<span class="my-1 h-px w-5 bg-zinc-900/10 dark:bg-white/10"></span>')}</div>`
+  }
+  /** A button of the chrome, in the bar or the strip: what a menu opens from. */
+  const chromeEl = (sel: string) => [bar.querySelector<HTMLElement>(sel), strip.querySelector<HTMLElement>(sel)].find(b => !!b?.offsetParent) ?? null
+  // Jump (⌘K): one field over the whole project (jump.tsx), drawn once per opening.
+  const drawJump = createJump()
+  let jumpOpen = false
+  function openJump() {
+    if (jumpOpen) return
+    jumpOpen = true
+    st.open = null; render()
+    const back = document.activeElement as HTMLElement | null, pl = st.place
+    drawJump({
+      items: jumpItems(all, designs), here: pl.view === 'variant' ? `${pl.proto}/${pl.variant}` : '',
+      onGo: route => { const [proto, variant] = route.split('/'); go({ view: 'variant', proto, variant }) },
+      onClose: () => { jumpOpen = false; drawJump(null); if (back?.isConnected) back.focus({ preventScroll: true }) },
+    })
   }
   let treeMounted = false
   function mountTreeOnce() {
@@ -1363,6 +1432,25 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           </span>${ic('chev', `size-3.5 shrink-0 text-zinc-400 transition-transform ${opened('switch') ? 'rotate-180' : ''}`)}</button>
         ${pop(opened('switch'), miller(), 'start-0 top-11')}</div>`
     const stepper = v && vs.length > 1 ? `<button data-act="step:-1" aria-label="${t('Previous variant')}" title="${t('Previous variant · ←')}" class="${IB} shrink-0">${ic('left')}</button><span class="w-9 shrink-0 text-center text-xs tabular-nums text-zinc-500">${at + 1}<span class="text-zinc-400 dark:text-zinc-600">/${vs.length}</span></span><button data-act="step:1" aria-label="${t('Next variant')}" title="${t('Next variant · →')}" class="${IB} shrink-0">${ic('right')}</button>` : ''
+    // With the project tree on, the bar only says where you are (the crumb walks the flow), with
+    // Jump and ⋯; the design's tools move to the strip down the stage's side (paintStrip).
+    if (treeOn && !framed) {
+      const sep = ic(rtl ? 'left' : 'right', 'size-3 shrink-0 text-zinc-300 dark:text-zinc-600')
+      const goTo = (route: string) => { const [slug, letter] = route.split('/'); return `pv:${esc(slug)}:${esc(letter)}` }
+      const w = p && vid ? whereOf(all, designs, { proto: p.id, variant: vid }) : null
+      const flowArrow = (d: -1 | 1) => { const r = w?.flow?.routes[w.at + d]; return `<button ${r ? `data-act="${goTo(r)}"` : 'disabled'} data-crumb-step="${d}" aria-label="${d < 0 ? t('Previous screen in the flow') : t('Next screen in the flow')}" title="${d < 0 ? t('Previous screen in the flow') : t('Next screen in the flow')}" class="grid size-7 shrink-0 place-items-center rounded-md text-zinc-400 hover:bg-zinc-900/5 hover:text-zinc-900 disabled:opacity-25 dark:hover:bg-white/10 dark:hover:text-white">${ic(d < 0 ? (rtl ? 'right' : 'left') : (rtl ? 'left' : 'right'), 'size-3.5')}</button>` }
+      const toMap = (label: string, cls: string) => `<button data-act="lobby:session" data-crumb-map class="min-w-0 truncate rounded-md px-1.5 py-1 hover:bg-zinc-900/5 dark:hover:bg-white/10 ${cls}"><span dir="auto">${esc(label)}</span></button>`
+      const option = (q: Proto) => `<b class="shrink-0">${variantRef(q, vid)}</b>${q.picked === vid ? ic('check', `size-3.5 shrink-0 ${PICK}`) : ''}`
+      const crumb = !p || view !== 'variant' ? `${toMap(session.name, 'font-semibold')}${sep}<span class="shrink-0 text-zinc-500">${t('Map')}</span>`
+        : w?.design && w.flow && w.screen ? `${toMap(w.design.title, 'font-semibold')}${sep}<span dir="auto" class="min-w-0 shrink truncate text-zinc-500">${esc(w.flow.name)}</span>${sep}
+            ${flowArrow(-1)}<button data-act="${goTo(w.flow.routes[w.at])}" data-crumb-screen class="min-w-0 truncate rounded-md px-1 py-1 font-medium hover:bg-zinc-900/5 dark:hover:bg-white/10"><span dir="auto">${esc(w.screen.title)}</span></button><span class="shrink-0 text-[11px] tabular-nums text-zinc-400">${w.at + 1}/${w.flow.routes.length}</span>${flowArrow(1)}
+            ${w.exploration ? `${sep}<span dir="auto" class="min-w-0 truncate font-medium">${esc(w.exploration.title)}</span>${option(w.exploration)}` : option(p)}`
+        : `${toMap(t('Explorations on no screen'), 'text-zinc-500')}${sep}<span dir="auto" class="min-w-0 truncate font-medium">${esc(p.title)}</span>${option(p)}`
+      const jumpBtn = `<button data-act="jump" data-shoot="jump" aria-label="${t('Jump to')} (⌘K)" title="${t('Jump to')} · ⌘K" class="${IB} shrink-0">${ic('search')}<kbd dir="ltr" class="hidden font-sans text-[11px] text-zinc-400 lg:inline">⌘K</kbd></button>`
+      keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
+        <nav data-crumb aria-label="${t('Where you are')}" class="flex min-w-0 items-center gap-0.5 text-sm">${crumb}</nav>
+        <div class="ms-auto flex shrink-0 items-center gap-1">${stepper}${stepper ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}${jumpBtn}${shareBtn()}${moreBtn()}</div></div>`)
+    } else
     keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
       ${switcher}
       <div class="ms-auto flex shrink-0 items-center gap-1">
@@ -1370,6 +1458,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${replayBtn()}${deviceBtn()}${commentBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${shareBtn()}${moreBtn()}
       </div></div>`)
     menus = { protos: drill(), session: '' }
+    paintStrip(deviceBtn, replayBtn)
+    paintChip()
 
     // The switcher's dropdown: one column per level, scrolled to the last, and what is shown
     // described beside them.
@@ -2055,6 +2145,23 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'lobby': return arg === 'session' ? go({ view: 'session' }) : go({ view: 'proto', proto: arg2 || p!.id })
       case 'proto': return openProto(arg)
       case 'pv': return go({ view: 'variant', proto: arg, variant: arg2 })
+      case 'jump': return openJump()
+      case 'go-chip': {
+        const c = chip
+        chip = null; paintChip()
+        if (!c || arg === 'close') return
+        if (arg === 'go') { const [proto, variant] = c.route.split('/'); return go({ view: 'variant', proto, variant }) }
+        const [proto, variant] = c.from.split('/')
+        void comments.act.decide({ proto, variant }, 'build-screen', { body: [`Build the screen ${c.to}: a <Go to="${c.to}"> link on this variant leads to it.`], tags: [] })
+          .then(() => sayGo(t('Asked {agent} to build {name}', { agent: agentName(session.agent), name: c.to })), () => sayGo(t('Could not send it. Try again.')))
+        return
+      }
+      case 'tour': {
+        const w = here ? whereOf(all, designs, here) : null, first = w?.flow?.routes[0]
+        if (!first) return
+        const [proto, variant] = first.split('/')
+        return go({ view: 'variant', proto, variant })
+      }
       // In the columns: a variant (kept open when something was built from it) or a prototype.
       case 'mv': { const q = byId(arg); keepOpen = !!q && kidsOf(q, arg2).length > 0; stay = !keepOpen; return go(q ? keepIn(q, arg2) : { view: 'variant', proto: arg, variant: arg2 }) }
       case 'mp': keepOpen = true; return go({ view: 'proto', proto: arg })
@@ -2246,6 +2353,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (settingsOpen || shareOpen || linkOpen) return
     if (resetViewKey(e)) return
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); return act('side', (wide() ? st.side : st.drawer) ? '0' : '1', '') }
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k' && treeOn && !framed) { e.preventDefault(); return openJump() }
     // Cmd or Ctrl Enter sends what's ready to Claude, from anywhere but a field of the design's own.
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
     if (e.key === 'Escape') {
@@ -2829,7 +2937,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // The button is redrawn with the bar, so the menu finds it again each time it is drawn.
   const paintDecide = () => drawDecide({
     open: st.open === 'decide', subject: decideOf(),
-    anchor: () => { const b = bar.querySelector<HTMLElement>('[data-decide-btn]'); return b?.offsetParent ? b : null },
+    anchor: () => chromeEl('[data-decide-btn]'),
     onClose: () => { if (st.open === 'decide') { st.open = null; render() } },
   })
 
@@ -3140,13 +3248,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onReset: (id?: string) => { if (host && host === toolHost()) tweaks.reset(host, id) },
     }
     drawTweaks(props)
-    const btn = bar.querySelector<HTMLElement>('[data-act="open:tweaks"]')
+    const btn = chromeEl('[data-act="open:tweaks"]')
     const popOn = st.open === 'tweaks' && !phoneMq.matches && fields.length > 0 && !!btn
     tweaksPop.hidden = !popOn
     if (popOn) {
       const r = btn!.getBoundingClientRect()
-      tweaksPop.style.top = `${r.bottom + 8}px`
-      tweaksPop.style.left = `${Math.max(8, Math.min(r.right - 320, innerWidth - 328))}px`
+      // From the strip it opens beside it; from the bar, under its button.
+      if (btn!.closest('[data-strip]')) { tweaksPop.style.top = `${r.top}px`; tweaksPop.style.left = `${rtl ? Math.max(8, r.left - 332) : r.right + 12}px` }
+      else { tweaksPop.style.top = `${r.bottom + 8}px`; tweaksPop.style.left = `${Math.max(8, Math.min(r.right - 320, innerWidth - 328))}px` }
     } else if (st.open === 'tweaks' && !fields.length) st.open = null
     const open = phoneMq.matches && tweaksOpen && fields.length > 0
     if (open) tweaksUp = true
