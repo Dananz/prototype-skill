@@ -128,9 +128,11 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await until(page, `!document.querySelector('[data-map-board="screen:mother"]') && !!document.querySelector('[data-map-board="screen:mhome"]')`, 'the filter should show one design')
     await page.run(`(() => { const s = document.querySelector('[data-map-design]'); s.value = ''; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
 
-    // Zoomed into the home screen, its live preview draws.
+    // Zoomed into the home screen, its live preview draws. The overview hidden under the map goes at
+    // once, not faded over the screen.
     await page.run(`document.querySelector('[data-map-board="screen:mhome"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`)
     await until(page, `location.pathname === '/mhome/B'`, 'a double click should open the screen')
+    assert(await page.run(`document.querySelector('[data-layers]').children.length === 1`), `the overview under the map should not fade over the screen (${await page.run(`document.querySelector('[data-layers]').children.length`)} layers)`)
     assert(await page.run(`document.querySelector('[data-map-host]').hidden`), 'Focus should hide the map')
     await page.run(`document.body.focus(); dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }))`)
     await until(page, `!document.querySelector('[data-map-host]').hidden`, 'M should go back to the map')

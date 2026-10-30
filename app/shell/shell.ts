@@ -1127,6 +1127,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const scrollerOf = (l: Layer) => l.el.firstElementChild as HTMLElement | null
   function show(fade: boolean) {
     healSizes()
+    // Under the map (tree on) the layers are hidden: what was there was never seen, so it goes at once.
+    const unseen = layers.style.visibility === 'hidden'
     if (layer && lobbyKey) lobbyScroll.set(lobbyKey, scrollerOf(layer)?.scrollTop ?? 0)
     // On a phone the design leaving goes before the next one mounts, with no crossfade: Safari
     // there kills a page that holds two heavy designs at once (3D, big photos), and reloads it.
@@ -1138,7 +1140,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     layers.prepend(next.el)
     // The new design reaches its state under the old one, which then fades out on top. Set up
     // before the new one is settled, so the old one still goes when that throws.
-    if (prev) {
+    if (prev && unseen) { prev.el.remove(); prev.dispose() }
+    else if (prev) {
       prev.el.inert = true
       const drop = () => { prev.el.remove(); prev.dispose() }
       Promise.race([next.ready, wait(1500)]).then(() => (fade ? fadeOut(prev.el, drop) : drop()))
