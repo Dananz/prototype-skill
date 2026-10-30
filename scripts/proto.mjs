@@ -110,7 +110,8 @@ import { report as reportShared } from '../app/share/owner.mjs'
 import { sharedLines } from '../app/share/viewer-text.mjs'
 import { BASE, SHELL, STACKS, syncApp } from './app-sync.mjs'
 import { skillUpdate } from './self-update.mjs'
-import { locked as lockApp, projectApp, registerSession } from './project.mjs'
+import { legacySessions, locked as lockApp, projectApp, registerSession } from './project.mjs'
+import { importSession } from './import.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 // The languages the page speaks (app/shell/i18n.ts). --lang sets the session's: the language the
@@ -407,6 +408,7 @@ async function up() {
   const project = projectRoot()
   if (!existsSync(sessionFile(dir))) scaffold(dir, project)
   else if (!flags['no-serve']) await update(dir)
+  const depsMoved = await importLegacy(dir, project)
   beat(dir)
   let s = readSession(dir)
   // --name names this conversation; the page's title is the project's.
@@ -414,7 +416,7 @@ async function up() {
   if (langFlag() && langFlag() !== (s.lang ?? 'en')) s = patchSession(dir, { lang: langFlag() })
   // --no-serve: the app and the registry only, no install, server or tailnet (the CLI checks).
   if (flags['no-serve']) return console.log(`dir ${dir}`)
-  if (!existsSync(join(dir, 'node_modules', 'vite'))) install(dir)
+  if (!existsSync(join(dir, 'node_modules', 'vite')) || depsMoved) install(dir)
 
   if (!await running(s)) {
     const port = await localPort(s)
@@ -448,6 +450,25 @@ async function up() {
   for (const name of kitNames()) console.log(kitLine(name, project))
   for (const line of imageTools()) console.log(line)
   printListener(dir)
+}
+
+// Session apps from before the project app (scripts/import.mjs), this conversation's first, so its
+// link (the same ports) and its slugs carry over unchanged. Each one's server is stopped first; a
+// tailnet rule that didn't move to the project app goes. Returns whether packages were added.
+async function importLegacy(dir, project) {
+  const sid = sessionId(), told = new Set(readJson(join(dir, '.proto', 'imports.json'), []).filter(x => x.skipped).map(x => x.sid))
+  const all = legacySessions(project).filter(l => !told.has(String(l.json.id)))
+  let deps = false
+  for (const l of [...all.filter(l => String(l.json.id) === sid), ...all.filter(l => String(l.json.id) !== sid)]) {
+    if (!flags['no-serve'] && await running(l.json)) await kill(l.json.pid)
+    const r = importSession(dir, l, { first: String(l.json.id) === sid })
+    if (r.skipped) { console.log(`skipped ${r.name}: ${r.skipped}; its app is left as it was`); continue }
+    if (!flags['no-serve'] && l.json.tailnetPort && readSession(dir).tailnetPort !== l.json.tailnetPort && has('tailscale')) run('tailscale', ['serve', `--https=${l.json.tailnetPort}`, 'off'])
+    deps ||= r.depsChanged
+    const renamed = Object.entries(r.renames).map(([a, b]) => `${a} → ${b}`)
+    console.log(`imported ${r.name} (${r.prototypes} prototype${r.prototypes === 1 ? '' : 's'}${renamed.length ? `, renamed ${renamed.join(', ')}` : ''})${r.conflicts.length ? `; kept apart: ${r.conflicts.join(', ')}` : ''}`)
+  }
+  return deps
 }
 
 function add() {

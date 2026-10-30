@@ -27,6 +27,8 @@ jobs:
         run: node --test .github/project-checks.mjs
       - name: Theme merge
         run: node --test .github/theme-merge-unit-checks.mjs
+      - name: Import of session apps
+        run: node --test .github/import-checks.mjs
       - name: Agent compatibility
         run: node --test .github/agent-checks.mjs
       - name: Listener lifecycle
