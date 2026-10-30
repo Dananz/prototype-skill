@@ -2607,13 +2607,28 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const te = e as TouchEvent
     if (!pinch || te.touches.length !== 2) return
     te.preventDefault()
+    // Pinched in past the fit (the design at its own size): on out to the map.
+    if (pinch.z * apart(te.touches) / pinch.d < 0.7 && (zoom?.z ?? 1) <= 1.01 && zoomOutToMap()) { pinch = null; return }
     zoomTo(pinch.z * apart(te.touches) / pinch.d, (te.touches[0].clientX + te.touches[1].clientX) / 2, (te.touches[0].clientY + te.touches[1].clientY) / 2)
   }, { capture: true, passive: false })
   listen(layers, 'touchend', e => { if ((e as TouchEvent).touches.length < 2) pinch = null }, { capture: true, passive: true })
   // Safari's own pinch would zoom the page.
-  listen(layers, 'gesturestart', e => { if (zoom || zoomMount()) e.preventDefault() }, { capture: true, passive: false })
+  listen(layers, 'gesturestart', e => { if (zoom || zoomMount() || outOk()) e.preventDefault() }, { capture: true, passive: false })
+  listen(layers, 'gesturechange', e => { if (outOk() && (e as unknown as { scale: number }).scale < 0.75) { e.preventDefault(); zoomOutToMap() } }, { capture: true, passive: false })
+  // Zooming out of a screen at its own size (no layout chosen) goes on out to the map, which flies
+  // out from it: ⌘/Ctrl + wheel past a notch or two, or Safari's pinch. With the project tree on only.
+  const outOk = () => treeOn && !framed && !st.focus && !viewOn() && st.place.view === 'variant' && (zoom?.z ?? 1) <= 1.01
+  const zoomOutToMap = () => { if (!outOk()) return false; outBy = 0; go({ view: 'session' }); return true }
+  let outBy = 0, outAt = 0
   listen(layers, 'wheel', e => {
     const we = e as WheelEvent
+    if ((we.ctrlKey || we.metaKey) && we.deltaY > 0 && outOk()) {
+      we.preventDefault()
+      if (performance.now() - outAt > 600) outBy = 0
+      outAt = performance.now(); outBy += we.deltaY
+      if (outBy > 240) zoomOutToMap()
+      return
+    }
     if (!(we.ctrlKey || we.metaKey) || !(zoom || zoomMount())) return
     we.preventDefault()
     zoomTo((zoom?.z ?? 1) * Math.exp(-we.deltaY / 200), we.clientX, we.clientY)

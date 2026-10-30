@@ -66,6 +66,12 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
     await until(page, `!!document.querySelector('[data-shoot="f-to-about"]')`, 'back on home B')
 
+    // Zooming out of a screen (⌘/Ctrl + wheel, a pinch) goes on out to the map, which flies out from it.
+    await page.run(`(() => { const l = document.querySelector('[data-layers]'); for (let i = 0; i < 4; i++) l.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, ctrlKey: true, bubbles: true, cancelable: true, clientX: 600, clientY: 400 })) })()`)
+    await until(page, `!document.querySelector('[data-map-host]').hidden && location.pathname !== '/fhome/B'`, 'zooming out of a screen should land on the map')
+    await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
+    await until(page, `!!document.querySelector('[data-shoot="f-to-about"]')`, 'back on home B after the zoom out')
+
     // ⌘K: Jump.
     await page.run(`document.body.focus(); dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))`)
     await until(page, `!!document.querySelector('[data-jump-field]')`, '⌘K should open Jump')
