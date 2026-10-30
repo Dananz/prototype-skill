@@ -710,8 +710,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     mapHost.hidden = !show
     const full = show && deskMq.matches && !st.focus
     mapHost.toggleAttribute('data-full', full)
-    const r = layers.getBoundingClientRect()
-    const safe = full ? [r.left, r.top, innerWidth - r.right, innerHeight - r.bottom].map(n => Math.max(0, Math.round(n))).join(',') : ''
+    const r = full ? layers.getBoundingClientRect() : null
+    const safe = r ? [r.left, r.top, innerWidth - r.right, innerHeight - r.bottom].map(n => Math.max(0, Math.round(n))).join(',') : ''
     layers.style.visibility = show ? 'hidden' : ''
     if (!show && !mapMounted) return
     const work = all.flatMap(p => p.variants.filter(v => editing(p.id, v.id)).map(v => `${p.id}/${v.id}:${building(p.id, v.id) ? 'building' : 'editing'}`)).join(' ')

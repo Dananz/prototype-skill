@@ -252,6 +252,13 @@ if (process.argv.includes('--map-only')) {
   console.log('OK: focused map checks')
   process.exit(0)
 }
+if (process.argv.includes('--share-shots-only')) {
+  await shareChecks({ proto, app, local, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused share screenshot checks')
+  process.exit(0)
+}
 if (process.argv.includes('--tree-only')) {
   await treeChecks({ proto, app, local, openPage, fail })
   proto(['rm', '--all'])

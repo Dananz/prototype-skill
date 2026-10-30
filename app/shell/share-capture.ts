@@ -35,7 +35,11 @@ async function renderRoute(path: string, size: ShotSize, dark: boolean, signal: 
     }
     const d = mount.ownerDocument
     const registry = (d.defaultView as unknown as { __proto?: { tweaks?: { change: (host: HTMLElement, id: string, value: unknown) => boolean } } }).__proto?.tweaks
-    for (const [id, value] of Object.entries(values)) registry?.change(mount, id, value)
+    // A design registers its tweaks as it mounts, which can be after the page says it is ready: each
+    // value waits (briefly) until it takes, so a shot never quietly shows the default instead.
+    for (const [id, value] of Object.entries(values)) {
+      for (const end = performance.now() + 3000; !registry?.change(mount, id, value) && performance.now() < end;) { signal.throwIfAborted(); await wait(50) }
+    }
     // Let the shell's entry crossfade and the design's state setters finish.
     await wait(300)
     await d.fonts.ready
