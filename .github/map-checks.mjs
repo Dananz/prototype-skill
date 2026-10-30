@@ -11,6 +11,11 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     for (const end = Date.now() + 8000; Date.now() < end; await wait(50)) if (await page.run(expression)) return
     fail(`map: ${why} (timed out: ${expression}; at ${await page.run('location.pathname')})`)
   }
+  // Stills are taken one board at a time, each after its entrance settles: give them longer.
+  const slow = async (page, expression, why) => {
+    for (const end = Date.now() + 45000; Date.now() < end; await wait(200)) if (await page.run(expression)) return
+    fail(`map: ${why} (timed out: ${expression})`)
+  }
   const variant = (slug, letter, body) => writeFileSync(join(app, 'src', 'protos', slug, `${letter}.tsx`), `import { Go } from '../../go'\nexport default function V() { return <main style={{ padding: 32 }}>${body}</main> }\n`)
 
   proto(['add', 'mhome', '--title', 'Map home', '--variants', 'A:One,B:Two'])
@@ -47,6 +52,9 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`!!document.querySelector('[data-map-label="design:macme"]') && !!document.querySelector('[data-map-label="flow:macme:Main"]')`), 'the design and its flow should be named')
     assert(await page.run(`!!document.querySelector('[data-map-board="opt:mloose/A"]') && !!document.querySelector('[data-map-board="opt:mloose/B"]')`), 'an exploration on no screen should be spread as its options')
     assert(await page.run(`!!document.querySelector('[data-map-board="opt:mhome/B"]')`), 'a screen\'s options should be on the map under it')
+    // Boards are stills of their page once it settled, not live pages: nothing stays mounted on the map.
+    await slow(page, `!!document.querySelector('[data-map-board="screen:mhome"] img[data-map-still]')`, 'a screen should show a still of itself')
+    assert(await page.run(`!document.querySelector('[data-map-board] [data-mount] > *')`), 'no board should keep its page mounted')
     // Selected only by default: no line until a board is selected.
     assert(await page.run(`!document.querySelector('[data-map-line]')`), 'no link line should show before a selection')
     await page.run(`document.querySelector('[data-map-board="screen:mhome"]').click()`)
@@ -54,10 +62,11 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-map-lines]').click()`)
     await until(page, `document.querySelector('[data-map-lines]').getAttribute('aria-pressed') === 'false'`, 'the lines switch should turn to all')
     await until(page, `localStorage.getItem('proto-map-lines') === 'all'`, 'the lines mode should be kept')
-    // An edit to a screen's variant is a hot update, never a reload (the links are read by the server).
-    await page.run(`window.__mapMark = 1`)
+    // An edit to a screen's variant is a hot update, never a reload (the links are read by the server),
+    // and its still is taken again.
+    await page.run(`window.__mapMark = 1; window.__stillWas = document.querySelector('[data-map-board="screen:mhome"] img[data-map-still]').src`)
     variant('mhome', 'B', `<h1 data-shoot="mhome-live">Home again</h1><Go to="mabout">About</Go>`)
-    await wait(2500)
+    await slow(page, `document.querySelector('[data-map-board="screen:mhome"] img[data-map-still]')?.src !== window.__stillWas`, 'an edited screen should get a new still')
     assert(await page.run(`window.__mapMark === 1`), 'editing a screen reloaded the page')
     // A design changed on disk is drawn on the map at once.
     proto(['design', 'macme', '--flow', 'Extra', '--screens', 'mabout'])
@@ -89,7 +98,9 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await wait(500)
     await page.run(`document.querySelector('[data-map-fit]').click()`)
     await wait(800)
-    // A line dragged from home's handle to about asks for a link.
+    // A line dragged from home's handle to about asks for a link. (A click on the empty map first lets
+    // go of home, selected above, so this click selects it rather than opening it.)
+    await page.run(`document.querySelector('[data-map]').click()`)
     await page.run(`document.querySelector('[data-map-board="screen:mhome"]').click()`)
     await until(page, `!!document.querySelector('[data-map-handle]')`, 'a selected screen should offer a link handle')
     had = new Set(batches())
@@ -128,15 +139,16 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await until(page, `!document.querySelector('[data-map-board="screen:mother"]') && !!document.querySelector('[data-map-board="screen:mhome"]')`, 'the filter should show one design')
     await page.run(`(() => { const s = document.querySelector('[data-map-design]'); s.value = ''; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
 
-    // Zoomed into the home screen, its live preview draws. The overview hidden under the map goes at
-    // once, not faded over the screen.
+    // Focus stays on the map: the screen opens in place on its board (the page's view of it in the
+    // board's slot), the overview that was under the map goes at once, and one design mounts.
     await page.run(`document.querySelector('[data-map-board="screen:mhome"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`)
     await until(page, `location.pathname === '/mhome/B'`, 'a double click should open the screen')
-    assert(await page.run(`document.querySelector('[data-layers]').children.length === 1`), `the overview under the map should not fade over the screen (${await page.run(`document.querySelector('[data-layers]').children.length`)} layers)`)
-    assert(await page.run(`document.querySelector('[data-map-host]').hidden`), 'Focus should hide the map')
+    await until(page, `!!document.querySelector('[data-map-slot="mhome/B"] [data-shoot="mhome-live"]')`, 'Focus should draw the screen in place on the map')
+    assert(await page.run(`!document.querySelector('[data-map-host]').hidden && document.querySelector('[data-layers]').children.length === 0`), 'Focus should keep the map, with the view in the board, not on a stage of its own')
+    assert(await page.run(`!document.querySelector('[data-map-board="screen:mhome"] [data-shoot="mhome-live"]')`), 'the board under Focus should not mount the screen a second time')
     await page.run(`document.body.focus(); dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }))`)
-    await until(page, `!document.querySelector('[data-map-host]').hidden`, 'M should go back to the map')
-    await until(page, `!!document.querySelector('[data-map-board="screen:mhome"] [data-shoot="mhome-live"]')`, 'coming back the map flies out from the screen, which draws live')
+    await until(page, `location.pathname === '/' && !document.querySelector('[data-map-slot]')`, 'M should leave Focus for the map')
+    await slow(page, `!!document.querySelector('[data-map-board="screen:mhome"] img[data-map-still]')`, 'back on the map the screen shows its still')
     // Enter on a focused button is the button's, not the map's (a screen is selected on the way back).
     await page.run(`(() => { const b = document.querySelector('[data-map-fit]'); b.focus(); b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })) })()`)
     await wait(800)

@@ -673,7 +673,23 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let mapSnap: MapInput | null = null, mapMounted = false, lastFocus = ''
   let mapLines: 'all' | 'selected' = localStorage.getItem('proto-map-lines') === 'all' ? 'all' : 'selected'
   let mapDesign = '', mapEdits = 0
+  // Each prototype's file edits, counted: its stills on the map are taken again when its count moves.
+  const editsOf = new Map<string, number>()
   const onMap = () => treeOn && !framed && st.place.view !== 'variant'
+  // Focus on a wide page with the tree on stays on the map: the design's view sits in place on its
+  // board (the map's slot) and the camera carries it. A tool that takes the stage (Compare, History,
+  // Autoplay, All), and a phone, keep the stage of their own.
+  const inPlace = () => treeOn && !framed && !phoneMq.matches && st.place.view === 'variant' && !st.place.tool
+  let slotEl: HTMLElement | null = null
+  /** Puts the current layer where it shows: in the focused board's slot, else in the stage's layers. */
+  function placeLayer() {
+    if (!layer) return
+    const want = inPlace() && slotEl ? slotEl : layers
+    if (layer.el.parentElement === want) return
+    // moveBefore keeps what is running in it (animations, focus, frames) where the browser has it.
+    const box = want as HTMLElement & { moveBefore?: (n: Node, ref: Node | null) => void }
+    try { if (box.moveBefore && layer.el.isConnected) box.moveBefore(layer.el, box.firstChild); else box.prepend(layer.el) } catch { box.prepend(layer.el) }
+  }
   const mapApi: MapApi = {
     get: () => mapSnap!, subscribe: f => { mapWatchers.add(f); return () => { mapWatchers.delete(f) } },
     open: route => { const [proto, variant] = route.split('/'); go({ view: 'variant', proto, variant }) },
@@ -681,18 +697,20 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     setLines: mode => { mapLines = mode; remember('proto-map-lines', mode); paintMap() },
     setDesign: id => { mapDesign = id; paintMap() },
     ask: async (on, action, text) => { await comments.act.decide(on, action, { body: [text], tags: [] }) },
+    slot: el => { slotEl = el; placeLayer() },
   }
   function paintMap() {
-    const show = onMap()
+    const show = onMap() || inPlace()
     mapHost.hidden = !show
     layers.style.visibility = show ? 'hidden' : ''
     if (!show && !mapMounted) return
     const work = all.flatMap(p => p.variants.filter(v => editing(p.id, v.id)).map(v => `${p.id}/${v.id}:${building(p.id, v.id) ? 'building' : 'editing'}`)).join(' ')
-    const next: MapInput = { protos: all, designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits, working: work }
+    const next: MapInput = { protos: all, designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), working: work, focus: inPlace() ? `${st.place.proto}/${st.place.variant}` : '' }
     if (mapSnap && (Object.keys(next) as (keyof MapInput)[]).every(k => next[k] === mapSnap![k])) return
     mapSnap = next
     if (!mapMounted && show) { mapMounted = true; mountMap(mapHost, mapApi) }
     mapWatchers.forEach(f => f())
+    placeLayer()
   }
   // The tool strip (tree mode, a wide page): down the stage's start, as in a drawing app, on the map
   // too. Its head walks and decides the screen (Tour, Decide), then Move and Comment, the three
@@ -1138,6 +1156,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     layer = next
     lobbyKey = st.place.view === 'variant' ? '' : pathOf(st.place) + (st.stack ? ':stack' : '')
     layers.prepend(next.el)
+    placeLayer()
     // The new design reaches its state under the old one, which then fades out on top. Set up
     // before the new one is settled, so the old one still goes when that throws.
     if (prev && unseen) { prev.el.remove(); prev.dispose() }
@@ -3780,6 +3799,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (retrying) show(false)
       motionDock.edited(paths, st.place.view === 'variant' ? st.place.proto : null)
       if (paths.some(p => p.includes('/src/protos/'))) mapEdits++
+      for (const path of paths) { const slug = path.match(/\/src\/protos\/([^/]+)\//)?.[1]; if (slug) editsOf.set(slug, (editsOf.get(slug) ?? 0) + 1) }
       render()
       clearTimeout(editTimer)
       editTimer = window.setTimeout(() => { st.editing = null; render() }, 10_000)

@@ -4,6 +4,7 @@
 // (never a scale transform), so Safari keeps one real layout per design; labels stay one size at
 // any zoom through --iz (1 / zoom). A double click on a screen flies into it and opens it (Focus);
 // the shell flies back out here when Focus is left.
+import { domToCanvas } from 'modern-screenshot'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Design, Proto, Variant } from '../shell'
@@ -18,13 +19,19 @@ export type MapInput = {
   readOnly?: boolean
   /** Counts edits to the prototypes' files: the links are read again. */
   edits?: number
+  /** Each prototype's count of file edits (`slug:n`, space-separated): a board's still is taken again when it moves. */
+  stamps?: string
   /** What the agent is writing now: `route:building` or `route:editing`, space-separated. */
   working?: string
+  /** The route in Focus, drawn in place on its board: the map stays, the page's view of it sits in the board's slot. */
+  focus?: string
 }
 export type MapApi = {
   get(): MapInput; subscribe(fn: () => void): () => void
   /** Opens a route in Focus. */
   open(route: string): void
+  /** The focused board's slot, where the page puts its view of the design (null when none). */
+  slot?(el: HTMLElement | null): void
   mount(el: HTMLElement, component: unknown): () => void
   /** The camera's last place, kept across Focus so leaving it flies back to where the map was. */
   camera: { x: number; y: number; z: number } | null
@@ -37,27 +44,90 @@ export type MapApi = {
 /** What a note on the map is about: a link line, a flow, or a link dragged from one screen to another. */
 type Note = { kind: 'line' | 'link'; a: Board; b: Board } | { kind: 'flow'; design: string; flow: string; a: Board }
 type Cam = { x: number; y: number; z: number }
-const MIN_Z = 0.02, MAX_Z = 2, MAX_LIVE = 12
+const MIN_Z = 0.02, MAX_Z = 2
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 /** Labels keep one size on screen (1 / zoom), shrinking to 60 % when the map is zoomed far out (a phone fitting it all), so they never cover the boards. */
 const labelZ = (z: number) => String(clamp(z / 0.2, 0.6, 1) / z)
 const ease = (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2)
 
 /** A design's variant, drawn inert in its frame while it is on screen and big enough to read. */
-function Preview({ v, live, mount }: { v: Variant | undefined; live: boolean; mount: MapApi['mount'] }) {
-  const host = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!live || !v) return
+// A board shows its page as a still, once its entrance settled, instead of the live page: a map full of
+// live pages loads every one of them and keeps them all animating. Stills are taken one at a time,
+// in a hidden box of the board's frame, and kept (per route) until its prototype's files change.
+const stills = new Map<string, string>(), latest = new Map<string, string>(), asked = new Map<string, Promise<string | null>>()
+// The stills waiting, taken one at a time, the best ranked first (screens, then nearest the middle).
+const waiting: { rank: () => number; run: () => Promise<void> }[] = []
+let busyTaking = false
+async function pump() {
+  if (busyTaking) return
+  busyTaking = true
+  while (waiting.length) {
+    waiting.sort((a, b) => a.rank() - b.rank())
+    await waiting.shift()!.run()
+  }
+  busyTaking = false
+}
+const SETTLE_MIN = 2000, SETTLE_MAX = 4500
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+/** Waits out the entrance: a floor (script-driven motion can't be seen), then until no finite animation runs. */
+async function settle(box: HTMLElement) {
+  const t0 = performance.now()
+  await sleep(SETTLE_MIN)
+  while (performance.now() - t0 < SETTLE_MAX && box.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity)) await sleep(150)
+  await document.fonts.ready
+  await Promise.all([...box.querySelectorAll('img')].map(i => i.decode().catch(() => {})))
+}
+function stillOf(key: string, route: string, v: Variant, w: number, h: number, scale: number, mount: MapApi['mount'], wanted: () => boolean, rank: () => number): Promise<string | null> {
+  const had = asked.get(key)
+  if (had) return had
+  let done: (u: string | null) => void = () => {}
+  const job = new Promise<string | null>(r => { done = r })
+  const take = async (): Promise<string | null> => {
+    if (!wanted()) { asked.delete(key); return null }
     const box = document.createElement('div')
-    box.dataset.mount = ''; box.dataset.preview = ''; box.inert = true; box.dir = 'ltr'
-    box.className = 'pointer-events-none h-full overflow-hidden'
+    box.dataset.mount = ''; box.dataset.mapCapture = ''; box.inert = true; box.dir = 'ltr'
     if (v.theme) box.dataset.protoTheme = v.theme
-    host.current!.append(box)
-    let off: (() => void) | null = null, gone = false
-    v.load().then(c => { if (!gone) off = mount(box, c) }, () => { /* the card's name stays */ })
-    return () => { gone = true; box.remove(); if (off) { const o = off; setTimeout(() => { try { o() } catch { /* gone */ } }) } }
-  }, [v, live, mount])
-  return <div ref={host} className="absolute inset-0" />
+    box.style.cssText = `position:fixed;left:0;top:0;width:${w}px;height:${h}px;overflow:hidden;opacity:0;pointer-events:none;contain:strict;z-index:-1`
+    document.body.append(box)
+    let off: (() => void) | null = null
+    try {
+      off = mount(box, await v.load())
+      await settle(box)
+      const dark = document.documentElement.classList.contains('dark')
+      const canvas = await domToCanvas(box, {
+        scale, width: w, height: h, backgroundColor: dark ? '#09090b' : '#ffffff',
+        style: { opacity: '1', position: 'static', zIndex: 'auto' },
+        filter: n => !(n.nodeType === 1 && (n as Element).matches('[data-proto-ui], vite-error-overlay')),
+      })
+      const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/webp', 0.9))
+      if (!blob) throw new Error('no still')
+      const url = URL.createObjectURL(blob)
+      stills.set(key, url); latest.set(route, url)
+      return url
+    } catch { asked.delete(key); return null }
+    finally { try { off?.() } catch { /* gone */ } box.remove() }
+  }
+  waiting.push({ rank, run: () => take().then(done, () => done(null)) })
+  asked.set(key, job)
+  void pump()
+  return job
+}
+function Still({ v, route, w, h, size, want, rank, stamp, mount }: { v: Variant | undefined; route: string; w: number; h: number; size: number; want: boolean; rank: number; stamp: string; mount: MapApi['mount'] }) {
+  const ranked = useRef(rank); ranked.current = rank
+  // Sharp at the board's size on the map at 100% (an option card is a third of its frame), on this screen.
+  const scale = Math.round(Math.min(2, devicePixelRatio || 1) * size * 100) / 100
+  const key = `${route}|${stamp}|${scale}|${document.documentElement.classList.contains('dark') ? 'dark' : 'light'}`
+  // The last still of this route shows while a new one is taken.
+  const [url, setUrl] = useState<string | null>(() => stills.get(key) ?? latest.get(route) ?? null)
+  useEffect(() => {
+    const have = stills.get(key)
+    if (have) { setUrl(have); return }
+    if (!want || !v) return
+    let gone = false
+    stillOf(key, route, v, w, h, scale, mount, () => !gone, () => ranked.current).then(u => { if (!gone && u) setUrl(u) })
+    return () => { gone = true }
+  }, [key, want, v, mount]) // eslint-disable-line react-hooks/exhaustive-deps
+  return url ? <img data-map-still src={url} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover object-top" /> : null
 }
 
 /** Each screen's <Go to> targets, read from its variant's source. */
@@ -134,11 +204,15 @@ function MapView({ api }: { api: MapApi }) {
   }, [])
   // First sight: back from Focus, the map flies out from the screen to where it was; else it fits.
   const placed = useRef(false)
+  // The focus seen last, and the camera before Focus took it (where leaving it flies back to).
+  const was = useRef(''), before = useRef<Cam | null>(null)
   useEffect(() => {
     if (placed.current || size.w < 2 || !world.boards.length) return
     placed.current = true
     const here = world.boards.find(b => b.kind === 'screen' && b.route === input.place) ?? world.boards.find(b => b.route === input.place)
-    if (here && api.camera) { const back = { ...api.camera }; set(fitTo(here, 1)); fly(back, 500) }
+    const focused = input.focus ? world.boards.find(b => b.kind === 'screen' && b.route === input.focus) ?? world.boards.find(b => b.route === input.focus) : undefined
+    if (focused) { before.current = fitTo({ x: 0, y: 0, w: world.w, h: world.h }, 0.92); set(fitTo(focused, 1)); was.current = input.focus ?? '' }
+    else if (here && api.camera) { const back = { ...api.camera }; set(fitTo(here, 1)); fly(back, 500) }
     else if (api.camera) set(api.camera)
     else set(fitTo({ x: 0, y: 0, w: world.w, h: world.h }, 0.92))
     if (here) setSel(here.key)
@@ -149,7 +223,7 @@ function MapView({ api }: { api: MapApi }) {
     const el = view.current!, pts = new Map<number, { x: number; y: number }>()
     let last: { x: number; y: number; d: number } | null = null, moved = 0
     const mid = () => { const p = [...pts.values()]; const x = p.reduce((a, q) => a + q.x, 0) / p.length, y = p.reduce((a, q) => a + q.y, 0) / p.length; return { x, y, d: p.length > 1 ? Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) : 0 } }
-    const down = (e: PointerEvent) => { if (e.button > 1 || (e.target as HTMLElement).closest?.('[data-map-handle], [data-map-note], [data-map-tools]')) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = mid(); moved = 0; dragged.current = 0 }
+    const down = (e: PointerEvent) => { if (e.button > 1 || (e.target as HTMLElement).closest?.('[data-map-handle], [data-map-note], [data-map-tools], [data-map-slot]')) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = mid(); moved = 0; dragged.current = 0 }
     const move = (e: PointerEvent) => {
       if (!pts.has(e.pointerId)) return
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -164,6 +238,8 @@ function MapView({ api }: { api: MapApi }) {
     }
     const up = (e: PointerEvent) => { pts.delete(e.pointerId); last = pts.size ? mid() : null }
     const wheel = (e: WheelEvent) => {
+      // Over the design in Focus a wheel scrolls it; only ⌘/Ctrl+wheel moves the camera.
+      if (!e.ctrlKey && !e.metaKey && (e.target as HTMLElement).closest?.('[data-map-slot]')) return
       e.preventDefault()
       const r = el.getBoundingClientRect()
       if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top)
@@ -184,11 +260,11 @@ function MapView({ api }: { api: MapApi }) {
     const key = (e: KeyboardEvent) => {
       // Typing, or a key for a focused control (a button, a link, a menu), or anywhere outside the map, isn't the map's.
       const at = e.target instanceof Element ? e.target : null
-      if (at && at !== document.body && (at.closest('input, textarea, select, [contenteditable], button, a, [role]') || !at.closest('[data-map]'))) return
+      if (at && at !== document.body && (at.closest('input, textarea, select, [contenteditable], button, a, [role], [data-map-slot]') || !at.closest('[data-map]'))) return
       const c = { x: size.w / 2, y: size.h / 2 }
       if (e.key === '+' || e.key === '=') zoomAt(1.25, c.x, c.y)
       else if (e.key === '-') zoomAt(0.8, c.x, c.y)
-      else if (e.key === '0') fitAll()
+      else if (e.key === '0') { if (focusBoard) fly(fitTo(focusBoard, 1)); else fitAll() }
       else if (e.key === 'Enter' && sel) { const b = world.boards.find(x => x.key === sel); if (b) openBoard(b) }
       else return
       e.preventDefault()
@@ -217,15 +293,33 @@ function MapView({ api }: { api: MapApi }) {
   const spreadOut = (slug: string) => { setSel(k => k?.startsWith(`opt:${slug}/`) ? null : k); setSpread(s => new Set(s).add(slug)) }
   // A click on the selected board and a double click both open it: the second one of a pair is let go.
   const opening = useRef(0)
-  const openBoard = (b: Board) => { if (Date.now() - opening.current < 600) return; opening.current = Date.now(); fly(fitTo(b, 1), 380, () => api.open(b.route)) }
+  const openBoard = (b: Board) => { if (Date.now() - opening.current < 600) return; opening.current = Date.now(); api.open(b.route) }
   const c = cam.current
   // What is on screen, in world pixels, with a screen's margin around it.
   const vis = { x0: -c.x / c.z - size.w / c.z, y0: -c.y / c.z - size.h / c.z, x1: (size.w * 2 - c.x) / c.z, y1: (size.h * 2 - c.y) / c.z }
-  const near = world.boards.filter(b => b.x + b.w > vis.x0 && b.x < vis.x1 && b.y + b.h > vis.y0 && b.y < vis.y1 && b.w * c.z > 90)
+  const near = world.boards.filter(b => b.x + b.w > vis.x0 && b.x < vis.x1 && b.y + b.h > vis.y0 && b.y < vis.y1 && b.w * c.z > 40)
     .sort((a, b) => Math.hypot(a.x + a.w / 2 + c.x / c.z - size.w / 2 / c.z, a.y + a.h / 2 + c.y / c.z - size.h / 2 / c.z) - Math.hypot(b.x + b.w / 2 + c.x / c.z - size.w / 2 / c.z, b.y + b.h / 2 + c.y / c.z - size.h / 2 / c.z))
-  const live = new Set(near.slice(0, MAX_LIVE).map(b => b.key))
+  // The boards whose stills are wanted: those on screen, nearest the middle first.
+  const live = new Set(near.map(b => b.key)), rankOf = new Map(near.map((b, i) => [b.key, i]))
+  const stampOf = useMemo(() => new Map((input.stamps ?? '').split(' ').filter(Boolean).map(x => { const i = x.lastIndexOf(':'); return [x.slice(0, i), Number(x.slice(i + 1))] as [string, number] })), [input.stamps])
   const variantOf = (b: Board) => input.protos.find(p => p.id === b.slug)?.variants.find(v => v.id === b.letter)
   const selBoard = world.boards.find(b => b.key === sel)
+  const focusBoard = input.focus ? world.boards.find(b => b.kind === 'screen' && b.route === input.focus) ?? world.boards.find(b => b.route === input.focus) : undefined
+  // Focus moves the camera: onto the board it takes, and back to where the map was when it ends.
+  useEffect(() => {
+    if (!placed.current) return
+    const now = input.focus ?? ''
+    if (now === was.current) return
+    if (!was.current) before.current = { ...cam.current }
+    was.current = now
+    if (focusBoard) fly(fitTo(focusBoard, 1), 420)
+    else if (before.current) { fly(before.current, 450); before.current = null }
+  }, [input.focus, focusBoard?.key]) // eslint-disable-line react-hooks/exhaustive-deps
+  const slot = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    api.slot?.(slot.current)
+    return () => api.slot?.(null)
+  }, [focusBoard?.key, api])
   const screenOf = (slug: string, design?: string) => world.boards.find(b => b.kind === 'screen' && b.slug === slug && (!design || b.design === design))
   const lines = world.boards.filter(b => b.kind === 'screen').flatMap(a => (links[a.route] ?? []).map(to => ({ a, b: screenOf(to, a.design), to })).filter(l => !!l.b && l.b !== a))
     .filter(l => input.lines === 'all' || (selBoard && (l.a.slug === selBoard.slug || l.b!.slug === selBoard.slug)))
@@ -273,10 +367,12 @@ function MapView({ api }: { api: MapApi }) {
                 className={'absolute overflow-hidden rounded-[calc(10px*var(--iz))] bg-white shadow-[0_1px_3px_rgb(0_0_0/.08)] dark:bg-zinc-900'}
                 style={{ left: b.x, top: b.y, width: b.w, height: b.h, zIndex: b.pile != null ? 3 - b.pile : undefined, cursor: 'pointer',
                   outline: on || here ? `calc(2px * var(--iz)) solid ${on ? '#0ea5e9' : '#10b981'}` : `calc(1px * var(--iz)) solid rgb(0 0 0 / .08)` }}>
+                <div className={'absolute inset-0 grid place-items-center bg-zinc-50 text-zinc-400 dark:bg-zinc-900'} style={{ fontSize: 'calc(13px * var(--lz))' }}><span dir="auto" className={b.pile ? 'invisible' : ''}>{b.title}</span></div>
                 <div className="absolute left-0 top-0 origin-top-left" style={{ width: b.w / b.scale, height: b.h / b.scale, zoom: b.scale }}>
-                  <Preview v={variantOf(b)} live={live.has(b.key) && !input.hidden} mount={api.mount} />
+                  <Still v={variantOf(b)} route={b.route} w={b.w / b.scale} h={b.h / b.scale} size={b.scale} want={live.has(b.key) && !input.hidden && b !== focusBoard}
+                    rank={(b.kind === 'screen' ? 0 : 1000) + (rankOf.get(b.key) ?? 999)}
+                    stamp={`${stampOf.get(b.slug) ?? 0}:${busy.get(b.route) ?? ''}`} mount={api.mount} />
                 </div>
-                {!live.has(b.key) && <div className={'absolute inset-0 grid place-items-center bg-zinc-50 text-zinc-400 dark:bg-zinc-900'} style={{ fontSize: 'calc(13px * var(--lz))' }}><span dir="auto" className={b.pile ? 'invisible' : ''}>{b.title}</span></div>}
                 {busy.has(b.route) && !b.pile && b.kind === 'option' && (
                   // An option's card is small: a dot, its name in the title, so the card's own name stays readable.
                   <span data-map-building={busy.get(b.route)} title={busy.get(b.route) === 'building' ? t('Building') : t('Editing')} className="absolute end-[calc(8px*var(--iz))] top-[calc(8px*var(--iz))] size-[calc(8px*var(--iz))] animate-pulse rounded-full bg-emerald-500 shadow-[0_0_0_calc(2px*var(--iz))_white] dark:shadow-[0_0_0_calc(2px*var(--iz))_rgb(24_24_27)]" style={{ zIndex: 2 }} />
@@ -289,6 +385,13 @@ function MapView({ api }: { api: MapApi }) {
               </div>
             )
           })}
+          {focusBoard && (
+            // The design in Focus, in place on its board: the page puts its view here (MapApi.slot), and the camera carries it.
+            <div key={`slot:${focusBoard.key}`} data-map-slot={focusBoard.route} className="absolute overflow-hidden rounded-[calc(10px*var(--iz))] bg-white shadow-[0_2px_24px_rgb(0_0_0/.18)] dark:bg-zinc-950"
+              style={{ left: focusBoard.x, top: focusBoard.y, width: focusBoard.w, height: focusBoard.h, zIndex: 5, cursor: 'auto', userSelect: 'text', touchAction: 'auto' }}>
+              <div ref={slot} className="relative" style={{ width: focusBoard.w / focusBoard.scale, height: focusBoard.h / focusBoard.scale, zoom: focusBoard.scale }} />
+            </div>
+          )}
           {world.boards.filter(b => (b.pile ?? 0) === 0 && b.w * c.z > (b.kind === 'screen' ? 60 : 110)).map(b => (
             <div key={`n:${b.key}`} className="pointer-events-none absolute flex items-center gap-[calc(6px*var(--iz))] whitespace-nowrap text-zinc-500" style={{ left: b.x, top: b.y + b.h + 6 / c.z, fontSize: `calc(${b.kind === 'screen' ? 13 : 11}px * var(--lz))`, zIndex: 4 }}>
               {b.kind === 'screen' ? <span dir="auto" className="font-medium text-zinc-700 dark:text-zinc-200">{b.title}</span> : <span className="tabular-nums">#{numberOf(b.letter)}</span>}
@@ -296,7 +399,7 @@ function MapView({ api }: { api: MapApi }) {
               {b.standIn && <span className="rounded bg-zinc-900/[.06] px-1 dark:bg-white/10">{t('not picked')}</span>}
             </div>
           ))}
-          {selBoard?.kind === 'screen' && !drag && !ro && (
+          {selBoard?.kind === 'screen' && selBoard !== focusBoard && !drag && !ro && (
             // Drag from here to another screen: a link, sent to the agent to put on the right element.
             <span data-map-handle role="button" aria-label={t('Drag to another screen to link them')} title={t('Drag to another screen to link them')} onPointerDown={e => startLink(e, selBoard)}
               className="absolute grid cursor-crosshair touch-none place-items-center rounded-full bg-violet-500 shadow ring-white dark:ring-zinc-900"
@@ -322,7 +425,7 @@ function MapView({ api }: { api: MapApi }) {
       </div>
       {build && one && !note && <BuildBox design={one} boards={world.boards} api={api} onClose={() => setBuild(false)} />}
       {note && <NoteBox key={`${note.kind}:${note.a.key}:${'b' in note ? note.b.key : note.flow}`} note={note} api={api} onClose={() => setNote(null)} />}
-      {selBoard && !note && !build && (
+      {selBoard && selBoard !== focusBoard && !note && !build && (
         <div className="absolute inset-x-0 bottom-3 mx-auto flex w-fit max-w-[calc(100%-2rem)] items-center gap-2 rounded-xl max-sm:bottom-14 bg-zinc-900 px-3 py-1.5 text-[12px] text-white shadow-lg dark:bg-white dark:text-zinc-900">
           <span dir="auto" className="font-medium">{selBoard.title}</span>{selBoard.kind === 'option' && <span className="opacity-60">#{numberOf(selBoard.letter)}</span>}
           <button type="button" data-map-open onClick={() => openBoard(selBoard)} className="rounded-md bg-white/15 px-2 py-0.5 dark:bg-zinc-900/10">{t('Open')}</button>
