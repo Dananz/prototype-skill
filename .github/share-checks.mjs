@@ -24,7 +24,8 @@ export default function Shot(){ const words=useCopy([{id:'title',label:'Title',o
   })()`)
   try {
     assert(await page.run('!document.querySelector("[data-bar] [data-act=share]")'), 'Share remains in the navbar')
-    await page.run(`(async()=>{const {tweaks}=await import('/shell/tweaks.ts');tweaks.change(window.__protoDesign(),'accent','#dc2626');const {copy}=await import('/shell/copy.ts');copy.choose(window.__protoDesign(),'title',{text:'Alternate caption'})})()`)
+    // The design registers its tweaks as it mounts: wait until the accent takes, as a person would see it.
+    assert(await page.run(`(async()=>{const {tweaks}=await import('/shell/tweaks.ts');let ok=false;for(const end=Date.now()+10000;!(ok=!!window.__protoDesign?.()&&tweaks.change(window.__protoDesign(),'accent','#dc2626'))&&Date.now()<end;)await new Promise(r=>setTimeout(r,100));const {copy}=await import('/shell/copy.ts');copy.choose(window.__protoDesign(),'title',{text:'Alternate caption'});return ok})()`), 'the accent tweak never took on the page')
     assert(await openShare(page, 'share-check', 'A'), 'variant context menu has no Share entry')
     assert(await page.run(`!document.querySelector('[data-share-scope]') && document.querySelectorAll('[data-share-board] input[type=radio]').length===4`), 'planned radio choices were replaced by generic scope and checkbox controls')
     await until('document.querySelectorAll("[data-share-tile] canvas").length === 4', 'board did not show both styles for every variant')

@@ -388,7 +388,9 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
         rows = await until(async () => (await page.run(`document.querySelectorAll('[data-proto-row]').length`)) || 0, 3000)
       }
       assert(rows === 2, `prototype list: it lists ${rows} prototypes`)
-      await page.press(...await at('[data-proto-row="lineage-src"]'))
+      const row = await until(() => at('[data-proto-row="lineage-src"]'), 3000)
+      assert(row, 'prototype list: lineage-src has no row to press')
+      await page.press(...row)
       await until(async () => (await boards()) === 'lineage-src/A', 3000)
       assert(await boards() === 'lineage-src/A', `prototype list: choosing lineage-src left ${JSON.stringify(await boards())}`)
       assert(await until(async () => (await text())?.includes('MARK-LINEAGE-A'), 5000), 'prototype list: lineage-src/A is not mounted')
