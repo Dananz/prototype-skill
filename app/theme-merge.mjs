@@ -80,7 +80,7 @@ export function mergeThemes(base, scopes) {
   const all = [...tokens].map(([name, t]) => [name, t.value, t.inline])
   const block = (isInline, list) => list.length ? `@theme${isInline ? ' inline' : ''} {\n${list.map(([n, v]) => decl([n, v])).join('\n')}\n}` : ''
   // Scope blocks the base already had are rules: they come back as they were.
-  const scopeRules = [...scoped].map(([scope, list]) => `[data-proto-theme="${scope}"] {\n${list.map(decl).join('\n')}\n}`)
+  const scopeRules = [...scoped].map(([scope, list]) => `[data-proto-theme="${scope}"] {\n${list.map(decl).join('\n')}\n}`).filter(r => !rules.includes(r))
   const css = [
     '/* The project app\'s look: every merged theme\'s tokens (scripts/import.mjs, app/theme-merge.mjs). */',
     ...imports, ...others,
@@ -92,4 +92,13 @@ export function mergeThemes(base, scopes) {
     conflicts: [...conflicts].filter(([n]) => !inline.has(n)).map(([token, s]) => ({ token, scopes: s })),
     inline: [...inline],
   }
+}
+
+/** The theme as one scope sees it, its block folded into @theme: what a kit saves from a prototype. */
+export function resolveTheme(css, scope) {
+  const own = pieces(css).find(p => p.kind === 'rule' && p.text.startsWith(`[data-proto-theme="${scope}"]`))
+  const over = new Map(own ? entries(own.text.slice(own.text.indexOf('{') + 1, own.text.lastIndexOf('}'))) : [])
+  const kept = pieces(css).map(p => p.kind === 'stmt' ? p.text : p.kind === 'rule' ? (p.text.startsWith('[data-proto-theme=') ? '' : p.text)
+    : `@theme${p.inline ? ' inline' : ''} {\n${entries(p.body).map(([n, v]) => n.startsWith('--') ? `  ${n}: ${over.get(n) ?? v};` : `  ${v}`).join('\n')}\n}`)
+  return kept.filter(Boolean).join('\n\n') + '\n'
 }

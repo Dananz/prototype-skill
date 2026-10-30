@@ -95,7 +95,7 @@
 // Optional PROTO_AGENT_PID (or CLAUDE_PID) identifies the long-lived agent for comment recovery.
 
 import { spawn, spawnSync } from 'node:child_process'
-import { adoptListener, listenerFile, listenerStatus, saveListener, reconcileListener, pendingListenerWork, wakes } from '../app/listener.mjs'
+import { adoptListener, listenerFile, listenerSids, listenerStatus, saveListener, reconcileListener, pendingListenerWork, wakes } from '../app/listener.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -110,7 +110,8 @@ import { report as reportShared } from '../app/share/owner.mjs'
 import { sharedLines } from '../app/share/viewer-text.mjs'
 import { BASE, SHELL, STACKS, syncApp } from './app-sync.mjs'
 import { skillUpdate } from './self-update.mjs'
-import { legacySessions, locked as lockApp, projectApp, registerSession } from './project.mjs'
+import { legacySessions, locked as lockApp, ownerOf, PROJECT_DIR, projectApp, registerSession, sessionsOf } from './project.mjs'
+import { mergeThemes, resolveTheme } from '../app/theme-merge.mjs'
 import { importSession } from './import.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -242,7 +243,8 @@ function replyAgent() {
 }
 function beat(dir) {
   const agent = detectedAgent()
-  registerSession(dir, sessionId(), { agent })
+  // The page runs some commands as the app itself (its share sync): that is no conversation.
+  if (sessionId() !== readSession(dir)?.id) registerSession(dir, sessionId(), { agent })
   locked(dir, () => adoptListener(dir, sessionId()))
   if (agent) patchSession(dir, { agent })
   const pid = agentPid()
@@ -592,6 +594,7 @@ function add() {
     useKit(dir, pdir, slug, design, flags.current && { file: join(pdir, `A.${kit.ext}`), stub: stubOf(stub, 'A', added.A ?? current().variants.A) })
     // A saved Current is already built.
     if (flags.current && fresh.includes('A')) fresh.splice(fresh.indexOf('A'), 1)
+    if (readFileSync(join(dir, 'src', 'theme.css'), 'utf8').includes(`[data-proto-theme="kit:${design.name}"]`)) set.theme = `kit:${design.name}`
   }
   // meta.ts goes last, so the page sees the prototype with all its variants at once. It is read
   // again just before: a pick made in the page meanwhile is written by the dev server, and stays.
@@ -1034,11 +1037,39 @@ async function stop(dir = sessionDir(), reason = 'stopped') {
   patchSession(dir, { pid: null, stoppedAt: s.stoppedAt || new Date().toISOString(), stopReason: s.stopReason || reason })
 }
 
-async function rm(dir = sessionDir()) {
-  if (!existsSync(dir)) return die(`nothing at ${tilde(dir)}`)
-  const listener = listenerStatus(dir, sessionId())
+// proto rm: this conversation's prototypes go (with their history, references, briefs and
+// decisions); the project app and everyone else's stay. --project deletes the whole app.
+async function rmMine() {
+  const dir = sessionDir(), sid = sessionId()
+  need(dir)
+  const listener = listenerStatus(dir, sid)
   if (listener.id && listener.hostEnabled) {
     printListener(dir)
+    die('disable the owned host task and confirm with proto inbox --host-disabled <id> before deleting its local identity')
+  }
+  const root = join(dir, 'src', 'protos'), gone = []
+  for (const slug of existsSync(root) ? readdirSync(root) : []) {
+    let m = null
+    try { m = readMeta(dir, slug) } catch { /* not plain JSON: not ours to judge */ }
+    if (m?.session !== sid) continue
+    for (const p of [join(root, slug), join(dir, 'src', 'history', slug), join(dir, '.proto', 'ref', slug), join(dir, '.proto', 'briefs', `${slug}.json`), join(dir, '.proto', 'decisions', `${slug}.md`)]) rmSync(p, { recursive: true, force: true })
+    gone.push(slug)
+  }
+  const ours = k => gone.includes(String(k).split('/')[0])
+  patchSession(dir, now => ({
+    asks: Object.fromEntries(Object.entries(now.asks || {}).filter(([k]) => !ours(k))),
+    building: Object.fromEntries(Object.entries(now.building || {}).filter(([k]) => !ours(k))),
+    ...(now.work && ours(now.work.proto) ? { work: null } : {}),
+  }))
+  locked(dir, () => { const all = sessionsOf(dir); delete all[sid]; writeJson(join(dir, '.proto', 'sessions.json'), all) })
+  console.log(`removed ${gone.length} prototype${gone.length === 1 ? '' : 's'} made in this conversation${gone.length ? `: ${gone.join(', ')}` : ''}`)
+}
+
+async function removeApp(dir) {
+  if (!existsSync(dir)) return die(`nothing at ${tilde(dir)}`)
+  const owned = listenerSids(dir).map(sid => ({ sid, l: listenerStatus(dir, sid) })).find(x => x.l.id && x.l.hostEnabled)
+  if (owned) {
+    console.log(`listener ${owned.l.id} (${owned.sid ?? 'the session app'}) is still enabled on its host`)
     die('disable the owned host task and confirm with proto inbox --host-disabled <id> before deleting its local identity')
   }
   await stop(dir, 'deleted')
@@ -1066,8 +1097,10 @@ async function gc(quiet = false) {
     const age = (now - lastEdit(dir)) / 864e5
     // Retain listener identity/opt-out for explicit reopening, and never delete pending
     // feedback. GC cannot disable another thread's task. Explicit rm can retire the record.
-    if (!s.keep && !existsSync(listenerFile(dir)) && !pendingListenerWork(dir) && age > (s.deleteDays ?? DELETE_DAYS)) {
-      await rm(dir)
+    // The project app is never deleted by age; a session app whose work moved into it goes in time.
+    const moved = !!s.migratedTo
+    if (basename(dir) !== PROJECT_DIR && !s.keep && (moved || (!existsSync(listenerFile(dir)) && !pendingListenerWork(dir))) && age > (s.deleteDays ?? DELETE_DAYS)) {
+      await removeApp(dir)
       continue
     }
     if (s.pid && !alive(s.pid)) patchSession(dir, { pid: null, stoppedAt: s.stoppedAt || new Date().toISOString(), stopReason: s.stopReason || 'exited' })
@@ -1083,15 +1116,26 @@ async function gc(quiet = false) {
   if (!quiet) console.log('gc done')
 }
 
+// Every project app (with the conversations in it, and how many prototypes each made), then any
+// session app not imported yet. --mine: this conversation's prototypes in this project instead.
 async function ls() {
-  const rows = []
+  if (flags.mine) {
+    const dir = sessionDir(), sid = sessionId(), root = join(dir, 'src', 'protos')
+    const mine = (existsSync(root) ? readdirSync(root) : []).map(slug => { try { return [slug, readMeta(dir, slug)] } catch { return [slug, null] } })
+      .filter(([, m]) => m && (m.session === sid || ownerOf(m) === sid))
+    return console.log(mine.map(([slug, m]) => `${slug}  ${m.title || slug}  ${Object.keys(m.variants || {}).length} variants${m.session !== sid ? '  (joined)' : ''}`).join('\n') || 'no prototypes from this conversation here')
+  }
+  const rows = [], count = (dir, sid) => { const root = join(dir, 'src', 'protos'); return (existsSync(root) ? readdirSync(root) : []).filter(slug => { try { return readMeta(dir, slug)?.session === sid } catch { return false } }).length }
   for (const dir of index()) {
     const s = readSession(dir)
-    if (!s) continue
-    const days = ((Date.now() - lastEdit(dir)) / 864e5).toFixed(1)
-    rows.push(`${await running(s) ? 'running' : 'stopped'}  ${s.name}  ${s.url || '-'}  last edit ${days}d ago${s.keep ? '  kept' : ''}\n  ${tilde(dir)}`)
+    if (!s || s.migratedTo) continue
+    const days = ((Date.now() - lastEdit(dir)) / 864e5).toFixed(1), live = await running(s) ? 'running' : 'stopped'
+    if (basename(dir) !== PROJECT_DIR) { rows.push(`${live}  ${s.name}  ${s.url || '-'}  last edit ${days}d ago${s.keep ? '  kept' : ''}\n  ${tilde(dir)}`); continue }
+    rows.push(`project ${s.name}  ${s.url || '-'}  ${live}  last edit ${days}d ago`)
+    for (const [sid, e] of Object.entries(sessionsOf(dir))) { const n = count(dir, sid); rows.push(`  session ${sid}  ${e.name || '-'}  ${n} prototype${n === 1 ? '' : 's'}  seen ${String(e.seenAt || '').slice(0, 16).replace('T', ' ')}`) }
+    rows.push(`  ${tilde(dir)}`)
   }
-  console.log(rows.join('\n') || 'no prototype sessions')
+  console.log(rows.join('\n') || 'no prototype apps')
 }
 
 async function shoot() {
@@ -2428,7 +2472,9 @@ function kitSave() {
   const name = kitName(), kd = kitDir(name), was = readKit(name)
   if (was && was.stack !== s.stack) die(`kit ${name} is for ${was.stack} and this session is ${s.stack}: save under another name (--kit=<name>)`)
   mkdirSync(kd, { recursive: true })
-  const theme = readFileSync(join(dir, 'src', 'theme.css'), 'utf8')
+  // The look this prototype has: its scope (meta.theme) folded in, the others' left out.
+  const raw = readFileSync(join(dir, 'src', 'theme.css'), 'utf8'), scope = readMeta(dir, slug)?.theme
+  const theme = scope || raw.includes('[data-proto-theme=') ? resolveTheme(raw, scope) : raw
   writeFileSync(join(kd, 'theme.css'), theme)
   // Everything in the prototype's folder but its variants and meta.ts, as it is now, replaces the kit's.
   const parts = readdirSync(pdir).filter(f => f !== 'meta.ts' && !VARIANT_FILE.test(f) && !f.startsWith('.')).sort()
@@ -2526,10 +2572,12 @@ function useKit(dir, pdir, slug, { name, k, kd }, a) {
     if (existsSync(join(pdir, f))) kept.push(f)
     else cpSync(join(kd, 'parts', f), join(pdir, f), { recursive: true })
   }
+  // The project app's theme takes the kit's tokens; ones it already has otherwise go in the kit's
+  // own scope (app/theme-merge.mjs), which add() puts on the prototype.
   const themeFile = join(dir, 'src', 'theme.css'), mine = readFileSync(themeFile, 'utf8'), theirs = readFileSync(join(kd, 'theme.css'), 'utf8')
   if (mine !== theirs) {
     if (mine === readFileSync(join(APP, 'src', 'theme.css'), 'utf8')) writeFileSync(themeFile, theirs)
-    else kept.push('src/theme.css')
+    else writeFileSync(themeFile, mergeThemes(mine, [{ scope: `kit:${name}`, css: theirs }]).css)
   }
   const pkgFile = join(dir, 'package.json'), pkg = readJson(pkgFile, {})
   const want = Object.entries(k.packages || {}).filter(([p]) => !pkg.dependencies?.[p] && !pkg.devDependencies?.[p])
@@ -2582,7 +2630,8 @@ function fonts() {
 const commands = {
   up, add, plan, done, pick, fav, work, ask, history, brief: briefCmd, archive, shoot, compare, perf, handoff, snap, intake, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
-  rm: () => rm(),
+  // --project is the project's folder on every command, so the whole app is --all.
+  rm: () => flags.all ? removeApp(sessionDir()) : rmMine(),
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },
   url: () => { const s = need(sessionDir()); console.log(s.url || s.localUrl || 'not started') },
   stack: () => { const d = detectStack(projectRoot()); console.log(`${d.stack} (${d.why})`) },

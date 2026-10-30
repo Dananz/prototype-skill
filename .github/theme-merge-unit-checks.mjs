@@ -91,3 +91,13 @@ test('a prototype with a theme scope gives its variants that scope, for their mo
   const [q] = protosOf({ './protos/cart/meta.ts': { title: 'Cart' } }, { './protos/cart/A.tsx': load })
   assert.equal('theme' in q.variants[0], false)
 })
+
+test('a scope resolved for a kit has its values in @theme and no scope blocks', async () => {
+  const { resolveTheme } = await import('../app/theme-merge.mjs')
+  const merged = mergeThemes('', [{ scope: 's1', css: '@theme { --c: #111; --d: 1px; }' }, { scope: 's2', css: '@theme { --c: #222; }' }]).css
+  const out = resolveTheme(merged, 's2')
+  assert.match(out, /--c: #222;/)
+  assert.match(out, /--d: 1px;/)
+  assert.doesNotMatch(out, /data-proto-theme/)
+  assert.match(resolveTheme(merged, undefined), /--c: #111;/)
+})
