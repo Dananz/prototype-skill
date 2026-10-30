@@ -30,12 +30,16 @@
 //             frames per second at rest (or while dragging that element), how busy the main and GPU
 //             threads are, and the design's slowest functions; run it on anything that animates
 //   proto handoff <slug>/<letter>   a checklist of what that variant has, for building it into the codebase
+//   proto brief <slug>   the decision brief: the ask, the pick and why, the other directions, the changes
+//             asked on the pick and every comment with its answer (.proto/decisions/<slug>.md)
 //   proto snap <slug>[/<letter>]… [--width 672]   static HTML snapshots for a shared document
 //   proto pick <slug> <number> [--off]   the user chose this variant: marked in the page
 //   proto fav [<slug>] | <slug>/<number>[ …] [--off]   the user's favorites (the page's stars): list them, or star some
 //   proto work <slug>/<letter> [--ask "…"] [--off]   the variant being worked on: pinned in the page
 //   proto ask "…" [--to <slug>/<letter>]   a change the user asked for, kept with that variant
-//   proto ask --each "…" "…" …   several at once (a batch of comments)
+//   proto ask --each "…" "…" …   several at once (a batch of comments); each ask keeps the variant as it was first
+//   proto history <slug>/<letter> [--save "…"]   its earlier versions (kept before each ask), or keep one now;
+//             the page shows any of them beside the variant now (History, in the variant's tools)
 //   proto intake set <questions.json|->   ask the user questions in the page before building (a from-scratch
 //             request, or too little context): the page shows them as their own screen, and the answers
 //             arrive in `proto inbox` as an intake batch. See references/intake.md for the file's shape.
@@ -100,6 +104,8 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, buildUpNeeded, isCurrent } from '../app/assignment.mjs'
 import { idOf, letterOf, numberOf } from '../app/numbers.mjs'
+import { snapshot, versionLabel, versionsOf } from '../app/history.mjs'
+import { partsOf, writeBrief } from '../app/brief.mjs'
 import { report as reportShared } from '../app/share/owner.mjs'
 import { sharedLines } from '../app/share/viewer-text.mjs'
 import { BASE, SHELL, STACKS, syncApp } from './app-sync.mjs'
@@ -897,8 +903,15 @@ function setWork(dir, t, ask) {
   if (ask) {
     const key = `${t.proto}/${t.variant}`
     patch.asks = { ...s.asks, [key]: [...(s.asks?.[key] || []), { at, text: ask }] }
+    keepVersion(dir, t, [ask], at)
   }
   patchSession(dir, patch)
+}
+// Each ask is about to change the variant: keep it as it is now first (app/history.mjs), so the
+// page can show it beside what the change made. Never in the way of the ask itself.
+function keepVersion(dir, t, texts, at) {
+  try { for (const text of texts) snapshot(dir, t.proto, t.variant, text, { at }) }
+  catch (e) { console.error(`proto: couldn't keep ${t.proto}/${t.variant} as it was (${e.message}); the ask is noted`) }
 }
 
 function work() {
@@ -920,8 +933,45 @@ function ask() {
   const t = flags.to ? target(dir, flags.to) : s.work
   if (!t) die('no working variant yet: proto work <slug>/<letter> --ask "…"')
   const key = `${t.proto}/${t.variant}`, at = new Date().toISOString()
+  keepVersion(dir, t, texts, at)
   patchSession(dir, now => ({ asks: { ...now.asks, [key]: [...(now.asks?.[key] || []), ...texts.map(text => ({ at, text }))] } }))
-  console.log(`${key}: ${(s.asks?.[key]?.length || 0) + texts.length} asks`)
+  const n = versionsOf(dir, t.proto, t.variant).length
+  console.log(`${key}: ${(s.asks?.[key]?.length || 0) + texts.length} asks${n ? ` · ${n} earlier version${n === 1 ? '' : 's'} kept (proto history ${key})` : ''}`)
+}
+
+// proto brief <slug>: the prototype's decision brief (app/brief.mjs), for the team and for whoever
+// builds it: kept at .proto/decisions/<slug>.md and printed.
+function briefCmd() {
+  const dir = sessionDir()
+  need(dir)
+  const slug = String(args[0] || '').split('/')[0]
+  if (!slug) die('which prototype? proto brief <slug>')
+  const made = writeBrief(dir, slug)
+  if (!made) die(`no prototype "${slug}" here`)
+  console.log(made.markdown)
+  console.log(`(kept at ${made.file}${made.picked ? '' : '; nothing is picked yet'}${made.open ? `; ${made.open} comment${made.open === 1 ? '' : 's'} still open` : ''})`)
+}
+
+// proto history <slug>/<letter> [--save "…"]: the variant's earlier versions, kept before each
+// change asked for (proto ask, proto work --ask, a pick in the page); --save keeps one now, by hand.
+// The page shows any of them beside the variant as it is now (History, in the variant's tools).
+function history() {
+  const dir = sessionDir()
+  need(dir)
+  if (!args[0]) die('which variant? proto history <slug>/<number> [--save "…"]')
+  const t = target(dir, args[0]), key = `${t.proto}/${t.variant}`
+  if (flags.save !== undefined) {
+    const note = typeof flags.save === 'string' ? flags.save : ''
+    const kept = snapshot(dir, t.proto, t.variant, '', { note })
+    if (!kept) die(`${routeShown(key)} has no file to keep`)
+    console.log(kept.created ? `kept ${routeShown(key)} as version ${kept.n}` : `nothing changed since version ${kept.n}; not kept again`)
+    return
+  }
+  const all = versionsOf(dir, t.proto, t.variant)
+  if (!all.length) return console.log(`${routeShown(key)} has no earlier versions yet: one is kept before each change asked for (proto ask), or now with --save "…"`)
+  console.log(`${routeShown(key)} · ${t.name}: ${all.length} earlier version${all.length === 1 ? '' : 's'}, then now`)
+  for (const v of all) console.log(`  ${v.n}. ${v.at.slice(0, 16).replace('T', ' ')}  ${versionLabel(v)}`)
+  console.log(`In the page: ${key}, History in its tools (or ${(readSession(dir).url || readSession(dir).localUrl || '').replace(/\/$/, '')}/${key}/~history)`)
 }
 
 function archive() {
@@ -1813,6 +1863,11 @@ function actionText(dir, c) {
   if (c.action === 'build' && c.picked) return 'picked in the page and now the working variant; build this variant into the codebase' + suffix
   // New variants from one variant nest under it, as their own prototype; never new letters beside it.
   if (c.action === 'more') return `new variants from this one, nested under it: proto add <new slug> --from ${c.route} --next --title "…" --variants "A:…,B:…"` + suffix
+  // Parts of several variants in one new design: built from all of them, nested under the first.
+  if (c.action === 'combine') {
+    const parts = partsOf(c)
+    return `one new design from parts of ${parts.map(routeShown).join(' + ')} (the note and its @ tags say which part from which; ${routeShown(parts[0])}'s structure is the base): proto add <new slug> --from ${parts.join(',')} --next --title "…" --variants "A:…" --ask "<what it takes from each>", build it, reply --until <new slug>` + suffix
+  }
   return (ACTIONS[c.action] || '') + suffix
 }
 
@@ -2491,7 +2546,7 @@ function fonts() {
 }
 
 const commands = {
-  up, add, plan, done, pick, fav, work, ask, archive, shoot, compare, perf, handoff, snap, intake, inbox, reply, gc: () => gc(false), ls,
+  up, add, plan, done, pick, fav, work, ask, history, brief: briefCmd, archive, shoot, compare, perf, handoff, snap, intake, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
   rm: () => rm(),
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },

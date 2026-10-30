@@ -47,10 +47,13 @@ import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
 import { dims, FILL_MIN_W, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
 
 export type Variant = { id: string; name: string; file: string; load: () => Promise<unknown> }
+/** A variant as it was before a change the user asked for (app/history.mjs): n counts from 1, oldest
+ *  first; before: the asks it came before; note: why it was kept by hand. */
+export type Version = { n: number; at: string; note: string; before: { text: string; at: string }[]; file: string; load: () => Promise<unknown> }
 /** Something behind clicks in a prototype's variants (a menu, a drawer, a dialog), reached by
  *  clicking its selectors in order. about: one line per variant; only: the variants that have it. */
 export type State = { id: string; name: string; click: string[]; about?: Record<string, string>; only?: string[] }
-export type Proto = { id: string; title: string; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; slot?: string; also: { proto: string; variant: string }[]; picked?: string; favorites: string[]; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[] }
+export type Proto = { id: string; title: string; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; slot?: string; also: { proto: string; variant: string }[]; picked?: string; favorites: string[]; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[]; versions?: Record<string, Version[]> }
 /** A variant of one prototype ("pricing" and "C"). */
 export type Ref = { proto: string; variant: string }
 /** work: the variant being changed now; before: the ones worked on before it (newest first);
@@ -62,8 +65,10 @@ const FWD = rtl ? 'ArrowLeft' : 'ArrowRight', BACK = rtl ? 'ArrowRight' : 'Arrow
 export type Session = { agent?: Agent; id: string; name: string; lang?: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
 type Mount = (el: HTMLElement, component: any) => () => void
 // A variant can be shown in one of its states, or through a tool: all its states at once
-// (all), playing through them (play), or next to another variant (compare).
-type Tool = 'play' | 'all' | 'compare'
+// (all), playing through them (play), next to another variant (compare), or next to one of its
+// own earlier versions (history).
+type Tool = 'play' | 'all' | 'compare' | 'history'
+const TOOL_LIST: Tool[] = ['play', 'all', 'compare', 'history']
 type Place = { view: 'session' } | { view: 'proto'; proto: string } | { view: 'variant'; proto: string; variant: string; state?: string; tool?: Tool }
 type Layer = { el: HTMLElement; refs: unknown[]; ready: Promise<unknown>; dispose: () => void; player?: { toggle: () => void; jump: (i: number) => void }; remount?: () => Promise<unknown>; refresh?: () => void }
 // Comments sent from the page to the agent running the session (`proto inbox`), and what came back.
@@ -124,6 +129,7 @@ const TOOLS: Record<Tool, { name: string; icon: string; hint: string }> = {
   play: { name: t('Autoplay'), icon: 'play', hint: t('Clicks through every state for you') },
   all: { name: t('All states'), icon: 'grid', hint: t('Every state on one page') },
   compare: { name: t('Compare'), icon: 'diff', hint: t('Side by side, in the same state') },
+  history: { name: t('History'), icon: 'clock', hint: t('An earlier version beside this one') },
 }
 
 // A design can override a window size the shell reads (to fit a library to its card) and then
@@ -235,6 +241,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     editing: null as null | { proto: string; variant: string },
     status: null as Status | null,
     vs: new Map<string, string>(),
+    // The earlier version History shows, per variant ("pricing/C"); none chosen: the newest.
+    ver: new Map<string, number>(),
     playing: '' as string,
     // The working variant's strip: whether its requests are open, and the move Claude just made
     // (offered back for a few seconds).
@@ -287,7 +295,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const stateOf = (p: Proto, v: string, id?: string) => (id ? statesOf(p, v).find(s => s.id === id) : undefined)
   const refOf = (p: Proto) => p.variants[0]?.id ?? ''
   const changed = (p: Proto, v: string, s: State) => v !== refOf(p) && !!s.about?.[v]
-  const toolOk = (p: Proto, v: string, t?: Tool) => !t || (t === 'compare' ? p.variants.length > 1 : statesOf(p, v).length > 0)
+  const toolOk = (p: Proto, v: string, t?: Tool) => !t || (t === 'compare' ? p.variants.length > 1 : t === 'history' ? versionsOf(p, v).length > 0 : statesOf(p, v).length > 0)
+  const versionsOf = (p: Proto, v: string) => p.versions?.[v] ?? []
+  /** The version History shows for a variant: the one chosen, else the newest. */
+  const versionOf = (p: Proto, v: string) => { const all = versionsOf(p, v), n = st.ver.get(`${p.id}/${v}`); return all.find(x => x.n === n) ?? all.at(-1) }
+  // What a version is called: its note, else the asks it came before ("Before: make the price bigger").
+  const versionText = (x: Version) => x.note || (x.before.length ? t('Before: {asks}', { asks: x.before.map(b => b.text).join(' · ') }) : t('Saved by hand'))
   const pathOf = (p: Place) => p.view === 'session' ? '/' : p.view === 'proto' ? `/${p.proto}` : `/${p.proto}/${p.variant}${p.tool ? `/~${p.tool}` : ''}${p.state ? `/${encodeURIComponent(p.state)}` : ''}`
   // Where the address points: its path, or an older link's #/ route, which then gives way to the path.
   const address = () => location.hash.startsWith('#/') ? location.hash.slice(1) : location.pathname
@@ -570,11 +583,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const proto = byId(p.proto)!
     if (p.view === 'proto') return [st.stack, nestKey(), proto.title, proto.kind, ...lobbyOrder(proto).flatMap(v => [v.id, v.name, v.file])]
     const v = proto.variants.find(v => v.id === p.variant)!
-    return [proto.kind, v.file, p.state, p.tool, p.tool === 'compare' ? otherOf(proto, v.id) : '', JSON.stringify(proto.states), ...(p.tool === 'compare' ? proto.variants.map(x => x.file) : [])]
+    return [proto.kind, v.file, p.state, p.tool, p.tool === 'compare' ? otherOf(proto, v.id) : '', p.tool === 'history' ? versionOf(proto, v.id)?.file ?? '' : '', p.tool === 'history' ? versionsOf(proto, v.id).length : 0, JSON.stringify(proto.states), ...(p.tool === 'compare' ? proto.variants.map(x => x.file) : [])]
   }
   /** A variant's file (/src/protos/today/C.tsx) as its route, today/C. */
   const routeOfFile = (file: string) => { const [, , , slug = '', name = ''] = file.split('/'); return `${slug}/${name.replace(/\.\w+$/, '')}` }
   // What a variant is compared with: the one chosen, else the reference (else the next one).
+  // What a tool's button adds after its name: the variant compared with, or how many versions there are.
+  const toolDetail = (p: Proto, v: string, tl: Tool) => tl === 'compare' ? variantRef(p, otherOf(p, v)) : tl === 'history' ? String(versionsOf(p, v).length) : undefined
   const otherOf = (p: Proto, v: string) => {
     const want = st.vs.get(p.id)
     if (want && want !== v && p.variants.some(x => x.id === want)) return want
@@ -716,6 +731,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const pair = [o, v].sort((a, b) => proto.variants.indexOf(a) - proto.variants.indexOf(b))
         el.innerHTML = compareView(proto, v, o, s, pair)
         mountAll(pair.map(x => ({ v: x, s: stateOf(proto, x.id, p.state) })), false)
+      } else if (p.tool === 'history') {
+        const old = versionOf(proto, v.id)!
+        el.innerHTML = historyView(proto, v, old, s)
+        // The earlier version mounts as a variant would, from its own copy of the file.
+        mountAll([{ v: { id: v.id, name: v.name, file: old.file, load: old.load }, s }, { v, s }], false)
       } else if (p.tool === 'play') {
         el.innerHTML = playView(proto, v)
         ;({ player, quit } = autoplay(proto, v))
@@ -854,6 +874,24 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${closeTool(proto, v, 'compare', t('Stop comparing'))}
       </div>
       <div class="flex min-h-0 flex-1 flex-col divide-y divide-black/[.07] md:flex-row md:divide-x md:divide-y-0 dark:divide-white/10">${pair.map(pane).join('')}</div></div>`
+  }
+
+  // An earlier version of the variant (left) beside it now (right), in the same state. The bar picks
+  // the version; nothing here is commented on or picked: the variant now is where that happens.
+  function historyView(proto: Proto, v: Variant, old: Version, s: State | undefined) {
+    const all = versionsOf(proto, v.id)
+    const when = (at: string) => { const tm = Date.parse(at); return tm ? `<span class="shrink-0 text-zinc-400" data-ago="${tm}">${ago(tm)}</span>` : '' }
+    const head = (label: string, line: string, extra = '') => `<div class="flex h-9 shrink-0 items-center gap-2 border-b border-black/[.07] px-3 text-xs dark:border-white/10"><b class="shrink-0">${label}</b><span dir="auto" class="min-w-0 truncate text-zinc-500">${line}</span>${extra}</div>`
+    const pane = (headHtml: string, attrs = '') => `<div class="flex min-h-0 min-w-0 flex-1 flex-col">${headHtml}
+        <div data-fit data-chipbox ${attrs} class="relative min-h-0 flex-1 [contain:layout_paint]"><div class="absolute inset-0 overflow-auto">${frameOf(proto)}</div></div></div>`
+    return `<div data-history="${esc(proto.id)}/${v.id}" class="flex h-full flex-col">
+      <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-violet-500/25 bg-violet-50 px-3 py-2 text-xs dark:bg-violet-500/10">
+        <span class="font-semibold text-violet-900 dark:text-violet-200">${t('{v}, earlier', { v: variantRef(proto, v.id) })}</span>
+        <span class="flex flex-wrap gap-0.5 rounded-md bg-violet-500/10 p-0.5">${all.map(x => `<button data-act="ver:${x.n}" data-version="${x.n}" aria-pressed="${x.n === old.n}" title="${esc(versionText(x))}" class="h-6 min-w-6 rounded px-1.5 tabular-nums ${x.n === old.n ? 'bg-white text-violet-900 shadow-sm dark:bg-violet-200 dark:text-violet-950' : 'text-violet-800 hover:bg-violet-500/15 dark:text-violet-200'}">${t('v{n}', { n: x.n })}</button>`).join('')}</span>
+        <span dir="auto" class="min-w-0 flex-1 truncate text-violet-900/80 dark:text-violet-200/80">${esc(versionText(old))}</span>
+        ${closeTool(proto, v, 'history', t('Close history'))}
+      </div>
+      <div class="flex min-h-0 flex-1 flex-col divide-y divide-black/[.07] md:flex-row md:divide-x md:divide-y-0 dark:divide-white/10">${pane(head(t('v{n}', { n: old.n }), esc(versionText(old)), when(old.at)), `data-version-pane="${old.n}"`)}${pane(head(t('Now'), bd(v.name)), 'data-version-pane="now"')}</div></div>`
   }
 
   function playView(proto: Proto, v: Variant) {
@@ -1194,7 +1232,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // Where in the variant: its state, and the tool it is shown through.
     const pv = st.place.view === 'variant' ? st.place : null
     const stateName = p && pv ? stateOf(p, pv.variant, pv.tool === 'play' ? st.playing : pv.state)?.name ?? '' : ''
-    const toolName = pv?.tool ? pv.tool === 'compare' ? t('vs {variant}', { variant: otherOf(p!, pv.variant) }) : TOOLS[pv.tool].name : ''
+    const toolName = pv?.tool ? pv.tool === 'compare' ? t('vs {variant}', { variant: otherOf(p!, pv.variant) }) : pv.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, pv.variant)?.n ?? '' }) : TOOLS[pv.tool].name : ''
     const where = pv ? [toolName, stateName].filter(Boolean).join(' · ') : ''
     // A state name alone takes its own direction; after the tool's name it is isolated in the line.
     const whereHtml = toolName ? `${esc(toolName)}${stateName ? ` · ${bd(stateName)}` : ''}` : esc(stateName)
@@ -1400,7 +1438,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           : viewOk() ? `<button data-pill-layout data-shoot="pill-layout" aria-label="${t('Layout')}" aria-haspopup="dialog" aria-expanded="false" class="${btn} transition-colors">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth), st.view.land), 'size-5')}</button>`
           : v ? `<button data-act="fav:${esc(p!.id)}:${esc(v.id)}" data-shoot="pill-fav" aria-pressed="${fav}" aria-label="${fav ? t('Unfavorite') : t('Favorite')}" class="${btn} ${fav ? '!text-amber-400' : ''}">${ic(fav ? 'star-fill' : 'star', 'size-5')}</button>` : ''
         const sOn = stateOn === null ? undefined : sts.find(x => x.id === stateOn)
-        const stateText = pv?.tool === 'all' ? t('All states') : pv?.tool === 'compare' ? t('Compare with {variant}', { variant: variantRef(p!, otherOf(p!, pv.variant)) }) : sOn?.name ?? t('At rest')
+        const stateText = pv?.tool === 'all' ? t('All states') : pv?.tool === 'compare' ? t('Compare with {variant}', { variant: variantRef(p!, otherOf(p!, pv.variant)) }) : pv?.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, pv.variant)?.n ?? '' }) : sOn?.name ?? t('At rest')
         const stateN = pv?.tool ? '' : `${sts.indexOf(sOn!) + 2}/${sts.length + 1}`
         const stateLine = v && sts.length ? `<button data-act="states" data-pill-state data-shoot="pill-state" aria-haspopup="dialog" aria-expanded="${st.states}" aria-label="${t('States: {state}. Show all states', { state: esc(stateText) })}" class="mx-auto flex h-[18px] min-w-0 max-w-full items-center gap-1 rounded-full px-2 text-[11px] leading-none text-sky-700 dark:text-sky-300 ${k.press}">${pv?.tool === 'play' ? ic('play', 'size-2.5 shrink-0') : ''}<span data-pill-state-name dir="auto" class="min-w-0 truncate">${esc(stateText)}</span>${stateN ? `<span class="shrink-0 tabular-nums ${k.n}">${stateN}</span>` : ''}${ic('caret-up', `size-2.5 shrink-0 ${k.n}`)}</button>` : ''
         const pillRow = (flush: boolean) => `<div data-ruler hidden class="pointer-events-none absolute left-1/2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-white/95 shadow-lg ring-1 ring-black/[.08] dark:bg-zinc-800/95 dark:ring-white/10 ${flush ? 'bottom-[calc(100%+var(--isl-h,0px)+.75rem)]' : 'bottom-full mb-2'} [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)]"></div>
@@ -1454,7 +1492,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       label: sv ? variantRef(p!, sv.id) : '',
       name: sv?.name ?? '',
       rows: sv ? [undefined, ...sts].map(x => ({ id: x?.id ?? '', name: x?.name ?? t('At rest'), note: x?.about?.[sv.id], noteCls: x ? noteCls(p!, sv.id, x) : undefined, dot: dot(p!, sv.id, x, stateOn === (x?.id ?? '')), on: stateOn === (x?.id ?? ''), playing: pv?.tool === 'play' && st.playing === (x?.id ?? '') })) : [],
-      tools: sv ? (['play', 'all', 'compare'] as Tool[]).filter(tl => toolOk(p!, sv.id, tl)).map(tl => ({ id: tl, name: TOOLS[tl].name, icon: ic(pv?.tool === tl && tl === 'play' ? 'pause' : TOOLS[tl].icon, 'size-5'), detail: tl === 'compare' ? variantRef(p!, otherOf(p!, sv.id)) : undefined, on: pv?.tool === tl })) : [],
+      tools: sv ? TOOL_LIST.filter(tl => toolOk(p!, sv.id, tl)).map(tl => ({ id: tl, name: TOOLS[tl].name, icon: ic(pv?.tool === tl && tl === 'play' ? 'pause' : TOOLS[tl].icon, 'size-5'), detail: toolDetail(p!, sv.id, tl), on: pv?.tool === tl })) : [],
       onClose: () => { st.states = false; render() },
       onState: id => { st.states = false; if (p && sv) act('pvs', p.id, sv.id, id); render() },
       onTool: id => { st.states = false; if (p && sv) act('tool', p.id, sv.id, id); render() },
@@ -1762,7 +1800,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (p && pv && v) {
       const sts = statesOf(p, v.id), tool = pv.tool
       const lit = tool === 'all' ? null : tool === 'play' ? st.playing : pv.state ?? ''
-      const tools = (['play', 'all', 'compare'] as Tool[]).filter(t => toolOk(p, v.id, t))
+      const tools = TOOL_LIST.filter(t => toolOk(p, v.id, t))
       const leaf = (x?: State) => {
         const id = x?.id ?? '', on = lit === id, note = x?.about?.[v.id]
         return `<button data-act="pvs:${esc(p.id)}:${v.id}:${esc(id)}" aria-current="${on}" class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-start ${on ? ON : ROWC}">${dot(p, v.id, x, on)}<span class="min-w-0 flex-1"><span class="flex items-center gap-1.5 leading-4 ${on ? 'font-medium text-zinc-900 dark:text-white' : ''}"><span dir="auto" class="truncate">${esc(x?.name ?? t('At rest'))}</span>${on && tool === 'play' ? ic('play', 'size-3 text-sky-500') : ''}</span>${note && x ? `<span dir="auto" class="mt-0.5 block text-[10px] leading-[14px] ${noteCls(p, v.id, x)}">${esc(note)}</span>` : ''}</span></button>`
@@ -1770,7 +1808,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (sts.length || tools.length) here = `<div class="mt-3 border-t border-black/[.06] pt-2 dark:border-white/[.07]">
           <div class="flex items-center gap-1 px-1.5 pb-1 text-[10px] font-medium text-zinc-400"><b class="text-zinc-500">${variantRef(p!, v.id)}</b><span dir="auto" class="truncate">${esc(v.name)}</span><span class="ms-auto">${sts.length ? tn(sts.length, '{n} state', '{n} states') : ''}</span></div>
           ${sts.length ? `<div>${leaf()}${sts.map(leaf).join('')}</div>` : ''}
-          ${tools.length ? `<div class="flex flex-wrap gap-1 px-1 pt-1.5">${tools.map(tl => `<button data-act="tool:${esc(p.id)}:${v.id}:${tl}" aria-pressed="${tool === tl}" title="${TOOLS[tl].hint}${tool === tl ? t(' · click to stop') : ''}" class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] ${tool === tl ? 'bg-sky-500/15 font-medium text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${ic(TOOLS[tl].icon, 'size-3')}${TOOLS[tl].name}${tl === 'compare' ? `<span class="text-zinc-400">${variantRef(p, otherOf(p, v.id))}</span>` : ''}</button>`).join('')}</div>` : ''}
+          ${tools.length ? `<div class="flex flex-wrap gap-1 px-1 pt-1.5">${tools.map(tl => `<button data-act="tool:${esc(p.id)}:${v.id}:${tl}" aria-pressed="${tool === tl}" title="${TOOLS[tl].hint}${tool === tl ? t(' · click to stop') : ''}" class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] ${tool === tl ? 'bg-sky-500/15 font-medium text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${ic(TOOLS[tl].icon, 'size-3')}${TOOLS[tl].name}${toolDetail(p, v.id, tl) ? `<span class="text-zinc-400">${toolDetail(p, v.id, tl)}</span>` : ''}</button>`).join('')}</div>` : ''}
         </div>`
     }
 
@@ -1898,6 +1936,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         return go({ view: 'variant', proto: arg, variant: arg2, tool: t, ...(state ? { state } : {}) })
       }
       case 'vs': if (p) { st.vs.set(p.id, arg); show(false); render() } return
+      case 'ver': if (p && here) { st.ver.set(`${p.id}/${here.variant}`, Number(arg)); show(false); render() } return
       case 'nextdiff': {
         if (!p || !here) return
         const v = here.variant, o = otherOf(p, v)
@@ -2805,8 +2844,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       rows.push({ id: 'theme', label: st.dark ? t('Light theme') : t('Dark theme'), icon: st.dark ? 'sun' : 'moon', run: () => setTheme(!st.dark) })
     } else {
       if (!here) rows.push({ id: 'open', label: t('Open {v}', { v: variantRef(q, v.id) }), icon: 'right', run: () => go(keepIn(q, v.id)) })
-      for (const t of (['play', 'all', 'compare'] as Tool[]).filter(t => toolOk(q, v.id, t))) {
-        rows.push({ id: `tool-${t}`, label: TOOLS[t].name, icon: TOOLS[t].icon, hint: t === 'compare' ? variantRef(q, otherOf(q, v.id)) : undefined, on: here && st.place.view === 'variant' && st.place.tool === t, run: () => act('tool', q.id, v.id, t) })
+      for (const t of TOOL_LIST.filter(t => toolOk(q, v.id, t))) {
+        rows.push({ id: `tool-${t}`, label: TOOLS[t].name, icon: TOOLS[t].icon, hint: toolDetail(q, v.id, t), on: here && st.place.view === 'variant' && st.place.tool === t, run: () => act('tool', q.id, v.id, t) })
       }
       rows.push({ id: 'share-link', label: t('Share link…'), icon: 'link-simple', run: () => act('share-link', q.id, v.id) })
       rows.push({ id: 'share', label: t('Share screenshots'), icon: 'share', run: () => act('share', q.id, v.id) })

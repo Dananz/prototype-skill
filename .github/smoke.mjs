@@ -31,6 +31,7 @@ import { hostLabelChecks } from './host-label-checks.mjs'
 import { listenerChecks, continuousListenerChecks, continuousRuntimeChecks } from './listener-checks.mjs'
 import { intakeChecks } from './intake-checks.mjs'
 import { pickNoteChecks } from './pick-note-checks.mjs'
+import { decisionChecks } from './decision-checks.mjs'
 import { commentReplyThreadChecks } from './comment-reply-thread-checks.mjs'
 import { contextMenuChecks } from './context-menu-checks.mjs'
 import { splitChecks } from './split-checks.mjs'
@@ -313,6 +314,13 @@ if (process.argv.includes('--share-link-only')) {
   console.log('OK: focused share link checks')
   process.exit(0)
 }
+if (process.argv.includes('--decisions-only')) {
+  await decisionChecks({ proto, app, local, openPage, fail, keepShots })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused History, Combine parts and Decision brief checks')
+  process.exit(0)
+}
 if (process.argv.includes('--slots-only')) {
   await slotChecks({ proto, app, local, openPage, fail })
   proto(['rm'])
@@ -368,6 +376,7 @@ await contextMenuChecks({ proto, app, local, openPage, fail })
 await splitChecks({ proto, app, local, openPage, fail, keepShots })
 await keyboardColumnsChecks({ proto, app, local, openPage, fail, keepShots })
 await slotChecks({ proto, app, local, openPage, fail })
+await decisionChecks({ proto, app, local, openPage, fail, keepShots })
 await middleDragChecks({ proto, app, local, openPage, fail })
 await zoomResetChecks({ proto, app, local, openPage, fail })
 await variantLabelsChecks({ proto, app, local, openPage, fail })

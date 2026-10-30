@@ -192,6 +192,7 @@ export const ACTION: Record<Action, { say: (v: string) => string; icon: string }
   'copy-options': { say: v => `Generate copy options for ${v}`, icon: 'text' },
   copy: { say: v => `Copy for ${v}`, icon: 'text' },
   'share-fix': { say: v => `Fix before sharing ${v}`, icon: 'warning' },
+  combine: { say: v => `Combine parts, starting from ${v}`, icon: 'branch' },
 }
 /** A moment or a range of the motion, as the dock and the inbox write it: `0.35 s`, `0.30–0.62 s`. */
 export const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `${(t.at / 1000).toFixed(2)} s` : `${(t.at / 1000).toFixed(2)}–${(t.to / 1000).toFixed(2)} s`
@@ -206,6 +207,7 @@ export const aboutOf = (i: Item) => i.action === 'more-variants'
   : i.action === 'copy-options' ? t('Generate copy options for {v}', { v: variantRef(null, i.variant) })
   : i.action === 'copy' ? t('Copy for {v}', { v: variantRef(null, i.variant) })
   : i.action === 'share-fix' ? t('Fix before sharing {v}', { v: variantRef(null, i.variant) })
+  : i.action === 'combine' ? t('Combine parts, starting from {v}', { v: variantRef(null, i.variant) })
   : i.time ? (i.time.to === undefined ? t('At {time}', { time: spanOf(i.time) }) : t('Over {time}', { time: spanOf(i.time) }))
   : i.target?.whole ? t('Whole variant')
   : t('Comment {n}', { n: i.n })

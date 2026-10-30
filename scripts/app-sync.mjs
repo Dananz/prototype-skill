@@ -29,7 +29,7 @@ export const STACKS = {
 }
 
 // The files a running dev server holds in memory: a change to one takes a new server.
-export const RESTART_WORTHY = ['vite.config.mjs', 'server.mjs', 'source.mjs', 'assignment.mjs', 'listener.mjs']
+export const RESTART_WORTHY = ['vite.config.mjs', 'server.mjs', 'source.mjs', 'assignment.mjs', 'listener.mjs', 'history.mjs', 'brief.mjs']
 
 const readJson = (f, fallback) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return fallback } }
 

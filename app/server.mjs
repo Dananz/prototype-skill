@@ -7,6 +7,8 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, buildUpNeeded, isCurrent } from './assignment.mjs'
+import { snapshot } from './history.mjs'
+import { partsOf, writeBrief } from './brief.mjs'
 
 const dir = fileURLToPath(new URL('.', import.meta.url))
 const file = join(dir, 'session.json')
@@ -73,7 +75,12 @@ function work({ proto, variant, undo, ask }) {
     patch.work = { ...t, at }
     patch.before = before.filter((x, i, all) => all.findIndex(y => same(x, y)) === i).slice(0, 3).map(x => ({ proto: x.proto, variant: x.variant }))
   }
-  if (ask) { const key = `${t.proto}/${t.variant}`; patch.asks = { ...s.asks, [key]: [...(s.asks?.[key] || []), { at, text: ask }] } }
+  if (ask) {
+    const key = `${t.proto}/${t.variant}`
+    patch.asks = { ...s.asks, [key]: [...(s.asks?.[key] || []), { at, text: ask }] }
+    // The design as it was picked, kept for History (history.mjs): the note may change it next.
+    try { snapshot(dir, t.proto, t.variant, ask, { at }) } catch { /* the pick still counts */ }
+  }
   if (Object.keys(patch).length) write(patch)
   return !!patch.work
 }
@@ -335,7 +342,7 @@ const fromOf = f => ({ share: f.share, version: f.version, viewer: f.viewer, nam
 // the element of the line it changes. More variants is the one made on a prototype (route <slug>),
 // with how many.
 // Fix before sharing is asked from a share review: the owner's words and what the review found.
-const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'copy', 'try-it', 'copy-options', 'share-fix'])
+const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'copy', 'try-it', 'copy-options', 'share-fix', 'combine'])
 
 /**
  * Writes one send from the page as a new batch; images come as data URLs and are stored as files.
@@ -382,7 +389,13 @@ export function receive(data, root = dir, { check = false } = {}) {
       if (c.point !== undefined || c.region !== undefined || c.target !== undefined || time) throw bad(i, ': more-variants has no element, spot, region or moment')
     } else if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
-      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it, copy-options or share-fix, on a variant (<slug>/<letter>)')
+      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it, copy-options, share-fix or combine, on a variant (<slug>/<letter>)')
+      if (c.action === 'combine') {
+        const parts = partsOf({ route: c.route, tags: (Array.isArray(c.tags) ? c.tags : []).map(element).filter(Boolean) })
+        if (parts.length < 2) throw bad(i, ': combine takes parts of at least two variants: tag the other ones in its note (@ a variant, or an element on one)')
+        const gone = parts.find(r => { const [s2, l2] = r.split('/'); return !hasVariant(s2, l2) })
+        if (gone) throw bad(i, `: there is no variant ${gone} to take a part from`)
+      }
       if (c.action === 'pick' || c.action === 'unpick') {
         let meta
         try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { throw bad(i, `: src/protos/${slug}/meta.ts is missing or isn't plain JSON, so a pick can't be marked in it`) }
@@ -684,6 +697,13 @@ export function prototypeServer(session) {
             let took
             if (route === '/withdraw') {
               try { took = withdraw(data) } catch (e) { return fail(e.status || 500, e.message) }
+            }
+            // Decision brief in the page: made now, kept at .proto/decisions/<slug>.md, and shown.
+            if (route === '/brief') {
+              const made = typeof data.proto === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(data.proto) ? writeBrief(dir, data.proto) : null
+              if (!made) return fail(404, `no prototype ${String(data.proto ?? '')}`)
+              res.setHeader('content-type', 'application/json')
+              return res.end(JSON.stringify({ markdown: made.markdown, file: `.proto/decisions/${data.proto}.md`, picked: made.picked, open: made.open }))
             }
             if (route === '/fav') {
               let favorites
