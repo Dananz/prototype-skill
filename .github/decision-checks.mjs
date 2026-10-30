@@ -45,6 +45,14 @@ export async function decisionChecks({ proto, app, local, openPage, fail, keepSh
     assert(!bad.length, `page errors: ${bad.join(' | ')}`)
   } finally { page.close() }
 
+  // On a phone, History is in the pill's line even when the variant has no states.
+  const phone = await openPage(`${local}decide/B`, { width: 390, height: 844, phone: true })
+  try {
+    const result = await phone.run(`(async () => { ${until} try { (await until(() => document.querySelector('[data-pill-state]'))).click(); (await until(() => [...document.querySelectorAll('button')].find(b => /History/.test(b.textContent) && !b.closest('[data-pill-state]') && b.offsetParent))).click(); await until(() => document.querySelector('[data-version-pane="2"] [data-mount] h1')?.textContent === 'Second words of B'); return 'ok' } catch (e) { return e.message } })()`)
+    assert(result === 'ok', `phone History: ${result}`)
+    await phone.screenshot(join(keepShots, 'history-phone.png'))
+  } finally { phone.close() }
+
   // The server takes a combine only with another variant to take from, and names it to the agent.
   const send = body => fetch(`${local}__proto/comments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comments: [body] }) })
   const lone = await send({ route: 'decide/B', text: 'Combine parts, starting from #2: nothing tagged', action: 'combine' })
@@ -55,6 +63,10 @@ export async function decisionChecks({ proto, app, local, openPage, fail, keepSh
   assert(ok.status === 200, `a combine was refused: ${await ok.text()}`)
   const heard = proto(['inbox'])
   assert(heard.includes('action: combine') && heard.includes('proto add <new slug> --from decide/B,decide/A --next'), 'proto inbox does not say how to build the combination')
+  // The line it prints is one the CLI takes: a new prototype from both, nested under the first.
+  proto(['add', 'mix', '--from', 'decide/B,decide/A', '--next', '--title', 'Mix', '--ask', 'The heading of #2 on the calm page of #1', '--variants', 'A:Mixed'])
+  const mixed = readFileSync(join(app, 'src/protos/mix/meta.ts'), 'utf8')
+  assert(mixed.includes('"from": "decide/B"') && /"also": \[\s*"decide\/A"\s*\]/.test(mixed), `the combined prototype does not name both variants: ${mixed}`)
   const { sent } = await ok.json().catch(() => ({}))
   const id = sent || heard.match(/^batch (\S+)/m)?.[1]
   if (id) proto(['reply', id, 'Building it', '--done'])

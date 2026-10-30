@@ -218,4 +218,5 @@ export default {
   'v{n}': 'ג{n}',
   'Close history': 'סגור היסטוריה',
   'History · v{n}': 'היסטוריה · ג{n}',
+  'As picked': 'כפי שנבחר',
 } satisfies Record<string, string>

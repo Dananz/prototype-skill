@@ -300,7 +300,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   /** The version History shows for a variant: the one chosen, else the newest. */
   const versionOf = (p: Proto, v: string) => { const all = versionsOf(p, v), n = st.ver.get(`${p.id}/${v}`); return all.find(x => x.n === n) ?? all.at(-1) }
   // What a version is called: its note, else the asks it came before ("Before: make the price bigger").
-  const versionText = (x: Version) => x.note || (x.before.length ? t('Before: {asks}', { asks: x.before.map(b => b.text).join(' · ') }) : t('Saved by hand'))
+  // One kept at a pick made in the page (its ask is "Picked B") reads as the design as picked.
+  const versionText = (x: Version) => {
+    const asks = x.before.map(b => b.text).filter(a => !/^Picked [A-Z]{1,2}$/.test(a))
+    return x.note || (asks.length ? t('Before: {asks}', { asks: asks.join(' · ') }) : x.before.length ? t('As picked') : t('Saved by hand'))
+  }
   const pathOf = (p: Place) => p.view === 'session' ? '/' : p.view === 'proto' ? `/${p.proto}` : `/${p.proto}/${p.variant}${p.tool ? `/~${p.tool}` : ''}${p.state ? `/${encodeURIComponent(p.state)}` : ''}`
   // Where the address points: its path, or an older link's #/ route, which then gives way to the path.
   const address = () => location.hash.startsWith('#/') ? location.hash.slice(1) : location.pathname
@@ -1439,8 +1443,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           : v ? `<button data-act="fav:${esc(p!.id)}:${esc(v.id)}" data-shoot="pill-fav" aria-pressed="${fav}" aria-label="${fav ? t('Unfavorite') : t('Favorite')}" class="${btn} ${fav ? '!text-amber-400' : ''}">${ic(fav ? 'star-fill' : 'star', 'size-5')}</button>` : ''
         const sOn = stateOn === null ? undefined : sts.find(x => x.id === stateOn)
         const stateText = pv?.tool === 'all' ? t('All states') : pv?.tool === 'compare' ? t('Compare with {variant}', { variant: variantRef(p!, otherOf(p!, pv.variant)) }) : pv?.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, pv.variant)?.n ?? '' }) : sOn?.name ?? t('At rest')
-        const stateN = pv?.tool ? '' : `${sts.indexOf(sOn!) + 2}/${sts.length + 1}`
-        const stateLine = v && sts.length ? `<button data-act="states" data-pill-state data-shoot="pill-state" aria-haspopup="dialog" aria-expanded="${st.states}" aria-label="${t('States: {state}. Show all states', { state: esc(stateText) })}" class="mx-auto flex h-[18px] min-w-0 max-w-full items-center gap-1 rounded-full px-2 text-[11px] leading-none text-sky-700 dark:text-sky-300 ${k.press}">${pv?.tool === 'play' ? ic('play', 'size-2.5 shrink-0') : ''}<span data-pill-state-name dir="auto" class="min-w-0 truncate">${esc(stateText)}</span>${stateN ? `<span class="shrink-0 tabular-nums ${k.n}">${stateN}</span>` : ''}${ic('caret-up', `size-2.5 shrink-0 ${k.n}`)}</button>` : ''
+        const stateN = pv?.tool || !sts.length ? '' : `${sts.indexOf(sOn!) + 2}/${sts.length + 1}`
+        const stateLine = v && (sts.length || versionsOf(p!, v.id).length) ? `<button data-act="states" data-pill-state data-shoot="pill-state" aria-haspopup="dialog" aria-expanded="${st.states}" aria-label="${t('States: {state}. Show all states', { state: esc(stateText) })}" class="mx-auto flex h-[18px] min-w-0 max-w-full items-center gap-1 rounded-full px-2 text-[11px] leading-none text-sky-700 dark:text-sky-300 ${k.press}">${pv?.tool === 'play' ? ic('play', 'size-2.5 shrink-0') : ''}<span data-pill-state-name dir="auto" class="min-w-0 truncate">${esc(stateText)}</span>${stateN ? `<span class="shrink-0 tabular-nums ${k.n}">${stateN}</span>` : ''}${ic('caret-up', `size-2.5 shrink-0 ${k.n}`)}</button>` : ''
         const pillRow = (flush: boolean) => `<div data-ruler hidden class="pointer-events-none absolute left-1/2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-white/95 shadow-lg ring-1 ring-black/[.08] dark:bg-zinc-800/95 dark:ring-white/10 ${flush ? 'bottom-[calc(100%+var(--isl-h,0px)+.75rem)]' : 'bottom-full mb-2'} [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)]"></div>
             ${menuBtn}${sep}
             <button data-act="variant:${prev.id}" aria-label="${t('Previous variant: {label} {name}', { label: variantRef(p!, prev.id), name: prev.name })}" class="${btn}">${ic('left')}</button>
@@ -1488,7 +1492,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     })
     const sv = p && pv ? p.variants.find(x => x.id === pv.variant) : undefined
     paintStates({
-      open: st.states && !!key && !!sv && sts.length > 0,
+      open: st.states && !!key && !!sv && (sts.length > 0 || versionsOf(p!, sv.id).length > 0),
       label: sv ? variantRef(p!, sv.id) : '',
       name: sv?.name ?? '',
       rows: sv ? [undefined, ...sts].map(x => ({ id: x?.id ?? '', name: x?.name ?? t('At rest'), note: x?.about?.[sv.id], noteCls: x ? noteCls(p!, sv.id, x) : undefined, dot: dot(p!, sv.id, x, stateOn === (x?.id ?? '')), on: stateOn === (x?.id ?? ''), playing: pv?.tool === 'play' && st.playing === (x?.id ?? '') })) : [],
