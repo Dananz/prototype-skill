@@ -57,7 +57,7 @@ export async function commentUntilChecks({ proto, app, fail }) {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const skill = dirname(dirname(fileURLToPath(import.meta.url)))
   const project = mkdtempSync(join(tmpdir(), 'proto-until-'))
-  const app = join(project, '.prototypes', 'untilchk')
+  const app = join(project, '.prototypes', '_project')
   mkdirSync(join(app, 'src', 'protos'), { recursive: true })
   writeFileSync(join(app, 'session.json'), JSON.stringify({ stack: 'react' }))
   const fail = msg => { console.error(`\nFAILED: ${msg}`); rmSync(project, { recursive: true, force: true }); process.exit(1) }

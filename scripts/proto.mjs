@@ -417,6 +417,8 @@ async function up() {
   // --name names this conversation; the page's title is the project's.
   registerSession(dir, sessionId(), { name: typeof flags.name === 'string' ? flags.name : undefined, lang: langFlag() ?? undefined })
   if (langFlag() && langFlag() !== (s.lang ?? 'en')) s = patchSession(dir, { lang: langFlag() })
+  // The conversation that last started the app: Settings' restart message names it.
+  if (s.conversation !== sessionId()) s = patchSession(dir, { conversation: sessionId() })
   // --no-serve: the app and the registry only, no install, server or tailnet (the CLI checks).
   if (flags['no-serve']) return console.log(`dir ${dir}`)
   if (!existsSync(join(dir, 'node_modules', 'vite')) || depsMoved) install(dir)

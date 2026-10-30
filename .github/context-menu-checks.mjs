@@ -4,6 +4,7 @@
 // browser's: Shift + right-click, a field, selected text.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { commentsKey } from './comments-key.mjs'
 
 export async function contextMenuChecks({ proto, app, local, openPage, fail }) {
   // Four directions at the start: the menu asks for four more.
@@ -20,7 +21,7 @@ export async function contextMenuChecks({ proto, app, local, openPage, fail }) {
     const menu = () => document.querySelector('[data-context-menu]')
     const labels = () => [...(menu()?.querySelectorAll('[role=menuitem], [role=menuitemradio]') ?? [])].map(x => x.textContent.trim())
     const frame = () => document.querySelector('[data-view] iframe')?.contentDocument
-    const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items ?? []
+    const saved = () => JSON.parse(localStorage.getItem('${commentsKey(app)}') || '{}').items ?? []
     const esc = () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   `
   try {

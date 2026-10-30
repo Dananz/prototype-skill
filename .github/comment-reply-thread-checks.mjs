@@ -4,6 +4,7 @@
 // comment (one row, one pin). `proto reply` to the follow-up lands in that thread.
 import { join } from 'node:path'
 import { writeFileSync } from 'node:fs'
+import { commentsKey } from './comments-key.mjs'
 
 export async function commentReplyThreadChecks({ proto, app, openPage, fail, local, evidence = '', layout = 'desktop', phase = 'after' }) {
   proto(['add', 'threadfx', '--title', 'Threads', '--variants', 'A:Plain'])
@@ -14,7 +15,7 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
   const page = await openPage(`${local}threadfx/A?theme=light`)
   const helpers = `
     const until = async (f, ms = 10000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 50))) { const v = f(); if (v) return v } return null }
-    const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.filter(i => i.proto === 'threadfx') ?? []
+    const saved = () => JSON.parse(localStorage.getItem('${commentsKey(app)}') || '{}').items?.filter(i => i.proto === 'threadfx') ?? []
     const panel = () => innerWidth < 640 ? document.querySelector('[role=dialog]') : document
     const rows = () => [...(panel()?.querySelectorAll('[data-shoot=comment-row]') ?? [])].filter(r => r.getClientRects().length && saved().some(i => i.id === r.dataset.comment))
     const type = (el, text) => { if (el.isContentEditable) el.textContent = text; else Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, text); el.dispatchEvent(new Event('input', { bubbles: true })) }

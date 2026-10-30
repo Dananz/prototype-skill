@@ -2,6 +2,7 @@
 // the components around the element are used, and `proto inbox` marks the one the comment is on.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { commentsKey } from './comments-key.mjs'
 
 export async function commentUsesChecks({ proto, app, openPage, fail }) {
   const local = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8')).localUrl
@@ -28,7 +29,7 @@ ${nested ? `function Leaf({ label, shoot }: { label: string; shoot: string }) {
     const editor = () => document.querySelector('[data-composer] [role=textbox]')
     const design = () => document.querySelector('[data-view] iframe')?.contentDocument ?? document
     const second = () => design().querySelector('[data-mount] [data-shoot=second]')
-    const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.find(i => i.proto === '${slug}')?.target
+    const saved = () => JSON.parse(localStorage.getItem('${commentsKey(app)}') || '{}').items?.find(i => i.proto === '${slug}')?.target
   `
   let target
   try {

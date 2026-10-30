@@ -62,7 +62,7 @@ export type Ref = { proto: string; variant: string }
 // arrow keys and slides that go along the line are mirrored by X.
 const X = rtl ? -1 : 1
 const FWD = rtl ? 'ArrowLeft' : 'ArrowRight', BACK = rtl ? 'ArrowRight' : 'ArrowLeft'
-export type Session = { agent?: Agent; id: string; name: string; lang?: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
+export type Session = { agent?: Agent; id: string; conversation?: string; name: string; lang?: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
 type Mount = (el: HTMLElement, component: any) => () => void
 // A variant can be shown in one of its states, or through a tool: all its states at once
 // (all), playing through them (play), next to another variant (compare), or next to one of its
@@ -2703,7 +2703,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     drawSettings({
       open: settingsOpen, category: settingsCategory, appearance, live: comments.store.get().live, sidebar: st.side,
       review: localStorage.getItem('proto-hints') !== '0', stack: st.stack,
-      session: { host: agentName(session.agent), id: session.id, name: session.name, url: session.url || location.origin + '/', keep: !!st.status?.keep,
+      session: { host: agentName(session.agent), id: session.conversation || session.id, name: session.name, url: session.url || location.origin + '/', keep: !!st.status?.keep,
         server: st.stopped ? 'stopped' : st.live ? 'live' : 'reconnecting',
         listening: !!st.status?.inbox?.listening,
         error: st.failed?.at === 'session' ? st.failed.text : null,

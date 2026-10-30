@@ -214,7 +214,7 @@ export default function Panel() {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const skill = dirname(dirname(fileURLToPath(import.meta.url)))
   const project = realpathSync.native(mkdtempSync(join(tmpdir(), 'proto-pin-')))
-  const app = join(project, '.prototypes', 'pinchk')
+  const app = join(project, '.prototypes', '_project')
   writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'proto-pin', private: true, dependencies: { react: '^19.2.0' } }))
   let up = false
   const proto = (args, { ok = true, stdout = false } = {}) => {
@@ -227,7 +227,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     return stdout ? r.stdout || '' : (r.stdout || '') + (r.stderr || '')
   }
   const end = () => {
-    if (up) spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'rm', '--project', project, '--session', 'pinchk'], { stdio: 'ignore', timeout: 60_000 })
+    if (up) spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'rm', '--all', '--project', project, '--session', 'pinchk'], { stdio: 'ignore', timeout: 60_000 })
     try { rmSync(project, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) } catch { /* temp dir */ }
   }
   function fail(msg) { console.error(`\nFAILED: ${msg}`); end(); process.exit(1) }

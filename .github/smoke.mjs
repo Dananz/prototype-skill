@@ -65,7 +65,7 @@ const scratch = mkdtempSync(join(base, 'proto-smoke-run-'))
 const real = join(scratch, 'proto-smoke')
 const project = join(scratch, 'proto-smoke-link')
 const keepShots = join(base, 'proto-shots')
-const app = join(project, '.prototypes', 'smoke')
+const app = join(project, '.prototypes', '_project')
 mkdirSync(real, { recursive: true })
 symlinkSync(real, project, 'junction')
 writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'proto-smoke', private: true, dependencies: { react: '^19.2.0' } }))
@@ -82,7 +82,7 @@ const fail = msg => {
   if (!failing) {
     failing = true
     for (const close of pages) try { close() } catch { /* already gone */ }
-    if (existsSync(join(app, 'session.json'))) spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'rm', '--project', project, '--session', 'smoke'], { stdio: 'ignore', timeout: 60_000 })
+    if (existsSync(join(app, 'session.json'))) spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'rm', '--all', '--project', project, '--session', 'smoke'], { stdio: 'ignore', timeout: 60_000 })
     try { rmSync(scratch, { recursive: true, force: true }) } catch { /* temp dir */ }
   }
   process.exit(1)
@@ -214,21 +214,21 @@ let { pid } = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
 if (process.argv.includes('--labels-favorites-only')) {
   await variantLabelsChecks({ proto, app, local, openPage, fail })
   await favoritesChecks({ proto, app, local, openPage, fail })
-  proto(['rm'])
+  proto(['rm', '--all'])
   try { rmSync(scratch, { recursive: true, force: true }) } catch { /* temp dir */ }
   console.log('OK: focused variant label and favorites checks')
   process.exit(0)
 }
 if (process.argv.includes('--zoom-reset-only')) {
   await zoomResetChecks({ proto, app, local, openPage, fail, keepShots })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused zoom reset checks')
   process.exit(0)
 }
 if (process.argv.includes('--comment-gone-only')) {
   await commentGoneChecks({ proto, app, openPage, fail, shots: process.env.PROTO_GONE_SHOTS })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused gone-target comment checks')
   process.exit(0)
@@ -239,39 +239,39 @@ if (process.argv.includes('--comment-core-only')) {
   await commentPicturesChecks({ proto, app, openPage, fail })
   await commentReplyThreadChecks({ proto, app, local, openPage, fail })
   await pickNoteChecks({ proto, app, local, openPage, fail, keepShots })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   process.exit(0)
 }
 if (process.argv.includes('--comment-thread-only')) {
   await commentReplyThreadChecks({ proto, app, local, openPage, fail, evidence: process.env.PROTO_IMAGE_EVIDENCE || '', phase: process.env.PROTO_IMAGE_EVIDENCE_PHASE || 'after' })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   process.exit(0)
 }
 if (process.argv.includes('--comment-images-only')) {
   await commentImagesChecks({ proto, app, openPage, fail })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   process.exit(0)
 }
 if (process.argv.includes('--comment-whole-only')) {
   await commentWholeChecks({ proto, app, openPage, fail })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused whole-variant comment checks')
   process.exit(0)
 }
 if (process.argv.includes('--phone-one-design-only')) {
   await phoneOneDesignChecks({ proto, app, local, openPage, fail })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused phone one-design checks')
   process.exit(0)
 }
 if (process.argv.includes('--broken-global-only')) {
   await brokenGlobalChecks({ proto, app, local, openPage, fail })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused broken-global checks')
   process.exit(0)
@@ -281,7 +281,7 @@ if (process.argv.includes('--share-tray-only')) {
   proto(['add', 'share-link', '--title', 'Share link', '--variants', 'A:One,B:Two,C:Three'])
   for (const id of ['A', 'B', 'C']) writeFileSync(join(app, 'src/protos/share-link', `${id}.tsx`), `export default function ${id}() { return <main><h1>MARK-${id}</h1></main> }\n`)
   await shareTrayChecks({ proto, app, fail })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused share tray checks')
   process.exit(0)
@@ -291,7 +291,7 @@ if (process.argv.includes('--share-sheet-only')) {
   proto(['add', 'share-link', '--title', 'Share link', '--variants', 'A:One,B:Two,C:Three'])
   for (const id of ['A', 'B', 'C']) writeFileSync(join(app, 'src/protos/share-link', `${id}.tsx`), `export default function ${id}() { return <main><h1>MARK-${id}</h1></main> }\n`)
   await shareSheetChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_SHEET_SHOTS || join(keepShots, 'share-sheet') })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused share sheet checks')
   process.exit(0)
@@ -300,7 +300,7 @@ if (process.argv.includes('--share-sheet-only')) {
 // the online plan): proto share against it, a viewer in Chrome, the owner's sheet and tray.
 if (process.argv.includes('--share-online-only')) {
   await shareOnlineChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_ONLINE_SHOTS || join(keepShots, 'share-online') })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused share online checks')
   process.exit(0)
@@ -309,28 +309,28 @@ if (process.argv.includes('--share-link-only')) {
   await shareLinkChecks({ proto, app, local, openPage, fail })
   await shareTrayChecks({ proto, app, fail })
   await shareSheetChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_SHEET_SHOTS || join(keepShots, 'share-sheet') })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused share link checks')
   process.exit(0)
 }
 if (process.argv.includes('--decisions-only')) {
   await decisionChecks({ proto, app, local, openPage, fail, keepShots })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused History and Decision brief checks')
   process.exit(0)
 }
 if (process.argv.includes('--slots-only')) {
   await slotChecks({ proto, app, local, openPage, fail })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused slot checks')
   process.exit(0)
 }
 if (process.argv.includes('--compare-comments-only')) {
   await commentCompareChecks({ proto, app, openPage, fail })
-  proto(['rm'])
+  proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused Compare comments checks')
   process.exit(0)
@@ -1824,7 +1824,7 @@ let gone = false
 try { process.kill(pid, 0) } catch { gone = true }
 if (!gone) fail(`the dev server (pid ${pid}) is still running after proto stop`)
 
-proto(['rm'])
+proto(['rm', '--all'])
 if (existsSync(app)) fail('proto rm left the session folder')
 if (!existsSync(join(project, '.prototypes', '_kits', 'main', 'kit.json'))) fail('proto rm took the project\'s design kit with it')
 try { rmSync(scratch, { recursive: true, force: true }) } catch { /* temp dir */ }

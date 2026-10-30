@@ -7,10 +7,12 @@ allowed-tools:
 
 # Prototype
 
-Each agent conversation gets **one live prototype app**. The user gets its link once, at
-the start, and watches every prototype appear and fill in as you write the files: the page
-updates through hot module replacement, never a reload. Everything the user asks for in the
-session lives in that one app: **session › prototype › variant**.
+Each project gets **one live prototype app**, and every agent conversation in that project works
+in it. The user gets its link once, at the start, and watches every prototype appear and fill in
+as you write the files: the page updates through hot module replacement, never a reload.
+Everything the user asks for, in this conversation and the ones before it, lives in that one app:
+**project › prototype › variant**. Each conversation is a session in it: it owns the prototypes it
+makes, and comments on them wake it.
 
 The app already has its navigation (a switcher in the bar that opens the session as columns,
 a sidebar with one line per level and the current level as two columns, a stepper through the
@@ -88,7 +90,7 @@ The CLI resolves identity in this order: `--session`, `PROTO_SESSION_ID`, `CODEX
 use it. If none is available, generate a unique ID once (`node -e
 "console.log(require('node:crypto').randomUUID())"`) and pass `--session "<id>"` on every call.
 Never generate a new ID per command or use one shared default for different conversations.
-To resume an earlier app, use its original project and ID (`proto ls` lists sessions).
+To pick up an earlier conversation's work, run in the same project: it is all in the one app (`proto ls` lists the conversations in each project's app).
 
 For example (replace all placeholders with actual values):
 
@@ -149,11 +151,26 @@ delivery into an idle conversation. Use the T3 webhook when available. Use `--wa
 when the host explicitly supports completion wakeups into this same conversation, then
 rearm it on every completion as described under Comments.
 
-What `proto up` does: the app lives in `<project>/.prototypes/<session>/` (git-ignored, the
-project's own files are untouched), its stack follows the project (React for React, Next or
+What `proto up` does: the app lives in `<project>/.prototypes/_project/` (git-ignored, the
+project's own files are untouched), the same app for every conversation in the project, its stack follows the project (React for React, Next or
 Expo projects, Vue for Vue or Nuxt, React for anything else), it runs a Vite dev server and
 publishes it on the tailnet with `tailscale serve` when available, so that link opens on
 the user's phone too. Without Tailscale, use the printed local URL.
+
+**Apps from before.** A project used before this change has one app per conversation
+(`.prototypes/<session>/`). The first `proto up` copies them all into the project app and prints a
+line per conversation: `imported <name> (<n> prototypes, renamed home → home-2)`. Yours goes first, so
+its link and its slugs stay as they were; another conversation's slug that was taken gets `-2`, and
+everything pointing at it follows. A token two of them define differently stays as each had it
+(`; kept apart: --color-brand`). An app on another stack is skipped and left as it was. Tell the
+user once what was brought in, and use the new slugs from then on.
+
+**One tree, many conversations.** `proto add <slug>` on a slug another conversation made creates
+`<slug>-2` and prints it: use the printed slug in every later command. `--join` adds your variants to
+that prototype instead (when the user means that one). The conversation that last ran `add`, `work`,
+`ask`, `pick` or `fav` on a prototype owns it now, and the page's comments on it wake that
+conversation; a comment on a prototype whose owner isn't listening wakes the conversation that
+listens and was seen last. `proto ls --mine` lists what this conversation made or joined.
 
 `proto up` also keeps the skill current, checking at most every six hours. A plain git clone
 on `main` updates itself and prints `skill: updated the prototype skill …`: re-read this file
@@ -1049,13 +1066,14 @@ says which links (and variants) changed since shared, who is in them now and how
 | The user explicitly finishes or abandons the entire prototype session | Follow `references/listener.md`: `proto inbox --close finished` or `--close abandoned`, disable/verify the exact host task, then `proto stop` |
 | A selected design is delivered into the real app, its `-vs-built.png` shows no double edges, and its feedback is finished | `proto inbox --finish <slug>` for each finished prototype; reconcile and disable the host task only when all feedback is finished |
 | The user explicitly resumes closed review | `proto up`, then follow `references/listener.md` to `proto inbox --reopen` and enable the same saved task (explicit opt-out requires user-authorized `--again`) |
-| The user asks to throw the prototypes away | Close feedback, disable/verify its host task, then `proto rm` |
+| The user asks to throw the prototypes away | Close feedback, disable/verify its host task, then `proto rm` (this conversation's prototypes; `proto rm --all` deletes the whole project app, only when the user means every conversation's work) |
 | The user wants to keep them | `proto keep` (`--off` undoes) |
 | The user wants their links | `proto ls` |
 
 On its own: a server stops after 6 hours with no edits and no open page (90 minutes once every
-prototype in the session is picked or archived, unless the session is kept), and every
-`proto up` deletes sessions untouched for 14 days unless kept, holding a listener record,
+prototype is picked or archived, unless the app is kept). The project app itself is never
+deleted by age; an imported conversation's old app is deleted 14 days after its last edit, and
+every `proto up` deletes other old apps untouched for 14 days unless kept, holding a listener record,
 or containing pending work, and drops leftover tailnet
 rules (`proto gc` does the same on demand). The user can also Keep or Stop from Settings › Session
 in the page. Server stops preserve the comment subscription. Listener reconciliation runs at

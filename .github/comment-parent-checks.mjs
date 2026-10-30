@@ -1,6 +1,7 @@
 // Parent/back belongs to a visible new comment, never a saved draft's invisible old outline.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { commentsKey } from './comments-key.mjs'
 
 export async function commentParentChecks({ proto, app, openPage, fail }) {
   proto(['add', 'parentfx', '--title', 'Comment parents', '--variants', 'A:Nested'])
@@ -54,7 +55,7 @@ export async function commentParentChecks({ proto, app, openPage, fail }) {
       if (editor().textContent !== 'Keep this parent comment') return 'Parent/back lost the words'
       document.querySelector('[data-composer] button[title^="Add,"]').click()
       if (!await until(() => !editor() && document.querySelector('button[aria-label="Comment 1"]'))) return 'Add did not save the comment'
-      const savedTarget = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.find(i => i.proto === 'parentfx')?.target
+      const savedTarget = () => JSON.parse(localStorage.getItem('${commentsKey(app)}') || '{}').items?.find(i => i.proto === 'parentfx')?.target
       if (!await until(() => savedTarget()?.shoot === 'leaf')) return 'Parent/back did not save the original target'
       document.querySelector('button[aria-label="Comment 1"]').click()
       if (!await until(editor)) return 'the saved draft did not reopen'

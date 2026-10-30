@@ -2,6 +2,7 @@
 // proto inbox lists each.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { commentsKey } from './comments-key.mjs'
 
 export async function commentPicturesChecks({ proto, app, openPage, fail }) {
   proto(['add', 'picsfx', '--title', 'Pictures', '--variants', 'A:One button'])
@@ -93,7 +94,7 @@ export async function commentPicturesChecks({ proto, app, openPage, fail }) {
       if (!await until(() => pictures() === 1)) return 'the removal picture did not show'
       document.querySelector('[data-composer] button[title^="Add,"]').click()
       if (!await until(() => !editor())) return 'the removal draft was not saved'
-      const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.find(i => i.body.includes('Remove every picture'))
+      const saved = () => JSON.parse(localStorage.getItem('${commentsKey(app)}') || '{}').items?.find(i => i.body.includes('Remove every picture'))
       if (!await until(() => saved()?.shots?.length === 1)) return 'the original picture was not persisted'
       const legacy = { ...saved(), id: 'legacy-picture', body: ['Legacy picture'], shot: saved().shots[0].src, pasted: true }; delete legacy.shots
       const row = () => [...document.querySelectorAll('[data-shoot=comment-row]')].find(r => r.textContent.includes('Remove every picture'))
@@ -107,9 +108,9 @@ export async function commentPicturesChecks({ proto, app, openPage, fail }) {
       if (!await until(editor)) return 'the empty-picture draft did not reopen'
       if (pictures() !== 0) return 'the removed picture came back on reopen'
       ;[...document.querySelectorAll('[data-composer] button')].find(b => b.textContent === 'Cancel' || b.getAttribute('aria-label') === 'Cancel').click()
-      const data = JSON.parse(localStorage.getItem('proto-comments-smoke'))
+      const data = JSON.parse(localStorage.getItem('${commentsKey(app)}'))
       data.items.push(legacy)
-      localStorage.setItem('proto-comments-smoke', JSON.stringify(data))
+      localStorage.setItem('${commentsKey(app)}', JSON.stringify(data))
       return 'ok'
     })()`)
     if (removed !== 'ok') fail(`pictures: ${removed}`)
@@ -123,7 +124,7 @@ export async function commentPicturesChecks({ proto, app, openPage, fail }) {
       document.querySelector('[data-composer] button[aria-label="Remove the image"]').click()
       if (!await until(() => pictures() === 0)) return 'the legacy picture did not disappear'
       document.querySelector('[data-composer] button[title^="Add,"]').click()
-      const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.find(i => i.id === 'legacy-picture')
+      const saved = () => JSON.parse(localStorage.getItem('${commentsKey(app)}') || '{}').items?.find(i => i.id === 'legacy-picture')
       if (!await until(() => !editor() && saved() && !(saved().shots?.length || saved().shot))) return 'Save restored the legacy picture'
       document.querySelector('[data-shoot=send]').click()
       return 'ok'

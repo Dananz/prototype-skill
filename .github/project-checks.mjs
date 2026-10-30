@@ -42,6 +42,13 @@ test('a second session joins the same app', () => projectFixture(({ call, json }
   assert.equal(json('session.json').id, id)
 }))
 
+test('up records the conversation that started the app', () => projectFixture(({ call, json }) => {
+  ok(call(['up', '--session', 'one', '--no-serve']))
+  assert.equal(json('session.json').conversation, 'one')
+  ok(call(['up', '--session', 'two', '--no-serve']))
+  assert.equal(json('session.json').conversation, 'two')
+}))
+
 test('url prints the project app url for any session', () => projectFixture(({ call }) => {
   ok(call(['up', '--session', 'one', '--no-serve']))
   ok(call(['up', '--session', 'two', '--no-serve']))
