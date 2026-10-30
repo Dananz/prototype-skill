@@ -257,7 +257,7 @@ if (process.argv.includes('--comment-images-only')) {
   process.exit(0)
 }
 if (process.argv.includes('--island-send-only')) {
-  await islandSendChecks({ proto, app, openPage, fail })
+  await islandSendChecks({ proto, app, openPage, fail, shots: process.env.PROTO_ISLAND_SEND_SHOTS })
   proto(['rm'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused island send checks')
