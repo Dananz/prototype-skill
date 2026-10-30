@@ -19,6 +19,10 @@ export type MapInput = {
   readOnly?: boolean
   /** Counts edits to the prototypes' files: the links are read again. */
   edits?: number
+  /** The clear part of the map (`left,top,right,bottom` insets in px) when it runs under the page's cards: fits centre there. */
+  safe?: string
+  /** An area to show (a design's or flow's key, `#n` to ask again): the camera fits it, ending any Focus flight back. */
+  frame?: string
   /** Each prototype's count of file edits (`slug:n`, space-separated): a board's still is taken again when it moves. */
   stamps?: string
   /** What the agent is writing now: `route:building` or `route:editing`, space-separated. */
@@ -172,6 +176,10 @@ function MapView({ api }: { api: MapApi }) {
   const dragged = useRef(0)
   const [size, setSize] = useState({ w: 1, h: 1 })
   const sizeRef = useRef(size); sizeRef.current = size
+  const safe = useMemo(() => { const [l = 0, t = 0, r = 0, b = 0] = (input.safe ?? '').split(',').map(Number); return { l, t, r, b } }, [input.safe])
+  const safeRef = useRef(safe); safeRef.current = safe
+  /** The clear part of the map: where fits land and zooms centre. */
+  const clear = () => { const s = sizeRef.current, k = safeRef.current; return { x: k.l, y: k.t, w: Math.max(1, s.w - k.l - k.r), h: Math.max(1, s.h - k.t - k.b) } }
 
   const apply = useCallback(() => {
     const c = cam.current, el = layer.current
@@ -184,12 +192,15 @@ function MapView({ api }: { api: MapApi }) {
   }, [api])
   const set = (c: Cam) => { cam.current = { ...c, z: clamp(c.z, MIN_Z, MAX_Z) }; apply(); redraw(n => n + 1) }
   const fitTo = (b: { x: number; y: number; w: number; h: number }, pad = 0.9): Cam => {
-    const z = clamp(Math.min(size.w / b.w, size.h / b.h) * pad, MIN_Z, MAX_Z)
-    return { z, x: size.w / 2 - (b.x + b.w / 2) * z, y: size.h / 2 - (b.y + b.h / 2) * z }
+    const a = clear(), z = clamp(Math.min(a.w / b.w, a.h / b.h) * pad, MIN_Z, MAX_Z)
+    return { z, x: a.x + a.w / 2 - (b.x + b.w / 2) * z, y: a.y + a.h / 2 - (b.y + b.h / 2) * z }
   }
+  // One flight at a time: a new one takes over from the one under way.
+  const flight = useRef(0)
   const fly = (to: Cam, ms = 450, done?: () => void) => {
-    const from = { ...cam.current }, t0 = performance.now()
+    const from = { ...cam.current }, t0 = performance.now(), id = ++flight.current
     const step = (now: number) => {
+      if (id !== flight.current) return
       const k = ease(Math.min(1, (now - t0) / ms))
       // Zoom moves geometrically, so the flight feels even at every scale.
       const z = from.z * Math.pow(to.z / from.z, k)
@@ -204,8 +215,8 @@ function MapView({ api }: { api: MapApi }) {
     set({ z, x: px - (px - c.x) * (z / c.z), y: py - (py - c.y) * (z / c.z) })
     // Zoomed out well past the design in Focus: that is the map again, right where the camera is.
     const fb = focusRef.current
-    const sz = sizeRef.current
-    if (fb && f < 1 && z < Math.min(sz.w / fb.w, sz.h / fb.h) * OUT) { before.current = null; was.current = ''; api.leave?.() }
+    const a = clear()
+    if (fb && f < 1 && z < Math.min(a.w / fb.w, a.h / fb.h) * OUT) { before.current = null; was.current = ''; api.leave?.() }
   }
 
   useLayoutEffect(() => {
@@ -273,7 +284,7 @@ function MapView({ api }: { api: MapApi }) {
       // Typing, or a key for a focused control (a button, a link, a menu), or anywhere outside the map, isn't the map's.
       const at = e.target instanceof Element ? e.target : null
       if (at && at !== document.body && (at.closest('input, textarea, select, [contenteditable], button, a, [role], [data-map-slot]') || !at.closest('[data-map]'))) return
-      const c = { x: size.w / 2, y: size.h / 2 }
+      const a = clear(), c = { x: a.x + a.w / 2, y: a.y + a.h / 2 }
       if (e.key === '+' || e.key === '=') zoomAt(1.25, c.x, c.y)
       else if (e.key === '-') zoomAt(0.8, c.x, c.y)
       else if (e.key === '0') { if (focusBoard) fly(fitTo(focusBoard, 1)); else fitAll() }
@@ -329,10 +340,29 @@ function MapView({ api }: { api: MapApi }) {
     if (focusBoard) fly(fitTo(focusBoard, 1), 420)
     else if (before.current) { fly(before.current, 450); before.current = null }
   }, [input.focus, focusBoard?.key, input.hidden, size.w < 2]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A design's or flow's area: its name down to the next name at its level or above, with the boards in it.
+  const areaOf = (key: string) => {
+    const ls = [...world.labels].sort((a, b) => a.y - b.y), at = ls.find(l => l.key === key)
+    if (!at) return null
+    const level = (l: { kind: string }) => l.kind === 'flow' ? 1 : l.kind === 'round' ? 2 : 0
+    const next = ls.find(l => l.y > at.y && level(l) <= level(at)), end = next ? next.y : Infinity
+    const inside = world.boards.filter(b => b.y >= at.y && b.y < end)
+    if (!inside.length) return null
+    const top = at.y - (at.kind === 'flow' ? 70 : 150), right = Math.max(...inside.map(b => b.x + b.w)), bottom = Math.max(...inside.map(b => b.y + b.h)) + 80
+    return { x: Math.min(at.x, ...inside.map(b => b.x)), y: top, w: right - Math.min(at.x, ...inside.map(b => b.x)), h: bottom - top }
+  }
+  // The tree asked for an area: the camera fits it (and Focus, if it was on, doesn't fly back).
+  useEffect(() => {
+    if (!placed.current || !input.frame || input.hidden || size.w < 2) return
+    const a = areaOf(input.frame.split('#')[0])
+    if (!a) return
+    before.current = null
+    fly(fitTo(a, 0.92), 500)
+  }, [input.frame, input.hidden, size.w < 2]) // eslint-disable-line react-hooks/exhaustive-deps
   // The stage resized (the window, the sidebar, the map shown again) with a design in Focus: it fits again.
   useEffect(() => {
     if (placed.current && !input.hidden && size.w >= 2 && focusBoard && was.current === input.focus) set(fitTo(focusBoard, 1))
-  }, [size.w, size.h]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [size.w, size.h, input.safe]) // eslint-disable-line react-hooks/exhaustive-deps
   const slot = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     api.slot?.(slot.current)
@@ -425,30 +455,33 @@ function MapView({ api }: { api: MapApi }) {
           )}
         </div>
       </div>
-      <div data-map-tools className="absolute bottom-3 end-3 flex items-center gap-1 rounded-xl bg-white/90 p-1 text-[12px] shadow ring-1 ring-black/[.06] backdrop-blur dark:bg-zinc-900/90 dark:ring-white/10">
-        {input.designs.length > 1 && (
-          <select data-map-design aria-label={t('Design')} value={input.design} onChange={e => api.setDesign(e.target.value)}
-            className="h-7 max-w-40 rounded-lg bg-transparent px-1 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">
-            <option value="">{t('All designs')}</option>
-            {input.designs.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
-          </select>
-        )}
-        {one && !ro && <button type="button" data-map-build aria-pressed={build} onClick={() => { setNote(null); setBuild(b => !b) }} className="h-7 rounded-lg px-2 font-medium text-zinc-700 hover:bg-zinc-900/5 dark:text-zinc-200 dark:hover:bg-white/10">{t('Build it…')}</button>}
-        <button type="button" data-map-lines aria-pressed={input.lines === 'selected'} onClick={() => api.setLines(input.lines === 'all' ? 'selected' : 'all')}
-          className="h-7 rounded-lg px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{input.lines === 'all' ? t('All links') : t('Selected only')}</button>
-        <button type="button" data-map-zoom="out" aria-label={t('Zoom out')} title={t('Zoom out') + ' (-)'} onClick={() => zoomAt(0.8, size.w / 2, size.h / 2)} className="grid size-7 place-items-center rounded-lg text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><Ph name="minus" className="size-3.5" /></button>
-        <button type="button" data-map-zoom="in" aria-label={t('Zoom in')} title={t('Zoom in') + ' (+)'} onClick={() => zoomAt(1.25, size.w / 2, size.h / 2)} className="grid size-7 place-items-center rounded-lg text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><Ph name="plus" className="size-3.5" /></button>
-        <button type="button" data-map-fit onClick={fitAll} title={t('Fit (0)')} className="h-7 rounded-lg px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{t('Fit')}</button>
-        <span className="w-10 text-center tabular-nums text-zinc-400">{Math.round(c.z * 100)}%</span>
-      </div>
-      {build && one && !note && <BuildBox design={one} boards={world.boards} api={api} onClose={() => setBuild(false)} />}
-      {note && <NoteBox key={`${note.kind}:${note.a.key}:${'b' in note ? note.b.key : note.flow}`} note={note} api={api} onClose={() => setNote(null)} />}
-      {selBoard && selBoard !== focusBoard && !note && !build && (
-        <div className="absolute inset-x-0 bottom-3 mx-auto flex w-fit max-w-[calc(100%-2rem)] items-center gap-2 rounded-xl max-sm:bottom-14 bg-zinc-900 px-3 py-1.5 text-[12px] text-white shadow-lg dark:bg-white dark:text-zinc-900">
-          <span dir="auto" className="font-medium">{selBoard.title}</span>{selBoard.kind === 'option' && <span className="opacity-60">#{numberOf(selBoard.letter)}</span>}
-          <button type="button" data-map-open onClick={() => openBoard(selBoard)} className="rounded-md bg-white/15 px-2 py-0.5 dark:bg-zinc-900/10">{t('Open')}</button>
+      {/* The map's own controls stay in its clear part, off the page's cards. */}
+      <div className="pointer-events-none absolute [&>*]:pointer-events-auto" style={{ left: safe.l, top: safe.t, right: safe.r, bottom: safe.b }}>
+        <div data-map-tools className="absolute bottom-3 end-3 flex items-center gap-1 rounded-xl bg-white/90 p-1 text-[12px] shadow ring-1 ring-black/[.06] backdrop-blur dark:bg-zinc-900/90 dark:ring-white/10">
+          {input.designs.length > 1 && (
+            <select data-map-design aria-label={t('Design')} value={input.design} onChange={e => api.setDesign(e.target.value)}
+              className="h-7 max-w-40 rounded-lg bg-transparent px-1 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">
+              <option value="">{t('All designs')}</option>
+              {input.designs.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+            </select>
+          )}
+          {one && !ro && <button type="button" data-map-build aria-pressed={build} onClick={() => { setNote(null); setBuild(b => !b) }} className="h-7 rounded-lg px-2 font-medium text-zinc-700 hover:bg-zinc-900/5 dark:text-zinc-200 dark:hover:bg-white/10">{t('Build it…')}</button>}
+          <button type="button" data-map-lines aria-pressed={input.lines === 'selected'} onClick={() => api.setLines(input.lines === 'all' ? 'selected' : 'all')}
+            className="h-7 rounded-lg px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{input.lines === 'all' ? t('All links') : t('Selected only')}</button>
+          <button type="button" data-map-zoom="out" aria-label={t('Zoom out')} title={t('Zoom out') + ' (-)'} onClick={() => { const a = clear(); zoomAt(0.8, a.x + a.w / 2, a.y + a.h / 2) }} className="grid size-7 place-items-center rounded-lg text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><Ph name="minus" className="size-3.5" /></button>
+          <button type="button" data-map-zoom="in" aria-label={t('Zoom in')} title={t('Zoom in') + ' (+)'} onClick={() => { const a = clear(); zoomAt(1.25, a.x + a.w / 2, a.y + a.h / 2) }} className="grid size-7 place-items-center rounded-lg text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><Ph name="plus" className="size-3.5" /></button>
+          <button type="button" data-map-fit onClick={fitAll} title={t('Fit (0)')} className="h-7 rounded-lg px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{t('Fit')}</button>
+          <span className="w-10 text-center tabular-nums text-zinc-400">{Math.round(c.z * 100)}%</span>
         </div>
-      )}
+        {build && one && !note && <BuildBox design={one} boards={world.boards} api={api} onClose={() => setBuild(false)} />}
+        {note && <NoteBox key={`${note.kind}:${note.a.key}:${'b' in note ? note.b.key : note.flow}`} note={note} api={api} onClose={() => setNote(null)} />}
+        {selBoard && selBoard !== focusBoard && !note && !build && (
+          <div className="absolute inset-x-0 bottom-3 mx-auto flex w-fit max-w-[calc(100%-2rem)] items-center gap-2 rounded-xl max-sm:bottom-14 bg-zinc-900 px-3 py-1.5 text-[12px] text-white shadow-lg dark:bg-white dark:text-zinc-900">
+            <span dir="auto" className="font-medium">{selBoard.title}</span>{selBoard.kind === 'option' && <span className="opacity-60">#{numberOf(selBoard.letter)}</span>}
+            <button type="button" data-map-open onClick={() => openBoard(selBoard)} className="rounded-md bg-white/15 px-2 py-0.5 dark:bg-zinc-900/10">{t('Open')}</button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

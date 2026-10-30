@@ -673,6 +673,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let mapSnap: MapInput | null = null, mapMounted = false, lastFocus = ''
   let mapLines: 'all' | 'selected' = localStorage.getItem('proto-map-lines') === 'all' ? 'all' : 'selected'
   let mapDesign = '', mapEdits = 0
+  // The area the tree asked the map to show (a design or flow key, numbered so asking again flies again).
+  let mapFrame = '', frames = 0
   // Each prototype's file edits, counted: its stills on the map are taken again when its count moves.
   const editsOf = new Map<string, number>()
   const onMap = () => treeOn && !framed && st.place.view !== 'variant'
@@ -700,13 +702,20 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     slot: el => { slotEl = el; placeLayer() },
     leave: () => { if (inPlace()) go({ view: 'session' }) },
   }
+  // On a wide desk the map fills the window, under the bar, the strip, the sidebar and the island; it
+  // is told the clear part of it (the stage), where it fits and centres things and keeps its controls.
+  const deskMq = matchMedia('(min-width: 1024px)')
   function paintMap() {
     const show = onMap() || inPlace()
     mapHost.hidden = !show
+    const full = show && deskMq.matches && !st.focus
+    mapHost.toggleAttribute('data-full', full)
+    const r = layers.getBoundingClientRect()
+    const safe = full ? [r.left, r.top, innerWidth - r.right, innerHeight - r.bottom].map(n => Math.max(0, Math.round(n))).join(',') : ''
     layers.style.visibility = show ? 'hidden' : ''
     if (!show && !mapMounted) return
     const work = all.flatMap(p => p.variants.filter(v => editing(p.id, v.id)).map(v => `${p.id}/${v.id}:${building(p.id, v.id) ? 'building' : 'editing'}`)).join(' ')
-    const next: MapInput = { protos: all, designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), working: work, focus: inPlace() ? `${st.place.proto}/${st.place.variant}` : '' }
+    const next: MapInput = { protos: all, designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), working: work, frame: mapFrame, safe, focus: inPlace() ? `${st.place.proto}/${st.place.variant}` : '' }
     if (mapSnap && (Object.keys(next) as (keyof MapInput)[]).every(k => next[k] === mapSnap![k])) return
     mapSnap = next
     if (!mapMounted && show) { mapMounted = true; mountMap(mapHost, mapApi) }
@@ -784,6 +793,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       get: () => treeSnap!, subscribe: f => { treeWatchers.add(f); return () => { treeWatchers.delete(f) } },
       go: route => { const [proto, variant] = route.split('/'); go(variant ? { view: 'variant', proto, variant } : { view: 'proto', proto }) },
       goWork: () => act('work', 'go', ''), hide: () => act('side', '0', ''), name: session.name,
+      frame: key => { mapFrame = `${key}#${++frames}`; if (st.place.view !== 'session') go({ view: 'session' }); else paintMap() },
     })
   }
   const grip = root.querySelector<HTMLElement>('[data-grip]')!
@@ -2790,7 +2800,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const deviceView = createView(zone.querySelector<HTMLElement>('[data-view]')!, comments.wrap)
   // The size selected at rest is this window's own layout, which a resize of it or the stage can change.
   let nativeWas = native()
-  new ResizeObserver(() => { if (native() !== nativeWas) { nativeWas = native(); render() } }).observe(layers)
+  new ResizeObserver(() => { if (native() !== nativeWas) { nativeWas = native(); render() } else paintMap() }).observe(layers)
   function pickSize(s: Size) {
     // The layout shown, chosen again, leaves the view: the way out when no layout is this window's own.
     if (s === native() || (viewOn() && s === st.view.size)) { if (viewOn()) patchView({ size: null, zoom: 0 }); return }

@@ -26,7 +26,9 @@ export type TreeInput = {
   /** Open comments per slug. */
   counts: Record<string, number>
 }
-export type TreeApi = { get(): TreeInput; subscribe(fn: () => void): () => void; go(route: string): void; goWork(): void; hide(): void; name: string }
+export type TreeApi = { get(): TreeInput; subscribe(fn: () => void): () => void; go(route: string): void; goWork(): void; hide(): void; name: string
+  /** Shows a design or a flow (its tree key) on the map, leaving Focus. */
+  frame(key: string): void }
 
 const FILTERS: [Filter, () => string][] = [['all', () => t('All')], ['open', () => t('Open')], ['mine', () => t('This conversation')], ['favs', () => t('Favorites')]]
 const SECTION: Record<string, () => string> = { 'section:loose': () => t('Explorations on no screen'), 'section:archive': () => t('Archive') }
@@ -75,12 +77,13 @@ function Tree({ api }: { api: TreeApi }) {
     const kids = shut ? n.children.map(c => draw(c, depth + 1)) : null
     if (n.kind === 'design') return (
       <div key={n.key}>
-        <Row id={n.key} depth={depth} strong open={shut} onCaret={() => flip(n)} onClick={() => flip(n)} count={n.count}
+        <Row id={n.key} depth={depth} strong open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count}
           icon={<span className="size-2.5 shrink-0 rounded-full bg-indigo-500" />} label={<span dir="auto">{n.label}</span>} />
         {kids}
       </div>
     )
-    if (n.kind === 'flow') return <div key={n.key}><Row id={n.key} depth={depth} medium open={shut} onCaret={() => flip(n)} onClick={() => flip(n)} count={n.count} label={<span dir="auto">{n.label}</span>} />{kids}</div>
+    // A design or a flow: its caret folds it here, its name frames it on the map.
+    if (n.kind === 'flow') return <div key={n.key}><Row id={n.key} depth={depth} medium open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count} label={<span dir="auto">{n.label}</span>} />{kids}</div>
     if (n.kind === 'section') return (
       <div key={n.key}>
         <div className="flex items-center px-3 pb-1 pt-3">

@@ -195,6 +195,9 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
     box-shadow: 0 1px 2px rgb(0 0 0 / .06), 0 10px 28px -14px rgb(0 0 0 / .3);
   }
   [data-desk] > :is([data-side], [data-tree-side]) { overflow: hidden; }
+  /* The map runs under the desk's cards to the window's edges: the sidebar card stays over it. */
+  [data-desk] > [data-tree-side] { position: relative; z-index: 10; }
+  [data-desk] [data-map-host][data-full] { position: fixed !important; inset: 0 !important; }
   [data-desk] > [data-grip] + div { margin-inline-start: var(--desk-gap); }
   [data-desk] [data-bar] { margin-bottom: var(--desk-gap); }
   [data-desk] [data-panel]:not(.hidden) { overflow: hidden; }
