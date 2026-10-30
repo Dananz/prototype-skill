@@ -51,6 +51,8 @@ export type MapApi = {
 type Note = { kind: 'line' | 'link'; a: Board; b: Board } | { kind: 'flow'; design: string; flow: string; a: Board }
 type Cam = { x: number; y: number; z: number }
 const MIN_Z = 0.02, MAX_Z = 2
+/** A fold or a spread animates at most this many cards (those in view nearest the middle), for this long. */
+const MAX_ANIM = 24, ANIM_MS = 380
 /** How far under its fit the design in Focus is zoomed out before the map takes over again. */
 const OUT = 0.55
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
@@ -313,7 +315,43 @@ function MapView({ api }: { api: MapApi }) {
     setDrag({ from, x: from.x + from.w, y: from.y + from.h / 2 })
   }
   // A folded stack is one target: a click anywhere on it spreads it out (its label folds it again).
-  const spreadOut = (slug: string) => { setSel(k => k?.startsWith(`opt:${slug}/`) ? null : k); setSpread(s => new Set(s).add(slug)) }
+  const spreadOut = (slug: string) => turnRound(slug, true)
+  // A round folding or spreading moves what is in view: from where it was to where it is (a new card
+  // from the stack; a card folding away as a ghost into it). At most MAX_ANIM of them, the nearest the
+  // middle, so a round of hundreds of options moves a few and the rest are just there.
+  const moving = useRef<{ slug: string; was: Map<string, Board>; stack: { x: number; y: number } | null } | null>(null)
+  const [ghosts, setGhosts] = useState<{ b: Board; to: { x: number; y: number } }[]>([])
+  const turnRound = (slug: string, open: boolean) => {
+    const lab = world.labels.find(l => l.key === `round:${slug}`)
+    moving.current = { slug, was: new Map(world.boards.map(b => [b.key, b])), stack: lab ? { x: lab.x, y: lab.y } : null }
+    setSel(k => k?.startsWith(`opt:${slug}/`) ? null : k)
+    setSpread(s => { const n = new Set(s); if (open) n.add(slug); else n.delete(slug); return n })
+  }
+  useLayoutEffect(() => {
+    const m = moving.current
+    if (!m) return
+    moving.current = null
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || !layer.current) return
+    const c = cam.current, sz = sizeRef.current
+    const x0 = -c.x / c.z, y0 = -c.y / c.z, x1 = (sz.w - c.x) / c.z, y1 = (sz.h - c.y) / c.z, mx = (x0 + x1) / 2, my = (y0 + y1) / 2
+    type R = { x: number; y: number; w: number; h: number }
+    const seen = (r: R) => r.x + r.w > x0 && r.x < x1 && r.y + r.h > y0 && r.y < y1
+    const near = (r: R) => Math.hypot(r.x + r.w / 2 - mx, r.y + r.h / 2 - my)
+    const gone = [...m.was.values()].filter(o => o.slug === m.slug && !world.boards.some(b => b.key === o.key) && seen(o)).sort((a, b) => near(a) - near(b)).slice(0, m.stack ? MAX_ANIM / 2 : 0)
+    const moves = world.boards.flatMap(b => {
+      const o = m.was.get(b.key) ?? (b.slug === m.slug && m.stack ? { ...b, x: m.stack.x, y: m.stack.y } : null)
+      return o && (o.x !== b.x || o.y !== b.y) && (seen(b) || seen(o)) ? [{ b, o, fresh: !m.was.has(b.key) }] : []
+    }).sort((p, q) => near(p.b) - near(q.b)).slice(0, MAX_ANIM - gone.length)
+    for (const { b, o, fresh } of moves) {
+      const el = layer.current.querySelector<HTMLElement>(`[data-map-board="${CSS.escape(b.key)}"]`)
+      el?.animate([{ transform: `translate(${o.x - b.x}px, ${o.y - b.y}px)`, opacity: fresh ? 0.5 : 1 }, { transform: 'translate(0, 0)', opacity: 1 }], { duration: ANIM_MS, easing: 'cubic-bezier(.2, .8, .2, 1)' })
+    }
+    if (gone.length && m.stack) {
+      const to = m.stack
+      setGhosts(gone.map(b => ({ b, to })))
+      setTimeout(() => setGhosts([]), ANIM_MS + 60)
+    }
+  }, [world]) // eslint-disable-line react-hooks/exhaustive-deps
   // A click on the selected board and a double click both open it: the second one of a pair is let go.
   const opening = useRef(0)
   const openBoard = (b: Board) => { if (Date.now() - opening.current < 600) return; opening.current = Date.now(); api.open(b.route) }
@@ -393,10 +431,17 @@ function MapView({ api }: { api: MapApi }) {
             <div key={l.key} data-map-label={l.key} className="absolute whitespace-nowrap" style={{ left: l.x, top: l.y, ...(l.w ? { maxWidth: l.w + GAP * 0.8 } : {}), fontSize: `calc(${l.kind === 'design' ? 22 : l.kind === 'flow' ? 15 : 13}px * var(--lz))`,
               transform: `translateY(calc(-100% - ${l.kind === 'design' || l.kind === 'section' ? 34 : 8}px * var(--lz)))` }}>
               {l.kind === 'round'
-                ? <button type="button" data-map-round={l.slug} onClick={() => setSpread(s => { const n = new Set(s); if (n.has(l.slug!)) n.delete(l.slug!); else n.add(l.slug!); return n })}
-                    className="flex max-w-full items-center gap-[calc(6px*var(--iz))] rounded-full text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white">
+                ? <button type="button" data-map-round={l.slug} onClick={() => turnRound(l.slug!, !l.open)}
+                    title={l.state === 'done' ? (l.open ? t('Fold into a stack') : t('Spread out')) : undefined}
+                    className="group flex max-w-full items-center gap-[calc(6px*var(--iz))] rounded-full text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white">
                     <span className={'shrink-0 rounded-full ' + (l.state === 'done' ? 'bg-emerald-500' : 'bg-amber-500')} style={{ width: 'calc(8px*var(--iz))', height: 'calc(8px*var(--iz))' }} />
                     <span dir="auto" className="truncate font-medium">{l.own ? t('Options') : l.text}</span><span className="shrink-0 text-zinc-400">· {l.count}</span>
+                    {l.state === 'done' && (
+                      // What a click does, coming in on hover: fold the spread options into a stack, or spread the stack.
+                      <span data-map-round-icon={l.open ? 'fold' : 'spread'} className="grid max-w-0 shrink-0 overflow-hidden opacity-0 transition-all duration-200 ease-out group-hover:max-w-[1.3em] group-hover:opacity-100 group-focus-visible:max-w-[1.3em] group-focus-visible:opacity-100 motion-reduce:transition-none">
+                        <Ph name={l.open ? 'foldIn' : 'spreadOut'} className="size-[1.1em]" />
+                      </span>
+                    )}
                   </button>
                 : l.kind === 'flow'
                 ? <button type="button" data-map-flow={l.key} title={t('A note on this flow')} disabled={ro} onClick={() => { const [, design, ...rest] = l.key.split(':'), flow = rest.join(':'), a = world.boards.find(b => b.kind === 'screen' && b.design === design && b.flow === flow); if (a) setNote({ kind: 'flow', design, flow, a }) }}
@@ -433,6 +478,13 @@ function MapView({ api }: { api: MapApi }) {
               </div>
             )
           })}
+          {ghosts.map(({ b, to }) => (
+            <div key={`ghost:${b.key}`} data-map-ghost aria-hidden className="pointer-events-none absolute overflow-hidden rounded-[calc(10px*var(--iz))] bg-white dark:bg-zinc-900"
+              style={{ left: b.x, top: b.y, width: b.w, height: b.h, zIndex: 2 }}
+              ref={el => { if (el && !el.dataset.went) { el.dataset.went = '1'; el.animate([{ transform: 'translate(0, 0)', opacity: 1 }, { transform: `translate(${to.x - b.x}px, ${to.y - b.y}px)`, opacity: 0 }], { duration: ANIM_MS, easing: 'cubic-bezier(.2, .8, .2, 1)', fill: 'forwards' }) } }}>
+              {latest.get(b.route) && <img src={latest.get(b.route)} alt="" className="h-full w-full object-cover object-top" />}
+            </div>
+          ))}
           {focusBoard && (
             // The design in Focus, in place on its board: the page puts its view here (MapApi.slot), and the camera carries it.
             <div key={`slot:${focusBoard.key}`} data-map-slot={focusBoard.route} className="absolute overflow-hidden rounded-[calc(10px*var(--iz))] bg-white shadow-[0_2px_24px_rgb(0_0_0/.18)] dark:bg-zinc-950"

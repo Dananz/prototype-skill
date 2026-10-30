@@ -88,4 +88,7 @@ export default {
   'Jump to a screen': 'קפיצה למסך',
   'Zoom out past the screen to the map': 'התרחקות מהמסך אל המפה',
   'Pinch': 'צביטה',
+  // A round's label on the map (map/index.tsx).
+  'Fold into a stack': 'קיפול לערימה',
+  'Spread out': 'פריסה',
 }

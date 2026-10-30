@@ -20,12 +20,14 @@ import circle from '@phosphor-icons/core/assets/regular/circle.svg?raw'
 import x from '@phosphor-icons/core/assets/regular/x.svg?raw'
 import dots from '@phosphor-icons/core/assets/bold/dots-three-bold.svg?raw'
 import starFill from '@phosphor-icons/core/assets/fill/star-fill.svg?raw'
+import foldIn from '@phosphor-icons/core/assets/regular/arrows-in-line-horizontal.svg?raw'
+import spreadOut from '@phosphor-icons/core/assets/regular/arrows-out-line-horizontal.svg?raw'
 import plus from '@phosphor-icons/core/assets/bold/plus-bold.svg?raw'
 import minus from '@phosphor-icons/core/assets/bold/minus-bold.svg?raw'
 import { rtl, t } from '../i18n'
 import type { ExpState } from './model'
 
-const ICONS = { browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle, x, dots, starFill, plus, minus }
+const ICONS = { browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle, x, dots, starFill, plus, minus, foldIn, spreadOut }
 export type PhName = keyof typeof ICONS
 /** A Phosphor icon, drawn from @phosphor-icons/core like the rest of the shell's (ui.ts ic()). */
 export function Ph({ name, className = 'size-4' }: { name: PhName; className?: string }) {

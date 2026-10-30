@@ -174,6 +174,23 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await wait(400)
     // (The screen M came back from stays selected; no card of the stack is, which would show its #n in the pill.)
     assert(await page.run(`location.pathname === '/' && !/#\\d/.test(document.querySelector('[data-map-open]')?.parentElement.textContent ?? '')`), 'spreading a stack should neither open nor select a card')
+    // Its label says it folds back (an icon that comes in on hover), and folding animates what is in view only.
+    assert(await page.run(`document.querySelector('[data-map-round="mloose"] [data-map-round-icon]')?.dataset.mapRoundIcon === 'fold'`), 'a spread round with a pick should offer to fold')
+    await page.run(`document.querySelector('[data-map-round="mloose"]').click()`)
+    await until(page, `!!document.querySelector('[data-map-board="opt:mloose/A"][data-map-pile]')`, 'the label should fold the round back into a stack')
+    assert(await page.run(`document.querySelector('[data-map-round="mloose"] [data-map-round-icon]')?.dataset.mapRoundIcon === 'spread'`), 'a stack\'s label should offer to spread it')
+    await wait(900)
+    assert(await page.run(`!document.querySelector('[data-map-ghost]') && !document.getAnimations().some(a => a.effect?.target?.closest?.('[data-map]') && a.effect.getTiming().iterations !== Infinity)`), 'the fold animation should finish and leave nothing behind')
+    // A round of 26 options: spreading it animates at most the 24 the cap allows, never all of them.
+    proto(['add', 'mwide', '--title', 'Map wide', '--variants', Array.from({ length: 26 }, (_, i) => `${String.fromCharCode(65 + i)}:W${i}`).join(',')])
+    proto(['done', 'mwide']); proto(['pick', 'mwide', 'A'])
+    await until(page, `!!document.querySelector('[data-map-board="opt:mwide/A"][data-map-pile]')`, 'a picked wide round should be a stack')
+    await page.run(`(() => { const m = document.querySelector('[data-map]'); for (let i = 0; i < 30; i++) m.dispatchEvent(new WheelEvent('wheel', { deltaY: 60, ctrlKey: true, clientX: 400, clientY: 300, bubbles: true, cancelable: true })) })()`)
+    await page.run(`document.querySelector('[data-map-board="opt:mwide/A"]').click()`)
+    await until(page, `!!document.querySelector('[data-map-board="opt:mwide/Z"]')`, 'the wide round should spread')
+    const moving = await page.run(`document.getAnimations().filter(a => a.effect?.target?.closest?.('[data-map]') && a.effect.getTiming().iterations !== Infinity).length`)
+    assert(moving > 0 && moving <= 24, `spreading 26 options should animate some and at most 24 (${moving})`)
+    proto(['archive', 'mwide'])
   } finally { page.close() }
   for (const s of ['mhome', 'mabout', 'mloose', 'mother']) proto(['archive', s])
   console.log('OK: the map: designs, screens live, options, loose explorations, link lines, notes on lines and flows, dragged links, Build it, the building mark, the design filter, open and back with M, a second click opens, a stack spreads in one click')
