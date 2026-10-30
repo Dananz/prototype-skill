@@ -61,3 +61,17 @@ change the copy.
 Grow two picks into two concepts (Home #3 and Home #5) with two `proto design` calls. The second
 one pins its first screen (`home/E`), so each design keeps its own version of it. Links never cross
 between designs.
+
+## What the page sends from the map
+
+With the project tree on (Settings, or `?tree=1`), the page's overview is a map of the designs, and
+the user can ask for things there. Each reaches the inbox as a request on a screen's variant:
+
+- `build-screen`: a link leads to a screen not built yet. Add it with
+  `proto add <slug> --design <id> --variants "…"` on the design's shared parts.
+- `add-link`: a line dragged from one screen to another. Put `<Go to="<slug>">` on the element the
+  text names, else the one it most likely belongs on.
+- `map-note`: a note on a link line or a whole flow ("the checkout is too long").
+- `build-design`: build the chosen screens. Run `proto handoff --design <id> --screens a,b` for the
+  plan (each screen's route, its checklist command and its links as navigation, open screens
+  marked), then build each one as in step 7.

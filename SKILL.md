@@ -1050,6 +1050,7 @@ says which links (and variants) changed since shared, who is in them now and how
 | How a variant looked before ("what did 2 look like before the last change?", "compare with the old one") | History: `<slug>/<letter>/~history` in the page; `proto history <slug>/<letter>` lists the versions |
 | A write-up of the decision ("summarize what we picked and why", "a brief for the team", "what's left before we build?") | `proto brief <slug>`: give them the Markdown it prints (kept at `.proto/decisions/<slug>.md`); Decision brief in the Decide menu shows the same |
 | The winner built into the codebase ("build B", "ship it") | `proto pick` if not yet, then `proto handoff <slug>/<letter>` and step 7 |
+| A whole design built ("build the design", a `build-design` request from the map) | `proto handoff --design <id> [--screens a,b]`, then each screen's own `proto handoff` and step 7, its `<Go to>` links as the app's navigation |
 | A pick, More like this or Build it from the page (`action:` in a batch) | the table under Comments from the page |
 | Other copy for some lines ("better headlines", "other button text") | `proto ask "…"`, then `useCopy` on those lines (Offer other copy when asked) |
 | Copy choices sent from the page (`action: copy`) | the table under Comments from the page |

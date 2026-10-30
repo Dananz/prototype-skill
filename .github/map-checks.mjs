@@ -1,7 +1,7 @@
 // The map (app/shell/map/): with the project tree on, the overview is a canvas of the designs'
 // screens (live), their options and the explorations on no screen, with the <Go to> links as
 // lines. A board double-clicked opens it; M goes back to the map; ?tree=0 keeps the old lobby.
-import { writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export async function mapChecks({ proto, app, local, openPage, fail }) {
@@ -16,6 +16,17 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
   proto(['add', 'mhome', '--title', 'Map home', '--variants', 'A:One,B:Two'])
   proto(['design', 'mhome/B', '--title', 'Map Acme', '--id', 'macme'])
   proto(['add', 'mabout', '--title', 'Map about', '--design', 'macme', '--variants', 'A:One'])
+  const inbox = join(app, '.proto', 'inbox', 'new')
+  const batches = () => existsSync(inbox) ? readdirSync(inbox).filter(b => !b.startsWith('.')) : []
+  // What the page sent last: the one batch that came after `had`.
+  const sentAfter = async had => {
+    for (const end = Date.now() + 8000; Date.now() < end; await wait(100)) {
+      const b = batches().find(x => !had.has(x))
+      if (b) { const c = JSON.parse(readFileSync(join(inbox, b, 'batch.json'), 'utf8')).comments[0]; rmSync(join(inbox, b), { recursive: true, force: true }); return c }
+    }
+    return null
+  }
+  const typeIn = (page, sel, text) => page.run(`(() => { const f = document.querySelector('${sel}'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(f, ${JSON.stringify(text)}); f.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   proto(['add', 'mloose', '--title', 'Map loose', '--variants', 'A:One,B:Two'])
   variant('mhome', 'B', `<h1 data-shoot="mhome-live">Home</h1><Go to="mabout">About</Go>`)
   variant('mhome', 'A', '<h1>Home A</h1>')
@@ -43,6 +54,58 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-map-lines]').click()`)
     await until(page, `document.querySelector('[data-map-lines]').getAttribute('aria-pressed') === 'false'`, 'the lines switch should turn to all')
     await until(page, `localStorage.getItem('proto-map-lines') === 'all'`, 'the lines mode should be kept')
+    // A note on a link line, and on a flow, reaches the agent.
+    let had = new Set(batches())
+    await page.run(`document.querySelector('[data-map-line-hit="mhome>mabout"]').dispatchEvent(new MouseEvent('click', { bubbles: true }))`)
+    await until(page, `document.querySelector('[data-map-note]')?.dataset.mapNote === 'line'`, 'a click on a line should open a note on it')
+    await typeIn(page, '[data-map-note-field]', 'This should go to pricing')
+    await page.run(`document.querySelector('[data-map-note-send]').click()`)
+    let c = await sentAfter(had)
+    assert(c?.action === 'map-note' && c.route === 'mhome/B' && /mhome to mabout: This should go to pricing/.test(c.text), `a line note should be a map-note on mhome/B: ${JSON.stringify(c)?.slice(0, 200)}`)
+    await until(page, `!document.querySelector('[data-map-note]')`, 'the note should close once sent')
+    had = new Set(batches())
+    await page.run(`document.querySelector('[data-map-flow="flow:macme:Main"]').click()`)
+    await until(page, `document.querySelector('[data-map-note]')?.dataset.mapNote === 'flow'`, 'a click on a flow name should open a note on it')
+    await typeIn(page, '[data-map-note-field]', 'Too long')
+    await page.run(`document.querySelector('[data-map-note-send]').click()`)
+    c = await sentAfter(had)
+    assert(c?.action === 'map-note' && /flow Main of the design macme: Too long/.test(c.text), `a flow note should name the flow: ${JSON.stringify(c)?.slice(0, 200)}`)
+
+    // A line dragged from home's handle to about asks for a link.
+    await page.run(`document.querySelector('[data-map-board="screen:mhome"]').click()`)
+    await until(page, `!!document.querySelector('[data-map-handle]')`, 'a selected screen should offer a link handle')
+    had = new Set(batches())
+    await page.run(`(() => {
+      const h = document.querySelector('[data-map-handle]').getBoundingClientRect(), t = document.querySelector('[data-map-board="screen:mabout"]').getBoundingClientRect()
+      const at = (r) => ({ clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, pointerId: 1 })
+      document.querySelector('[data-map-handle]').dispatchEvent(new PointerEvent('pointerdown', at(h)))
+      dispatchEvent(new PointerEvent('pointermove', at(t)))
+      dispatchEvent(new PointerEvent('pointerup', at(t)))
+    })()`)
+    await until(page, `document.querySelector('[data-map-note]')?.dataset.mapNote === 'link'`, 'letting go over another screen should offer the link')
+    await page.run(`document.querySelector('[data-map-note-send]').click()`)
+    c = await sentAfter(had)
+    assert(c?.action === 'add-link' && c.route === 'mhome/B' && c.text.includes('<Go to="mabout">'), `the link should be an add-link on mhome/B: ${JSON.stringify(c)?.slice(0, 200)}`)
+
+    // Build it on the one design: the picked screens are ticked, the open one is not.
+    await until(page, `!document.querySelector('[data-map-note]')`, 'the link box should close once sent')
+    await page.run(`document.querySelector('[data-map-build]').click()`)
+    await until(page, `!!document.querySelector('[data-map-build-box]')`, 'Build it should open its box')
+    assert(await page.run(`document.querySelector('[data-map-build-screen="screen:mhome"]').checked && !document.querySelector('[data-map-build-screen="screen:mabout"]').checked`), 'the picked screen should be ticked, the open one not')
+    await page.run(`document.querySelector('[data-map-build-screen="screen:mabout"]').click()`)
+    had = new Set(batches())
+    await page.run(`document.querySelector('[data-map-build-send]').click()`)
+    c = await sentAfter(had)
+    assert(c?.action === 'build-design' && /proto handoff --design macme --screens mhome,mabout/.test(c.text) && /Still open, #1 stands in: mabout/.test(c.text), `Build it should send the plan: ${JSON.stringify(c)?.slice(0, 300)}`)
+
+    // A second design brings the design filter.
+    proto(['add', 'mother', '--title', 'Map other', '--variants', 'A:One'])
+    proto(['design', 'mother/A', '--title', 'Map Other', '--id', 'mother-d'])
+    await until(page, `!!document.querySelector('[data-map-design]')`, 'two designs should bring the design filter')
+    await page.run(`(() => { const s = document.querySelector('[data-map-design]'); s.value = 'macme'; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+    await until(page, `!document.querySelector('[data-map-board="screen:mother"]') && !!document.querySelector('[data-map-board="screen:mhome"]')`, 'the filter should show one design')
+    await page.run(`(() => { const s = document.querySelector('[data-map-design]'); s.value = ''; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+
     // Zoomed into the home screen, its live preview draws.
     await page.run(`document.querySelector('[data-map-board="screen:mhome"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`)
     await until(page, `location.pathname === '/mhome/B'`, 'a double click should open the screen')
@@ -51,6 +114,6 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await until(page, `!document.querySelector('[data-map-host]').hidden`, 'M should go back to the map')
     await until(page, `!!document.querySelector('[data-map-board="screen:mhome"] [data-shoot="mhome-live"]')`, 'coming back the map flies out from the screen, which draws live')
   } finally { page.close() }
-  for (const s of ['mhome', 'mabout', 'mloose']) proto(['archive', s])
-  console.log('OK: the map: designs, screens live, options, loose explorations, link lines, open and back with M')
+  for (const s of ['mhome', 'mabout', 'mloose', 'mother']) proto(['archive', s])
+  console.log('OK: the map: designs, screens live, options, loose explorations, link lines, notes on lines and flows, dragged links, Build it, the design filter, open and back with M')
 }

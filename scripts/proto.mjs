@@ -34,6 +34,7 @@
 //             frames per second at rest (or while dragging that element), how busy the main and GPU
 //             threads are, and the design's slowest functions; run it on anything that animates
 //   proto handoff <slug>/<letter>   a checklist of what that variant has, for building it into the codebase
+//   proto handoff --design <id> [--screens a,b]   building a design's screens (or the ones named), their links as navigation
 //   proto brief <slug>   the decision brief: the ask, the pick and why, the other directions, the changes
 //             asked on the pick and every comment with its answer (.proto/decisions/<slug>.md)
 //   proto snap <slug>[/<letter>]… [--width 672]   static HTML snapshots for a shared document
@@ -1677,6 +1678,7 @@ function copyOptionsIn(files) {
 }
 
 function handoff() {
+  if (typeof flags.design === 'string') return handoffDesign()
   const dir = sessionDir()
   const s = need(dir)
   const t = target(dir, args[0])
@@ -1865,6 +1867,9 @@ const ACTIONS = {
   copy: 'make this the line\'s text in the variant: put it first in that line\'s useCopy options',
   'share-fix': 'asked from a share review, before the link goes out: change the prototype so the findings quoted in the text are gone, the way the user\'s words say (inline or swap an asset, use a hosted font, take out a secret); never by quieting the review. Check it with proto share file (it prints the same review without publishing), then reply --done saying what changed: the user makes the link again from the page. Do not publish it yourself unless they ask',
   'build-screen': 'a <Go to="<slug>"> link on this variant leads to a screen not built yet (the text names the slug): add it to the same design and flow with proto add <slug> --design <id> --variants "…" (its first option stands in until a pick), written on the design\'s shared parts, then reply --done naming it',
+  'map-note': 'a note from the map about a link line or a whole flow of a design (the text says which): change the screens, links or flow the way it asks, then reply --done saying what changed',
+  'add-link': 'a link drawn on the map from this screen to another (the text names the target slug): put <Go to="<slug>"> on the element the text names, else on the one it most likely belongs on, in this variant, then reply --done naming the element',
+  'build-design': 'build these screens of the design into the codebase, its links as real navigation: run proto handoff --design <id> --screens <slugs> (the text names them) for the checklist, build each screen from its route, and say which screens are still open explorations',
   intake: 'the answers to your questions: plan the directions from them (a question left to you is yours to decide; say what you picked), then reply --done',
 }
 const FAILED = {
@@ -2730,6 +2735,40 @@ function design() {
   }
   if (missing.size) console.log(`links to screens not built: ${[...missing].join(', ')}`)
   if (crossing.size) console.log(`links outside this design (never followed): ${[...crossing].join(', ')}`)
+}
+
+// handoff --design <id> [--screens a,b]: building a design's screens (all, or the ones named), in
+// flow order, each at the option it shows, with its own checklist command and its links as the
+// app's navigation. A screen with no pick is marked: #1 stands in for an exploration still open.
+function handoffDesign() {
+  const dir = sessionDir()
+  need(dir)
+  const id = flags.design, d = readDesign(dir, id) || die(`no design ${id}: proto design lists them`)
+  const flows = d.flows || []
+  const all = flows.flatMap(f => f.screens.map(x => ({ flow: f.name, x, ...entryOf(x) })))
+  const want = typeof flags.screens === 'string' ? flags.screens.split(',').map(x => x.trim()).filter(Boolean) : null
+  for (const w of want || []) if (!all.some(e => e.x === w || e.slug === w)) die(`${w} is not a screen of ${id}`)
+  const chosen = all.filter(e => !want || want.includes(e.x) || want.includes(e.slug))
+  const ext = STACKS[readSession(dir).stack]?.ext ?? 'tsx'
+  const slugs = new Set(chosen.map(e => e.slug)), open = []
+  console.log(`Build ${d.title || id}: ${chosen.length} ${chosen.length === 1 ? 'screen' : 'screens'}, each from its route, its links as real navigation in the app.`)
+  for (const f of flows) {
+    const here = chosen.filter(e => e.flow === f.name)
+    if (!here.length) continue
+    console.log(`\n${f.name}`)
+    for (const e of here) {
+      const meta = readMeta(dir, e.slug)
+      if (!meta || meta.archived) { console.log(`  ${e.x}  (gone)`); continue }
+      const letter = e.letter || meta.picked || Object.keys(meta.variants || {})[0]
+      const file = join(dir, 'src', 'protos', e.slug, `${letter}.${ext}`)
+      const links = existsSync(file) ? linksIn(readFileSync(file, 'utf8')) : []
+      const says = e.letter ? `#${numberOf(letter)} pinned` : meta.picked ? `#${numberOf(letter)} picked` : `#${numberOf(letter)} stands in (not picked)`
+      if (!e.letter && !meta.picked) open.push(e.slug)
+      console.log(`  ${e.slug}/${letter}  ${says}  ·  checklist: proto handoff ${e.slug}/${letter}`)
+      for (const l of links) console.log(`    ${e.slug} → ${l}${slugs.has(l) ? '' : all.some(x => x.slug === l) ? '  (a screen not in this build: link it once it is built)' : '  (not built yet)'}`)
+    }
+  }
+  if (open.length) console.log(`\nStill open (no pick, #1 stands in): ${open.join(', ')}. Ask before building them, or build #1.`)
 }
 
 // ---------- fonts ----------

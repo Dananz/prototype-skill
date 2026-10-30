@@ -661,6 +661,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     open: route => { const [proto, variant] = route.split('/'); go({ view: 'variant', proto, variant }) },
     mount: (el, c) => mount(el, c), camera: null,
     setLines: mode => { mapLines = mode; remember('proto-map-lines', mode); paintMap() },
+    setDesign: id => { mapDesign = id; paintMap() },
+    ask: async (on, action, text) => { await comments.act.decide(on, action, { body: [text], tags: [] }) },
   }
   function paintMap() {
     const show = onMap()

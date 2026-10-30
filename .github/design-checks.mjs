@@ -91,6 +91,25 @@ test('flow edits: move, rename, drop', () => withHome(({ app, run }) => {
   assert.ok(existsSync(join(app, 'src', 'protos', 'about', 'meta.ts')), 'the prototype stays')
 }))
 
+test('handoff --design plans building the chosen screens, links as navigation, open ones marked', () => withHome(({ app, run }) => {
+  ok(run('design', 'home/C', '--title', 'Acme'))
+  ok(run('add', 'about', '--design', 'acme', '--variants', 'A:One'))
+  ok(run('add', 'pricing', '--design', 'acme', '--variants', 'A:One'))
+  writeFileSync(join(app, 'src', 'protos', 'home', 'C.tsx'), `import { Go } from '../../go'\nexport default function C() { return <nav><Go to="about">About</Go></nav> }\n`)
+  const all = run('handoff', '--design', 'acme')
+  ok(all)
+  assert.match(all.stdout, /home\/C\s+#3 picked/)
+  assert.match(all.stdout, /proto handoff home\/C/)
+  assert.match(all.stdout, /home → about/)
+  assert.match(all.stdout, /about\/A\s+#1 stands in \(not picked\)/)
+  const some = run('handoff', '--design', 'acme', '--screens', 'home,about')
+  ok(some)
+  assert.doesNotMatch(some.stdout, /pricing/)
+  const bad = run('handoff', '--design', 'acme', '--screens', 'nope')
+  assert.notEqual(bad.status, 0)
+  assert.match(bad.stderr + bad.stdout, /nope is not a screen of acme/)
+}))
+
 test('linksIn finds Go targets', () => {
   assert.deepEqual(linksIn(`<Go to="a" className="x">A</Go><Go className="x" to='b'>B</Go><Go to="a"/>`), ['a', 'b'])
   assert.deepEqual(linksIn(`<Goal to="x" />`), [])

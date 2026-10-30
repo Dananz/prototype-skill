@@ -17,10 +17,11 @@ import magnifyingGlass from '@phosphor-icons/core/assets/regular/magnifying-glas
 import squaresFour from '@phosphor-icons/core/assets/regular/squares-four.svg?raw'
 import path from '@phosphor-icons/core/assets/regular/path.svg?raw'
 import circle from '@phosphor-icons/core/assets/regular/circle.svg?raw'
+import x from '@phosphor-icons/core/assets/regular/x.svg?raw'
 import { rtl, t } from '../i18n'
 import type { ExpState } from './model'
 
-const ICONS = { browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle }
+const ICONS = { browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle, x }
 export type PhName = keyof typeof ICONS
 /** A Phosphor icon, drawn from @phosphor-icons/core like the rest of the shell's (ui.ts ic()). */
 export function Ph({ name, className = 'size-4' }: { name: PhName; className?: string }) {

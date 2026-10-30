@@ -4,10 +4,10 @@
 // (never a scale transform), so Safari keeps one real layout per design; labels stay one size at
 // any zoom through --iz (1 / zoom). A double click on a screen flies into it and opens it (Focus);
 // the shell flies back out here when Focus is left.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Design, Proto, Variant } from '../shell'
-import { t } from '../i18n'
+import { t, tn } from '../i18n'
 import { numberOf } from '../variants'
 import { linksIn } from '../../links.mjs'
 import { GAP, linePath, worldOf, type Board, type World } from './world'
@@ -22,7 +22,13 @@ export type MapApi = {
   /** The camera's last place, kept across Focus so leaving it flies back to where the map was. */
   camera: { x: number; y: number; z: number } | null
   setLines(mode: 'all' | 'selected'): void
+  /** Shows one design only ('' for all). */
+  setDesign(id: string): void
+  /** Sends words to the agent about the map, on a screen's variant: a note on a link or a flow, or a link to add. */
+  ask(on: { proto: string; variant: string }, action: 'map-note' | 'add-link', text: string): Promise<void>
 }
+/** What a note on the map is about: a link line, a flow, or a link dragged from one screen to another. */
+type Note = { kind: 'line' | 'link'; a: Board; b: Board } | { kind: 'flow'; design: string; flow: string; a: Board }
 type Cam = { x: number; y: number; z: number }
 const MIN_Z = 0.02, MAX_Z = 2, MAX_LIVE = 12
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
@@ -64,7 +70,13 @@ function MapView({ api }: { api: MapApi }) {
   const input = useSyncExternalStore(api.subscribe, api.get)
   const [spread, setSpread] = useState<Set<string>>(() => new Set())
   const [sel, setSel] = useState<string | null>(null)
-  const designs = input.design ? input.designs.filter(d => d.id === input.design) : input.designs
+  const designs = useMemo(() => input.design ? input.designs.filter(d => d.id === input.design) : input.designs, [input.designs, input.design])
+  const [note, setNote] = useState<Note | null>(null)
+  const [build, setBuild] = useState(false)
+  // Build it works on one design: the one chosen, or the only one.
+  const one = designs.length === 1 ? designs[0] : null
+  // A link being dragged from the selected screen's handle: where the pointer is, in world pixels.
+  const [drag, setDrag] = useState<{ from: Board; x: number; y: number } | null>(null)
   const world: World = useMemo(() => worldOf(input.protos, designs, spread), [input.protos, designs, spread])
   const links = useLinks(world.boards, input.protos)
   const view = useRef<HTMLDivElement>(null), layer = useRef<HTMLDivElement>(null)
@@ -124,7 +136,7 @@ function MapView({ api }: { api: MapApi }) {
     const el = view.current!, pts = new Map<number, { x: number; y: number }>()
     let last: { x: number; y: number; d: number } | null = null, moved = 0
     const mid = () => { const p = [...pts.values()]; const x = p.reduce((a, q) => a + q.x, 0) / p.length, y = p.reduce((a, q) => a + q.y, 0) / p.length; return { x, y, d: p.length > 1 ? Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) : 0 } }
-    const down = (e: PointerEvent) => { if (e.button > 1) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = mid(); moved = 0; dragged.current = 0 }
+    const down = (e: PointerEvent) => { if (e.button > 1 || (e.target as HTMLElement).closest?.('[data-map-handle], [data-map-note], [data-map-tools]')) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = mid(); moved = 0; dragged.current = 0 }
     const move = (e: PointerEvent) => {
       if (!pts.has(e.pointerId)) return
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -170,6 +182,21 @@ function MapView({ api }: { api: MapApi }) {
     return () => removeEventListener('keydown', key)
   })
 
+  // A link dragged from a screen's handle: the line follows the pointer; let go over another screen.
+  const startLink = (e: ReactPointerEvent, from: Board) => {
+    e.preventDefault()
+    const at = (ev: PointerEvent) => { const r = view.current!.getBoundingClientRect(), c = cam.current; return { x: (ev.clientX - r.left - c.x) / c.z, y: (ev.clientY - r.top - c.y) / c.z } }
+    const move = (ev: PointerEvent) => setDrag({ from, ...at(ev) })
+    const up = (ev: PointerEvent) => {
+      removeEventListener('pointermove', move); removeEventListener('pointerup', up)
+      setDrag(null)
+      const key = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-map-board]')?.dataset.mapBoard
+      const to = world.boards.find(b => b.key === key && b.kind === 'screen' && b.slug !== from.slug)
+      if (to) setNote({ kind: 'link', a: from, b: to })
+    }
+    addEventListener('pointermove', move); addEventListener('pointerup', up)
+    setDrag({ from, x: from.x + from.w, y: from.y + from.h / 2 })
+  }
   const openBoard = (b: Board) => fly(fitTo(b, 1), 380, () => api.open(b.route))
   const c = cam.current
   // What is on screen, in world pixels, with a screen's margin around it.
@@ -189,7 +216,13 @@ function MapView({ api }: { api: MapApi }) {
       <div ref={layer} className="absolute left-0 top-0 origin-top-left" style={{ ['--iz' as string]: String(1 / c.z) }}>
         <div className="relative" style={{ width: world.w, height: world.h }}>
           <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={world.w} height={world.h}>
-            {lines.map(({ a, b, to }) => <path key={`${a.key}>${to}`} data-map-line={`${a.slug}>${to}`} d={linePath(a, b!)} fill="none" className="stroke-sky-500/70" style={{ strokeWidth: 'calc(2px * var(--iz))' }} />)}
+            {lines.map(({ a, b, to }) => <g key={`${a.key}>${to}`}>
+              <path data-map-line={`${a.slug}>${to}`} d={linePath(a, b!)} fill="none" className={note?.kind === 'line' && note.a === a && note.b === b ? 'stroke-violet-500' : 'stroke-sky-500/70'} style={{ strokeWidth: 'calc(2px * var(--iz))' }} />
+              {/* A wide, unseen stroke to click: a note on this link. */}
+              <path data-map-line-hit={`${a.slug}>${to}`} d={linePath(a, b!)} fill="none" stroke="transparent" className="pointer-events-auto cursor-pointer" style={{ strokeWidth: 'calc(14px * var(--iz))' }}
+                onClick={e => { e.stopPropagation(); if (dragged.current < 6) setNote({ kind: 'line', a, b: b! }) }} />
+            </g>)}
+            {drag && <path data-map-drag d={`M${drag.from.x + drag.from.w},${drag.from.y + drag.from.h / 2} L${drag.x},${drag.y}`} fill="none" className="stroke-violet-500" style={{ strokeWidth: 'calc(2px * var(--iz))', strokeDasharray: 'calc(6px * var(--iz))' }} />}
           </svg>
           {world.labels.map(l => (
             // Above its anchor, one size on screen: a design's name over its first flow's, a flow's over its row.
@@ -203,6 +236,9 @@ function MapView({ api }: { api: MapApi }) {
                     <span className={'shrink-0 rounded-full ' + (l.state === 'done' ? 'bg-emerald-500' : 'bg-amber-500')} style={{ width: 'calc(8px*var(--iz))', height: 'calc(8px*var(--iz))' }} />
                     <span dir="auto" className="truncate font-medium">{l.own ? t('Options') : l.text}</span><span className="shrink-0 text-zinc-400">· {l.count}</span>
                   </button>
+                : l.kind === 'flow'
+                ? <button type="button" data-map-flow={l.key} title={t('A note on this flow')} onClick={() => { const [, design, ...rest] = l.key.split(':'), flow = rest.join(':'), a = world.boards.find(b => b.kind === 'screen' && b.design === design && b.flow === flow); if (a) setNote({ kind: 'flow', design, flow, a }) }}
+                    className="rounded-md font-medium text-zinc-700 hover:text-violet-600 dark:text-zinc-200 dark:hover:text-violet-300"><span dir="auto">{l.text}</span><span className="text-zinc-400"> · {l.count}</span></button>
                 : <span dir="auto" className={l.kind === 'design' ? 'font-semibold text-indigo-600 dark:text-indigo-300' : l.kind === 'flow' ? 'font-medium text-zinc-700 dark:text-zinc-200' : 'text-zinc-400'}>
                     {l.kind === 'section' ? t('Explorations on no screen') : l.text}{l.count != null && l.kind === 'flow' ? <span className="text-zinc-400"> · {l.count}</span> : null}
                   </span>}
@@ -229,20 +265,112 @@ function MapView({ api }: { api: MapApi }) {
               {b.standIn && <span className="rounded bg-zinc-900/[.06] px-1 dark:bg-white/10">{t('not picked')}</span>}
             </div>
           ))}
+          {selBoard?.kind === 'screen' && !drag && (
+            // Drag from here to another screen: a link, sent to the agent to put on the right element.
+            <span data-map-handle role="button" aria-label={t('Drag to another screen to link them')} title={t('Drag to another screen to link them')} onPointerDown={e => startLink(e, selBoard)}
+              className="absolute grid cursor-crosshair touch-none place-items-center rounded-full bg-violet-500 shadow ring-white dark:ring-zinc-900"
+              style={{ left: selBoard.x + selBoard.w, top: selBoard.y + selBoard.h / 2, width: 'calc(16px * var(--iz))', height: 'calc(16px * var(--iz))', transform: 'translate(-50%, -50%)', boxShadow: '0 0 0 calc(3px * var(--iz)) white', zIndex: 6 }} />
+          )}
         </div>
       </div>
-      <div className="absolute bottom-3 end-3 flex items-center gap-1 rounded-xl bg-white/90 p-1 text-[12px] shadow ring-1 ring-black/[.06] backdrop-blur dark:bg-zinc-900/90 dark:ring-white/10">
+      <div data-map-tools className="absolute bottom-3 end-3 flex items-center gap-1 rounded-xl bg-white/90 p-1 text-[12px] shadow ring-1 ring-black/[.06] backdrop-blur dark:bg-zinc-900/90 dark:ring-white/10">
+        {input.designs.length > 1 && (
+          <select data-map-design aria-label={t('Design')} value={input.design} onChange={e => api.setDesign(e.target.value)}
+            className="h-7 max-w-40 rounded-lg bg-transparent px-1 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">
+            <option value="">{t('All designs')}</option>
+            {input.designs.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+          </select>
+        )}
+        {one && <button type="button" data-map-build aria-pressed={build} onClick={() => { setNote(null); setBuild(b => !b) }} className="h-7 rounded-lg px-2 font-medium text-zinc-700 hover:bg-zinc-900/5 dark:text-zinc-200 dark:hover:bg-white/10">{t('Build it…')}</button>}
         <button type="button" data-map-lines aria-pressed={input.lines === 'selected'} onClick={() => api.setLines(input.lines === 'all' ? 'selected' : 'all')}
           className="h-7 rounded-lg px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{input.lines === 'all' ? t('All links') : t('Selected only')}</button>
         <button type="button" data-map-fit onClick={fitAll} title={t('Fit (0)')} className="h-7 rounded-lg px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{t('Fit')}</button>
         <span className="w-10 text-center tabular-nums text-zinc-400">{Math.round(c.z * 100)}%</span>
       </div>
-      {selBoard && (
+      {build && one && !note && <BuildBox design={one} boards={world.boards} api={api} onClose={() => setBuild(false)} />}
+      {note && <NoteBox key={`${note.kind}:${note.a.key}:${'b' in note ? note.b.key : note.flow}`} note={note} api={api} onClose={() => setNote(null)} />}
+      {selBoard && !note && !build && (
         <div className="absolute bottom-3 start-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl bg-zinc-900 px-3 py-1.5 text-[12px] text-white shadow-lg dark:bg-white dark:text-zinc-900">
           <span dir="auto" className="font-medium">{selBoard.title}</span>{selBoard.kind === 'option' && <span className="opacity-60">#{numberOf(selBoard.letter)}</span>}
           <button type="button" data-map-open onClick={() => openBoard(selBoard)} className="rounded-md bg-white/15 px-2 py-0.5 dark:bg-zinc-900/10">{t('Open')}</button>
         </div>
       )}
+    </div>
+  )
+}
+
+/** Words to the agent about a link, a flow, or a link to add: what it is about, a field, Send. */
+function NoteBox({ note, api, onClose }: { note: Note; api: MapApi; onClose: () => void }) {
+  const [text, setText] = useState(''), [state, setState] = useState<'' | 'sending' | 'sent' | 'failed'>('')
+  const field = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => { field.current?.focus() }, [])
+  const what = note.kind === 'flow' ? t('A note on the flow {flow}', { flow: note.flow })
+    : note.kind === 'line' ? t('A note on the link {a} → {b}', { a: note.a.title, b: note.b.title })
+    : t('Link {a} → {b}', { a: note.a.title, b: note.b.title })
+  const ok = note.kind === 'link' || text.trim().length > 0
+  const send = async () => {
+    if (!ok || state === 'sending') return
+    const words = text.trim(), on = { proto: note.a.slug, variant: note.a.letter }
+    setState('sending')
+    try {
+      if (note.kind === 'link') await api.ask(on, 'add-link', `Add a link from this screen to ${note.b.slug} (<Go to="${note.b.slug}">)${words ? `: ${words}` : '. Put it on the element it belongs on.'}`)
+      else if (note.kind === 'line') await api.ask(on, 'map-note', `About the link from ${note.a.slug} to ${note.b.slug}: ${words}`)
+      else await api.ask(on, 'map-note', `About the flow ${note.flow} of the design ${note.design}: ${words}`)
+      setState('sent'); setTimeout(onClose, 1200)
+    } catch { setState('failed') }
+  }
+  return (
+    <div data-map-note={note.kind} className="absolute inset-x-0 bottom-3 mx-auto w-[min(26rem,calc(100%-2rem))] rounded-2xl bg-white p-3 text-[13px] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
+      <div className="mb-2 flex items-center gap-2"><span dir="auto" className="min-w-0 flex-1 truncate font-medium">{what}</span>
+        <button type="button" aria-label={t('Close')} onClick={onClose} className="grid size-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-900/5 dark:hover:bg-white/10"><Ph name="x" className="size-3.5" /></button></div>
+      <textarea ref={field} data-map-note-field dir="auto" rows={2} value={text} onChange={e => setText(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() } else if (e.key === 'Escape') { e.stopPropagation(); onClose() } }}
+        placeholder={note.kind === 'link' ? t('Which element should link there? (optional)') : t('What should change?')}
+        className="w-full resize-none rounded-lg bg-zinc-900/[.04] px-2.5 py-2 outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-violet-500/40 dark:bg-white/[.06]" />
+      <div className="mt-2 flex items-center justify-end gap-2">
+        {state === 'sent' && <span className="text-emerald-600">{t('Sent')}</span>}
+        {state === 'failed' && <span className="text-rose-600">{t('Could not send it. Try again.')}</span>}
+        <button type="button" data-map-note-send disabled={!ok || state === 'sending'} onClick={() => void send()} className="h-8 rounded-full bg-proto-primary px-3 font-medium text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-40">{note.kind === 'link' ? t('Ask for this link') : t('Send')}</button>
+      </div>
+    </div>
+  )
+}
+
+/** Build it on a design: its screens to tick (the picked ones by default; an open one is marked), then one request to the agent. */
+function BuildBox({ design, boards, api, onClose }: { design: Design; boards: Board[]; api: MapApi; onClose: () => void }) {
+  const screens = boards.filter(b => b.kind === 'screen' && b.design === design.id)
+  const [on, setOn] = useState(() => new Set(screens.filter(b => !b.standIn).map(b => b.key)))
+  const [state, setState] = useState<'' | 'sending' | 'sent' | 'failed'>('')
+  const chosen = screens.filter(b => on.has(b.key))
+  const send = async () => {
+    if (!chosen.length || state === 'sending') return
+    const list = chosen.map(b => b.key.slice('screen:'.length)), open = chosen.filter(b => b.standIn).map(b => b.slug)
+    setState('sending')
+    try {
+      await api.ask({ proto: chosen[0].slug, variant: chosen[0].letter }, 'build-design',
+        `Build the design ${design.title} (${design.id}): ${list.join(', ')}. Plan: proto handoff --design ${design.id} --screens ${list.join(',')}.${open.length ? ` Still open, #1 stands in: ${open.join(', ')}.` : ''}`)
+      setState('sent'); setTimeout(onClose, 1200)
+    } catch { setState('failed') }
+  }
+  return (
+    <div data-map-build-box data-map-note="build" className="absolute inset-x-0 bottom-3 mx-auto w-[min(24rem,calc(100%-2rem))] rounded-2xl bg-white p-3 text-[13px] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
+      <div className="mb-1 flex items-center gap-2"><span dir="auto" className="min-w-0 flex-1 truncate font-medium">{t('Build {name}', { name: design.title })}</span>
+        <button type="button" aria-label={t('Close')} onClick={onClose} className="grid size-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-900/5 dark:hover:bg-white/10"><Ph name="x" className="size-3.5" /></button></div>
+      <p className="mb-2 text-zinc-500">{t('The screens you tick, with their links as real navigation.')}</p>
+      <div className="max-h-56 space-y-px overflow-y-auto">
+        {screens.map(b => (
+          <label key={b.key} className="flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2 hover:bg-zinc-900/[.03] dark:hover:bg-white/5">
+            <input type="checkbox" data-map-build-screen={b.key} checked={on.has(b.key)} onChange={() => setOn(s => { const n = new Set(s); if (n.has(b.key)) n.delete(b.key); else n.add(b.key); return n })} className="size-4 accent-violet-600" />
+            <span dir="auto" className="min-w-0 flex-1 truncate">{b.title}</span>
+            <span className={'shrink-0 text-[11px] ' + (b.standIn ? 'text-amber-600' : 'text-zinc-400')}>{b.standIn ? t('not picked') : `#${numberOf(b.letter)}`}</span>
+          </label>
+        ))}
+      </div>
+      <div className="mt-2 flex items-center justify-end gap-2">
+        {state === 'sent' && <span className="text-emerald-600">{t('Sent')}</span>}
+        {state === 'failed' && <span className="text-rose-600">{t('Could not send it. Try again.')}</span>}
+        <button type="button" data-map-build-send disabled={!chosen.length || state === 'sending'} onClick={() => void send()} className="h-8 rounded-full bg-proto-primary px-3 font-medium text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-40">{tn(chosen.length, 'Build 1 screen', 'Build {n} screens')}</button>
+      </div>
     </div>
   )
 }
