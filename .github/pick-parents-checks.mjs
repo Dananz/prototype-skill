@@ -10,7 +10,7 @@ import { test } from 'node:test'
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
 for (const entry of ['page', 'CLI']) test(`${entry} parent picks preserve decisions and traverse the whole chain`, async () => {
   const project = mkdtempSync(join(tmpdir(), 'proto-parent-picks-'))
-  const app = join(project, '.prototypes', 'parents')
+  const app = join(project, '.prototypes', '_project')
   const file = slug => join(app, 'src', 'protos', slug, 'meta.ts')
   const put = (slug, fields = {}) => {
     mkdirSync(dirname(file(slug)), { recursive: true })

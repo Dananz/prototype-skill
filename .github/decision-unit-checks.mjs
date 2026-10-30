@@ -118,7 +118,7 @@ test('proto history and proto brief from the command line', () => {
   try {
     // The CLI finds a session by --project and --session; this one is made by hand in the index's place.
     const project = mkdtempSync(join(tmpdir(), 'proto-decisions-project-'))
-    const app = join(project, '.prototypes', 'unit')
+    const app = join(project, '.prototypes', '_project')
     mkdirSync(dirname(app), { recursive: true })
     spawnSync('cp', ['-R', s.app, app])
     const run = (...a) => spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), ...a, '--project', project, '--session', 'unit'], { encoding: 'utf8', env: { ...process.env, PROTO_NO_UPDATE: '1', PROTO_NO_GC: '1' } })

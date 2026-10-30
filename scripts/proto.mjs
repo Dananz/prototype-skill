@@ -110,6 +110,7 @@ import { report as reportShared } from '../app/share/owner.mjs'
 import { sharedLines } from '../app/share/viewer-text.mjs'
 import { BASE, SHELL, STACKS, syncApp } from './app-sync.mjs'
 import { skillUpdate } from './self-update.mjs'
+import { locked as lockApp, projectApp, registerSession } from './project.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 // The languages the page speaks (app/shell/i18n.ts). --lang sets the session's: the language the
@@ -136,7 +137,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'again'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'again', 'no-serve'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -196,20 +197,11 @@ function sessionId() {
   if (!id || id === true) die('no session id. Pass --session <id> on every call, or set PROTO_SESSION_ID to one stable, unique name for this conversation.')
   return String(id)
 }
-// UUIDv7's first 8 characters are a timestamp shared by nearby threads. Keep full IDs for
-// new folders; reuse the old 8-character UUID folder only when its stored identity matches.
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const short = id => id.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 40) || 'session'
+// The project's one app (scripts/project.mjs). Every command still names its conversation, which
+// owns what it makes there.
 function sessionDir() {
-  const id = sessionId(), root = join(projectRoot(), '.prototypes')
-  const dir = join(root, short(id))
-  if (!existsSync(dir) && UUID.test(id)) {
-    const legacy = join(root, id.slice(0, 8))
-    if (readSession(legacy)?.id === id) return legacy
-  }
-  const stored = readSession(dir)?.id
-  if (stored && stored !== id) die(`folder ${tilde(dir)} belongs to a different session. Use a distinct --session name; no files were changed.`)
-  return dir
+  sessionId()
+  return projectApp(projectRoot())
 }
 const sessionFile = dir => join(dir, 'session.json')
 const readSession = dir => readJson(sessionFile(dir), null)
@@ -219,18 +211,7 @@ const readSession = dir => readJson(sessionFile(dir), null)
 // `proto done`, the dev server stamping edits), so each change is made under a lock: a directory,
 // which only one of them can create. One held past 5 s was left by a crash and is taken over.
 // app/server.mjs takes the same lock.
-function locked(dir, fn) {
-  const lock = join(dir, '.proto', 'session.lock')
-  mkdirSync(dirname(lock), { recursive: true })
-  let mine = false
-  for (let i = 0; i < 200 && !mine; i++) {
-    try { mkdirSync(lock); mine = true } catch {
-      try { if (Date.now() - statSync(lock).mtimeMs > 5000) rmSync(lock, { recursive: true, force: true }) } catch { /* just released */ }
-      if (!mine) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
-    }
-  }
-  try { return fn() } finally { if (mine) rmSync(lock, { recursive: true, force: true }) }
-}
+const locked = (dir, fn) => lockApp(dir, fn)
 // patch: the fields to change, or a function of the session as it is now that returns them.
 function patchSession(dir, patch) {
   return locked(dir, () => {
@@ -260,6 +241,7 @@ function replyAgent() {
 }
 function beat(dir) {
   const agent = detectedAgent()
+  registerSession(dir, sessionId(), { agent })
   if (agent) patchSession(dir, { agent })
   const pid = agentPid()
   if (!pid) return
@@ -373,9 +355,8 @@ function scaffold(dir, project) {
     name: `prototype-${basename(dir)}`, private: true, type: 'module',
     dependencies: { ...SHELL, ...kit.deps, ...kit.craft }, devDependencies: { ...BASE, ...kit.dev },
   })
-  const id = sessionId()
   writeJson(sessionFile(dir), {
-    id, agent: detectedAgent() ?? 'agent', name: flags.name || basename(project), lang: langFlag() ?? 'en', project, path: tilde(project), stack,
+    id: `p-${randomBytes(4).toString('hex')}`, agent: detectedAgent() ?? 'agent', name: basename(project), lang: langFlag() ?? 'en', project, path: tilde(project), stack,
     createdAt: new Date().toISOString(), port: null, tailnetPort: null, pid: null,
     url: null, localUrl: null, keep: false, idleHours: IDLE_HOURS, deleteDays: DELETE_DAYS,
   })
@@ -425,11 +406,14 @@ async function up() {
   if (process.env.PROTO_NO_GC !== '1') await gc(true)
   const project = projectRoot()
   if (!existsSync(sessionFile(dir))) scaffold(dir, project)
-  else await update(dir)
+  else if (!flags['no-serve']) await update(dir)
   beat(dir)
   let s = readSession(dir)
-  if (flags.name && flags.name !== s.name) s = patchSession(dir, { name: flags.name })
+  // --name names this conversation; the page's title is the project's.
+  registerSession(dir, sessionId(), { name: typeof flags.name === 'string' ? flags.name : undefined, lang: langFlag() ?? undefined })
   if (langFlag() && langFlag() !== (s.lang ?? 'en')) s = patchSession(dir, { lang: langFlag() })
+  // --no-serve: the app and the registry only, no install, server or tailnet (the CLI checks).
+  if (flags['no-serve']) return console.log(`dir ${dir}`)
   if (!existsSync(join(dir, 'node_modules', 'vite'))) install(dir)
 
   if (!await running(s)) {
@@ -2563,8 +2547,7 @@ function numbersToLetters() {
   const id = flags.session || process.env.PROTO_SESSION_ID || process.env.CODEX_THREAD_ID || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID
   const shaped = a => typeof a === 'string' && /^[a-z0-9][a-z0-9-]*\/\d/.test(a)
   if (!id || id === true || !args.concat(['from', 'to', 'until'].map(k => flags[k])).some(a => shaped(a) || (typeof a === 'string' && a.split(',').some(shaped)))) return
-  const root = join(projectRoot(), '.prototypes'), dirs = [join(root, short(String(id))), UUID.test(id) ? join(root, String(id).slice(0, 8)) : ''].filter(Boolean)
-  const isProto = slug => dirs.some(d => existsSync(join(d, 'src', 'protos', slug, 'meta.ts')))
+  const isProto = slug => existsSync(join(projectApp(projectRoot()), 'src', 'protos', slug, 'meta.ts'))
   const byNumber = r => r.replace(/^([a-z0-9][a-z0-9-]*)\/(\d{1,3})(?=\/|$)/, (all, slug, n) => letterOf(n) && isProto(slug) ? `${slug}/${letterOf(n)}` : all)
   for (const [i, a] of args.entries()) args[i] = byNumber(a)
   for (const k of ['from', 'to', 'until']) if (typeof flags[k] === 'string') flags[k] = flags[k].split(',').map(r => byNumber(r.trim())).join(',')

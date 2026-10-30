@@ -14,7 +14,7 @@ const cli = fileURLToPath(new URL('../scripts/proto.mjs', import.meta.url))
 function fixture(t, { legacy = false } = {}) {
   const project = mkdtempSync(join(tmpdir(), 'proto-lifecycle-'))
   t.after(() => rmSync(project, { recursive: true, force: true }))
-  const app = join(project, '.prototypes', 'lifecycle'), inbox = join(app, '.proto', 'inbox')
+  const app = join(project, '.prototypes', '_project'), inbox = join(app, '.proto', 'inbox')
   const put = (path, data) => { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, JSON.stringify(data)) }
   put(join(app, 'session.json'), { id: 'lifecycle', stack: 'react', createdAt: new Date().toISOString() })
   const meta = (slug, data = {}) => {

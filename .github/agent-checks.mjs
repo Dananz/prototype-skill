@@ -15,31 +15,43 @@ function fixture(fn) {
   const env = { ...process.env }
   identityVars.forEach(k => delete env[k])
   const call = (args, extra = {}, cli = join(skill, 'scripts/proto.mjs')) => spawnSync(process.execPath, [cli, ...args, '--project', project], { env: { ...env, ...extra }, encoding: 'utf8', timeout: 10_000 })
+  // Every conversation works in the project's one app (scripts/project.mjs); this registers one there.
   const session = id => {
-    const dir = join(project, '.prototypes', id)
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'session.json'), JSON.stringify({ id, localUrl: `http://example.test/${id}` }))
+    const dir = join(project, '.prototypes', '_project')
+    mkdirSync(join(dir, '.proto'), { recursive: true })
+    if (!existsSync(join(dir, 'session.json'))) writeFileSync(join(dir, 'session.json'), JSON.stringify({ id: 'p-0000test', localUrl: 'http://example.test/app' }))
+    const reg = join(dir, '.proto', 'sessions.json'), all = existsSync(reg) ? JSON.parse(readFileSync(reg, 'utf8')) : {}
+    all[id] = { createdAt: new Date().toISOString() }
+    writeFileSync(reg, JSON.stringify(all))
     return dir
   }
   try { fn({ project, call, session }) } finally { rmSync(project, { recursive: true, force: true }) }
 }
 
+// The conversation a command ran for is the one the registry last saw.
+const lastSeen = dir => Object.entries(JSON.parse(readFileSync(join(dir, '.proto', 'sessions.json'), 'utf8'))).sort((a, b) => String(b[1].seenAt || '').localeCompare(String(a[1].seenAt || '')))[0]?.[0]
+
 for (const variable of identityVars.slice(0, 4)) test(`session from ${variable}`, () => fixture(({ call, session }) => {
-  session('thread-one')
+  const dir = session('thread-one')
   const r = call(['url'], { [variable]: 'thread-one' })
   assert.equal(r.status, 0, r.stderr)
-  assert.equal(r.stdout.trim(), 'http://example.test/thread-one')
+  assert.equal(r.stdout.trim(), 'http://example.test/app')
+  assert.equal(lastSeen(dir), 'thread-one')
 }))
 
 test('explicit session wins over inherited identities, generic then Codex then Claude', () => fixture(({ call, session }) => {
-  for (const id of ['explicit', 'generic', 'codex', 'claude']) session(id)
+  let dir
+  for (const id of ['explicit', 'generic', 'codex', 'claude']) dir = session(id)
   const env = { PROTO_SESSION_ID: 'generic', CODEX_THREAD_ID: 'codex', CLAUDE_CODE_SESSION_ID: 'claude' }
   for (const [args, extra, id] of [
     [['url', '--session', 'explicit'], env, 'explicit'],
     [['url'], env, 'generic'],
     [['url'], { ...env, PROTO_SESSION_ID: '' }, 'codex'],
     [['url'], { CLAUDE_CODE_SESSION_ID: 'claude' }, 'claude'],
-  ]) assert.equal(call(args, extra).stdout.trim(), `http://example.test/${id}`)
+  ]) {
+    assert.equal(call(args, extra).status, 0)
+    assert.equal(lastSeen(dir), id)
+  }
 }))
 
 test('missing identity fails with portable recovery, no shared default', () => fixture(({ call }) => {
@@ -47,32 +59,6 @@ test('missing identity fails with portable recovery, no shared default', () => f
   assert.equal(r.status, 1)
   assert.match(r.stderr, /--session/)
   assert.match(r.stderr, /PROTO_SESSION_ID/)
-}))
-
-test('UUIDv7 threads sharing a timestamp prefix stay separate, existing sessions resume', () => fixture(({ call, session }) => {
-  const first = '0199a7c3-1b2e-7000-8000-000000000001'
-  const second = '0199a7c3-4f90-7000-8000-000000000002'
-  const legacy = session('0199a7c3')
-  writeFileSync(join(legacy, 'session.json'), JSON.stringify({ id: first, localUrl: 'http://example.test/legacy' }))
-  session(second)
-  assert.equal(call(['url'], { CODEX_THREAD_ID: first }).stdout.trim(), 'http://example.test/legacy')
-  assert.equal(call(['url'], { CODEX_THREAD_ID: second }).stdout.trim(), `http://example.test/${second}`)
-}))
-
-test('Claude UUIDv4 sessions keep their existing folder', () => fixture(({ call, session }) => {
-  const id = 'deadbeef-1234-4000-8000-000000000001'
-  const dir = session('deadbeef')
-  writeFileSync(join(dir, 'session.json'), JSON.stringify({ id, localUrl: 'http://example.test/claude-legacy' }))
-  assert.equal(call(['url'], { CLAUDE_CODE_SESSION_ID: id }).stdout.trim(), 'http://example.test/claude-legacy')
-}))
-
-test('normalized session name collision cannot read or alter another conversation', () => fixture(({ call, session }) => {
-  const dir = session('reviewone')
-  const before = readFileSync(join(dir, 'session.json'), 'utf8')
-  const r = call(['keep', '--session', 'review one'])
-  assert.equal(r.status, 1)
-  assert.match(r.stderr, /different session/)
-  assert.equal(readFileSync(join(dir, 'session.json'), 'utf8'), before)
 }))
 
 test('generic heartbeat records the selected parent session', () => fixture(({ call, session }) => {
@@ -307,7 +293,7 @@ test('the Share sheet syncs through the skill, or says the viewer may be old', a
   const { BASE, SHELL, STACKS } = await import('../scripts/app-sync.mjs')
   const project = mkdtempSync(join(tmpdir(), 'proto agent checks '))
   try {
-    const dir = join(project, '.prototypes', 'sharer')
+    const dir = join(project, '.prototypes', '_project')
     mkdirSync(dir, { recursive: true })
     const session = { id: 'sharer', stack: 'react', project }
     writeFileSync(join(dir, 'session.json'), JSON.stringify(session))
@@ -325,7 +311,7 @@ test('the page\'s sync leaves moved packages to proto up, and gives up on a hung
   const { syncFirst } = await import('../app/share/routes.mjs')
   const project = mkdtempSync(join(tmpdir(), 'proto agent checks '))
   try {
-    const dir = join(project, '.prototypes', 'sharer')
+    const dir = join(project, '.prototypes', '_project')
     mkdirSync(dir, { recursive: true })
     const session = { id: 'sharer', stack: 'react', project }
     writeFileSync(join(dir, 'session.json'), JSON.stringify(session))
