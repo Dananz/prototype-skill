@@ -37,6 +37,8 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
   try {
     await until(page, `!!document.querySelector('[data-tree-row="design:acme"]')`, 'the tree should draw the design')
     assert(await page.run(`!document.querySelector('[data-tree-side]').hidden && !document.querySelector('[data-side] *')`), 'with ?tree=1 the tree replaces the old sidebar')
+    // On the desk it is a card like the old sidebar, not the dotted desk showing through.
+    assert(await page.run(`(() => { const s = getComputedStyle(document.querySelector('[data-tree-side]')); return s.backgroundColor !== 'rgba(0, 0, 0, 0)' && s.backgroundImage === 'none' && parseFloat(s.borderTopLeftRadius) > 0 })()`), 'the tree should sit on the desk as a card')
     assert(await page.run(`localStorage.getItem('proto-tree') === '1'`), '?tree=1 should be kept in this browser')
     assert(await page.run(`!!document.querySelector('[data-tree-row="screen:thome"]')`), 'thome should be a screen row')
     assert(await page.run(`/not picked/.test(document.querySelector('[data-tree-row="screen:tabout"]')?.textContent ?? '')`), 'tabout should say it is not picked')
