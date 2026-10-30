@@ -35,6 +35,7 @@ import { createView } from './view/index'
 import { createIntake } from './intake/index'
 import type { Intake } from './intake/types'
 import { createSettings, type Appearance } from './settings'
+import { mountTree, type TreeInput } from './tree/index'
 import { followSession, rtl, t, tn, day } from './i18n'
 import { createShare } from './share'
 import { createShareLink } from './share-link'
@@ -196,7 +197,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let designs = opts.designs ?? []
   // The tree sidebar draws them and listens for changes (tree/index.tsx).
   const designWatchers = new Set<() => void>()
-  const designsChanged = () => designWatchers.forEach(f => f())
+  const designsChanged = () => { designWatchers.forEach(f => f()); paintTree() }
   const shown = (list: Proto[]) => favOnly ? list.map(p => p.favorites.length ? { ...p, variants: p.variants.filter(v => p.favorites.includes(v.id)) } : p) : list
   let protos = shown(all)
   // The page inside a device view (view/frame.ts) shares this browser's storage with the page
@@ -541,6 +542,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // arrows, the spotlight and the comment layer.
   root.innerHTML = `<div ${framed ? '' : 'data-desk '}class="flex h-dvh bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
     <aside data-side></aside>
+    <aside data-tree-side hidden></aside>
     <div data-grip role="separator" aria-orientation="vertical" aria-label="${t('Resize sidebar')}" tabindex="0" title="${t('Drag to resize · double-click to reset')}" class="group relative z-40 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none outline-none">
       <span class="absolute left-1/2 top-1/2 h-10 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-400/0 transition-colors duration-150 group-hover:bg-zinc-400/70 group-focus-visible:bg-zinc-400/70 group-data-[dragging]:bg-zinc-400/70"></span>
     </div>
@@ -573,6 +575,45 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div data-intake hidden class="fixed inset-0 z-[60]"></div>
   </div>`
   const side = root.querySelector<HTMLElement>('[data-side]')!
+  const treeHost = root.querySelector<HTMLElement>('[data-tree-side]')!
+  // The project tree replaces the columns while ?tree=1 or Settings says so (kept in this browser).
+  const treeAsked = new URLSearchParams(location.search).get('tree')
+  if (treeAsked === '1' || treeAsked === '0') remember('proto-tree', treeAsked)
+  let treeOn = !framed && localStorage.getItem('proto-tree') === '1'
+  const treeWatchers = new Set<() => void>()
+  let treeSnap: TreeInput | null = null
+  const placeRoute = () => st.place.view === 'variant' ? `${st.place.proto}/${st.place.variant}` : st.place.view === 'proto' ? `${st.place.proto}/` : ''
+  function treeInput(): TreeInput {
+    const by: Record<string, number> = {}
+    for (const [k, n] of comments.counts().by) { const slug = k.split('/')[0]; by[slug] = (by[slug] ?? 0) + n }
+    const w = workOf()
+    return {
+      protos: all, designs, place: placeRoute(), me: session.conversation ?? null,
+      building: new Set(Object.keys(session.building ?? {})), counts: by,
+      work: w ? t('Working on {name}', { name: `${w.p.title} ${variantLabel(w.p, w.v.id)}` }) : '',
+      live: st.stopped ? t('Server stopped') : [st.live ? t('Live') : t('Reconnecting'), st.lastEdit ? t('edited {when}', { when: ago(st.lastEdit) }) : ''].filter(Boolean).join(' · '),
+    }
+  }
+  /** Gives the tree what it reads now; it redraws only when that changed. */
+  function paintTree() {
+    if (!treeOn) return
+    const next = treeInput(), was = treeSnap
+    const key = (x: TreeInput | null) => x && JSON.stringify({ ...x, protos: x.protos.map(p => [p.id, p.title, p.picked, p.archived, p.from, p.session, p.variants.map(v => v.id + v.name)]), building: [...x.building] })
+    if (key(next) === key(was)) return
+    treeSnap = next
+    treeWatchers.forEach(f => f())
+  }
+  let treeMounted = false
+  function mountTreeOnce() {
+    if (treeMounted || !treeOn) return
+    treeMounted = true
+    treeSnap = treeInput()
+    mountTree(treeHost, {
+      get: () => treeSnap!, subscribe: f => { treeWatchers.add(f); return () => { treeWatchers.delete(f) } },
+      go: route => { const [proto, variant] = route.split('/'); go(variant ? { view: 'variant', proto, variant } : { view: 'proto', proto }) },
+      goWork: () => act('work', 'go', ''), hide: () => act('side', '0', ''), name: session.name,
+    })
+  }
   const grip = root.querySelector<HTMLElement>('[data-grip]')!
   const drawer = root.querySelector<HTMLElement>('[data-drawer]')!
   const bar = root.querySelector<HTMLElement>('[data-bar]')!
@@ -1315,11 +1356,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${chips.length > 1 ? `<div data-mcols class="flex gap-1.5 overflow-x-auto px-3 pb-3 [scrollbar-width:none]">${chips.map(({ x, j }) => `<button data-act="drill:${j}" class="h-8 shrink-0 rounded-full px-3 text-xs ${j === i ? 'bg-sky-500/15 font-semibold text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.05] text-zinc-600 dark:bg-white/[.07] dark:text-zinc-300'}"><span dir="auto">${esc(colName(x))}</span> <b>${esc(x.sel)}</b></button>`).join('')}</div>` : ''}
         <div data-vlist data-k="${esc(colKey(c))}" class="space-y-px px-2">${colRows(c, true)}</div></div>`
     }
-    side.className = st.side && !framed ? 'hidden shrink-0 flex-col border-e border-black/[.07] lg:flex dark:border-white/10' : 'hidden'
+    const sideClass = st.side && !framed ? 'hidden shrink-0 flex-col border-e border-black/[.07] lg:flex dark:border-white/10' : 'hidden'
+    side.className = treeOn ? 'hidden' : sideClass
     side.style.width = `${st.sideW}px`
+    treeHost.hidden = !treeOn
+    treeHost.className = treeOn ? sideClass : 'hidden'
+    treeHost.style.width = `${st.sideW}px`
     grip.classList.toggle('lg:block', st.side)
     grip.setAttribute('aria-valuenow', String(st.sideW))
-    keepScroll(side, st.side ? sideNav(false) : '')
+    keepScroll(side, st.side && !treeOn ? sideNav(false) : '')
+    if (treeOn) { mountTreeOnce(); paintTree() }
     keepScroll(drawer, st.drawer ? `<div class="fixed inset-0 z-50 lg:hidden"><div data-act="drawer:0" class="absolute inset-0 bg-black/30"></div><div class="absolute inset-y-0 start-0 flex w-[19rem] max-w-[85%] flex-col bg-white shadow-2xl dark:bg-zinc-950">${sideNav(true)}</div></div>` : '')
 
     // Focus mode restyles the zone to cover the page; the mounted design stays put. On a phone
@@ -2199,7 +2245,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // chrome re-rendering under it (status pings, edits).
   const setSideW = (w: number, save = true) => {
     st.sideW = Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, w)))
-    side.style.width = `${st.sideW}px`
+    side.style.width = treeHost.style.width = `${st.sideW}px`
     grip.setAttribute('aria-valuenow', String(st.sideW))
     if (save) remember('proto-side-w', String(st.sideW))
   }
@@ -2211,7 +2257,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     grip.setPointerCapture(e.pointerId)
     grip.dataset.dragging = ''
     document.documentElement.style.cursor = 'col-resize'
-    const b = side.getBoundingClientRect()
+    const b = (treeOn ? treeHost : side).getBoundingClientRect()
     const move = (m: PointerEvent) => setSideW(rtl ? b.right - m.clientX : m.clientX - b.left, false)
     const end = () => {
       grip.removeEventListener('pointermove', move)
@@ -2710,7 +2756,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const drawSettings = createSettings()
   function paintSettings() {
     drawSettings({
-      open: settingsOpen, category: settingsCategory, appearance, live: comments.store.get().live, sidebar: st.side,
+      open: settingsOpen, category: settingsCategory, appearance, live: comments.store.get().live, sidebar: st.side, tree: treeOn,
       review: localStorage.getItem('proto-hints') !== '0', stack: st.stack,
       session: { host: agentName(session.agent), id: session.conversation || session.id, name: session.name, url: session.url || location.origin + '/', keep: !!st.status?.keep,
         server: st.stopped ? 'stopped' : st.live ? 'live' : 'reconnecting',
@@ -2725,6 +2771,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onAppearance: setAppearance,
       onLive: on => { comments.act.setLive(on); paintSettings() },
       onSidebar: on => { st.side = on; remember('proto-side', on ? '1' : '0'); render() },
+      onTree: on => { treeOn = on; remember('proto-tree', on ? '1' : '0'); render() },
       onReview: on => { remember('proto-hints', on ? '1' : '0'); hintsOpen = wideMq.matches && on; if (!on) setTry(null); render() },
       onLayout: on => { act('stack', on ? '1' : '0', ''); paintSettings() },
       onResetWidths: () => { setSideW(SIDE_W); setSplit(SPLIT_W); render() },

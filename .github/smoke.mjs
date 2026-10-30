@@ -51,6 +51,7 @@ import { virtualWindowChecks } from './virtual-window-checks.mjs'
 import { virtualReactChecks } from './virtual-react-checks.mjs'
 import { variantLabelsChecks } from './variant-labels-checks.mjs'
 import { favoritesChecks } from './favorites-checks.mjs'
+import { treeChecks } from './tree-checks.mjs'
 import { headerChecks } from './header-checks.mjs'
 import { phoneFrameChecks } from './phone-frame-checks.mjs'
 import { phoneOneDesignChecks } from './phone-one-design-checks.mjs'
@@ -211,6 +212,13 @@ let { pid } = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
 // its own connection: the spawnSync calls block this script for many seconds, long enough for
 // the server to close an idle kept-alive socket without fetch noticing.
 // A focused run uses the same real browser/server harness as the full suite.
+if (process.argv.includes('--tree-only')) {
+  await treeChecks({ proto, app, local, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused project tree checks')
+  process.exit(0)
+}
 if (process.argv.includes('--labels-favorites-only')) {
   await variantLabelsChecks({ proto, app, local, openPage, fail })
   await favoritesChecks({ proto, app, local, openPage, fail })
@@ -381,6 +389,7 @@ await middleDragChecks({ proto, app, local, openPage, fail })
 await zoomResetChecks({ proto, app, local, openPage, fail })
 await variantLabelsChecks({ proto, app, local, openPage, fail })
 await favoritesChecks({ proto, app, local, openPage, fail })
+await treeChecks({ proto, app, local, openPage, fail })
 await headerChecks({ proto, app, local, openPage, fail })
 await phoneFrameChecks({ proto, app, local, openPage, fail })
 await phoneOneDesignChecks({ proto, app, local, openPage, fail })
