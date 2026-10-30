@@ -559,6 +559,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-island-host class="pointer-events-none absolute inset-0 z-[17]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px)"></div>
         <div data-strip hidden class="absolute start-3 top-3 z-[20]"></div>
+        <div data-zoom-pill hidden class="absolute bottom-3 z-[21]" style="inset-inline-end:calc(var(--hw,0px) + 0.75rem)"></div>
         <div data-motion-dock class="absolute start-0 z-[18]" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-copy-bar class="absolute start-0 z-[14]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px))"></div>
         <div data-copy-sheet class="pointer-events-none absolute inset-0 z-[19] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
@@ -673,6 +674,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let mapSnap: MapInput | null = null, mapMounted = false, lastFocus = ''
   let mapLines: 'all' | 'selected' = localStorage.getItem('proto-map-lines') === 'all' ? 'all' : 'selected'
   let mapDesign = '', mapEdits = 0
+  // What the map says of itself: its zoom (as the design's own size), and Build it (open, offered).
+  let mapState = { pct: 100, build: false, one: false }
   // The area the tree asked the map to show (a design or flow key, numbered so asking again flies again).
   let mapFrame = '', frames = 0
   // Each prototype's file edits, counted: its stills on the map are taken again when its count moves.
@@ -700,11 +703,36 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     setDesign: id => { mapDesign = id; paintMap() },
     ask: async (on, action, text) => { await comments.act.decide(on, action, { body: [text], tags: [] }) },
     slot: el => { slotEl = el; placeLayer() },
+    report: s => { const was = mapState; mapState = s; paintZoom(); if (was.build !== s.build || was.one !== s.one) render() },
+    panel: open => islandHost.toggleAttribute('data-away', open),
     leave: () => { if (inPlace()) go({ view: 'session' }) },
   }
   // On a wide desk the map fills the window, under the bar, the strip, the sidebar and the island; it
   // is told the clear part of it (the stage), where it fits and centres things and keeps its controls.
   const deskMq = matchMedia('(min-width: 1024px)')
+  // The zoom pill (tree mode, a wide page): its zoom only, and on hover the layouts, Fit and −/+. It
+  // drives the map's camera while the map shows (its zoom is the design's own size), else the layout's.
+  const zoomPillOn = () => treeOn && !framed && deskMq.matches && !st.focus && (onMap() || inPlace() || viewOn())
+  let zoomKey = ''
+  function paintZoom() {
+    const el = root.querySelector<HTMLElement>('[data-zoom-pill]')
+    if (!el) return
+    if (!el.dataset.bound) { el.dataset.bound = '1'; el.addEventListener('change', e => { const sel = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-map-design]'); if (sel) mapApi.setDesign(sel.value) }) }
+    const on = zoomPillOn()
+    el.hidden = !on
+    if (!on) { el.innerHTML = ''; zoomKey = ''; return }
+    const mapOn = onMap() || inPlace(), inScreen = st.place.view === 'variant'
+    const pct = mapOn ? `${mapState.pct}%` : scaleLabel()
+    const key = JSON.stringify([mapOn, inScreen, viewOk(), shownSize(), st.view.land, designs.map(d => d.id + d.title), mapDesign, document.documentElement.lang])
+    if (key === zoomKey && el.firstElementChild) { el.querySelector('[data-zoom-pct]')!.textContent = pct; return }
+    zoomKey = key
+    const btn = 'grid size-7 shrink-0 place-items-center rounded-lg text-zinc-600 hover:bg-zinc-900/5 aria-pressed:bg-zinc-900/[.07] aria-pressed:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:aria-pressed:bg-white/10 dark:aria-pressed:text-white'
+    const sizes = inScreen && viewOk() ? ORDER.map(z => { const land = z === 'tablet' && st.view.land, d = dims(z, land); return `<button type="button" data-act="size:${z}" data-shoot="pill-size-${z}" aria-pressed="${shownSize() === z}" aria-label="${SIZES[z].name}" title="${SIZES[z].name} · ${d.w} × ${d.h}" class="${btn}">${ic(sizeIcon(z, land))}</button>` }).join('') + '<span class="mx-1 h-5 w-px shrink-0 bg-black/[.08] dark:bg-white/10"></span>' : ''
+    const pick = mapOn && designs.length > 1 ? `<select data-map-design aria-label="${t('Design')}" class="h-7 max-w-40 shrink-0 rounded-lg bg-transparent px-1 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><option value="">${t('All designs')}</option>${designs.map(d => `<option value="${esc(d.id)}"${d.id === mapDesign ? ' selected' : ''}>${esc(d.title)}</option>`).join('')}</select>` : ''
+    el.innerHTML = `<div class="group flex items-center rounded-xl bg-white/90 p-1 text-[12px] shadow ring-1 ring-black/[.06] backdrop-blur dark:bg-zinc-900/90 dark:ring-white/10">
+      <div data-zoom-more class="flex max-w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[max-width,opacity] duration-200 ease-out group-hover:max-w-[40rem] group-hover:opacity-100 group-focus-within:max-w-[40rem] group-focus-within:opacity-100 motion-reduce:transition-none">${pick}${sizes}<button type="button" data-act="zoom:fit" data-map-fit aria-label="${mapOn ? t('Fit') : t('Center the design')}" title="${mapOn ? t('Fit') : t('Center the design')} · 0" class="${btn}">${ic('center')}</button><button type="button" data-act="zoom:out" data-map-zoom="out" aria-label="${t('Zoom out')}" title="${t('Zoom out')} (-)" class="${btn}">${ic('zoom-out', 'size-3.5')}</button><button type="button" data-act="zoom:in" data-map-zoom="in" aria-label="${t('Zoom in')}" title="${t('Zoom in')} (+)" class="${btn}">${ic('zoom-in', 'size-3.5')}</button></div>
+      <span data-zoom-pct class="min-w-11 px-1.5 text-center tabular-nums text-zinc-500 dark:text-zinc-400">${pct}</span></div>`
+  }
   function paintMap() {
     const show = onMap() || inPlace()
     mapHost.hidden = !show
@@ -760,7 +788,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const own = !inScreen ? [off('strip-tweaks', 'tweaks', t('Tweaks')), off('strip-try', 'key', t('Try it')), off('strip-copy', 'text', t('Copy options')), off('strip-motion', 'curves', t('Motion')), off('strip-states', 'grid', t('States, Autoplay, Compare'))]
       : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), motionBtn(), statesBtn, replayBtn()]
     const fit = inScreen && frameOn() ? tool('center', 'strip-fit', 'center', t('Center the design'), '⌘0') : ''
-    const groups = [[tourBtn, decide], hands, sizes, own, [fit]].map(g => g.filter(Boolean).join('')).filter(Boolean)
+    // On the map: Build it (the island turns into its box) and every link drawn, not just the selected screen's.
+    const onTheMap = onMap() || inPlace()
+    const mapTools = onTheMap ? [
+      mapState.one ? tool('map:build', 'strip-build', 'build', t('Build it…'), '', mapState.build).replace('data-act', 'data-map-build data-act') : '',
+      tool('map:lines', 'strip-links', 'links', mapLines === 'all' ? t('Showing every link') : t('Show every link'), '', mapLines === 'all').replace('data-act', 'data-map-lines data-act'),
+    ] : []
+    // The layouts and the zoom live in the zoom pill (bottom corner) when it shows.
+    const groups = [[tourBtn, decide], hands, zoomPillOn() ? [] : sizes, own, mapTools, zoomPillOn() ? [] : [fit]].map(g => g.filter(Boolean).join('')).filter(Boolean)
     // The bar's own buttons drawn upright: their words, carets and counts' text stay out (only the
     // strip's own buttons, never the rows of a menu opening beside it).
     strip.innerHTML = `<div data-strip-tools class="flex flex-col items-center gap-0.5 rounded-2xl bg-white p-1 shadow-[0_8px_24px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:ring-white/10
@@ -1533,6 +1568,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       </div></div>`)
     menus = { protos: drill(), session: '' }
     paintStrip(deviceBtn, replayBtn, centerBtn)
+    paintZoom()
     paintTour()
     paintChip()
 
@@ -2291,6 +2327,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'turn': return patchView({ land: !st.view.land, zoom: 0 })
       case 'center': return setScale(0)
       case 'replay': return replayDesign()
+      // The zoom pill: the map's camera while the map shows, else the chosen layout's zoom.
+      case 'zoom': {
+        const mapOn = onMap() || inPlace()
+        if (arg === 'fit') return mapOn ? mapApi.ctl?.fit() : setScale(0)
+        if (mapOn) return mapApi.ctl?.zoom(arg === 'in' ? 1.25 : 0.8)
+        { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || 50) + (arg === 'in' ? 10 : -10)) / 5) * 5))) }
+      }
+      case 'map':
+        if (arg === 'build') return mapApi.ctl?.build()
+        if (arg === 'lines') { mapApi.setLines(mapLines === 'all' ? 'selected' : 'all'); return render() }
+        return
       case 'scalestep': { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || 50) + Number(arg)) / 5) * 5))) }
       case 'theme': return setTheme(arg === 'dark')
       case 'focus': if (st.place.view !== 'variant') return; st.focus = true; st.open = null; dock.hold = performance.now() + 1600; edge.hover = {}; render(); return fit()

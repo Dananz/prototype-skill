@@ -198,6 +198,12 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
   /* The map runs under the desk's cards to the window's edges: the sidebar card stays over it. */
   [data-desk] > [data-tree-side] { position: relative; z-index: 10; }
   [data-desk] [data-map-host][data-full] { position: fixed !important; inset: 0 !important; }
+}
+/* The comments island steps aside while a box of the map's (Build it, a note) grows out of its place. */
+[data-island-host] { transition: opacity .18s ease-out; }
+[data-island-host][data-away] { opacity: 0; }
+[data-island-host][data-away] * { pointer-events: none !important; }
+@media (min-width: 1024px) {
   [data-desk] > [data-grip] + div { margin-inline-start: var(--desk-gap); }
   [data-desk] [data-bar] { margin-bottom: var(--desk-gap); }
   [data-desk] [data-panel]:not(.hidden) { overflow: hidden; }

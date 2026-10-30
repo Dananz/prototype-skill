@@ -91,4 +91,7 @@ export default {
   // A round's label on the map (map/index.tsx).
   'Fold into a stack': 'קיפול לערימה',
   'Spread out': 'פריסה',
+  // The strip's map tools (shell.ts paintStrip).
+  'Show every link': 'הצגת כל הקישורים',
+  'Showing every link': 'מוצגים כל הקישורים',
 }

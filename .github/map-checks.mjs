@@ -60,7 +60,7 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-map-board="screen:mhome"]').click()`)
     await until(page, `!!document.querySelector('[data-map-line="mhome>mabout"]')`, 'selecting home should draw its link to about')
     await page.run(`document.querySelector('[data-map-lines]').click()`)
-    await until(page, `document.querySelector('[data-map-lines]').getAttribute('aria-pressed') === 'false'`, 'the lines switch should turn to all')
+    await until(page, `document.querySelector('[data-map-lines]').getAttribute('aria-pressed') === 'true'`, 'the strip\'s links toggle should show every link')
     await until(page, `localStorage.getItem('proto-map-lines') === 'all'`, 'the lines mode should be kept')
     // An edit to a screen's variant is a hot update, never a reload (the links are read by the server),
     // and its still is taken again.
@@ -121,6 +121,7 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await until(page, `!document.querySelector('[data-map-note]')`, 'the link box should close once sent')
     await page.run(`document.querySelector('[data-map-build]').click()`)
     await until(page, `!!document.querySelector('[data-map-build-box]')`, 'Build it should open its box')
+    assert(await page.run(`document.querySelector('[data-island-host]').hasAttribute('data-away')`), 'the island should step aside for Build it (the box grows out of it)')
     assert(await page.run(`document.querySelector('[data-map-build-screen="screen:mhome"]').checked && !document.querySelector('[data-map-build-screen="screen:mabout"]').checked`), 'the picked screen should be ticked, the open one not')
     await page.run(`document.querySelector('[data-map-build-screen="screen:mabout"]').click()`)
     had = new Set(batches())
@@ -139,6 +140,11 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await until(page, `!document.querySelector('[data-map-board="screen:mother"]') && !!document.querySelector('[data-map-board="screen:mhome"]')`, 'the filter should show one design')
     await page.run(`(() => { const s = document.querySelector('[data-map-design]'); s.value = ''; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
 
+    // The zoom reads as the design's own size and goes past 200%, to 500%.
+    for (let i = 0; i < 40; i++) await page.run(`document.querySelector('[data-map-zoom="in"]').click()`)
+    await until(page, `Number(document.querySelector('[data-zoom-pct]').textContent.replace('%', '')) === 500`, 'zooming in should go up to 500% of the design')
+    await page.run(`document.querySelector('[data-map-fit]').click()`)
+    await wait(600)
     // Focus stays on the map: the screen opens in place on its board (the page's view of it in the
     // board's slot), the overview that was under the map goes at once, and one design mounts.
     await page.run(`document.querySelector('[data-map-board="screen:mhome"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`)

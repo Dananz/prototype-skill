@@ -10,7 +10,7 @@ import { createRoot } from 'react-dom/client'
 import type { Design, Proto, Variant } from '../shell'
 import { t, tn } from '../i18n'
 import { numberOf } from '../variants'
-import { GAP, linePath, worldOf, type Board, type World } from './world'
+import { CARD, GAP, linePath, worldOf, type Board, type World } from './world'
 import { Ph } from '../tree/row'
 
 export type MapInput = {
@@ -38,6 +38,12 @@ export type MapApi = {
   slot?(el: HTMLElement | null): void
   /** Ends Focus where the map is (zoomed out past the focused board). */
   leave?(): void
+  /** The page's controls for the map (its zoom pill and strip), set by the map. */
+  ctl?: { zoom(f: number): void; fit(): void; build(): void }
+  /** The map's state for those controls: its zoom as the design's own size, Build it open and offered. With it, the page draws the controls. */
+  report?(s: { pct: number; build: boolean; one: boolean }): void
+  /** A box of the map's (Build it, a note) opened or closed: the comments island steps aside for it. */
+  panel?(open: boolean): void
   mount(el: HTMLElement, component: unknown): () => void
   /** The camera's last place, kept across Focus so leaving it flies back to where the map was. */
   camera: { x: number; y: number; z: number } | null
@@ -50,7 +56,8 @@ export type MapApi = {
 /** What a note on the map is about: a link line, a flow, or a link dragged from one screen to another. */
 type Note = { kind: 'line' | 'link'; a: Board; b: Board } | { kind: 'flow'; design: string; flow: string; a: Board }
 type Cam = { x: number; y: number; z: number }
-const MIN_Z = 0.02, MAX_Z = 2
+// The zoom reads as the design's own size (an option card is CARD of it), up to MAX_SIZE of it.
+const MAX_SIZE = 5, MIN_Z = 0.02, MAX_Z = MAX_SIZE / CARD
 /** A fold or a spread animates at most this many cards (those in view nearest the middle), for this long. */
 const MAX_ANIM = 24, ANIM_MS = 380
 /** How far under its fit the design in Focus is zoomed out before the map takes over again. */
@@ -178,6 +185,8 @@ function MapView({ api }: { api: MapApi }) {
   const dragged = useRef(0)
   const [size, setSize] = useState({ w: 1, h: 1 })
   const sizeRef = useRef(size); sizeRef.current = size
+  // The board the zoom is read against: the one in Focus, else the nearest the middle.
+  const refScale = useRef(1)
   const safe = useMemo(() => { const [l = 0, t = 0, r = 0, b = 0] = (input.safe ?? '').split(',').map(Number); return { l, t, r, b } }, [input.safe])
   const safeRef = useRef(safe); safeRef.current = safe
   /** The clear part of the map: where fits land and zooms centre. */
@@ -213,7 +222,7 @@ function MapView({ api }: { api: MapApi }) {
   }
   const fitAll = () => fly(fitTo({ x: 0, y: 0, w: Math.max(world.w, 1), h: Math.max(world.h, 1) }, 0.92))
   const zoomAt = (f: number, px: number, py: number) => {
-    const c = cam.current, z = clamp(c.z * f, MIN_Z, MAX_Z)
+    const c = cam.current, z = clamp(c.z * f, MIN_Z, MAX_SIZE / refScale.current)
     set({ z, x: px - (px - c.x) * (z / c.z), y: py - (py - c.y) * (z / c.z) })
     // Zoomed out well past the design in Focus: that is the map again, right where the camera is.
     const fb = focusRef.current
@@ -367,6 +376,13 @@ function MapView({ api }: { api: MapApi }) {
   const selBoard = world.boards.find(b => b.key === sel)
   const focusBoard = input.focus ? world.boards.find(b => b.kind === 'screen' && b.route === input.focus) ?? world.boards.find(b => b.route === input.focus) : undefined
   focusRef.current = focusBoard ?? null
+  refScale.current = (focusBoard ?? near[0])?.scale ?? 1
+  const pct = Math.round(c.z * refScale.current * 100)
+  const hosted = !!api.report
+  useEffect(() => { api.report?.({ pct, build, one: !!one && !ro }) }, [pct, build, !!one, ro]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    api.ctl = { zoom: f => { const a = clear(); zoomAt(f, a.x + a.w / 2, a.y + a.h / 2) }, fit: () => { const fb = focusRef.current; if (fb) fly(fitTo(fb, 1)); else fitAll() }, build: () => { setNote(null); setBuild(b => !b) } }
+  })
   // Focus moves the camera: onto the board it takes, and back to where the map was when it ends.
   useEffect(() => {
     // Hidden (a device size or a tool has the stage) the map has no size to fly in: it waits as it is.
@@ -509,7 +525,7 @@ function MapView({ api }: { api: MapApi }) {
       </div>
       {/* The map's own controls stay in its clear part, off the page's cards. */}
       <div className="pointer-events-none absolute [&>*]:pointer-events-auto" style={{ left: safe.l, top: safe.t, right: safe.r, bottom: safe.b }}>
-        <div data-map-tools className="absolute bottom-3 end-3 flex items-center gap-1 rounded-xl bg-white/90 p-1 text-[12px] shadow ring-1 ring-black/[.06] backdrop-blur dark:bg-zinc-900/90 dark:ring-white/10">
+        {!hosted && <div data-map-tools className="absolute bottom-3 end-3 flex items-center gap-1 rounded-xl bg-white/90 p-1 text-[12px] shadow ring-1 ring-black/[.06] backdrop-blur dark:bg-zinc-900/90 dark:ring-white/10">
           {input.designs.length > 1 && (
             <select data-map-design aria-label={t('Design')} value={input.design} onChange={e => api.setDesign(e.target.value)}
               className="h-7 max-w-40 rounded-lg bg-transparent px-1 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">
@@ -524,7 +540,7 @@ function MapView({ api }: { api: MapApi }) {
           <button type="button" data-map-zoom="in" aria-label={t('Zoom in')} title={t('Zoom in') + ' (+)'} onClick={() => { const a = clear(); zoomAt(1.25, a.x + a.w / 2, a.y + a.h / 2) }} className="grid size-7 place-items-center rounded-lg text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><Ph name="plus" className="size-3.5" /></button>
           <button type="button" data-map-fit onClick={fitAll} title={t('Fit (0)')} className="h-7 rounded-lg px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{t('Fit')}</button>
           <span className="w-10 text-center tabular-nums text-zinc-400">{Math.round(c.z * 100)}%</span>
-        </div>
+        </div>}
         {build && one && !note && <BuildBox design={one} boards={world.boards} api={api} onClose={() => setBuild(false)} />}
         {note && <NoteBox key={`${note.kind}:${note.a.key}:${'b' in note ? note.b.key : note.flow}`} note={note} api={api} onClose={() => setNote(null)} />}
         {selBoard && selBoard !== focusBoard && !note && !build && (
@@ -538,10 +554,28 @@ function MapView({ api }: { api: MapApi }) {
   )
 }
 
+/** A box of the map's grows out of the comments island (which steps aside meanwhile), as if the island became it. */
+function useFromIsland(api: MapApi) {
+  const box = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = box.current, from = document.querySelector('[data-island-host] [data-island]')?.getBoundingClientRect()
+    api.panel?.(true)
+    if (el && from && from.width && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const to = el.getBoundingClientRect()
+      el.animate([
+        { transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`, borderRadius: '999px', opacity: 0.5 },
+        { transform: 'none', borderRadius: '16px', opacity: 1 },
+      ], { duration: 280, easing: 'cubic-bezier(.2, .9, .25, 1)' })
+    }
+    return () => api.panel?.(false)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return box
+}
+
 /** Words to the agent about a link, a flow, or a link to add: what it is about, a field, Send. */
 function NoteBox({ note, api, onClose }: { note: Note; api: MapApi; onClose: () => void }) {
   const [text, setText] = useState(''), [state, setState] = useState<'' | 'sending' | 'sent' | 'failed'>('')
-  const field = useRef<HTMLTextAreaElement>(null)
+  const field = useRef<HTMLTextAreaElement>(null), box = useFromIsland(api)
   useEffect(() => { field.current?.focus() }, [])
   const what = note.kind === 'flow' ? t('A note on the flow {flow}', { flow: note.flow })
     : note.kind === 'line' ? t('A note on the link {a} → {b}', { a: note.a.title, b: note.b.title })
@@ -559,7 +593,7 @@ function NoteBox({ note, api, onClose }: { note: Note; api: MapApi; onClose: () 
     } catch { setState('failed') }
   }
   return (
-    <div data-map-note={note.kind} className="absolute inset-x-0 bottom-3 mx-auto max-sm:bottom-14 w-[min(26rem,calc(100%-2rem))] rounded-2xl bg-white p-3 text-[13px] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
+    <div ref={box} data-map-note={note.kind} style={{ transformOrigin: 'top left' }} className="absolute inset-x-0 bottom-3 mx-auto max-sm:bottom-14 w-[min(26rem,calc(100%-2rem))] rounded-2xl bg-white p-3 text-[13px] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
       <div className="mb-2 flex items-center gap-2"><span dir="auto" className="min-w-0 flex-1 truncate font-medium">{what}</span>
         <button type="button" aria-label={t('Close')} onClick={onClose} className="grid size-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-900/5 dark:hover:bg-white/10"><Ph name="x" className="size-3.5" /></button></div>
       <textarea ref={field} data-map-note-field dir="auto" rows={2} value={text} onChange={e => setText(e.target.value)}
@@ -580,7 +614,7 @@ function BuildBox({ design, boards, api, onClose }: { design: Design; boards: Bo
   const screens = boards.filter(b => b.kind === 'screen' && b.design === design.id)
   const [on, setOn] = useState(() => new Set(screens.filter(b => !b.standIn).map(b => b.key)))
   const [state, setState] = useState<'' | 'sending' | 'sent' | 'failed'>('')
-  const chosen = screens.filter(b => on.has(b.key))
+  const chosen = screens.filter(b => on.has(b.key)), box = useFromIsland(api)
   const send = async () => {
     if (!chosen.length || state === 'sending') return
     const list = chosen.map(b => b.key.slice('screen:'.length)), open = chosen.filter(b => b.standIn).map(b => b.slug)
@@ -592,7 +626,7 @@ function BuildBox({ design, boards, api, onClose }: { design: Design; boards: Bo
     } catch { setState('failed') }
   }
   return (
-    <div data-map-build-box data-map-note="build" className="absolute inset-x-0 bottom-3 mx-auto max-sm:bottom-14 w-[min(24rem,calc(100%-2rem))] rounded-2xl bg-white p-3 text-[13px] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
+    <div ref={box} data-map-build-box data-map-note="build" style={{ transformOrigin: 'top left' }} className="absolute inset-x-0 bottom-3 mx-auto max-sm:bottom-14 w-[min(24rem,calc(100%-2rem))] rounded-2xl bg-white p-3 text-[13px] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
       <div className="mb-1 flex items-center gap-2"><span dir="auto" className="min-w-0 flex-1 truncate font-medium">{t('Build {name}', { name: design.title })}</span>
         <button type="button" aria-label={t('Close')} onClick={onClose} className="grid size-7 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-900/5 dark:hover:bg-white/10"><Ph name="x" className="size-3.5" /></button></div>
       <p className="mb-2 text-zinc-500">{t('The screens you tick, with their links as real navigation.')}</p>
