@@ -48,3 +48,49 @@ test('url prints the project app url for any session', () => projectFixture(({ c
   ok(a); ok(b)
   assert.equal(a.stdout, b.stdout)
 }))
+
+// Who made a prototype (session) and who works on it now (owner), and taken names.
+const metaOf = (app, slug) => JSON.parse(readFileSync(join(app, 'src', 'protos', slug, 'meta.ts'), 'utf8').replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
+function twoSessions(fn) {
+  return projectFixture(f => {
+    ok(f.call(['up', '--session', 'one', '--no-serve']))
+    ok(f.call(['up', '--session', 'two', '--no-serve']))
+    ok(f.call(['add', 'home', '--title', 'Home page', '--variants', 'A:Current,B:Calm', '--session', 'one']))
+    return fn(f)
+  })
+}
+
+test('add stamps session and owner', () => twoSessions(({ app }) => {
+  const m = metaOf(app, 'home')
+  assert.equal(m.session, 'one')
+  assert.equal(m.owner, 'one')
+}))
+
+test("another session's slug gets a new one", () => twoSessions(({ app, call }) => {
+  const r = call(['add', 'home', '--title', 'Other home', '--variants', 'A:One', '--session', 'two'])
+  ok(r)
+  assert.match(r.stdout, /home-2/)
+  assert.equal(metaOf(app, 'home-2').session, 'two')
+  assert.equal(metaOf(app, 'home').title, 'Home page')
+  assert.deepEqual(Object.keys(metaOf(app, 'home').variants), ['A', 'B'])
+}))
+
+test('--join adds variants and takes ownership', () => twoSessions(({ app, call }) => {
+  ok(call(['add', 'home', '--join', '--variants', 'D:Extra', '--session', 'two']))
+  const m = metaOf(app, 'home')
+  assert.equal(m.owner, 'two')
+  assert.equal(m.session, 'one')
+  assert.ok(existsSync(join(app, 'src', 'protos', 'home', 'D.tsx')))
+}))
+
+test('work moves ownership', () => twoSessions(({ app, call }) => {
+  ok(call(['add', 'home', '--join', '--variants', 'D:Extra', '--session', 'two']))
+  ok(call(['work', 'home/A', '--session', 'one']))
+  assert.equal(metaOf(app, 'home').owner, 'one')
+}))
+
+test('same session adds as today', () => twoSessions(({ app, call }) => {
+  ok(call(['add', 'home', '--variants', 'E:More', '--session', 'one']))
+  assert.ok(metaOf(app, 'home').variants.E)
+  assert.equal(existsSync(join(app, 'src', 'protos', 'home-2')), false)
+}))

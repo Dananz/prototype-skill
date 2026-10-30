@@ -137,7 +137,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'again', 'no-serve'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'again', 'no-serve', 'join'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -453,8 +453,17 @@ async function up() {
 function add() {
   const dir = sessionDir()
   const s = need(dir)
-  const slug = args[0]
+  let slug = args[0]
   if (!slug || !/^[a-z0-9][a-z0-9-]*$/.test(slug)) die('give a slug like "hero-sections" (lowercase, digits, dashes)')
+  // The project's tree is shared: a slug another conversation made gets a fresh one (home-2), unless
+  // --join adds to that prototype.
+  const sid = sessionId(), taken = readMeta(dir, slug)
+  if (taken?.session && taken.session !== sid && !flags.join) {
+    let n = 2
+    while (existsSync(join(dir, 'src', 'protos', `${slug}-${n}`))) n++
+    console.log(`"${slug}" is ${taken.title || slug}, made in another conversation, so this one is "${slug}-${n}" (--join adds to it instead).`)
+    slug = `${slug}-${n}`
+  }
   const kit = STACKS[s.stack]
   const pdir = join(dir, 'src', 'protos', slug)
   const metaFile = join(pdir, 'meta.ts')
@@ -565,7 +574,8 @@ function add() {
   // meta.ts goes last, so the page sees the prototype with all its variants at once. It is read
   // again just before: a pick made in the page meanwhile is written by the dev server, and stays.
   // The variant list goes last, where it is easiest to read.
-  const { variants, ...head } = { ...current(), ...set }
+  // session: the conversation that made it; owner: the one working on it now (scripts/project.mjs).
+  const { variants, ...head } = { ...current(), ...set, ...(existsSync(metaFile) ? {} : { session: sid }), owner: sid }
   for (const k of drop) delete head[k]
   const meta = { ...head, variants: { ...variants, ...added } }
   // How many directions it was started with: the page's More variants asks for that many again.
@@ -788,6 +798,7 @@ function pick() {
   if (flags.off) delete meta.picked
   else if (!id || !meta.variants?.[id]) die(`which variant of ${slug}? (${choices(meta)})`)
   else meta.picked = id
+  stampOwner(meta)
   // Before the pick is marked: if the parent can't be written, nothing is marked and this can be run again.
   const letter = flags.off ? was : id
   const plugged = plug(dir, slug, meta, letter, !!flags.off)
@@ -835,6 +846,7 @@ function fav() {
     const now = sorted(flags.off ? was.filter(x => !ids.includes(x)) : [...was, ...ids])
     if (now.length) m.favorites = now
     else delete m.favorites
+    stampOwner(m)
     writeWhole(f, withMeta(text, m), scratchOf(dir))
     console.log(line(slug, m))
   }
@@ -874,8 +886,24 @@ function target(dir, spec) {
   if (!variant || !meta.variants?.[variant]) die(`which variant of ${proto}? (${choices(meta)})`)
   return { proto, variant, name: meta.variants[variant] }
 }
+// The conversation working on a prototype now takes its comments (app/server.mjs). The variant
+// list stays last in meta.ts.
+function stampOwner(m) {
+  const { variants } = m
+  delete m.variants
+  m.owner = sessionId()
+  if (variants) m.variants = variants
+  return m
+}
+function own(dir, slug) {
+  const f = join(dir, 'src', 'protos', slug, 'meta.ts'), sid = sessionId()
+  if (!existsSync(f)) return
+  const text = readFileSync(f, 'utf8'), m = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
+  if (m.owner !== sid) writeWhole(f, withMeta(text, stampOwner(m)), scratchOf(dir))
+}
 /** Points the session at a variant; the one it leaves goes first in `before` (three kept). */
 function setWork(dir, t, ask) {
+  own(dir, t.proto)
   const s = readSession(dir)
   const at = new Date().toISOString()
   const patch = {}
@@ -917,6 +945,7 @@ function ask() {
   const t = flags.to ? target(dir, flags.to) : s.work
   if (!t) die('no working variant yet: proto work <slug>/<letter> --ask "…"')
   const key = `${t.proto}/${t.variant}`, at = new Date().toISOString()
+  own(dir, t.proto)
   keepVersion(dir, t, texts, at)
   patchSession(dir, now => ({ asks: { ...now.asks, [key]: [...(now.asks?.[key] || []), ...texts.map(text => ({ at, text }))] } }))
   const n = versionsOf(dir, t.proto, t.variant).length
