@@ -14,7 +14,7 @@ const app = document.getElementById('app')!
 // is in view, and whenever it comes back to it. The copy in the full view's frame (one design) doesn't.
 if (SHARE) {
   void import('../shell/viewer/index').then(({ createViewer }) => {
-    const viewer = createViewer(app, { mount, protos, session })
+    const viewer = createViewer(app, { mount, protos, session, designs })
     if (viewer.framed) return
     const check = async () => {
       const state = await status()

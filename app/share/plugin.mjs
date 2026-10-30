@@ -11,6 +11,7 @@ import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import { metaOf, slotPointers } from '../server.mjs'
 import { trimMeta, trimSession } from './scope.mjs'
+import { linksIn } from '../links.mjs'
 import { stampsPlugin } from './stamps.mjs'
 import { imagesPlugin } from './images.mjs'
 
@@ -135,6 +136,26 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
   // under src/protos they reach by relative imports (a lineage helper from an unshared prototype
   // too). Pictures and Tailwind classes are taken from these files only, so an unshared variant
   // beside them adds neither.
+  // The designs whose screens are in the share, each screen pinned to the option it shows (the
+  // pick stays out, like every meta's), with its <Go to> links: the viewer opens on their map.
+  const designsDir = join(root, 'src', 'designs')
+  const designs = (existsSync(designsDir) ? readdirSync(designsDir) : []).flatMap(id => {
+    let d
+    try { d = metaOf(readFileSync(join(designsDir, id, 'design.ts'), 'utf8')) } catch { return [] }
+    const links = {}
+    const flows = (Array.isArray(d.flows) ? d.flows : []).map(f => ({ name: String(f.name), screens: (Array.isArray(f.screens) ? f.screens : []).flatMap(e => {
+      const [slug, pin] = String(e).split('/')
+      if (!kept.has(slug)) return []
+      let meta = {}
+      try { meta = metaOf(readFileSync(join(protosDir, slug, 'meta.ts'), 'utf8')) } catch { return [] }
+      const letter = pin || meta.picked || Object.keys(meta.variants || {})[0]
+      if (!letter || !kept.get(slug).has(letter)) return []
+      try { links[`${slug}/${letter}`] = linksIn(readFileSync(join(protosDir, variantFile(slug, letter)), 'utf8')) } catch { /* no file: no lines */ }
+      return [`${slug}/${letter}`]
+    }) })).filter(f => f.screens.length)
+    return flows.length ? [{ id, title: typeof d.title === 'string' ? d.title : id, created: typeof d.created === 'string' ? d.created : '', flows, links }] : []
+  })
+
   const entries = [...scope.protos.flatMap(p => p.variants.map(v => variantFile(p.id, v))), ...slotFiles].map(f => join(protosDir, f))
   const reached = reachedFiles(entries, protosDir)
 
@@ -154,8 +175,7 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
         `const metas = ${JSON.stringify(metas)}`,
         `const files = {${files.map(f => `\n  ${JSON.stringify(`./protos/${f}`)}: () => import(${JSON.stringify(join(protosDir, f))}).then(m => m.default),`).join('')}\n}`,
         'export const protos = protosOf(metas, files)',
-        // Designs reach a share in phase 5 (the share opening on the map).
-        'export const designs = []',
+        `export const designs = ${JSON.stringify(designs)}`,
       ].join('\n')
     },
     [VIRTUAL.session]: () => `export default ${JSON.stringify(trimSession(session))}`,

@@ -59,7 +59,9 @@ export type Version = { n: number; at: string; note: string; before: { text: str
 export type State = { id: string; name: string; click: string[]; about?: Record<string, string>; only?: string[] }
 /** A design: screens (prototypes, by slug) that share one look and link to each other, in flows
  *  (src/designs/<id>/design.ts, written by `proto design`). from: the variant it was made from. */
-export type Design = { id: string; title: string; created: string; session?: string; owner?: string; from?: { proto: string; variant: string }; flows: { name: string; screens: string[] }[] }
+export type Design = { id: string; title: string; created: string; session?: string; owner?: string; from?: { proto: string; variant: string }; flows: { name: string; screens: string[] }[]
+  /** In a share: each screen's <Go to> targets, read when it was built (the page has no sources to read). */
+  links?: Record<string, string[]> }
 /** session: the conversation that made it; owner: the one working on it now; next: its pick is
  *  built into its parent (proto add --next). */
 export type Proto = { id: string; title: string; session?: string; owner?: string; next?: boolean; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; slot?: string; also: { proto: string; variant: string }[]; picked?: string; favorites: string[]; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[]; versions?: Record<string, Version[]> }
@@ -1721,6 +1723,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function cardHtml() {
     const p = cur()!, c = copyCounts(), n = tryCount(hintList())
     const rows = cardKind === 'layout' ? '' : [
+      // With the project tree on: the map and Jump come first (the phone's way around the project).
+      treeOn && !framed ? menuRow({ act: 'lobby:session', shoot: 'menu-map', icon: 'map', label: t('Map') }) : '',
+      treeOn && !framed ? menuRow({ act: 'jump', shoot: 'menu-jump', icon: 'search', label: t('Jump to') }) : '',
       menuRow({ act: 'lobby:proto', shoot: 'all-variants', icon: 'grid', label: t('All variants'), detail: String(visible(p).length), on: st.place.view === 'proto' }),
       !framed ? menuRow({ act: 'share-link', shoot: 'share-link', icon: 'link-simple', label: t('Share link…') }) : '',
       !framed ? menuRow({ act: 'share', shoot: 'share', icon: 'share', label: t('Share screenshots') }) : '',

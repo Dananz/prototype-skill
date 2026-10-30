@@ -13,7 +13,11 @@ import { linksIn } from '../../links.mjs'
 import { GAP, linePath, worldOf, type Board, type World } from './world'
 import { Ph } from '../tree/row'
 
-export type MapInput = { protos: Proto[]; designs: Design[]; place: string; hidden: boolean; lines: 'all' | 'selected'; design: string }
+export type MapInput = {
+  protos: Proto[]; designs: Design[]; place: string; hidden: boolean; lines: 'all' | 'selected'; design: string
+  /** A share's viewer: look and open only (no notes, links or Build it); the links come with the designs. */
+  readOnly?: boolean
+}
 export type MapApi = {
   get(): MapInput; subscribe(fn: () => void): () => void
   /** Opens a route in Focus. */
@@ -52,18 +56,19 @@ function Preview({ v, live, mount }: { v: Variant | undefined; live: boolean; mo
 }
 
 /** Each screen's <Go to> targets, read from its variant's source. */
-function useLinks(boards: Board[], protos: Proto[]) {
+function useLinks(boards: Board[], protos: Proto[], given: Record<string, string[]> | null) {
   const [links, setLinks] = useState<Record<string, string[]>>({})
   const files = useMemo(() => boards.filter(b => b.kind === 'screen').map(b => ({ route: b.route, file: protos.find(p => p.id === b.slug)?.variants.find(v => v.id === b.letter)?.file })), [boards, protos])
   useEffect(() => {
+    if (given) return
     let gone = false
     void Promise.all(files.map(async ({ route, file }) => {
       if (!file) return [route, []] as const
       try { const m = await import(/* @vite-ignore */ `${file}?raw`); return [route, linksIn(String(m.default))] as const } catch { return [route, []] as const }
     })).then(all => { if (!gone) setLinks(Object.fromEntries(all)) })
     return () => { gone = true }
-  }, [files])
-  return links
+  }, [files, given])
+  return given ?? links
 }
 
 function MapView({ api }: { api: MapApi }) {
@@ -78,7 +83,9 @@ function MapView({ api }: { api: MapApi }) {
   // A link being dragged from the selected screen's handle: where the pointer is, in world pixels.
   const [drag, setDrag] = useState<{ from: Board; x: number; y: number } | null>(null)
   const world: World = useMemo(() => worldOf(input.protos, designs, spread), [input.protos, designs, spread])
-  const links = useLinks(world.boards, input.protos)
+  const given = useMemo(() => input.designs.some(d => d.links) ? Object.assign({}, ...input.designs.map(d => d.links ?? {})) as Record<string, string[]> : null, [input.designs])
+  const links = useLinks(world.boards, input.protos, given)
+  const ro = !!input.readOnly
   const view = useRef<HTMLDivElement>(null), layer = useRef<HTMLDivElement>(null)
   const cam = useRef<Cam>(api.camera ?? { x: 0, y: 0, z: 0.2 })
   const [, redraw] = useState(0)
@@ -220,7 +227,7 @@ function MapView({ api }: { api: MapApi }) {
               <path data-map-line={`${a.slug}>${to}`} d={linePath(a, b!)} fill="none" className={note?.kind === 'line' && note.a === a && note.b === b ? 'stroke-violet-500' : 'stroke-sky-500/70'} style={{ strokeWidth: 'calc(2px * var(--iz))' }} />
               {/* A wide, unseen stroke to click: a note on this link. */}
               <path data-map-line-hit={`${a.slug}>${to}`} d={linePath(a, b!)} fill="none" stroke="transparent" className="pointer-events-auto cursor-pointer" style={{ strokeWidth: 'calc(14px * var(--iz))' }}
-                onClick={e => { e.stopPropagation(); if (dragged.current < 6) setNote({ kind: 'line', a, b: b! }) }} />
+                onClick={e => { e.stopPropagation(); if (dragged.current < 6 && !ro) setNote({ kind: 'line', a, b: b! }) }} />
             </g>)}
             {drag && <path data-map-drag d={`M${drag.from.x + drag.from.w},${drag.from.y + drag.from.h / 2} L${drag.x},${drag.y}`} fill="none" className="stroke-violet-500" style={{ strokeWidth: 'calc(2px * var(--iz))', strokeDasharray: 'calc(6px * var(--iz))' }} />}
           </svg>
@@ -237,7 +244,7 @@ function MapView({ api }: { api: MapApi }) {
                     <span dir="auto" className="truncate font-medium">{l.own ? t('Options') : l.text}</span><span className="shrink-0 text-zinc-400">· {l.count}</span>
                   </button>
                 : l.kind === 'flow'
-                ? <button type="button" data-map-flow={l.key} title={t('A note on this flow')} onClick={() => { const [, design, ...rest] = l.key.split(':'), flow = rest.join(':'), a = world.boards.find(b => b.kind === 'screen' && b.design === design && b.flow === flow); if (a) setNote({ kind: 'flow', design, flow, a }) }}
+                ? <button type="button" data-map-flow={l.key} title={t('A note on this flow')} disabled={ro} onClick={() => { const [, design, ...rest] = l.key.split(':'), flow = rest.join(':'), a = world.boards.find(b => b.kind === 'screen' && b.design === design && b.flow === flow); if (a) setNote({ kind: 'flow', design, flow, a }) }}
                     className="rounded-md font-medium text-zinc-700 hover:text-violet-600 dark:text-zinc-200 dark:hover:text-violet-300"><span dir="auto">{l.text}</span><span className="text-zinc-400"> · {l.count}</span></button>
                 : <span dir="auto" className={l.kind === 'design' ? 'font-semibold text-indigo-600 dark:text-indigo-300' : l.kind === 'flow' ? 'font-medium text-zinc-700 dark:text-zinc-200' : 'text-zinc-400'}>
                     {l.kind === 'section' ? t('Explorations on no screen') : l.text}{l.count != null && l.kind === 'flow' ? <span className="text-zinc-400"> · {l.count}</span> : null}
@@ -265,7 +272,7 @@ function MapView({ api }: { api: MapApi }) {
               {b.standIn && <span className="rounded bg-zinc-900/[.06] px-1 dark:bg-white/10">{t('not picked')}</span>}
             </div>
           ))}
-          {selBoard?.kind === 'screen' && !drag && (
+          {selBoard?.kind === 'screen' && !drag && !ro && (
             // Drag from here to another screen: a link, sent to the agent to put on the right element.
             <span data-map-handle role="button" aria-label={t('Drag to another screen to link them')} title={t('Drag to another screen to link them')} onPointerDown={e => startLink(e, selBoard)}
               className="absolute grid cursor-crosshair touch-none place-items-center rounded-full bg-violet-500 shadow ring-white dark:ring-zinc-900"
@@ -281,7 +288,7 @@ function MapView({ api }: { api: MapApi }) {
             {input.designs.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
           </select>
         )}
-        {one && <button type="button" data-map-build aria-pressed={build} onClick={() => { setNote(null); setBuild(b => !b) }} className="h-7 rounded-lg px-2 font-medium text-zinc-700 hover:bg-zinc-900/5 dark:text-zinc-200 dark:hover:bg-white/10">{t('Build it…')}</button>}
+        {one && !ro && <button type="button" data-map-build aria-pressed={build} onClick={() => { setNote(null); setBuild(b => !b) }} className="h-7 rounded-lg px-2 font-medium text-zinc-700 hover:bg-zinc-900/5 dark:text-zinc-200 dark:hover:bg-white/10">{t('Build it…')}</button>}
         <button type="button" data-map-lines aria-pressed={input.lines === 'selected'} onClick={() => api.setLines(input.lines === 'all' ? 'selected' : 'all')}
           className="h-7 rounded-lg px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{input.lines === 'all' ? t('All links') : t('Selected only')}</button>
         <button type="button" data-map-fit onClick={fitAll} title={t('Fit (0)')} className="h-7 rounded-lg px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10">{t('Fit')}</button>
@@ -376,5 +383,7 @@ function BuildBox({ design, boards, api, onClose }: { design: Design; boards: Bo
 }
 
 export function mountMap(host: HTMLElement, api: MapApi) {
-  createRoot(host).render(<MapView api={api} />)
+  const root = createRoot(host)
+  root.render(<MapView api={api} />)
+  return () => root.unmount()
 }
