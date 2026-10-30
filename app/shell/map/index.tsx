@@ -213,7 +213,9 @@ function MapView({ api }: { api: MapApi }) {
     addEventListener('pointermove', move); addEventListener('pointerup', up)
     setDrag({ from, x: from.x + from.w, y: from.y + from.h / 2 })
   }
-  const openBoard = (b: Board) => fly(fitTo(b, 1), 380, () => api.open(b.route))
+  // A click on the selected board and a double click both open it: the second one of a pair is let go.
+  const opening = useRef(0)
+  const openBoard = (b: Board) => { if (Date.now() - opening.current < 600) return; opening.current = Date.now(); fly(fitTo(b, 1), 380, () => api.open(b.route)) }
   const c = cam.current
   // What is on screen, in world pixels, with a screen's margin around it.
   const vis = { x0: -c.x / c.z - size.w / c.z, y0: -c.y / c.z - size.h / c.z, x1: (size.w * 2 - c.x) / c.z, y1: (size.h * 2 - c.y) / c.z }
@@ -263,7 +265,7 @@ function MapView({ api }: { api: MapApi }) {
           {world.boards.map(b => {
             const on = b.key === sel, here = b.route === input.place
             return (
-              <div key={b.key} data-map-board={b.key} onClick={e => { e.stopPropagation(); if (dragged.current < 6) setSel(b.key) }} onDoubleClick={() => openBoard(b)}
+              <div key={b.key} data-map-board={b.key} onClick={e => { e.stopPropagation(); if (dragged.current >= 6) return; if (on && e.detail < 2) openBoard(b); else setSel(b.key) }} onDoubleClick={() => openBoard(b)}
                 className={'absolute overflow-hidden rounded-[calc(10px*var(--iz))] bg-white shadow-[0_1px_3px_rgb(0_0_0/.08)] dark:bg-zinc-900'}
                 style={{ left: b.x, top: b.y, width: b.w, height: b.h, zIndex: b.pile != null ? 3 - b.pile : undefined, cursor: 'pointer',
                   outline: on || here ? `calc(2px * var(--iz)) solid ${on ? '#0ea5e9' : '#10b981'}` : `calc(1px * var(--iz)) solid rgb(0 0 0 / .08)` }}>

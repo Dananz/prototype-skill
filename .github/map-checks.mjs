@@ -139,7 +139,13 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await page.run(`(() => { const b = document.querySelector('[data-map-fit]'); b.focus(); b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })) })()`)
     await wait(800)
     assert(await page.run(`location.pathname === '/'`), `Enter on a button should not open the selected screen (at ${await page.run('location.pathname')})`)
+    // A click on the board already selected opens it, as the double click does.
+    await page.run(`document.querySelector('[data-map-board="screen:mabout"]').click()`)
+    await wait(300)
+    assert(await page.run(`location.pathname === '/'`), 'a first click should only select the board')
+    await page.run(`document.querySelector('[data-map-board="screen:mabout"]').click()`)
+    await until(page, `location.pathname === '/mabout/A'`, 'a click on the selected board should open it')
   } finally { page.close() }
   for (const s of ['mhome', 'mabout', 'mloose', 'mother']) proto(['archive', s])
-  console.log('OK: the map: designs, screens live, options, loose explorations, link lines, notes on lines and flows, dragged links, Build it, the building mark, the design filter, open and back with M')
+  console.log('OK: the map: designs, screens live, options, loose explorations, link lines, notes on lines and flows, dragged links, Build it, the building mark, the design filter, open and back with M, a second click opens')
 }
