@@ -52,9 +52,13 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`!!document.querySelector('[data-map-label="design:macme"]') && !!document.querySelector('[data-map-label="flow:macme:Main"]')`), 'the design and its flow should be named')
     assert(await page.run(`!!document.querySelector('[data-map-board="opt:mloose/A"]') && !!document.querySelector('[data-map-board="opt:mloose/B"]')`), 'an exploration on no screen should be spread as its options')
     assert(await page.run(`!!document.querySelector('[data-map-board="opt:mhome/B"]')`), 'a screen\'s options should be on the map under it')
-    // Boards are stills of their page once it settled, not live pages: nothing stays mounted on the map.
-    await slow(page, `!!document.querySelector('[data-map-board="screen:mhome"] img[data-map-still]')`, 'a screen should show a still of itself')
-    assert(await page.run(`!document.querySelector('[data-map-board] [data-mount] > *')`), 'no board should keep its page mounted')
+    // Boards are stills of their page once it settled, not live pages: the dev server takes them in
+    // headless Chrome (app/stills.mjs) and the page only shows the images.
+    await slow(page, `!!document.querySelector('[data-map-board="screen:mhome"] img[data-map-still][src^="/__proto/stills/"]')`, 'a screen should show the server\'s still of itself')
+    assert(await page.run(`!document.querySelector('[data-map-board] [data-mount]:not([data-map-live]) > *')`), 'no board but the one being read should keep its page mounted')
+    // A still is the screen at its own size and 2x; the board shows the small one until it's big on screen.
+    const sizes = await page.run(`(async () => { const i = document.querySelector('[data-map-board="screen:mhome"] img[data-map-still]'); const f = new Image(); f.src = i.getAttribute('src').replace('-s.webp', '.webp'); await f.decode(); return { small: i.naturalWidth, full: f.naturalWidth, frame: parseFloat(i.parentElement.style.width) } })()`)
+    assert(sizes.full === sizes.frame * 2 && sizes.small === sizes.frame / 2, `the still should be the frame at 2x, and the small one at half: ${JSON.stringify(sizes)}`)
     // Selected only by default: no line until a board is selected.
     assert(await page.run(`!document.querySelector('[data-map-line]')`), 'no link line should show before a selection')
     await page.run(`document.querySelector('[data-map-board="screen:mhome"]').click()`)
@@ -144,6 +148,15 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     for (let i = 0; i < 40; i++) await page.run(`document.querySelector('[data-map-zoom="in"]').click()`)
     await until(page, `Number(document.querySelector('[data-zoom-pct]').textContent.replace('%', '')) === 500`, 'zooming in should go up to 500% of the design')
     await page.run(`document.querySelector('[data-map-fit]').click()`)
+    await wait(600)
+    // Zoomed in over a screen until it fills the stage, it's the live page (sharp at any zoom), over its
+    // full-size still; zoomed out again, it's a still again.
+    await page.run(`(() => { const b = document.querySelector('[data-map-board="screen:mhome"]'); for (let i = 0; i < 30; i++) { const r = b.getBoundingClientRect(); b.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: -30, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, bubbles: true, cancelable: true })) } })()`)
+    await until(page, `getComputedStyle(document.querySelector('[data-map-board="screen:mhome"] [data-map-live]') ?? document.createElement('i')).opacity === '1'`, 'the screen filling the stage should go live')
+    assert(await page.run(`document.querySelectorAll('[data-map-live]').length === 1 && !!document.querySelector('[data-map-board="screen:mhome"] [data-map-live] > *')`), 'one board, and only one, should be live')
+    await until(page, `!!document.querySelector('[data-map-board="screen:mhome"] img[data-map-still="full"]')`, 'a board big on screen should load its full-size still')
+    await page.run(`document.querySelector('[data-map-fit]').click()`)
+    await until(page, `!document.querySelector('[data-map-live]')`, 'zoomed out, the board should be a still again')
     await wait(600)
     // Focus stays on the map: the screen opens in place on its board (the page's view of it in the
     // board's slot), the overview that was under the map goes at once, and one design mounts.

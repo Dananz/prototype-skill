@@ -3,7 +3,7 @@
 import { batchOwner, commentListener, listenerSids, listenerStatus } from './listener.mjs'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync, watch } from 'node:fs'
+import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync, watch } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, buildUpNeeded, isCurrent } from './assignment.mjs'
@@ -645,6 +645,32 @@ export function prototypeServer(session) {
         return shares
       })
       sharesReady.catch(e => console.error(`share links are off: ${e?.message || e}`))
+      // The map's stills (stills.mjs): taken here in headless Chrome from the page at this server's own
+      // address, and served as files. A still that's ready reaches the page as `proto:still`.
+      const stillsReady = import('./stills.mjs').then(({ stillServer }) => {
+        const stills = stillServer({
+          root: dir,
+          origin: () => {
+            const a = server.httpServer?.address()
+            const host = !a || typeof a !== 'object' || a.address === '::' || a.address === '0.0.0.0' ? '127.0.0.1' : a.address.includes(':') ? `[${a.address}]` : a.address
+            return `${server.config.server.https ? 'https' : 'http'}://${host}:${a && typeof a === 'object' ? a.port : server.config.server.port}`
+          },
+          emit: data => server.ws.send({ type: 'custom', event: 'proto:still', data }),
+        })
+        server.httpServer?.once('close', () => stills.close())
+        return stills
+      })
+      // Before /__proto below, which takes JSON POSTs only. A still's name is its contents' hash.
+      server.middlewares.use('/__proto/stills', (req, res) => {
+        stillsReady.then(stills => {
+          const path = req.method === 'GET' || req.method === 'HEAD' ? stills.file(req.url.split('?')[0].replace(/^\//, '')) : null
+          if (!path) { res.statusCode = 404; return res.end() }
+          res.setHeader('content-type', 'image/webp')
+          res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+          if (req.method === 'HEAD') return res.end()
+          createReadStream(path).on('error', () => res.end()).pipe(res)
+        }, () => { res.statusCode = 404; res.end() })
+      })
       server.middlewares.use('/__proto', (req, res) => {
         const chunks = []
         let size = 0
@@ -676,6 +702,13 @@ export function prototypeServer(session) {
                 res.setHeader('content-type', 'application/json')
                 res.end(JSON.stringify(body))
               }, e => fail(500, String(e?.message || e).slice(0, 300)))
+              return
+            }
+            if (route === '/still') {
+              stillsReady.then(stills => stills.ask(data)).then(body => {
+                res.setHeader('content-type', 'application/json')
+                res.end(JSON.stringify(body))
+              }, e => fail(e.status || 500, String(e?.message || e).slice(0, 300)))
               return
             }
             if (route === '/ping') { activity = Date.now(); shares?.ping() }

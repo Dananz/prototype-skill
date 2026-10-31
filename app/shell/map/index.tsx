@@ -69,9 +69,31 @@ const ease = (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 
 
 /** A design's variant, drawn inert in its frame while it is on screen and big enough to read. */
 // A board shows its page as a still, once its entrance settled, instead of the live page: a map full of
-// live pages loads every one of them and keeps them all animating. Stills are taken one at a time,
-// in a hidden box of the board's frame, and kept (per route) until its prototype's files change.
-const stills = new Map<string, string>(), latest = new Map<string, string>(), asked = new Map<string, Promise<string | null>>()
+// live pages loads every one of them and keeps them all animating. The dev server takes them in
+// headless Chrome (app/stills.mjs), at the screen's own size and 2x, with a small one for a board seen
+// small, and keeps them on disk until its prototype's files change. Where there is no server (a share)
+// the page takes them itself, one at a time, in a hidden box of the board's frame.
+type Shot = { url: string; thumb?: string }
+const stills = new Map<string, Shot>(), latest = new Map<string, Shot>(), asked = new Map<string, Promise<Shot | null>>()
+type Served = { url?: string; thumb?: string; error?: string }
+const heard = new Map<string, (r: Served) => void>()
+if (import.meta.hot) import.meta.hot.on('proto:still', (d: Served & { hash: string }) => { heard.get(d.hash)?.(d); heard.delete(d.hash) })
+let noServer = !import.meta.hot
+/** The server's still of a route, once it's taken; null where the server takes none. */
+async function served(route: string, w: number, h: number, theme: string): Promise<Served | null> {
+  if (noServer) return null
+  try {
+    const r = await fetch('/__proto/still', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ route, w: Math.round(w), h: Math.round(h), theme }) })
+    if (!r.ok) { if (r.status === 404 || r.status === 405) noServer = true; return null }
+    const d = await r.json() as Served & { hash: string; pending?: boolean; unavailable?: boolean }
+    if (d.unavailable) { noServer = true; return null }
+    if (!d.pending) return d
+    return await new Promise<Served>(ok => {
+      heard.set(d.hash, ok)
+      setTimeout(() => { if (heard.get(d.hash) === ok) { heard.delete(d.hash); ok({ error: 'took too long' }) } }, 30_000)
+    })
+  } catch { return null }
+}
 // The stills waiting, taken one at a time, the best ranked first (screens, then nearest the middle).
 const waiting: { rank: () => number; run: () => Promise<void> }[] = []
 let busyTaking = false
@@ -94,13 +116,17 @@ async function settle(box: HTMLElement) {
   await document.fonts.ready
   await Promise.all([...box.querySelectorAll('img')].map(i => i.decode().catch(() => {})))
 }
-function stillOf(key: string, route: string, v: Variant, w: number, h: number, scale: number, mount: MapApi['mount'], wanted: () => boolean, rank: () => number): Promise<string | null> {
+function stillOf(key: string, route: string, v: Variant, w: number, h: number, scale: number, mount: MapApi['mount'], wanted: () => boolean, rank: () => number): Promise<Shot | null> {
   const had = asked.get(key)
   if (had) return had
-  let done: (u: string | null) => void = () => {}
-  const job = new Promise<string | null>(r => { done = r })
-  const take = async (): Promise<string | null> => {
+  let done: (u: Shot | null) => void = () => {}
+  const job = new Promise<Shot | null>(r => { done = r })
+  const take = async (): Promise<Shot | null> => {
     if (!wanted()) { asked.delete(key); return null }
+    const dark = document.documentElement.classList.contains('dark')
+    const got = await served(route, w, h, dark ? 'dark' : 'light')
+    if (got?.url) { const shot = { url: got.url, thumb: got.thumb }; stills.set(key, shot); latest.set(route, shot); return shot }
+    if (got?.error && !wanted()) { asked.delete(key); return null }
     const box = document.createElement('div')
     box.dataset.mount = ''; box.dataset.mapCapture = ''; box.inert = true; box.dir = 'ltr'
     if (v.theme) box.dataset.protoTheme = v.theme
@@ -110,7 +136,6 @@ function stillOf(key: string, route: string, v: Variant, w: number, h: number, s
     try {
       off = mount(box, await v.load())
       await settle(box)
-      const dark = document.documentElement.classList.contains('dark')
       const canvas = await domToCanvas(box, {
         scale, width: w, height: h, backgroundColor: dark ? '#09090b' : '#ffffff',
         style: { opacity: '1', position: 'static', zIndex: 'auto' },
@@ -118,9 +143,9 @@ function stillOf(key: string, route: string, v: Variant, w: number, h: number, s
       })
       const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/webp', 0.9))
       if (!blob) throw new Error('no still')
-      const url = URL.createObjectURL(blob)
-      stills.set(key, url); latest.set(route, url)
-      return url
+      const shot = { url: URL.createObjectURL(blob) }
+      stills.set(key, shot); latest.set(route, shot)
+      return shot
     } catch { asked.delete(key); return null }
     finally { try { off?.() } catch { /* gone */ } box.remove() }
   }
@@ -129,22 +154,53 @@ function stillOf(key: string, route: string, v: Variant, w: number, h: number, s
   void pump()
   return job
 }
-function Still({ v, route, w, h, size, want, rank, stamp, mount }: { v: Variant | undefined; route: string; w: number; h: number; size: number; want: boolean; rank: number; stamp: string; mount: MapApi['mount'] }) {
+function Still({ v, route, w, h, size, want, sharp, rank, stamp, mount }: { v: Variant | undefined; route: string; w: number; h: number; size: number; want: boolean; sharp: boolean; rank: number; stamp: string; mount: MapApi['mount'] }) {
   const ranked = useRef(rank); ranked.current = rank
-  // Sharp at the board's size on the map at 100% (an option card is a third of its frame), on this screen.
+  // Taken in the tab: sharp at the board's size on the map at 100% (an option card is a third of its frame), on this screen.
   const scale = Math.round(Math.min(2, devicePixelRatio || 1) * size * 100) / 100
-  const key = `${route}|${stamp}|${scale}|${document.documentElement.classList.contains('dark') ? 'dark' : 'light'}`
+  const key = `${route}|${stamp}|${noServer ? scale : `${Math.round(w)}x${Math.round(h)}`}|${document.documentElement.classList.contains('dark') ? 'dark' : 'light'}`
   // The last still of this route shows while a new one is taken.
-  const [url, setUrl] = useState<string | null>(() => stills.get(key) ?? latest.get(route) ?? null)
+  const [shot, setShot] = useState<Shot | null>(() => stills.get(key) ?? latest.get(route) ?? null)
+  // The full size is laid over the small one once it has loaded, so the board never blinks.
+  const [full, setFull] = useState<string | null>(null)
   useEffect(() => {
     const have = stills.get(key)
-    if (have) { setUrl(have); return }
+    if (have) { setShot(have); return }
     if (!want || !v) return
     let gone = false
-    stillOf(key, route, v, w, h, scale, mount, () => !gone, () => ranked.current).then(u => { if (!gone && u) setUrl(u) })
+    stillOf(key, route, v, w, h, scale, mount, () => !gone, () => ranked.current).then(u => { if (!gone && u) setShot(u) })
     return () => { gone = true }
   }, [key, want, v, mount]) // eslint-disable-line react-hooks/exhaustive-deps
-  return url ? <img data-map-still src={url} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover object-top" /> : null
+  if (!shot) return null
+  const cls = 'pointer-events-none absolute inset-0 h-full w-full object-cover object-top'
+  if (!shot.thumb) return <img data-map-still src={shot.url} alt="" draggable={false} className={cls} />
+  return <>
+    <img data-map-still src={shot.thumb} alt="" draggable={false} className={cls} />
+    {(sharp || full === shot.url) && <img data-map-still="full" src={shot.url} alt="" draggable={false} decoding="async" onLoad={() => setFull(shot.url)} className={cls} style={{ opacity: full === shot.url ? 1 : 0 }} />}
+  </>
+}
+/** The board being read, live: sharp at any zoom. It shows over its still once its entrance has played out. */
+function Live({ v, mount }: { v: Variant | undefined; mount: MapApi['mount'] }) {
+  const host = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!v) return
+    const box = document.createElement('div')
+    box.dataset.mount = ''; box.dataset.mapLive = ''; box.inert = true; box.dir = 'ltr'
+    box.className = 'pointer-events-none absolute inset-0 overflow-hidden bg-white opacity-0 transition-opacity duration-200 dark:bg-zinc-950'
+    if (v.theme) box.dataset.protoTheme = v.theme
+    host.current!.append(box)
+    let off: (() => void) | null = null, gone = false
+    v.load().then(async c => {
+      if (gone) return
+      off = mount(box, c)
+      const t0 = performance.now()
+      await sleep(300)
+      while (!gone && performance.now() - t0 < 2500 && box.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity)) await sleep(120)
+      if (!gone) box.style.opacity = '1'
+    }, () => { /* the still stays */ })
+    return () => { gone = true; box.remove(); if (off) { const o = off; setTimeout(() => { try { o() } catch { /* gone */ } }) } }
+  }, [v, mount])
+  return <div ref={host} className="absolute inset-0" />
 }
 
 /** Each screen's <Go to> targets, read from its variant's source. */
@@ -201,7 +257,13 @@ function MapView({ api }: { api: MapApi }) {
     el.style.setProperty('--lz', labelZ(c.z))
     api.camera = { ...c }
   }, [api])
-  const set = (c: Cam) => { cam.current = { ...c, z: clamp(c.z, MIN_Z, MAX_Z) }; apply(); redraw(n => n + 1) }
+  // The camera at rest: a quarter second after its last move (a board goes live only then).
+  const [resting, setResting] = useState(true)
+  const restTimer = useRef(0)
+  const set = (c: Cam) => {
+    cam.current = { ...c, z: clamp(c.z, MIN_Z, MAX_Z) }; apply(); redraw(n => n + 1)
+    setResting(false); clearTimeout(restTimer.current); restTimer.current = window.setTimeout(() => setResting(true), 250)
+  }
   const fitTo = (b: { x: number; y: number; w: number; h: number }, pad = 0.9): Cam => {
     const a = clear(), z = clamp(Math.min(a.w / b.w, a.h / b.h) * pad, MIN_Z, MAX_Z)
     return { z, x: a.x + a.w / 2 - (b.x + b.w / 2) * z, y: a.y + a.h / 2 - (b.y + b.h / 2) * z }
@@ -376,6 +438,11 @@ function MapView({ api }: { api: MapApi }) {
   const selBoard = world.boards.find(b => b.key === sel)
   const focusBoard = input.focus ? world.boards.find(b => b.kind === 'screen' && b.route === input.focus) ?? world.boards.find(b => b.route === input.focus) : undefined
   focusRef.current = focusBoard ?? null
+  // The board being read: the one nearest the middle, once it fills most of the stage and the camera
+  // rests. It is the live page, sharp at any zoom; every other board stays a still. Never the one in
+  // Focus (that one is the shell's own) and never a folded stack.
+  const room = clear()
+  const lensBoard = !focusBoard && resting && !input.hidden && near[0] && near[0].pile == null && (near[0].w * c.z >= room.w * 0.5 || near[0].h * c.z >= room.h * 0.5) ? near[0] : undefined
   refScale.current = (focusBoard ?? near[0])?.scale ?? 1
   const pct = Math.round(c.z * refScale.current * 100)
   const hosted = !!api.report
@@ -479,8 +546,10 @@ function MapView({ api }: { api: MapApi }) {
                 <div className={'absolute inset-0 grid place-items-center bg-zinc-50 text-zinc-400 dark:bg-zinc-900'} style={{ fontSize: 'calc(13px * var(--lz))' }}><span dir="auto" className={b.pile ? 'invisible' : ''}>{b.title}</span></div>
                 <div className="absolute left-0 top-0 origin-top-left" style={{ width: b.w / b.scale, height: b.h / b.scale, zoom: b.scale }}>
                   <Still v={variantOf(b)} route={b.route} w={b.w / b.scale} h={b.h / b.scale} size={b.scale} want={live.has(b.key) && !input.hidden && b !== focusBoard}
+                    sharp={c.z * b.scale * (devicePixelRatio || 1) > 0.55}
                     rank={(b.kind === 'screen' ? 0 : 1000) + (rankOf.get(b.key) ?? 999)}
                     stamp={`${stampOf.get(b.slug) ?? 0}:${busy.get(b.route) ?? ''}`} mount={api.mount} />
+                  {b === lensBoard && <Live key={`${b.route}|${stampOf.get(b.slug) ?? 0}`} v={variantOf(b)} mount={api.mount} />}
                 </div>
                 {busy.has(b.route) && !b.pile && b.kind === 'option' && (
                   // An option's card is small: a dot, its name in the title, so the card's own name stays readable.

@@ -26,7 +26,7 @@ jobs:
       - name: One app per project
         run: node --test .github/project-checks.mjs
       - name: Designs
-        run: node --test .github/design-checks.mjs .github/tree-unit-checks.mjs .github/designs-unit-checks.mjs .github/map-unit-checks.mjs .github/where-unit-checks.mjs
+        run: node --test .github/design-checks.mjs .github/tree-unit-checks.mjs .github/designs-unit-checks.mjs .github/map-unit-checks.mjs .github/stills-unit-checks.mjs .github/where-unit-checks.mjs
       - name: Theme merge
         run: node --test .github/theme-merge-unit-checks.mjs
       - name: Import of session apps

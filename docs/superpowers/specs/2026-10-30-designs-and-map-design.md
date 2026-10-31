@@ -53,7 +53,11 @@ the way a decision gets made, and lets whole flows of linked screens be built, w
 
 11. **Three ways to move around**, replacing today's columns switcher and lobbies:
     - **Map**: an infinite canvas (drag, pinch, ⌘/Ctrl + wheel). Screens as thumbnails, link lines
-      between them, Explorations beside the screen they belong to.
+      between them, Explorations beside the screen they belong to. The thumbnails are stills the dev
+      server takes in headless Chrome (each screen at its own size and 2x, reduced motion, after its
+      entrance; a small and a full size, cached on disk until the prototype's files change), so the
+      tab only shows images. The one board filling the stage, with the camera at rest, is the live
+      page, sharp at any zoom. A share has no server: its map takes stills in the tab.
     - **Focus**: one screen big, today's stage. **Continuous zoom** between Map and Focus (pinch out
       of a screen lands on the map; double click a screen flies into it). A breadcrumb
       `‹ Flow › Screen ›` walks the flow.
