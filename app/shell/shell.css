@@ -203,7 +203,7 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
   [data-desk] > :is([data-side], [data-tree-side]) { overflow: hidden; }
   /* The map runs under the desk's cards to the window's edges: the sidebar card stays over it. */
   [data-desk] > [data-tree-side] { position: relative; z-index: 10; }
-  [data-desk] [data-map-host][data-full] { position: fixed !important; inset: 0 !important; }
+  [data-desk] [data-zone] > :is([data-map-host], [data-view])[data-full] { position: fixed !important; inset: 0 !important; }
 }
 /* The comments island steps aside while a box of the map's (Build it, a note) grows out of its place. */
 [data-island-host] { transition: opacity .18s ease-out; }

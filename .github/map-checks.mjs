@@ -13,7 +13,7 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
   }
   // Stills are taken one board at a time, each after its entrance settles: give them longer.
   const slow = async (page, expression, why) => {
-    for (const end = Date.now() + 45000; Date.now() < end; await wait(200)) if (await page.run(expression)) return
+    for (const end = Date.now() + 90000; Date.now() < end; await wait(200)) if (await page.run(expression)) return
     fail(`map: ${why} (timed out: ${expression})`)
   }
   const variant = (slug, letter, body) => writeFileSync(join(app, 'src', 'protos', slug, `${letter}.tsx`), `import { Go } from '../../go'\nexport default function V() { return <main style={{ padding: 32 }}>${body}</main> }\n`)

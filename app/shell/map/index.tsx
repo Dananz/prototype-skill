@@ -94,17 +94,18 @@ async function served(route: string, w: number, h: number, theme: string): Promi
     })
   } catch { return null }
 }
-// The stills waiting, taken one at a time, the best ranked first (screens, then nearest the middle).
+// The stills waiting, the best ranked first (screens, then nearest the middle): three asked of the
+// server at once (it takes them in three tabs), one at a time where the page takes them itself.
 const waiting: { rank: () => number; run: () => Promise<void> }[] = []
-let busyTaking = false
+let taking = 0
 async function pump() {
-  if (busyTaking) return
-  busyTaking = true
+  if (taking >= (noServer ? 1 : 3)) return
+  taking++
   while (waiting.length) {
     waiting.sort((a, b) => a.rank() - b.rank())
     await waiting.shift()!.run()
   }
-  busyTaking = false
+  taking--
 }
 const SETTLE_MIN = 2000, SETTLE_MAX = 4500
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -151,7 +152,7 @@ function stillOf(key: string, route: string, v: Variant, w: number, h: number, s
   }
   waiting.push({ rank, run: () => take().then(done, () => done(null)) })
   asked.set(key, job)
-  void pump()
+  void pump(); void pump(); void pump()
   return job
 }
 function Still({ v, route, w, h, size, want, sharp, rank, stamp, mount }: { v: Variant | undefined; route: string; w: number; h: number; size: number; want: boolean; sharp: boolean; rank: number; stamp: string; mount: MapApi['mount'] }) {

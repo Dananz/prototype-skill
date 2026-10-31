@@ -10,7 +10,7 @@
 // scrolls, and what is written is about that layout (comments/). The shell draws the controls (the
 // bar's three sizes and its scale button, which zooms the view; the Layout and Zoom rows of the
 // pill's menu); this draws the view, in [data-view].
-import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type RefObject } from 'react'
 import { createRoot } from 'react-dom/client'
 import { useRows } from '../comments/list'
 import { useCtx } from '../comments/ctx'
@@ -40,7 +40,13 @@ export type ViewProps = {
   route: (path: string) => void
   /** A key pressed in the page in the frame (C comments on it, as out here). */
   onKey: (e: KeyboardEvent) => void
+  /** The view fills the window, under the page's chrome: the room left clear of it, from each edge. */
+  safe?: Insets
 }
+type Insets = { l: number; t: number; r: number; b: number }
+const NO_INSETS: Insets = { l: 0, t: 0, r: 0, b: 0 }
+/** The caption line over the device (its size and zoom, comments on other sizes). */
+const LINE_H = 40
 
 // The one frame on screen, for the comment layer to look into.
 let live: Frame | null = null
@@ -176,7 +182,7 @@ function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>;
 
 const coarse = matchMedia('(pointer: coarse)')
 
-function ViewStage({ view, path, dark, set, route, onKey }: ViewProps & { view: View }) {
+function ViewStage({ view, path, dark, set, route, onKey, safe }: ViewProps & { view: View }) {
   const { act } = useCtx()
   const { s, rows } = useRows()
   const [area, box] = useBox<HTMLDivElement>()
@@ -189,11 +195,13 @@ function ViewStage({ view, path, dark, set, route, onKey }: ViewProps & { view: 
   const fillW = !view.size && innerWidth >= FILL_MIN_W && inner.w > 0 && inner.w < FILL_MIN_W ? FILL_MIN_W : inner.w
   const d = view.size ? dims(view.size, view.land) : { w: fillW, h: inner.w ? Math.round((inner.h * fillW) / inner.w) : inner.h }
   const pad = desk && !view.size ? DESK_PAD : !view.size || box.w < 640 ? 0 : 16
-  const fit = fitOf(box, d, pad)
+  // Full window (safe): the device fits and centres in the room clear of the chrome, under its caption.
+  const ins = safe ? { ...safe, t: safe.t + LINE_H } : NO_INSETS
+  const fit = fitOf({ w: Math.max(0, box.w - ins.l - ins.r), h: Math.max(0, box.h - ins.t - ins.b) }, d, pad)
   const scale = view.zoom ? view.zoom / 100 : fit
   const zoomed = scale > fit + 0.001
   const setZoom = (z: number) => set({ zoom: z })
-  const { wrap, anchor } = usePlace(area, box, d, scale, zoomed, pad, `${view.size}-${view.land}`, view.home ?? 0)
+  const { wrap, anchor } = usePlace(area, box, d, scale, zoomed, pad, `${view.size}-${view.land}`, view.home ?? 0, ins)
   const pinch = usePinch(area, scale, fit, setZoom, anchor)
   const gestures = useGestures(area, scale, fit, setZoom, anchor)
   const keys = useRef(onKey)
@@ -221,17 +229,21 @@ function ViewStage({ view, path, dark, set, route, onKey }: ViewProps & { view: 
   // Comments written on the other sizes, open ones, as a chip each that switches to that size.
   const others = ORDER.filter(x => x !== view.size).map(x => ({ x, k: rows.filter(r => r.here && r.state !== 'done' && r.item.target?.view?.size === x).length })).filter(o => o.k)
   const pct = Math.round(scale * 100)
+  // Full window, the caption lies over the room's top, and lets the device under it be taken hold of.
+  const over: CSSProperties | undefined = safe ? { position: 'absolute', left: safe.l, right: safe.r, top: safe.t, zIndex: 1, pointerEvents: 'none' } : undefined
+  // The zoom pill (shell.ts) shows this, the size it really is, also while it fits.
+  useEffect(() => { window.dispatchEvent(new CustomEvent('proto:view-zoom', { detail: pct })) }, [pct])
   return (
     <div data-view-stage className="relative flex h-full flex-col bg-zinc-100 text-[13px] text-zinc-900 dark:bg-[#111113] dark:text-zinc-100">
       {!view.size ? null : picking
-        ? <div data-view-banner className="flex h-10 shrink-0 items-center gap-2 bg-proto-primary pe-1.5 ps-3 text-xs font-medium text-proto-primary-fg [@media(hover:hover)]:pe-28">
+        ? <div data-view-banner style={over} className="flex h-10 shrink-0 items-center gap-2 bg-proto-primary pe-1.5 ps-3 text-xs font-medium text-proto-primary-fg [@media(hover:hover)]:pe-28">
             <Icon name="comment" className="size-4" />
             <span className="min-w-0 flex-1 truncate">{coarse.matches ? t('Tap what to change on {device}', { device: name.toLowerCase() }) : t('Click what to change on {device}', { device: name.toLowerCase() })}</span>
             <span className="hidden shrink-0 tabular-nums opacity-70 sm:inline">{d.w} × {d.h}</span>
             <button type="button" onClick={() => act.stop()} className="h-7 shrink-0 rounded-full bg-white/20 px-2.5 font-semibold hover:bg-white/30">{t('Done')}</button>
           </div>
-        : <div data-view-line className="flex h-10 shrink-0 items-center gap-1 pe-1 ps-3 text-[11px] text-zinc-500 dark:text-zinc-400 [@media(hover:hover)]:pe-28">
-            <span className="shrink-0 tabular-nums"><span className="font-medium text-zinc-800 dark:text-zinc-200">{d.w} × {d.h}</span> · {pct}%</span>
+        : <div data-view-line style={over} className="flex h-10 shrink-0 items-center gap-1 pe-1 ps-3 [&>*]:pointer-events-auto text-[11px] text-zinc-500 dark:text-zinc-400 [@media(hover:hover)]:pe-28">
+            <span className="shrink-0 tabular-nums"><span dir="ltr" className="font-medium text-zinc-800 dark:text-zinc-200">{d.w} × {d.h}</span> · {pct}%</span>
             <span className="ms-auto" />
             {others.map(({ x, k }) => (
               <button key={x} type="button" data-view-other={x} onClick={() => set({ size: x, zoom: 0 })} title={tn(k, '{n} comment on the {name} layout', '{n} comments on the {name} layout', { name: SIZES[x].name.toLowerCase() })}
@@ -246,7 +258,7 @@ function ViewStage({ view, path, dark, set, route, onKey }: ViewProps & { view: 
           </div>}
       {/* No scrollbars, as on a canvas: one coming and going changes the area's width, and with it Fit, which
           brings it back (the zoom flickered between two values). It moves by drag, wheel and fingers. */}
-      <div ref={area} data-view-area className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ touchAction: 'pan-x pan-y' }}>
+      <div ref={area} data-view-area className={`${safe ? 'absolute inset-0' : 'min-h-0 flex-1'} overflow-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`} style={{ touchAction: 'pan-x pan-y' }}>
         <div ref={wrap} className="flex h-max min-h-full w-max min-w-full items-start justify-start">
           <LiveFrame path={path} dark={dark} w={d.w} h={d.h} scale={scale} route={route} bind={bind}
             ring={!view.size ? `bg-white dark:bg-zinc-950 ${desk ? 'rounded-[10px] ring-1 ring-black/[.08] shadow-[0_18px_44px_-18px_rgb(0_0_0/.35)] dark:ring-white/[.12]' : ''}` : `bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${pad ? 'rounded-[10px]' : ''}`}>

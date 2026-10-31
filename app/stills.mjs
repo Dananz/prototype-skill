@@ -11,6 +11,8 @@ import { join } from 'node:path'
 /** Bump when a capture would come out different for the same files: every still is taken again. */
 const VERSION = 1
 const DPR = 2, THUMB = 0.25
+/** Stills taken at once, each in a tab of its own. */
+const TABS = 3
 /** Chrome stops after this long with nothing to take; the next still starts it again. */
 const IDLE_MS = 60_000
 /** The folder keeps at most this many files (a full and a small one per still), the oldest go first. */
@@ -51,7 +53,7 @@ export function stillKey(root, { route, w, h, theme }) {
 export function stillServer({ root, origin, skill = process.env.PROTO_SKILL, emit }) {
   const dir = join(root, '.proto', 'stills')
   const queue = [], queued = new Set()
-  let chrome = null, starting = null, running = false, idle = null, closed = false
+  let chrome = null, starting = null, running = 0, idle = null, closed = false
 
   const files = hash => ({ full: join(dir, `${hash}.webp`), thumb: join(dir, `${hash}-s.webp`) })
   const urls = hash => ({ url: `/__proto/stills/${hash}.webp`, thumb: `/__proto/stills/${hash}-s.webp` })
@@ -60,7 +62,8 @@ export function stillServer({ root, origin, skill = process.env.PROTO_SKILL, emi
   async function launch() {
     const { startChrome, stopChrome, waitReady } = await import(join(skill, 'scripts', 'chrome.mjs'))
     const profile = mkdtempSync(join(tmpdir(), 'proto-stills-'))
-    const proc = startChrome([`--user-data-dir=${profile}`, '--no-first-run', '--hide-scrollbars', '--mute-audio'])
+    // Its tabs all work at once: none is put in the background and slowed.
+    const proc = startChrome([`--user-data-dir=${profile}`, '--no-first-run', '--hide-scrollbars', '--mute-audio', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'])
     const wsUrl = await new Promise((ok, no) => {
       let b = ''
       const timer = setTimeout(() => no(new Error('Chrome did not start')), 15_000)
@@ -78,17 +81,21 @@ export function stillServer({ root, origin, skill = process.env.PROTO_SKILL, emi
       wait.set(i, m => m.error ? no(new Error(m.error.message)) : ok(m.result))
       ws.send(JSON.stringify({ id: i, method, params, sessionId }))
     })
-    const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
-    const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
-    await send('Page.enable', {}, sessionId)
-    await send('Runtime.enable', {}, sessionId)
-    const run = async expression => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId))?.result?.value
-    return { proc, ws, send: (m, p) => send(m, p, sessionId), run, waitReady, stop: () => { try { ws.close() } catch { /* gone */ } stopChrome(proc) } }
+    const tab = async () => {
+      // A window each: in one window only the front tab counts as seen, and the others' frames stall.
+      const { targetId } = await send('Target.createTarget', { url: 'about:blank', newWindow: true })
+      const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+      await send('Page.enable', {}, sessionId)
+      await send('Runtime.enable', {}, sessionId)
+      await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId)
+      const run = async expression => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId))?.result?.value
+      return { send: (m, p) => send(m, p, sessionId), run }
+    }
+    return { proc, ws, tab, waitReady, stop: () => { try { ws.close() } catch { /* gone */ } stopChrome(proc) } }
   }
 
-  async function take({ hash, route, w, h, theme }) {
-    if (!chrome) chrome = await (starting ??= launch().finally(() => { starting = null }))
-    const { send, run, waitReady } = chrome
+  async function take({ hash, route, w, h, theme }, { send, run }) {
+    const { waitReady } = chrome
     await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: DPR, mobile: false })
     await send('Emulation.setEmulatedMedia', { media: '', features: [{ name: 'prefers-reduced-motion', value: 'reduce' }, { name: 'prefers-color-scheme', value: theme }] })
     await send('Page.navigate', { url: `${origin()}/${route}?dv=1&theme=${theme}&shot=1` })
@@ -98,7 +105,7 @@ export function stillServer({ root, origin, skill = process.env.PROTO_SKILL, emi
     await run(`(async () => {
       const s = document.createElement('style'); s.textContent = '[data-proto-ui], vite-error-overlay { display: none !important }'; document.head.append(s)
       const sleep = ms => new Promise(r => setTimeout(r, ms)), t0 = performance.now()
-      await sleep(1200)
+      await sleep(700)
       while (performance.now() - t0 < 5000 && document.getAnimations().some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity)) await sleep(120)
       await document.fonts.ready
       await Promise.all([...document.images].map(i => i.decode().catch(() => {})))
@@ -118,24 +125,30 @@ export function stillServer({ root, origin, skill = process.env.PROTO_SKILL, emi
     } catch { /* no folder yet */ }
   }
 
-  async function drain() {
-    if (running) return
-    running = true
+  // One worker per tab, each taking the next still waiting.
+  async function work() {
+    running++
     clearTimeout(idle)
+    let tab = null, owner = null
     while (queue.length && !closed) {
       const job = queue.shift()
-      try { await take(job); emit({ hash: job.hash, ...urls(job.hash), tw: Math.round(job.w * DPR * THUMB) }) }
-      catch (e) {
+      try {
+        if (!chrome) chrome = await (starting ??= launch().finally(() => { starting = null }))
+        if (owner !== chrome) { owner = chrome; tab = await chrome.tab() }
+        await take(job, tab)
+        emit({ hash: job.hash, ...urls(job.hash), tw: Math.round(job.w * DPR * THUMB) })
+      } catch (e) {
         emit({ hash: job.hash, error: String(e?.message || e).slice(0, 200) })
-        // A Chrome that broke mid-way is started again for the next one.
-        if (chrome) { chrome.stop(); chrome = null }
-      }
-      finally { queued.delete(job.hash) }
+        // A Chrome whose connection broke is started again for the next one; a page that failed
+        // leaves it (and the other tabs' stills) be.
+        if (chrome && chrome.ws.readyState !== WebSocket.OPEN) { chrome.stop(); chrome = null }
+      } finally { queued.delete(job.hash) }
     }
-    running = false
+    if (--running) return
     prune()
     idle = setTimeout(() => { if (!running && chrome) { chrome.stop(); chrome = null } }, IDLE_MS)
   }
+  const drain = () => { while (running < TABS && running < queue.length) void work() }
 
   return {
     /** A still now ({url, thumb, tw}), or once it's taken ({pending, hash}, then the page hears `proto:still`). */
@@ -150,7 +163,7 @@ export function stillServer({ root, origin, skill = process.env.PROTO_SKILL, emi
       if (has(hash)) return { hash, ...urls(hash), tw }
       if (!skill) return { unavailable: true }
       if (!queued.has(hash)) { queued.add(hash); queue.push({ hash, route, w, h, theme }) }
-      void drain()
+      drain()
       return { hash, pending: true }
     },
     /** The file behind a /__proto/stills/<name> URL, or null. */

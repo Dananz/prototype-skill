@@ -59,6 +59,11 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     for (const sh of ['pill-size-desktop', 'pill-size-tablet', 'pill-size-phone']) assert(await page.run(`!!document.querySelector('[data-zoom-pill] [data-shoot="${sh}"]')`), `the zoom pill should hold ${sh}`)
     assert(await page.run(`!document.querySelector('[data-strip] [data-shoot^="strip-size-"]')`), 'the strip should no longer hold the layouts')
     assert(await page.run(`/^\\d+%$/.test(document.querySelector('[data-zoom-pct]')?.textContent ?? '') && getComputedStyle(document.querySelector('[data-zoom-more]')).opacity === '0'`), 'the zoom pill should show only its zoom until hovered')
+    // A layout chosen and fitted, the pill says the size it really is (as the stage's caption does), not "Fit".
+    await page.run(`document.querySelector('[data-zoom-pill] [data-shoot="pill-size-phone"]').click()`)
+    await until(page, `(() => { const p = document.querySelector('[data-zoom-pct]')?.textContent, c = document.querySelector('[data-view-stage]')?.textContent.match(/· (\\d+)%/)?.[1]; return !!c && p === c + '%' })()`, 'with the phone fitted, the pill should show its real zoom')
+    await page.run(`document.querySelector('[data-zoom-pill] [data-shoot="pill-size-phone"]').click()`)
+    await until(page, `!document.querySelector('[data-view-stage]')`, 'the phone layout should toggle off again')
     for (const sh of ['strip-move', 'strip-comment']) assert(await page.run(`!!document.querySelector('[data-strip] [data-shoot="${sh}"]:not([disabled])')`), `the strip should have ${sh}`)
     await page.run(`document.querySelector('[data-strip] [data-shoot="strip-states"]').click()`)
     await until(page, `!!document.querySelector('[data-strip-states] [data-act="tool:fhome:B:compare"]')`, 'the states panel should offer Compare')

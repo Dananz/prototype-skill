@@ -722,7 +722,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     el.hidden = !on
     if (!on) { el.innerHTML = ''; zoomKey = ''; return }
     const mapOn = onMap() || inPlace(), inScreen = st.place.view === 'variant'
-    const pct = mapOn ? `${mapState.pct}%` : scaleLabel()
+    const pct = mapOn ? `${mapState.pct}%` : pillPct()
     const key = JSON.stringify([mapOn, inScreen, viewOk(), shownSize(), st.view.land, designs.map(d => d.id + d.title), mapDesign, document.documentElement.lang])
     if (key === zoomKey && el.firstElementChild) { el.querySelector('[data-zoom-pct]')!.textContent = pct; return }
     zoomKey = key
@@ -901,6 +901,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const scaleRange = () => (frameOn() ? [ZOOM_MIN, ZOOM_MAX] : [SCALE_MIN, SCALE_MAX])
   const rangeAt = (v: number) => { const [lo, hi] = scaleRange(); return ((v - lo) / (hi - lo)) * 100 }
   const scaleLabel = () => (scaleNow() ? `${Math.round(scaleNow())}%` : t('Fit'))
+  // The zoom pill says the size the device view really is, fitted too (view/index.tsx tells it).
+  let viewPct = 0
+  const pillPct = () => (!scaleNow() && viewOn() && viewPct ? `${viewPct}%` : scaleLabel())
+  addEventListener('proto:view-zoom', e => {
+    viewPct = (e as CustomEvent<number>).detail
+    const el = root.querySelector('[data-zoom-pct]')
+    if (el && !onMap() && !inPlace()) el.textContent = pillPct()
+  })
   function setScale(v: number) {
     // Fit chosen here also puts a device that was dragged away back in the middle.
     if (frameOn()) return patchView(v ? { zoom: v } : { zoom: 0, home: st.view.home + 1 })
@@ -2334,7 +2342,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const mapOn = onMap() || inPlace()
         if (arg === 'fit') return mapOn ? mapApi.ctl?.fit() : setScale(0)
         if (mapOn) return mapApi.ctl?.zoom(arg === 'in' ? 1.25 : 0.8)
-        { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || 50) + (arg === 'in' ? 10 : -10)) / 5) * 5))) }
+        // From Fit, a step goes from the size it really is.
+        { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || (viewOn() && viewPct) || 50) + (arg === 'in' ? 10 : -10)) / 5) * 5))) }
       }
       case 'map':
         if (arg === 'build') return mapApi.ctl?.build()
@@ -2676,7 +2685,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // On a phone the design zooms by itself, never the page: two fingers (or a wheel with Ctrl or ⌘)
   // scale it in its scroller around the point between them, laid out as it was at Fit, and Fit
   // puts it back. A device view (a layout chosen) zooms its own way (view/gestures.ts).
-  const ZOOM_MAX = 4
+  const PHONE_ZOOM_MAX = 4
   let zoom: { mount: HTMLElement; z: number } | null = null
   const zoomFit = document.createElement('button')
   zoomFit.type = 'button'
@@ -2694,7 +2703,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function zoomTo(to: number, x: number, y: number) {
     const mount = zoom?.mount ?? zoomMount(), sc = mount?.parentElement
     if (!mount || !sc) return
-    const was = zoom?.z ?? 1, z = Math.min(ZOOM_MAX, Math.max(1, to))
+    const was = zoom?.z ?? 1, z = Math.min(PHONE_ZOOM_MAX, Math.max(1, to))
     if (z === was) return
     // Laid out at the size it had at Fit, so zooming scales it and never reflows it.
     if (!zoom) { mount.style.width = `${sc.clientWidth}px`; mount.style.height = `${sc.clientHeight}px`; zoom = { mount, z: 1 } }
@@ -2846,10 +2855,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const frameOn = () => (viewOn() && !cardView()) || fillOk()
   const shownSize = (): Size | null => viewOn() ? st.view.size! : native()
   const viewSize = (): ViewSize => { const s = st.view.size!, d = dims(s, st.view.land); return { size: s, w: d.w, h: d.h } }
-  const deviceView = createView(zone.querySelector<HTMLElement>('[data-view]')!, comments.wrap)
+  const viewHost = zone.querySelector<HTMLElement>('[data-view]')!
+  const deviceView = createView(viewHost, comments.wrap)
   // The size selected at rest is this window's own layout, which a resize of it or the stage can change.
   let nativeWas = native()
-  new ResizeObserver(() => { if (native() !== nativeWas) { nativeWas = native(); render() } else paintMap() }).observe(layers)
+  new ResizeObserver(() => { if (native() !== nativeWas) { nativeWas = native(); render() } else { paintMap(); if (viewHost.hasAttribute('data-full')) paintView() } }).observe(layers)
   function pickSize(s: Size) {
     // The layout shown, chosen again, leaves the view: the way out when no layout is this window's own.
     if (s === native() || (viewOn() && s === st.view.size)) { if (viewOn()) patchView({ size: null, zoom: 0 }); return }
@@ -2863,8 +2873,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else { paintView(); syncScale() }
   }
   function paintView() {
+    // A chosen layout on the desk with the tree on runs to the window's edges, as the map does: under
+    // the bar, the strip, the island and the sidebar card. It fits and centres in the room between them.
+    const full = treeOn && !framed && deskMq.matches && !st.focus && viewOn()
+    viewHost.toggleAttribute('data-full', full)
+    const r = full ? layers.getBoundingClientRect() : null
     deviceView.paint({
       view: frameOn() ? { size: viewOn() ? st.view.size! : null, land: st.view.land, zoom: st.view.zoom, home: st.view.home } : null,
+      safe: r ? { l: Math.max(0, Math.round(r.left)), t: Math.max(0, Math.round(r.top)), r: Math.max(0, Math.round(innerWidth - r.right)), b: Math.max(0, Math.round(innerHeight - r.bottom)) } : undefined,
       path: pathOf(st.place),
       dark: st.dark,
       set: patchView,
