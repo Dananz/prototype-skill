@@ -76,7 +76,9 @@ const labelZ = (z: number) => String(clamp(z / 0.2, 0.6, 1) / z)
 // small, and keeps them on disk until its prototype's files change. Where there is no server (a share)
 // the page takes them itself, one at a time, in a hidden box of the board's frame.
 type Shot = { url: string; thumb?: string }
-const stills = new Map<string, Shot>(), latest = new Map<string, Shot>(), asked = new Map<string, Promise<Shot | null>>()
+// A still asked for again while it waits follows the latest asker: whether it's still wanted, and how it ranks.
+type Ask = { job: Promise<Shot | null>; wanted: () => boolean; rank: () => number }
+const stills = new Map<string, Shot>(), latest = new Map<string, Shot>(), asked = new Map<string, Ask>()
 type Served = { url?: string; thumb?: string; error?: string }
 const heard = new Map<string, (r: Served) => void>()
 if (import.meta.hot) import.meta.hot.on('proto:still', (d: Served & { hash: string }) => { heard.get(d.hash)?.(d); heard.delete(d.hash) })
@@ -126,15 +128,15 @@ async function settle(box: HTMLElement) {
 }
 function stillOf(key: string, route: string, v: Variant, w: number, h: number, scale: number, mount: MapApi['mount'], wanted: () => boolean, rank: () => number): Promise<Shot | null> {
   const had = asked.get(key)
-  if (had) return had
+  if (had) { had.wanted = wanted; had.rank = rank; return had.job }
   let done: (u: Shot | null) => void = () => {}
   const job = new Promise<Shot | null>(r => { done = r })
   const take = async (): Promise<Shot | null> => {
-    if (!wanted()) { asked.delete(key); return null }
+    if (!ask.wanted()) { asked.delete(key); return null }
     const dark = document.documentElement.classList.contains('dark')
     const got = await served(route, w, h, dark ? 'dark' : 'light')
     if (got?.url) { const shot = { url: got.url, thumb: got.thumb }; stills.set(key, shot); latest.set(route, shot); return shot }
-    if (got?.error && !wanted()) { asked.delete(key); return null }
+    if (got?.error && !ask.wanted()) { asked.delete(key); return null }
     const box = document.createElement('div')
     box.dataset.mount = ''; box.dataset.mapCapture = ''; box.inert = true; box.dir = 'ltr'
     if (v.theme) box.dataset.protoTheme = v.theme
@@ -159,8 +161,9 @@ function stillOf(key: string, route: string, v: Variant, w: number, h: number, s
     } catch { asked.delete(key); return null }
     finally { try { off?.() } catch { /* gone */ } box.remove() }
   }
-  waiting.push({ rank, run: () => take().then(done, () => done(null)) })
-  asked.set(key, job)
+  const ask: Ask = { job, wanted, rank }
+  waiting.push({ rank: () => ask.rank(), run: () => take().then(done, () => done(null)) })
+  asked.set(key, ask)
   void pump(); void pump(); void pump()
   return job
 }

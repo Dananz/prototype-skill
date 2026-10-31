@@ -245,6 +245,16 @@ if (process.argv.includes('--focus-only')) {
   console.log('OK: focused Focus checks')
   process.exit(0)
 }
+// The map checks on a crowded map, as the full run leaves it: cards too small to ask for stills at Fit,
+// and stacks folding and spreading under the camera while stills wait.
+if (process.argv.includes('--map-crowd-only')) {
+  for (let i = 0; i < 90; i++) proto(['add', `crowd${i}`, '--title', `Crowd ${i}`, '--variants', 'A:One,B:Two'])
+  await mapChecks({ proto, app, local, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused map checks on a crowded map')
+  process.exit(0)
+}
 if (process.argv.includes('--map-only')) {
   await mapChecks({ proto, app, local, openPage, fail })
   proto(['rm', '--all'])

@@ -14,7 +14,25 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
   // Stills are taken one board at a time, each after its entrance settles: give them longer.
   const slow = async (page, expression, why) => {
     for (const end = Date.now() + 90000; Date.now() < end; await wait(200)) if (await page.run(expression)) return
-    fail(`map: ${why} (timed out: ${expression}; map: ${await page.run(`JSON.stringify({ boards: document.querySelectorAll('[data-map-board]').length, server: [...document.querySelectorAll('img[data-map-still]')].filter(i => i.getAttribute('src').startsWith('/__proto/stills/')).length, local: [...document.querySelectorAll('img[data-map-still]')].filter(i => i.getAttribute('src').startsWith('blob:')).length, mhome: document.querySelector('[data-map-board="screen:mhome"]')?.innerHTML.slice(0, 200) ?? null })`)})`)
+    fail(`map: ${why} (timed out: ${expression}; map: ${await page.run(`JSON.stringify({ boards: document.querySelectorAll('[data-map-board]').length, server: [...document.querySelectorAll('img[data-map-still]')].filter(i => i.getAttribute('src').startsWith('/__proto/stills/')).length, local: [...document.querySelectorAll('img[data-map-still]')].filter(i => i.getAttribute('src').startsWith('blob:')).length, mw: Math.round(document.querySelector('[data-map-board="screen:mhome"]')?.getBoundingClientRect().width ?? -1), mx: Math.round(document.querySelector('[data-map-board="screen:mhome"]')?.getBoundingClientRect().x ?? -1), zoom: document.querySelector('[data-zoom-pill]')?.textContent ?? null, view: [innerWidth, innerHeight] })`)})`)
+  }
+  // In over a board until it's readable: with many designs on the map (the full run), Fit leaves every
+  // card a few pixels wide, too small to name itself or to ask for its still.
+  const closer = async (page, key) => {
+    // A notch at a time, the board brought to the middle first: the map folds and spreads its stacks as it
+    // zooms, so a board doesn't stay under a point zoomed around.
+    await page.run(`(async () => {
+      const m = document.querySelector('[data-map]'), at = () => document.querySelector('[data-map-board="${key}"]').getBoundingClientRect()
+      const wheel = o => m.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ...o }))
+      for (let i = 0; i < 24; i++) {
+        const r = at(), v = m.getBoundingClientRect(), cx = v.x + v.width / 2, cy = v.y + v.height / 2
+        wheel({ deltaX: r.x + r.width / 2 - cx, deltaY: r.y + r.height / 2 - cy, clientX: cx, clientY: cy })
+        if (r.width >= 160) break
+        wheel({ deltaY: -40, ctrlKey: true, clientX: cx, clientY: cy })
+        await new Promise(f => requestAnimationFrame(() => requestAnimationFrame(f)))
+      }
+    })()`)
+    await wait(300)
   }
   const variant = (slug, letter, body) => writeFileSync(join(app, 'src', 'protos', slug, `${letter}.tsx`), `import { Go } from '../../go'\nexport default function V() { return <main style={{ padding: 32 }}>${body}</main> }\n`)
 
@@ -54,6 +72,7 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`!!document.querySelector('[data-map-board="opt:mhome/B"]')`), 'a screen\'s options should be on the map under it')
     // Boards are stills of their page once it settled, not live pages: the dev server takes them in
     // headless Chrome (app/stills.mjs) and the page only shows the images.
+    await closer(page, 'screen:mhome')
     await slow(page, `!!document.querySelector('[data-map-board="screen:mhome"] img[data-map-still][src^="/__proto/stills/"]')`, 'a screen should show the server\'s still of itself')
     assert(await page.run(`!document.querySelector('[data-map-board] [data-mount]:not([data-map-live]) > *')`), 'no board but the one being read should keep its page mounted')
     // A still is the screen at its own size and 2x; the board shows the small one until it's big on screen.
@@ -70,6 +89,7 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     // and its still is taken again.
     await page.run(`window.__mapMark = 1; window.__stillWas = document.querySelector('[data-map-board="screen:mhome"] img[data-map-still]').src`)
     variant('mhome', 'B', `<h1 data-shoot="mhome-live">Home again</h1><Go to="mabout">About</Go>`)
+    await closer(page, 'screen:mhome')
     await slow(page, `document.querySelector('[data-map-board="screen:mhome"] img[data-map-still]')?.src !== window.__stillWas`, 'an edited screen should get a new still')
     assert(await page.run(`window.__mapMark === 1`), 'editing a screen reloaded the page')
     // A design changed on disk is drawn on the map at once.
@@ -176,6 +196,7 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await until(page, `location.pathname === '/mhome/B' && !!document.querySelector('[data-map-slot="mhome/B"]')`, 'M should open the screen last in Focus')
     await page.run(`document.body.focus(); dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }))`)
     await until(page, `location.pathname === '/' && !document.querySelector('[data-map-slot]')`, 'M should leave Focus for the map')
+    await closer(page, 'screen:mhome')
     await slow(page, `!!document.querySelector('[data-map-board="screen:mhome"] img[data-map-still]')`, 'back on the map the screen shows its still')
     // Enter on a focused button is the button's, not the map's (a screen is selected on the way back).
     await page.run(`(() => { const b = document.querySelector('[data-map-fit]'); b.focus(); b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })) })()`)
@@ -197,9 +218,7 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await until(page, `location.pathname === '/'`, 'M should be back on the map')
     await page.run(`document.querySelector('[data-map-fit]').click()`)
     await wait(800)
-    // (And in over the stack: with more designs on the map, Fit leaves its cards too small to show its name.)
-    await page.run(`(() => { const r = document.querySelector('[data-map-board="opt:mloose/A"]').getBoundingClientRect(), m = document.querySelector('[data-map]'); for (let i = 0; i < 8 && document.querySelector('[data-map-board="opt:mloose/A"]').getBoundingClientRect().width < 160; i++) m.dispatchEvent(new WheelEvent('wheel', { deltaY: -40, ctrlKey: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, bubbles: true, cancelable: true })) })()`)
-    await wait(300)
+    await closer(page, 'opt:mloose/A')
     await page.run(`document.querySelector('[data-map-board="opt:mloose/A"]').click()`)
     await until(page, `!document.querySelector('[data-map-board^="opt:mloose/"][data-map-pile]')`, 'a click on the stack should spread it')
     await wait(400)
