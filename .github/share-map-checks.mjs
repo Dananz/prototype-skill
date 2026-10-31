@@ -4,7 +4,7 @@
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { SHARE_CSP } from '../host/lib/pages.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -14,14 +14,17 @@ export async function shareMapChecks({ proto, app, openPage, fail }) {
   const wait = ms => new Promise(r => setTimeout(r, ms))
   const until = async (page, expression, why, ms = 15000) => {
     for (const end = Date.now() + ms; Date.now() < end; await wait(100)) if (await page.run(expression)) return
-    fail(`share map: ${why} (timed out: ${expression})`)
+    fail(`share map: ${why} (timed out: ${expression}; ${await page.run(`JSON.stringify({ stills: [...document.querySelectorAll('[data-map-board]')].map(b => b.dataset.mapBoard + ':' + b.querySelectorAll('img[data-map-still]').length + ':' + Math.round(b.getBoundingClientRect().width)), capturing: document.querySelectorAll('[data-map-capture]').length })`)})`)
   }
   const variant = (slug, letter, body) => writeFileSync(join(app, 'src', 'protos', slug, `${letter}.tsx`), `import { Go } from '../../go'\nexport default function V() { return <main style={{ padding: 32 }}>${body}</main> }\n`)
   proto(['add', 'smhome', '--title', 'Share home', '--variants', 'A:One,B:Two'])
   proto(['design', 'smhome/B', '--title', 'Share Acme', '--id', 'smacme'])
   proto(['add', 'smabout', '--title', 'Share about', '--design', 'smacme', '--variants', 'A:One'])
   variant('smhome', 'A', '<h1>SM-HOME-A</h1>')
-  variant('smhome', 'B', '<h1>SM-HOME-B</h1><Go to="smabout">About</Go>')
+  variant('smhome', 'B', '<h1>SM-HOME-B</h1><Go to="smabout">About</Go><img alt="never" src="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27/%3E" />')
+  // An image that never decodes (a design waiting on something that never comes): the page takes the
+  // share's stills itself, and this one must not hold up the others (it keeps its name card).
+  writeFileSync(join(app, 'src', 'protos', 'smhome', 'B.tsx'), `const decode = HTMLImageElement.prototype.decode\nHTMLImageElement.prototype.decode = function () { return this.alt === 'never' ? new Promise(() => {}) : decode.call(this) }\n` + readFileSync(join(app, 'src', 'protos', 'smhome', 'B.tsx'), 'utf8'))
   variant('smabout', 'A', '<h1>SM-ABOUT-A</h1>')
   for (const s of ['smhome', 'smabout']) proto(['done', s])
 
@@ -49,6 +52,7 @@ export async function shareMapChecks({ proto, app, openPage, fail }) {
     await until(page, `!!document.querySelector('[data-viewer-map] [data-map-board="screen:smhome/B"]')`, 'the share should open on the design\'s map')
     assert(await page.run(`!!document.querySelector('[data-map-board="screen:smabout/A"]') && !!document.querySelector('[data-map-label="design:smacme"]')`), 'the map should hold both screens and the design\'s name')
     assert(await page.run(`!document.querySelector('[data-map-build]')`), 'a viewer cannot Build it')
+    await until(page, `!!document.querySelector('[data-map-board="screen:smabout/A"] img[data-map-still]') && !document.querySelector('[data-map-capture]')`, 'the other screen should get its still, and the one that never loads be given up, not taken for ever', 60000)
     await page.run(`document.querySelector('[data-map-board="screen:smhome/B"]').click()`)
     await until(page, `!!document.querySelector('[data-map-line="smhome>smabout"]')`, 'the link read at build time should be drawn')
     assert(await page.run(`!document.querySelector('[data-map-handle]')`), 'a viewer cannot drag a link')

@@ -14,7 +14,7 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
   // Stills are taken one board at a time, each after its entrance settles: give them longer.
   const slow = async (page, expression, why) => {
     for (const end = Date.now() + 90000; Date.now() < end; await wait(200)) if (await page.run(expression)) return
-    fail(`map: ${why} (timed out: ${expression})`)
+    fail(`map: ${why} (timed out: ${expression}; map: ${await page.run(`JSON.stringify({ boards: document.querySelectorAll('[data-map-board]').length, server: [...document.querySelectorAll('img[data-map-still]')].filter(i => i.getAttribute('src').startsWith('/__proto/stills/')).length, local: [...document.querySelectorAll('img[data-map-still]')].filter(i => i.getAttribute('src').startsWith('blob:')).length, mhome: document.querySelector('[data-map-board="screen:mhome"]')?.innerHTML.slice(0, 200) ?? null })`)})`)
   }
   const variant = (slug, letter, body) => writeFileSync(join(app, 'src', 'protos', slug, `${letter}.tsx`), `import { Go } from '../../go'\nexport default function V() { return <main style={{ padding: 32 }}>${body}</main> }\n`)
 
@@ -197,6 +197,9 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await until(page, `location.pathname === '/'`, 'M should be back on the map')
     await page.run(`document.querySelector('[data-map-fit]').click()`)
     await wait(800)
+    // (And in over the stack: with more designs on the map, Fit leaves its cards too small to show its name.)
+    await page.run(`(() => { const r = document.querySelector('[data-map-board="opt:mloose/A"]').getBoundingClientRect(), m = document.querySelector('[data-map]'); for (let i = 0; i < 8 && document.querySelector('[data-map-board="opt:mloose/A"]').getBoundingClientRect().width < 160; i++) m.dispatchEvent(new WheelEvent('wheel', { deltaY: -40, ctrlKey: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, bubbles: true, cancelable: true })) })()`)
+    await wait(300)
     await page.run(`document.querySelector('[data-map-board="opt:mloose/A"]').click()`)
     await until(page, `!document.querySelector('[data-map-board^="opt:mloose/"][data-map-pile]')`, 'a click on the stack should spread it')
     await wait(400)

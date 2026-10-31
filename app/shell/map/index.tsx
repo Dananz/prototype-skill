@@ -110,14 +110,19 @@ async function pump() {
   taking--
 }
 const SETTLE_MIN = 2000, SETTLE_MAX = 4500
+/** A still the page takes itself is given up after this, so a design that hangs holds up none behind it. */
+const TAKE_MS = 20_000
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
-/** Waits out the entrance: a floor (script-driven motion can't be seen), then until no finite animation runs. */
+/** At most `ms` of waiting on `p`. */
+const most = (p: Promise<unknown>, ms = 2000) => Promise.race([p, sleep(ms)])
+/** Waits out the entrance: a floor (script-driven motion can't be seen), then until no finite animation
+ *  runs. Fonts and images get a few seconds each: one that never loads is taken as it is. */
 async function settle(box: HTMLElement) {
   const t0 = performance.now()
   await sleep(SETTLE_MIN)
   while (performance.now() - t0 < SETTLE_MAX && box.getAnimations({ subtree: true }).some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity)) await sleep(150)
-  await document.fonts.ready
-  await Promise.all([...box.querySelectorAll('img')].map(i => i.decode().catch(() => {})))
+  await most(document.fonts.ready)
+  await most(Promise.all([...box.querySelectorAll('img')].map(i => i.decode().catch(() => {}))))
 }
 function stillOf(key: string, route: string, v: Variant, w: number, h: number, scale: number, mount: MapApi['mount'], wanted: () => boolean, rank: () => number): Promise<Shot | null> {
   const had = asked.get(key)
@@ -137,13 +142,15 @@ function stillOf(key: string, route: string, v: Variant, w: number, h: number, s
     document.body.append(box)
     let off: (() => void) | null = null
     try {
-      off = mount(box, await v.load())
-      await settle(box)
-      const canvas = await domToCanvas(box, {
+      const late = sleep(TAKE_MS).then((): never => { throw new Error('took too long') })
+      late.catch(() => {}) // a still taken in time leaves it unheard
+      off = mount(box, await Promise.race([v.load(), late]))
+      await Promise.race([settle(box), late])
+      const canvas = await Promise.race([domToCanvas(box, {
         scale, width: w, height: h, backgroundColor: dark ? '#09090b' : '#ffffff',
         style: { opacity: '1', position: 'static', zIndex: 'auto' },
         filter: n => !(n.nodeType === 1 && (n as Element).matches('[data-proto-ui], vite-error-overlay')),
-      })
+      }), late])
       const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/webp', 0.9))
       if (!blob) throw new Error('no still')
       const shot = { url: URL.createObjectURL(blob) }

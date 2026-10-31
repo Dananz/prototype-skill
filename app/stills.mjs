@@ -13,6 +13,8 @@ const VERSION = 1
 const DPR = 2, THUMB = 0.25
 /** Stills taken at once, each in a tab of its own. */
 const TABS = 3
+/** A still taking longer than this is given up and its tab thrown away, so a page that hangs holds no tab. */
+const JOB_MS = 20_000
 /** Chrome stops after this long with nothing to take; the next still starts it again. */
 const IDLE_MS = 60_000
 /** The folder keeps at most this many files (a full and a small one per still), the oldest go first. */
@@ -89,7 +91,7 @@ export function stillServer({ root, origin, skill = process.env.PROTO_SKILL, emi
       await send('Runtime.enable', {}, sessionId)
       await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId)
       const run = async expression => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId))?.result?.value
-      return { send: (m, p) => send(m, p, sessionId), run }
+      return { send: (m, p) => send(m, p, sessionId), run, close: () => send('Target.closeTarget', { targetId }).catch(() => {}) }
     }
     return { proc, ws, tab, waitReady, stop: () => { try { ws.close() } catch { /* gone */ } stopChrome(proc) } }
   }
@@ -99,16 +101,20 @@ export function stillServer({ root, origin, skill = process.env.PROTO_SKILL, emi
     await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: DPR, mobile: false })
     await send('Emulation.setEmulatedMedia', { media: '', features: [{ name: 'prefers-reduced-motion', value: 'reduce' }, { name: 'prefers-color-scheme', value: theme }] })
     await send('Page.navigate', { url: `${origin()}/${route}?dv=1&theme=${theme}&shot=1` })
-    if (!await waitReady(run)) throw new Error('the page never said it was ready')
+    // A page that never says it's ready (a design that throws) is taken as it is after 4 s, so it
+    // doesn't hold a tab the others are waiting for.
+    await waitReady(run, { tries: 40, every: 100 })
     // The design alone: the shell's own controls and Vite's error overlay are hidden. Then its entrance
-    // plays out: a floor for motion driven by script, then until no finite animation runs.
+    // plays out: a floor for motion driven by script, then until no finite animation runs. Fonts and
+    // images get a few seconds each: one that never loads is taken as it is.
     await run(`(async () => {
       const s = document.createElement('style'); s.textContent = '[data-proto-ui], vite-error-overlay { display: none !important }'; document.head.append(s)
       const sleep = ms => new Promise(r => setTimeout(r, ms)), t0 = performance.now()
-      await sleep(700)
+      await sleep(500)
       while (performance.now() - t0 < 5000 && document.getAnimations().some(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity)) await sleep(120)
-      await document.fonts.ready
-      await Promise.all([...document.images].map(i => i.decode().catch(() => {})))
+      const most = p => Promise.race([p, sleep(2000)])
+      await most(document.fonts.ready)
+      await most(Promise.all([...document.images].map(i => i.decode().catch(() => {}))))
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
     })()`)
     const shot = async scale => Buffer.from((await send('Page.captureScreenshot', { format: 'webp', quality: 86, clip: { x: 0, y: 0, width: w, height: h, scale } })).data, 'base64')
@@ -134,11 +140,18 @@ export function stillServer({ root, origin, skill = process.env.PROTO_SKILL, emi
       const job = queue.shift()
       try {
         if (!chrome) chrome = await (starting ??= launch().finally(() => { starting = null }))
-        if (owner !== chrome) { owner = chrome; tab = await chrome.tab() }
-        await take(job, tab)
+        if (owner !== chrome || !tab) { owner = chrome; tab = await chrome.tab() }
+        let timer
+        const late = new Promise((_, no) => { timer = setTimeout(() => no(new Error('took too long')), JOB_MS) })
+        try { await Promise.race([take(job, tab), late]) } catch (e) {
+          // The page may still be busy in it: the tab goes, and the next still gets a new one.
+          if (e?.message === 'took too long') { void tab.close(); tab = null }
+          throw e
+        } finally { clearTimeout(timer) }
         emit({ hash: job.hash, ...urls(job.hash), tw: Math.round(job.w * DPR * THUMB) })
       } catch (e) {
         emit({ hash: job.hash, error: String(e?.message || e).slice(0, 200) })
+        console.error(`stills: ${job.route} (${job.w}x${job.h}) was not taken: ${e?.message || e}`)
         // A Chrome whose connection broke is started again for the next one; a page that failed
         // leaves it (and the other tabs' stills) be.
         if (chrome && chrome.ws.readyState !== WebSocket.OPEN) { chrome.stop(); chrome = null }
