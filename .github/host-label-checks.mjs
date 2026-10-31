@@ -1,6 +1,7 @@
 // Session identity reaches already mounted desktop and phone controls through session.json HMR.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { commentsKey } from './comments-key.mjs'
 
 export async function hostLabelChecks({ proto, app, local, openPage, fail }) {
   proto(['add', 'hostfx', '--title', 'Host labels', '--variants', 'A:Preview'])
@@ -14,7 +15,7 @@ export async function hostLabelChecks({ proto, app, local, openPage, fail }) {
         const batch = await page.run(`(async () => {
           const res = await fetch('/__proto/comments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: 'light', viewport: { w: innerWidth, h: innerHeight, phone: innerWidth < 640 }, comments: [{ route: 'hostfx/A', text: 'Pending feedback' }] }) })
           const b = await res.json()
-          localStorage.setItem('proto-comments-smoke', JSON.stringify({ items: [
+          localStorage.setItem('${commentsKey(app)}', JSON.stringify({ items: [
             { id: 'host-sent', proto: 'hostfx', variant: 'A', n: 1, body: ['Pending feedback'], tags: [], at: Date.now(), sent: { batch: b.sent, i: 1 } },
             { id: 'host-draft', proto: 'hostfx', variant: 'A', n: 2, body: ['Draft stays here'], tags: [], at: Date.now() }
           ], held: null }))

@@ -68,7 +68,7 @@ export async function listenerChecks({ proto, app, fail }) {
 export async function continuousListenerChecks({ fail }) {
   const skill = dirname(dirname(fileURLToPath(import.meta.url)))
   const project = mkdtempSync(join(tmpdir(), 'proto-continuous-'))
-  const app = join(project, '.prototypes', 'continuous')
+  const app = join(project, '.prototypes', '_project')
   mkdirSync(join(app, 'src', 'protos'), { recursive: true })
   writeFileSync(join(app, 'session.json'), JSON.stringify({ stack: 'react' }))
   const proto = (args, { ok = true, stdout = false } = {}) => {
@@ -93,7 +93,7 @@ export async function continuousListenerChecks({ fail }) {
   try {
     writeFileSync(config, JSON.stringify({ url, id: 'one-subscription', threadId: 'original-thread' }))
     proto(['inbox', '--listen', config])
-    const registration = join(inbox, 'listener.json')
+    const registration = join(inbox, 'listeners', 'continuous.json')
     if (!existsSync(registration)) return fail('continuous listening must persist one subscription instead of ending after a batch')
     if (process.platform !== 'win32' && (statSync(registration).mode & 0o777) !== 0o600) fail('listener credential must be private to its owner')
     const { commentListener } = await import('../app/listener.mjs')
@@ -139,11 +139,12 @@ export async function continuousListenerChecks({ fail }) {
 // Exercise the real server pump too, so forgetting configureServer wiring fails the suite.
 export async function continuousRuntimeChecks({ proto, app, local, fail }) {
   const temp = mkdtempSync(join(tmpdir(), 'proto-wake-runtime-'))
-  const config = join(temp, 'config.json'), registration = join(app, '.proto', 'inbox', 'listener.json')
+  const config = join(temp, 'config.json'), registration = join(app, '.proto', 'inbox', 'listeners', 'smoke.json')
   const received = []
   const receiver = createServer((req, res) => {
     let body = ''; req.on('data', b => body += b)
-    req.on('end', () => { received.push(JSON.parse(body)); res.end('accepted') })
+    // A send cut off by a server stop arrives empty; the listener sends it again.
+    req.on('end', () => { try { received.push(JSON.parse(body)) } catch { /* cut off */ } res.end('accepted') })
   })
   await new Promise(ok => receiver.listen(0, '127.0.0.1', ok))
   const send = async text => {
@@ -160,14 +161,15 @@ export async function continuousRuntimeChecks({ proto, app, local, fail }) {
     if (!disconnected.includes('not listening') || !disconnected.includes('schedule_task')) fail('startup must tell Codex to connect the host wakeup before ending the turn')
     writeFileSync(config, JSON.stringify({ url: `http://127.0.0.1:${receiver.address().port}/wake-private-token`, id: 'runtime-subscription', threadId: 'runtime-thread' }))
     // A live legacy waiter prevents a second listener from being registered.
-    const waiter = join(app, '.proto', 'inbox', 'waiter.json')
+    const waiter = join(app, '.proto', 'inbox', 'waiters', 'smoke.json')
+    mkdirSync(dirname(waiter), { recursive: true })
     writeFileSync(waiter, JSON.stringify({ pid: process.pid }))
     proto(['inbox', '--listen', config], { ok: false }); rmSync(waiter)
     if (existsSync(join(app, '.proto', 'session.lock'))) fail('refusing a live waiter must release its lock')
     proto(['inbox', '--listen', config])
     const connected = proto(['up'], { stdout: true })
     if (!connected.includes('persistent listener (runtime-subscription); listening') || connected.includes('schedule_task')) fail('startup must reuse the connected listener instead of proposing another subscription')
-    for (const path of ['.proto/inbox/listener.json', '.proto/inbox/listener.json?raw', `@fs${registration.replaceAll('\\', '/')}`]) {
+    for (const path of ['.proto/inbox/listeners/smoke.json', '.proto/inbox/listeners/smoke.json?raw', `@fs${registration.replaceAll('\\', '/')}`]) {
       const response = await fetch(local + path), text = await response.text()
       if (response.status !== 403 || text.includes('wake-private-token')) fail(`private callback is readable at ${path}`)
     }
@@ -186,6 +188,8 @@ export async function continuousRuntimeChecks({ proto, app, local, fail }) {
     proto(['inbox', '--host-disabled', 'runtime-subscription']) // only the test receiver, no real host task
     const optedOut = proto(['up'], { stdout: true })
     if (!optedOut.includes('explicit user opt-out') || optedOut.includes('schedule_task')) fail('startup must preserve explicit opt-out instead of requesting a new task')
+    // The run's later checks start their own waiter for this conversation, which an opt-out refuses.
+    rmSync(join(app, '.proto', 'inbox', 'listeners'), { recursive: true, force: true })
     receiver.closeAllConnections(); await new Promise(ok => receiver.close(ok))
     rmSync(temp, { recursive: true, force: true })
   }
@@ -195,7 +199,7 @@ export async function continuousRuntimeChecks({ proto, app, local, fail }) {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const skill = dirname(dirname(fileURLToPath(import.meta.url)))
   const project = mkdtempSync(join(tmpdir(), 'proto-listener-'))
-  const app = join(project, '.prototypes', 'listenchk')
+  const app = join(project, '.prototypes', '_project')
   mkdirSync(join(app, 'src', 'protos'), { recursive: true })
   writeFileSync(join(app, 'session.json'), JSON.stringify({ stack: 'react' }))
   const fail = msg => { console.error(`\nFAILED: ${msg}`); rmSync(project, { recursive: true, force: true }); process.exit(1) }

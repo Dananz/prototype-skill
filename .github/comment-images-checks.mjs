@@ -1,6 +1,7 @@
 // Whole-variant images on desktop and phone, including file selection, removal, and paste.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { commentsKey } from './comments-key.mjs'
 
 export async function commentImagesChecks({ proto, app, openPage, fail }) {
   proto(['add', 'imagesfx', '--title', 'Image comments', '--variants', 'A:Review'])
@@ -76,7 +77,7 @@ export async function commentImagesChecks({ proto, app, openPage, fail }) {
       await page.run(`document.querySelector('[data-shoot=whole-input]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }))`)
       const sent = await page.run(`(async () => {
         for (const end = Date.now() + 8000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) {
-          const items = JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items ?? []
+          const items = JSON.parse(localStorage.getItem('${commentsKey(app)}') || '{}').items ?? []
           if (items.some(i => i.proto === 'imagesfx' && i.shots?.length && i.sent)) return true
         }
         return false

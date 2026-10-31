@@ -46,7 +46,7 @@ import { framed, frameClicks, frameMenus, offerTheme, openFrame, frameUrl, type 
 import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
 import { dims, FILL_MIN_W, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
 
-export type Variant = { id: string; name: string; file: string; load: () => Promise<unknown> }
+export type Variant = { id: string; name: string; file: string; load: () => Promise<unknown>; theme?: string }
 /** A variant as it was before a change the user asked for (app/history.mjs): n counts from 1, oldest
  *  first; before: the asks it came before; note: why it was kept by hand. */
 export type Version = { n: number; at: string; note: string; before: { text: string; at: string }[]; file: string; load: () => Promise<unknown> }
@@ -62,7 +62,7 @@ export type Ref = { proto: string; variant: string }
 // arrow keys and slides that go along the line are mirrored by X.
 const X = rtl ? -1 : 1
 const FWD = rtl ? 'ArrowLeft' : 'ArrowRight', BACK = rtl ? 'ArrowRight' : 'ArrowLeft'
-export type Session = { agent?: Agent; id: string; name: string; lang?: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
+export type Session = { agent?: Agent; id: string; conversation?: string; name: string; lang?: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
 type Mount = (el: HTMLElement, component: any) => () => void
 // A variant can be shown in one of its states, or through a tool: all its states at once
 // (all), playing through them (play), next to another variant (compare), or next to one of its
@@ -682,6 +682,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       // Copy choices are kept per variant, so every place it is mounted reads the same words.
       copy.bind(host, routeOfFile(v.file))
       host.dataset.route = routeOfFile(v.file)
+      // Its look, when its prototype came from a session or kit whose theme differs (app/theme-merge.mjs).
+      if (v.theme) host.dataset.protoTheme = v.theme; else delete host.dataset.protoTheme
       if (s) host.dataset.commentState = s.id
       markBuilding(host)
       const here = () => !gone && live.has(host) && generations.get(host) === generation
@@ -2701,7 +2703,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     drawSettings({
       open: settingsOpen, category: settingsCategory, appearance, live: comments.store.get().live, sidebar: st.side,
       review: localStorage.getItem('proto-hints') !== '0', stack: st.stack,
-      session: { host: agentName(session.agent), id: session.id, name: session.name, url: session.url || location.origin + '/', keep: !!st.status?.keep,
+      session: { host: agentName(session.agent), id: session.conversation || session.id, name: session.name, url: session.url || location.origin + '/', keep: !!st.status?.keep,
         server: st.stopped ? 'stopped' : st.live ? 'live' : 'reconnecting',
         listening: !!st.status?.inbox?.listening,
         error: st.failed?.at === 'session' ? st.failed.text : null,

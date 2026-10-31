@@ -1,6 +1,7 @@
 // Browser + real inbox contract: the agent authors nothing optional until a UI request arrives.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { commentsKey } from './comments-key.mjs'
 
 export async function optionalExtras({ proto, app, local, openPage, postJson, fail, keepShots }) {
   const assert = (ok, why) => { if (!ok) fail(`optional extras: ${why}`) }
@@ -88,7 +89,7 @@ export default function A() {
     await page.screenshot(join(keepShots, 'first-prototype-visual-comments.png'))
     await run(`[...document.querySelectorAll('[data-composer] button')].find(b => b.textContent === 'Add').click(); await until(() => [...document.querySelectorAll('[data-shoot=comment-row]')].some(r => r.textContent.includes('Comment 1')))`)
     // Old saved labels are not displayed, but their stable selector targets and tags still open.
-    await run(`await until(() => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.some(i => i.target)); const saved = JSON.parse(localStorage.getItem('proto-comments-smoke')); const old = saved.items.find(i => i.target); old.target.label = 'Legacy special name'; old.tags[0].label = 'Legacy tagged name'; localStorage.setItem('proto-comments-smoke', JSON.stringify(saved))`)
+    await run(`await until(() => JSON.parse(localStorage.getItem('${commentsKey(app)}') || '{}').items?.some(i => i.target)); const saved = JSON.parse(localStorage.getItem('${commentsKey(app)}')); const old = saved.items.find(i => i.target); old.target.label = 'Legacy special name'; old.tags[0].label = 'Legacy tagged name'; localStorage.setItem('${commentsKey(app)}', JSON.stringify(saved))`)
     await page.run(`location.reload(); true`)
     await run(`await until(() => document.documentElement?.dataset.ready === '1'); const row = await until(() => [...document.querySelectorAll('[data-shoot=comment-row]')].find(r => r.textContent.includes('Comment 1'))); if (row.textContent.includes('Legacy')) throw new Error('saved names shown'); row.querySelector('button').click(); await until(() => document.querySelector('[data-composer]')); const tag = document.querySelector('[data-composer] [data-tag="0"]')?.textContent ?? ''; if (!tag.startsWith('@') || tag.includes('Legacy')) throw new Error('legacy tag lost, or its saved name shown'); [...document.querySelectorAll('[data-composer] button')].find(b => b.textContent === 'Cancel' || b.getAttribute('aria-label') === 'Cancel').click()`)
     // Completed/no-op request can be retried; a taken then withdrawn request never reappears in inbox.

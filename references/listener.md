@@ -12,6 +12,14 @@ truth; webhook payloads are wake signals. Read `proto inbox` at the start and en
 turns. Never add a listener agent, helper thread, recurring polling schedule, or second
 subscription. Viewer comments sent by the owner use this same listener.
 
+The project has one app, and each conversation in it has its own listener. A comment wakes the
+conversation that owns its prototype (the last to `add`, `work`, `ask`, `pick` or `fav` on it); when
+that one isn't listening, the listening conversation seen last. `proto inbox` takes this
+conversation's comments, and others' only when their owner isn't listening. Registering yours never
+touches another conversation's task, and `--close`, `--finish` and the seven-day cleanup look only at
+this conversation's prototypes and comments. A conversation from before the project app keeps its
+task: the import moves its listener with it.
+
 ## T3 Code, both Codex and Claude
 
 Discover the host's scheduling tools before declaring them unavailable. Use its documented

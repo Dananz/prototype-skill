@@ -23,6 +23,12 @@ jobs:
         run: git ls-files -z '*.mjs' | xargs -0 -r -n1 node --check
       - name: Comment image notes
         run: node .github/comment-images-unit-checks.mjs
+      - name: One app per project
+        run: node --test .github/project-checks.mjs
+      - name: Theme merge
+        run: node --test .github/theme-merge-unit-checks.mjs
+      - name: Import of session apps
+        run: node --test .github/import-checks.mjs
       - name: Agent compatibility
         run: node --test .github/agent-checks.mjs
       - name: Listener lifecycle

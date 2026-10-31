@@ -3,6 +3,7 @@
 // row's menu comments on another variant, and the inbox says it is on the whole variant.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { commentsKey } from './comments-key.mjs'
 
 export async function commentWholeChecks({ proto, app, openPage, fail }) {
   proto(['add', 'wholefx', '--title', 'Whole variant', '--variants', 'A:Plain,B:Other'])
@@ -16,7 +17,7 @@ export async function commentWholeChecks({ proto, app, openPage, fail }) {
     const until = async f => { for (const end = Date.now() + 5000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
     const box = () => document.querySelector('[data-shoot=whole-input]')
     const outline = () => document.querySelector('[data-whole-outline]')
-    const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.filter(i => i.proto === 'wholefx') ?? []
+    const saved = () => JSON.parse(localStorage.getItem('${commentsKey(app)}') || '{}').items?.filter(i => i.proto === 'wholefx') ?? []
   `
   try {
     const typed = await page.run(`(async () => {

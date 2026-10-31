@@ -147,8 +147,11 @@ async function sendCard(api, host, id, title, lang, had) {
   }
 }
 
-const metaFor = (session, sessionDir, scope, title, extra = {}) => ({
-  title, session: String(session.id ?? basename(sessionDir)), projectLabel: basename(session.project || sessionDir), scope, lang: session.lang === 'he' ? 'he' : 'en', ...extra,
+/** The session a share goes out under: the one it was made in (a share imported into the project
+ *  app keeps its own), else the app's. */
+export const shareSession = (entry, session, sessionDir) => String(entry?.session ?? session?.id ?? basename(sessionDir))
+const metaFor = (session, sessionDir, scope, title, extra = {}, entry = null) => ({
+  title, session: shareSession(entry, session, sessionDir), projectLabel: basename(session.project || sessionDir), scope, lang: session.lang === 'he' ? 'he' : 'en', ...extra,
 })
 
 // Built and reviewed; null when it may go out, else what stops it.
@@ -203,7 +206,7 @@ export async function updateShare({ sessionDir, session, host, token, id, note, 
   let version
   const api = client(host, token, fetch ? { fetch } : {})
   try {
-    ;({ version } = await api.put(id, b.gz, metaFor(session, sessionDir, entry.scope, entry.title, { ...(text ? { note: text } : {}), ...(words !== undefined ? { message: words } : {}) })))
+    ;({ version } = await api.put(id, b.gz, metaFor(session, sessionDir, entry.scope, entry.title, { ...(text ? { note: text } : {}), ...(words !== undefined ? { message: words } : {}) }, entry)))
   } catch (e) { src.drop(); throw e }
   src.keep(id, version)
   const cardHash = await sendCard(api, host, id, entry.title, session.lang, entry.cardHash)

@@ -47,7 +47,7 @@ function chromePath() {
 // ---------- the session ----------
 const scratch = mkdtempSync(join(tmpdir(), 'proto-popover-run-'))
 const project = join(scratch, 'proto-popover')
-const app = join(project, '.prototypes', 'smoke')
+const app = join(project, '.prototypes', '_project')
 mkdirSync(project, { recursive: true })
 writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'proto-popover', private: true, dependencies: { react: '^19.2.0' } }))
 const env = { ...process.env, PROTO_NO_GC: '1', PROTO_NO_UPDATE: '1', PROTO_SHARE_POLL_MS: '0' }
@@ -62,7 +62,7 @@ const cleanup = async () => {
   try { await browser?.close() } catch { /* gone */ }
   viewerServer?.close()
   if (!keep) {
-    if (existsSync(join(app, 'session.json'))) spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'rm', '--project', project, '--session', 'smoke'], { stdio: 'ignore', env, timeout: 60_000 })
+    if (existsSync(join(app, 'session.json'))) spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'rm', '--all', '--project', project, '--session', 'smoke'], { stdio: 'ignore', env, timeout: 60_000 })
     rmSync(scratch, { recursive: true, force: true })
   } else console.log(`kept: ${app}`)
 }

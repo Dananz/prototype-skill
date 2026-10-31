@@ -2,6 +2,7 @@
 // on the button that opens it, and a click on that pin, or on the comment in the list, opens the menu.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { commentsKey } from './comments-key.mjs'
 
 export async function commentRoutesChecks({ proto, app, openPage, fail }) {
   for (const [slug, css, nested, dual, learn] of [['routefx', false, false, false, false], ['routecss', true, false, false, false], ['routenested', true, true, false, false], ['routepress', true, false, true, false], ['routelearn', true, false, false, true]]) {
@@ -36,7 +37,7 @@ export default function Menu() {
     const editor = () => document.querySelector('[data-composer] [role=textbox]')
     const pin = () => document.querySelector('button[aria-label="Comment 1"]')
     const via = () => document.querySelector('[data-shoot=comment-via]')
-    const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.find(i => i.proto === '${slug}')
+    const saved = () => JSON.parse(localStorage.getItem('${commentsKey(app)}') || '{}').items?.find(i => i.proto === '${slug}')
   `
   try {
     // Open the menu (commenting off), then comment on the item in it.

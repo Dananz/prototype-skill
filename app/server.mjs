@@ -1,6 +1,6 @@
 // The dev-server side of a prototype session: status for the shell, the Keep and Stop
 // buttons, and stopping by itself after hours with no edits and nobody looking.
-import { commentListener, listenerStatus } from './listener.mjs'
+import { batchOwner, commentListener, listenerSids, listenerStatus } from './listener.mjs'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync, watch } from 'node:fs'
@@ -261,7 +261,10 @@ const intakeView = () => { const d = intakeNow(); return d && Array.isArray(d.qu
 
 /** Where the inbox stands, for the page: what waits, whether an agent is listening, the batches' states. */
 export function inboxStatus() {
-  const waiter = readJson(join(inbox, 'waiter.json'), null)
+  // A background waiter of any conversation (one file each), or a session app's one from before.
+  let waiters = []
+  try { waiters = readdirSync(join(inbox, 'waiters')).filter(f => f.endsWith('.json')).map(f => readJson(join(inbox, 'waiters', f), null)) } catch { /* none */ }
+  const waiter = [readJson(join(inbox, 'waiter.json'), null), ...waiters].find(w => w && alive(w.pid)) ?? null
   const agent = readJson(join(inbox, 'agent.json'), null)
   const batches = [...list('new').map(id => [id, 'new']), ...list('taken').map(id => [id, 'taken'])].map(([id, where]) => {
     const b = readJson(join(inbox, where, id, 'batch.json'), null)
@@ -270,7 +273,7 @@ export function inboxStatus() {
       comments: b.comments.map(c => ({ n: c.n, route: c.route, action: c.action, done: !!c.done, ...(c.withdrawn ? { withdrawn: true } : {}), ...(c.action && c.target ? { scoped: true } : {}), reply: c.reply ?? null })),
     }
   }).filter(Boolean).sort((a, b) => a.at < b.at ? 1 : -1)
-  return { intake: intakeView(), new: list('new').length, listening: listenerStatus(dir).listening || !!waiter && alive(waiter.pid), agent: agent?.pid ? (alive(agent.pid) ? 'alive' : 'gone') : null, batches: batches.filter((b, i) => i < 20 || b.comments.some(c => ['try-it', 'copy-options'].includes(c.action) && !c.done && !c.withdrawn)) }
+  return { intake: intakeView(), new: list('new').length, listening: listenerSids(dir).some(sid => listenerStatus(dir, sid).listening) || !!waiter && alive(waiter.pid), agent: agent?.pid ? (alive(agent.pid) ? 'alive' : 'gone') : null, batches: batches.filter((b, i) => i < 20 || b.comments.some(c => ['try-it', 'copy-options'].includes(c.action) && !c.done && !c.withdrawn)) }
 }
 
 const box = r => r && typeof r === 'object' ? { x: Math.round(+r.x || 0), y: Math.round(+r.y || 0), w: Math.round(+r.w || 0), h: Math.round(+r.h || 0) } : undefined
@@ -477,6 +480,9 @@ export function receive(data, root = dir, { check = false } = {}) {
     comments: list,
     ...(list.every(c => c.done) ? { done: true } : {}),
   }
+  // The conversation working on its first comment's prototype takes it (app/listener.mjs).
+  const owner = batchOwner(root, batch)
+  if (owner) batch.owner = owner
   const folder = join(inbox, '.incoming', id)
   mkdirSync(folder, { recursive: true })
   for (const [file, bytes] of files) writeFileSync(join(folder, file), bytes)

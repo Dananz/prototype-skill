@@ -95,7 +95,7 @@
 // Optional PROTO_AGENT_PID (or CLAUDE_PID) identifies the long-lived agent for comment recovery.
 
 import { spawn, spawnSync } from 'node:child_process'
-import { listenerFile, listenerStatus, saveListener, reconcileListener, pendingListenerWork } from '../app/listener.mjs'
+import { adoptListener, listenerFile, listenerSids, listenerStatus, saveListener, reconcileListener, pendingListenerWork, wakes } from '../app/listener.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -110,6 +110,9 @@ import { report as reportShared } from '../app/share/owner.mjs'
 import { sharedLines } from '../app/share/viewer-text.mjs'
 import { BASE, SHELL, STACKS, syncApp } from './app-sync.mjs'
 import { skillUpdate } from './self-update.mjs'
+import { legacySessions, locked as lockApp, ownerOf, PROJECT_DIR, projectApp, registerSession, sessionsOf } from './project.mjs'
+import { mergeThemes, resolveTheme } from '../app/theme-merge.mjs'
+import { importSession, untold } from './import.mjs'
 
 const SKILL = dirname(dirname(fileURLToPath(import.meta.url)))
 // The languages the page speaks (app/shell/i18n.ts). --lang sets the session's: the language the
@@ -136,7 +139,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'again'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'again', 'no-serve', 'join'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -196,20 +199,11 @@ function sessionId() {
   if (!id || id === true) die('no session id. Pass --session <id> on every call, or set PROTO_SESSION_ID to one stable, unique name for this conversation.')
   return String(id)
 }
-// UUIDv7's first 8 characters are a timestamp shared by nearby threads. Keep full IDs for
-// new folders; reuse the old 8-character UUID folder only when its stored identity matches.
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const short = id => id.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 40) || 'session'
+// The project's one app (scripts/project.mjs). Every command still names its conversation, which
+// owns what it makes there.
 function sessionDir() {
-  const id = sessionId(), root = join(projectRoot(), '.prototypes')
-  const dir = join(root, short(id))
-  if (!existsSync(dir) && UUID.test(id)) {
-    const legacy = join(root, id.slice(0, 8))
-    if (readSession(legacy)?.id === id) return legacy
-  }
-  const stored = readSession(dir)?.id
-  if (stored && stored !== id) die(`folder ${tilde(dir)} belongs to a different session. Use a distinct --session name; no files were changed.`)
-  return dir
+  sessionId()
+  return projectApp(projectRoot())
 }
 const sessionFile = dir => join(dir, 'session.json')
 const readSession = dir => readJson(sessionFile(dir), null)
@@ -219,18 +213,7 @@ const readSession = dir => readJson(sessionFile(dir), null)
 // `proto done`, the dev server stamping edits), so each change is made under a lock: a directory,
 // which only one of them can create. One held past 5 s was left by a crash and is taken over.
 // app/server.mjs takes the same lock.
-function locked(dir, fn) {
-  const lock = join(dir, '.proto', 'session.lock')
-  mkdirSync(dirname(lock), { recursive: true })
-  let mine = false
-  for (let i = 0; i < 200 && !mine; i++) {
-    try { mkdirSync(lock); mine = true } catch {
-      try { if (Date.now() - statSync(lock).mtimeMs > 5000) rmSync(lock, { recursive: true, force: true }) } catch { /* just released */ }
-      if (!mine) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
-    }
-  }
-  try { return fn() } finally { if (mine) rmSync(lock, { recursive: true, force: true }) }
-}
+const locked = (dir, fn) => lockApp(dir, fn)
 // patch: the fields to change, or a function of the session as it is now that returns them.
 function patchSession(dir, patch) {
   return locked(dir, () => {
@@ -260,6 +243,15 @@ function replyAgent() {
 }
 function beat(dir) {
   const agent = detectedAgent()
+  // The page runs some commands as the app itself (its share sync): that is no conversation.
+  if (sessionId() !== readSession(dir)?.id) registerSession(dir, sessionId(), { agent })
+  // Its old app was moved in by another conversation's `proto up`: say so once, with the new names.
+  for (const x of untold(dir, sessionId())) {
+    const renamed = Object.entries(x.renames || {}).map(([a, b]) => `${a} → ${b}`)
+    const s = readSession(dir)
+    console.log(`this conversation's prototypes moved into the project app (${s.url || s.localUrl || tilde(dir)})${renamed.length ? `; renamed ${renamed.join(', ')}: use the new names` : ''}`)
+  }
+  locked(dir, () => adoptListener(dir, sessionId()))
   if (agent) patchSession(dir, { agent })
   const pid = agentPid()
   if (!pid) return
@@ -373,9 +365,8 @@ function scaffold(dir, project) {
     name: `prototype-${basename(dir)}`, private: true, type: 'module',
     dependencies: { ...SHELL, ...kit.deps, ...kit.craft }, devDependencies: { ...BASE, ...kit.dev },
   })
-  const id = sessionId()
   writeJson(sessionFile(dir), {
-    id, agent: detectedAgent() ?? 'agent', name: flags.name || basename(project), lang: langFlag() ?? 'en', project, path: tilde(project), stack,
+    id: `p-${randomBytes(4).toString('hex')}`, agent: detectedAgent() ?? 'agent', name: basename(project), lang: langFlag() ?? 'en', project, path: tilde(project), stack,
     createdAt: new Date().toISOString(), port: null, tailnetPort: null, pid: null,
     url: null, localUrl: null, keep: false, idleHours: IDLE_HOURS, deleteDays: DELETE_DAYS,
   })
@@ -420,17 +411,24 @@ async function up() {
   }
   // Reconcile before app sync changes source mtimes or GC can discard task identity.
   const dir = sessionDir()
-  if (existsSync(sessionFile(dir))) locked(dir, () => reconcileListener(dir, { touch: true }))
+  if (existsSync(sessionFile(dir))) locked(dir, () => reconcileListener(dir, { sid: sessionId(), touch: true }))
   // PROTO_NO_GC=1 (the smoke run sets it) leaves every other session and tailnet rule alone.
   if (process.env.PROTO_NO_GC !== '1') await gc(true)
   const project = projectRoot()
   if (!existsSync(sessionFile(dir))) scaffold(dir, project)
-  else await update(dir)
+  else if (typeof flags.stack === 'string' && flags.stack !== readSession(dir)?.stack) console.log(`the project app is ${readSession(dir)?.stack}; --stack only applies when it is made`)
+  else if (!flags['no-serve']) await update(dir)
+  const depsMoved = await importLegacy(dir, project)
   beat(dir)
   let s = readSession(dir)
-  if (flags.name && flags.name !== s.name) s = patchSession(dir, { name: flags.name })
+  // --name names this conversation; the page's title is the project's.
+  registerSession(dir, sessionId(), { name: typeof flags.name === 'string' ? flags.name : undefined, lang: langFlag() ?? undefined })
   if (langFlag() && langFlag() !== (s.lang ?? 'en')) s = patchSession(dir, { lang: langFlag() })
-  if (!existsSync(join(dir, 'node_modules', 'vite'))) install(dir)
+  // The conversation that last started the app: Settings' restart message names it.
+  if (s.conversation !== sessionId()) s = patchSession(dir, { conversation: sessionId() })
+  // --no-serve: the app and the registry only, no install, server or tailnet (the CLI checks).
+  if (flags['no-serve']) return console.log(`dir ${dir}`)
+  if (!existsSync(join(dir, 'node_modules', 'vite')) || depsMoved) install(dir)
 
   if (!await running(s)) {
     const port = await localPort(s)
@@ -466,11 +464,51 @@ async function up() {
   printListener(dir)
 }
 
+// Session apps from before the project app (scripts/import.mjs), this conversation's first, so its
+// link (the same ports) and its slugs carry over unchanged. Each one's server is stopped first; a
+// tailnet rule that didn't move to the project app goes. Returns whether packages were added.
+async function importLegacy(dir, project) {
+  const sid = sessionId(), told = new Set(readJson(join(dir, '.proto', 'imports.json'), []).filter(x => x.skipped).map(x => x.sid))
+  const all = legacySessions(project).filter(l => !told.has(String(l.json.id)))
+  let deps = false
+  const stack = readSession(dir)?.stack
+  for (const l of [...all.filter(l => String(l.json.id) === sid), ...all.filter(l => String(l.json.id) !== sid)]) {
+    // One on another stack isn't imported, so its server keeps running.
+    const other = l.json.stack && stack && l.json.stack !== stack
+    if (!other && !flags['no-serve'] && await running(l.json)) await kill(l.json.pid)
+    // One old app that can't be read is left for the next `proto up` (an import resumes where it
+    // stopped); the others come in and the project app starts.
+    let r
+    try { r = importSession(dir, l, { first: String(l.json.id) === sid }) } catch (e) {
+      console.log(`skipped ${l.json.name || l.json.id} for now: ${e.message}; its app is left as it was, and the next proto up tries again`)
+      continue
+    }
+    if (r.already) continue
+    // Its scope, so what it makes from now on keeps its look (add stamps it).
+    if (r.theme) registerSession(dir, r.sid, { name: r.name, theme: r.theme })
+    if (r.skipped) { console.log(`skipped ${r.name}: ${r.skipped}; its app is left as it was, kept in ${tilde(l.dir)}`); continue }
+    if (!flags['no-serve'] && l.json.tailnetPort && readSession(dir).tailnetPort !== l.json.tailnetPort && has('tailscale')) run('tailscale', ['serve', `--https=${l.json.tailnetPort}`, 'off'])
+    deps ||= r.depsChanged
+    const renamed = Object.entries(r.renames).map(([a, b]) => `${a} → ${b}`)
+    console.log(`imported ${r.name} (${r.prototypes} prototype${r.prototypes === 1 ? '' : 's'}${renamed.length ? `, renamed ${renamed.join(', ')}` : ''})${r.conflicts.length ? `; kept apart: ${r.conflicts.join(', ')}` : ''}`)
+  }
+  return deps
+}
+
 function add() {
   const dir = sessionDir()
   const s = need(dir)
-  const slug = args[0]
+  let slug = args[0]
   if (!slug || !/^[a-z0-9][a-z0-9-]*$/.test(slug)) die('give a slug like "hero-sections" (lowercase, digits, dashes)')
+  // The project's tree is shared: a slug another conversation made gets a fresh one (home-2), unless
+  // --join adds to that prototype.
+  const sid = sessionId(), taken = readMeta(dir, slug)
+  if (taken?.session && taken.session !== sid && !flags.join) {
+    let n = 2
+    while (existsSync(join(dir, 'src', 'protos', `${slug}-${n}`))) n++
+    console.log(`"${slug}" is ${taken.title || slug}, made in another conversation, so this one is "${slug}-${n}" (--join adds to it instead).`)
+    slug = `${slug}-${n}`
+  }
   const kit = STACKS[s.stack]
   const pdir = join(dir, 'src', 'protos', slug)
   const metaFile = join(pdir, 'meta.ts')
@@ -577,11 +615,15 @@ function add() {
     useKit(dir, pdir, slug, design, flags.current && { file: join(pdir, `A.${kit.ext}`), stub: stubOf(stub, 'A', added.A ?? current().variants.A) })
     // A saved Current is already built.
     if (flags.current && fresh.includes('A')) fresh.splice(fresh.indexOf('A'), 1)
+    if (readFileSync(join(dir, 'src', 'theme.css'), 'utf8').includes(`[data-proto-theme="kit:${design.name}"]`)) set.theme = `kit:${design.name}`
   }
+  // A conversation whose old app had a look of its own (scripts/import.mjs) keeps it on new prototypes.
+  if (!set.theme && !existsSync(metaFile) && sessionsOf(dir)[sid]?.theme) set.theme = sessionsOf(dir)[sid].theme
   // meta.ts goes last, so the page sees the prototype with all its variants at once. It is read
   // again just before: a pick made in the page meanwhile is written by the dev server, and stays.
   // The variant list goes last, where it is easiest to read.
-  const { variants, ...head } = { ...current(), ...set }
+  // session: the conversation that made it; owner: the one working on it now (scripts/project.mjs).
+  const { variants, ...head } = { ...current(), ...set, ...(existsSync(metaFile) ? {} : { session: sid }), owner: sid }
   for (const k of drop) delete head[k]
   const meta = { ...head, variants: { ...variants, ...added } }
   // How many directions it was started with: the page's More variants asks for that many again.
@@ -804,6 +846,7 @@ function pick() {
   if (flags.off) delete meta.picked
   else if (!id || !meta.variants?.[id]) die(`which variant of ${slug}? (${choices(meta)})`)
   else meta.picked = id
+  stampOwner(meta)
   // Before the pick is marked: if the parent can't be written, nothing is marked and this can be run again.
   const letter = flags.off ? was : id
   const plugged = plug(dir, slug, meta, letter, !!flags.off)
@@ -851,6 +894,7 @@ function fav() {
     const now = sorted(flags.off ? was.filter(x => !ids.includes(x)) : [...was, ...ids])
     if (now.length) m.favorites = now
     else delete m.favorites
+    stampOwner(m)
     writeWhole(f, withMeta(text, m), scratchOf(dir))
     console.log(line(slug, m))
   }
@@ -890,8 +934,24 @@ function target(dir, spec) {
   if (!variant || !meta.variants?.[variant]) die(`which variant of ${proto}? (${choices(meta)})`)
   return { proto, variant, name: meta.variants[variant] }
 }
+// The conversation working on a prototype now takes its comments (app/server.mjs). The variant
+// list stays last in meta.ts.
+function stampOwner(m) {
+  const { variants } = m
+  delete m.variants
+  m.owner = sessionId()
+  if (variants) m.variants = variants
+  return m
+}
+function own(dir, slug) {
+  const f = join(dir, 'src', 'protos', slug, 'meta.ts'), sid = sessionId()
+  if (!existsSync(f)) return
+  const text = readFileSync(f, 'utf8'), m = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
+  if (m.owner !== sid) writeWhole(f, withMeta(text, stampOwner(m)), scratchOf(dir))
+}
 /** Points the session at a variant; the one it leaves goes first in `before` (three kept). */
 function setWork(dir, t, ask) {
+  own(dir, t.proto)
   const s = readSession(dir)
   const at = new Date().toISOString()
   const patch = {}
@@ -933,6 +993,7 @@ function ask() {
   const t = flags.to ? target(dir, flags.to) : s.work
   if (!t) die('no working variant yet: proto work <slug>/<letter> --ask "…"')
   const key = `${t.proto}/${t.variant}`, at = new Date().toISOString()
+  own(dir, t.proto)
   keepVersion(dir, t, texts, at)
   patchSession(dir, now => ({ asks: { ...now.asks, [key]: [...(now.asks?.[key] || []), ...texts.map(text => ({ at, text }))] } }))
   const n = versionsOf(dir, t.proto, t.variant).length
@@ -999,11 +1060,42 @@ async function stop(dir = sessionDir(), reason = 'stopped') {
   patchSession(dir, { pid: null, stoppedAt: s.stoppedAt || new Date().toISOString(), stopReason: s.stopReason || reason })
 }
 
-async function rm(dir = sessionDir()) {
-  if (!existsSync(dir)) return die(`nothing at ${tilde(dir)}`)
-  const listener = listenerStatus(dir)
+// proto rm: this conversation's prototypes go (with their history, references, briefs and
+// decisions); the project app and everyone else's stay. --project deletes the whole app.
+async function rmMine() {
+  const dir = sessionDir(), sid = sessionId()
+  need(dir)
+  const listener = listenerStatus(dir, sid)
   if (listener.id && listener.hostEnabled) {
     printListener(dir)
+    die('disable the owned host task and confirm with proto inbox --host-disabled <id> before deleting its local identity')
+  }
+  const root = join(dir, 'src', 'protos'), gone = [], kept = []
+  for (const slug of existsSync(root) ? readdirSync(root) : []) {
+    let m = null
+    try { m = readMeta(dir, slug) } catch { /* not plain JSON: not ours to judge */ }
+    if (m?.session !== sid) continue
+    // Made here, but another conversation joined it and works on it now: its work stays.
+    if (ownerOf(m) !== sid) { kept.push(`${slug} (${ownerOf(m)} works on it now)`); continue }
+    for (const p of [join(root, slug), join(dir, 'src', 'history', slug), join(dir, '.proto', 'ref', slug), join(dir, '.proto', 'briefs', `${slug}.json`), join(dir, '.proto', 'decisions', `${slug}.md`)]) rmSync(p, { recursive: true, force: true })
+    gone.push(slug)
+  }
+  const ours = k => gone.includes(String(k).split('/')[0])
+  patchSession(dir, now => ({
+    asks: Object.fromEntries(Object.entries(now.asks || {}).filter(([k]) => !ours(k))),
+    building: Object.fromEntries(Object.entries(now.building || {}).filter(([k]) => !ours(k))),
+    ...(now.work && ours(now.work.proto) ? { work: null } : {}),
+  }))
+  locked(dir, () => { const all = sessionsOf(dir); delete all[sid]; writeJson(join(dir, '.proto', 'sessions.json'), all) })
+  console.log(`removed ${gone.length} prototype${gone.length === 1 ? '' : 's'} made in this conversation${gone.length ? `: ${gone.join(', ')}` : ''}`)
+  if (kept.length) console.log(`kept ${kept.join(', ')}`)
+}
+
+async function removeApp(dir) {
+  if (!existsSync(dir)) return die(`nothing at ${tilde(dir)}`)
+  const owned = listenerSids(dir).map(sid => ({ sid, l: listenerStatus(dir, sid) })).find(x => x.l.id && x.l.hostEnabled)
+  if (owned) {
+    console.log(`listener ${owned.l.id} (${owned.sid ?? 'the session app'}) is still enabled on its host`)
     die('disable the owned host task and confirm with proto inbox --host-disabled <id> before deleting its local identity')
   }
   await stop(dir, 'deleted')
@@ -1031,8 +1123,10 @@ async function gc(quiet = false) {
     const age = (now - lastEdit(dir)) / 864e5
     // Retain listener identity/opt-out for explicit reopening, and never delete pending
     // feedback. GC cannot disable another thread's task. Explicit rm can retire the record.
-    if (!s.keep && !existsSync(listenerFile(dir)) && !pendingListenerWork(dir) && age > (s.deleteDays ?? DELETE_DAYS)) {
-      await rm(dir)
+    // The project app is never deleted by age; a session app whose work moved into it goes in time.
+    const moved = !!s.migratedTo
+    if (basename(dir) !== PROJECT_DIR && !s.keep && (moved || (!existsSync(listenerFile(dir)) && !pendingListenerWork(dir))) && age > (s.deleteDays ?? DELETE_DAYS)) {
+      await removeApp(dir)
       continue
     }
     if (s.pid && !alive(s.pid)) patchSession(dir, { pid: null, stoppedAt: s.stoppedAt || new Date().toISOString(), stopReason: s.stopReason || 'exited' })
@@ -1048,15 +1142,26 @@ async function gc(quiet = false) {
   if (!quiet) console.log('gc done')
 }
 
+// Every project app (with the conversations in it, and how many prototypes each made), then any
+// session app not imported yet. --mine: this conversation's prototypes in this project instead.
 async function ls() {
-  const rows = []
+  if (flags.mine) {
+    const dir = sessionDir(), sid = sessionId(), root = join(dir, 'src', 'protos')
+    const mine = (existsSync(root) ? readdirSync(root) : []).map(slug => { try { return [slug, readMeta(dir, slug)] } catch { return [slug, null] } })
+      .filter(([, m]) => m && (m.session === sid || ownerOf(m) === sid))
+    return console.log(mine.map(([slug, m]) => `${slug}  ${m.title || slug}  ${Object.keys(m.variants || {}).length} variants${m.session !== sid ? '  (joined)' : ''}`).join('\n') || 'no prototypes from this conversation here')
+  }
+  const rows = [], count = (dir, sid) => { const root = join(dir, 'src', 'protos'); return (existsSync(root) ? readdirSync(root) : []).filter(slug => { try { return readMeta(dir, slug)?.session === sid } catch { return false } }).length }
   for (const dir of index()) {
     const s = readSession(dir)
-    if (!s) continue
-    const days = ((Date.now() - lastEdit(dir)) / 864e5).toFixed(1)
-    rows.push(`${await running(s) ? 'running' : 'stopped'}  ${s.name}  ${s.url || '-'}  last edit ${days}d ago${s.keep ? '  kept' : ''}\n  ${tilde(dir)}`)
+    if (!s || s.migratedTo) continue
+    const days = ((Date.now() - lastEdit(dir)) / 864e5).toFixed(1), live = await running(s) ? 'running' : 'stopped'
+    if (basename(dir) !== PROJECT_DIR) { rows.push(`${live}  ${s.name}  ${s.url || '-'}  last edit ${days}d ago${s.keep ? '  kept' : ''}\n  ${tilde(dir)}`); continue }
+    rows.push(`project ${s.name}  ${s.url || '-'}  ${live}  last edit ${days}d ago`)
+    for (const [sid, e] of Object.entries(sessionsOf(dir))) { const n = count(dir, sid); rows.push(`  session ${sid}  ${e.name || '-'}  ${n} prototype${n === 1 ? '' : 's'}  seen ${String(e.seenAt || '').slice(0, 16).replace('T', ' ')}`) }
+    rows.push(`  ${tilde(dir)}`)
   }
-  console.log(rows.join('\n') || 'no prototype sessions')
+  console.log(rows.join('\n') || 'no prototype apps')
 }
 
 async function shoot() {
@@ -1660,7 +1765,9 @@ function handoff() {
 // run in the background: it exits when a batch arrives, which wakes the agent.
 const inboxDir = dir => join(dir, '.proto', 'inbox')
 const batchesIn = (dir, sub) => { try { return readdirSync(join(inboxDir(dir), sub)).filter(f => !f.startsWith('.')).sort() } catch { return [] } }
-const waiterFile = dir => join(inboxDir(dir), 'waiter.json')
+// One background waiter per conversation; another's, alive, means its comments are left for it.
+const waiterFile = (dir, sid = sessionId()) => join(inboxDir(dir), 'waiters', `${sid}.json`)
+const waiting = (dir, sid) => { const w = readJson(waiterFile(dir, sid), null); return !!w && alive(w.pid) }
 
 // A batch that can't be taken or read is said so (on stderr), never skipped without a word, and
 // once: `--wait` takes again every few seconds and would say it each time.
@@ -1669,8 +1776,12 @@ const tell = (id, what) => { if (!told.has(id)) { told.add(id); console.error(`b
 function take(dir) {
   const taken = []
   mkdirSync(join(inboxDir(dir), 'taken'), { recursive: true })
+  const sid = sessionId(), held = {}
   for (const id of batchesIn(dir, 'new')) {
     const from = join(inboxDir(dir), 'new', id)
+    // Another conversation's comments, while it listens or waits, are left for it (app/listener.mjs wakes()).
+    const owner = readJson(join(from, 'batch.json'), null)?.owner
+    if (owner && owner !== sid && (wakes(dir, owner) === owner || waiting(dir, owner))) { held[owner] = (held[owner] || 0) + 1; continue }
     try { moveDir(from, join(inboxDir(dir), 'taken', id)) } catch (e) { if (existsSync(from)) tell(id, `could not be taken (${e?.code ?? e?.message ?? e})`); continue /* else another reader took it */ }
     const file = join(inboxDir(dir), 'taken', id, 'batch.json')
     const b = readJson(file, null)
@@ -1681,6 +1792,7 @@ function take(dir) {
     }
     else tell(id, 'was taken, but its batch.json could not be read')
   }
+  for (const [owner, n] of Object.entries(held)) if (!told.has(`held:${owner}:${n}`)) { told.add(`held:${owner}:${n}`); console.log(`${n} batch${n === 1 ? '' : 'es'} held for ${owner}, the conversation working on ${n === 1 ? 'its prototype' : 'their prototypes'}`) }
   return taken
 }
 
@@ -1975,7 +2087,7 @@ function intake() {
 }
 
 function printListener(dir) {
-  const persistent = listenerStatus(dir)
+  const persistent = listenerStatus(dir, sessionId())
   if (flags.json) return console.log(JSON.stringify(persistent))
   if (persistent.hostAction) console.log(`host action required: ${JSON.stringify(persistent.hostAction)}; verify ownership in references/listener.md, perform it with the host tool, then confirm with proto inbox --host-${persistent.hostAction.action === 'enable' ? 'enabled' : 'disabled'} ${persistent.id}`)
   if (persistent.lifecycle === 'opted-out') return console.log('not listening: explicit user opt-out retained; only user-authorized proto inbox --reopen --again restores it')
@@ -2002,7 +2114,7 @@ async function inbox() {
   if (flags.json && !flags.status && !flags.reconcile) die('--json requires --status or --reconcile')
   try {
     locked(dir, () => reconcileListener(dir, {
-      close: flags.close, finish: flags.finish, reopen: !!flags.reopen, optIn: !!flags.again, optOut: !!flags.unlisten,
+      sid: sessionId(), close: flags.close, finish: flags.finish, reopen: !!flags.reopen, optIn: !!flags.again, optOut: !!flags.unlisten,
       hostEnabled: flags['host-enabled'] ? true : flags['host-disabled'] ? false : undefined,
       taskId: flags['host-enabled'] || flags['host-disabled'],
       touch: !flags.status && !flags.reconcile,
@@ -2016,16 +2128,16 @@ async function inbox() {
     if (!(url.protocol === 'https:' || url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) || url.username || url.password) die('listener URL must use HTTPS (HTTP is allowed only on loopback)')
     if (typeof config.id !== 'string' || !config.id.trim() || typeof config.threadId !== 'string' || !config.threadId.trim()) die('listener config needs its host task id and owning threadId')
     const refusal = locked(dir, () => {
-      const was = readJson(listenerFile(dir), null), waiter = readJson(waiterFile(dir), null)
+      const was = readJson(listenerFile(dir, sessionId()), null), waiter = readJson(waiterFile(dir), null)
       if (was?.lifecycle && was.lifecycle !== 'active') return 'listener closed or explicitly opted out; explicitly reopen it before registering'
       if (was?.id && (was.id !== config.id || was.url !== config.url || was.threadId !== config.threadId)) return 'one persistent listener is already registered; reuse its exact task and owning thread'
       if (waiter && alive(waiter.pid)) return 'a background waiter is already listening; cancel that harness job before switching to a persistent listener'
-      saveListener(dir, { ...was, url: config.url, id: config.id, threadId: config.threadId, session: sessionId(), lifecycle: 'active', hostEnabled: was?.hostEnabled ?? true, lastActivityAt: new Date().toISOString() })
+      saveListener(dir, { ...was, url: config.url, id: config.id, threadId: config.threadId, session: sessionId(), lifecycle: 'active', hostEnabled: was?.hostEnabled ?? true, lastActivityAt: new Date().toISOString() }, sessionId())
     })
     if (refusal) die(refusal)
     return console.log(`persistent listener registered (${config.id}); reused across comments and server restarts`)
   }
-  const persistent = listenerStatus(dir)
+  const persistent = listenerStatus(dir, sessionId())
   if (flags.wait && persistent.lifecycle !== 'missing') return printListener(dir)
   if (!flags.wait) {
     const lost = orphans(dir)
@@ -2043,7 +2155,7 @@ async function inbox() {
   const minutes = Number(flags.timeout) || 115
   const existing = locked(dir, () => {
     const w = readJson(waiterFile(dir), null)
-    if (readJson(listenerFile(dir), null)) return 'persistent listener already registered; no background waiter needed'
+    if (readJson(listenerFile(dir, sessionId()), null)) return 'persistent listener already registered; no background waiter needed'
     if (w && alive(w.pid) && w.pid !== process.pid) return `already listening (pid ${w.pid}); nothing to do`
     writeJson(waiterFile(dir), { pid: process.pid, at: new Date().toISOString(), until: new Date(Date.now() + minutes * 60e3).toISOString() })
   })
@@ -2389,7 +2501,9 @@ function kitSave() {
   const name = kitName(), kd = kitDir(name), was = readKit(name)
   if (was && was.stack !== s.stack) die(`kit ${name} is for ${was.stack} and this session is ${s.stack}: save under another name (--kit=<name>)`)
   mkdirSync(kd, { recursive: true })
-  const theme = readFileSync(join(dir, 'src', 'theme.css'), 'utf8')
+  // The look this prototype has: its scope (meta.theme) folded in, the others' left out.
+  const raw = readFileSync(join(dir, 'src', 'theme.css'), 'utf8'), scope = readMeta(dir, slug)?.theme
+  const theme = scope || raw.includes('[data-proto-theme=') ? resolveTheme(raw, scope) : raw
   writeFileSync(join(kd, 'theme.css'), theme)
   // Everything in the prototype's folder but its variants and meta.ts, as it is now, replaces the kit's.
   const parts = readdirSync(pdir).filter(f => f !== 'meta.ts' && !VARIANT_FILE.test(f) && !f.startsWith('.')).sort()
@@ -2487,10 +2601,12 @@ function useKit(dir, pdir, slug, { name, k, kd }, a) {
     if (existsSync(join(pdir, f))) kept.push(f)
     else cpSync(join(kd, 'parts', f), join(pdir, f), { recursive: true })
   }
+  // The project app's theme takes the kit's tokens; ones it already has otherwise go in the kit's
+  // own scope (app/theme-merge.mjs), which add() puts on the prototype.
   const themeFile = join(dir, 'src', 'theme.css'), mine = readFileSync(themeFile, 'utf8'), theirs = readFileSync(join(kd, 'theme.css'), 'utf8')
   if (mine !== theirs) {
     if (mine === readFileSync(join(APP, 'src', 'theme.css'), 'utf8')) writeFileSync(themeFile, theirs)
-    else kept.push('src/theme.css')
+    else writeFileSync(themeFile, mergeThemes(mine, [{ scope: `kit:${name}`, css: theirs }]).css)
   }
   const pkgFile = join(dir, 'package.json'), pkg = readJson(pkgFile, {})
   const want = Object.entries(k.packages || {}).filter(([p]) => !pkg.dependencies?.[p] && !pkg.devDependencies?.[p])
@@ -2543,7 +2659,8 @@ function fonts() {
 const commands = {
   up, add, plan, done, pick, fav, work, ask, history, brief: briefCmd, archive, shoot, compare, perf, handoff, snap, intake, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
-  rm: () => rm(),
+  // --project is the project's folder on every command, so the whole app is --all.
+  rm: () => flags.all ? removeApp(sessionDir()) : rmMine(),
   keep: () => { const dir = sessionDir(); need(dir); patchSession(dir, { keep: !flags.off }); console.log(flags.off ? 'no longer kept' : 'kept until deleted by hand') },
   url: () => { const s = need(sessionDir()); console.log(s.url || s.localUrl || 'not started') },
   stack: () => { const d = detectStack(projectRoot()); console.log(`${d.stack} (${d.why})`) },
@@ -2563,8 +2680,7 @@ function numbersToLetters() {
   const id = flags.session || process.env.PROTO_SESSION_ID || process.env.CODEX_THREAD_ID || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID
   const shaped = a => typeof a === 'string' && /^[a-z0-9][a-z0-9-]*\/\d/.test(a)
   if (!id || id === true || !args.concat(['from', 'to', 'until'].map(k => flags[k])).some(a => shaped(a) || (typeof a === 'string' && a.split(',').some(shaped)))) return
-  const root = join(projectRoot(), '.prototypes'), dirs = [join(root, short(String(id))), UUID.test(id) ? join(root, String(id).slice(0, 8)) : ''].filter(Boolean)
-  const isProto = slug => dirs.some(d => existsSync(join(d, 'src', 'protos', slug, 'meta.ts')))
+  const isProto = slug => existsSync(join(projectApp(projectRoot()), 'src', 'protos', slug, 'meta.ts'))
   const byNumber = r => r.replace(/^([a-z0-9][a-z0-9-]*)\/(\d{1,3})(?=\/|$)/, (all, slug, n) => letterOf(n) && isProto(slug) ? `${slug}/${letterOf(n)}` : all)
   for (const [i, a] of args.entries()) args[i] = byNumber(a)
   for (const k of ['from', 'to', 'until']) if (typeof flags[k] === 'string') flags[k] = flags[k].split(',').map(r => byNumber(r.trim())).join(',')

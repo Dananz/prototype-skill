@@ -73,10 +73,10 @@ export default function A() { return <main className="min-h-full bg-white"><h1>T
   assert(meta.kind === 'phone' && meta.screen?.join('x') === '402x874', 'the frame comes from the kit')
   assert(Object.keys(meta.variants).join() === 'A,B', 'the saved Current is A, first')
 
-  // A session with tokens of its own keeps them.
-  writeFileSync(themeFile, theme + '/* mine */\n')
+  // A project app with tokens of its own keeps them: the kit's are merged in (app/theme-merge.mjs).
+  writeFileSync(themeFile, theme.replace('@theme {', '@theme {\n  --color-mine-only: #010203;'))
   out = proto(['add', 'kitmine', '--variants', 'A:Current', '--kit'])
-  assert(out.includes('kept this session\'s own src/theme.css'), 'a session\'s own theme is never overwritten')
+  assert(readFileSync(themeFile, 'utf8').includes('--color-mine-only: #010203'), 'a session\'s own theme is never overwritten')
 
   let ok = false
   for (let i = 0; i < 40 && !ok; i++) {

@@ -75,7 +75,7 @@ let t0 = Date.now()
 const up = proto('up', '--name', 'Stress')
 note('proto up, cold (scaffold + install + start)', `${((Date.now() - t0) / 1000).toFixed(1)} s`)
 const local = up.match(/^local (\S+)/m)?.[1] || up.match(/^url (\S+)/m)[1]
-const app = join(PROJECT, '.prototypes', 'perf')
+const app = join(PROJECT, '.prototypes', '_project')
 const pid = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8')).pid
 let s0 = await serverOver(pid, 5000)
 note('server idle, empty session', `${f1(s0.rssMB)} MB, ${f1(s0.cpuPct)}% CPU, ${s0.procs} processes`)
@@ -154,7 +154,7 @@ note(`  after a second storm of ${EDITS}`, `server ${f1(s2.rssMB)} MB, page ${f1
 
 await pg.close()
 
-proto('rm')
+proto('rm', '--all')
 rmSync(PROJECT, { recursive: true, force: true })
 stopChrome(chrome)
 process.exit(0)
