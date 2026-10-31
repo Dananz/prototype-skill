@@ -185,6 +185,8 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-map-board="screen:mabout"]').click()`)
     await wait(300)
     assert(await page.run(`location.pathname === '/'`), 'a first click should only select the board')
+    // Its chip (name and Open) sits on the board's top corner, not at the foot of the stage under the comments island.
+    assert(await page.run(`(() => { const c = document.querySelector('[data-map-chip]')?.getBoundingClientRect(), b = document.querySelector('[data-map-board="screen:mabout"]').getBoundingClientRect(); return !!c && c.bottom <= b.top + 1 && c.bottom >= b.top - 40 && c.right <= b.right + 1 })()`), 'the selected board\'s chip should sit on its top corner')
     await page.run(`document.querySelector('[data-map-board="screen:mabout"]').click()`)
     await until(page, `location.pathname === '/mabout/A'`, 'a click on the selected board should open it')
     // A picked exploration folds into a stack, one target: a click anywhere on it spreads it out, opening nothing.

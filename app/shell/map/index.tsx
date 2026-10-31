@@ -338,7 +338,7 @@ function MapView({ api }: { api: MapApi }) {
     const el = view.current!, pts = new Map<number, { x: number; y: number }>()
     let last: { x: number; y: number; d: number } | null = null, moved = 0
     const mid = () => { const p = [...pts.values()]; const x = p.reduce((a, q) => a + q.x, 0) / p.length, y = p.reduce((a, q) => a + q.y, 0) / p.length; return { x, y, d: p.length > 1 ? Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) : 0 } }
-    const down = (e: PointerEvent) => { if (e.button > 1 || (e.target as HTMLElement).closest?.('[data-map-handle], [data-map-note], [data-map-tools], [data-map-slot]')) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = mid(); moved = 0; dragged.current = 0 }
+    const down = (e: PointerEvent) => { if (e.button > 1 || (e.target as HTMLElement).closest?.('[data-map-handle], [data-map-note], [data-map-tools], [data-map-slot], [data-map-chip]')) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = mid(); moved = 0; dragged.current = 0 }
     const move = (e: PointerEvent) => {
       if (!pts.has(e.pointerId)) return
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -536,6 +536,15 @@ function MapView({ api }: { api: MapApi }) {
             </g>)}
             {drag && <path data-map-drag d={`M${drag.from.x + drag.from.w},${drag.from.y + drag.from.h / 2} L${drag.x},${drag.y}`} fill="none" className="stroke-violet-500" style={{ strokeWidth: 'calc(2px * var(--iz))', strokeDasharray: 'calc(6px * var(--iz))' }} />}
           </svg>
+          {selBoard && selBoard !== focusBoard && !note && !build && (
+            // The selected board's chip, on its top corner (one size on screen): its name and Open, as a click on
+            // the board does. On the board, not at the foot of the stage, where the comments island rests.
+            <div data-map-chip className="absolute z-30 flex items-center whitespace-nowrap bg-zinc-900 text-white shadow-lg dark:bg-white dark:text-zinc-900"
+              style={{ left: selBoard.x + selBoard.w, top: selBoard.y, transform: 'translate(-100%, calc(-100% - 8px * var(--lz)))', fontSize: 'calc(12px * var(--lz))', gap: 'calc(8px * var(--lz))', borderRadius: 'calc(9px * var(--lz))', padding: 'calc(3px * var(--lz)) calc(3px * var(--lz)) calc(3px * var(--lz)) calc(10px * var(--lz))' }}>
+              <span dir="auto" className="font-medium">{selBoard.title}</span>{selBoard.kind === 'option' && <span className="opacity-60">#{numberOf(selBoard.letter)}</span>}
+              <button type="button" data-map-open onClick={e => { e.stopPropagation(); openBoard(selBoard) }} className="bg-white/15 dark:bg-zinc-900/10" style={{ borderRadius: 'calc(6px * var(--lz))', padding: 'calc(2px * var(--lz)) calc(8px * var(--lz))' }}>{t('Open')}</button>
+            </div>
+          )}
           {world.labels.map(l => (
             // Above its anchor, one size on screen: a design's name over its first flow's, a flow's over its row.
             // Rounds name themselves once their cards are big enough to tell apart; a long name truncates at its round's width.
@@ -642,12 +651,6 @@ function MapView({ api }: { api: MapApi }) {
         </div>}
         {build && one && !note && <BuildBox design={one} boards={world.boards} api={api} onClose={() => setBuild(false)} />}
         {note && <NoteBox key={`${note.kind}:${note.a.key}:${'b' in note ? note.b.key : note.flow}`} note={note} api={api} onClose={() => setNote(null)} />}
-        {selBoard && selBoard !== focusBoard && !note && !build && (
-          <div className="absolute inset-x-0 bottom-3 mx-auto flex w-fit max-w-[calc(100%-2rem)] items-center gap-2 rounded-xl max-sm:bottom-14 bg-zinc-900 px-3 py-1.5 text-[12px] text-white shadow-lg dark:bg-white dark:text-zinc-900">
-            <span dir="auto" className="font-medium">{selBoard.title}</span>{selBoard.kind === 'option' && <span className="opacity-60">#{numberOf(selBoard.letter)}</span>}
-            <button type="button" data-map-open onClick={() => openBoard(selBoard)} className="rounded-md bg-white/15 px-2 py-0.5 dark:bg-zinc-900/10">{t('Open')}</button>
-          </div>
-        )}
       </div>
     </div>
   )
