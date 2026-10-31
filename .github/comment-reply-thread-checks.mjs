@@ -148,7 +148,7 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
       const pinCount = () => [...document.querySelectorAll('button[aria-label^="Comment 1"]')].filter(p => p.getClientRects().length).length
       await until(() => pinCount() === 1)
       const pins = pinCount()
-      if (pins !== 1) return 'the thread should have one pin, it has ' + pins
+      if (pins !== 1) return 'the thread should have one pin, it has ' + pins + ' (pins: ' + JSON.stringify([...document.querySelectorAll('button[aria-label^="Comment"]')].map(p => p.getAttribute('aria-label') + (p.getClientRects().length ? '' : ' unseen'))) + ', at ' + location.pathname + location.search + ')'
       return 'ok'
     })()`)
     if (nested !== 'ok') fail(`reply thread: ${nested}`)

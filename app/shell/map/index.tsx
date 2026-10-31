@@ -65,7 +65,6 @@ const OUT = 0.55
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 /** Labels keep one size on screen (1 / zoom), shrinking to 60 % when the map is zoomed far out (a phone fitting it all), so they never cover the boards. */
 const labelZ = (z: number) => String(clamp(z / 0.2, 0.6, 1) / z)
-const ease = (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2)
 
 /** A design's variant, drawn inert in its frame while it is on screen and big enough to read. */
 // A board shows its page as a still, once its entrance settled, instead of the live page: a map full of
@@ -269,28 +268,44 @@ function MapView({ api }: { api: MapApi }) {
     const a = clear(), z = clamp(Math.min(a.w / b.w, a.h / b.h) * pad, MIN_Z, MAX_Z)
     return { z, x: a.x + a.w / 2 - (b.x + b.w / 2) * z, y: a.y + a.h / 2 - (b.y + b.h / 2) * z }
   }
-  // One flight at a time: a new one takes over from the one under way.
+  // One flight at a time: a new one takes over from the one under way. It leaves at once and settles
+  // softly (a quartic ease-out), a little longer the further it goes: about a third of a second for a step,
+  // at most 0.65 s across the map. The middle of the view travels through the world while the zoom moves
+  // geometrically, so what it flies to comes straight at you instead of swinging in.
   const flight = useRef(0)
-  const fly = (to: Cam, ms = 450, done?: () => void) => {
-    const from = { ...cam.current }, t0 = performance.now(), id = ++flight.current
+  // Where a run of + or - presses is headed, so each press steps on from the last, not from mid-glide.
+  const flightTo = useRef<Cam | null>(null)
+  const fly = (to: Cam, ms?: number, done?: () => void) => {
+    const from = { ...cam.current }, id = ++flight.current
+    flightTo.current = null
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { set(to); done?.(); return }
+    const a = clear(), px = a.x + a.w / 2, py = a.y + a.h / 2
+    const w0 = { x: (px - from.x) / from.z, y: (py - from.y) / from.z }, w1 = { x: (px - to.x) / to.z, y: (py - to.y) / to.z }
+    const far = (Math.hypot(w1.x - w0.x, w1.y - w0.y) * Math.min(from.z, to.z)) / Math.max(a.w, 1)
+    const dur = ms ?? clamp(340 + 90 * Math.abs(Math.log(to.z / from.z)) + 140 * far, 340, 650)
+    const t0 = performance.now()
     const step = (now: number) => {
       if (id !== flight.current) return
-      const k = ease(Math.min(1, (now - t0) / ms))
-      // Zoom moves geometrically, so the flight feels even at every scale.
-      const z = from.z * Math.pow(to.z / from.z, k)
-      set({ z, x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k })
-      if (k < 1) requestAnimationFrame(step); else done?.()
+      const t = Math.min(1, (now - t0) / dur), k = 1 - Math.pow(1 - t, 4)
+      const z = from.z * Math.pow(to.z / from.z, k), cx = w0.x + (w1.x - w0.x) * k, cy = w0.y + (w1.y - w0.y) * k
+      set(t < 1 ? { z, x: px - cx * z, y: py - cy * z } : to)
+      if (t < 1) requestAnimationFrame(step); else done?.()
     }
     requestAnimationFrame(step)
   }
   const fitAll = () => fly(fitTo({ x: 0, y: 0, w: Math.max(world.w, 1), h: Math.max(world.h, 1) }, 0.92))
+  // The hand takes over from a flight under way (a wheel, a pinch, a drag): it stops where it is.
+  const grab = () => { flight.current++; flightTo.current = null }
   const zoomAt = (f: number, px: number, py: number) => {
+    grab()
     const c = cam.current, z = clamp(c.z * f, MIN_Z, MAX_SIZE / refScale.current)
     set({ z, x: px - (px - c.x) * (z / c.z), y: py - (py - c.y) * (z / c.z) })
-    // Zoomed out well past the design in Focus: that is the map again, right where the camera is.
-    const fb = focusRef.current
-    const a = clear()
-    if (fb && f < 1 && z < Math.min(a.w / fb.w, a.h / fb.h) * OUT) { before.current = null; was.current = ''; api.leave?.() }
+    if (f < 1) leaveIfOut()
+  }
+  // Zoomed out well past the design in Focus: that is the map again, right where the camera is.
+  const leaveIfOut = () => {
+    const fb = focusRef.current, a = clear()
+    if (fb && cam.current.z < Math.min(a.w / fb.w, a.h / fb.h) * OUT) { before.current = null; was.current = ''; api.leave?.() }
   }
 
   useLayoutEffect(() => {
@@ -309,7 +324,7 @@ function MapView({ api }: { api: MapApi }) {
     const here = world.boards.find(b => b.kind === 'screen' && b.route === input.place) ?? world.boards.find(b => b.route === input.place)
     const focused = input.focus ? world.boards.find(b => b.kind === 'screen' && b.route === input.focus) ?? world.boards.find(b => b.route === input.focus) : undefined
     if (focused) { before.current = fitTo({ x: 0, y: 0, w: world.w, h: world.h }, 0.92); set(fitTo(focused, 1)); was.current = input.focus ?? '' }
-    else if (here && api.camera) { const back = { ...api.camera }; set(fitTo(here, 1)); fly(back, 500) }
+    else if (here && api.camera) { const back = { ...api.camera }; set(fitTo(here, 1)); fly(back) }
     else if (api.camera) set(api.camera)
     else set(fitTo({ x: 0, y: 0, w: world.w, h: world.h }, 0.92))
     if (here) setSel(here.key)
@@ -329,6 +344,7 @@ function MapView({ api }: { api: MapApi }) {
       moved += Math.abs(now.x - last.x) + Math.abs(now.y - last.y)
       if (moved > 4) el.setPointerCapture?.(e.pointerId)
       if (now.d && last.d) zoomAt(now.d / last.d, now.x - r.left, now.y - r.top)
+      grab()
       set({ ...cam.current, x: cam.current.x + now.x - last.x, y: cam.current.y + now.y - last.y })
       dragged.current = moved
       last = now
@@ -340,7 +356,7 @@ function MapView({ api }: { api: MapApi }) {
       e.preventDefault()
       const r = el.getBoundingClientRect()
       if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top)
-      else set({ ...cam.current, x: cam.current.x - e.deltaX, y: cam.current.y - e.deltaY })
+      else { grab(); set({ ...cam.current, x: cam.current.x - e.deltaX, y: cam.current.y - e.deltaY }) }
     }
     let g = 1
     const gs = (e: Event) => { e.preventDefault(); g = 1 }
@@ -438,6 +454,9 @@ function MapView({ api }: { api: MapApi }) {
   const variantOf = (b: Board) => input.protos.find(p => p.id === b.slug)?.variants.find(v => v.id === b.letter)
   const selBoard = world.boards.find(b => b.key === sel)
   const focusBoard = input.focus ? world.boards.find(b => b.kind === 'screen' && b.route === input.focus) ?? world.boards.find(b => b.route === input.focus) : undefined
+  // An option of a folded stack opened (from the tree, say): the stack spreads, so it opens on its own card.
+  const foldedFocus = !!input.focus && (!focusBoard || focusBoard.pile != null) && world.labels.some(l => l.key === `round:${input.focus.split('/')[0]}`) ? input.focus.split('/')[0] : null
+  useEffect(() => { if (foldedFocus && !spread.has(foldedFocus)) spreadOut(foldedFocus) }, [foldedFocus]) // eslint-disable-line react-hooks/exhaustive-deps
   focusRef.current = focusBoard ?? null
   // The board being read: the one nearest the middle, once it fills most of the stage and the camera
   // rests. It is the live page, sharp at any zoom; every other board stays a still. Never the one in
@@ -449,7 +468,13 @@ function MapView({ api }: { api: MapApi }) {
   const hosted = !!api.report
   useEffect(() => { api.report?.({ pct, build, one: !!one && !ro }) }, [pct, build, !!one, ro]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    api.ctl = { zoom: f => { const a = clear(); zoomAt(f, a.x + a.w / 2, a.y + a.h / 2) }, fit: () => { const fb = focusRef.current; if (fb) fly(fitTo(fb, 1)); else fitAll() }, build: () => { setNote(null); setBuild(b => !b) } }
+    // A step of the pill's + or - glides (a short flight), and past the design in Focus it is the map again.
+    api.ctl = { zoom: f => {
+      const a = clear(), px = a.x + a.w / 2, py = a.y + a.h / 2, c = flightTo.current ?? cam.current, z = clamp(c.z * f, MIN_Z, MAX_SIZE / refScale.current)
+      const to = { z, x: px - (px - c.x) * (z / c.z), y: py - (py - c.y) * (z / c.z) }
+      fly(to, 220, () => { flightTo.current = null; if (f < 1) leaveIfOut() })
+      flightTo.current = to
+    }, fit: () => { const fb = focusRef.current; if (fb) fly(fitTo(fb, 1)); else fitAll() }, build: () => { setNote(null); setBuild(b => !b) } }
   })
   // Focus moves the camera: onto the board it takes, and back to where the map was when it ends.
   useEffect(() => {
@@ -459,8 +484,8 @@ function MapView({ api }: { api: MapApi }) {
     if (now === was.current) return
     if (!was.current) before.current = { ...cam.current }
     was.current = now
-    if (focusBoard) fly(fitTo(focusBoard, 1), 420)
-    else if (before.current) { fly(before.current, 450); before.current = null }
+    if (focusBoard) fly(fitTo(focusBoard, 1))
+    else if (before.current) { fly(before.current); before.current = null }
   }, [input.focus, focusBoard?.key, input.hidden, size.w < 2]) // eslint-disable-line react-hooks/exhaustive-deps
   // A design's or flow's area: its name down to the next name at its level or above, with the boards in it.
   const areaOf = (key: string) => {
@@ -479,7 +504,7 @@ function MapView({ api }: { api: MapApi }) {
     const a = areaOf(input.frame.split('#')[0])
     if (!a) return
     before.current = null
-    fly(fitTo(a, 0.92), 500)
+    fly(fitTo(a, 0.92))
   }, [input.frame, input.hidden, size.w < 2]) // eslint-disable-line react-hooks/exhaustive-deps
   // The stage resized (the window, the sidebar, the map shown again) with a design in Focus: it fits again.
   useEffect(() => {
