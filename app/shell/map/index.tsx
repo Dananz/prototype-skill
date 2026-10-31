@@ -5,7 +5,7 @@
 // any zoom through --iz (1 / zoom). A double click on a screen flies into it and opens it (Focus);
 // the shell flies back out here when Focus is left.
 import { domToCanvas } from 'modern-screenshot'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Design, Proto, Variant } from '../shell'
 import { t, tn } from '../i18n'
@@ -62,6 +62,9 @@ const MAX_SIZE = 5, MIN_Z = 0.02, MAX_Z = MAX_SIZE / CARD
 const MAX_ANIM = 24, ANIM_MS = 380
 /** How far under its fit the design in Focus is zoomed out before the map takes over again. */
 const OUT = 0.55
+/** While a screen is in Focus the rest of the map steps back to this, so the screen stands out with no frame. */
+const DIM = 0.25
+const dim = (on: boolean): CSSProperties => ({ opacity: on ? DIM : 1, transition: 'opacity .3s ease-out' })
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 /** Labels keep one size on screen (1 / zoom), shrinking to 60 % when the map is zoomed far out (a phone fitting it all), so they never cover the boards. */
 const labelZ = (z: number) => String(clamp(z / 0.2, 0.6, 1) / z)
@@ -524,7 +527,7 @@ function MapView({ api }: { api: MapApi }) {
       onClick={e => { if (e.target === view.current) setSel(null) }}>
       <div ref={layer} className="absolute left-0 top-0 origin-top-left" style={{ ['--iz' as string]: String(1 / c.z), ['--lz' as string]: labelZ(c.z) }}>
         <div className="relative" style={{ width: world.w, height: world.h }}>
-          <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={world.w} height={world.h}>
+          <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={world.w} height={world.h} style={dim(!!focusBoard)}>
             {lines.map(({ a, b, to }) => <g key={`${a.key}>${to}`}>
               <path data-map-line={`${a.slug}>${to}`} d={linePath(a, b!)} fill="none" className={note?.kind === 'line' && note.a === a && note.b === b ? 'stroke-violet-500' : 'stroke-sky-500/70'} style={{ strokeWidth: 'calc(2px * var(--iz))' }} />
               {/* A wide, unseen stroke to click: a note on this link. */}
@@ -537,7 +540,7 @@ function MapView({ api }: { api: MapApi }) {
             // Above its anchor, one size on screen: a design's name over its first flow's, a flow's over its row.
             // Rounds name themselves once their cards are big enough to tell apart; a long name truncates at its round's width.
             (l.kind !== 'round' || (world.boards.find(b => b.slug === l.slug)?.w ?? 0) * c.z > 60) &&
-            <div key={l.key} data-map-label={l.key} className="absolute whitespace-nowrap" style={{ left: l.x, top: l.y, ...(l.w ? { maxWidth: l.w + GAP * 0.8 } : {}), fontSize: `calc(${l.kind === 'design' ? 22 : l.kind === 'flow' ? 15 : 13}px * var(--lz))`,
+            <div key={l.key} data-map-label={l.key} className="absolute whitespace-nowrap" style={{ ...dim(!!focusBoard), left: l.x, top: l.y, ...(l.w ? { maxWidth: l.w + GAP * 0.8 } : {}), fontSize: `calc(${l.kind === 'design' ? 22 : l.kind === 'flow' ? 15 : 13}px * var(--lz))`,
               transform: `translateY(calc(-100% - ${l.kind === 'design' || l.kind === 'section' ? 34 : 8}px * var(--lz)))` }}>
               {l.kind === 'round'
                 ? <button type="button" data-map-round={l.slug} onClick={() => turnRound(l.slug!, !l.open)}
@@ -567,8 +570,9 @@ function MapView({ api }: { api: MapApi }) {
                 onClick={e => { e.stopPropagation(); if (dragged.current >= 6) return; if (b.pile != null) spreadOut(b.slug); else if (on && e.detail < 2) openBoard(b); else setSel(b.key) }}
                 onDoubleClick={() => { if (b.pile == null) openBoard(b) }}
                 className={'absolute overflow-hidden rounded-[calc(10px*var(--iz))] bg-white shadow-[0_1px_3px_rgb(0_0_0/.08)] dark:bg-zinc-900'}
-                style={{ left: b.x, top: b.y, width: b.w, height: b.h, zIndex: b.pile != null ? 3 - b.pile : undefined, cursor: 'pointer',
-                  outline: on || here ? `calc(2px * var(--iz)) solid ${on ? '#0ea5e9' : '#10b981'}` : `calc(1px * var(--iz)) solid rgb(0 0 0 / .08)` }}>
+                style={{ ...dim(!!focusBoard && b !== focusBoard), left: b.x, top: b.y, width: b.w, height: b.h, zIndex: b.pile != null ? 3 - b.pile : undefined, cursor: 'pointer',
+                  // The screen in Focus has no frame of its own: it stands out by the rest of the map stepping back.
+                  outline: b === focusBoard ? 'none' : on || here ? `calc(2px * var(--iz)) solid ${on ? '#0ea5e9' : '#10b981'}` : `calc(1px * var(--iz)) solid rgb(0 0 0 / .08)` }}>
                 <div className={'absolute inset-0 grid place-items-center bg-zinc-50 text-zinc-400 dark:bg-zinc-900'} style={{ fontSize: 'calc(13px * var(--lz))' }}><span dir="auto" className={b.pile ? 'invisible' : ''}>{b.title}</span></div>
                 <div className="absolute left-0 top-0 origin-top-left" style={{ width: b.w / b.scale, height: b.h / b.scale, zoom: b.scale }}>
                   <Still v={variantOf(b)} route={b.route} w={b.w / b.scale} h={b.h / b.scale} size={b.scale} want={live.has(b.key) && !input.hidden && b !== focusBoard}

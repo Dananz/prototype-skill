@@ -165,6 +165,9 @@ export async function mapChecks({ proto, app, local, openPage, fail }) {
     await until(page, `!!document.querySelector('[data-map-slot="mhome/B"] [data-shoot="mhome-live"]')`, 'Focus should draw the screen in place on the map')
     assert(await page.run(`!document.querySelector('[data-map-host]').hidden && document.querySelector('[data-layers]').children.length === 0`), 'Focus should keep the map, with the view in the board, not on a stage of its own')
     assert(await page.run(`!document.querySelector('[data-map-board="screen:mhome"] [data-shoot="mhome-live"]')`), 'the board under Focus should not mount the screen a second time')
+    // No frame on the screen in Focus: the rest of the map steps back instead.
+    await until(page, `getComputedStyle(document.querySelector('[data-map-board="screen:mabout"]')).opacity < 0.5`, 'the rest of the map should step back while a screen is in Focus')
+    assert(await page.run(`getComputedStyle(document.querySelector('[data-map-board="screen:mhome"]')).outlineStyle === 'none' && getComputedStyle(document.querySelector('[data-map-board="screen:mhome"]')).opacity === '1'`), 'the screen in Focus should have no outline and stay at full strength')
     // Zoomed out well past it (⌘/Ctrl + wheel over the map), Focus ends where the camera is.
     await page.run(`(() => { const m = document.querySelector('[data-map]'); for (let i = 0; i < 12; i++) m.dispatchEvent(new WheelEvent('wheel', { deltaY: 60, ctrlKey: true, clientX: 300, clientY: 300, bubbles: true, cancelable: true })) })()`)
     await until(page, `location.pathname === '/' && !document.querySelector('[data-map-slot]')`, 'zooming out past the screen should leave Focus for the map')
