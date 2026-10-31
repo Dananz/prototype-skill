@@ -62,12 +62,24 @@ export function worldOf(protos: Proto[], designs: Design[], spread: Set<string> 
   if (loose.length) {
     y += LABEL_H
     labels.push({ key: 'section:loose', kind: 'section', text: 'Explorations on no screen', x: 0, y })
+    // Wrapped into rows about as wide as 16:9 of their area (never narrower than the widest round),
+    // each exploration's rounds kept together on a row when they fit.
+    const groups = loose.map(p => [p, ...under(p.id)])
+    const roundW = (r: Proto) => { const cw = frameOf(r)[0] * CARD, open = !r.picked || spread.has(r.id); return open ? Math.max(cw, r.variants.length * (cw + CARD_GAP) - CARD_GAP) : cw + 36 }
+    const groupW = (g: Proto[]) => g.reduce((s, r) => s + roundW(r) + GAP, 0) + GAP
+    const area = groups.reduce((s, g) => s + groupW(g) * (Math.max(...g.map(roundH)) + ROW_GAP), 0)
+    const wrap = Math.max(...groups.flat().map(roundW), Math.sqrt(area * 16 / 9))
     let x = 0, h = 0
-    for (const p of loose) {
-      for (const r of [p, ...under(p.id)]) { const rw = round(r, x, y); x += rw + GAP; h = Math.max(h, roundH(r)) }
+    const next = () => { y += h + ROW_GAP; x = 0; h = 0 }
+    for (const g of groups) {
+      if (x > 0 && x + groupW(g) - GAP > wrap) next()
+      for (const r of g) {
+        if (x > 0 && x + roundW(r) > wrap) next()
+        x += round(r, x, y) + GAP; h = Math.max(h, roundH(r)); w = Math.max(w, x)
+      }
       x += GAP
     }
-    w = Math.max(w, x); y += h + ROW_GAP
+    y += h + ROW_GAP
   }
   const placed = new Set<string>()
   for (const d of designs) {

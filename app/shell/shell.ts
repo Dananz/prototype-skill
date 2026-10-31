@@ -115,7 +115,9 @@ export type CommentBatch = {
  *  (marked: the pick is in meta.ts and only the working variant didn't move; nothing: an unpick of a
  *  variant that wasn't the pick). */
 export type Sent = { id: string; results: { n: number; action: Action; done: boolean; failed?: string; marked?: boolean; nothing?: boolean }[] }
-type Status = { lastEdit: number; edits?: Record<string, number>; keep: boolean; idleHours: number; deleteDays: number; work?: Ref | null; inbox?: Inbox }
+type Status = { lastEdit: number; edits?: Record<string, number>; keep: boolean; idleHours: number; deleteDays: number; work?: Ref | null; inbox?: Inbox
+  /** The project's conversations by name (server.mjs). */
+  conversations?: Record<string, string> }
 
 const PHONE = 'proto-phone shrink-0 border-[10px] bg-white text-zinc-900 dark:bg-black dark:text-white'
 // The phone scale: Fit (0) or a percentage. The menu offers these in a row and a slider for
@@ -597,7 +599,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     for (const [k, n] of comments.counts().by) { const slug = k.split('/')[0]; by[slug] = (by[slug] ?? 0) + n }
     const w = workOf()
     return {
-      protos: all, designs, place: placeRoute(), me: session.conversation ?? null,
+      protos: all, designs, place: placeRoute(), me: session.conversation ?? null, scope: scopeNow(), scopeName: scopeName(),
       building: new Set(Object.keys(session.building ?? {}).filter(k => buildingUntil(k) > Date.now())), counts: by,
       work: w ? t('Working on {name}', { name: `${w.p.title} ${variantLabel(w.p, w.v.id)}` }) : '',
       up: st.live && !st.stopped,
@@ -674,8 +676,49 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let mapSnap: MapInput | null = null, mapMounted = false, lastFocus = ''
   let mapLines: 'all' | 'selected' = localStorage.getItem('proto-map-lines') === 'all' ? 'all' : 'selected'
   let mapDesign = '', mapEdits = 0
+  // What the page shows (the tree, the gallery, the map): this conversation by default ('conv:<id>'),
+  // another one opened from the past, the whole project ('all') or favorites ('favs'). Kept per project
+  // in this browser; a page with no conversation (a share's viewer) shows the whole project.
+  const scopeKey = `proto-scope:${session.id}`
+  let scope = (() => { try { return localStorage.getItem(scopeKey) || '' } catch { return '' } })()
+  const scopeNow = () => {
+    if (scope === 'all' || scope === 'favs') return scope
+    const sid = scope.startsWith('conv:') ? scope.slice('conv:'.length) : session.conversation
+    return sid && (sid === session.conversation || all.some(p => p.session === sid)) ? `conv:${sid}` : 'all'
+  }
+  const convNames = () => st.status?.conversations ?? {}
+  const scopeName = () => { const s = scopeNow(); return s.startsWith('conv:') ? convNames()[s.slice(5)] ?? '' : '' }
+  function setScope(next: string) {
+    if (next === scopeNow()) return
+    scope = next
+    remember(scopeKey, next)
+    // On an exploration's own page the map is framed on it: a new scope shows the whole of it instead.
+    if (st.place.view === 'proto') { widenedAt = ''; return go({ view: 'session' }) }
+    paintTree(); paintMap()
+  }
+  /** The explorations in scope, the same array while neither the list nor the scope changes. */
+  let scoped: { of: Proto[]; scope: string; list: Proto[] } | null = null
+  const inScope = (p: Proto, s = scopeNow()) => s === 'all' ? true : s === 'favs' ? p.favorites.length > 0 : p.session === s.slice('conv:'.length)
+  const scopedProtos = () => {
+    const s = scopeNow()
+    if (!scoped || scoped.of !== all || scoped.scope !== s) scoped = { of: all, scope: s, list: s === 'all' ? all : all.filter(p => inScope(p, s)) }
+    return scoped.list
+  }
+  /** Every conversation with its explorations, newest first (this one first), for the gallery's list. */
+  let convsKey = '', convsJson = ''
+  const convsOf = () => {
+    const names = convNames(), live = all.filter(p => !p.archived)
+    const key = JSON.stringify([live.map(p => [p.id, p.session, p.picked, p.created]), names, session.conversation])
+    if (key === convsKey) return convsJson
+    const by = new Map<string, Proto[]>()
+    for (const p of live) { const k = p.session ?? ''; by.set(k, [...(by.get(k) ?? []), p]) }
+    const list = [...by].map(([sid, ps]) => ({ sid, name: names[sid] ?? (sid === session.conversation ? session.name : ''), at: ps.reduce((m, p) => p.created > m ? p.created : m, ''), n: ps.length, picked: ps.filter(p => p.picked).length }))
+      .sort((a, b) => a.sid === session.conversation ? -1 : b.sid === session.conversation ? 1 : b.at.localeCompare(a.at))
+    convsKey = key; convsJson = JSON.stringify(list)
+    return convsJson
+  }
   // What the map says of itself: its zoom (as the design's own size), and Build it (open, offered).
-  let mapState = { pct: 100, build: false, one: false }
+  let mapState: { pct: number; build: boolean; one: boolean; flat?: boolean } = { pct: 100, build: false, one: false }
   // The area the tree asked the map to show (a design or flow key, numbered so asking again flies again).
   let mapFrame = '', frames = 0
   // Each prototype's file edits, counted: its stills on the map are taken again when its count moves.
@@ -701,9 +744,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     mount: (el, c) => mount(el, c), camera: null,
     setLines: mode => { mapLines = mode; remember('proto-map-lines', mode); paintMap() },
     setDesign: id => { mapDesign = id; paintMap() },
+    setScope,
     ask: async (on, action, text) => { await comments.act.decide(on, action, { body: [text], tags: [] }) },
     slot: el => { slotEl = el; placeLayer() },
-    report: s => { const was = mapState; mapState = s; paintZoom(); if (was.build !== s.build || was.one !== s.one) render() },
+    report: s => { const was = mapState; mapState = s; paintZoom(); if (was.build !== s.build || was.one !== s.one || was.flat !== s.flat) render() },
     panel: open => islandHost.toggleAttribute('data-away', open),
     leave: () => { if (inPlace()) go({ view: 'session' }) },
   }
@@ -712,7 +756,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const deskMq = matchMedia('(min-width: 1024px)')
   // The zoom pill (tree mode, a wide page): its zoom only, and on hover the layouts, Fit and −/+. It
   // drives the map's camera while the map shows (its zoom is the design's own size), else the layout's.
-  const zoomPillOn = () => treeOn && !framed && deskMq.matches && !st.focus && (onMap() || inPlace() || viewOn())
+  // The gallery (the map's other face) has nothing to zoom: no pill over it.
+  const zoomPillOn = () => treeOn && !framed && deskMq.matches && !st.focus && ((onMap() && !mapState.flat) || inPlace() || viewOn())
   let zoomKey = ''
   function paintZoom() {
     const el = root.querySelector<HTMLElement>('[data-zoom-pill]')
@@ -735,17 +780,30 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <div data-zoom-more class="flex max-w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[max-width,opacity] duration-200 ease-in group-hover:max-w-[40rem] group-hover:opacity-100 group-hover:duration-500 group-hover:ease-[cubic-bezier(.2,.9,.25,1.1)] group-focus-within:max-w-[40rem] group-focus-within:opacity-100 group-focus-within:duration-500 group-focus-within:ease-[cubic-bezier(.2,.9,.25,1.1)] motion-reduce:transition-none">${pick}${sizes}<button type="button" data-act="zoom:fit" data-map-fit aria-label="${mapOn ? t('Fit') : t('Center the design')}" title="${mapOn ? t('Fit') : t('Center the design')} · 0" class="${btn}">${ic('center')}</button><button type="button" data-act="zoom:out" data-map-zoom="out" aria-label="${t('Zoom out')}" title="${t('Zoom out')} (-)" class="${btn}">${ic('zoom-out', 'size-3.5')}</button><button type="button" data-act="zoom:in" data-map-zoom="in" aria-label="${t('Zoom in')}" title="${t('Zoom in')} (+)" class="${btn}">${ic('zoom-in', 'size-3.5')}</button></div>
       <span data-zoom-pct class="grid h-8 min-w-12 place-items-center px-2 tabular-nums text-zinc-500 dark:text-zinc-400">${pct}</span></div>`
   }
+  // An exploration's own page (/slug) in tree mode is the map: it flies to that exploration's options.
+  let framedProto = '', widenedAt = ''
   function paintMap() {
     const show = onMap() || inPlace()
+    const proto = show && st.place.view === 'proto' ? st.place.proto : ''
+    // A route to an exploration outside the scope (a link, Jump, the work strip) widens it to that
+    // exploration's conversation, or to the whole project when it has none.
+    // Only on arriving there: a scope chosen while on it stays.
+    const target = show && st.place.view !== 'session' ? byId(st.place.proto) : undefined, arrived = target ? placeRoute() : ''
+    if (arrived !== widenedAt) { widenedAt = arrived; if (target && !inScope(target)) { scope = target.session && scopeNow() !== 'all' ? `conv:${target.session}` : 'all'; remember(scopeKey, scope); paintTree() } }
+    if (proto !== framedProto) { framedProto = proto; if (proto) mapFrame = `round:${proto}#${++frames}` }
     mapHost.hidden = !show
     const full = show && deskMq.matches && !st.focus
     mapHost.toggleAttribute('data-full', full)
     const r = full ? layers.getBoundingClientRect() : null
     const safe = r ? [r.left, r.top, innerWidth - r.right, innerHeight - r.bottom].map(n => Math.max(0, Math.round(n))).join(',') : ''
+    // Hidden under the map, and kept laid out (its box is the map's clear part). Opacity too: a design
+    // that sets visibility: visible on its own root would show through visibility alone.
     layers.style.visibility = show ? 'hidden' : ''
+    layers.style.opacity = show ? '0' : ''
+    layers.style.pointerEvents = show ? 'none' : ''
     if (!show && !mapMounted) return
     const work = all.flatMap(p => p.variants.filter(v => editing(p.id, v.id)).map(v => `${p.id}/${v.id}:${building(p.id, v.id) ? 'building' : 'editing'}`)).join(' ')
-    const next: MapInput = { protos: all, designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), working: work, frame: mapFrame, safe, focus: inPlace() ? `${st.place.proto}/${st.place.variant}` : '' }
+    const next: MapInput = { protos: scopedProtos(), scope: scopeNow(), me: session.conversation ?? '', convs: convsOf(), designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), working: work, frame: mapFrame, safe, focus: inPlace() ? `${st.place.proto}/${st.place.variant}` : '' }
     if (mapSnap && (Object.keys(next) as (keyof MapInput)[]).every(k => next[k] === mapSnap![k])) return
     mapSnap = next
     if (!mapMounted && show) { mapMounted = true; mountMap(mapHost, mapApi) }
@@ -831,6 +889,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       go: route => { const [proto, variant] = route.split('/'); go(variant ? { view: 'variant', proto, variant } : { view: 'proto', proto }) },
       goWork: () => act('work', 'go', ''), hide: () => act('side', '0', ''), name: session.name,
       frame: key => { mapFrame = `${key}#${++frames}`; if (st.place.view !== 'session') go({ view: 'session' }); else paintMap() },
+      setScope,
     })
   }
   const grip = root.querySelector<HTMLElement>('[data-grip]')!

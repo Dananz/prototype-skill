@@ -587,10 +587,19 @@ export function prototypeServer(session) {
   // the page's Building marks, which count from there. Kept here, not in session.json: rewriting
   // that on every edit can reach Vite as a deleted file and reload the page.
   const edits = {}
+  // The project's conversations by name, for the page's scope: the imported ones (.proto/imports.json)
+  // and those that worked here (.proto/sessions.json, the newer name).
+  const conversations = () => {
+    const out = {}
+    const json = f => { try { return JSON.parse(readFileSync(join(dir, '.proto', f), 'utf8')) } catch { return null } }
+    for (const i of json('imports.json') ?? []) if (i?.sid && i.name) out[i.sid] = String(i.name)
+    for (const [sid, x] of Object.entries(json('sessions.json') ?? {})) if (x?.name) out[sid] = String(x.name)
+    return out
+  }
   const status = () => {
     let s = {}
     try { s = read() } catch { /* being rewritten by hand; the rest still answers */ }
-    return { lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, slots: slotPointers(), inbox: inboxStatus() }
+    return { lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, slots: slotPointers(), inbox: inboxStatus(), conversations: conversations() }
   }
   const stop = reason => {
     // The tailnet port as session.json has it now: on a session's first run, `proto up` gives it one
