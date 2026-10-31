@@ -109,13 +109,18 @@ function Tree({ api }: { api: TreeApi }) {
     const parent = n.kind === 'exploration' && n.on ? n : null
     return (
       <div key={n.key}>
-        <Row id={n.key} depth={depth} on={lit} open={shut} onCaret={() => flip(n)} onClick={() => { api.go(n.route!); if (!shut) flip(n) }} mv={n.route}
+        <Row id={n.key} depth={depth} on={lit} open={shut} onCaret={() => flip(n)} mv={n.route}
+          /* An exploration's name shows all its options on the map (its stack spread); a screen's opens it. */
+          onClick={() => { if (!shut) flip(n); if (n.kind === 'exploration') api.frame(`round:${n.route!.split('/')[0]}`); else api.go(n.route!) }}
           icon={n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" /> : <Ph name="shuffle" className={'size-3.5 ' + (n.state === 'waits' ? 'text-zinc-300' : 'text-violet-500')} />}
           label={<span className={n.state === 'waits' ? 'text-zinc-400' : ''}><span dir="auto">{n.label}</span>{parent && <span className="text-[11px] text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
           end={<span className="flex shrink-0 items-center gap-1.5">
             {n.standIn && <span title={t('#1 stands in until one is picked')} className="rounded bg-zinc-900/[.05] px-1 text-[10px] text-zinc-500 dark:bg-white/10">{t('not picked')}</span>}
             {comments > 0 && <span title={t('Open comments')} className="rounded-full bg-zinc-900/[.06] px-1.5 text-[10px] font-medium tabular-nums text-zinc-600 dark:bg-white/10 dark:text-zinc-300">{comments}</span>}
-            {n.state && !(n.kind === 'screen' && n.state === 'open') && <Mark state={n.state} picked={picked ? numberOf(picked.split('/')[1]) : undefined} />}
+            {n.state && !(n.kind === 'screen' && n.state === 'open') && (n.kind === 'exploration' && picked
+              ? /* The pick's mark opens the pick. */ <button type="button" data-tree-picked={picked} onClick={() => api.go(picked)} title={t('Open #{n}, the pick', { n: numberOf(picked.split('/')[1]) })} aria-label={t('Open #{n}, the pick', { n: numberOf(picked.split('/')[1]) })}
+                  className="-mx-1 rounded-md px-1 py-0.5 hover:bg-zinc-900/[.06] dark:hover:bg-white/10"><Mark state={n.state} picked={numberOf(picked.split('/')[1])} /></button>
+              : <Mark state={n.state} picked={picked ? numberOf(picked.split('/')[1]) : undefined} />)}
           </span>} />
         {shut && n.state === 'stale' && <StaleNote n={n} protos={input.protos} depth={depth} />}
         {kids}

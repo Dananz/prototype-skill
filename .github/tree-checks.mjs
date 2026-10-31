@@ -93,6 +93,13 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-tree-row="design:acme"] button:not([aria-expanded])').click()`)
     await until(page, `location.pathname === '/' && !document.querySelector('[data-map-slot]')`, 'the design\'s name should leave Focus for the map')
     await until(page, `(() => { const m = document.querySelector('[data-map]').getBoundingClientRect(), l = document.querySelector('[data-map-label="design:acme"]')?.getBoundingClientRect(), b = document.querySelector('[data-map-board="screen:thome"]')?.getBoundingClientRect(); return !!l && !!b && l.top >= m.top - 2 && b.bottom <= m.bottom + 2 && b.right <= m.right + 2 && b.width < m.width })()`, 'the map should frame the design: its name and screens in view')
+    // An exploration's row: its name spreads its stack on the map and frames all its options; its pick's mark opens the pick.
+    await until(page, `!!document.querySelector('[data-tree-row="exp:tlogo"]')`, 'the picked exploration tlogo should be in the tree')
+    await page.run(`document.querySelector('[data-tree-row="exp:tlogo"] button:not([aria-expanded]):not([data-act]):not([data-tree-picked])').click()`)
+    await until(page, `location.pathname === '/' && !document.querySelector('[data-map-board^="opt:tlogo/"][data-map-pile]') && [...document.querySelectorAll('[data-map-board^="opt:tlogo/"]')].every(b => { const r = b.getBoundingClientRect(), m = document.querySelector('[data-map]').getBoundingClientRect(); return r.left >= m.left - 1 && r.right <= m.right + 1 && r.top >= m.top - 1 && r.bottom <= m.bottom + 1 })`, 'an exploration\'s name should spread its stack and show all its options')
+    await page.run(`document.querySelector('[data-tree-row="exp:tlogo"] [data-tree-picked]').click()`)
+    await until(page, `location.pathname === '/tlogo/B'`, 'the pick\'s mark should open the pick')
+    await page.run(`history.pushState(null, '', '/'); dispatchEvent(new PopStateEvent('popstate'))`)
     await page.run(`document.querySelector('[data-bar] [data-act="open:more"]')?.click()`)
     await until(page, `!!document.querySelector('[data-pop] [data-act=settings]')`, 'the bar menu should offer Settings')
     await page.run(`document.querySelector('[data-pop] [data-act=settings]').click()`)

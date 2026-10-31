@@ -501,14 +501,39 @@ function MapView({ api }: { api: MapApi }) {
     const top = at.y - (at.kind === 'flow' ? 70 : 150), right = Math.max(...inside.map(b => b.x + b.w)), bottom = Math.max(...inside.map(b => b.y + b.h)) + 80
     return { x: Math.min(at.x, ...inside.map(b => b.x)), y: top, w: right - Math.min(at.x, ...inside.map(b => b.x)), h: bottom - top }
   }
+  // An exploration (round:<slug>): all its cards and its name. Folded, it has one card: it spreads first
+  // (pending), and is framed once its cards are laid out.
+  const roundArea = (slug: string) => {
+    const cards = world.boards.filter(b => b.slug === slug && b.kind === 'option'), at = world.labels.find(l => l.key === `round:${slug}`)
+    if (!cards.length) return null
+    const x = Math.min(...cards.map(b => b.x)), y = Math.min(...cards.map(b => b.y)) - 60
+    return { x, y, w: Math.max(...cards.map(b => b.x + b.w)) - x, h: Math.max(...cards.map(b => b.y + b.h)) + 40 - y, folded: !!at && !at.open }
+  }
+  const framing = useRef<string | null>(null)
   // The tree asked for an area: the camera fits it (and Focus, if it was on, doesn't fly back).
   useEffect(() => {
     if (!placed.current || !input.frame || input.hidden || size.w < 2) return
-    const a = areaOf(input.frame.split('#')[0])
+    const key = input.frame.split('#')[0]
+    if (key.startsWith('round:')) {
+      const slug = key.slice('round:'.length), r = roundArea(slug)
+      if (!r) return
+      before.current = null
+      if (r.folded) { framing.current = slug; spreadOut(slug) } else fly(fitTo(r, 0.9))
+      return
+    }
+    const a = areaOf(key)
     if (!a) return
     before.current = null
     fly(fitTo(a, 0.92))
   }, [input.frame, input.hidden, size.w < 2]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const slug = framing.current
+    if (!slug) return
+    const r = roundArea(slug)
+    if (!r || r.folded) return
+    framing.current = null
+    fly(fitTo(r, 0.9))
+  }, [world]) // eslint-disable-line react-hooks/exhaustive-deps
   // The stage resized (the window, the sidebar, the map shown again) with a design in Focus: it fits again.
   useEffect(() => {
     if (placed.current && !input.hidden && size.w >= 2 && focusBoard && was.current === input.focus) set(fitTo(focusBoard, 1))
