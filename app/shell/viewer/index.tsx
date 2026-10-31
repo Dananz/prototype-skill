@@ -8,9 +8,11 @@
 // design (framed.tsx). Who is looking comes from the host (api/config, api/me): Sign in with GitHub,
 // or the signed-in viewer at the top right. Comments (comments.tsx, pins.tsx): the bar's second row,
 // which grows into the comments of the design in view, pins on the designs, counts on the labels.
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { Proto, Session, Variant } from '../shell'
+import type { Design, Proto, Session, Variant } from '../shell'
+import { mountMap, type MapApi, type MapInput } from '../map/index'
+import { Ph } from '../tree/row'
 import { shareInfo, shareScope } from '../mode'
 import { t } from '../i18n'
 import { numberOf } from '../variants'
@@ -144,7 +146,26 @@ type Flag = ReturnType<typeof makeFlag>
 
 const screensOf = (p: Proto): Screen[] => p.variants.map((v, k) => ({ key: `${p.id}/${v.id}`, n: numberOf(v.id) || k + 1, name: v.name, v }))
 
-function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
+/** A shared design's map, look and open only: a screen double-clicked (or Open) leaves the map for it. */
+function ShareMap({ protos, designs, onOpen }: { protos: Proto[]; designs: Design[]; onOpen: (route: string) => void }) {
+  const host = useRef<HTMLDivElement>(null), mounts = useContext(MountsCtx)!
+  const open = useRef(onOpen)
+  open.current = onOpen
+  useEffect(() => {
+    const subs = new Set<() => void>()
+    let input: MapInput = { protos, designs, place: '', hidden: false, lines: 'selected', design: '', readOnly: true }
+    const set = (next: Partial<MapInput>) => { input = { ...input, ...next }; subs.forEach(f => f()) }
+    const api: MapApi = {
+      get: () => input, subscribe: f => { subs.add(f); return () => { subs.delete(f) } },
+      open: route => open.current(route), mount: (el, c) => mounts.mount(el, c), camera: null,
+      setLines: lines => set({ lines }), setDesign: design => set({ design }), ask: async () => {},
+    }
+    return mountMap(host.current!, api)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return <div ref={host} data-viewer-map className="absolute inset-0 z-10 bg-zinc-50 dark:bg-zinc-950" />
+}
+
+function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; designs: Design[] }) {
   const wide = useWide()
   const root = useRef<HTMLDivElement>(null)
   const api = useRef<Api | null>(null)
@@ -164,6 +185,21 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
   const isNewer = useSyncExternalStore(newer.sub, newer.get)
   const facts = { owner: account.sharer?.login || (shareInfo?.owner ?? ''), avatar: account.sharer?.avatar ?? null, version: shareInfo?.version ?? 1, updatedAt: shareInfo?.updatedAt ?? new Date().toISOString() }
   const bar = useRef<HTMLDivElement>(null)
+  // A share with designs opens on their map; a screen opened from it leaves it, the Map button goes back.
+  const [mapOn, setMapOn] = useState(designs.length > 0)
+  // A <Go to> link in a shared screen (adapters/go.react.ts) walks to that screen of the share: the
+  // option its design shows, else its first; a screen not in the share stays put.
+  const goTo = useRef<(route: string) => void>(() => {})
+  goTo.current = route => { setMapOn(false); setProtoId(route.split('/')[0]); if (wide) openDesign(route); else setSel(route) }
+  useEffect(() => {
+    const on = (e: Event) => {
+      const to = String((e as CustomEvent).detail?.to ?? ''), p = protos.find(x => x.id === to)
+      const route = designs.flatMap(d => d.flows.flatMap(f => f.screens)).find(x => x.split('/')[0] === to) ?? (p?.variants[0] ? `${to}/${p.variants[0].id}` : '')
+      if (route && p?.variants.some(v => v.id === route.split('/')[1])) goTo.current(route)
+    }
+    addEventListener('proto:go', on)
+    return () => removeEventListener('proto:go', on)
+  }, [designs, protos])
 
   // A design opened full size from the desk, and whether it is on its way back into its preview.
   const [open, setOpen] = useState<string | null>(null)
@@ -335,6 +371,13 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
         </div>
       )}
       <div className="relative min-h-0 flex-1">
+        {mapOn && <ShareMap protos={protos} designs={designs} onOpen={route => goTo.current(route)} />}
+        {designs.length > 0 && !mapOn && (
+          <button type="button" data-viewer-map-btn onClick={() => { setOpen(null); setMapOn(true) }} title={t('Map')}
+            className="absolute start-3 top-3 z-10 inline-flex h-8 items-center gap-1.5 rounded-full bg-white/95 px-3 text-[12px] font-medium text-zinc-700 shadow ring-1 ring-black/[.06] backdrop-blur dark:bg-zinc-900/95 dark:text-zinc-200 dark:ring-white/10">
+            <Ph name="squaresFour" className="size-3.5" />{t('Map')}
+          </button>
+        )}
         {wide
           ? <>
             <Desk key={proto.id} screens={screens} size={size} phone={proto.kind === 'phone'} sel={cur.key} store={store} api={api}
@@ -357,7 +400,7 @@ function Viewer({ protos, newer }: { protos: Proto[]; newer: Flag }) {
  * page's ready mark (`data-ready`, which screenshots wait for) once the first designs are on it.
  * newer(): the host has a version above this page's; a quiet banner offers the reload.
  */
-export function createViewer(el: HTMLElement, opts: { mount: Mount; protos: Proto[]; session: Session }) {
+export function createViewer(el: HTMLElement, opts: { mount: Mount; protos: Proto[]; session: Session; designs?: Design[] }) {
   const order = shareScope?.protos.map(s => s.id) ?? []
   const protos = [...opts.protos].filter(p => p.variants.length)
     .sort((a, b) => (order.indexOf(a.id) + 1 || Infinity) - (order.indexOf(b.id) + 1 || Infinity))
@@ -379,7 +422,7 @@ export function createViewer(el: HTMLElement, opts: { mount: Mount; protos: Prot
   const newer = makeFlag()
   const root = createRoot(el)
   root.render(protos.length
-    ? <MountsCtx.Provider value={mounts}><Viewer protos={protos} newer={newer} /></MountsCtx.Provider>
+    ? <MountsCtx.Provider value={mounts}><Viewer protos={protos} newer={newer} designs={opts.designs ?? []} /></MountsCtx.Provider>
     : <p className={`${face} p-8 text-sm text-zinc-500`}>{t('Nothing was shared here.')}</p>)
   const wait = (ms: number) => new Promise(r => setTimeout(r, ms))
   Promise.all([document.fonts.ready, Promise.race([mountedOnce, wait(5000)])])

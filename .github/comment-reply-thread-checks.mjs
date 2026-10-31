@@ -144,8 +144,11 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
       if (!row.querySelector('[data-shoot=comment-turn]').textContent.includes('Better, but the button still feels cramped')) return 'the nested turn lacks the follow-up'
       if (!row.closest('section')?.getAttribute('aria-label')?.startsWith('With')) return 'a thread with an open follow-up should be with the agent, it is in ' + row.closest('section')?.getAttribute('aria-label')
       if (!row.textContent.includes('Opened up the padding everywhere')) return 'the thread lost the first reply'
-      const pins = [...document.querySelectorAll('button[aria-label^="Comment 1"]')].filter(p => p.getClientRects().length).length
-      if (pins !== 1) return 'the thread should have one pin, it has ' + pins
+      // The pins draw after the list, a frame later on a busy page.
+      const pinCount = () => [...document.querySelectorAll('button[aria-label^="Comment 1"]')].filter(p => p.getClientRects().length).length
+      await until(() => pinCount() === 1)
+      const pins = pinCount()
+      if (pins !== 1) return 'the thread should have one pin, it has ' + pins + ' (pins: ' + JSON.stringify([...document.querySelectorAll('button[aria-label^="Comment"]')].map(p => p.getAttribute('aria-label') + (p.getClientRects().length ? '' : ' unseen'))) + ', at ' + location.pathname + location.search + ', page: ' + JSON.stringify({ ready: document.documentElement.dataset.ready, mount: document.querySelector('[data-layers] [data-mount]')?.innerHTML.length ?? null, overlay: !!document.querySelector('vite-error-overlay'), overlayText: document.querySelector('vite-error-overlay')?.shadowRoot?.textContent?.slice(0, 300) ?? null, layers: document.querySelector('[data-layers]')?.children.length, view: !document.querySelector('[data-view]')?.hidden, tree: localStorage.getItem('proto-tree'), rows: document.querySelectorAll('[data-comment-row], [data-shoot=comment-turn]').length, frame: (f => f && { src: f.getAttribute('src'), ready: f.contentDocument?.documentElement?.dataset.ready ?? null, mount: f.contentDocument?.querySelector('[data-mount]')?.innerHTML.length ?? null, hostVis: document.querySelector('[data-view]')?.style.visibility })(document.querySelector('[data-view] iframe')) }) + ')'
       return 'ok'
     })()`)
     if (nested !== 'ok') fail(`reply thread: ${nested}`)

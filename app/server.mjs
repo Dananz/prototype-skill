@@ -3,7 +3,7 @@
 import { batchOwner, commentListener, listenerSids, listenerStatus } from './listener.mjs'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync, watch } from 'node:fs'
+import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync, watch } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assignmentNeeded, buildUpNeeded, isCurrent } from './assignment.mjs'
@@ -345,7 +345,7 @@ const fromOf = f => ({ share: f.share, version: f.version, viewer: f.viewer, nam
 // the element of the line it changes. More variants is the one made on a prototype (route <slug>),
 // with how many.
 // Fix before sharing is asked from a share review: the owner's words and what the review found.
-const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'copy', 'try-it', 'copy-options', 'share-fix'])
+const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'copy', 'try-it', 'copy-options', 'share-fix', 'build-screen', 'map-note', 'add-link', 'build-design'])
 
 /**
  * Writes one send from the page as a new batch; images come as data URLs and are stored as files.
@@ -392,7 +392,7 @@ export function receive(data, root = dir, { check = false } = {}) {
       if (c.point !== undefined || c.region !== undefined || c.target !== undefined || time) throw bad(i, ': more-variants has no element, spot, region or moment')
     } else if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
-      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it, copy-options or share-fix, on a variant (<slug>/<letter>)')
+      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it, copy-options, share-fix, build-screen, map-note, add-link or build-design, on a variant (<slug>/<letter>)')
       if (c.action === 'pick' || c.action === 'unpick') {
         let meta
         try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { throw bad(i, `: src/protos/${slug}/meta.ts is missing or isn't plain JSON, so a pick can't be marked in it`) }
@@ -645,6 +645,32 @@ export function prototypeServer(session) {
         return shares
       })
       sharesReady.catch(e => console.error(`share links are off: ${e?.message || e}`))
+      // The map's stills (stills.mjs): taken here in headless Chrome from the page at this server's own
+      // address, and served as files. A still that's ready reaches the page as `proto:still`.
+      const stillsReady = import('./stills.mjs').then(({ stillServer }) => {
+        const stills = stillServer({
+          root: dir,
+          origin: () => {
+            const a = server.httpServer?.address()
+            const host = !a || typeof a !== 'object' || a.address === '::' || a.address === '0.0.0.0' ? '127.0.0.1' : a.address.includes(':') ? `[${a.address}]` : a.address
+            return `${server.config.server.https ? 'https' : 'http'}://${host}:${a && typeof a === 'object' ? a.port : server.config.server.port}`
+          },
+          emit: data => server.ws.send({ type: 'custom', event: 'proto:still', data }),
+        })
+        server.httpServer?.once('close', () => stills.close())
+        return stills
+      })
+      // Before /__proto below, which takes JSON POSTs only. A still's name is its contents' hash.
+      server.middlewares.use('/__proto/stills', (req, res) => {
+        stillsReady.then(stills => {
+          const path = req.method === 'GET' || req.method === 'HEAD' ? stills.file(req.url.split('?')[0].replace(/^\//, '')) : null
+          if (!path) { res.statusCode = 404; return res.end() }
+          res.setHeader('content-type', 'image/webp')
+          res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+          if (req.method === 'HEAD') return res.end()
+          createReadStream(path).on('error', () => res.end()).pipe(res)
+        }, () => { res.statusCode = 404; res.end() })
+      })
       server.middlewares.use('/__proto', (req, res) => {
         const chunks = []
         let size = 0
@@ -678,6 +704,13 @@ export function prototypeServer(session) {
               }, e => fail(500, String(e?.message || e).slice(0, 300)))
               return
             }
+            if (route === '/still') {
+              stillsReady.then(stills => stills.ask(data)).then(body => {
+                res.setHeader('content-type', 'application/json')
+                res.end(JSON.stringify(body))
+              }, e => fail(e.status || 500, String(e?.message || e).slice(0, 300)))
+              return
+            }
             if (route === '/ping') { activity = Date.now(); shares?.ping() }
             if (route === '/keep') write({ keep: !!data.keep })
             if (route === '/work' && typeof data.proto === 'string' && typeof data.variant === 'string') work({ proto: data.proto, variant: data.variant, undo: data.undo })
@@ -704,6 +737,20 @@ export function prototypeServer(session) {
               if (!made) return fail(404, `no prototype ${String(data.proto ?? '')}`)
               res.setHeader('content-type', 'application/json')
               return res.end(JSON.stringify({ markdown: made.markdown, file: `.proto/decisions/${data.proto}.md`, picked: made.picked, open: made.open }))
+            }
+            // The map's lines: each screen's <Go to> targets, read here so the page never imports a
+            // variant's source (an import with no importer makes every edit of it a full reload).
+            if (route === '/links') {
+              const routes = Array.isArray(data.routes) ? data.routes.filter(r => typeof r === 'string' && /^[a-z0-9][a-z0-9-]*\/[A-Z]{1,2}$/.test(r)).slice(0, 500) : []
+              import('./links.mjs').then(({ linksIn }) => {
+                const links = Object.fromEntries(routes.map(r => {
+                  const [slug, letter] = r.split('/'), ext = ['tsx', 'jsx', 'vue', 'svelte'].find(x => existsSync(join(dir, 'src', 'protos', slug, `${letter}.${x}`)))
+                  try { return [r, ext ? linksIn(readFileSync(join(dir, 'src', 'protos', slug, `${letter}.${ext}`), 'utf8')) : []] } catch { return [r, []] }
+                }))
+                res.setHeader('content-type', 'application/json')
+                res.end(JSON.stringify({ links }))
+              }, e => fail(500, String(e?.message || e).slice(0, 300)))
+              return
             }
             if (route === '/fav') {
               let favorites

@@ -231,7 +231,9 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
   assert(await until(async () => (await viewerList()).find(c => c.id === first)?.owner_reply === 'OWNER-REPLY thanks, bigger now', 15_000), 'reply: the viewer does not see the owner\'s reply')
   await waitFor(page, `document.querySelector('[data-link-card="${first}"]').textContent.includes('OWNER-REPLY')`, 'reply: the card does not show the reply')
 
-  // Hide takes it off the link for viewers and keeps it here; Unhide brings it back.
+  // Hide takes it off the link for viewers and keeps it here; Unhide brings it back. (The card's
+  // buttons stay disabled until the reply's request settles, after its text already shows.)
+  await waitFor(page, `!document.querySelector('[data-link-card="${first}"] [data-link-hide]').disabled`, 'hide: the button stayed disabled after the reply')
   await click(page, `[data-link-card="${first}"] [data-link-hide]`)
   assert(await until(async () => !(await viewerList()).some(c => c.id === first), 15_000), 'hide: the viewer still sees the comment')
   await waitFor(page, `document.querySelector('[data-link-card="${first}"] [data-link-hide]')?.textContent==='Unhide' && !document.querySelector('[data-link-card="${first}"] [data-link-hide]').disabled`, 'hide: the card does not offer Unhide')

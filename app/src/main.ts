@@ -4,7 +4,7 @@ import { refOfPath } from '../shell/building'
 import { SHARE, shareInfo } from '../shell/mode'
 import { status } from '../shell/transport'
 import { mount } from './mount'
-import { protos } from './registry'
+import { designs, protos } from './registry'
 import session from '../session.json'
 
 const app = document.getElementById('app')!
@@ -14,7 +14,7 @@ const app = document.getElementById('app')!
 // is in view, and whenever it comes back to it. The copy in the full view's frame (one design) doesn't.
 if (SHARE) {
   void import('../shell/viewer/index').then(({ createViewer }) => {
-    const viewer = createViewer(app, { mount, protos, session })
+    const viewer = createViewer(app, { mount, protos, session, designs })
     if (viewer.framed) return
     const check = async () => {
       const state = await status()
@@ -25,12 +25,12 @@ if (SHARE) {
   })
 }
 
-const shell = SHARE ? null : createShell(app, { mount, protos, session })
+const shell = SHARE ? null : createShell(app, { mount, protos, session, designs })
 
 if (import.meta.hot && shell) {
   // New or renamed prototype files re-run the registry; the shell takes the new list
   // without a page reload. Edits inside a variant are handled by the framework's own HMR.
-  import.meta.hot.accept('./registry', mod => mod && shell.setProtos(mod.protos))
+  import.meta.hot.accept('./registry', mod => { if (!mod) return; shell.setDesigns(mod.designs); shell.setProtos(mod.protos) })
   import.meta.hot.accept('../session.json', mod => mod && shell.setSession(mod.default))
   // Sent by the dev server for any change under src/protos, shown or not (Vite itself only
   // reports modules the page has loaded).

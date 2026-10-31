@@ -108,6 +108,12 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
 @keyframes proto-isl-pop { 0% { opacity: 0; transform: scale(.4) } 60% { opacity: 1; transform: scale(1.12) } 100% { transform: none } }
 @keyframes proto-isl-rise { from { opacity: 0; transform: translateY(10px); filter: blur(3px) } to { opacity: 1; transform: none; filter: none } }
 @keyframes proto-isl-out { to { opacity: 0; transform: translateY(-8px); filter: blur(2px) } }
+/* The zoom pill opens as the island's buttons arrive: each pops in, one after another. */
+[data-zoom-pill] :is(:hover, :focus-within) > [data-zoom-more] > * { animation-name: proto-isl-pop; animation-duration: .45s; animation-timing-function: cubic-bezier(.3,1.6,.5,1); animation-fill-mode: both; }
+[data-zoom-more] > :nth-child(2) { animation-delay: 30ms; } [data-zoom-more] > :nth-child(3) { animation-delay: 60ms; }
+[data-zoom-more] > :nth-child(4) { animation-delay: 90ms; } [data-zoom-more] > :nth-child(5) { animation-delay: 120ms; }
+[data-zoom-more] > :nth-child(6) { animation-delay: 150ms; } [data-zoom-more] > :nth-child(n+7) { animation-delay: 180ms; }
+@media (prefers-reduced-motion: reduce) { [data-zoom-pill] [data-zoom-more] > * { animation: none !important; } }
 /* The whole-variant box's @ menu: it rises out of the box, and sinks back into it. */
 @keyframes proto-isl-menu-in { from { opacity: 0; transform: translateY(6px) scale(.97) } to { opacity: 1; transform: none } }
 @keyframes proto-isl-menu-out { to { opacity: 0; transform: translateY(4px) scale(.98) } }
@@ -188,13 +194,22 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
     background-attachment: fixed;
   }
   [data-desk] { padding: var(--desk-gap); }
-  [data-desk] > [data-side], [data-desk] [data-bar], [data-desk] [data-panel]:not(.hidden) {
+  [data-desk] > :is([data-side], [data-tree-side]), [data-desk] [data-bar], [data-desk] [data-panel]:not(.hidden) {
     background: var(--desk-card);
     border: 1px solid var(--desk-line) !important;
     border-radius: 14px;
     box-shadow: 0 1px 2px rgb(0 0 0 / .06), 0 10px 28px -14px rgb(0 0 0 / .3);
   }
-  [data-desk] > [data-side] { overflow: hidden; }
+  [data-desk] > :is([data-side], [data-tree-side]) { overflow: hidden; }
+  /* The map runs under the desk's cards to the window's edges: the sidebar card stays over it. */
+  [data-desk] > [data-tree-side] { position: relative; z-index: 10; }
+  [data-desk] [data-zone] > :is([data-map-host], [data-view])[data-full] { position: fixed !important; inset: 0 !important; }
+}
+/* The comments island steps aside while a box of the map's (Build it, a note) grows out of its place. */
+[data-island-host] { transition: opacity .18s ease-out; }
+[data-island-host][data-away] { opacity: 0; }
+[data-island-host][data-away] * { pointer-events: none !important; }
+@media (min-width: 1024px) {
   [data-desk] > [data-grip] + div { margin-inline-start: var(--desk-gap); }
   [data-desk] [data-bar] { margin-bottom: var(--desk-gap); }
   [data-desk] [data-panel]:not(.hidden) { overflow: hidden; }

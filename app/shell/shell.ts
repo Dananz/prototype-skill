@@ -11,7 +11,7 @@
 // First: it wraps the page listeners every later import, and every design, adds (see quiet.ts).
 import { listen, quiet } from './quiet'
 import { agentName, type Agent } from './agent'
-import { variantLabel, variantRef } from './variants'
+import { numberOf, variantLabel, variantRef } from './variants'
 import { VirtualList, virtualHTML, scrollParent, VIRTUAL_THRESHOLD } from './virtual'
 import { ic, esc, bd, ON, TAB_ON, TAB_OFF, IB, SEP, pulse, pop, ago, clock } from './ui'
 import { BUILDING_CLASS, ERROR_CLASS, ownerOfPath, refOfPath } from './building'
@@ -35,6 +35,10 @@ import { createView } from './view/index'
 import { createIntake } from './intake/index'
 import type { Intake } from './intake/types'
 import { createSettings, type Appearance } from './settings'
+import { mountTree, type TreeInput } from './tree/index'
+import { mountMap, type MapApi, type MapInput } from './map/index'
+import { createJump } from './jump'
+import { jumpItems, linkState, whereOf } from './where'
 import { followSession, rtl, t, tn, day } from './i18n'
 import { createShare } from './share'
 import { createShareLink } from './share-link'
@@ -53,7 +57,14 @@ export type Version = { n: number; at: string; note: string; before: { text: str
 /** Something behind clicks in a prototype's variants (a menu, a drawer, a dialog), reached by
  *  clicking its selectors in order. about: one line per variant; only: the variants that have it. */
 export type State = { id: string; name: string; click: string[]; about?: Record<string, string>; only?: string[] }
-export type Proto = { id: string; title: string; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; slot?: string; also: { proto: string; variant: string }[]; picked?: string; favorites: string[]; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[]; versions?: Record<string, Version[]> }
+/** A design: screens (prototypes, by slug) that share one look and link to each other, in flows
+ *  (src/designs/<id>/design.ts, written by `proto design`). from: the variant it was made from. */
+export type Design = { id: string; title: string; created: string; session?: string; owner?: string; from?: { proto: string; variant: string }; flows: { name: string; screens: string[] }[]
+  /** In a share: each screen's <Go to> targets, read when it was built (the page has no sources to read). */
+  links?: Record<string, string[]> }
+/** session: the conversation that made it; owner: the one working on it now; next: its pick is
+ *  built into its parent (proto add --next). */
+export type Proto = { id: string; title: string; session?: string; owner?: string; next?: boolean; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; slot?: string; also: { proto: string; variant: string }[]; picked?: string; favorites: string[]; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[]; versions?: Record<string, Version[]> }
 /** A variant of one prototype ("pricing" and "C"). */
 export type Ref = { proto: string; variant: string }
 /** work: the variant being changed now; before: the ones worked on before it (newest first);
@@ -178,7 +189,7 @@ async function replay(host: HTMLElement, steps: string[], alive: () => boolean, 
   return null
 }
 
-export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Proto[]; session: Session }) {
+export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Proto[]; session: Session; designs?: Design[] }) {
   const { mount } = opts
   let session = opts.session
   // Favorites only: each prototype with favorites shows just those, everywhere variants are listed
@@ -188,6 +199,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const favKey = `proto-favs-only:${session.id}`
   let favOnly = localStorage.getItem(favKey) === '1'
   let all = opts.protos
+  let designs = opts.designs ?? []
+  // The tree sidebar draws them and listens for changes (tree/index.tsx).
   const shown = (list: Proto[]) => favOnly ? list.map(p => p.favorites.length ? { ...p, variants: p.variants.filter(v => p.favorites.includes(v.id)) } : p) : list
   let protos = shown(all)
   // The page inside a device view (view/frame.ts) shares this browser's storage with the page
@@ -532,21 +545,28 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // arrows, the spotlight and the comment layer.
   root.innerHTML = `<div ${framed ? '' : 'data-desk '}class="flex h-dvh bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
     <aside data-side></aside>
+    <aside data-tree-side hidden></aside>
     <div data-grip role="separator" aria-orientation="vertical" aria-label="${t('Resize sidebar')}" tabindex="0" title="${t('Drag to resize · double-click to reset')}" class="group relative z-40 -mx-1 hidden w-2 shrink-0 cursor-col-resize touch-none outline-none">
       <span class="absolute left-1/2 top-1/2 h-10 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-400/0 transition-colors duration-150 group-hover:bg-zinc-400/70 group-focus-visible:bg-zinc-400/70 group-data-[dragging]:bg-zinc-400/70"></span>
     </div>
     <div class="flex min-w-0 flex-1 flex-col">
       <header data-bar class="relative z-30 ${framed ? 'hidden' : 'flex'} h-12 shrink-0 items-center gap-1 border-b border-black/[.07] px-2 dark:border-white/10"></header>
       <div data-zone>
-        <div data-layers class="absolute inset-0 overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-view hidden class="absolute inset-0 z-[5]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-island-host class="pointer-events-none absolute inset-0 z-[17]" style="inset-inline-end:var(--hw,0px)"></div>
+        <div data-layers class="absolute inset-0 overflow-hidden" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-map-host hidden class="absolute inset-0 z-[4]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-view hidden class="absolute inset-0 z-[5]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-island-host class="pointer-events-none absolute inset-0 z-[17]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px)"></div>
+        <div data-strip hidden class="absolute start-3 top-3 z-[20]"></div>
+        <div data-zoom-pill hidden class="absolute bottom-4 z-[21]" style="inset-inline-end:calc(var(--hw,0px) + 1rem)"></div>
         <div data-motion-dock class="absolute start-0 z-[18]" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-copy-bar class="absolute start-0 z-[14]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px))"></div>
         <div data-copy-sheet class="pointer-events-none absolute inset-0 z-[19] overflow-hidden" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-overlay></div>
+        <div data-tour hidden class="peer absolute inset-x-0 top-3 z-[30] mx-auto w-fit max-w-[90%]"></div>
+        <div data-go-chip hidden class="absolute inset-x-0 top-3 z-[30] mx-auto w-fit max-w-[90%] peer-[:not([hidden])]:top-16"></div>
+        <div data-go-note role="status" hidden class="pointer-events-none absolute inset-x-0 top-3 z-[30] mx-auto w-fit max-w-[90%] truncate rounded-full bg-zinc-900 px-3 py-1.5 text-[12px] text-white shadow-lg dark:bg-white dark:text-zinc-900"></div>
         <div data-pill></div>
         <div data-scale-card></div>
         <aside data-hints></aside>
@@ -564,6 +584,255 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div data-intake hidden class="fixed inset-0 z-[60]"></div>
   </div>`
   const side = root.querySelector<HTMLElement>('[data-side]')!
+  const treeHost = root.querySelector<HTMLElement>('[data-tree-side]')!
+  // The project tree replaces the columns while ?tree=1 or Settings says so (kept in this browser).
+  const treeAsked = new URLSearchParams(location.search).get('tree')
+  if (treeAsked === '1' || treeAsked === '0') remember('proto-tree', treeAsked)
+  let treeOn = !framed && localStorage.getItem('proto-tree') === '1'
+  const treeWatchers = new Set<() => void>()
+  let treeSnap: TreeInput | null = null
+  const placeRoute = () => st.place.view === 'variant' ? `${st.place.proto}/${st.place.variant}` : st.place.view === 'proto' ? `${st.place.proto}/` : ''
+  function treeInput(): TreeInput {
+    const by: Record<string, number> = {}
+    for (const [k, n] of comments.counts().by) { const slug = k.split('/')[0]; by[slug] = (by[slug] ?? 0) + n }
+    const w = workOf()
+    return {
+      protos: all, designs, place: placeRoute(), me: session.conversation ?? null,
+      building: new Set(Object.keys(session.building ?? {}).filter(k => buildingUntil(k) > Date.now())), counts: by,
+      work: w ? t('Working on {name}', { name: `${w.p.title} ${variantLabel(w.p, w.v.id)}` }) : '',
+      up: st.live && !st.stopped,
+      live: st.stopped ? t('Server stopped') : [st.live ? t('Live') : t('Reconnecting'), st.lastEdit ? t('edited {when}', { when: ago(st.lastEdit) }) : ''].filter(Boolean).join(' · '),
+    }
+  }
+  /** Gives the tree what it reads now; it redraws only when that changed. */
+  function paintTree() {
+    if (!treeOn) return
+    const next = treeInput(), was = treeSnap
+    const key = (x: TreeInput | null) => x && JSON.stringify({ ...x, protos: x.protos.map(p => [p.id, p.title, p.picked, p.archived, p.from, p.session, p.favorites, p.variants.map(v => v.id + v.name)]), building: [...x.building] })
+    if (key(next) === key(was)) return
+    treeSnap = next
+    treeWatchers.forEach(f => f())
+  }
+  // <Go to> in a design (adapters/go.react.ts): to that screen of the design on screen, at its pick
+  // (or the pinned variant, or #1 standing in). One it can't reach is said over the stage.
+  const goNote = root.querySelector<HTMLElement>('[data-go-note]')!
+  let goTimer: ReturnType<typeof setTimeout> | undefined
+  const sayGo = (text: string) => { goNote.textContent = text; goNote.hidden = false; clearTimeout(goTimer); goTimer = setTimeout(() => { goNote.hidden = true }, 4000) }
+  if (!framed) addEventListener('proto:go', e => {
+    const to = String((e as CustomEvent).detail?.to ?? '')
+    const target = all.find(p => p.id === to && !p.archived)
+    const from = st.place.view === 'variant' ? `${st.place.proto}/${st.place.variant}` : ''
+    // With the project tree on, a link asks first (a chip over the stage), and one to a screen not
+    // built yet offers to ask the agent for it.
+    if (!target) return treeOn && from ? showChip({ from, to, route: '' }) : sayGo(t('{name} is not built yet', { name: to }))
+    // The design of the screen on screen (a pinned one, or the one an exploration is built on).
+    const pl = st.place
+    const w = pl.view === 'variant' ? whereOf(all, designs, { proto: pl.proto, variant: pl.variant }) : null
+    const mine = w?.design ? designs.find(d => d.id === w.design!.id) : null
+    const entry = mine ? mine.flows.flatMap(f => f.screens).find(x => x.split('/')[0] === to) : to
+    if (!entry) return sayGo(t('{name} is not a screen of this design', { name: to }))
+    const route = `${to}/${entry.split('/')[1] || target.picked || target.variants[0]?.id || 'A'}`
+    if (treeOn && from) return showChip({ from, to, route })
+    const [proto, variant] = route.split('/')
+    go({ view: 'variant', proto, variant })
+  })
+  // The tour's bar (act 'tour'): the flow, where you are in it, its arrows and End. Leaving the flow ends it.
+  const tourBar = root.querySelector<HTMLElement>('[data-tour]')!
+  let tour: { design: string; flow: string } | null = null
+  function paintTour() {
+    const pl = st.place, w = pl.view === 'variant' ? whereOf(all, designs, { proto: pl.proto, variant: pl.variant }) : null
+    if (tour && (!treeOn || w?.design?.id !== tour.design || w.flow?.name !== tour.flow || w.exploration)) tour = null
+    tourBar.hidden = !tour
+    if (!tour || !w?.flow) { tourBar.innerHTML = ''; return }
+    const n = w.flow.routes.length, step = (d: -1 | 1, label: string) => `<button data-act="tour:${d < 0 ? 'prev' : 'next'}" aria-label="${label}" title="${label}" ${w.at + d < 0 || w.at + d >= n ? 'disabled' : ''} class="grid size-8 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 disabled:opacity-25 dark:text-zinc-300 dark:hover:bg-white/10">${ic(d < 0 ? (rtl ? 'right' : 'left') : (rtl ? 'left' : 'right'), 'size-3.5')}</button>`
+    tourBar.innerHTML = `<div role="status" class="flex items-center gap-1 rounded-full bg-white p-1 ps-3 text-[12px] text-zinc-600 shadow-[0_8px_24px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-300 dark:ring-white/10">
+      ${ic('signpost', 'size-3.5 text-violet-500')}<span class="ms-1 font-medium text-zinc-900 dark:text-white">${t('Tour')}</span><span class="text-zinc-400">·</span><span dir="auto" class="truncate">${esc(w.flow.name)}</span>
+      ${step(-1, t('Previous screen in the flow'))}<span class="tabular-nums">${w.at + 1}/${n}</span>${step(1, t('Next screen in the flow'))}
+      <button data-act="tour:end" class="h-8 rounded-full px-3 font-medium hover:bg-zinc-900/5 dark:hover:bg-white/10">${t('End')}</button></div>`
+  }
+  const goChip = root.querySelector<HTMLElement>('[data-go-chip]')!
+  let chip: { from: string; to: string; route: string } | null = null
+  function showChip(next: typeof chip) { chip = next; paintChip() }
+  function paintChip() {
+    const pl = st.place
+    if (chip && (pl.view !== 'variant' || `${pl.proto}/${pl.variant}` !== chip.from)) chip = null
+    goChip.hidden = !chip
+    if (!chip) { goChip.innerHTML = ''; return }
+    const q = all.find(p => p.id === chip!.to), letter = chip.route.split('/')[1]
+    const ls = q ? linkState(q, letter) : null
+    const state = !q ? t('{name} is not built yet', { name: chip.to })
+      : ls!.kind === 'picked' ? t('Picked #{n}', { n: numberOf(letter) }) : ls!.kind === 'stand-in' ? t('#1 stands in until one is picked') : t('#{n} in this design', { n: numberOf(letter) })
+    const pill = 'h-8 shrink-0 rounded-full px-3 text-[12px] font-medium'
+    goChip.innerHTML = `<div role="status" class="flex items-center gap-2 rounded-full bg-white p-1 ps-3 text-[12px] text-zinc-600 shadow-[0_8px_24px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:text-zinc-300 dark:ring-white/10">
+      ${q ? `<span dir="auto" class="truncate">${esc(state)}</span><button data-act="go-chip:go" data-shoot="go-chip-go" class="${pill} bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover">${esc(t('Go to {name}', { name: q.title }))}</button>`
+        : `<span dir="auto" class="truncate">${esc(state)}</span><button data-act="go-chip:build" data-shoot="go-chip-build" class="${pill} bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover">${esc(t('Ask {agent} to build it', { agent: agentName(session.agent) }))}</button>`}
+      <button data-act="go-chip:close" aria-label="${t('Close')}" class="grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:bg-zinc-900/5 dark:hover:bg-white/10">${ic('x', 'size-3.5')}</button></div>`
+  }
+  // The map (map/index.tsx): with the project tree on, it is the overview, in place of the lobbies.
+  const mapHost = root.querySelector<HTMLElement>('[data-map-host]')!
+  const mapWatchers = new Set<() => void>()
+  let mapSnap: MapInput | null = null, mapMounted = false, lastFocus = ''
+  let mapLines: 'all' | 'selected' = localStorage.getItem('proto-map-lines') === 'all' ? 'all' : 'selected'
+  let mapDesign = '', mapEdits = 0
+  // What the map says of itself: its zoom (as the design's own size), and Build it (open, offered).
+  let mapState = { pct: 100, build: false, one: false }
+  // The area the tree asked the map to show (a design or flow key, numbered so asking again flies again).
+  let mapFrame = '', frames = 0
+  // Each prototype's file edits, counted: its stills on the map are taken again when its count moves.
+  const editsOf = new Map<string, number>()
+  const onMap = () => treeOn && !framed && st.place.view !== 'variant'
+  // Focus on a wide page with the tree on stays on the map: the design's view sits in place on its
+  // board (the map's slot) and the camera carries it. A tool that takes the stage (Compare, History,
+  // Autoplay, All), a chosen device size, and a phone, keep the stage of their own.
+  const inPlace = () => treeOn && !framed && !phoneMq.matches && st.place.view === 'variant' && !st.place.tool && !viewOn()
+  let slotEl: HTMLElement | null = null
+  /** Puts the current layer where it shows: in the focused board's slot, else in the stage's layers. */
+  function placeLayer() {
+    if (!layer) return
+    const want = inPlace() && slotEl ? slotEl : layers
+    if (layer.el.parentElement === want) return
+    // moveBefore keeps what is running in it (animations, focus, frames) where the browser has it.
+    const box = want as HTMLElement & { moveBefore?: (n: Node, ref: Node | null) => void }
+    try { if (box.moveBefore && layer.el.isConnected) box.moveBefore(layer.el, box.firstChild); else box.prepend(layer.el) } catch { box.prepend(layer.el) }
+  }
+  const mapApi: MapApi = {
+    get: () => mapSnap!, subscribe: f => { mapWatchers.add(f); return () => { mapWatchers.delete(f) } },
+    open: route => { const [proto, variant] = route.split('/'); go({ view: 'variant', proto, variant }) },
+    mount: (el, c) => mount(el, c), camera: null,
+    setLines: mode => { mapLines = mode; remember('proto-map-lines', mode); paintMap() },
+    setDesign: id => { mapDesign = id; paintMap() },
+    ask: async (on, action, text) => { await comments.act.decide(on, action, { body: [text], tags: [] }) },
+    slot: el => { slotEl = el; placeLayer() },
+    report: s => { const was = mapState; mapState = s; paintZoom(); if (was.build !== s.build || was.one !== s.one) render() },
+    panel: open => islandHost.toggleAttribute('data-away', open),
+    leave: () => { if (inPlace()) go({ view: 'session' }) },
+  }
+  // On a wide desk the map fills the window, under the bar, the strip, the sidebar and the island; it
+  // is told the clear part of it (the stage), where it fits and centres things and keeps its controls.
+  const deskMq = matchMedia('(min-width: 1024px)')
+  // The zoom pill (tree mode, a wide page): its zoom only, and on hover the layouts, Fit and −/+. It
+  // drives the map's camera while the map shows (its zoom is the design's own size), else the layout's.
+  const zoomPillOn = () => treeOn && !framed && deskMq.matches && !st.focus && (onMap() || inPlace() || viewOn())
+  let zoomKey = ''
+  function paintZoom() {
+    const el = root.querySelector<HTMLElement>('[data-zoom-pill]')
+    if (!el) return
+    if (!el.dataset.bound) { el.dataset.bound = '1'; el.addEventListener('change', e => { const sel = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-map-design]'); if (sel) mapApi.setDesign(sel.value) }) }
+    const on = zoomPillOn()
+    el.hidden = !on
+    if (!on) { el.innerHTML = ''; zoomKey = ''; return }
+    const mapOn = onMap() || inPlace(), inScreen = st.place.view === 'variant'
+    const pct = mapOn ? `${mapState.pct}%` : pillPct()
+    const key = JSON.stringify([mapOn, inScreen, viewOk(), shownSize(), st.view.land, designs.map(d => d.id + d.title), mapDesign, document.documentElement.lang])
+    if (key === zoomKey && el.firstElementChild) { el.querySelector('[data-zoom-pct]')!.textContent = pct; return }
+    zoomKey = key
+    const btn = 'grid size-8 shrink-0 place-items-center rounded-full text-zinc-600 hover:bg-zinc-900/5 aria-pressed:bg-zinc-900/[.07] aria-pressed:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:aria-pressed:bg-white/10 dark:aria-pressed:text-white'
+    const sizes = inScreen && viewOk() ? ORDER.map(z => { const land = z === 'tablet' && st.view.land, d = dims(z, land); return `<button type="button" data-act="size:${z}" data-shoot="pill-size-${z}" aria-pressed="${shownSize() === z}" aria-label="${SIZES[z].name}" title="${SIZES[z].name} · ${d.w} × ${d.h}" class="${btn}">${ic(sizeIcon(z, land))}</button>` }).join('') + '<span class="mx-1 h-5 w-px shrink-0 bg-black/[.08] dark:bg-white/10"></span>' : ''
+    const pick = mapOn && designs.length > 1 ? `<select data-map-design aria-label="${t('Design')}" class="h-8 max-w-40 shrink-0 rounded-full bg-transparent px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><option value="">${t('All designs')}</option>${designs.map(d => `<option value="${esc(d.id)}"${d.id === mapDesign ? ' selected' : ''}>${esc(d.title)}</option>`).join('')}</select>` : ''
+    // The comments island's height, corners and shadow, and it widens with the island's easing (its
+    // buttons pop in after one another: shell.css).
+    el.innerHTML = `<div class="group flex items-center rounded-full bg-white p-1.5 text-[12px] text-zinc-900 shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.08] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
+      <div data-zoom-more class="flex max-w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[max-width,opacity] duration-200 ease-in group-hover:max-w-[40rem] group-hover:opacity-100 group-hover:duration-500 group-hover:ease-[cubic-bezier(.2,.9,.25,1.1)] group-focus-within:max-w-[40rem] group-focus-within:opacity-100 group-focus-within:duration-500 group-focus-within:ease-[cubic-bezier(.2,.9,.25,1.1)] motion-reduce:transition-none">${pick}${sizes}<button type="button" data-act="zoom:fit" data-map-fit aria-label="${mapOn ? t('Fit') : t('Center the design')}" title="${mapOn ? t('Fit') : t('Center the design')} · 0" class="${btn}">${ic('center')}</button><button type="button" data-act="zoom:out" data-map-zoom="out" aria-label="${t('Zoom out')}" title="${t('Zoom out')} (-)" class="${btn}">${ic('zoom-out', 'size-3.5')}</button><button type="button" data-act="zoom:in" data-map-zoom="in" aria-label="${t('Zoom in')}" title="${t('Zoom in')} (+)" class="${btn}">${ic('zoom-in', 'size-3.5')}</button></div>
+      <span data-zoom-pct class="grid h-8 min-w-12 place-items-center px-2 tabular-nums text-zinc-500 dark:text-zinc-400">${pct}</span></div>`
+  }
+  function paintMap() {
+    const show = onMap() || inPlace()
+    mapHost.hidden = !show
+    const full = show && deskMq.matches && !st.focus
+    mapHost.toggleAttribute('data-full', full)
+    const r = full ? layers.getBoundingClientRect() : null
+    const safe = r ? [r.left, r.top, innerWidth - r.right, innerHeight - r.bottom].map(n => Math.max(0, Math.round(n))).join(',') : ''
+    layers.style.visibility = show ? 'hidden' : ''
+    if (!show && !mapMounted) return
+    const work = all.flatMap(p => p.variants.filter(v => editing(p.id, v.id)).map(v => `${p.id}/${v.id}:${building(p.id, v.id) ? 'building' : 'editing'}`)).join(' ')
+    const next: MapInput = { protos: all, designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), working: work, frame: mapFrame, safe, focus: inPlace() ? `${st.place.proto}/${st.place.variant}` : '' }
+    if (mapSnap && (Object.keys(next) as (keyof MapInput)[]).every(k => next[k] === mapSnap![k])) return
+    mapSnap = next
+    if (!mapMounted && show) { mapMounted = true; mountMap(mapHost, mapApi) }
+    mapWatchers.forEach(f => f())
+    placeLayer()
+  }
+  // The tool strip (tree mode, a wide page): down the stage's start, as in a drawing app, on the map
+  // too. Its head walks and decides the screen (Tour, Decide), then Move and Comment, the three
+  // layouts (or a phone's scale), the design's own tools (Tweaks, Try it, copy options, motion, its
+  // states with Autoplay, Compare and History), and Fit. On the map the screen's tools are there but
+  // off, so nothing moves between the two. Each opens its menu beside the strip.
+  const strip = root.querySelector<HTMLElement>('[data-strip]')!
+  const stripOn = () => treeOn && !framed && !st.focus && !phoneMq.matches
+  function paintStrip(deviceBtn: () => string, replayBtn: () => string, centerBtn: string) {
+    const on = stripOn()
+    strip.hidden = !on
+    zone.style.setProperty('--strip-w', on ? '4rem' : '0px')
+    if (!on) { strip.innerHTML = ''; return }
+    const pl = st.place, inScreen = pl.view === 'variant', p = cur()
+    const w = inScreen ? whereOf(all, designs, { proto: pl.proto, variant: pl.variant }) : null
+    const picking = comments.counts().picking
+    const tool = (act: string, shoot: string, icon: string, label: string, key: string, pressed = false) => `<button data-act="${act}" data-shoot="${shoot}" aria-pressed="${pressed}" aria-label="${label}" title="${key ? `${label} · ${key}` : label}" class="${IB} ${pressed ? ON : ''}">${ic(icon)}</button>`
+    // A screen's tool, off on the map: the same place, a word on why.
+    const off = (shoot: string, icon: string, label: string) => `<button disabled data-shoot="${shoot}" aria-label="${label}" title="${label} · ${t('in a screen')}" class="${IB} opacity-30">${ic(icon)}</button>`
+    const tourBtn = !inScreen ? off('strip-tour', 'signpost', t('Tour')) : w?.flow && w.flow.routes.length > 1 ? tool(tour ? 'tour:end' : 'tour', 'strip-tour', 'signpost', tour ? t('End the tour') : t('Walk this flow from its first screen'), '', !!tour) : ''
+    // Decide: the bar's button is a dot and a word; upright it is the pick's check, filled once picked.
+    const d = decideOf()
+    const decide = !inScreen ? off('strip-decide', 'pick', t('Decide')) : d ? `<button data-act="open:decide" data-decide-btn data-shoot="strip-decide" aria-haspopup="menu" aria-expanded="${st.open === 'decide'}" aria-label="${d.picked ? t('Picked') : t('Decide')}" title="${d.picked ? t('Picked') : t('Decide')} · P" class="${IB} ${st.open === 'decide' ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}">${ic(d.picked ? 'picked' : 'pick')}</button>` : ''
+    // Move is the page as it is (clicks reach the design); Comment picks what to comment on (C).
+    const hands = inScreen && commentHost()
+      ? [tool(picking ? 'comment:toggle' : 'noop', 'strip-move', picking ? 'tap' : 'tap-on', t('Move'), 'Esc', !picking), tool('comment:toggle', 'strip-comment', picking ? 'select-on' : 'select', t('Comment'), 'C', picking)]
+      : [off('strip-move', 'tap', t('Move')), off('strip-comment', 'select', t('Comment'))]
+    // The three layouts, each its own button (the stage's own layout when none is chosen); a phone
+    // prototype has its scale instead, and a chosen layout its zoom (the layout menu).
+    // The zoom: the layout button's menu (its sizes and zoom), drawn as its percentage; Fit is its own button.
+    const zoomBtn = () => deviceBtn().replace(centerBtn, '').replace('data-act="open:device"', 'data-act="open:device" data-strip-zoom').replace('<span data-scale-label', '<span data-keep data-scale-label')
+    const sizes = !inScreen ? ORDER.map(z => off(`strip-size-${z}`, sizeIcon(z), SIZES[z].name))
+      : viewOk() ? [...ORDER.map(z => tool(`size:${z}`, `strip-size-${z}`, sizeIcon(z, z === 'tablet' && st.view.land), `${SIZES[z].name} · ${dims(z, z === 'tablet' && st.view.land).w} × ${dims(z).h}`, '', shownSize() === z)), frameOn() ? zoomBtn() : '']
+      : [zoomBtn()]
+    const sts = inScreen && p ? statesOf(p, pl.variant).length + TOOL_LIST.filter(x => toolOk(p, pl.variant, x)).length : 0
+    const statesBtn = sts ? `<div class="relative">${tool('open:states-pop', 'strip-states', 'grid', t('States, Autoplay, Compare'), '', st.open === 'states-pop')}${pop(st.open === 'states-pop', `<div data-strip-states class="w-72 p-1.5">${variantHere(false)}</div>`, 'start-0 top-0')}</div>` : ''
+    const own = !inScreen ? [off('strip-tweaks', 'tweaks', t('Tweaks')), off('strip-try', 'key', t('Try it')), off('strip-copy', 'text', t('Copy options')), off('strip-motion', 'curves', t('Motion')), off('strip-states', 'grid', t('States, Autoplay, Compare'))]
+      : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), motionBtn(), statesBtn, replayBtn()]
+    const fit = inScreen && frameOn() ? tool('center', 'strip-fit', 'center', t('Center the design'), '⌘0') : ''
+    // On the map: Build it (the island turns into its box) and every link drawn, not just the selected screen's.
+    const onTheMap = onMap() || inPlace()
+    const mapTools = onTheMap ? [
+      mapState.one ? tool('map:build', 'strip-build', 'build', t('Build it…'), '', mapState.build).replace('data-act', 'data-map-build data-act') : '',
+      tool('map:lines', 'strip-links', 'links', mapLines === 'all' ? t('Showing every link') : t('Show every link'), '', mapLines === 'all').replace('data-act', 'data-map-lines data-act'),
+    ] : []
+    // The layouts and the zoom live in the zoom pill (bottom corner) when it shows.
+    const groups = [[tourBtn, decide], hands, zoomPillOn() ? [] : sizes, own, mapTools, zoomPillOn() ? [] : [fit]].map(g => g.filter(Boolean).join('')).filter(Boolean)
+    // The bar's own buttons drawn upright: their words, carets and counts' text stay out (only the
+    // strip's own buttons, never the rows of a menu opening beside it).
+    strip.innerHTML = `<div data-strip-tools class="flex flex-col items-center gap-0.5 rounded-2xl bg-white p-1 shadow-[0_8px_24px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:ring-white/10
+      [&>div.flex]:flex-col [&>button>span:not(.absolute)]:!hidden [&>div>button>span:not(.absolute):not([data-keep])]:!hidden [&_[data-strip-zoom]>svg]:!hidden [&_[data-strip-zoom]]:!text-[10px] [&>button_kbd]:!hidden [&>div>button_kbd]:!hidden [&>button>svg+svg]:!hidden [&>div>button>svg+svg]:!hidden
+      [&>button]:!size-9 [&>button]:!px-0 [&>button]:!rounded-xl [&>div>button]:!size-9 [&>div>button]:!px-0 [&>div>button]:!rounded-xl [&>div>span]:!hidden
+      [&_[data-pop]]:!top-0 [&_[data-pop]]:!end-auto [&_[data-pop]]:!start-[calc(100%+.75rem)]">${groups.join('<span class="my-1 h-px w-5 shrink-0 bg-zinc-900/10 dark:bg-white/10"></span>')}</div>`
+  }
+  /** A button of the chrome, in the bar or the strip: what a menu opens from. */
+  const chromeEl = (sel: string) => [bar.querySelector<HTMLElement>(sel), strip.querySelector<HTMLElement>(sel)].find(b => !!b?.offsetParent) ?? null
+  // Jump (⌘K): one field over the whole project (jump.tsx), drawn once per opening.
+  const drawJump = createJump()
+  let jumpOpen = false
+  function openJump() {
+    if (jumpOpen) return
+    jumpOpen = true
+    st.open = null; render()
+    const back = document.activeElement as HTMLElement | null, pl = st.place
+    drawJump({
+      items: jumpItems(all, designs), here: pl.view === 'variant' ? `${pl.proto}/${pl.variant}` : '',
+      onGo: route => { const [proto, variant] = route.split('/'); go({ view: 'variant', proto, variant }) },
+      onClose: () => { jumpOpen = false; drawJump(null); if (back?.isConnected) back.focus({ preventScroll: true }) },
+    })
+  }
+  let treeMounted = false
+  function mountTreeOnce() {
+    if (treeMounted || !treeOn) return
+    treeMounted = true
+    treeSnap = treeInput()
+    mountTree(treeHost, {
+      get: () => treeSnap!, subscribe: f => { treeWatchers.add(f); return () => { treeWatchers.delete(f) } },
+      go: route => { const [proto, variant] = route.split('/'); go(variant ? { view: 'variant', proto, variant } : { view: 'proto', proto }) },
+      goWork: () => act('work', 'go', ''), hide: () => act('side', '0', ''), name: session.name,
+      frame: key => { mapFrame = `${key}#${++frames}`; if (st.place.view !== 'session') go({ view: 'session' }); else paintMap() },
+    })
+  }
   const grip = root.querySelector<HTMLElement>('[data-grip]')!
   const drawer = root.querySelector<HTMLElement>('[data-drawer]')!
   const bar = root.querySelector<HTMLElement>('[data-bar]')!
@@ -632,6 +901,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const scaleRange = () => (frameOn() ? [ZOOM_MIN, ZOOM_MAX] : [SCALE_MIN, SCALE_MAX])
   const rangeAt = (v: number) => { const [lo, hi] = scaleRange(); return ((v - lo) / (hi - lo)) * 100 }
   const scaleLabel = () => (scaleNow() ? `${Math.round(scaleNow())}%` : t('Fit'))
+  // The zoom pill says the size the device view really is, fitted too (view/index.tsx tells it).
+  let viewPct = 0
+  const pillPct = () => (!scaleNow() && viewOn() && viewPct ? `${viewPct}%` : scaleLabel())
+  addEventListener('proto:view-zoom', e => {
+    viewPct = (e as CustomEvent<number>).detail
+    const el = root.querySelector('[data-zoom-pct]')
+    if (el && !onMap() && !inPlace()) el.textContent = pillPct()
+  })
   function setScale(v: number) {
     // Fit chosen here also puts a device that was dragged away back in the middle.
     if (frameOn()) return patchView(v ? { zoom: v } : { zoom: 0, home: st.view.home + 1 })
@@ -924,6 +1201,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const scrollerOf = (l: Layer) => l.el.firstElementChild as HTMLElement | null
   function show(fade: boolean) {
     healSizes()
+    // Under the map (tree on) the layers are hidden: what was there was never seen, so it goes at once.
+    const unseen = layers.style.visibility === 'hidden'
     if (layer && lobbyKey) lobbyScroll.set(lobbyKey, scrollerOf(layer)?.scrollTop ?? 0)
     // On a phone the design leaving goes before the next one mounts, with no crossfade: Safari
     // there kills a page that holds two heavy designs at once (3D, big photos), and reloads it.
@@ -933,9 +1212,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     layer = next
     lobbyKey = st.place.view === 'variant' ? '' : pathOf(st.place) + (st.stack ? ':stack' : '')
     layers.prepend(next.el)
+    placeLayer()
     // The new design reaches its state under the old one, which then fades out on top. Set up
     // before the new one is settled, so the old one still goes when that throws.
-    if (prev) {
+    if (prev && unseen) { prev.el.remove(); prev.dispose() }
+    else if (prev) {
       prev.el.inert = true
       const drop = () => { prev.el.remove(); prev.dispose() }
       Promise.race([next.ready, wait(1500)]).then(() => (fade ? fadeOut(prev.el, drop) : drop()))
@@ -1270,6 +1551,25 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           </span>${ic('chev', `size-3.5 shrink-0 text-zinc-400 transition-transform ${opened('switch') ? 'rotate-180' : ''}`)}</button>
         ${pop(opened('switch'), miller(), 'start-0 top-11')}</div>`
     const stepper = v && vs.length > 1 ? `<button data-act="step:-1" aria-label="${t('Previous variant')}" title="${t('Previous variant · ←')}" class="${IB} shrink-0">${ic('left')}</button><span class="w-9 shrink-0 text-center text-xs tabular-nums text-zinc-500">${at + 1}<span class="text-zinc-400 dark:text-zinc-600">/${vs.length}</span></span><button data-act="step:1" aria-label="${t('Next variant')}" title="${t('Next variant · →')}" class="${IB} shrink-0">${ic('right')}</button>` : ''
+    // With the project tree on, the bar only says where you are (the crumb walks the flow), with
+    // Jump and ⋯; the design's tools move to the strip down the stage's side (paintStrip).
+    if (treeOn && !framed) {
+      const sep = ic(rtl ? 'left' : 'right', 'size-3 shrink-0 text-zinc-300 dark:text-zinc-600')
+      const goTo = (route: string) => { const [slug, letter] = route.split('/'); return `pv:${esc(slug)}:${esc(letter)}` }
+      const w = p && vid ? whereOf(all, designs, { proto: p.id, variant: vid }) : null
+      const flowArrow = (d: -1 | 1) => { const r = w?.flow?.routes[w.at + d]; return `<button ${r ? `data-act="${goTo(r)}"` : 'disabled'} data-crumb-step="${d}" aria-label="${d < 0 ? t('Previous screen in the flow') : t('Next screen in the flow')}" title="${d < 0 ? t('Previous screen in the flow') : t('Next screen in the flow')}" class="grid size-7 shrink-0 place-items-center rounded-md text-zinc-400 hover:bg-zinc-900/5 hover:text-zinc-900 disabled:opacity-25 dark:hover:bg-white/10 dark:hover:text-white">${ic(d < 0 ? (rtl ? 'right' : 'left') : (rtl ? 'left' : 'right'), 'size-3.5')}</button>` }
+      const toMap = (label: string, cls: string) => `<button data-act="lobby:session" data-crumb-map class="min-w-0 truncate rounded-md px-1.5 py-1 hover:bg-zinc-900/5 dark:hover:bg-white/10 ${cls}"><span dir="auto">${esc(label)}</span></button>`
+      const option = (q: Proto) => `<b class="shrink-0">${variantRef(q, vid)}</b>${q.picked === vid ? ic('check', `size-3.5 shrink-0 ${PICK}`) : ''}`
+      const crumb = !p || view !== 'variant' ? `${toMap(session.name, 'font-semibold')}${sep}<span class="shrink-0 text-zinc-500">${t('Map')}</span>`
+        : w?.design && w.flow && w.screen ? `${toMap(w.design.title, 'font-semibold')}${sep}<span dir="auto" class="min-w-0 shrink truncate text-zinc-500">${esc(w.flow.name)}</span>${sep}
+            ${flowArrow(-1)}<button data-act="${goTo(w.flow.routes[w.at])}" data-crumb-screen class="min-w-0 truncate rounded-md px-1 py-1 font-medium hover:bg-zinc-900/5 dark:hover:bg-white/10"><span dir="auto">${esc(w.screen.title)}</span></button><span class="shrink-0 text-[11px] tabular-nums text-zinc-400">${w.at + 1}/${w.flow.routes.length}</span>${flowArrow(1)}
+            ${w.exploration ? `${sep}<span dir="auto" class="min-w-0 truncate font-medium">${esc(w.exploration.title)}</span>${option(w.exploration)}` : option(p)}`
+        : `${toMap(t('Explorations on no screen'), 'text-zinc-500')}${sep}<span dir="auto" class="min-w-0 truncate font-medium">${esc(p.title)}</span>${option(p)}`
+      const jumpBtn = `<button data-act="jump" data-shoot="jump" aria-label="${t('Jump to')} (⌘K)" title="${t('Jump to')} · ⌘K" class="${IB} shrink-0">${ic('search')}<kbd dir="ltr" class="hidden font-sans text-[11px] text-zinc-400 lg:inline">⌘K</kbd></button>`
+      keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
+        <nav data-crumb aria-label="${t('Where you are')}" class="flex min-w-0 items-center gap-0.5 text-sm">${crumb}</nav>
+        <div class="ms-auto flex shrink-0 items-center gap-1">${stepper}${stepper ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}${jumpBtn}${shareBtn()}${moreBtn()}</div></div>`)
+    } else
     keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
       ${switcher}
       <div class="ms-auto flex shrink-0 items-center gap-1">
@@ -1277,6 +1577,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${replayBtn()}${deviceBtn()}${commentBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${shareBtn()}${moreBtn()}
       </div></div>`)
     menus = { protos: drill(), session: '' }
+    paintStrip(deviceBtn, replayBtn, centerBtn)
+    paintZoom()
+    paintTour()
+    paintChip()
 
     // The switcher's dropdown: one column per level, scrolled to the last, and what is shown
     // described beside them.
@@ -1306,11 +1610,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${chips.length > 1 ? `<div data-mcols class="flex gap-1.5 overflow-x-auto px-3 pb-3 [scrollbar-width:none]">${chips.map(({ x, j }) => `<button data-act="drill:${j}" class="h-8 shrink-0 rounded-full px-3 text-xs ${j === i ? 'bg-sky-500/15 font-semibold text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.05] text-zinc-600 dark:bg-white/[.07] dark:text-zinc-300'}"><span dir="auto">${esc(colName(x))}</span> <b>${esc(x.sel)}</b></button>`).join('')}</div>` : ''}
         <div data-vlist data-k="${esc(colKey(c))}" class="space-y-px px-2">${colRows(c, true)}</div></div>`
     }
-    side.className = st.side && !framed ? 'hidden shrink-0 flex-col border-e border-black/[.07] lg:flex dark:border-white/10' : 'hidden'
+    const sideClass = st.side && !framed ? 'hidden shrink-0 flex-col border-e border-black/[.07] lg:flex dark:border-white/10' : 'hidden'
+    side.className = treeOn ? 'hidden' : sideClass
     side.style.width = `${st.sideW}px`
+    treeHost.hidden = !treeOn
+    treeHost.className = treeOn ? sideClass : 'hidden'
+    treeHost.style.width = `${st.sideW}px`
     grip.classList.toggle('lg:block', st.side)
     grip.setAttribute('aria-valuenow', String(st.sideW))
-    keepScroll(side, st.side ? sideNav(false) : '')
+    keepScroll(side, st.side && !treeOn ? sideNav(false) : '')
+    if (treeOn) { mountTreeOnce(); paintTree() }
+    if (st.place.view === 'variant') lastFocus = `${st.place.proto}/${st.place.variant}`
+    paintMap()
     keepScroll(drawer, st.drawer ? `<div class="fixed inset-0 z-50 lg:hidden"><div data-act="drawer:0" class="absolute inset-0 bg-black/30"></div><div class="absolute inset-y-0 start-0 flex w-[19rem] max-w-[85%] flex-col bg-white shadow-2xl dark:bg-zinc-950">${sideNav(true)}</div></div>` : '')
 
     // Focus mode restyles the zone to cover the page; the mounted design stays put. On a phone
@@ -1529,6 +1840,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function cardHtml() {
     const p = cur()!, c = copyCounts(), n = tryCount(hintList())
     const rows = cardKind === 'layout' ? '' : [
+      // With the project tree on: the map and Jump come first (the phone's way around the project).
+      treeOn && !framed ? menuRow({ act: 'lobby:session', shoot: 'menu-map', icon: 'map', label: t('Map') }) : '',
+      treeOn && !framed ? menuRow({ act: 'jump', shoot: 'menu-jump', icon: 'search', label: t('Jump to') }) : '',
       menuRow({ act: 'lobby:proto', shoot: 'all-variants', icon: 'grid', label: t('All variants'), detail: String(visible(p).length), on: st.place.view === 'proto' }),
       !framed ? menuRow({ act: 'share-link', shoot: 'share-link', icon: 'link-simple', label: t('Share link…') }) : '',
       !framed ? menuRow({ act: 'share', shoot: 'share', icon: 'share', label: t('Share screenshots') }) : '',
@@ -1781,6 +2095,28 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // there, and one level opens as two columns side by side (the last two, unless a line was
   // clicked). Under them, the states and tools of the variant shown. On top, the variant your
   // requests change, said in words.
+  /** The variant shown: its states (each opens it in that state) and its tools (Autoplay, All states,
+   *  Compare, History). In the sidebar under the columns, and in the tool strip's States panel. */
+  function variantHere(boxed = true): string {
+    const p = cur(), pv = st.place.view === 'variant' ? st.place : null
+    const v = p && pv ? p.variants.find(x => x.id === pv.variant) : undefined
+    let here = ''
+    if (p && pv && v) {
+      const sts = statesOf(p, v.id), tool = pv.tool
+      const lit = tool === 'all' ? null : tool === 'play' ? st.playing : pv.state ?? ''
+      const tools = TOOL_LIST.filter(t => toolOk(p, v.id, t))
+      const leaf = (x?: State) => {
+        const id = x?.id ?? '', on = lit === id, note = x?.about?.[v.id]
+        return `<button data-act="pvs:${esc(p.id)}:${v.id}:${esc(id)}" aria-current="${on}" class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-start ${on ? ON : ROWC}">${dot(p, v.id, x, on)}<span class="min-w-0 flex-1"><span class="flex items-center gap-1.5 leading-4 ${on ? 'font-medium text-zinc-900 dark:text-white' : ''}"><span dir="auto" class="truncate">${esc(x?.name ?? t('At rest'))}</span>${on && tool === 'play' ? ic('play', 'size-3 text-sky-500') : ''}</span>${note && x ? `<span dir="auto" class="mt-0.5 block text-[10px] leading-[14px] ${noteCls(p, v.id, x)}">${esc(note)}</span>` : ''}</span></button>`
+      }
+      if (sts.length || tools.length) here = `<div class="${boxed ? 'mt-3 border-t border-black/[.06] pt-2 dark:border-white/[.07]' : ''}">
+          <div class="flex items-center gap-1 px-1.5 pb-1 text-[10px] font-medium text-zinc-400"><b class="text-zinc-500">${variantRef(p!, v.id)}</b><span dir="auto" class="truncate">${esc(v.name)}</span><span class="ms-auto">${sts.length ? tn(sts.length, '{n} state', '{n} states') : ''}</span></div>
+          ${sts.length ? `<div>${leaf()}${sts.map(leaf).join('')}</div>` : ''}
+          ${tools.length ? `<div class="flex flex-wrap gap-1 px-1 pt-1.5">${tools.map(tl => `<button data-act="tool:${esc(p.id)}:${v.id}:${tl}" aria-pressed="${tool === tl}" title="${TOOLS[tl].hint}${tool === tl ? t(' · click to stop') : ''}" class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] ${tool === tl ? 'bg-sky-500/15 font-medium text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${ic(TOOLS[tl].icon, 'size-3')}${TOOLS[tl].name}${toolDetail(p, v.id, tl) ? `<span class="text-zinc-400">${toolDetail(p, v.id, tl)}</span>` : ''}</button>`).join('')}</div>` : ''}
+        </div>`
+    }
+    return here
+  }
   function sideNav(inDrawer: boolean) {
     const cols = columns(), last = Math.max(0, cols.length - 2)
     const at = Math.min(st.pairAt ?? last, last)
@@ -1799,24 +2135,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const split = `<div data-split role="separator" aria-orientation="vertical" aria-label="${t('Resize columns')}" aria-valuemin="${SPLIT_LO * 100}" aria-valuemax="${SPLIT_HI * 100}" aria-valuenow="${Math.round(st.split * 100)}" tabindex="0" title="${t('Drag to resize · double-click to reset')}" class="group/s relative z-10 -mx-[3px] w-1.5 shrink-0 cursor-col-resize touch-none outline-none"><span class="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-black/[.06] transition-colors group-hover/s:w-0.5 group-hover/s:bg-sky-500/50 group-focus-visible/s:w-0.5 group-focus-visible/s:bg-sky-500 [[data-splitting]_&]:w-0.5 [[data-splitting]_&]:bg-sky-500 dark:bg-white/[.07]"></span></div>`
     const box = `<div data-colnav="side" class="my-1 flex max-h-[26rem] overflow-hidden rounded-xl ring-1 ring-black/[.08] dark:ring-white/10">${pair.map((c, k) => `${k ? split : ''}<div ${two && !k ? 'style="flex:0 1 calc(var(--split) * 100%)"' : ''} class="flex min-w-24 flex-col pt-0.5 ${two && !k ? 'bg-zinc-900/[.02] dark:bg-white/[.02]' : 'flex-1'}">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1 pb-1.5">${colRows(c)}</div></div>`).join('')}</div>`
 
-    // The variant shown: its states (each opens it in that state) and its tools.
-    const p = cur(), pv = st.place.view === 'variant' ? st.place : null
-    const v = p && pv ? p.variants.find(x => x.id === pv.variant) : undefined
-    let here = ''
-    if (p && pv && v) {
-      const sts = statesOf(p, v.id), tool = pv.tool
-      const lit = tool === 'all' ? null : tool === 'play' ? st.playing : pv.state ?? ''
-      const tools = TOOL_LIST.filter(t => toolOk(p, v.id, t))
-      const leaf = (x?: State) => {
-        const id = x?.id ?? '', on = lit === id, note = x?.about?.[v.id]
-        return `<button data-act="pvs:${esc(p.id)}:${v.id}:${esc(id)}" aria-current="${on}" class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-start ${on ? ON : ROWC}">${dot(p, v.id, x, on)}<span class="min-w-0 flex-1"><span class="flex items-center gap-1.5 leading-4 ${on ? 'font-medium text-zinc-900 dark:text-white' : ''}"><span dir="auto" class="truncate">${esc(x?.name ?? t('At rest'))}</span>${on && tool === 'play' ? ic('play', 'size-3 text-sky-500') : ''}</span>${note && x ? `<span dir="auto" class="mt-0.5 block text-[10px] leading-[14px] ${noteCls(p, v.id, x)}">${esc(note)}</span>` : ''}</span></button>`
-      }
-      if (sts.length || tools.length) here = `<div class="mt-3 border-t border-black/[.06] pt-2 dark:border-white/[.07]">
-          <div class="flex items-center gap-1 px-1.5 pb-1 text-[10px] font-medium text-zinc-400"><b class="text-zinc-500">${variantRef(p!, v.id)}</b><span dir="auto" class="truncate">${esc(v.name)}</span><span class="ms-auto">${sts.length ? tn(sts.length, '{n} state', '{n} states') : ''}</span></div>
-          ${sts.length ? `<div>${leaf()}${sts.map(leaf).join('')}</div>` : ''}
-          ${tools.length ? `<div class="flex flex-wrap gap-1 px-1 pt-1.5">${tools.map(tl => `<button data-act="tool:${esc(p.id)}:${v.id}:${tl}" aria-pressed="${tool === tl}" title="${TOOLS[tl].hint}${tool === tl ? t(' · click to stop') : ''}" class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] ${tool === tl ? 'bg-sky-500/15 font-medium text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${ic(TOOLS[tl].icon, 'size-3')}${TOOLS[tl].name}${toolDetail(p, v.id, tl) ? `<span class="text-zinc-400">${toolDetail(p, v.id, tl)}</span>` : ''}</button>`).join('')}</div>` : ''}
-        </div>`
-    }
+    const here = variantHere()
 
     const initial = esc((session.name.trim()[0] || 'P').toUpperCase())
     return `<div class="flex h-12 shrink-0 items-center gap-2 ps-3 pe-1.5">
@@ -1955,6 +2274,29 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'lobby': return arg === 'session' ? go({ view: 'session' }) : go({ view: 'proto', proto: arg2 || p!.id })
       case 'proto': return openProto(arg)
       case 'pv': return go({ view: 'variant', proto: arg, variant: arg2 })
+      case 'jump': return openJump()
+      // The strip's Move while it is already on: nothing to change.
+      case 'noop': return
+      case 'go-chip': {
+        const c = chip
+        chip = null; paintChip()
+        if (!c || arg === 'close') return
+        if (arg === 'go') { const [proto, variant] = c.route.split('/'); return go({ view: 'variant', proto, variant }) }
+        const [proto, variant] = c.from.split('/')
+        void comments.act.decide({ proto, variant }, 'build-screen', { body: [`Build the screen ${c.to}: a <Go to="${c.to}"> link on this variant leads to it.`], tags: [] })
+          .then(() => sayGo(t('Asked {agent} to build {name}', { agent: agentName(session.agent), name: c.to })), () => sayGo(t('Could not send it. Try again.')))
+        return
+      }
+      // Tour: walk the flow of the screen on screen, from its first screen, a bar saying where you are.
+      case 'tour': {
+        const w = here ? whereOf(all, designs, here) : null, routes = w?.flow?.routes ?? []
+        if (arg === 'end' || !w?.design || !routes.length) { tour = null; return render() }
+        const to = arg === 'next' ? routes[w.at + 1] : arg === 'prev' ? routes[w.at - 1] : routes[0]
+        tour = { design: w.design.id, flow: w.flow!.name }
+        if (!to) return render()
+        const [proto, variant] = to.split('/')
+        return go({ view: 'variant', proto, variant })
+      }
       // In the columns: a variant (kept open when something was built from it) or a prototype.
       case 'mv': { const q = byId(arg); keepOpen = !!q && kidsOf(q, arg2).length > 0; stay = !keepOpen; return go(q ? keepIn(q, arg2) : { view: 'variant', proto: arg, variant: arg2 }) }
       case 'mp': keepOpen = true; return go({ view: 'proto', proto: arg })
@@ -1995,6 +2337,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'turn': return patchView({ land: !st.view.land, zoom: 0 })
       case 'center': return setScale(0)
       case 'replay': return replayDesign()
+      // The zoom pill: the map's camera while the map shows, else the chosen layout's zoom.
+      case 'zoom': {
+        const mapOn = onMap() || inPlace()
+        if (arg === 'fit') return mapOn ? mapApi.ctl?.fit() : setScale(0)
+        if (mapOn) return mapApi.ctl?.zoom(arg === 'in' ? 1.25 : 0.8)
+        // From Fit, a step goes from the size it really is.
+        { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || (viewOn() && viewPct) || 50) + (arg === 'in' ? 10 : -10)) / 5) * 5))) }
+      }
+      case 'map':
+        if (arg === 'build') return mapApi.ctl?.build()
+        if (arg === 'lines') { mapApi.setLines(mapLines === 'all' ? 'selected' : 'all'); return render() }
+        return
       case 'scalestep': { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || 50) + Number(arg)) / 5) * 5))) }
       case 'theme': return setTheme(arg === 'dark')
       case 'focus': if (st.place.view !== 'variant') return; st.focus = true; st.open = null; dock.hold = performance.now() + 1600; edge.hover = {}; render(); return fit()
@@ -2146,6 +2500,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (settingsOpen || shareOpen || linkOpen) return
     if (resetViewKey(e)) return
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); return act('side', (wide() ? st.side : st.drawer) ? '0' : '1', '') }
+    // ⌘K is Jump's unless the design took it (its own palette, a field that uses it).
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k' && treeOn && !framed && !e.defaultPrevented && !t.closest?.('[data-mount] input, [data-mount] textarea, [data-mount] [contenteditable]')) { e.preventDefault(); return openJump() }
     // Cmd or Ctrl Enter sends what's ready to Claude, from anywhere but a field of the design's own.
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
     if (e.key === 'Escape') {
@@ -2169,18 +2525,23 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // Esc on a variant goes up to its prototype's variants, unless the design used it first (a
     // design closing its own menu calls preventDefault). Its handlers may run after this one,
     // so the check waits a tick.
+    if (e.key === 'Escape' && tour) { e.preventDefault(); return act('tour', 'end', '') }
     if (e.key === 'Escape' && st.place.view === 'variant') {
       const from = pathOf(st.place)
       setTimeout(() => { if (!e.defaultPrevented && st.place.view === 'variant' && pathOf(st.place) === from) go({ view: 'proto', proto: st.place.proto }) })
       return
     }
-    if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant') { e.preventDefault(); step(e.key === FWD ? 1 : -1) }
+    // On a tour the arrows walk the flow's screens, not the screen's options.
+    if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant' && tour) { e.preventDefault(); act('tour', e.key === FWD ? 'next' : 'prev', '') }
+    else if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant') { e.preventDefault(); step(e.key === FWD ? 1 : -1) }
     else if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
     else if (e.key === 'C' && commentHost() && st.place.view === 'variant') { e.preventDefault(); commentWhole() }
     // Focus mode and the design's actions are the page outside's, when this page is in its view (viewKey).
     else if (e.key === 'r' && canReplay() && !framed) act('replay', '', '')
     else if (e.key === 'f' && st.place.view === 'variant' && !framed) act(st.focus ? 'unfocus' : 'focus', '', '')
     else if (e.key === 'w' && workOf()) act('work', 'go', '')
+    // M: from a screen out to the map, and from the map back into the last screen (continuous zoom's keys).
+    else if (e.key === 'm' && treeOn) st.place.view === 'variant' ? go({ view: 'session' }) : lastFocus && mapApi.open(lastFocus)
     else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches && !framed) act('open', 'decide', '')
     else if (e.key === 's' && st.place.view === 'variant' && !framed) act('fav', st.place.proto, st.place.variant)
   })
@@ -2190,7 +2551,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // chrome re-rendering under it (status pings, edits).
   const setSideW = (w: number, save = true) => {
     st.sideW = Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, w)))
-    side.style.width = `${st.sideW}px`
+    side.style.width = treeHost.style.width = `${st.sideW}px`
     grip.setAttribute('aria-valuenow', String(st.sideW))
     if (save) remember('proto-side-w', String(st.sideW))
   }
@@ -2202,7 +2563,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     grip.setPointerCapture(e.pointerId)
     grip.dataset.dragging = ''
     document.documentElement.style.cursor = 'col-resize'
-    const b = side.getBoundingClientRect()
+    const b = (treeOn ? treeHost : side).getBoundingClientRect()
     const move = (m: PointerEvent) => setSideW(rtl ? b.right - m.clientX : m.clientX - b.left, false)
     const end = () => {
       grip.removeEventListener('pointermove', move)
@@ -2324,7 +2685,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // On a phone the design zooms by itself, never the page: two fingers (or a wheel with Ctrl or ⌘)
   // scale it in its scroller around the point between them, laid out as it was at Fit, and Fit
   // puts it back. A device view (a layout chosen) zooms its own way (view/gestures.ts).
-  const ZOOM_MAX = 4
+  const PHONE_ZOOM_MAX = 4
   let zoom: { mount: HTMLElement; z: number } | null = null
   const zoomFit = document.createElement('button')
   zoomFit.type = 'button'
@@ -2342,7 +2703,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function zoomTo(to: number, x: number, y: number) {
     const mount = zoom?.mount ?? zoomMount(), sc = mount?.parentElement
     if (!mount || !sc) return
-    const was = zoom?.z ?? 1, z = Math.min(ZOOM_MAX, Math.max(1, to))
+    const was = zoom?.z ?? 1, z = Math.min(PHONE_ZOOM_MAX, Math.max(1, to))
     if (z === was) return
     // Laid out at the size it had at Fit, so zooming scales it and never reflows it.
     if (!zoom) { mount.style.width = `${sc.clientWidth}px`; mount.style.height = `${sc.clientHeight}px`; zoom = { mount, z: 1 } }
@@ -2366,13 +2727,28 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const te = e as TouchEvent
     if (!pinch || te.touches.length !== 2) return
     te.preventDefault()
+    // Pinched in past the fit (the design at its own size): on out to the map.
+    if (pinch.z * apart(te.touches) / pinch.d < 0.7 && (zoom?.z ?? 1) <= 1.01 && zoomOutToMap()) { pinch = null; return }
     zoomTo(pinch.z * apart(te.touches) / pinch.d, (te.touches[0].clientX + te.touches[1].clientX) / 2, (te.touches[0].clientY + te.touches[1].clientY) / 2)
   }, { capture: true, passive: false })
   listen(layers, 'touchend', e => { if ((e as TouchEvent).touches.length < 2) pinch = null }, { capture: true, passive: true })
   // Safari's own pinch would zoom the page.
-  listen(layers, 'gesturestart', e => { if (zoom || zoomMount()) e.preventDefault() }, { capture: true, passive: false })
+  listen(layers, 'gesturestart', e => { if (zoom || zoomMount() || outOk()) e.preventDefault() }, { capture: true, passive: false })
+  listen(layers, 'gesturechange', e => { if (outOk() && (e as unknown as { scale: number }).scale < 0.75) { e.preventDefault(); zoomOutToMap() } }, { capture: true, passive: false })
+  // Zooming out of a screen at its own size (no layout chosen) goes on out to the map, which flies
+  // out from it: ⌘/Ctrl + wheel past a notch or two, or Safari's pinch. With the project tree on only.
+  const outOk = () => treeOn && !framed && !st.focus && !viewOn() && st.place.view === 'variant' && (zoom?.z ?? 1) <= 1.01
+  const zoomOutToMap = () => { if (!outOk()) return false; outBy = 0; go({ view: 'session' }); return true }
+  let outBy = 0, outAt = 0
   listen(layers, 'wheel', e => {
     const we = e as WheelEvent
+    if ((we.ctrlKey || we.metaKey) && we.deltaY > 0 && outOk()) {
+      we.preventDefault()
+      if (performance.now() - outAt > 600) outBy = 0
+      outAt = performance.now(); outBy += we.deltaY
+      if (outBy > 240) zoomOutToMap()
+      return
+    }
     if (!(we.ctrlKey || we.metaKey) || !(zoom || zoomMount())) return
     we.preventDefault()
     zoomTo((zoom?.z ?? 1) * Math.exp(-we.deltaY / 200), we.clientX, we.clientY)
@@ -2463,7 +2839,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // and the design in it stay as they are (an open menu, what was typed), as on the stage.
   const frameable = () => !framed && q.get('hints') !== '0' && st.place.view !== 'session' && cur()?.kind !== 'phone'
   const viewOk = () => frameable() && !st.focus && (!phoneMq.matches || pillOn())
-  const fillOk = () => frameable() && !phoneMq.matches && st.place.view === 'variant' && !st.place.tool
+  // With the tree on the design sits on the map as its board, mounted in the page (no artboard frame):
+  // the map's own mount hands over to it, so it doesn't load twice.
+  const fillOk = () => frameable() && !phoneMq.matches && !treeOn && st.place.view === 'variant' && !st.place.tool
   const native = (): Size | null => {
     // a desktop window keeps the desktop layout even when the side panels narrow the stage (view/index.tsx FILL_MIN_W)
     if (fillOk()) return nativeOf(innerWidth >= FILL_MIN_W ? Math.max(layers.clientWidth || innerWidth, FILL_MIN_W) : layers.clientWidth || innerWidth)
@@ -2477,10 +2855,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const frameOn = () => (viewOn() && !cardView()) || fillOk()
   const shownSize = (): Size | null => viewOn() ? st.view.size! : native()
   const viewSize = (): ViewSize => { const s = st.view.size!, d = dims(s, st.view.land); return { size: s, w: d.w, h: d.h } }
-  const deviceView = createView(zone.querySelector<HTMLElement>('[data-view]')!, comments.wrap)
+  const viewHost = zone.querySelector<HTMLElement>('[data-view]')!
+  const deviceView = createView(viewHost, comments.wrap)
   // The size selected at rest is this window's own layout, which a resize of it or the stage can change.
   let nativeWas = native()
-  new ResizeObserver(() => { if (native() !== nativeWas) { nativeWas = native(); render() } }).observe(layers)
+  new ResizeObserver(() => { if (native() !== nativeWas) { nativeWas = native(); render() } else { paintMap(); if (viewHost.hasAttribute('data-full')) paintView() } }).observe(layers)
   function pickSize(s: Size) {
     // The layout shown, chosen again, leaves the view: the way out when no layout is this window's own.
     if (s === native() || (viewOn() && s === st.view.size)) { if (viewOn()) patchView({ size: null, zoom: 0 }); return }
@@ -2494,8 +2873,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else { paintView(); syncScale() }
   }
   function paintView() {
+    // A chosen layout on the desk with the tree on runs to the window's edges, as the map does: under
+    // the bar, the strip, the island and the sidebar card. It fits and centres in the room between them.
+    const full = treeOn && !framed && deskMq.matches && !st.focus && viewOn()
+    viewHost.toggleAttribute('data-full', full)
+    const r = full ? layers.getBoundingClientRect() : null
     deviceView.paint({
       view: frameOn() ? { size: viewOn() ? st.view.size! : null, land: st.view.land, zoom: st.view.zoom, home: st.view.home } : null,
+      safe: r ? { l: Math.max(0, Math.round(r.left)), t: Math.max(0, Math.round(r.top)), r: Math.max(0, Math.round(innerWidth - r.right)), b: Math.max(0, Math.round(innerHeight - r.bottom)) } : undefined,
       path: pathOf(st.place),
       dark: st.dark,
       set: patchView,
@@ -2701,7 +3086,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const drawSettings = createSettings()
   function paintSettings() {
     drawSettings({
-      open: settingsOpen, category: settingsCategory, appearance, live: comments.store.get().live, sidebar: st.side,
+      open: settingsOpen, category: settingsCategory, appearance, live: comments.store.get().live, sidebar: st.side, tree: treeOn,
       review: localStorage.getItem('proto-hints') !== '0', stack: st.stack,
       session: { host: agentName(session.agent), id: session.conversation || session.id, name: session.name, url: session.url || location.origin + '/', keep: !!st.status?.keep,
         server: st.stopped ? 'stopped' : st.live ? 'live' : 'reconnecting',
@@ -2716,6 +3101,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onAppearance: setAppearance,
       onLive: on => { comments.act.setLive(on); paintSettings() },
       onSidebar: on => { st.side = on; remember('proto-side', on ? '1' : '0'); render() },
+      onTree: on => { treeOn = on; remember('proto-tree', on ? '1' : '0'); render() },
       onReview: on => { remember('proto-hints', on ? '1' : '0'); hintsOpen = wideMq.matches && on; if (!on) setTry(null); render() },
       onLayout: on => { act('stack', on ? '1' : '0', ''); paintSettings() },
       onResetWidths: () => { setSideW(SIDE_W); setSplit(SPLIT_W); render() },
@@ -2726,7 +3112,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // The button is redrawn with the bar, so the menu finds it again each time it is drawn.
   const paintDecide = () => drawDecide({
     open: st.open === 'decide', subject: decideOf(),
-    anchor: () => { const b = bar.querySelector<HTMLElement>('[data-decide-btn]'); return b?.offsetParent ? b : null },
+    anchor: () => chromeEl('[data-decide-btn]'),
     onClose: () => { if (st.open === 'decide') { st.open = null; render() } },
   })
 
@@ -3037,13 +3423,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onReset: (id?: string) => { if (host && host === toolHost()) tweaks.reset(host, id) },
     }
     drawTweaks(props)
-    const btn = bar.querySelector<HTMLElement>('[data-act="open:tweaks"]')
+    const btn = chromeEl('[data-act="open:tweaks"]')
     const popOn = st.open === 'tweaks' && !phoneMq.matches && fields.length > 0 && !!btn
     tweaksPop.hidden = !popOn
     if (popOn) {
       const r = btn!.getBoundingClientRect()
-      tweaksPop.style.top = `${r.bottom + 8}px`
-      tweaksPop.style.left = `${Math.max(8, Math.min(r.right - 320, innerWidth - 328))}px`
+      // From the strip it opens beside it; from the bar, under its button.
+      if (btn!.closest('[data-strip]')) { tweaksPop.style.top = `${r.top}px`; tweaksPop.style.left = `${rtl ? Math.max(8, r.left - 332) : r.right + 12}px` }
+      else { tweaksPop.style.top = `${r.bottom + 8}px`; tweaksPop.style.left = `${Math.max(8, Math.min(r.right - 320, innerWidth - 328))}px` }
     } else if (st.open === 'tweaks' && !fields.length) st.open = null
     const open = phoneMq.matches && tweaksOpen && fields.length > 0
     if (open) tweaksUp = true
@@ -3387,6 +3774,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   return {
     // New prototypes and new variants are followed; edits to existing ones only light the
     // editing dot, so the view never jumps while someone is looking at something.
+    /** Designs added or changed on disk (proto design, add --design). */
+    // Everything that reads the designs draws again: the tree, the map, the crumb, the strip, a link's chip.
+    setDesigns(next: Design[]) { designs = next; render() },
     setProtos(next: Proto[]) {
       const before = new Map(protos.map(p => [p.id, new Set(p.variants.map(v => v.id))]))
       // Stars changed elsewhere (`proto fav`, another tab): an overview's cards are its layer, so it is drawn again below.
@@ -3484,6 +3874,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       }
       if (retrying) show(false)
       motionDock.edited(paths, st.place.view === 'variant' ? st.place.proto : null)
+      if (paths.some(p => p.includes('/src/protos/'))) mapEdits++
+      for (const path of paths) { const slug = path.match(/\/src\/protos\/([^/]+)\//)?.[1]; if (slug) editsOf.set(slug, (editsOf.get(slug) ?? 0) + 1) }
       render()
       clearTimeout(editTimer)
       editTimer = window.setTimeout(() => { st.editing = null; render() }, 10_000)

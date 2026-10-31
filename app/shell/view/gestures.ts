@@ -67,7 +67,7 @@ const KEEP = 48
  * it never goes back to the middle on its own. Another size, or Fit chosen from the zoom control
  * (`home` counts those), centres it again.
  */
-export function usePlace(area: RefObject<HTMLDivElement | null>, box: { w: number; h: number }, d: { w: number; h: number }, scale: number, zoomed: boolean, pad: number, key: string, home = 0) {
+export function usePlace(area: RefObject<HTMLDivElement | null>, box: { w: number; h: number }, d: { w: number; h: number }, scale: number, zoomed: boolean, pad: number, key: string, home = 0, ins = { l: 0, t: 0, r: 0, b: 0 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const anchor = useRef<Pt | null>(null)
   const [held, setHeld] = useState(false)
@@ -105,15 +105,16 @@ export function usePlace(area: RefObject<HTMLDivElement | null>, box: { w: numbe
   useLayoutEffect(() => {
     if (!area.current || !wrap.current || !box.w) return
     const W = d.w * scale, H = d.h * scale
-    const mid = (A: number, S: number) => (S + 2 * pad <= A ? (A - S) / 2 : pad)
+    // In the room clear of the chrome over the area (ins), when the area runs under it.
+    const mid = (A: number, S: number, a: number, b: number) => a + (S + 2 * pad <= A - a - b ? (A - a - b - S) / 2 : pad)
     const p = prev.current
     const same = !!p && p.key === key && p.home === home
     if (!same) moved.current = false
     else if (held || anchor.current) moved.current = true
-    let vx = mid(box.w, W), vy = mid(box.h, H)
+    let vx = mid(box.w, W, ins.l, ins.r), vy = mid(box.h, H, ins.t, ins.b)
     if (p && same && (zoomed || held || moved.current)) {
       if (p.scale !== scale) {
-        const a = anchor.current ?? { x: box.w / 2, y: box.h / 2 }
+        const a = anchor.current ?? { x: ins.l + (box.w - ins.l - ins.r) / 2, y: ins.t + (box.h - ins.t - ins.b) / 2 }
         const fx = (a.x + p.sl - p.ox) / p.scale, fy = (a.y + p.st - p.oy) / p.scale
         // Fingers beside the device hold its nearest edge, so it isn't pushed off the screen.
         const cx = Math.min(d.w, Math.max(0, fx)), cy = Math.min(d.h, Math.max(0, fy))
@@ -121,7 +122,7 @@ export function usePlace(area: RefObject<HTMLDivElement | null>, box: { w: numbe
       } else { vx = p.ox - p.sl; vy = p.oy - p.st }
     }
     lay(vx, vy)
-  }, [scale, key, home, box.w, box.h, d.w, d.h, zoomed, held, pad])
+  }, [scale, key, home, box.w, box.h, d.w, d.h, zoomed, held, pad, ins.l, ins.t, ins.r, ins.b])
   return {
     wrap,
     anchor: useMemo<Anchor>(() => ({

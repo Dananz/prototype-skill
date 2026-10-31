@@ -792,6 +792,14 @@ favorites ("more like my favorites", "combine my favorites") starts from that li
 
 If `proto up` or `proto shoot` failed, say so with the error instead of leaving things out.
 
+## When a pick grows into a whole design
+
+When the user wants a pick grown into more pages in its look ("make this the design", "now the
+About and Pricing pages"), make it a design: `proto design <slug>/<number> --title "…"`, then each
+new screen with `proto add <slug> --design <id>`, linked in code with `<Go to="<slug>">`. Read
+`references/designs.md` first: screens, flows, links, the stand-in rule and the shared-parts
+question.
+
 ## While the user works on one variant
 
 After a pick the user usually asks for changes to one variant, round after round. A strip at
@@ -996,6 +1004,10 @@ the text.
 | `intake` | the answers are saved and the questions are marked answered; nothing is built | read the printed answers and the files beside them, decide what was left to you, reply `--done` with the brief you will build from, then plan the directions (step 3) |
 | `copy-options` | queued only; no alternatives generated yet | check that the request is not withdrawn; add `useCopy` to the requested lines in this variant only (headline and primary text/CTA without a note), current words first, verify fit, then reply `--done`; reuse existing options. One with an element and quoted words (highlighted in the page) is for those words only: one `useCopy` line on that element, not the headline and primary text |
 | `share-fix` | nothing; sent from a share review (Ask Claude to fix this), the user's words first, then the findings | change the prototype so those findings are gone, the way the words say (a hosted font instead of uploaded files, an asset inlined, a secret taken out), never by quieting the review; check with `proto share file <route>` (same review, nothing published), then reply `--done` with what changed. The user makes the link again from the page; don't publish it yourself unless they ask |
+| `build-screen` | nothing; sent from a link's chip in the page (the project tree on): a `<Go to>` on this variant leads to a screen not built yet, its slug in the text | add it to the same design and flow with `proto add <slug> --design <id> --variants "…"` on the design's shared parts (its #1 stands in until a pick), then reply `--done` naming it |
+| `add-link` | nothing; a line drawn on the map from this screen to another, the target slug in the text | put `<Go to="<slug>">` on the element the text names, else on the one it most likely belongs on, then reply `--done` naming the element |
+| `map-note` | nothing; a note on a link line or a whole flow, written on the map | change the screens, links or flow the way it asks (`proto design <id>` shows them), then reply `--done` with what changed |
+| `build-design` | nothing; Build it on the map, the chosen screens in the text | `proto handoff --design <id> --screens <slugs>` for the plan, then build each screen as in step 7, its links as the app's navigation; ask before building a screen still marked open |
 | `copy` | nothing (one comment per line changed since the last send, on that line's element; the text says option k of n, their own words, or back to today's words) | put the chosen words first in that line's `useCopy` options and keep the rest; then one `proto reply <batch> "…" --done` for the batch, in one line. The page drops its own choice once the words are first |
 
 ## 7. Only if asked: build it
@@ -1042,6 +1054,7 @@ says which links (and variants) changed since shared, who is in them now and how
 | How a variant looked before ("what did 2 look like before the last change?", "compare with the old one") | History: `<slug>/<letter>/~history` in the page; `proto history <slug>/<letter>` lists the versions |
 | A write-up of the decision ("summarize what we picked and why", "a brief for the team", "what's left before we build?") | `proto brief <slug>`: give them the Markdown it prints (kept at `.proto/decisions/<slug>.md`); Decision brief in the Decide menu shows the same |
 | The winner built into the codebase ("build B", "ship it") | `proto pick` if not yet, then `proto handoff <slug>/<letter>` and step 7 |
+| A whole design built ("build the design", a `build-design` request from the map) | `proto handoff --design <id> [--screens a,b]`, then each screen's own `proto handoff` and step 7, its `<Go to>` links as the app's navigation |
 | A pick, More like this or Build it from the page (`action:` in a batch) | the table under Comments from the page |
 | Other copy for some lines ("better headlines", "other button text") | `proto ask "…"`, then `useCopy` on those lines (Offer other copy when asked) |
 | Copy choices sent from the page (`action: copy`) | the table under Comments from the page |

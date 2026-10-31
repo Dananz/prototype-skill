@@ -85,7 +85,7 @@ export async function continuousListenerChecks({ fail }) {
   const requests = []; let reject = false
   const server = createServer((req, res) => {
     let body = ''; req.on('data', b => body += b)
-    req.on('end', () => { requests.push(JSON.parse(body)); res.writeHead(reject ? 503 : 200); res.end() })
+    req.on('end', () => { try { if (body) requests.push(JSON.parse(body)) } catch { /* a probe with no body */ } res.writeHead(reject ? 503 : 200); res.end() })
   })
   await new Promise(ok => server.listen(0, '127.0.0.1', ok))
   const url = `http://127.0.0.1:${server.address().port}/wake`
