@@ -46,7 +46,7 @@ function useInView<T extends HTMLElement>() {
 function Card({ p, on, dim, pic, onClick }: { p: Proto; on: boolean; dim: boolean; pic: Pic; onClick: () => void }) {
   const [ref, seen] = useInView<HTMLButtonElement>()
   return (
-    <button ref={ref} type="button" data-gallery-card={p.id} aria-expanded={on} onClick={onClick} className={`group min-w-0 pb-7 text-start transition-opacity duration-300 ${dim ? 'opacity-50 hover:opacity-80' : ''}`}>
+    <button ref={ref} type="button" data-gallery-card={p.id} aria-expanded={on} onClick={onClick} className={`group min-w-0 pb-5 text-start sm:pb-7 transition-opacity duration-300 ${dim ? 'opacity-50 hover:opacity-80' : ''}`}>
       <div className={`rounded-xl ring-sky-500 ring-offset-[var(--desk-card)] transition-[box-shadow,transform] duration-300 ${on ? 'ring-2 ring-offset-4' : 'group-hover:-translate-y-0.5'}`} style={{ transitionTimingFunction: EASE_OUT }}>
         <Thumb p={p} letter={p.picked ?? p.variants[0]?.id ?? 'A'} pic={pic} want={seen} />
       </div>
@@ -71,13 +71,13 @@ function Drawer({ p, pic, open }: { p: Proto | null; pic: Pic; open: (route: str
     <div ref={box} className={`col-span-full grid transition-[grid-template-rows,opacity] motion-reduce:transition-none ${p ? 'grid-rows-[1fr] opacity-100 duration-[340ms]' : 'grid-rows-[0fr] opacity-0 duration-[240ms]'}`} style={{ transitionTimingFunction: p ? EASE_OUT : EASE_IN }}
       onTransitionEnd={e => { if (!p && e.target === e.currentTarget && e.propertyName === 'grid-template-rows') setShown(null) }}>
       <div className="min-h-0 overflow-hidden">{shown && (
-        <div className="pb-7">
-          <div data-gallery-options={shown.id} className="-mx-2 rounded-2xl bg-zinc-900/[.03] p-4 ring-1 ring-black/[.06] dark:bg-white/[.03] dark:ring-white/[.06]">
+        <div className="pb-5 sm:pb-7">
+          <div data-gallery-options={shown.id} className="-mx-1 rounded-2xl bg-zinc-900/[.03] p-3 sm:-mx-2 sm:p-4 ring-1 ring-black/[.06] dark:bg-white/[.03] dark:ring-white/[.06]">
             <div className="mb-3 flex items-center gap-3 text-sm"><b dir="auto" className="font-semibold">{shown.title}</b><Status p={shown} /></div>
             <div className="-m-1.5 flex gap-4 overflow-x-auto p-1.5 pb-2.5 [scrollbar-width:thin]">
               {shown.variants.map((v, i) => (
                 <button key={v.id} type="button" data-gallery-option={`${shown.id}/${v.id}`} onClick={() => open(`${shown.id}/${v.id}`)} title={t('Open')}
-                  className="group w-52 shrink-0 text-start motion-safe:animate-[proto-gallery-rise_.4s_cubic-bezier(.32,.72,0,1)_both]" style={{ animationDelay: `${60 + i * 35}ms` }}>
+                  className="group w-40 shrink-0 text-start sm:w-52 motion-safe:animate-[proto-gallery-rise_.4s_cubic-bezier(.32,.72,0,1)_both]" style={{ animationDelay: `${60 + i * 35}ms` }}>
                   <div className={`rounded-xl transition-transform duration-200 group-hover:-translate-y-0.5 ${shown.picked === v.id ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-[var(--desk-card)]' : ''}`}><Thumb p={shown} letter={v.id} pic={pic} want /></div>
                   <div className="mt-2 flex items-center gap-1.5 text-[13px]"><span className="tabular-nums text-zinc-400">{numberOf(v.id)}</span><span dir="auto" className="truncate">{v.name}</span>{shown.picked === v.id && <Ph name="checkFill" className="size-3.5 text-emerald-500" />}</div>
                 </button>
@@ -95,13 +95,13 @@ function Section({ id, title, hint, list, cols, pic, open, openId, setOpenId }: 
   const rows = Array.from({ length: Math.ceil(list.length / cols) }, (_, r) => list.slice(r * cols, r * cols + cols))
   const here = list.some(p => p.id === openId)
   return (
-    <section data-gallery-section={id} className="mb-6 rounded-3xl bg-[var(--desk-card)] p-6 pt-5 ring-1 ring-[var(--desk-line)]">
-      <header className="mb-5 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-[var(--desk-line)] pb-4">
+    <section data-gallery-section={id} className="mb-3 rounded-[20px] bg-[var(--desk-card)] p-3.5 pt-3 ring-1 ring-[var(--desk-line)] sm:mb-6 sm:rounded-3xl sm:p-6 sm:pt-5">
+      <header className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-[var(--desk-line)] pb-3 sm:mb-5 sm:pb-4">
         <h2 dir="auto" className="whitespace-nowrap text-[15px] font-semibold">{title}</h2>
         <span className="rounded-full bg-zinc-900/5 px-2 py-0.5 text-xs tabular-nums text-zinc-500 dark:bg-white/10 dark:text-zinc-400">{list.length}</span>
         <span className="w-full text-xs text-zinc-400 sm:ms-auto sm:w-auto">{hint}</span>
       </header>
-      <div className="grid gap-x-5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+      <div className="grid gap-x-3 sm:gap-x-5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
         {rows.map((row, r) => (
           <Fragment key={r}>
             {row.map(p => <Card key={p.id} p={p} on={openId === p.id} dim={here && openId !== p.id} pic={pic} onClick={() => setOpenId(openId === p.id ? '' : p.id)} />)}
@@ -118,8 +118,8 @@ type Conv = { sid: string; name: string; at: string; n: number; picked: number }
 /** The other conversations, one line each: opening one scopes the page (and the tree) to it. */
 function Past({ convs, setScope }: { convs: Conv[]; setScope: (scope: string) => void }) {
   return (
-    <section data-gallery-section="past" className="mb-6 rounded-3xl bg-[var(--desk-card)] p-6 pt-5 ring-1 ring-[var(--desk-line)]">
-      <header className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-[var(--desk-line)] pb-4">
+    <section data-gallery-section="past" className="mb-3 rounded-[20px] bg-[var(--desk-card)] p-3.5 pt-3 ring-1 ring-[var(--desk-line)] sm:mb-6 sm:rounded-3xl sm:p-6 sm:pt-5">
+      <header className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-[var(--desk-line)] pb-3 sm:pb-4">
         <h2 className="whitespace-nowrap text-[15px] font-semibold">{t('Past conversations')}</h2>
         <span className="rounded-full bg-zinc-900/5 px-2 py-0.5 text-xs tabular-nums text-zinc-500 dark:bg-white/10 dark:text-zinc-400">{convs.length}</span>
         <span className="w-full text-xs text-zinc-400 sm:ms-auto sm:w-auto">{t('Open one to see its explorations')}</span>
@@ -149,6 +149,8 @@ export function Gallery({ input, pic, open, safe, head, setScope }: { input: Map
     return () => ro.disconnect()
   }, [safe.l, safe.r])
   const cols = COLS_AT.find(([at]) => width >= at)?.[1] ?? 1
+  // A phone keeps its width for the cards: a thin margin instead of the desk's.
+  const pad = width > 0 && width < 560 ? 10 : 24
   const live = useMemo(() => input.protos.filter(p => !p.archived).sort((a, b) => b.created.localeCompare(a.created)), [input.protos])
   const [openId, setOpenId] = useState('')
   const scope = input.scope ?? 'all', sid = scope.startsWith('conv:') ? scope.slice('conv:'.length) : ''
@@ -163,7 +165,7 @@ export function Gallery({ input, pic, open, safe, head, setScope }: { input: Map
   }, [input.frame])
   return (
     <div ref={scroller} data-gallery className={'absolute inset-0 overflow-y-auto overscroll-contain ' + (input.hidden ? 'hidden' : '')}
-      style={{ paddingLeft: safe.l + 24, paddingRight: safe.r + 24, paddingTop: safe.t + 14, paddingBottom: safe.b + 120 }}>
+      style={{ paddingLeft: safe.l + pad, paddingRight: safe.r + pad, paddingTop: safe.t + 14, paddingBottom: safe.b + 120 }}>
       <style>{'@keyframes proto-gallery-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}'}</style>
       <div className="mx-auto max-w-[1600px]">
         {head && <div className="mb-4 flex justify-center">{head}</div>}
