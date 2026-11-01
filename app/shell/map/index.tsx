@@ -500,16 +500,26 @@ function MapView({ api, covered = false }: { api: MapApi; covered?: boolean }) {
     }, fit: () => { framing.current = null; const fb = focusRef.current; if (fb) fly(fitTo(fb, 1)); else fitAll() }, build: () => { setNote(null); setBuild(b => !b) } }
   })
   // Focus moves the camera: onto the board it takes, and back to where the map was when it ends.
+  // The board in Focus can move under it (its folded stack spreads, the map lays out again): the
+  // camera follows it there, or it would rest on another card, dimmed.
+  const focusAt = focusBoard && focusBoard.pile == null ? `${focusBoard.key}@${focusBoard.x},${focusBoard.y},${focusBoard.w},${focusBoard.h}` : ''
+  const flown = useRef('')
   useEffect(() => {
     // Hidden (a device size or a tool has the stage) the map has no size to fly in: it waits as it is.
     if (!placed.current || input.hidden || size.w < 2) return
+    // A card in a folded stack is flown to once the stack has spread (foldedFocus spreads it).
+    if (focusBoard?.pile != null) return
     const now = input.focus ?? ''
-    if (now === was.current) return
+    if (now === was.current) {
+      if (focusBoard && focusAt !== flown.current) { flown.current = focusAt; fly(fitTo(focusBoard, 1)) }
+      return
+    }
     if (!was.current) before.current = { ...cam.current }
     was.current = now
+    flown.current = focusAt
     if (focusBoard) fly(fitTo(focusBoard, 1))
     else if (before.current) { fly(before.current); before.current = null }
-  }, [input.focus, focusBoard?.key, input.hidden, size.w < 2]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [input.focus, focusAt, input.hidden, size.w < 2]) // eslint-disable-line react-hooks/exhaustive-deps
   // A design's or flow's area: its name down to the next name at its level or above, with the boards in it.
   const areaOf = (key: string) => {
     const ls = [...world.labels].sort((a, b) => a.y - b.y), at = ls.find(l => l.key === key)
@@ -568,7 +578,7 @@ function MapView({ api, covered = false }: { api: MapApi; covered?: boolean }) {
     .filter(l => input.lines === 'all' || (selBoard && (l.a.slug === selBoard.slug || l.b!.slug === selBoard.slug)))
 
   return (
-    <div ref={view} data-map aria-hidden={covered || undefined} className={'absolute inset-0 touch-none select-none overflow-hidden ' + (input.hidden ? 'hidden' : covered ? 'invisible' : '')} style={{ cursor: 'grab' }}
+    <div ref={view} data-map aria-hidden={covered || undefined} className={'absolute inset-0 touch-none select-none overflow-clip ' + (input.hidden ? 'hidden' : covered ? 'invisible' : '')} style={{ cursor: 'grab' }}
       onClick={e => { if (e.target === view.current) setSel(null) }}>
       <div ref={layer} className="absolute left-0 top-0 origin-top-left" style={{ ['--iz' as string]: String(1 / c.z), ['--lz' as string]: labelZ(c.z) }}>
         <div className="relative" style={{ width: world.w, height: world.h }}>
