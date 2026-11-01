@@ -159,3 +159,13 @@ export async function waitReady(evaluate, { tries = 100, every = 100 } = {}) {
   }
   return false
 }
+
+/** The page's tools capture the classic stage (the design full size in [data-layers] [data-mount]):
+ *  open a page as a browser that turned the project tree off, unless the address asks for it
+ *  (?tree=1). Call right after attaching to the page, before navigating. */
+export async function classicShell(send, sessionId) {
+  await send('Page.enable', {}, sessionId) // the script below only runs on a page whose Page domain is on
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: "try { if (localStorage.getItem('proto-tree') === null) localStorage.setItem('proto-tree', '0') } catch {}",
+  }, sessionId)
+}

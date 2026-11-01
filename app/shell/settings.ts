@@ -140,7 +140,7 @@ function Settings(p: Props) {
     : category === 'browsing' ? h('div', { className: 'space-y-5' },
       h('div', { className: 'space-y-3' }, h('div', null, h('p', { className: 'text-[13px] font-medium' }, t('Overview layout')), h('p', { className: muted }, t('How variants appear in overviews.'))), choices(t('Overview layout'), [choice('layout', 'grid', t('Grid'), !p.stack, () => p.onLayout(false), 'grid'), choice('layout', 'stack', t('List'), p.stack, () => p.onLayout(true), 'rows')])),
       toggle('sidebar', t('Show sidebar'), t('Keep prototype navigation open on wide screens.'), p.sidebar, p.onSidebar),
-      toggle('tree', t('Project tree (preview)'), t('The sidebar shows designs, screens and explorations as one tree.'), p.tree, p.onTree),
+      toggle('tree', t('Project tree'), t('The sidebar shows designs, screens and explorations as one tree.'), p.tree, p.onTree),
       toggle('review', t('Show review panel'), t('Keep Try it open on wide screens when available.'), p.review, p.onReview),
       h('div', { className: 'flex flex-wrap items-center justify-between gap-3 border-t border-black/[.06] pt-4 dark:border-white/10' }, h('p', { className: muted }, t('Restore sidebar and column widths.')), h('button', { type: 'button', 'data-setting-reset': '', onClick: p.onResetWidths, className: button }, t('Reset widths'))))
     : category === 'session' ? h('div', { className: 'space-y-5' },

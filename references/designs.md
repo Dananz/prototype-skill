@@ -2,7 +2,7 @@
 
 A prototype is an exploration: one question, several options, one pick. A **design** is what the
 pick grows into: a set of screens that share one look (theme, fonts, parts) and link to each other.
-The page shows designs at the top of its project tree (Settings, Browsing, Project tree), each
+The page shows designs at the top of its project tree (on by default; Settings, Browsing, Project tree turns it off), each
 with its flows and screens, and the explorations under each screen.
 
 ## When to make one
@@ -64,7 +64,7 @@ between designs.
 
 ## What the page sends from the map
 
-With the project tree on (Settings, or `?tree=1`), the page's overview is a map of the designs, and
+With the project tree on (the default; `?tree=0` or Settings turns it off), the page's overview is a map of the designs, and
 the user can ask for things there. Each reaches the inbox as a request on a screen's variant:
 
 - `build-screen`: a link leads to a screen not built yet. Add it with

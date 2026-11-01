@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { startChrome, stopChrome, waitReady } from './chrome.mjs'
+import { classicShell, startChrome, stopChrome, waitReady } from './chrome.mjs'
 
 const argv = process.argv.slice(2)
 const flags = Object.fromEntries(argv.filter(a => a.startsWith('--') && !a.startsWith('--click=')).map(a => { const [k, ...v] = a.slice(2).split('='); return [k, v.join('=')] }))
@@ -60,6 +60,7 @@ try {
     // Its own window, with focus: headless Chrome holds back frames in a tab that is not in front.
     const { targetId } = await send('Target.createTarget', { url: 'about:blank', newWindow: true })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+    await classicShell(send, sessionId)
     await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId)
     await send('Emulation.setDeviceMetricsOverride', { width: VW, height: VH, deviceScaleFactor: scale, mobile: VW < 640 }, sessionId)
     // Below 640 px a phone, with touch, as shoot's phone shots are: (pointer: coarse) and

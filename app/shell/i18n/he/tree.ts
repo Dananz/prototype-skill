@@ -2,7 +2,7 @@
 // t(), then the Hebrew. Masculine singular for the user. Exploration is "סבב", design "עיצוב",
 // screen "מסך"; variant numbers and placeholders stay as they are.
 export default {
-  'Project tree (preview)': 'עץ הפרויקט (תצוגה מקדימה)',
+  'Project tree': 'עץ הפרויקט',
   'The sidebar shows designs, screens and explorations as one tree.': 'הסרגל מציג עיצובים, מסכים וסבבים כעץ אחד.',
   'Working on {name}': 'עובדים על {name}',
   'Server stopped': 'השרת נעצר',

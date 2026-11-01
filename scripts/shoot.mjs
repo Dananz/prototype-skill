@@ -48,7 +48,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { startChrome, stopChrome, waitReady } from './chrome.mjs'
+import { classicShell, startChrome, stopChrome, waitReady } from './chrome.mjs'
 import { numberOf } from '../app/numbers.mjs'
 
 const args = process.argv.slice(2)
@@ -409,6 +409,7 @@ try {
     for (const size of many ? [phoneOnly(route) ? SIZES[1] : SIZES[0]] : SIZES.filter(z => z.mobile || !phoneOnly(route))) {
       const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
       const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+      await classicShell(send, sessionId)
       await send('Emulation.setDeviceMetricsOverride', { width: size.width, height: size.height, deviceScaleFactor: size.deviceScaleFactor, mobile: size.mobile }, sessionId)
       if (size.mobile) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
       const url = new URL(base)
@@ -504,6 +505,7 @@ try {
       const t0 = performance.now(), out = [], missed = []
       const { targetId } = await send('Target.createTarget', { url: 'about:blank', newWindow: true })
       const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+      await classicShell(send, sessionId)
       const page = async expression => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)).result?.value
       // The helpers go in with each call that needs them: a page the dev server reloads (as it does
       // when it first optimizes a dependency) has lost them.
@@ -724,6 +726,7 @@ try {
     const at = [performance.now()]
     const { targetId } = await send('Target.createTarget', { url: 'about:blank', newWindow: true })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+    await classicShell(send, sessionId)
     await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId)
     await send('Emulation.setDeviceMetricsOverride', {
       width: size.width, height: size.height, deviceScaleFactor: size.deviceScaleFactor, mobile: size.mobile,
@@ -791,6 +794,7 @@ try {
     for (const route of routes) {
       const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
       const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+      await classicShell(send, sessionId)
       // Tall enough that the shell shows the phone at 100%; 3x is an iPhone screenshot's scale.
       await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1400, deviceScaleFactor: 3, mobile: false }, sessionId)
       const url = new URL(base)

@@ -34,6 +34,13 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`document.querySelector('[data-tree-side]').hidden`), 'with ?tree=0 the tree should be hidden')
   } finally { page.close() }
 
+  // A browser that never chose (a fresh profile; every new project's app is a new origin) gets the tree.
+  page = await openPage(`${local}thome/C`, { classic: false })
+  try {
+    await until(page, `!!document.querySelector('[data-tree-row="screen:thome"]')`, 'with nothing chosen in this browser the tree should be the default')
+    assert(await page.run(`document.querySelector('[data-tree-side]').hidden === false && !document.querySelector('[data-side] *')`), 'with nothing chosen the old sidebar should not be drawn')
+  } finally { page.close() }
+
   page = await openPage(`${local}tcta-copy/A?tree=1`)
   try {
     await until(page, `!!document.querySelector('[data-tree-row="design:acme"]')`, 'the tree should draw the design')

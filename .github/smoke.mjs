@@ -119,7 +119,8 @@ const pngs = dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.
 // errors: true also keeps what the page reports as an error (uncaught exceptions, console.error,
 // failed loads), read back with errors().
 // args: more Chrome switches (the online checks take wrangler dev's self-signed certificate).
-async function openPage(url, { width = 1440, height = 900, phone = false, errors = false, args = [] } = {}) {
+// classic: false opens it as a browser that never chose, so the project tree is on.
+async function openPage(url, { width = 1440, height = 900, phone = false, errors = false, args = [], classic = true } = {}) {
   const profile = mkdtempSync(join(tmpdir(), 'proto-smoke-'))
   const chrome = startChrome([`--user-data-dir=${profile}`, '--no-first-run', ...args])
   let ws
@@ -156,6 +157,9 @@ async function openPage(url, { width = 1440, height = 900, phone = false, errors
     if (errors) { await send('Runtime.enable', {}, sessionId); await send('Log.enable', {}, sessionId) }
     await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: phone ? 2 : 1, mobile: phone }, sessionId)
     if (phone) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
+    // The project tree is the page's default; the checks written for the classic sidebar open as a
+    // browser that turned it off, unless the address asks (?tree=1) or the check wants the default.
+    if (classic) { await send('Page.enable', {}, sessionId); await send('Page.addScriptToEvaluateOnNewDocument', { source: "try { if (localStorage.getItem('proto-tree') === null) localStorage.setItem('proto-tree', '0') } catch {}" }, sessionId) }
     await send('Page.navigate', { url }, sessionId)
     // A page that stops answering (a render loop) fails the check instead of hanging the run.
     const run = async (expr, ms = 30_000) => {

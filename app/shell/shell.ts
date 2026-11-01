@@ -587,10 +587,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   </div>`
   const side = root.querySelector<HTMLElement>('[data-side]')!
   const treeHost = root.querySelector<HTMLElement>('[data-tree-side]')!
-  // The project tree replaces the columns while ?tree=1 or Settings says so (kept in this browser).
+  // The project tree replaces the columns unless ?tree=0 or Settings turned it off (kept in this browser).
   const treeAsked = new URLSearchParams(location.search).get('tree')
   if (treeAsked === '1' || treeAsked === '0') remember('proto-tree', treeAsked)
-  let treeOn = !framed && localStorage.getItem('proto-tree') === '1'
+  let treeOn = !framed && localStorage.getItem('proto-tree') !== '0'
   const treeWatchers = new Set<() => void>()
   let treeSnap: TreeInput | null = null
   const placeRoute = () => st.place.view === 'variant' ? `${st.place.proto}/${st.place.variant}` : st.place.view === 'proto' ? `${st.place.proto}/` : ''
