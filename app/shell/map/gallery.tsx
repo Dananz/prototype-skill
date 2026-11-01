@@ -47,7 +47,7 @@ function Card({ p, on, dim, pic, onClick }: { p: Proto; on: boolean; dim: boolea
   const [ref, seen] = useInView<HTMLButtonElement>()
   return (
     <button ref={ref} type="button" data-gallery-card={p.id} aria-expanded={on} onClick={onClick} className={`group min-w-0 pb-5 text-start sm:pb-7 transition-opacity duration-300 ${dim ? 'opacity-50 hover:opacity-80' : ''}`}>
-      <div className={`rounded-xl ring-sky-500 ring-offset-[var(--desk-card)] transition-[box-shadow,transform] duration-300 ${on ? 'ring-2 ring-offset-4' : 'group-hover:-translate-y-0.5'}`} style={{ transitionTimingFunction: EASE_OUT }}>
+      <div className={`rounded-xl ring-sky-500 ring-offset-[var(--gallery-bg,var(--desk-card))] transition-[box-shadow,transform] duration-300 ${on ? 'ring-2 ring-offset-4' : 'group-hover:-translate-y-0.5'}`} style={{ transitionTimingFunction: EASE_OUT }}>
         <Thumb p={p} letter={p.picked ?? p.variants[0]?.id ?? 'A'} pic={pic} want={seen} />
       </div>
       <div dir="auto" className="mt-2.5 truncate text-start text-[14px] font-medium">{p.title}</div>
@@ -78,7 +78,7 @@ function Drawer({ p, pic, open }: { p: Proto | null; pic: Pic; open: (route: str
               {shown.variants.map((v, i) => (
                 <button key={v.id} type="button" data-gallery-option={`${shown.id}/${v.id}`} onClick={() => open(`${shown.id}/${v.id}`)} title={t('Open')}
                   className="group w-40 shrink-0 text-start sm:w-52 motion-safe:animate-[proto-gallery-rise_.4s_cubic-bezier(.32,.72,0,1)_both]" style={{ animationDelay: `${60 + i * 35}ms` }}>
-                  <div className={`rounded-xl transition-transform duration-200 group-hover:-translate-y-0.5 ${shown.picked === v.id ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-[var(--desk-card)]' : ''}`}><Thumb p={shown} letter={v.id} pic={pic} want /></div>
+                  <div className={`rounded-xl transition-transform duration-200 group-hover:-translate-y-0.5 ${shown.picked === v.id ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-[var(--gallery-bg,var(--desk-card))]' : ''}`}><Thumb p={shown} letter={v.id} pic={pic} want /></div>
                   <div className="mt-2 flex items-center gap-1.5 text-[13px]"><span className="tabular-nums text-zinc-400">{numberOf(v.id)}</span><span dir="auto" className="truncate">{v.name}</span>{shown.picked === v.id && <Ph name="checkFill" className="size-3.5 text-emerald-500" />}</div>
                 </button>
               ))}
@@ -90,12 +90,13 @@ function Drawer({ p, pic, open }: { p: Proto | null; pic: Pic; open: (route: str
   )
 }
 
-function Section({ id, title, hint, list, cols, pic, open, openId, setOpenId }: { id: string; title: string; hint: string; list: Proto[]; cols: number; pic: Pic; open: (route: string) => void; openId: string; setOpenId: (id: string) => void }) {
+/** bare: the page's only section, drawn on the desk without its panel. */
+function Section({ id, title, hint, list, cols, pic, open, openId, setOpenId, bare }: { id: string; title: string; hint: string; list: Proto[]; cols: number; pic: Pic; open: (route: string) => void; openId: string; setOpenId: (id: string) => void; bare?: boolean }) {
   if (!list.length) return null
   const rows = Array.from({ length: Math.ceil(list.length / cols) }, (_, r) => list.slice(r * cols, r * cols + cols))
   const here = list.some(p => p.id === openId)
   return (
-    <section data-gallery-section={id} className="mb-3 rounded-[20px] bg-[var(--desk-card)] p-3.5 pt-3 ring-1 ring-[var(--desk-line)] sm:mb-6 sm:rounded-3xl sm:p-6 sm:pt-5">
+    <section data-gallery-section={id} data-bare={bare || undefined} style={bare ? { ['--gallery-bg' as string]: 'var(--desk)' } : undefined} className={bare ? 'mb-3 px-1 sm:mb-6' : 'mb-3 rounded-[20px] bg-[var(--desk-card)] p-3.5 pt-3 ring-1 ring-[var(--desk-line)] sm:mb-6 sm:rounded-3xl sm:p-6 sm:pt-5'}>
       <header className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-[var(--desk-line)] pb-3 sm:mb-5 sm:pb-4">
         <h2 dir="auto" className="whitespace-nowrap text-[15px] font-semibold">{title}</h2>
         <span className="rounded-full bg-zinc-900/5 px-2 py-0.5 text-xs tabular-nums text-zinc-500 dark:bg-white/10 dark:text-zinc-400">{list.length}</span>
@@ -156,6 +157,9 @@ export function Gallery({ input, pic, open, safe, head, setScope }: { input: Map
   const scope = input.scope ?? 'all', sid = scope.startsWith('conv:') ? scope.slice('conv:'.length) : ''
   const convs: Conv[] = useMemo(() => { try { return JSON.parse(input.convs || '[]') as Conv[] } catch { return [] } }, [input.convs])
   const same = { cols, pic, open, openId, setOpenId }
+  // One section on the page (only waiting, or only picked, and no past conversations under it) needs no panel.
+  const past = sid === input.me && convs.some(c => c.sid !== sid)
+  const alone = [live.some(p => !p.picked), live.some(p => !!p.picked), past].filter(Boolean).length === 1
   // A new scope starts at the top.
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [scope])
   // The tree (or an exploration's own page) asked for one: its card opens, and the drawer scrolls it in.
@@ -169,18 +173,18 @@ export function Gallery({ input, pic, open, safe, head, setScope }: { input: Map
       <style>{'@keyframes proto-gallery-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}'}</style>
       <div className="mx-auto max-w-[1600px]">
         {head && <div className="mb-4 flex justify-center">{head}</div>}
-        {scope === 'favs' ? (live.length ? <Section id="favs" title={t('Favorites')} hint={t('From the whole project')} list={live} {...same} /> : <Empty text={t('No favorites yet')} />)
-          : scope === 'all' ? convs.map(c => <Section key={c.sid} id={`conv:${c.sid}`} title={c.name || t('A past conversation')} hint={c.sid === input.me ? t('This conversation') : day(c.at)} list={live.filter(p => (p.session ?? '') === c.sid)} {...same} />)
+        {scope === 'favs' ? (live.length ? <Section id="favs" title={t('Favorites')} hint={t('From the whole project')} list={live} bare {...same} /> : <Empty text={t('No favorites yet')} />)
+          : scope === 'all' ? convs.map(c => <Section key={c.sid} id={`conv:${c.sid}`} title={c.name || t('A past conversation')} hint={c.sid === input.me ? t('This conversation') : day(c.at)} list={live.filter(p => (p.session ?? '') === c.sid)} bare={convs.length === 1} {...same} />)
           : <>
             {sid !== input.me && <div className="mb-4 flex items-center gap-3">
               {input.me && <button type="button" data-gallery-back onClick={() => setScope(`conv:${input.me}`)} className="flex items-center gap-1.5 text-sm font-medium text-sky-600 hover:text-sky-700 dark:text-sky-400"><Ph name="caretRight" className="size-3 -scale-x-100 rtl:scale-x-100" />{t('Back to this conversation')}</button>}
               <span dir="auto" className="ms-auto text-sm text-zinc-500">{convs.find(c => c.sid === sid)?.name || t('A past conversation')}</span>
             </div>}
             {live.length ? <>
-              <Section id="open" title={t('Waiting for a pick')} hint={t('Open a card to see its options')} list={live.filter(p => !p.picked)} {...same} />
-              <Section id="picked" title={t('Picked')} hint={t('Each card shows its pick')} list={live.filter(p => p.picked)} {...same} />
+              <Section id="open" title={t('Waiting for a pick')} hint={t('Open a card to see its options')} list={live.filter(p => !p.picked)} bare={alone} {...same} />
+              <Section id="picked" title={t('Picked')} hint={t('Each card shows its pick')} list={live.filter(p => p.picked)} bare={alone} {...same} />
             </> : <Empty text={t('Nothing from this conversation yet')} />}
-            {sid === input.me && convs.some(c => c.sid !== sid) && <Past convs={convs.filter(c => c.sid !== sid)} setScope={setScope} />}
+            {past && <Past convs={convs.filter(c => c.sid !== sid)} setScope={setScope} />}
           </>}
       </div>
     </div>
