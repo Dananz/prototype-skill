@@ -205,6 +205,9 @@ function StaleNote({ n, protos, depth }: { n: TreeNode; protos: Proto[]; depth: 
   )
 }
 
+/** The tree as a component, for a host that renders it in a root of its own (the phone's tree sheet). */
+export function TreeView({ api }: { api: TreeApi }) { return <Tree api={api} /> }
+
 /** Draws the tree into host; the shell calls the api's listeners when anything it reads changed. */
 export function mountTree(host: HTMLElement, api: TreeApi) {
   createRoot(host).render(<Tree api={api} />)

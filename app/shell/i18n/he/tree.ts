@@ -113,4 +113,9 @@ export default {
   // The strip's map tools (shell.ts paintStrip).
   'Show every link': 'הצגת כל הקישורים',
   'Showing every link': 'מוצגים כל הקישורים',
+  // The phone with the project tree on: the tree sheet's handle and the decide tiles (sheet.ts, comments/decide.tsx).
+  'Half the screen': 'חצי מסך',
+  'Full screen': 'מסך מלא',
+  '1 comment': 'הערה אחת',
+  'Not picked yet': 'עוד לא נבחר',
 }

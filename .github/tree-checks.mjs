@@ -121,6 +121,27 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-setting=tree] input').click()`)
     await until(page, `document.querySelector('[data-tree-side]').hidden && localStorage.getItem('proto-tree') === '0'`, 'the Settings switch should turn the tree off')
   } finally { page.close() }
+  // On a phone with the tree on: a two-line bar (the session's mark, the title, Pick), the tree in a
+  // sheet at half the screen (its handle takes it to full), a row's ⋯ opening that variant's decide
+  // tiles, and the pill's name opening the tree instead of the variant sheet.
+  page = await openPage(`${local}thome/B?tree=1`, { width: 402, height: 874, phone: true })
+  try {
+    await until(page, `!!document.querySelector('[data-phone-bar] [data-shoot=bar-decide]')`, 'the phone bar should have Pick on a variant')
+    assert(await page.run(`!document.querySelector('[data-pill] [data-pill-state]')`), 'with the tree on the pill should leave the state line to the bar')
+    await page.run(`document.querySelector('[data-shoot=bar-title]').click()`)
+    await until(page, `(() => { const s = document.querySelector('[data-shoot=tree-sheet]'); return !!s && Math.abs(s.getBoundingClientRect().top - innerHeight / 2) < 4 })()`, 'the title should open the tree sheet at half the screen')
+    assert(await page.run(`!!document.querySelector('[data-shoot=tree-sheet] [data-tree-row="screen:thome"]') && getComputedStyle(document.querySelector('[data-shoot=tree-sheet] [data-tree-row]')).height === '40px'`), 'the sheet should hold the tree, with 40 px rows')
+    await page.run(`document.querySelector('[data-sheet-grip]').click()`)
+    await until(page, `document.querySelector('[data-shoot=tree-sheet]').getBoundingClientRect().top < 60`, 'the handle should take the tree to full height')
+    await page.run(`document.querySelector('[data-shoot=tree-sheet] [data-tree-row="opt:thome/A"] [data-act^="vm:"]').click()`)
+    await until(page, `!!document.querySelector('[data-shoot=decide-sheet] [data-tile=open]') && !!document.querySelector('[data-shoot=decide-sheet] [data-tile=fav]')`, 'a row\'s ⋯ should open that variant\'s tiles, with Open')
+    await page.run(`document.querySelector('[data-shoot=decide-sheet] [data-tile=open]').click()`)
+    await until(page, `location.pathname === '/thome/A' && !document.querySelector('[data-shoot=tree-sheet]') && !document.querySelector('[data-shoot=decide-sheet]')`, 'Open should go to the variant and close both sheets')
+    await page.run(`document.querySelector('[data-shoot=bar-decide]').click()`)
+    await until(page, `!!document.querySelector('[data-shoot=decide-sheet] [data-tile=pick]') && !document.querySelector('[data-shoot=decide-sheet] [data-tile=open]')`, 'Pick in the bar should open the tiles for the variant on screen, without Open')
+    await page.run(`document.querySelector('[data-shoot=decide-sheet] [data-tile=pick]').click()`)
+    await until(page, `/Picked/.test(document.querySelector('[data-shoot=bar-decide]').textContent) && !!document.querySelector('[data-shoot=decide-sheet]')`, 'a pick from the tiles should show in the bar, the tiles staying open')
+  } finally { page.close() }
   for (const slug of ['thome', 'tabout', 'thero-cta', 'tcta-copy', 'tlogo', 'tpricing']) proto(['archive', slug])
   rmSync(join(app, 'src', 'designs'), { recursive: true, force: true })
   console.log('OK: the project tree sidebar: switch, designs, screens, explorations, scope, place and live designs')

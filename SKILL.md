@@ -17,7 +17,11 @@ makes, and comments on them wake it.
 The app already has its navigation (a switcher in the bar that opens the session as columns,
 a sidebar with one line per level and the current level as two columns, a stepper through the
 variants (on a phone, one solid bar at the foot: the comments island over a pill you drag along,
-with a menu for the page's tools, and the columns as a sheet you drill into), a comments island
+with a menu for the page's tools, and the columns as a sheet you drill into; with the project tree
+on, a two-line bar instead: the session's mark opens the menu, the title opens the tree in a sheet at
+half the screen (its handle takes it to full) with the state line under it, and Pick opens the
+variant's tiles: Pick, Favorite, More like this, Build it, Comment, Share, then Copy link, Compare and
+Pick with a note; a tree row's ⋯ opens the same tiles for that variant), a comments island
 floating over the stage, edge arrows, a focus mode with a dock, light and dark, phone frames, "editing" dots, a
 strip naming the variant your requests change). You only write variant files.
 
