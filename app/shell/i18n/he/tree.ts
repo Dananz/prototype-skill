@@ -3,6 +3,8 @@
 // screen "מסך"; variant numbers and placeholders stay as they are.
 export default {
   'Project tree': 'עץ הפרויקט',
+  'Conversation first (preview)': 'השיחה קודם (תצוגה מקדימה)',
+  'The page opens on this conversation, with a gallery and past conversations.': 'הדף נפתח על השיחה הזו, עם גלריה ושיחות קודמות.',
   'The sidebar shows designs, screens and explorations as one tree.': 'הסרגל מציג עיצובים, מסכים וסבבים כעץ אחד.',
   'Working on {name}': 'עובדים על {name}',
   'Server stopped': 'השרת נעצר',
@@ -16,6 +18,7 @@ export default {
   '#1 stands in until one is picked': '#1 ממלא את המקום עד שתבחר',
   'not picked': 'לא נבחר',
   'Open comments': 'הערות פתוחות',
+  'Nothing waits for you': 'שום דבר לא מחכה לך',
   'Nothing from this conversation yet': 'עוד אין כלום מהשיחה הזו',
   'No prototypes yet': 'עוד אין פרוטוטייפים',
   'Favorites': 'מועדפים',

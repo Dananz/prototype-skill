@@ -591,6 +591,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const treeAsked = new URLSearchParams(location.search).get('tree')
   if (treeAsked === '1' || treeAsked === '0') remember('proto-tree', treeAsked)
   let treeOn = !framed && localStorage.getItem('proto-tree') !== '0'
+  // Conversation first (a preview, ?conv=1 or Settings, kept in this browser): the page is scoped to
+  // this conversation, the map has a gallery and lists past conversations. Off, it shows the whole
+  // project, the tree has its filters and the map is the canvas.
+  const convAsked = new URLSearchParams(location.search).get('conv')
+  if (convAsked === '1' || convAsked === '0') remember('proto-conv', convAsked)
+  let convOn = localStorage.getItem('proto-conv') === '1'
   const treeWatchers = new Set<() => void>()
   let treeSnap: TreeInput | null = null
   const placeRoute = () => st.place.view === 'variant' ? `${st.place.proto}/${st.place.variant}` : st.place.view === 'proto' ? `${st.place.proto}/` : ''
@@ -599,7 +605,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     for (const [k, n] of comments.counts().by) { const slug = k.split('/')[0]; by[slug] = (by[slug] ?? 0) + n }
     const w = workOf()
     return {
-      protos: all, designs, place: placeRoute(), me: session.conversation ?? null, scope: scopeNow(), scopeName: scopeName(),
+      protos: all, designs, place: placeRoute(), me: session.conversation ?? null, conv: convOn, scope: scopeNow(), scopeName: scopeName(),
       building: new Set(Object.keys(session.building ?? {}).filter(k => buildingUntil(k) > Date.now())), counts: by,
       work: w ? t('Working on {name}', { name: `${w.p.title} ${variantLabel(w.p, w.v.id)}` }) : '',
       up: st.live && !st.stopped,
@@ -682,6 +688,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const scopeKey = `proto-scope:${session.id}`
   let scope = (() => { try { return localStorage.getItem(scopeKey) || '' } catch { return '' } })()
   const scopeNow = () => {
+    if (!convOn) return 'all'
     if (scope === 'all' || scope === 'favs') return scope
     const sid = scope.startsWith('conv:') ? scope.slice('conv:'.length) : session.conversation
     return sid && (sid === session.conversation || all.some(p => p.session === sid)) ? `conv:${sid}` : 'all'
@@ -689,7 +696,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const convNames = () => st.status?.conversations ?? {}
   const scopeName = () => { const s = scopeNow(); return s.startsWith('conv:') ? convNames()[s.slice(5)] ?? '' : '' }
   function setScope(next: string) {
-    if (next === scopeNow()) return
+    if (!convOn || next === scopeNow()) return
     scope = next
     remember(scopeKey, next)
     // On an exploration's own page the map is framed on it: a new scope shows the whole of it instead.
@@ -803,7 +810,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     layers.style.pointerEvents = show ? 'none' : ''
     if (!show && !mapMounted) return
     const work = all.flatMap(p => p.variants.filter(v => editing(p.id, v.id)).map(v => `${p.id}/${v.id}:${building(p.id, v.id) ? 'building' : 'editing'}`)).join(' ')
-    const next: MapInput = { protos: scopedProtos(), scope: scopeNow(), me: session.conversation ?? '', convs: convsOf(), designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), working: work, frame: mapFrame, safe, focus: inPlace() ? `${st.place.proto}/${st.place.variant}` : '' }
+    const next: MapInput = { protos: scopedProtos(), conv: convOn, scope: scopeNow(), me: session.conversation ?? '', convs: convsOf(), designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), working: work, frame: mapFrame, safe, focus: inPlace() ? `${st.place.proto}/${st.place.variant}` : '' }
     if (mapSnap && (Object.keys(next) as (keyof MapInput)[]).every(k => next[k] === mapSnap![k])) return
     mapSnap = next
     if (!mapMounted && show) { mapMounted = true; mountMap(mapHost, mapApi) }
@@ -3145,7 +3152,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const drawSettings = createSettings()
   function paintSettings() {
     drawSettings({
-      open: settingsOpen, category: settingsCategory, appearance, live: comments.store.get().live, sidebar: st.side, tree: treeOn,
+      open: settingsOpen, category: settingsCategory, appearance, live: comments.store.get().live, sidebar: st.side, tree: treeOn, conv: convOn,
       review: localStorage.getItem('proto-hints') !== '0', stack: st.stack,
       session: { host: agentName(session.agent), id: session.conversation || session.id, name: session.name, url: session.url || location.origin + '/', keep: !!st.status?.keep,
         server: st.stopped ? 'stopped' : st.live ? 'live' : 'reconnecting',
@@ -3161,6 +3168,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onLive: on => { comments.act.setLive(on); paintSettings() },
       onSidebar: on => { st.side = on; remember('proto-side', on ? '1' : '0'); render() },
       onTree: on => { treeOn = on; remember('proto-tree', on ? '1' : '0'); render() },
+      onConv: on => { convOn = on; remember('proto-conv', on ? '1' : '0'); scoped = null; paintTree(); paintMap(); render() },
       onReview: on => { remember('proto-hints', on ? '1' : '0'); hintsOpen = wideMq.matches && on; if (!on) setTry(null); render() },
       onLayout: on => { act('stack', on ? '1' : '0', ''); paintSettings() },
       onResetWidths: () => { setSideW(SIDE_W); setSplit(SPLIT_W); render() },

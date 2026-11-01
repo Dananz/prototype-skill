@@ -172,7 +172,8 @@ that prototype instead (when the user means that one). The conversation that las
 conversation; a comment on a prototype whose owner isn't listening wakes the conversation that
 listens and was seen last. `proto ls --mine` lists what this conversation made or joined.
 
-The page opens on **this conversation**: with the project tree on, the sidebar's top row (This
+With **Conversation first** on (a preview: Settings › Browsing, or `?conv=1`, kept in the browser),
+the page opens on **this conversation**: with the project tree on, the sidebar's top row (This
 conversation | Whole project · N | ★) scopes the tree, the gallery and the map together. The gallery
 lists the earlier conversations as one line each, and opening one scopes the page to it, with a way
 back; a link to an exploration of another conversation widens the scope to that one. The choice is

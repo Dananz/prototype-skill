@@ -1,7 +1,7 @@
 // The project tree sidebar (app/shell/tree/): behind its switch (?tree=1, Settings), designs ›
-// flows › screens with their options and the explorations built on them, the page's scope (this
-// conversation, the whole project, favorites), the place on screen lit, and a design changed on disk
-// drawn without a reload.
+// flows › screens with their options and the explorations built on them, its filters, the page's
+// scope behind Conversation first (?conv=1: this conversation, the whole project, favorites), the
+// place on screen lit, and a design changed on disk drawn without a reload.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -39,9 +39,11 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
   try {
     await until(page, `!!document.querySelector('[data-tree-row="screen:thome"]')`, 'with nothing chosen in this browser the tree should be the default')
     assert(await page.run(`document.querySelector('[data-tree-side]').hidden === false && !document.querySelector('[data-side] *')`), 'with nothing chosen the old sidebar should not be drawn')
+    // Conversation first is a preview: off by default, the tree keeps its own filters and no scope row.
+    assert(await page.run(`!!document.querySelector('[data-tree-filters] [data-tree-filter="open"]') && !document.querySelector('[data-tree-scope]')`), 'with Conversation first off the tree should keep its filters')
   } finally { page.close() }
 
-  page = await openPage(`${local}tcta-copy/A?tree=1`)
+  page = await openPage(`${local}tcta-copy/A?tree=1&conv=1`)
   try {
     await until(page, `!!document.querySelector('[data-tree-row="design:acme"]')`, 'the tree should draw the design')
     assert(await page.run(`!document.querySelector('[data-tree-side]').hidden && !document.querySelector('[data-side] *')`), 'with ?tree=1 the tree replaces the old sidebar')

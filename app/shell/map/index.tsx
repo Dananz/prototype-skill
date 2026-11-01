@@ -30,6 +30,8 @@ export type MapInput = {
   working?: string
   /** The route in Focus, drawn in place on its board: the map stays, the page's view of it sits in the board's slot. */
   focus?: string
+  /** Conversation first (a preview): the gallery and its switch. Off, the map is the canvas only. */
+  conv?: boolean
   /** What protos holds (shell.ts scope): 'all', 'favs' or 'conv:<conversation>'; me: this conversation. */
   scope?: string; me?: string
   /** The project's conversations, newest first with this one first, as JSON: [{ sid, name, at, n, picked }]. */
@@ -812,7 +814,7 @@ type MapMode = 'gallery' | 'map'
 function MapRoot({ api }: { api: MapApi }) {
   const input = useSyncExternalStore(api.subscribe, api.get)
   const [chosen, setChosen] = useState<MapMode | ''>(() => { try { const v = localStorage.getItem(VIEW_KEY); return v === 'gallery' || v === 'map' ? v : '' } catch { return '' } })
-  const mode: MapMode = chosen || (input.designs.length ? 'map' : 'gallery')
+  const mode: MapMode = !input.conv ? 'map' : chosen || (input.designs.length ? 'map' : 'gallery')
   // Focus always flies in on the canvas; the gallery comes back when it ends.
   const flat = mode === 'gallery' && !input.focus
   const choose = (m: MapMode) => { setChosen(m); try { localStorage.setItem(VIEW_KEY, m) } catch { /* this visit only */ } }
@@ -837,7 +839,7 @@ function MapRoot({ api }: { api: MapApi }) {
   return <>
     <MapView api={api} covered={flat} />
     {flat && <Gallery input={input} pic={pic} open={api.open} safe={safe} head={switcher} setScope={s => api.setScope?.(s)} />}
-    {!flat && !input.focus && !input.hidden && <div className="pointer-events-none absolute flex justify-center" style={{ left: safe.l, right: safe.r, top: safe.t + 14 }}>{switcher}</div>}
+    {input.conv && !flat && !input.focus && !input.hidden && <div className="pointer-events-none absolute flex justify-center" style={{ left: safe.l, right: safe.r, top: safe.t + 14 }}>{switcher}</div>}
   </>
 }
 
