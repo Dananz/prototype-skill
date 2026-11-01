@@ -1918,7 +1918,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const openWays = () => { if (treeOn && !framed) st.tree = true; else st.sheet = true }
   // The same tree as the sidebar, fed the same input; its rows close the sheet on their way.
   const phoneTreeApi: TreeApi = {
-    get: () => treeSnap ?? treeInput(), subscribe: f => { treeWatchers.add(f); return () => { treeWatchers.delete(f) } }, name: session.name,
+    get: () => treeSnap ?? (treeSnap = treeInput()), subscribe: f => { treeWatchers.add(f); return () => { treeWatchers.delete(f) } }, name: session.name,
     go: route => { st.tree = false; const [proto, variant] = route.split('/'); go(variant ? { view: 'variant', proto, variant } : { view: 'proto', proto }) },
     goWork: () => { st.tree = false; act('work', 'go', '') },
     hide: () => { st.tree = false; render() },
@@ -2409,7 +2409,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       // The phone's two-line bar (with the project tree on): the tree, the variant's decide sheet, the menu.
       case 'phone-tree': st.tree = true; return render()
       case 'phone-decide': if (here) { st.decide = `${here.proto}/${here.variant}`; render() } return
-      case 'phone-menu': if (card && card.phase !== 'exit') closeCard(); else { if (card) closeCard(true); openCard('menu') } return
+      // While a tool opened from the menu (copy options, Try it) holds the pill's ≡ as its way out, the mark does nothing.
+      case 'phone-menu': if (menuBtn()?.dataset.pillMenu === 'mode') return; if (card && card.phase !== 'exit') closeCard(); else { if (card) closeCard(true); openCard('menu') } return
       // A state leaf: that variant in that state. Comparing keeps comparing.
       case 'pvs': {
         const keep = here?.tool === 'compare' && here.proto === arg && here.variant === arg2
