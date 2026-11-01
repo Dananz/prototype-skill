@@ -12,6 +12,7 @@ import { t, tn } from '../i18n'
 import { numberOf } from '../variants'
 import { CARD, GAP, linePath, worldOf, type Board, type World } from './world'
 import { Ph } from '../tree/row'
+import { Gallery, type Pic } from './gallery'
 
 export type MapInput = {
   protos: Proto[]; designs: Design[]; place: string; hidden: boolean; lines: 'all' | 'selected'; design: string
@@ -29,6 +30,12 @@ export type MapInput = {
   working?: string
   /** The route in Focus, drawn in place on its board: the map stays, the page's view of it sits in the board's slot. */
   focus?: string
+  /** Conversation first (a preview): the gallery and its switch. Off, the map is the canvas only. */
+  conv?: boolean
+  /** What protos holds (shell.ts scope): 'all', 'favs' or 'conv:<conversation>'; me: this conversation. */
+  scope?: string; me?: string
+  /** The project's conversations, newest first with this one first, as JSON: [{ sid, name, at, n, picked }]. */
+  convs?: string
 }
 export type MapApi = {
   get(): MapInput; subscribe(fn: () => void): () => void
@@ -41,7 +48,7 @@ export type MapApi = {
   /** The page's controls for the map (its zoom pill and strip), set by the map. */
   ctl?: { zoom(f: number): void; fit(): void; build(): void }
   /** The map's state for those controls: its zoom as the design's own size, Build it open and offered. With it, the page draws the controls. */
-  report?(s: { pct: number; build: boolean; one: boolean }): void
+  report?(s: { pct: number; build: boolean; one: boolean; flat?: boolean }): void
   /** A box of the map's (Build it, a note) opened or closed: the comments island steps aside for it. */
   panel?(open: boolean): void
   mount(el: HTMLElement, component: unknown): () => void
@@ -50,6 +57,8 @@ export type MapApi = {
   setLines(mode: 'all' | 'selected'): void
   /** Shows one design only ('' for all). */
   setDesign(id: string): void
+  /** Scopes the page (the tree too): 'conv:<id>', 'all' or 'favs'. */
+  setScope?(scope: string): void
   /** Sends words to the agent about the map, on a screen's variant: a note on a link or a flow, or a link to add. */
   ask(on: { proto: string; variant: string }, action: 'map-note' | 'add-link', text: string): Promise<void>
 }
@@ -231,7 +240,8 @@ function useLinks(boards: Board[], edits: number, given: Record<string, string[]
   return given ?? links
 }
 
-function MapView({ api }: { api: MapApi }) {
+/** covered: the gallery is over the canvas; it stays laid out (Focus flies in from it) but asks for no stills. */
+function MapView({ api, covered = false }: { api: MapApi; covered?: boolean }) {
   const input = useSyncExternalStore(api.subscribe, api.get)
   const [spread, setSpread] = useState<Set<string>>(() => new Set())
   const [sel, setSel] = useState<string | null>(null)
@@ -307,8 +317,9 @@ function MapView({ api }: { api: MapApi }) {
     requestAnimationFrame(step)
   }
   const fitAll = () => fly(fitTo({ x: 0, y: 0, w: Math.max(world.w, 1), h: Math.max(world.h, 1) }, 0.92))
-  // The hand takes over from a flight under way (a wheel, a pinch, a drag): it stops where it is.
-  const grab = () => { flight.current++; flightTo.current = null }
+  // The hand takes over from a flight under way (a wheel, a pinch, a drag): it stops where it is, and a
+  // framing still waiting for its stack to spread is dropped too.
+  const grab = () => { flight.current++; flightTo.current = null; framing.current = null }
   const zoomAt = (f: number, px: number, py: number) => {
     grab()
     const c = cam.current, z = clamp(c.z * f, MIN_Z, MAX_SIZE / refScale.current)
@@ -479,27 +490,38 @@ function MapView({ api }: { api: MapApi }) {
   refScale.current = (focusBoard ?? near[0])?.scale ?? 1
   const pct = Math.round(c.z * refScale.current * 100)
   const hosted = !!api.report
-  useEffect(() => { api.report?.({ pct, build, one: !!one && !ro }) }, [pct, build, !!one, ro]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { api.report?.({ pct, build, one: !!one && !ro, flat: covered }) }, [pct, build, !!one, ro, covered]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     // A step of the pill's + or - glides (a short flight), and past the design in Focus it is the map again.
     api.ctl = { zoom: f => {
+      framing.current = null
       const a = clear(), px = a.x + a.w / 2, py = a.y + a.h / 2, c = flightTo.current ?? cam.current, z = clamp(c.z * f, MIN_Z, MAX_SIZE / refScale.current)
       const to = { z, x: px - (px - c.x) * (z / c.z), y: py - (py - c.y) * (z / c.z) }
       fly(to, 220, () => { flightTo.current = null; if (f < 1) leaveIfOut() })
       flightTo.current = to
-    }, fit: () => { const fb = focusRef.current; if (fb) fly(fitTo(fb, 1)); else fitAll() }, build: () => { setNote(null); setBuild(b => !b) } }
+    }, fit: () => { framing.current = null; const fb = focusRef.current; if (fb) fly(fitTo(fb, 1)); else fitAll() }, build: () => { setNote(null); setBuild(b => !b) } }
   })
   // Focus moves the camera: onto the board it takes, and back to where the map was when it ends.
+  // The board in Focus can move under it (its folded stack spreads, the map lays out again): the
+  // camera follows it there, or it would rest on another card, dimmed.
+  const focusAt = focusBoard && focusBoard.pile == null ? `${focusBoard.key}@${focusBoard.x},${focusBoard.y},${focusBoard.w},${focusBoard.h}` : ''
+  const flown = useRef('')
   useEffect(() => {
     // Hidden (a device size or a tool has the stage) the map has no size to fly in: it waits as it is.
     if (!placed.current || input.hidden || size.w < 2) return
+    // A card in a folded stack is flown to once the stack has spread (foldedFocus spreads it).
+    if (focusBoard?.pile != null) return
     const now = input.focus ?? ''
-    if (now === was.current) return
+    if (now === was.current) {
+      if (focusBoard && focusAt !== flown.current) { flown.current = focusAt; fly(fitTo(focusBoard, 1)) }
+      return
+    }
     if (!was.current) before.current = { ...cam.current }
     was.current = now
+    flown.current = focusAt
     if (focusBoard) fly(fitTo(focusBoard, 1))
     else if (before.current) { fly(before.current); before.current = null }
-  }, [input.focus, focusBoard?.key, input.hidden, size.w < 2]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [input.focus, focusAt, input.hidden, size.w < 2]) // eslint-disable-line react-hooks/exhaustive-deps
   // A design's or flow's area: its name down to the next name at its level or above, with the boards in it.
   const areaOf = (key: string) => {
     const ls = [...world.labels].sort((a, b) => a.y - b.y), at = ls.find(l => l.key === key)
@@ -558,7 +580,7 @@ function MapView({ api }: { api: MapApi }) {
     .filter(l => input.lines === 'all' || (selBoard && (l.a.slug === selBoard.slug || l.b!.slug === selBoard.slug)))
 
   return (
-    <div ref={view} data-map className={'absolute inset-0 touch-none select-none overflow-hidden ' + (input.hidden ? 'hidden' : '')} style={{ cursor: 'grab' }}
+    <div ref={view} data-map aria-hidden={covered || undefined} className={'absolute inset-0 touch-none select-none overflow-clip ' + (input.hidden ? 'hidden' : covered ? 'invisible' : '')} style={{ cursor: 'grab' }}
       onClick={e => { if (e.target === view.current) setSel(null) }}>
       <div ref={layer} className="absolute left-0 top-0 origin-top-left" style={{ ['--iz' as string]: String(1 / c.z), ['--lz' as string]: labelZ(c.z) }}>
         <div className="relative" style={{ width: world.w, height: world.h }}>
@@ -619,7 +641,7 @@ function MapView({ api }: { api: MapApi }) {
                   outline: b === focusBoard ? 'none' : on || here ? `calc(2px * var(--iz)) solid ${on ? '#0ea5e9' : '#10b981'}` : `calc(1px * var(--iz)) solid rgb(0 0 0 / .08)` }}>
                 <div className={'absolute inset-0 grid place-items-center bg-zinc-50 text-zinc-400 dark:bg-zinc-900'} style={{ fontSize: 'calc(13px * var(--lz))' }}><span dir="auto" className={b.pile ? 'invisible' : ''}>{b.title}</span></div>
                 <div className="absolute left-0 top-0 origin-top-left" style={{ width: b.w / b.scale, height: b.h / b.scale, zoom: b.scale }}>
-                  <Still v={variantOf(b)} route={b.route} w={b.w / b.scale} h={b.h / b.scale} size={b.scale} want={live.has(b.key) && !input.hidden && b !== focusBoard}
+                  <Still v={variantOf(b)} route={b.route} w={b.w / b.scale} h={b.h / b.scale} size={b.scale} want={live.has(b.key) && !input.hidden && !covered && b !== focusBoard}
                     sharp={c.z * b.scale * (devicePixelRatio || 1) > 0.55}
                     rank={(b.kind === 'screen' ? 0 : 1000) + (rankOf.get(b.key) ?? 999)}
                     stamp={`${stampOf.get(b.slug) ?? 0}:${busy.get(b.route) ?? ''}`} mount={api.mount} />
@@ -785,8 +807,44 @@ function BuildBox({ design, boards, api, onClose }: { design: Design; boards: Bo
   )
 }
 
+// Gallery or canvas: the user's choice, kept in this browser; until they choose, a project with designs
+// opens on the canvas (its screens and links) and one with explorations only on the gallery.
+const VIEW_KEY = 'proto-map-view'
+type MapMode = 'gallery' | 'map'
+function MapRoot({ api }: { api: MapApi }) {
+  const input = useSyncExternalStore(api.subscribe, api.get)
+  const [chosen, setChosen] = useState<MapMode | ''>(() => { try { const v = localStorage.getItem(VIEW_KEY); return v === 'gallery' || v === 'map' ? v : '' } catch { return '' } })
+  const mode: MapMode = !input.conv ? 'map' : chosen || (input.designs.length ? 'map' : 'gallery')
+  // Focus always flies in on the canvas; the gallery comes back when it ends.
+  const flat = mode === 'gallery' && !input.focus
+  const choose = (m: MapMode) => { setChosen(m); try { localStorage.setItem(VIEW_KEY, m) } catch { /* this visit only */ } }
+  const safe = useMemo(() => { const [l = 0, t = 0, r = 0, b = 0] = (input.safe ?? '').split(',').map(Number); return { l, t, r, b } }, [input.safe])
+  const stampOf = useMemo(() => new Map((input.stamps ?? '').split(' ').filter(Boolean).map(x => { const i = x.lastIndexOf(':'); return [x.slice(0, i), Number(x.slice(i + 1))] as [string, number] })), [input.stamps])
+  const pic: Pic = (p, letter, want) => {
+    const [w, h] = p.kind === 'phone' ? p.screen : [1200, 750]
+    return <Still v={p.variants.find(v => v.id === letter)} route={`${p.id}/${letter}`} w={w} h={h} size={0.4} want={want && !input.hidden} sharp={false} rank={0} stamp={`${stampOf.get(p.id) ?? 0}:`} mount={api.mount} />
+  }
+  const MODES: [MapMode, 'squaresFour' | 'mapTrifold', string][] = [['gallery', 'squaresFour', t('Gallery')], ['map', 'mapTrifold', t('Map')]]
+  const switcher = (
+        <div role="radiogroup" aria-label={t('Gallery or map')} data-map-view={mode} className="pointer-events-auto flex gap-0.5 rounded-xl bg-[var(--desk-card,#fff)] p-1 text-[12px] shadow-sm ring-1 ring-[var(--desk-line,rgb(0_0_0/.07))]">
+          {MODES.map(([m, icon, label]) => (
+            <button key={m} type="button" role="radio" aria-checked={mode === m} data-map-view-btn={m} onClick={() => choose(m)}
+              className={`flex h-7 items-center gap-1.5 rounded-lg px-2.5 font-medium transition-colors ${mode === m ? 'bg-zinc-900/[.07] text-zinc-900 dark:bg-white/10 dark:text-white' : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>
+              <Ph name={icon} className="size-3.5" />{label}
+            </button>
+          ))}
+        </div>
+  )
+  // Over the canvas the switch floats at the top; in the gallery it heads the page and scrolls with it.
+  return <>
+    <MapView api={api} covered={flat} />
+    {flat && <Gallery input={input} pic={pic} open={api.open} safe={safe} head={switcher} setScope={s => api.setScope?.(s)} />}
+    {input.conv && !flat && !input.focus && !input.hidden && <div className="pointer-events-none absolute flex justify-center" style={{ left: safe.l, right: safe.r, top: safe.t + 14 }}>{switcher}</div>}
+  </>
+}
+
 export function mountMap(host: HTMLElement, api: MapApi) {
   const root = createRoot(host)
-  root.render(<MapView api={api} />)
+  root.render(<MapRoot api={api} />)
   return () => root.unmount()
 }

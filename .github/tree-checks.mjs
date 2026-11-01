@@ -1,6 +1,7 @@
 // The project tree sidebar (app/shell/tree/): behind its switch (?tree=1, Settings), designs ›
-// flows › screens with their options and the explorations built on them, the filters, the place on
-// screen lit, and a design changed on disk drawn without a reload.
+// flows › screens with their options and the explorations built on them, its filters, the page's
+// scope behind Conversation first (?conv=1: this conversation, the whole project, favorites), the
+// place on screen lit, and a design changed on disk drawn without a reload.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -33,7 +34,16 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`document.querySelector('[data-tree-side]').hidden`), 'with ?tree=0 the tree should be hidden')
   } finally { page.close() }
 
-  page = await openPage(`${local}tcta-copy/A?tree=1`)
+  // A browser that never chose (a fresh profile; every new project's app is a new origin) gets the tree.
+  page = await openPage(`${local}thome/C`, { classic: false })
+  try {
+    await until(page, `!!document.querySelector('[data-tree-row="screen:thome"]')`, 'with nothing chosen in this browser the tree should be the default')
+    assert(await page.run(`document.querySelector('[data-tree-side]').hidden === false && !document.querySelector('[data-side] *')`), 'with nothing chosen the old sidebar should not be drawn')
+    // Conversation first is a preview: off by default, the tree keeps its own filters and no scope row.
+    assert(await page.run(`!!document.querySelector('[data-tree-filters] [data-tree-filter="open"]') && !document.querySelector('[data-tree-scope]')`), 'with Conversation first off the tree should keep its filters')
+  } finally { page.close() }
+
+  page = await openPage(`${local}tcta-copy/A?tree=1&conv=1`)
   try {
     await until(page, `!!document.querySelector('[data-tree-row="design:acme"]')`, 'the tree should draw the design')
     assert(await page.run(`!document.querySelector('[data-tree-side]').hidden && !document.querySelector('[data-side] *')`), 'with ?tree=1 the tree replaces the old sidebar')
@@ -44,18 +54,20 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`/not picked/.test(document.querySelector('[data-tree-row="screen:tabout"]')?.textContent ?? '')`), 'tabout should say it is not picked')
     await until(page, `!!document.querySelector('[data-tree-row="exp:tcta-copy"] [data-mark="stale"]')`, 'the place on screen opens its ancestors, and tcta-copy is stale')
     assert(await page.run(`/became Acme/.test(document.querySelector('[data-tree-row="opt:thome/C"]')?.textContent ?? '')`), 'thome #3 should say it became Acme')
-    // The full smoke shares the app with other checks' prototypes, so the count is checked by what Open keeps.
-    assert(await page.run(`/^Open · \\d+$/.test(document.querySelector('[data-tree-filter="open"]').textContent.trim())`), 'the Open filter should carry a count')
-    await page.run(`document.querySelector('[data-tree-filter="open"]').click()`)
-    await until(page, `!!document.querySelector('[data-tree-row="screen:tabout"]') && !!document.querySelector('[data-tree-row="exp:tcta-copy"]') && !document.querySelector('[data-tree-row="exp:tlogo"]')`, 'Open should keep tabout and tcta-copy and leave out the picked tlogo')
+    // The page opens on this conversation: tlogo, made in another, is left out until the whole project.
+    // The full smoke shares the app with other checks' prototypes, so the count is only checked to be there.
+    assert(await page.run(`document.querySelector('[data-tree-filter="conv"]')?.getAttribute('aria-checked') === 'true'`), 'the scope should start on this conversation')
+    assert(await page.run(`!document.querySelector('[data-tree-row="exp:tlogo"]')`), 'this conversation should leave out tlogo')
+    assert(await page.run(`/· \\d+$/.test(document.querySelector('[data-tree-filter="all"]').textContent.trim())`), 'Whole project should carry a count')
     await page.run(`document.querySelector('[data-tree-filter="all"]').click()`)
+    await until(page, `!!document.querySelector('[data-tree-row="exp:tlogo"]') && localStorage.getItem([...Object.keys(localStorage)].find(k => k.startsWith('proto-scope:')) ?? '') === 'all'`, 'Whole project should bring tlogo in and be kept')
 
     await page.run(`document.querySelector('[data-tree-row="screen:tabout"] button:not([aria-expanded])').click()`)
     await until(page, `location.pathname === '/tabout/A'`, 'a screen row should open its shown variant')
     await page.run(`history.pushState(null, '', '/thero-cta/B'); dispatchEvent(new PopStateEvent('popstate'))`)
     await until(page, `document.querySelector('[data-tree-row="opt:thero-cta/B"]')?.dataset.on === 'true'`, 'arriving at thero-cta/B should light its row')
 
-    await page.run(`document.querySelector('[data-tree-filter="mine"]').click()`)
+    await page.run(`document.querySelector('[data-tree-filter="conv"]').click()`)
     await until(page, `!document.querySelector('[data-tree-row="exp:tlogo"]') && !!document.querySelector('[data-tree-row="screen:thome"]')`, 'This conversation should leave out tlogo')
     await page.run(`document.querySelector('[data-tree-filter="all"]').click()`)
     // Favorites: the star filter keeps what has a starred option; a star given now redraws the tree.
@@ -111,5 +123,5 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
   } finally { page.close() }
   for (const slug of ['thome', 'tabout', 'thero-cta', 'tcta-copy', 'tlogo', 'tpricing']) proto(['archive', slug])
   rmSync(join(app, 'src', 'designs'), { recursive: true, force: true })
-  console.log('OK: the project tree sidebar: switch, designs, screens, explorations, filters, place and live designs')
+  console.log('OK: the project tree sidebar: switch, designs, screens, explorations, scope, place and live designs')
 }

@@ -9,7 +9,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { startChrome, stopChrome, waitReady } from './chrome.mjs'
+import { classicShell, startChrome, stopChrome, waitReady } from './chrome.mjs'
 
 const [rawUrl, outDir, widthArg, specFile] = process.argv.slice(2)
 if (!rawUrl || !outDir || !specFile) { console.error('usage: snap.mjs <app-url> <out-dir> <width> <spec.json>'); process.exit(1) }
@@ -183,6 +183,7 @@ try {
     const phone = v.kind === 'phone'
     const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+    await classicShell(send, sessionId)
     // A phone variant is captured at 100% in its frame; a web one at the doc's width, one screen tall.
     await send('Emulation.setDeviceMetricsOverride', { width: phone ? 900 : WIDTH, height: phone ? 1100 : STAGE + 48, deviceScaleFactor: 1, mobile: false }, sessionId)
     const url = new URL(rawUrl)

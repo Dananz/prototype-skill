@@ -24,7 +24,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startChrome, stopChrome, waitReady } from './chrome.mjs'
+import { classicShell, startChrome, stopChrome, waitReady } from './chrome.mjs'
 
 const argv = process.argv.slice(2)
 const flags = Object.fromEntries(argv.filter(a => a.startsWith('--') && !a.startsWith('--click=')).map(a => { const [k, ...v] = a.slice(2).split('='); return [k, v.join('=')] }))
@@ -75,6 +75,7 @@ try {
   // not in front, which would read as the design dropping them.
   const { targetId } = await send('Target.createTarget', { url: 'about:blank', newWindow: true })
   const { sessionId: s } = await send('Target.attachToTarget', { targetId, flatten: true })
+  await classicShell(send, s)
   await send('Emulation.setFocusEmulationEnabled', { enabled: true }, s)
   await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: dpr, mobile: W < 640 }, s)
   const ev = async expression => {

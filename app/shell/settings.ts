@@ -17,6 +17,8 @@ type Props = {
   sidebar: boolean
   /** The project tree instead of the columns (the map prototype's #1), while it is new. */
   tree: boolean
+  /** Conversation first (preview), offered while the tree is on. */
+  conv: boolean
   review: boolean
   stack: boolean
   /** Opens on this category (the sidebar's session name asks for session, the bar's menu for shortcuts). */
@@ -31,6 +33,7 @@ type Props = {
   onLive: (value: boolean) => void
   onSidebar: (value: boolean) => void
   onTree: (value: boolean) => void
+  onConv: (value: boolean) => void
   onReview: (value: boolean) => void
   onLayout: (stack: boolean) => void
   onResetWidths: () => void
@@ -140,7 +143,8 @@ function Settings(p: Props) {
     : category === 'browsing' ? h('div', { className: 'space-y-5' },
       h('div', { className: 'space-y-3' }, h('div', null, h('p', { className: 'text-[13px] font-medium' }, t('Overview layout')), h('p', { className: muted }, t('How variants appear in overviews.'))), choices(t('Overview layout'), [choice('layout', 'grid', t('Grid'), !p.stack, () => p.onLayout(false), 'grid'), choice('layout', 'stack', t('List'), p.stack, () => p.onLayout(true), 'rows')])),
       toggle('sidebar', t('Show sidebar'), t('Keep prototype navigation open on wide screens.'), p.sidebar, p.onSidebar),
-      toggle('tree', t('Project tree (preview)'), t('The sidebar shows designs, screens and explorations as one tree.'), p.tree, p.onTree),
+      toggle('tree', t('Project tree'), t('The sidebar shows designs, screens and explorations as one tree.'), p.tree, p.onTree),
+      ...p.tree ? [toggle('conv', t('Conversation first (preview)'), t('The page opens on this conversation, with a gallery and past conversations.'), p.conv, p.onConv)] : [],
       toggle('review', t('Show review panel'), t('Keep Try it open on wide screens when available.'), p.review, p.onReview),
       h('div', { className: 'flex flex-wrap items-center justify-between gap-3 border-t border-black/[.06] pt-4 dark:border-white/10' }, h('p', { className: muted }, t('Restore sidebar and column widths.')), h('button', { type: 'button', 'data-setting-reset': '', onClick: p.onResetWidths, className: button }, t('Reset widths'))))
     : category === 'session' ? h('div', { className: 'space-y-5' },
