@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Design, Proto } from '../shell'
-import { t } from '../i18n'
+import { rtl, t, tn } from '../i18n'
 import { numberOf } from '../variants'
 import { treeOf, type Filter, type TreeNode } from './model'
 import { Mark, Ph, Row } from './row'
@@ -24,6 +24,8 @@ export type TreeInput = {
   /** The scoped conversation's name, when it isn't this one. */
   scopeName?: string
   building: Set<string>
+  /** The open variant's states and tools for the sidebar's foot; null without any. */
+  dock: { html: string; title: string; count: number; total: number; at: number; state: string } | null
   /** The variant being worked on, as the old sidebar's strip says it ('' when none). */
   work: string
   /** "Live · edited 2 min ago". */
@@ -43,7 +45,27 @@ const FILTERS: [Filter, () => string][] = [['all', () => t('All')], ['open', () 
 const SECTION: Record<string, () => string> = { 'section:loose': () => t('Explorations on no screen'), 'section:archive': () => t('Archive') }
 const pickedOf = (n: TreeNode) => n.children.find(c => c.kind === 'option' && c.picked)?.route
 
-function Tree({ api }: { api: TreeApi }) {
+/** The sidebar's foot: the open variant's states, in one place however far the tree scrolls. It folds to
+ *  one line naming the state showing, and stays folded (kept in this browser). */
+function Dock({ dock }: { dock: NonNullable<TreeInput['dock']> }) {
+  const [shut, setShut] = useState(() => { try { return localStorage.getItem('proto-tree-dock') === '0' } catch { return false } })
+  const flip = () => { const next = !shut; setShut(next); try { localStorage.setItem('proto-tree-dock', next ? '0' : '1') } catch { /* private window */ } }
+  return (
+    <section data-tree-dock data-shut={shut || undefined} aria-label={dock.title} className="flex max-h-[45%] shrink-0 flex-col border-t border-black/[.06] text-[13px] dark:border-white/10">
+      <button type="button" data-tree-dock-head aria-expanded={!shut} onClick={flip} className="flex h-9 w-full shrink-0 items-center gap-1.5 px-3 text-start text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
+        <Ph name={shut ? 'caretRight' : 'caretDown'} className={'size-2.5 ' + (shut && rtl ? '-scale-x-100' : '')} />
+        <span dir="auto" className="min-w-0 flex-1 truncate">{dock.title}</span>
+        {dock.count > 0 && (shut
+          ? <span className="flex min-w-0 items-center gap-1.5"><span dir="auto" className="truncate font-medium text-zinc-900 dark:text-white">{dock.state}</span><span className="shrink-0 tabular-nums text-zinc-400">{dock.at + 1}/{dock.total}</span></span>
+          : <span className="shrink-0 tabular-nums">{tn(dock.count, '{n} state', '{n} states')}</span>)}
+      </button>
+      {!shut && <div data-tree-dock-list className="min-h-0 overflow-y-auto overscroll-contain px-1.5 pb-2" dangerouslySetInnerHTML={{ __html: dock.html }} />}
+    </section>
+  )
+}
+
+/** desk: the wide page's sidebar, which also says what each variant has and holds the dock. */
+function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
   const input = useSyncExternalStore(api.subscribe, api.get)
   // The scope is the page's (shell.ts): the tree and the gallery show the same explorations.
   const scope = input.scope ?? 'all', sid = scope.startsWith('conv:') ? scope.slice('conv:'.length) : null
@@ -109,13 +131,15 @@ function Tree({ api }: { api: TreeApi }) {
       </div>
     )
     if (n.kind === 'option') {
-      const num = numberOf(n.route!.split('/')[1])
+      const letter = n.route!.split('/')[1], num = numberOf(letter)
+      const states = desk ? (input.protos.find(p => p.id === n.route!.split('/')[0])?.states.filter(s => !s.only?.length || s.only.includes(letter)).length ?? 0) : 0
       return (
         <Row key={n.key} id={n.key} depth={depth} on={lit} onClick={() => api.go(n.route!)} mv={n.route}
           icon={<span className={'grid size-4 shrink-0 place-items-center rounded text-[10px] font-semibold tabular-nums ' + (n.picked ? 'bg-emerald-500 text-white' : 'bg-zinc-900/[.06] text-zinc-500 dark:bg-white/10')}>{num}</span>}
           label={<span className="flex min-w-0 items-center gap-1"><span dir="auto" className="truncate">{n.label}</span>{input.protos.find(p => p.id === n.route!.split('/')[0])?.favorites.includes(n.route!.split('/')[1]) && <Ph name="starFill" className="size-3 shrink-0 text-amber-400" />}</span>}
-          end={n.became ? <span className="shrink-0 truncate text-[11px] text-indigo-500" dir="auto">{t('became {name}', { name: n.became })}</span>
-            : n.picked ? <span className="shrink-0 text-[11px] text-emerald-600 dark:text-emerald-400">{t('Picked')}</span> : null} />
+          end={<>{n.became ? <span className="shrink-0 truncate text-[11px] text-indigo-500" dir="auto">{t('became {name}', { name: n.became })}</span>
+            : n.picked ? <span className="shrink-0 text-[11px] text-emerald-600 dark:text-emerald-400">{t('Picked')}</span> : null}
+            {states > 0 && <span data-tree-states={states} title={tn(states, '{n} state', '{n} states')} className="shrink-0 text-[11px] tabular-nums text-zinc-400">{states}</span>}</>} />
       )
     }
     const picked = pickedOf(n)
@@ -187,6 +211,7 @@ function Tree({ api }: { api: TreeApi }) {
         {nodes.length ? nodes.map(n => draw(n, 0))
           : <p className="px-4 py-6 text-center text-[12px] text-zinc-400">{filter === 'open' ? t('Nothing waits for you') : filter === 'mine' ? t('Nothing from this conversation yet') : filter === 'favs' ? t('No favorites yet') : t('No prototypes yet')}</p>}
       </div>
+      {desk && input.dock && <Dock dock={input.dock} />}
       <div className="flex h-10 shrink-0 items-center gap-2 border-t border-black/[.06] px-3 text-[12px] text-zinc-500 dark:border-white/10">
         <span className={'size-2 rounded-full ' + (input.up ? 'bg-emerald-500' : 'bg-zinc-400')} /><span className="truncate">{input.live}</span>
       </div>
@@ -210,5 +235,5 @@ export function TreeView({ api }: { api: TreeApi }) { return <Tree api={api} /> 
 
 /** Draws the tree into host; the shell calls the api's listeners when anything it reads changed. */
 export function mountTree(host: HTMLElement, api: TreeApi) {
-  createRoot(host).render(<Tree api={api} />)
+  createRoot(host).render(<Tree api={api} desk />)
 }
