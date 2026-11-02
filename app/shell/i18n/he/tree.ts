@@ -33,12 +33,8 @@ export default {
   'Expand': 'לפתוח',
   '{name} is not built yet': '{name} עוד לא נבנה',
   '{name} is not a screen of this design': '{name} הוא לא מסך של העיצוב הזה',
-  // The map (map/).
-  'All links': 'כל הקישורים',
-  'Selected only': 'רק של הנבחר',
-  'Fit (0)': 'התאם (0)',
+  // The gallery (gallery/).
   'Gallery': 'גלריה',
-  'Gallery or map': 'גלריה או מפה',
   'Waiting for a pick': 'מחכים לבחירה',
   'Open a card to see its options': 'פתח כרטיס כדי לראות את האפשרויות שלו',
   'Each card shows its pick': 'כל כרטיס מראה את הבחירה שלו',
@@ -54,7 +50,6 @@ export default {
   '{n} explorations': '{n} סבבים',
   '{n} picked': '{n} נבחרו',
   // The bar's crumb, the tool strip and Jump (where.ts, jump.tsx).
-  'Map': 'מפה',
   'Where you are': 'איפה אתה',
   'Previous screen in the flow': 'המסך הקודם בזרימה',
   'Next screen in the flow': 'המסך הבא בזרימה',
@@ -74,20 +69,7 @@ export default {
   'Asked {agent} to build {name}': 'ביקשת מ־{agent} לבנות את {name}',
   'Could not send it. Try again.': 'לא הצלחתי לשלוח. נסה שוב.',
   'Build the screen a link on {v} goes to': 'לבנות את המסך שקישור ב־{v} מוביל אליו',
-  // The map's notes, links and Build it (map/index.tsx).
-  'A note on this flow': 'הערה על הזרימה הזו',
-  'Drag to another screen to link them': 'גרור למסך אחר כדי לקשר ביניהם',
-  'A note on the flow {flow}': 'הערה על הזרימה {flow}',
-  'A note on the link {a} → {b}': 'הערה על הקישור {a} ← {b}',
-  'Link {a} → {b}': 'קישור {a} ← {b}',
-  'Which element should link there? (optional)': 'איזה רכיב צריך לקשר לשם? (לא חובה)',
-  'What should change?': 'מה צריך להשתנות?',
-  'Ask for this link': 'לבקש את הקישור',
-  'Build it…': 'לבנות…',
-  'Build {name}': 'לבנות את {name}',
-  'The screens you tick, with their links as real navigation.': 'המסכים שתסמן, עם הקישורים שלהם כניווט אמיתי.',
-  'Build 1 screen': 'לבנות מסך אחד',
-  'Build {n} screens': 'לבנות {n} מסכים',
+  // Requests from older pages, still in an inbox (comments/ui.tsx).
   'A note from the map on {v}': 'הערה מהמפה על {v}',
   'A link to add on {v}': 'קישור להוספה ב־{v}',
   'Build the design': 'לבנות את העיצוב',
@@ -100,19 +82,13 @@ export default {
   'in a screen': 'בתוך מסך',
   'Move': 'הזזה',
   'States, Autoplay, Compare': 'מצבים, הפעלה אוטומטית, השוואה',
-  // The map's board mark (map/index.tsx).
-  'Editing': 'בעריכה',
   // Settings' shortcuts with the tree on.
   'Jump to a screen': 'קפיצה למסך',
-  'Zoom out past the screen to the map': 'התרחקות מהמסך אל המפה',
+  'Zoom out past the screen to the gallery': 'התרחקות מהמסך אל הגלריה',
   'Pinch': 'צביטה',
-  // A round's label on the map (map/index.tsx).
-  'Fold into a stack': 'קיפול לערימה',
-  'Spread out': 'פריסה',
+  // A round's row (tree/index.tsx).
   'Open #{n}, the pick': 'פתח את #{n}, שנבחר',
   // The strip's map tools (shell.ts paintStrip).
-  'Show every link': 'הצגת כל הקישורים',
-  'Showing every link': 'מוצגים כל הקישורים',
   // The phone with the project tree on: the tree sheet's handle and the decide tiles (sheet.ts, comments/decide.tsx).
   'Half the screen': 'חצי מסך',
   'Full screen': 'מסך מלא',

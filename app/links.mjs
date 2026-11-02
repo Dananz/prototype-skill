@@ -1,5 +1,5 @@
 // The links a variant's code makes to other screens of its design: <Go to="about">. Read from the
-// source, so the agent's links are known without running the design (proto design, the map's lines).
+// source, so the agent's links are known without running the design (proto design).
 
 /** The <Go to> targets in a source text, each once, in order. */
 export function linksIn(text) {

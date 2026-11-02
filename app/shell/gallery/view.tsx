@@ -1,23 +1,25 @@
-// The map as a gallery: one card per exploration (its pick, else its first option), those waiting for a
-// pick first, each section a panel on the desk. A card opens its options in a drawer under its row; an
-// option opens it. The canvas map is a switch away (map/index.tsx MapRoot), and Focus still flies in there.
+// The gallery: one card per exploration (its pick, else its first option), those waiting for a pick
+// first, each section a panel on the desk. A card opens its options in a drawer under its row; an option
+// opens it.
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { Proto } from '../shell'
+import type { Design, Proto } from '../shell'
 import { t, tn } from '../i18n'
 import { numberOf } from '../variants'
 import { Ph } from '../tree/row'
-import type { MapInput } from './index'
+import type { GalleryInput } from './index'
 
-/** A still of a route, filling a box of its frame's shape (the map's own Still, so they share one cache). */
+/** A still of a route, filling a box of its frame's shape. */
 export type Pic = (p: Proto, letter: string, want: boolean) => ReactNode
 const frameOf = (p: Proto): [number, number] => p.kind === 'phone' ? p.screen : [1200, 750]
 const COLS_AT = [[1200, 4], [860, 3], [560, 2], [0, 1]] as const
 const EASE_OUT = 'cubic-bezier(.32,.72,0,1)', EASE_IN = 'cubic-bezier(.4,0,1,1)'
+/** A card under the pointer rises on a soft shadow, and settles back while pressed. */
+const LIFT = 'motion-safe:group-hover:-translate-y-1 group-hover:shadow-[0_8px_20px_-8px_rgb(0_0_0/.25)] motion-safe:group-active:translate-y-0 group-active:shadow-none dark:group-hover:shadow-[0_8px_20px_-8px_rgb(0_0_0/.7)]'
 
 function Thumb({ p, letter, pic, want }: { p: Proto; letter: string; pic: Pic; want: boolean }) {
   const [w, h] = frameOf(p), phone = h > w
   return (
-    <div className="grid aspect-[16/10] place-items-center overflow-hidden rounded-xl bg-zinc-200/60 ring-1 ring-black/[.06] dark:bg-zinc-900 dark:ring-white/[.06]">
+    <div className="grid aspect-[16/10] place-items-center overflow-hidden rounded-xl bg-zinc-200/60 ring-1 ring-black/[.06] transition-[background-color,box-shadow] duration-200 group-hover:bg-zinc-300/70 group-hover:ring-black/20 dark:bg-zinc-900 dark:ring-white/[.06] dark:group-hover:bg-zinc-800 dark:group-hover:ring-white/25">
       <div className={`relative overflow-hidden ${phone ? 'mt-6 h-[115%] rounded-t-xl shadow-lg' : 'w-full'}`} style={{ aspectRatio: `${w} / ${h}` }}>{pic(p, letter, want)}</div>
     </div>
   )
@@ -46,8 +48,8 @@ function useInView<T extends HTMLElement>() {
 function Card({ p, on, dim, pic, onClick }: { p: Proto; on: boolean; dim: boolean; pic: Pic; onClick: () => void }) {
   const [ref, seen] = useInView<HTMLButtonElement>()
   return (
-    <button ref={ref} type="button" data-gallery-card={p.id} aria-expanded={on} onClick={onClick} className={`group min-w-0 pb-5 text-start sm:pb-7 transition-opacity duration-300 ${dim ? 'opacity-50 hover:opacity-80' : ''}`}>
-      <div className={`rounded-xl ring-sky-500 ring-offset-[var(--gallery-bg,var(--desk-card))] transition-[box-shadow,transform] duration-300 ${on ? 'ring-2 ring-offset-4' : 'group-hover:-translate-y-0.5'}`} style={{ transitionTimingFunction: EASE_OUT }}>
+    <button ref={ref} type="button" data-gallery-card={p.id} aria-expanded={on} onClick={onClick} className={`group min-w-0 cursor-pointer pb-5 text-start sm:pb-7 transition-opacity duration-300 ${dim ? 'opacity-50 hover:opacity-100' : ''}`}>
+      <div className={`rounded-xl ring-sky-500 ring-offset-[var(--gallery-bg,var(--desk-card))] transition-[box-shadow,translate] duration-300 ${on ? 'ring-2 ring-offset-4' : LIFT}`} style={{ transitionTimingFunction: EASE_OUT }}>
         <Thumb p={p} letter={p.picked ?? p.variants[0]?.id ?? 'A'} pic={pic} want={seen} />
       </div>
       <div dir="auto" className="mt-2.5 truncate text-start text-[14px] font-medium">{p.title}</div>
@@ -74,11 +76,11 @@ function Drawer({ p, pic, open }: { p: Proto | null; pic: Pic; open: (route: str
         <div className="pb-5 sm:pb-7">
           <div data-gallery-options={shown.id} className="-mx-1 rounded-2xl bg-zinc-900/[.03] p-3 sm:-mx-2 sm:p-4 ring-1 ring-black/[.06] dark:bg-white/[.03] dark:ring-white/[.06]">
             <div className="mb-3 flex items-center gap-3 text-sm"><b dir="auto" className="font-semibold">{shown.title}</b><Status p={shown} /></div>
-            <div className="-m-1.5 flex gap-4 overflow-x-auto p-1.5 pb-2.5 [scrollbar-width:thin]">
+            <div className="-mx-3 -mt-3 -mb-1.5 flex gap-4 overflow-x-auto p-3 [scrollbar-width:thin]">
               {shown.variants.map((v, i) => (
                 <button key={v.id} type="button" data-gallery-option={`${shown.id}/${v.id}`} onClick={() => open(`${shown.id}/${v.id}`)} title={t('Open')}
-                  className="group w-40 shrink-0 text-start sm:w-52 motion-safe:animate-[proto-gallery-rise_.4s_cubic-bezier(.32,.72,0,1)_both]" style={{ animationDelay: `${60 + i * 35}ms` }}>
-                  <div className={`rounded-xl transition-transform duration-200 group-hover:-translate-y-0.5 ${shown.picked === v.id ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-[var(--gallery-bg,var(--desk-card))]' : ''}`}><Thumb p={shown} letter={v.id} pic={pic} want /></div>
+                  className="group w-40 shrink-0 cursor-pointer text-start sm:w-52 motion-safe:animate-[proto-gallery-rise_.4s_cubic-bezier(.32,.72,0,1)_both]" style={{ animationDelay: `${60 + i * 35}ms` }}>
+                  <div className={`rounded-xl transition-[box-shadow,translate] duration-200 ${LIFT} ${shown.picked === v.id ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-[var(--gallery-bg,var(--desk-card))]' : ''}`}><Thumb p={shown} letter={v.id} pic={pic} want /></div>
                   <div className="mt-2 flex items-center gap-1.5 text-[13px]"><span className="tabular-nums text-zinc-400">{numberOf(v.id)}</span><span dir="auto" className="truncate">{v.name}</span>{shown.picked === v.id && <Ph name="checkFill" className="size-3.5 text-emerald-500" />}</div>
                 </button>
               ))}
@@ -114,6 +116,13 @@ function Section({ id, title, hint, list, cols, pic, open, openId, setOpenId, ba
   )
 }
 
+/** The first screen of a design or a flow, from its tree key (`design:<id>`, `flow:<id>:<name>`). */
+function firstOf(designs: Design[], key: string) {
+  const [kind, id, ...name] = key.split(':'), d = designs.find(x => x.id === id)
+  const flows = kind === 'design' ? d?.flows : kind === 'flow' ? d?.flows.filter(f => f.name === name.join(':')) : undefined
+  return flows?.flatMap(f => f.screens)[0]?.split('/')[0] ?? ''
+}
+
 type Conv = { sid: string; name: string; at: string; n: number; picked: number }
 
 /** The other conversations, one line each: opening one scopes the page (and the tree) to it. */
@@ -140,7 +149,7 @@ function Past({ convs, setScope }: { convs: Conv[]; setScope: (scope: string) =>
 }
 const Empty = ({ text }: { text: string }) => <p className="rounded-3xl bg-[var(--desk-card)] px-6 py-10 text-center text-sm text-zinc-400 ring-1 ring-[var(--desk-line)]">{text}</p>
 
-export function Gallery({ input, pic, open, safe, head, setScope }: { input: MapInput; pic: Pic; open: (route: string) => void; safe: { l: number; t: number; r: number; b: number }; head?: ReactNode; setScope: (scope: string) => void }) {
+export function Gallery({ input, pic, open, safe, setScope }: { input: GalleryInput; pic: Pic; open: (route: string) => void; safe: { l: number; t: number; r: number; b: number }; setScope: (scope: string) => void }) {
   const scroller = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   useEffect(() => {
@@ -163,16 +172,17 @@ export function Gallery({ input, pic, open, safe, head, setScope }: { input: Map
   // A new scope starts at the top.
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [scope])
   // The tree (or an exploration's own page) asked for one: its card opens, and the drawer scrolls it in.
+  // A design or a flow opens its first screen's card.
   useEffect(() => {
     const key = (input.frame ?? '').split('#')[0]
-    if (key.startsWith('round:')) setOpenId(key.slice('round:'.length))
-  }, [input.frame])
+    const slug = key.startsWith('round:') ? key.slice('round:'.length) : firstOf(input.designs, key)
+    if (slug) setOpenId(slug)
+  }, [input.frame]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div ref={scroller} data-gallery className={'absolute inset-0 overflow-y-auto overscroll-contain ' + (input.hidden ? 'hidden' : '')}
       style={{ paddingLeft: safe.l + pad, paddingRight: safe.r + pad, paddingTop: safe.t + 14, paddingBottom: safe.b + 120 }}>
       <style>{'@keyframes proto-gallery-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}'}</style>
       <div className="mx-auto max-w-[1600px]">
-        {head && <div className="mb-4 flex justify-center">{head}</div>}
         {scope === 'favs' ? (live.length ? <Section id="favs" title={t('Favorites')} hint={t('From the whole project')} list={live} bare {...same} /> : <Empty text={t('No favorites yet')} />)
           : scope === 'all' ? convs.map(c => <Section key={c.sid} id={`conv:${c.sid}`} title={c.name || t('A past conversation')} hint={c.sid === input.me ? t('This conversation') : day(c.at)} list={live.filter(p => (p.session ?? '') === c.sid)} bare={convs.length === 1} {...same} />)
           : <>

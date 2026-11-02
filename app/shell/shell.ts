@@ -37,7 +37,7 @@ import type { Intake } from './intake/types'
 import { createSettings, type Appearance } from './settings'
 import { mountTree, TreeView, type TreeApi, type TreeInput } from './tree/index'
 import { createElement } from 'react'
-import { mountMap, type MapApi, type MapInput } from './map/index'
+import { mountGallery, type GalleryApi, type GalleryInput } from './gallery/index'
 import { createJump } from './jump'
 import { jumpItems, linkState, whereOf } from './where'
 import { followSession, rtl, t, tn, day } from './i18n'
@@ -60,9 +60,7 @@ export type Version = { n: number; at: string; note: string; before: { text: str
 export type State = { id: string; name: string; click: string[]; about?: Record<string, string>; only?: string[] }
 /** A design: screens (prototypes, by slug) that share one look and link to each other, in flows
  *  (src/designs/<id>/design.ts, written by `proto design`). from: the variant it was made from. */
-export type Design = { id: string; title: string; created: string; session?: string; owner?: string; from?: { proto: string; variant: string }; flows: { name: string; screens: string[] }[]
-  /** In a share: each screen's <Go to> targets, read when it was built (the page has no sources to read). */
-  links?: Record<string, string[]> }
+export type Design = { id: string; title: string; created: string; session?: string; owner?: string; from?: { proto: string; variant: string }; flows: { name: string; screens: string[] }[] }
 /** session: the conversation that made it; owner: the one working on it now; next: its pick is
  *  built into its parent (proto add --next). */
 export type Proto = { id: string; title: string; session?: string; owner?: string; next?: boolean; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; slot?: string; also: { proto: string; variant: string }[]; picked?: string; favorites: string[]; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[]; versions?: Record<string, Version[]> }
@@ -560,7 +558,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <header data-bar class="relative z-30 ${framed ? 'hidden' : 'flex'} h-12 shrink-0 items-center gap-1 border-b border-black/[.07] px-2 dark:border-white/10"></header>
       <div data-zone>
         <div data-layers class="absolute inset-0 overflow-hidden" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
-        <div data-map-host hidden class="absolute inset-0 z-[4]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
+        <div data-gallery-host hidden class="absolute inset-0 z-[4]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-view hidden class="absolute inset-0 z-[5]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
@@ -599,8 +597,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   if (treeAsked === '1' || treeAsked === '0') remember('proto-tree', treeAsked)
   let treeOn = !framed && localStorage.getItem('proto-tree') !== '0'
   // Conversation first (the default; ?conv=0 or Settings turns it off, kept in this browser): the page is scoped to
-  // this conversation, the map has a gallery and lists past conversations. Off, it shows the whole
-  // project, the tree has its filters and the map is the canvas.
+  // this conversation, and the gallery lists past conversations. Off, it shows the whole project
+  // and the tree has its filters.
   const convAsked = new URLSearchParams(location.search).get('conv')
   if (convAsked === '1' || convAsked === '0') remember('proto-conv', convAsked)
   let convOn = localStorage.getItem('proto-conv') !== '0'
@@ -683,13 +681,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         : `<span dir="auto" class="truncate">${esc(state)}</span><button data-act="go-chip:build" data-shoot="go-chip-build" class="${pill} bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover">${esc(t('Ask {agent} to build it', { agent: agentName(session.agent) }))}</button>`}
       <button data-act="go-chip:close" aria-label="${t('Close')}" class="grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:bg-zinc-900/5 dark:hover:bg-white/10">${ic('x', 'size-3.5')}</button></div>`
   }
-  // The map (map/index.tsx): with the project tree on, it is the overview, in place of the lobbies.
-  const mapHost = root.querySelector<HTMLElement>('[data-map-host]')!
-  const mapWatchers = new Set<() => void>()
-  let mapSnap: MapInput | null = null, mapMounted = false, lastFocus = ''
-  let mapLines: 'all' | 'selected' = localStorage.getItem('proto-map-lines') === 'all' ? 'all' : 'selected'
-  let mapDesign = '', mapEdits = 0
-  // What the page shows (the tree, the gallery, the map): this conversation by default ('conv:<id>'),
+  // The gallery (gallery/index.tsx): with the project tree on, it is the overview, in place of the lobbies.
+  const galleryHost = root.querySelector<HTMLElement>('[data-gallery-host]')!
+  const galleryWatchers = new Set<() => void>()
+  let gallerySnap: GalleryInput | null = null, galleryMounted = false, lastFocus = ''
+  // What the page shows (the tree and the gallery): this conversation by default ('conv:<id>'),
   // another one opened from the past, the whole project ('all') or favorites ('favs'). Kept per project
   // in this browser; a page with no conversation (a share's viewer) shows the whole project.
   const scopeKey = `proto-scope:${session.id}`
@@ -706,9 +702,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (!convOn || next === scopeNow()) return
     scope = next
     remember(scopeKey, next)
-    // On an exploration's own page the map is framed on it: a new scope shows the whole of it instead.
+    // An exploration's own page has its card open: a new scope shows the whole of it instead.
     if (st.place.view === 'proto') { widenedAt = ''; return go({ view: 'session' }) }
-    paintTree(); paintMap()
+    paintTree(); paintGallery()
   }
   /** The explorations in scope, the same array while neither the list nor the scope changes. */
   let scoped: { of: Proto[]; scope: string; list: Proto[] } | null = null
@@ -731,103 +727,74 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     convsKey = key; convsJson = JSON.stringify(list)
     return convsJson
   }
-  // What the map says of itself: its zoom (as the design's own size), and Build it (open, offered).
-  let mapState: { pct: number; build: boolean; one: boolean; flat?: boolean } = { pct: 100, build: false, one: false }
-  // The area the tree asked the map to show (a design or flow key, numbered so asking again flies again).
-  let mapFrame = '', frames = 0
-  // Each prototype's file edits, counted: its stills on the map are taken again when its count moves.
+  // What the tree asked the gallery to show (an exploration, a design or a flow; numbered so asking again opens it again).
+  let galleryFrame = '', frames = 0
+  // Each prototype's file edits, counted: its stills in the gallery are taken again when its count moves.
   const editsOf = new Map<string, number>()
-  const onMap = () => treeOn && !framed && st.place.view !== 'variant'
-  // Focus on a wide page with the tree on stays on the map: the design's view sits in place on its
-  // board (the map's slot) and the camera carries it. A tool that takes the stage (Compare, History,
-  // Autoplay, All), a chosen device size, and a phone, keep the stage of their own.
-  const inPlace = () => treeOn && !framed && !phoneMq.matches && st.place.view === 'variant' && !st.place.tool && !viewOn()
-  let slotEl: HTMLElement | null = null
-  /** Puts the current layer where it shows: in the focused board's slot, else in the stage's layers. */
-  function placeLayer() {
-    if (!layer) return
-    const want = inPlace() && slotEl ? slotEl : layers
-    if (layer.el.parentElement === want) return
-    // moveBefore keeps what is running in it (animations, focus, frames) where the browser has it.
-    const box = want as HTMLElement & { moveBefore?: (n: Node, ref: Node | null) => void }
-    try { if (box.moveBefore && layer.el.isConnected) box.moveBefore(layer.el, box.firstChild); else box.prepend(layer.el) } catch { box.prepend(layer.el) }
-  }
-  const mapApi: MapApi = {
-    get: () => mapSnap!, subscribe: f => { mapWatchers.add(f); return () => { mapWatchers.delete(f) } },
+  const onGallery = () => treeOn && !framed && st.place.view !== 'variant'
+  const galleryApi: GalleryApi = {
+    get: () => gallerySnap!, subscribe: f => { galleryWatchers.add(f); return () => { galleryWatchers.delete(f) } },
     open: route => { const [proto, variant] = route.split('/'); go({ view: 'variant', proto, variant }) },
-    mount: (el, c) => mount(el, c), camera: null,
-    setLines: mode => { mapLines = mode; remember('proto-map-lines', mode); paintMap() },
-    setDesign: id => { mapDesign = id; paintMap() },
+    mount: (el, c) => mount(el, c),
     setScope,
-    ask: async (on, action, text) => { await comments.act.decide(on, action, { body: [text], tags: [] }) },
-    slot: el => { slotEl = el; placeLayer() },
-    report: s => { const was = mapState; mapState = s; paintZoom(); if (was.build !== s.build || was.one !== s.one || was.flat !== s.flat) render() },
-    panel: open => islandHost.toggleAttribute('data-away', open),
-    leave: () => { if (inPlace()) go({ view: 'session' }) },
   }
-  // On a wide desk the map fills the window, under the bar, the strip, the sidebar and the island; it
-  // is told the clear part of it (the stage), where it fits and centres things and keeps its controls.
+  // On a wide desk the gallery fills the window, under the bar, the strip, the sidebar and the island; it
+  // is told the clear part of it (the stage), which it keeps its cards to.
   const deskMq = matchMedia('(min-width: 1024px)')
   // The zoom pill (tree mode, a wide page): its zoom only, and on hover the layouts, Fit and −/+. It
-  // drives the map's camera while the map shows (its zoom is the design's own size), else the layout's.
-  // The gallery (the map's other face) has nothing to zoom: no pill over it.
-  const zoomPillOn = () => treeOn && !framed && deskMq.matches && !st.focus && ((onMap() && !mapState.flat) || inPlace() || viewOn())
+  // drives the layout's zoom. The gallery has nothing to zoom: no pill over it.
+  const zoomPillOn = () => treeOn && !framed && deskMq.matches && !st.focus && st.place.view === 'variant'
   let zoomKey = ''
   function paintZoom() {
     const el = root.querySelector<HTMLElement>('[data-zoom-pill]')
     if (!el) return
-    if (!el.dataset.bound) { el.dataset.bound = '1'; el.addEventListener('change', e => { const sel = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-map-design]'); if (sel) mapApi.setDesign(sel.value) }) }
     const on = zoomPillOn()
     el.hidden = !on
     if (!on) { el.innerHTML = ''; zoomKey = ''; return }
-    const mapOn = onMap() || inPlace(), inScreen = st.place.view === 'variant'
-    const pct = mapOn ? `${mapState.pct}%` : pillPct()
-    const key = JSON.stringify([mapOn, inScreen, viewOk(), shownSize(), st.view.land, designs.map(d => d.id + d.title), mapDesign, document.documentElement.lang])
+    const inScreen = st.place.view === 'variant', pct = pillPct()
+    const key = JSON.stringify([inScreen, viewOk(), shownSize(), st.view.land, document.documentElement.lang])
     if (key === zoomKey && el.firstElementChild) { el.querySelector('[data-zoom-pct]')!.textContent = pct; return }
     zoomKey = key
     const btn = 'grid size-8 shrink-0 place-items-center rounded-full text-zinc-600 hover:bg-zinc-900/5 aria-pressed:bg-zinc-900/[.07] aria-pressed:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:aria-pressed:bg-white/10 dark:aria-pressed:text-white'
     const sizes = inScreen && viewOk() ? ORDER.map(z => { const land = z === 'tablet' && st.view.land, d = dims(z, land); return `<button type="button" data-act="size:${z}" data-shoot="pill-size-${z}" aria-pressed="${shownSize() === z}" aria-label="${SIZES[z].name}" title="${SIZES[z].name} · ${d.w} × ${d.h}" class="${btn}">${ic(sizeIcon(z, land))}</button>` }).join('') + '<span class="mx-1 h-5 w-px shrink-0 bg-black/[.08] dark:bg-white/10"></span>' : ''
-    const pick = mapOn && designs.length > 1 ? `<select data-map-design aria-label="${t('Design')}" class="h-8 max-w-40 shrink-0 rounded-full bg-transparent px-2 text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><option value="">${t('All designs')}</option>${designs.map(d => `<option value="${esc(d.id)}"${d.id === mapDesign ? ' selected' : ''}>${esc(d.title)}</option>`).join('')}</select>` : ''
     // The comments island's height, corners and shadow, and it widens with the island's easing (its
     // buttons pop in after one another: shell.css).
     el.innerHTML = `<div class="group flex items-center rounded-full bg-white p-1.5 text-[12px] text-zinc-900 shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.08] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
-      <div data-zoom-more class="flex max-w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[max-width,opacity] duration-200 ease-in group-hover:max-w-[40rem] group-hover:opacity-100 group-hover:duration-500 group-hover:ease-[cubic-bezier(.2,.9,.25,1.1)] group-focus-within:max-w-[40rem] group-focus-within:opacity-100 group-focus-within:duration-500 group-focus-within:ease-[cubic-bezier(.2,.9,.25,1.1)] motion-reduce:transition-none">${pick}${sizes}<button type="button" data-act="zoom:fit" data-map-fit aria-label="${mapOn ? t('Fit') : t('Center the design')}" title="${mapOn ? t('Fit') : t('Center the design')} · 0" class="${btn}">${ic('center')}</button><button type="button" data-act="zoom:out" data-map-zoom="out" aria-label="${t('Zoom out')}" title="${t('Zoom out')} (-)" class="${btn}">${ic('zoom-out', 'size-3.5')}</button><button type="button" data-act="zoom:in" data-map-zoom="in" aria-label="${t('Zoom in')}" title="${t('Zoom in')} (+)" class="${btn}">${ic('zoom-in', 'size-3.5')}</button></div>
+      <div data-zoom-more class="flex max-w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[max-width,opacity] duration-200 ease-in group-hover:max-w-[40rem] group-hover:opacity-100 group-hover:duration-500 group-hover:ease-[cubic-bezier(.2,.9,.25,1.1)] group-focus-within:max-w-[40rem] group-focus-within:opacity-100 group-focus-within:duration-500 group-focus-within:ease-[cubic-bezier(.2,.9,.25,1.1)] motion-reduce:transition-none">${sizes}<button type="button" data-act="zoom:fit" data-zoom-fit aria-label="${t('Center the design')}" title="${t('Center the design')} · 0" class="${btn}">${ic('center')}</button><button type="button" data-act="zoom:out" data-zoom-step="out" aria-label="${t('Zoom out')}" title="${t('Zoom out')} (-)" class="${btn}">${ic('zoom-out', 'size-3.5')}</button><button type="button" data-act="zoom:in" data-zoom-step="in" aria-label="${t('Zoom in')}" title="${t('Zoom in')} (+)" class="${btn}">${ic('zoom-in', 'size-3.5')}</button></div>
       <span data-zoom-pct class="grid h-8 min-w-12 place-items-center px-2 tabular-nums text-zinc-500 dark:text-zinc-400">${pct}</span></div>`
   }
-  // An exploration's own page (/slug) in tree mode is the map: it flies to that exploration's options.
+  // An exploration's own page (/slug) in tree mode is the gallery, that exploration's card open.
   let framedProto = '', widenedAt = ''
-  function paintMap() {
-    const show = onMap() || inPlace()
+  function paintGallery() {
+    const show = onGallery()
     const proto = show && st.place.view === 'proto' ? st.place.proto : ''
     // A route to an exploration outside the scope (a link, Jump, the work strip) widens it to that
     // exploration's conversation, or to the whole project when it has none.
     // Only on arriving there: a scope chosen while on it stays.
     const target = show && st.place.view !== 'session' ? byId(st.place.proto) : undefined, arrived = target ? placeRoute() : ''
     if (arrived !== widenedAt) { widenedAt = arrived; if (target && !inScope(target)) { scope = target.session && scopeNow() !== 'all' ? `conv:${target.session}` : 'all'; remember(scopeKey, scope); paintTree() } }
-    if (proto !== framedProto) { framedProto = proto; if (proto) mapFrame = `round:${proto}#${++frames}` }
-    mapHost.hidden = !show
+    if (proto !== framedProto) { framedProto = proto; if (proto) galleryFrame = `round:${proto}#${++frames}` }
+    galleryHost.hidden = !show
     const full = show && deskMq.matches && !st.focus
-    mapHost.toggleAttribute('data-full', full)
+    galleryHost.toggleAttribute('data-full', full)
     const r = full ? layers.getBoundingClientRect() : null
     const safe = r ? [r.left, r.top, innerWidth - r.right, innerHeight - r.bottom].map(n => Math.max(0, Math.round(n))).join(',') : ''
-    // Hidden under the map, and kept laid out (its box is the map's clear part). Opacity too: a design
+    // Hidden under the gallery, and kept laid out (its box is the gallery's clear part). Opacity too: a design
     // that sets visibility: visible on its own root would show through visibility alone.
     layers.style.visibility = show ? 'hidden' : ''
     layers.style.opacity = show ? '0' : ''
     layers.style.pointerEvents = show ? 'none' : ''
-    if (!show && !mapMounted) return
-    const work = all.flatMap(p => p.variants.filter(v => editing(p.id, v.id)).map(v => `${p.id}/${v.id}:${building(p.id, v.id) ? 'building' : 'editing'}`)).join(' ')
-    const next: MapInput = { protos: scopedProtos(), conv: convOn, scope: scopeNow(), me: session.conversation ?? '', convs: convsOf(), designs, place: lastFocus, hidden: !show, lines: mapLines, design: mapDesign, edits: mapEdits, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), working: work, frame: mapFrame, safe, focus: inPlace() ? `${st.place.proto}/${st.place.variant}` : '' }
-    if (mapSnap && (Object.keys(next) as (keyof MapInput)[]).every(k => next[k] === mapSnap![k])) return
-    mapSnap = next
-    if (!mapMounted && show) { mapMounted = true; mountMap(mapHost, mapApi) }
-    mapWatchers.forEach(f => f())
-    placeLayer()
+    if (!show && !galleryMounted) return
+    const next: GalleryInput = { protos: scopedProtos(), scope: scopeNow(), me: session.conversation ?? '', convs: convsOf(), designs, hidden: !show, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), frame: galleryFrame, safe }
+    if (gallerySnap && (Object.keys(next) as (keyof GalleryInput)[]).every(k => next[k] === gallerySnap![k])) return
+    gallerySnap = next
+    if (!galleryMounted && show) { galleryMounted = true; mountGallery(galleryHost, galleryApi) }
+    galleryWatchers.forEach(f => f())
   }
-  // The tool strip (tree mode, a wide page): down the stage's start, as in a drawing app, on the map
-  // too. Its head walks and decides the screen (Tour, Decide), then Move and Comment, the three
+  // The tool strip (tree mode, a wide page): down the stage's start, as in a drawing app, over the
+  // gallery too. Its head walks and decides the screen (Tour, Decide), then Move and Comment, the three
   // layouts (or a phone's scale), the design's own tools (Tweaks, Try it, copy options, motion, its
-  // states with Autoplay, Compare and History), and Fit. On the map the screen's tools are there but
+  // states with Autoplay, Compare and History), and Fit. Over the gallery the screen's tools are there but
   // off, so nothing moves between the two. Each opens its menu beside the strip.
   const strip = root.querySelector<HTMLElement>('[data-strip]')!
   const stripOn = () => treeOn && !framed && !st.focus && !phoneMq.matches
@@ -840,7 +807,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const w = inScreen ? whereOf(all, designs, { proto: pl.proto, variant: pl.variant }) : null
     const picking = comments.counts().picking
     const tool = (act: string, shoot: string, icon: string, label: string, key: string, pressed = false) => `<button data-act="${act}" data-shoot="${shoot}" aria-pressed="${pressed}" aria-label="${label}" title="${key ? `${label} · ${key}` : label}" class="${IB} ${pressed ? ON : ''}">${ic(icon)}</button>`
-    // A screen's tool, off on the map: the same place, a word on why.
+    // A screen's tool, off over the gallery: the same place, a word on why.
     const off = (shoot: string, icon: string, label: string) => `<button disabled data-shoot="${shoot}" aria-label="${label}" title="${label} · ${t('in a screen')}" class="${IB} opacity-30">${ic(icon)}</button>`
     const tourBtn = !inScreen ? off('strip-tour', 'signpost', t('Tour')) : w?.flow && w.flow.routes.length > 1 ? tool(tour ? 'tour:end' : 'tour', 'strip-tour', 'signpost', tour ? t('End the tour') : t('Walk this flow from its first screen'), '', !!tour) : ''
     // Decide: the bar's button is a dot and a word; upright it is the pick's check, filled once picked.
@@ -862,14 +829,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const own = !inScreen ? [off('strip-tweaks', 'tweaks', t('Tweaks')), off('strip-try', 'key', t('Try it')), off('strip-copy', 'text', t('Copy options')), off('strip-motion', 'curves', t('Motion')), off('strip-states', 'grid', t('States, Autoplay, Compare'))]
       : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), motionBtn(), statesBtn, replayBtn()]
     const fit = inScreen && frameOn() ? tool('center', 'strip-fit', 'center', t('Center the design'), '⌘0') : ''
-    // On the map: Build it (the island turns into its box) and every link drawn, not just the selected screen's.
-    const onTheMap = onMap() || inPlace()
-    const mapTools = onTheMap ? [
-      mapState.one ? tool('map:build', 'strip-build', 'build', t('Build it…'), '', mapState.build).replace('data-act', 'data-map-build data-act') : '',
-      tool('map:lines', 'strip-links', 'links', mapLines === 'all' ? t('Showing every link') : t('Show every link'), '', mapLines === 'all').replace('data-act', 'data-map-lines data-act'),
-    ] : []
     // The layouts and the zoom live in the zoom pill (bottom corner) when it shows.
-    const groups = [[tourBtn, decide], hands, zoomPillOn() ? [] : sizes, own, mapTools, zoomPillOn() ? [] : [fit]].map(g => g.filter(Boolean).join('')).filter(Boolean)
+    const groups = [[tourBtn, decide], hands, zoomPillOn() ? [] : sizes, own, zoomPillOn() ? [] : [fit]].map(g => g.filter(Boolean).join('')).filter(Boolean)
     // The bar's own buttons drawn upright: their words, carets and counts' text stay out (only the
     // strip's own buttons, never the rows of a menu opening beside it).
     strip.innerHTML = `<div data-strip-tools class="flex flex-col items-center gap-0.5 rounded-2xl bg-white p-1 shadow-[0_8px_24px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:ring-white/10
@@ -902,7 +863,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       get: () => treeSnap!, subscribe: f => { treeWatchers.add(f); return () => { treeWatchers.delete(f) } },
       go: route => { const [proto, variant] = route.split('/'); go(variant ? { view: 'variant', proto, variant } : { view: 'proto', proto }) },
       goWork: () => act('work', 'go', ''), hide: () => act('side', '0', ''), name: session.name,
-      frame: key => { mapFrame = `${key}#${++frames}`; if (st.place.view !== 'session') go({ view: 'session' }); else paintMap() },
+      frame: key => { galleryFrame = `${key}#${++frames}`; if (st.place.view !== 'session') go({ view: 'session' }); else paintGallery() },
       setScope,
     })
   }
@@ -978,11 +939,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const scaleLabel = () => (scaleNow() ? `${Math.round(scaleNow())}%` : t('Fit'))
   // The zoom pill says the size the device view really is, fitted too (view/index.tsx tells it).
   let viewPct = 0
-  const pillPct = () => (!scaleNow() && viewOn() && viewPct ? `${viewPct}%` : scaleLabel())
+  const pillPct = () => (!scaleNow() && frameOn() && viewPct ? `${viewPct}%` : scaleLabel())
   addEventListener('proto:view-zoom', e => {
     viewPct = (e as CustomEvent<number>).detail
     const el = root.querySelector('[data-zoom-pct]')
-    if (el && !onMap() && !inPlace()) el.textContent = pillPct()
+    if (el) el.textContent = pillPct()
   })
   function setScale(v: number) {
     // Fit chosen here also puts a device that was dragged away back in the middle.
@@ -1276,7 +1237,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const scrollerOf = (l: Layer) => l.el.firstElementChild as HTMLElement | null
   function show(fade: boolean) {
     healSizes()
-    // Under the map (tree on) the layers are hidden: what was there was never seen, so it goes at once.
+    // Under the gallery (tree on) the layers are hidden: what was there was never seen, so it goes at once.
     const unseen = layers.style.visibility === 'hidden'
     if (layer && lobbyKey) lobbyScroll.set(lobbyKey, scrollerOf(layer)?.scrollTop ?? 0)
     // On a phone the design leaving goes before the next one mounts, with no crossfade: Safari
@@ -1287,7 +1248,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     layer = next
     lobbyKey = st.place.view === 'variant' ? '' : pathOf(st.place) + (st.stack ? ':stack' : '')
     layers.prepend(next.el)
-    placeLayer()
     // The new design reaches its state under the old one, which then fades out on top. Set up
     // before the new one is settled, so the old one still goes when that throws.
     if (prev && unseen) { prev.el.remove(); prev.dispose() }
@@ -1652,13 +1612,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const goTo = (route: string) => { const [slug, letter] = route.split('/'); return `pv:${esc(slug)}:${esc(letter)}` }
       const w = p && vid ? whereOf(all, designs, { proto: p.id, variant: vid }) : null
       const flowArrow = (d: -1 | 1) => { const r = w?.flow?.routes[w.at + d]; return `<button ${r ? `data-act="${goTo(r)}"` : 'disabled'} data-crumb-step="${d}" aria-label="${d < 0 ? t('Previous screen in the flow') : t('Next screen in the flow')}" title="${d < 0 ? t('Previous screen in the flow') : t('Next screen in the flow')}" class="grid size-7 shrink-0 place-items-center rounded-md text-zinc-400 hover:bg-zinc-900/5 hover:text-zinc-900 disabled:opacity-25 dark:hover:bg-white/10 dark:hover:text-white">${ic(d < 0 ? (rtl ? 'right' : 'left') : (rtl ? 'left' : 'right'), 'size-3.5')}</button>` }
-      const toMap = (label: string, cls: string) => `<button data-act="lobby:session" data-crumb-map class="min-w-0 truncate rounded-md px-1.5 py-1 hover:bg-zinc-900/5 dark:hover:bg-white/10 ${cls}"><span dir="auto">${esc(label)}</span></button>`
+      const toGallery = (label: string, cls: string) => `<button data-act="lobby:session" data-crumb-gallery class="min-w-0 truncate rounded-md px-1.5 py-1 hover:bg-zinc-900/5 dark:hover:bg-white/10 ${cls}"><span dir="auto">${esc(label)}</span></button>`
       const option = (q: Proto) => `<b class="shrink-0">${variantRef(q, vid)}</b>${q.picked === vid ? ic('check', `size-3.5 shrink-0 ${PICK}`) : ''}`
-      const crumb = !p || view !== 'variant' ? `${toMap(session.name, 'font-semibold')}${sep}<span class="shrink-0 text-zinc-500">${t('Map')}</span>`
-        : w?.design && w.flow && w.screen ? `${toMap(w.design.title, 'font-semibold')}${sep}<span dir="auto" class="min-w-0 shrink truncate text-zinc-500">${esc(w.flow.name)}</span>${sep}
+      const crumb = !p || view !== 'variant' ? `${toGallery(session.name, 'font-semibold')}${sep}<span class="shrink-0 text-zinc-500">${t('Gallery')}</span>`
+        : w?.design && w.flow && w.screen ? `${toGallery(w.design.title, 'font-semibold')}${sep}<span dir="auto" class="min-w-0 shrink truncate text-zinc-500">${esc(w.flow.name)}</span>${sep}
             ${flowArrow(-1)}<button data-act="${goTo(w.flow.routes[w.at])}" data-crumb-screen class="min-w-0 truncate rounded-md px-1 py-1 font-medium hover:bg-zinc-900/5 dark:hover:bg-white/10"><span dir="auto">${esc(w.screen.title)}</span></button><span class="shrink-0 text-[11px] tabular-nums text-zinc-400">${w.at + 1}/${w.flow.routes.length}</span>${flowArrow(1)}
             ${w.exploration ? `${sep}<span dir="auto" class="min-w-0 truncate font-medium">${esc(w.exploration.title)}</span>${option(w.exploration)}` : option(p)}`
-        : `${toMap(t('Explorations on no screen'), 'text-zinc-500')}${sep}<span dir="auto" class="min-w-0 truncate font-medium">${esc(p.title)}</span>${option(p)}`
+        : `${toGallery(t('Explorations on no screen'), 'text-zinc-500')}${sep}<span dir="auto" class="min-w-0 truncate font-medium">${esc(p.title)}</span>${option(p)}`
       const jumpBtn = `<button data-act="jump" data-shoot="jump" aria-label="${t('Jump to')} (⌘K)" title="${t('Jump to')} · ⌘K" class="${IB} shrink-0">${ic('search')}<kbd dir="ltr" class="hidden font-sans text-[11px] text-zinc-400 lg:inline">⌘K</kbd></button>`
       keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
         <nav data-crumb aria-label="${t('Where you are')}" class="flex min-w-0 items-center gap-0.5 text-sm">${crumb}</nav>
@@ -1715,7 +1675,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     keepScroll(side, st.side && !treeOn ? sideNav(false) : '')
     if (treeOn) { mountTreeOnce(); paintTree() }
     if (st.place.view === 'variant') lastFocus = `${st.place.proto}/${st.place.variant}`
-    paintMap()
+    paintGallery()
     keepScroll(drawer, st.drawer ? `<div class="fixed inset-0 z-50 lg:hidden"><div data-act="drawer:0" class="absolute inset-0 bg-black/30"></div><div class="absolute inset-y-0 start-0 flex w-[19rem] max-w-[85%] flex-col bg-white shadow-2xl dark:bg-zinc-950">${sideNav(true)}</div></div>` : '')
 
     // Focus mode restyles the zone to cover the page; the mounted design stays put. On a phone
@@ -1922,8 +1882,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     go: route => { st.tree = false; const [proto, variant] = route.split('/'); go(variant ? { view: 'variant', proto, variant } : { view: 'proto', proto }) },
     goWork: () => { st.tree = false; act('work', 'go', '') },
     hide: () => { st.tree = false; render() },
-    // A design or a flow shows on the map, as on a wide page.
-    frame: key => { st.tree = false; mapFrame = `${key}#${++frames}`; if (st.place.view !== 'session') go({ view: 'session' }); else { paintMap(); render() } },
+    // A design or a flow opens its first screen's card in the gallery, as on a wide page.
+    frame: key => { st.tree = false; galleryFrame = `${key}#${++frames}`; if (st.place.view !== 'session') go({ view: 'session' }); else { paintGallery(); render() } },
     setScope,
   }
   // Rows a finger can hit (40 px, 14 px type), each row's ⋯ always there (no hover to find it), and no
@@ -1999,8 +1959,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       treeOn && !framed ? `<button data-act="settings:session" data-shoot="menu-session" class="flex h-11 w-full items-center gap-2 rounded-[18px] px-3 text-start hover:bg-zinc-900/5 active:bg-zinc-900/5 dark:hover:bg-white/10 dark:active:bg-white/10"><span class="relative grid size-6 shrink-0 place-items-center rounded-md bg-zinc-900 text-[11px] font-bold text-white dark:bg-white dark:text-zinc-900">${esc((session.name.trim()[0] || 'P').toUpperCase())}<span class="absolute -end-1 -top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-800">${pulse('size-2', st.live && !st.stopped)}</span></span><span dir="auto" class="min-w-0 flex-1 truncate font-medium">${esc(session.name)}</span><span class="shrink-0 text-xs text-zinc-400 dark:text-white/45">${t('Session')}</span></button>` : '',
       treeOn && !framed ? menuRow({ act: 'settings', shoot: 'menu-settings', icon: 'settings', label: t('Settings') }) : '',
       treeOn && !framed ? '<div class="mx-3 my-1 h-px bg-black/[.06] dark:bg-white/10"></div>' : '',
-      // With the project tree on: the map and Jump come first (the phone's way around the project).
-      treeOn && !framed ? menuRow({ act: 'lobby:session', shoot: 'menu-map', icon: 'map', label: t('Map') }) : '',
+      // With the project tree on: the gallery and Jump come first (the phone's way around the project).
+      treeOn && !framed ? menuRow({ act: 'lobby:session', shoot: 'menu-gallery', icon: 'grid', label: t('Gallery') }) : '',
       treeOn && !framed ? menuRow({ act: 'jump', shoot: 'menu-jump', icon: 'search', label: t('Jump to') }) : '',
       menuRow({ act: 'lobby:proto', shoot: 'all-variants', icon: 'grid', label: t('All variants'), detail: String(visible(p).length), on: st.place.view === 'proto' }),
       !framed ? menuRow({ act: 'share-link', shoot: 'share-link', icon: 'link-simple', label: t('Share link…') }) : '',
@@ -2501,18 +2461,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'turn': return patchView({ land: !st.view.land, zoom: 0 })
       case 'center': return setScale(0)
       case 'replay': return replayDesign()
-      // The zoom pill: the map's camera while the map shows, else the chosen layout's zoom.
+      // The zoom pill: the chosen layout's zoom.
       case 'zoom': {
-        const mapOn = onMap() || inPlace()
-        if (arg === 'fit') return mapOn ? mapApi.ctl?.fit() : setScale(0)
-        if (mapOn) return mapApi.ctl?.zoom(arg === 'in' ? 1.25 : 0.8)
+        if (arg === 'fit') return setScale(0)
         // From Fit, a step goes from the size it really is.
-        { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || (viewOn() && viewPct) || 50) + (arg === 'in' ? 10 : -10)) / 5) * 5))) }
+        { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || (frameOn() && viewPct) || 50) + (arg === 'in' ? 10 : -10)) / 5) * 5))) }
       }
-      case 'map':
-        if (arg === 'build') return mapApi.ctl?.build()
-        if (arg === 'lines') { mapApi.setLines(mapLines === 'all' ? 'selected' : 'all'); return render() }
-        return
       case 'scalestep': { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || 50) + Number(arg)) / 5) * 5))) }
       case 'theme': return setTheme(arg === 'dark')
       case 'focus': if (st.place.view !== 'variant') return; st.focus = true; st.open = null; dock.hold = performance.now() + 1600; edge.hover = {}; render(); return fit()
@@ -2704,8 +2658,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else if (e.key === 'r' && canReplay() && !framed) act('replay', '', '')
     else if (e.key === 'f' && st.place.view === 'variant' && !framed) act(st.focus ? 'unfocus' : 'focus', '', '')
     else if (e.key === 'w' && workOf()) act('work', 'go', '')
-    // M: from a screen out to the map, and from the map back into the last screen (continuous zoom's keys).
-    else if (e.key === 'm' && treeOn) st.place.view === 'variant' ? go({ view: 'session' }) : lastFocus && mapApi.open(lastFocus)
+    // M: from a screen out to the gallery, and from the gallery back into the last screen.
+    else if (e.key === 'm' && treeOn) st.place.view === 'variant' ? go({ view: 'session' }) : lastFocus && galleryApi.open(lastFocus)
     else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches && !framed) act('open', 'decide', '')
     else if (e.key === 's' && st.place.view === 'variant' && !framed) act('fav', st.place.proto, st.place.variant)
   })
@@ -2891,18 +2845,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const te = e as TouchEvent
     if (!pinch || te.touches.length !== 2) return
     te.preventDefault()
-    // Pinched in past the fit (the design at its own size): on out to the map.
-    if (pinch.z * apart(te.touches) / pinch.d < 0.7 && (zoom?.z ?? 1) <= 1.01 && zoomOutToMap()) { pinch = null; return }
+    // Pinched in past the fit (the design at its own size): on out to the gallery.
+    if (pinch.z * apart(te.touches) / pinch.d < 0.7 && (zoom?.z ?? 1) <= 1.01 && zoomOutToGallery()) { pinch = null; return }
     zoomTo(pinch.z * apart(te.touches) / pinch.d, (te.touches[0].clientX + te.touches[1].clientX) / 2, (te.touches[0].clientY + te.touches[1].clientY) / 2)
   }, { capture: true, passive: false })
   listen(layers, 'touchend', e => { if ((e as TouchEvent).touches.length < 2) pinch = null }, { capture: true, passive: true })
   // Safari's own pinch would zoom the page.
   listen(layers, 'gesturestart', e => { if (zoom || zoomMount() || outOk()) e.preventDefault() }, { capture: true, passive: false })
-  listen(layers, 'gesturechange', e => { if (outOk() && (e as unknown as { scale: number }).scale < 0.75) { e.preventDefault(); zoomOutToMap() } }, { capture: true, passive: false })
-  // Zooming out of a screen at its own size (no layout chosen) goes on out to the map, which flies
-  // out from it: ⌘/Ctrl + wheel past a notch or two, or Safari's pinch. With the project tree on only.
+  listen(layers, 'gesturechange', e => { if (outOk() && (e as unknown as { scale: number }).scale < 0.75) { e.preventDefault(); zoomOutToGallery() } }, { capture: true, passive: false })
+  // Zooming out of a screen at its own size (no layout chosen) goes on out to the gallery: ⌘/Ctrl + wheel past a notch or two, or Safari's pinch. With the project tree on only.
   const outOk = () => treeOn && !framed && !st.focus && !viewOn() && st.place.view === 'variant' && (zoom?.z ?? 1) <= 1.01
-  const zoomOutToMap = () => { if (!outOk()) return false; outBy = 0; go({ view: 'session' }); return true }
+  const zoomOutToGallery = () => { if (!outOk()) return false; outBy = 0; go({ view: 'session' }); return true }
   let outBy = 0, outAt = 0
   listen(layers, 'wheel', e => {
     const we = e as WheelEvent
@@ -2910,7 +2863,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       we.preventDefault()
       if (performance.now() - outAt > 600) outBy = 0
       outAt = performance.now(); outBy += we.deltaY
-      if (outBy > 240) zoomOutToMap()
+      if (outBy > 240) zoomOutToGallery()
       return
     }
     if (!(we.ctrlKey || we.metaKey) || !(zoom || zoomMount())) return
@@ -3003,9 +2956,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // and the design in it stay as they are (an open menu, what was typed), as on the stage.
   const frameable = () => !framed && q.get('hints') !== '0' && st.place.view !== 'session' && cur()?.kind !== 'phone'
   const viewOk = () => frameable() && !st.focus && (!phoneMq.matches || pillOn())
-  // With the tree on the design sits on the map as its board, mounted in the page (no artboard frame):
-  // the map's own mount hands over to it, so it doesn't load twice.
-  const fillOk = () => frameable() && !phoneMq.matches && !treeOn && st.place.view === 'variant' && !st.place.tool
+  const fillOk = () => frameable() && !phoneMq.matches && st.place.view === 'variant' && !st.place.tool
   const native = (): Size | null => {
     // a desktop window keeps the desktop layout even when the side panels narrow the stage (view/index.tsx FILL_MIN_W)
     if (fillOk()) return nativeOf(innerWidth >= FILL_MIN_W ? Math.max(layers.clientWidth || innerWidth, FILL_MIN_W) : layers.clientWidth || innerWidth)
@@ -3023,7 +2974,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const deviceView = createView(viewHost, comments.wrap)
   // The size selected at rest is this window's own layout, which a resize of it or the stage can change.
   let nativeWas = native()
-  new ResizeObserver(() => { if (native() !== nativeWas) { nativeWas = native(); render() } else { paintMap(); if (viewHost.hasAttribute('data-full')) paintView() } }).observe(layers)
+  new ResizeObserver(() => { if (native() !== nativeWas) { nativeWas = native(); render() } else { paintGallery(); if (viewHost.hasAttribute('data-full')) paintView() } }).observe(layers)
   function pickSize(s: Size) {
     // The layout shown, chosen again, leaves the view: the way out when no layout is this window's own.
     if (s === native() || (viewOn() && s === st.view.size)) { if (viewOn()) patchView({ size: null, zoom: 0 }); return }
@@ -3037,9 +2988,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else { paintView(); syncScale() }
   }
   function paintView() {
-    // A chosen layout on the desk with the tree on runs to the window's edges, as the map does: under
-    // the bar, the strip, the island and the sidebar card. It fits and centres in the room between them.
-    const full = treeOn && !framed && deskMq.matches && !st.focus && viewOn()
+    // A design on the desk with the tree on runs to the window's edges, as the gallery does: under the
+    // bar, the strip, the island and the sidebar card. It fits and centres in the room between them.
+    const full = treeOn && !framed && deskMq.matches && !st.focus && frameOn()
     viewHost.toggleAttribute('data-full', full)
     const r = full ? layers.getBoundingClientRect() : null
     deviceView.paint({
@@ -3266,7 +3217,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onLive: on => { comments.act.setLive(on); paintSettings() },
       onSidebar: on => { st.side = on; remember('proto-side', on ? '1' : '0'); render() },
       onTree: on => { treeOn = on; remember('proto-tree', on ? '1' : '0'); render() },
-      onConv: on => { convOn = on; remember('proto-conv', on ? '1' : '0'); scoped = null; paintTree(); paintMap(); render() },
+      onConv: on => { convOn = on; remember('proto-conv', on ? '1' : '0'); scoped = null; paintTree(); paintGallery(); render() },
       onReview: on => { remember('proto-hints', on ? '1' : '0'); hintsOpen = wideMq.matches && on; if (!on) setTry(null); render() },
       onLayout: on => { act('stack', on ? '1' : '0', ''); paintSettings() },
       onResetWidths: () => { setSideW(SIDE_W); setSplit(SPLIT_W); render() },
@@ -3940,7 +3891,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // New prototypes and new variants are followed; edits to existing ones only light the
     // editing dot, so the view never jumps while someone is looking at something.
     /** Designs added or changed on disk (proto design, add --design). */
-    // Everything that reads the designs draws again: the tree, the map, the crumb, the strip, a link's chip.
+    // Everything that reads the designs draws again: the tree, the gallery, the crumb, the strip, a link's chip.
     setDesigns(next: Design[]) { designs = next; render() },
     setProtos(next: Proto[]) {
       const before = new Map(protos.map(p => [p.id, new Set(p.variants.map(v => v.id))]))
@@ -4039,7 +3990,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       }
       if (retrying) show(false)
       motionDock.edited(paths, st.place.view === 'variant' ? st.place.proto : null)
-      if (paths.some(p => p.includes('/src/protos/'))) mapEdits++
       for (const path of paths) { const slug = path.match(/\/src\/protos\/([^/]+)\//)?.[1]; if (slug) editsOf.set(slug, (editsOf.get(slug) ?? 0) + 1) }
       render()
       clearTimeout(editTimer)

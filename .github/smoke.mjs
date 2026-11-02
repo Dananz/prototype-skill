@@ -53,9 +53,8 @@ import { variantLabelsChecks } from './variant-labels-checks.mjs'
 import { favoritesChecks } from './favorites-checks.mjs'
 import { treeChecks } from './tree-checks.mjs'
 import { goChecks } from './go-checks.mjs'
-import { mapChecks } from './map-checks.mjs'
+import { shareDesignChecks } from './share-design-checks.mjs'
 import { focusChecks } from './focus-checks.mjs'
-import { shareMapChecks } from './share-map-checks.mjs'
 import { islandTreeChecks } from './island-tree-checks.mjs'
 import { headerChecks } from './header-checks.mjs'
 import { phoneFrameChecks } from './phone-frame-checks.mjs'
@@ -235,11 +234,11 @@ if (process.argv.includes('--island-tree-only')) {
   console.log('OK: focused island checks')
   process.exit(0)
 }
-if (process.argv.includes('--share-map-only')) {
-  await shareMapChecks({ proto, app, openPage, fail })
+if (process.argv.includes('--share-design-only')) {
+  await shareDesignChecks({ proto, app, openPage, fail })
   proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
-  console.log('OK: focused share map checks')
+  console.log('OK: focused share of a design checks')
   process.exit(0)
 }
 if (process.argv.includes('--focus-only')) {
@@ -247,23 +246,6 @@ if (process.argv.includes('--focus-only')) {
   proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused Focus checks')
-  process.exit(0)
-}
-// The map checks on a crowded map, as the full run leaves it: cards too small to ask for stills at Fit,
-// and stacks folding and spreading under the camera while stills wait.
-if (process.argv.includes('--map-crowd-only')) {
-  for (let i = 0; i < 90; i++) proto(['add', `crowd${i}`, '--title', `Crowd ${i}`, '--variants', 'A:One,B:Two'])
-  await mapChecks({ proto, app, local, openPage, fail })
-  proto(['rm', '--all'])
-  rmSync(scratch, { recursive: true, force: true })
-  console.log('OK: focused map checks on a crowded map')
-  process.exit(0)
-}
-if (process.argv.includes('--map-only')) {
-  await mapChecks({ proto, app, local, openPage, fail })
-  proto(['rm', '--all'])
-  rmSync(scratch, { recursive: true, force: true })
-  console.log('OK: focused map checks')
   process.exit(0)
 }
 if (process.argv.includes('--share-shots-only')) {
@@ -452,9 +434,8 @@ await variantLabelsChecks({ proto, app, local, openPage, fail })
 await favoritesChecks({ proto, app, local, openPage, fail })
 await treeChecks({ proto, app, local, openPage, fail })
 await goChecks({ proto, app, local, openPage, fail })
-await mapChecks({ proto, app, local, openPage, fail })
 await focusChecks({ proto, app, local, openPage, fail })
-await shareMapChecks({ proto, app, openPage, fail })
+await shareDesignChecks({ proto, app, openPage, fail })
 await islandTreeChecks({ proto, app, local, openPage, fail })
 await headerChecks({ proto, app, local, openPage, fail })
 await phoneFrameChecks({ proto, app, local, openPage, fail })

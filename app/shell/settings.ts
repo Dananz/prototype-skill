@@ -15,7 +15,7 @@ type Props = {
   appearance: Appearance
   live: boolean
   sidebar: boolean
-  /** The project tree instead of the columns (the map prototype's #1), while it is new. */
+  /** The project tree instead of the columns (the tree prototype's #1), while it is new. */
   tree: boolean
   /** Conversation first, offered while the tree is on. */
   conv: boolean
@@ -118,7 +118,7 @@ function Settings(p: Props) {
     [t('Send draft comments'), `${mod} Enter`], [t('Toggle sidebar'), `${mod} \\`], [t('Toggle focus mode'), 'F'], [t('Replay the variant'), 'R'],
     [t('Fit and center canvas'), `${mod} 0`],
     [t('Go to the working variant'), 'W'], [t('Design actions (desktop)'), 'P'], [t('Favorite or unfavorite the variant'), 'S'], [t('Close a tool or go back'), 'Esc'],
-    ...p.tree ? [[t('Map'), 'M'], [t('Jump to a screen'), `${mod} K`], [t('Zoom out past the screen to the map'), t('Pinch')]] : [],
+    ...p.tree ? [[t('Gallery'), 'M'], [t('Jump to a screen'), `${mod} K`], [t('Zoom out past the screen to the gallery'), t('Pinch')]] : [],
   ]
   const pane = category === 'appearance' ? h('div', { className: 'pb-6' },
     choices(t('Appearance'), (['system', 'light', 'dark'] as const).map(value => choice('theme', value, value === 'system' ? t('System') : value === 'light' ? t('Light') : t('Dark'), p.appearance === value, () => p.onAppearance(value), value === 'light' ? 'sun' : value === 'dark' ? 'moon' : 'desktop'))),
