@@ -13,11 +13,13 @@ export type Pic = (p: Proto, letter: string, want: boolean) => ReactNode
 const frameOf = (p: Proto): [number, number] => p.kind === 'phone' ? p.screen : [1200, 750]
 const COLS_AT = [[1200, 4], [860, 3], [560, 2], [0, 1]] as const
 const EASE_OUT = 'cubic-bezier(.32,.72,0,1)', EASE_IN = 'cubic-bezier(.4,0,1,1)'
+/** A card under the pointer rises on a soft shadow, and settles back while pressed. */
+const LIFT = 'motion-safe:group-hover:-translate-y-1 group-hover:shadow-[0_8px_20px_-8px_rgb(0_0_0/.25)] motion-safe:group-active:translate-y-0 group-active:shadow-none dark:group-hover:shadow-[0_8px_20px_-8px_rgb(0_0_0/.7)]'
 
 function Thumb({ p, letter, pic, want }: { p: Proto; letter: string; pic: Pic; want: boolean }) {
   const [w, h] = frameOf(p), phone = h > w
   return (
-    <div className="grid aspect-[16/10] place-items-center overflow-hidden rounded-xl bg-zinc-200/60 ring-1 ring-black/[.06] dark:bg-zinc-900 dark:ring-white/[.06]">
+    <div className="grid aspect-[16/10] place-items-center overflow-hidden rounded-xl bg-zinc-200/60 ring-1 ring-black/[.06] transition-[background-color,box-shadow] duration-200 group-hover:bg-zinc-300/70 group-hover:ring-black/20 dark:bg-zinc-900 dark:ring-white/[.06] dark:group-hover:bg-zinc-800 dark:group-hover:ring-white/25">
       <div className={`relative overflow-hidden ${phone ? 'mt-6 h-[115%] rounded-t-xl shadow-lg' : 'w-full'}`} style={{ aspectRatio: `${w} / ${h}` }}>{pic(p, letter, want)}</div>
     </div>
   )
@@ -46,8 +48,8 @@ function useInView<T extends HTMLElement>() {
 function Card({ p, on, dim, pic, onClick }: { p: Proto; on: boolean; dim: boolean; pic: Pic; onClick: () => void }) {
   const [ref, seen] = useInView<HTMLButtonElement>()
   return (
-    <button ref={ref} type="button" data-gallery-card={p.id} aria-expanded={on} onClick={onClick} className={`group min-w-0 pb-5 text-start sm:pb-7 transition-opacity duration-300 ${dim ? 'opacity-50 hover:opacity-80' : ''}`}>
-      <div className={`rounded-xl ring-sky-500 ring-offset-[var(--gallery-bg,var(--desk-card))] transition-[box-shadow,transform] duration-300 ${on ? 'ring-2 ring-offset-4' : 'group-hover:-translate-y-0.5'}`} style={{ transitionTimingFunction: EASE_OUT }}>
+    <button ref={ref} type="button" data-gallery-card={p.id} aria-expanded={on} onClick={onClick} className={`group min-w-0 cursor-pointer pb-5 text-start sm:pb-7 transition-opacity duration-300 ${dim ? 'opacity-50 hover:opacity-100' : ''}`}>
+      <div className={`rounded-xl ring-sky-500 ring-offset-[var(--gallery-bg,var(--desk-card))] transition-[box-shadow,translate] duration-300 ${on ? 'ring-2 ring-offset-4' : LIFT}`} style={{ transitionTimingFunction: EASE_OUT }}>
         <Thumb p={p} letter={p.picked ?? p.variants[0]?.id ?? 'A'} pic={pic} want={seen} />
       </div>
       <div dir="auto" className="mt-2.5 truncate text-start text-[14px] font-medium">{p.title}</div>
@@ -74,11 +76,11 @@ function Drawer({ p, pic, open }: { p: Proto | null; pic: Pic; open: (route: str
         <div className="pb-5 sm:pb-7">
           <div data-gallery-options={shown.id} className="-mx-1 rounded-2xl bg-zinc-900/[.03] p-3 sm:-mx-2 sm:p-4 ring-1 ring-black/[.06] dark:bg-white/[.03] dark:ring-white/[.06]">
             <div className="mb-3 flex items-center gap-3 text-sm"><b dir="auto" className="font-semibold">{shown.title}</b><Status p={shown} /></div>
-            <div className="-m-1.5 flex gap-4 overflow-x-auto p-1.5 pb-2.5 [scrollbar-width:thin]">
+            <div className="-mx-3 -mt-3 -mb-1.5 flex gap-4 overflow-x-auto p-3 [scrollbar-width:thin]">
               {shown.variants.map((v, i) => (
                 <button key={v.id} type="button" data-gallery-option={`${shown.id}/${v.id}`} onClick={() => open(`${shown.id}/${v.id}`)} title={t('Open')}
-                  className="group w-40 shrink-0 text-start sm:w-52 motion-safe:animate-[proto-gallery-rise_.4s_cubic-bezier(.32,.72,0,1)_both]" style={{ animationDelay: `${60 + i * 35}ms` }}>
-                  <div className={`rounded-xl transition-transform duration-200 group-hover:-translate-y-0.5 ${shown.picked === v.id ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-[var(--gallery-bg,var(--desk-card))]' : ''}`}><Thumb p={shown} letter={v.id} pic={pic} want /></div>
+                  className="group w-40 shrink-0 cursor-pointer text-start sm:w-52 motion-safe:animate-[proto-gallery-rise_.4s_cubic-bezier(.32,.72,0,1)_both]" style={{ animationDelay: `${60 + i * 35}ms` }}>
+                  <div className={`rounded-xl transition-[box-shadow,translate] duration-200 ${LIFT} ${shown.picked === v.id ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-[var(--gallery-bg,var(--desk-card))]' : ''}`}><Thumb p={shown} letter={v.id} pic={pic} want /></div>
                   <div className="mt-2 flex items-center gap-1.5 text-[13px]"><span className="tabular-nums text-zinc-400">{numberOf(v.id)}</span><span dir="auto" className="truncate">{v.name}</span>{shown.picked === v.id && <Ph name="checkFill" className="size-3.5 text-emerald-500" />}</div>
                 </button>
               ))}
