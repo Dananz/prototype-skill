@@ -1,5 +1,6 @@
 // The dev-server side of a prototype session: status for the shell, the Keep and Stop
 // buttons, and stopping by itself after hours with no edits and nobody looking.
+import { compression } from './compress.mjs'
 import { batchOwner, commentListener, listenerSids, listenerStatus } from './listener.mjs'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -616,6 +617,7 @@ export function prototypeServer(session) {
   return {
     name: 'prototype-server',
     configureServer(server) {
+      server.middlewares.use(compression())
       const src = slash(join(dir, 'src'))
       server.watcher.on('all', (_, path) => {
         if (!slash(path).startsWith(src)) return

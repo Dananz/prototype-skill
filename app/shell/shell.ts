@@ -34,16 +34,14 @@ import { setShellRoot } from './portals'
 import { createView } from './view/index'
 import { createIntake } from './intake/index'
 import type { Intake } from './intake/types'
-import { createSettings, type Appearance } from './settings'
+import type { Appearance } from './settings'
 import { mountTree, TreeView, type TreeApi, type TreeInput } from './tree/index'
 import { createElement } from 'react'
-import { mountGallery, type GalleryApi, type GalleryInput } from './gallery/index'
+import type { GalleryApi, GalleryInput } from './gallery/index'
+import { lazyDraw, preloadWhenIdle } from './lazy'
 import { createJump } from './jump'
 import { jumpItems, linkState, whereOf } from './where'
 import { followSession, rtl, t, tn, day } from './i18n'
-import { createShare } from './share'
-import { createShareLink } from './share-link'
-import { mountSharePop } from './share-popover'
 import { badge as shareBadge, setShareAsk, shareState, watchShares } from './share-state'
 import type { LinkTray } from './comments/types'
 import * as transport from './transport'
@@ -381,7 +379,24 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     for (let q = p, a = parentOf(p); a && !seen.has(a.id); q = a, a = parentOf(a)) { seen.add(a.id); out.unshift({ p: a, v: q.from!.variant }) }
     return out
   }
-  const kidsOf = (p: Proto, v?: string) => active().filter(k => k !== p && parentOf(k) === p && (v === undefined || k.from!.variant === v))
+  // Each list of protos is indexed by parent once, so the tree of a long project isn't protos times protos.
+  const kidsIndex = new WeakMap<Proto[], Map<Proto, Proto[]>>()
+  const kidsBy = () => {
+    let by = kidsIndex.get(protos)
+    if (!by) {
+      by = new Map()
+      for (const k of protos) {
+        if (k.archived) continue
+        const up = parentOf(k)
+        if (!up || up === k) continue
+        const list = by.get(up)
+        if (list) list.push(k); else by.set(up, [k])
+      }
+      kidsIndex.set(protos, by)
+    }
+    return by
+  }
+  const kidsOf = (p: Proto, v?: string) => { const all = kidsBy().get(p) ?? []; return v === undefined ? all : all.filter(k => k.from!.variant === v) }
   // An overview lists under a variant everything built from it, whether it nests there or
   // takes that variant as one of its others; the tree (columns, lobby) follows kidsOf only.
   const builtFrom = (p: Proto, v: string) => active().filter(k => k !== p && sources(k).some(s => s.p === p && s.v === v))
@@ -799,7 +814,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const next: GalleryInput = { protos: scopedProtos(), scope: scopeNow(), me: session.conversation ?? '', convs: convsOf(), designs, hidden: !show, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), frame: galleryFrame, safe }
     if (gallerySnap && (Object.keys(next) as (keyof GalleryInput)[]).every(k => next[k] === gallerySnap![k])) return
     gallerySnap = next
-    if (!galleryMounted && show) { galleryMounted = true; mountGallery(galleryHost, galleryApi) }
+    if (!galleryMounted && show) { galleryMounted = true; void import('./gallery/index').then(m => m.mountGallery(galleryHost, galleryApi)) }
     galleryWatchers.forEach(f => f())
   }
   // The tool strip (tree mode, a wide page): down the stage's start, as in a drawing app, over the
@@ -3160,8 +3175,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     return `<button data-act="open:decide" data-decide-btn aria-haspopup="menu" aria-expanded="${on}" aria-label="${say}" title="${say} · P" class="${IB} gap-2 ${on ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}"><span class="size-2 shrink-0 rounded-full ${d.picked ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600'}"></span><span class="hidden text-xs sm:inline">${d.picked ? t('Picked') : t('Decide')}</span>${ic('chev', 'size-3 opacity-60')}</button>`
   }
   const settingsBtn = (status = false) => `<button data-act="settings" aria-label="${t('Settings')}" aria-haspopup="dialog" title="${t('Settings')}" class="${IB}${status ? ' relative' : ''}">${ic('settings')}${status ? `<span class="absolute end-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span>` : ''}</button>`
-  const drawShare = createShare()
-  const drawLink = createShareLink()
+  type ShareProps = Parameters<ReturnType<typeof import('./share').createShare>>[0]
+  type LinkProps = Parameters<ReturnType<typeof import('./share-link').createShareLink>>[0]
+  const drawShare = lazyDraw<ShareProps>(() => import('./share').then(m => m.createShare()), p => !!p)
+  const drawLink = lazyDraw<LinkProps>(() => import('./share-link').then(m => m.createShareLink()), p => !!p)
   const linkProtos = () => protos.map(x => ({ id: x.id, title: x.title, archived: x.archived, screen: x.screen, variants: x.variants.map(v => ({ id: v.id, name: v.name })) }))
   /** The Share link sheet, on a prototype and its variant (from its menus, the ⋯ menu, the popover's Choose…). */
   function openLinkSheet(q: Proto, variant: string, what: 'variant' | 'proto' | 'all', message = '') {
@@ -3176,7 +3193,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   // The bar's Share (a wide page): the popover under it, with this session's links. The list is
   // watched from the start for the button's dot (a link behind its edits) and count (people in a link now).
-  const drawSharePop = mountSharePop(root.querySelector<HTMLElement>('[data-share-popover]')!)
+  type PopProps = Parameters<ReturnType<typeof import('./share-popover').mountSharePop>>[0]
+  const drawSharePop = lazyDraw<PopProps>(() => import('./share-popover').then(m => m.mountSharePop(root.querySelector<HTMLElement>('[data-share-popover]')!)), p => p.open)
   const shareHere = () => {
     const p = cur(), pl = st.place
     return p ? { proto: p.id, variant: pl.view === 'variant' && pl.proto === p.id ? pl.variant : p.variants[0]?.id ?? '' } : null
@@ -3209,7 +3227,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       send: async (on, text) => { const to = on ?? shareHere(); if (!to?.variant) throw new Error(t('Open a variant first')); await comments.act.decide(to, 'share-fix', { body: [text], tags: [] }) },
     })
   }
-  const drawSettings = createSettings()
+  type SettingsProps = Parameters<ReturnType<typeof import('./settings').createSettings>>[0]
+  const drawSettings = lazyDraw<SettingsProps>(() => import('./settings').then(m => m.createSettings()), p => p.open)
   function paintSettings() {
     drawSettings({
       open: settingsOpen, category: settingsCategory, appearance, live: comments.store.get().live, sidebar: st.side, tree: treeOn, conv: convOn,
@@ -3894,6 +3913,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // ?copy=1 (proto shoot --copy): copy mode opens once the design on the stage declares its lines.
   if (q.has('copy')) comments.copy.want()
   refreshStatus()
+  if (!framed) preloadWhenIdle([() => import('./gallery/index'), () => import('./settings'), () => import('./share-popover'), () => import('./share'), () => import('./share-link')])
   Promise.all([document.fonts.ready, q.has('shot') ? (layer as Layer | null)?.ready : Promise.race([(layer as Layer | null)?.ready, wait(5000)])]).then(() => requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1' })))
 
   // The working variant the page itself just moved to (a pick, Undo), until session.json brings it.

@@ -5,6 +5,7 @@ import { defineConfig } from 'vite'
 import tailwind from '@tailwindcss/vite'
 import { prototypeServer } from './server.mjs'
 import { reactSource, vueSource } from './source.mjs'
+import { inlineShellIcons, phosphorIcons } from './icons.mjs'
 
 const session = JSON.parse(readFileSync(new URL('./session.json', import.meta.url), 'utf8'))
 // Only the session's own framework plugin is installed; a non-literal import keeps the
@@ -28,7 +29,7 @@ async function shareMode() {
 export default defineConfig(async ({ mode }) => ({
   // In a share the share plugins come before Tailwind's, which must see shell.css with its
   // sources narrowed to what is shared.
-  plugins: mode === 'share' ? [framework, ...await shareMode(), tailwind()] : [framework, tailwind(), prototypeServer(session), reactSource()],
+  plugins: mode === 'share' ? [framework, ...await shareMode(), tailwind()] : [phosphorIcons(fileURLToPath(new URL('.', import.meta.url))), inlineShellIcons(fileURLToPath(new URL('.', import.meta.url))), framework, tailwind(), prototypeServer(session), reactSource()],
   // An inline config stops Vite from loading the project's own PostCSS config from above.
   css: { postcss: {} },
   resolve: { alias: { '@project': session.project } },

@@ -1,17 +1,21 @@
 // The gallery: one card per exploration (its pick, else its first option), those waiting for a pick
 // first, each section a panel on the desk. A card opens its options in a drawer under its row; an option
 // opens it.
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Design, Proto } from '../shell'
 import { t, tn } from '../i18n'
 import { numberOf } from '../variants'
 import { Ph } from '../tree/row'
+import { Near } from '../near'
 import type { GalleryInput } from './index'
 
 /** A still of a route, filling a box of its frame's shape. */
 export type Pic = (p: Proto, letter: string, want: boolean) => ReactNode
 const frameOf = (p: Proto): [number, number] => p.kind === 'phone' ? p.screen : [1200, 750]
 const COLS_AT = [[1200, 4], [860, 3], [560, 2], [0, 1]] as const
+/** A page with more cards than this draws only the rows near the view. */
+const WINDOW_CARDS = 24
+const galleryScroller = () => document.querySelector<HTMLElement>('[data-gallery]')
 const EASE_OUT = 'cubic-bezier(.32,.72,0,1)', EASE_IN = 'cubic-bezier(.4,0,1,1)'
 /** A card under the pointer rises on a soft shadow, and settles back while pressed. */
 const LIFT = 'motion-safe:group-hover:-translate-y-1 group-hover:shadow-[0_8px_20px_-8px_rgb(0_0_0/.25)] motion-safe:group-active:translate-y-0 group-active:shadow-none dark:group-hover:shadow-[0_8px_20px_-8px_rgb(0_0_0/.7)]'
@@ -58,6 +62,9 @@ function Card({ p, on, dim, pic, onClick }: { p: Proto; on: boolean; dim: boolea
   )
 }
 
+/** A card's exact height, with nothing in it: a row far from the view keeps its place with this. */
+const CardSpace = () => <div aria-hidden="true" className="pb-5 sm:pb-7" style={{ paddingTop: 'calc(62.5% + 49px)' }} />
+
 // Opens by growing (grid rows 0fr → 1fr) and fading in, the options rising one after another; shuts back,
 // keeping what it showed until it has. 340 ms in, 240 ms out, as the shell's menu card.
 function Drawer({ p, pic, open }: { p: Proto | null; pic: Pic; open: (route: string) => void }) {
@@ -72,7 +79,7 @@ function Drawer({ p, pic, open }: { p: Proto | null; pic: Pic; open: (route: str
   return (
     <div ref={box} className={`col-span-full grid transition-[grid-template-rows,opacity] motion-reduce:transition-none ${p ? 'grid-rows-[1fr] opacity-100 duration-[340ms]' : 'grid-rows-[0fr] opacity-0 duration-[240ms]'}`} style={{ transitionTimingFunction: p ? EASE_OUT : EASE_IN }}
       onTransitionEnd={e => { if (!p && e.target === e.currentTarget && e.propertyName === 'grid-template-rows') setShown(null) }}>
-      <div className="min-h-0 overflow-hidden">{shown && (
+      {shown && <div className="min-h-0 overflow-hidden">{(
         <div className="pb-5 sm:pb-7">
           <div data-gallery-options={shown.id} className="-mx-1 rounded-2xl bg-zinc-900/[.03] p-3 sm:-mx-2 sm:p-4 ring-1 ring-black/[.06] dark:bg-white/[.03] dark:ring-white/[.06]">
             <div className="mb-3 flex items-center gap-3 text-sm"><b dir="auto" className="font-semibold">{shown.title}</b><Status p={shown} /></div>
@@ -87,16 +94,17 @@ function Drawer({ p, pic, open }: { p: Proto | null; pic: Pic; open: (route: str
             </div>
           </div>
         </div>
-      )}</div>
+      )}</div>}
     </div>
   )
 }
 
 /** bare: the page's only section, drawn on the desk without its panel. */
-function Section({ id, title, hint, list, cols, pic, open, openId, setOpenId, bare }: { id: string; title: string; hint: string; list: Proto[]; cols: number; pic: Pic; open: (route: string) => void; openId: string; setOpenId: (id: string) => void; bare?: boolean }) {
+function Section({ id, title, hint, list, cols, pic, open, openId, setOpenId, bare, windowed, firstRows }: { id: string; title: string; hint: string; list: Proto[]; cols: number; pic: Pic; open: (route: string) => void; openId: string; setOpenId: (id: string) => void; bare?: boolean; windowed: boolean; firstRows: { left: number } }) {
   if (!list.length) return null
   const rows = Array.from({ length: Math.ceil(list.length / cols) }, (_, r) => list.slice(r * cols, r * cols + cols))
   const here = list.some(p => p.id === openId)
+  const grid = { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }
   return (
     <section data-gallery-section={id} data-bare={bare || undefined} style={bare ? { ['--gallery-bg' as string]: 'var(--desk)' } : undefined} className={bare ? 'mb-3 px-1 sm:mb-6' : 'mb-3 rounded-[20px] bg-[var(--desk-card)] p-3.5 pt-3 ring-1 ring-[var(--desk-line)] sm:mb-6 sm:rounded-3xl sm:p-6 sm:pt-5'}>
       <header className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-[var(--desk-line)] pb-3 sm:mb-5 sm:pb-4">
@@ -107,7 +115,12 @@ function Section({ id, title, hint, list, cols, pic, open, openId, setOpenId, ba
       <div className="grid gap-x-3 sm:gap-x-5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
         {rows.map((row, r) => (
           <Fragment key={r}>
-            {row.map(p => <Card key={p.id} p={p} on={openId === p.id} dim={here && openId !== p.id} pic={pic} onClick={() => setOpenId(openId === p.id ? '' : p.id)} />)}
+            {(() => {
+              const cards = () => row.map(p => <Card key={p.id} p={p} on={openId === p.id} dim={here && openId !== p.id} pic={pic} onClick={() => setOpenId(openId === p.id ? '' : p.id)} />)
+              return windowed
+                ? <Near placeholder={<CardSpace />} scroller={galleryScroller} force={row.some(p => p.id === openId)} start={firstRows.left-- > 0} className="col-span-full grid gap-x-3 sm:gap-x-5" style={grid}>{cards}</Near>
+                : cards()
+            })()}
             <Drawer p={row.find(p => p.id === openId) ?? null} pic={pic} open={open} />
           </Fragment>
         ))}
@@ -151,10 +164,14 @@ const Empty = ({ text }: { text: string }) => <p className="rounded-3xl bg-[var(
 
 export function Gallery({ input, pic, open, safe, setScope }: { input: GalleryInput; pic: Pic; open: (route: string) => void; safe: { l: number; t: number; r: number; b: number }; setScope: (scope: string) => void }) {
   const scroller = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(0)
-  useEffect(() => {
+  const [width, setWidth] = useState(() => { const w = document.querySelector('[data-gallery-host]')?.clientWidth ?? 0; return w ? w - safe.l - safe.r : 0 })
+  // Measured before the first paint, and only drawn once known: the page never lays out one column first. Hidden
+  // (a width of 0) it keeps its columns, so coming back draws nothing again.
+  useLayoutEffect(() => {
     const el = scroller.current!
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth - safe.l - safe.r))
+    const measure = () => { if (el.clientWidth) setWidth(el.clientWidth - safe.l - safe.r) }
+    measure()
+    const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
   }, [safe.l, safe.r])
@@ -165,7 +182,8 @@ export function Gallery({ input, pic, open, safe, setScope }: { input: GalleryIn
   const [openId, setOpenId] = useState('')
   const scope = input.scope ?? 'all', sid = scope.startsWith('conv:') ? scope.slice('conv:'.length) : ''
   const convs: Conv[] = useMemo(() => { try { return JSON.parse(input.convs || '[]') as Conv[] } catch { return [] } }, [input.convs])
-  const same = { cols, pic, open, openId, setOpenId }
+  // The rows of the first screenful, counted across the sections, are drawn straight away.
+  const same = { cols, pic, open, openId, setOpenId, windowed: live.length > WINDOW_CARDS, firstRows: { left: 8 } }
   // One section on the page (only waiting, or only picked, and no past conversations under it) needs no panel.
   const past = sid === input.me && convs.some(c => c.sid !== sid)
   const alone = [live.some(p => !p.picked), live.some(p => !!p.picked), past].filter(Boolean).length === 1
@@ -183,7 +201,7 @@ export function Gallery({ input, pic, open, safe, setScope }: { input: GalleryIn
       style={{ paddingLeft: safe.l + pad, paddingRight: safe.r + pad, paddingTop: safe.t + 14, paddingBottom: safe.b + 120 }}>
       <style>{'@keyframes proto-gallery-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}'}</style>
       <div className="mx-auto max-w-[1600px]">
-        {scope === 'favs' ? (live.length ? <Section id="favs" title={t('Favorites')} hint={t('From the whole project')} list={live} bare {...same} /> : <Empty text={t('No favorites yet')} />)
+        {!width ? null : scope === 'favs' ? (live.length ? <Section id="favs" title={t('Favorites')} hint={t('From the whole project')} list={live} bare {...same} /> : <Empty text={t('No favorites yet')} />)
           : scope === 'all' ? convs.map(c => <Section key={c.sid} id={`conv:${c.sid}`} title={c.name || t('A past conversation')} hint={c.sid === input.me ? t('This conversation') : day(c.at)} list={live.filter(p => (p.session ?? '') === c.sid)} bare={convs.length === 1} {...same} />)
           : <>
             {sid !== input.me && <div className="mb-4 flex items-center gap-3">

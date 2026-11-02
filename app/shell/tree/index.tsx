@@ -10,6 +10,7 @@ import { rtl, t, tn } from '../i18n'
 import { numberOf } from '../variants'
 import { treeOf, type Filter, type TreeNode } from './model'
 import { Mark, Ph, Row } from './row'
+import { Near } from '../near'
 
 export type TreeInput = {
   protos: Proto[]; designs: Design[]
@@ -43,6 +44,8 @@ export type TreeApi = { get(): TreeInput; subscribe(fn: () => void): () => void;
 
 const FILTERS: [Filter, () => string][] = [['all', () => t('All')], ['open', () => t('Open')], ['mine', () => t('This conversation')], ['favs', () => t('Favorites')]]
 const SECTION: Record<string, () => string> = { 'section:loose': () => t('Explorations on no screen'), 'section:archive': () => t('Archive') }
+/** A tree with more rows than this draws only the explorations near the view. */
+const WINDOW_ROWS = 120, ROW_H = 32
 const pickedOf = (n: TreeNode) => n.children.find(c => c.kind === 'option' && c.picked)?.route
 
 /** The sidebar's foot: the open variant's states, in one place however far the tree scrolls. It folds to
@@ -106,20 +109,25 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
   const isOpen = (n: TreeNode) => filter === 'favs' ? !shutFavs.has(n.key) : ['design', 'flow', 'section'].includes(n.kind) && n.key !== 'section:archive' ? !open.has(n.key) : open.has(n.key)
   const flip = (n: TreeNode) => filter === 'favs' ? setShutFavs(o => { const s = new Set(o); if (s.has(n.key)) s.delete(n.key); else s.add(n.key); return s }) : toggle(n.key)
 
-  const draw = (n: TreeNode, depth: number): React.ReactNode => {
+  const shownRows = (n: TreeNode): number => 1 + (n.children.length && isOpen(n) ? n.children.reduce((sum, c) => sum + shownRows(c), 0) : 0)
+  const windowed = nodes.reduce((sum, n) => sum + shownRows(n), 0) > WINDOW_ROWS
+  const holdsPlace = (n: TreeNode): boolean => (!!n.route && n.route.split('/')[0] === slug) || n.children.some(holdsPlace)
+  // The first screenfuls are drawn from the first render, so a long tree never opens empty.
+  let firstRows = 60
+  const draw = (n: TreeNode, depth: number, inside = false): React.ReactNode => {
     const here = !!n.route && n.kind !== 'option' && n.route.split('/')[0] === slug
     const lit = n.kind === 'option' ? n.route === input.place : here && !n.children.some(c => c.kind === 'option' && c.route === input.place)
     const shut = n.children.length ? isOpen(n) : undefined
-    const kids = shut ? n.children.map(c => draw(c, depth + 1)) : null
+    const kids = () => shut ? n.children.map(c => draw(c, depth + 1, inside)) : null
     if (n.kind === 'design') return (
       <div key={n.key}>
         <Row id={n.key} depth={depth} strong open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count}
           icon={<span className="size-2.5 shrink-0 rounded-full bg-indigo-500" />} label={<span dir="auto">{n.label}</span>} />
-        {kids}
+        {kids()}
       </div>
     )
     // A design or a flow: its caret folds it here, its name opens its first screen's card in the gallery.
-    if (n.kind === 'flow') return <div key={n.key}><Row id={n.key} depth={depth} medium open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count} label={<span dir="auto">{n.label}</span>} />{kids}</div>
+    if (n.kind === 'flow') return <div key={n.key}><Row id={n.key} depth={depth} medium open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count} label={<span dir="auto">{n.label}</span>} />{kids()}</div>
     if (n.kind === 'section') return (
       <div key={n.key}>
         <div className="flex items-center px-3 pb-1 pt-3">
@@ -127,7 +135,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
             {n.key === 'section:archive' && <Ph name="archive" className="size-3" />}{SECTION[n.key]()}{n.count != null && ` · ${n.count}`}
           </button>
         </div>
-        {kids}
+        {kids()}
       </div>
     )
     if (n.kind === 'option') {
@@ -145,8 +153,8 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
     const picked = pickedOf(n)
     const comments = input.counts[n.route!.split('/')[0]] ?? 0
     const parent = n.kind === 'exploration' && n.on ? n : null
-    return (
-      <div key={n.key}>
+    const block = () => (
+      <>
         <Row id={n.key} depth={depth} on={lit} open={shut} onCaret={() => flip(n)} mv={n.route}
           /* An exploration's name opens its card in the gallery, with its options; a screen's opens it. */
           onClick={() => { if (!shut) flip(n); if (n.kind === 'exploration') api.frame(`round:${n.route!.split('/')[0]}`); else api.go(n.route!) }}
@@ -161,9 +169,12 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
               : <Mark state={n.state} picked={picked ? numberOf(picked.split('/')[1]) : undefined} />)}
           </span>} />
         {shut && n.state === 'stale' && <StaleNote n={n} protos={input.protos} depth={depth} />}
-        {kids}
-      </div>
+        {shut ? n.children.map(c => draw(c, depth + 1, inside || windowed)) : null}
+      </>
     )
+    return windowed && !inside
+      ? <Near key={n.key} estimate={shownRows(n) * ROW_H} scroller={() => list.current} force={holdsPlace(n)} start={(firstRows -= shownRows(n)) + shownRows(n) > 0}>{block}</Near>
+      : <div key={n.key}>{block()}</div>
   }
 
   return (

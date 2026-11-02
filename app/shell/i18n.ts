@@ -58,6 +58,10 @@ export const t = (en: string, vars?: Record<string, unknown>) => fill(dict[en] ?
 export const tn = (n: number, one: string, many: string, vars?: Record<string, unknown>) => t(n === 1 ? one : many, { n, ...vars })
 
 /** A time of day in the page's language. */
-export const time = (d: Date) => d.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' })
+let timeFormat: Intl.DateTimeFormat | null = null, timeLang = ''
+export const time = (d: Date) => {
+  if (!timeFormat || timeLang !== lang) { timeFormat = new Intl.DateTimeFormat(lang, { hour: '2-digit', minute: '2-digit' }); timeLang = lang }
+  return timeFormat.format(d)
+}
 /** A date in the page's language (Nov 2). */
 export const day = (d: Date, opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }) => d.toLocaleDateString(lang, opts)
