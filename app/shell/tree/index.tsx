@@ -17,7 +17,7 @@ export type TreeInput = {
   place: string
   /** This conversation ('' or null where there is none, as a share's viewer). */
   me: string | null
-  /** Conversation first (a preview): the page's scope replaces the tree's own filters. */
+  /** Conversation first: the page's scope replaces the tree's own filters. */
   conv?: boolean
   /** What the page shows (shell.ts scope): 'all', 'favs' or 'conv:<conversation>'. */
   scope?: string

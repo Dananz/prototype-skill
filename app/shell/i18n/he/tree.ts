@@ -3,7 +3,7 @@
 // screen "מסך"; variant numbers and placeholders stay as they are.
 export default {
   'Project tree': 'עץ הפרויקט',
-  'Conversation first (preview)': 'השיחה קודם (תצוגה מקדימה)',
+  'Conversation first': 'השיחה קודם',
   'The page opens on this conversation, with a gallery and past conversations.': 'הדף נפתח על השיחה הזו, עם גלריה ושיחות קודמות.',
   'The sidebar shows designs, screens and explorations as one tree.': 'הסרגל מציג עיצובים, מסכים וסבבים כעץ אחד.',
   'Working on {name}': 'עובדים על {name}',

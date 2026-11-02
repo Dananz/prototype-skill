@@ -39,8 +39,15 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
   try {
     await until(page, `!!document.querySelector('[data-tree-row="screen:thome"]')`, 'with nothing chosen in this browser the tree should be the default')
     assert(await page.run(`document.querySelector('[data-tree-side]').hidden === false && !document.querySelector('[data-side] *')`), 'with nothing chosen the old sidebar should not be drawn')
-    // Conversation first is a preview: off by default, the tree keeps its own filters and no scope row.
-    assert(await page.run(`!!document.querySelector('[data-tree-filters] [data-tree-filter="open"]') && !document.querySelector('[data-tree-scope]')`), 'with Conversation first off the tree should keep its filters')
+    // Conversation first is the default: the scope row, not the tree's own filters.
+    assert(await page.run(`!!document.querySelector('[data-tree-scope]') && !document.querySelector('[data-tree-filters]')`), 'with nothing chosen Conversation first should be on')
+  } finally { page.close() }
+
+  // Off (?conv=0, kept in this browser), the tree keeps its own filters and no scope row.
+  page = await openPage(`${local}thome/C?tree=1&conv=0`, { classic: false })
+  try {
+    await until(page, `!!document.querySelector('[data-tree-filters] [data-tree-filter="open"]') && !document.querySelector('[data-tree-scope]')`, 'with Conversation first off the tree should keep its filters')
+    assert(await page.run(`localStorage.getItem('proto-conv') === '0'`), '?conv=0 should be kept in this browser')
   } finally { page.close() }
 
   page = await openPage(`${local}tcta-copy/A?tree=1&conv=1`)

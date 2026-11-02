@@ -159,7 +159,7 @@ async function openPage(url, { width = 1440, height = 900, phone = false, errors
     if (phone) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId)
     // The project tree is the page's default; the checks written for the classic sidebar open as a
     // browser that turned it off, unless the address asks (?tree=1) or the check wants the default.
-    if (classic) { await send('Page.enable', {}, sessionId); await send('Page.addScriptToEvaluateOnNewDocument', { source: "try { if (localStorage.getItem('proto-tree') === null) localStorage.setItem('proto-tree', '0') } catch {}" }, sessionId) }
+    if (classic) { await send('Page.enable', {}, sessionId); await send('Page.addScriptToEvaluateOnNewDocument', { source: "try { if (localStorage.getItem('proto-tree') === null) localStorage.setItem('proto-tree', '0'); if (localStorage.getItem('proto-conv') === null) localStorage.setItem('proto-conv', '0') } catch {}" }, sessionId) }
     await send('Page.navigate', { url }, sessionId)
     // A page that stops answering (a render loop) fails the check instead of hanging the run.
     const run = async (expr, ms = 30_000) => {

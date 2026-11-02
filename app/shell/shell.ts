@@ -598,12 +598,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const treeAsked = new URLSearchParams(location.search).get('tree')
   if (treeAsked === '1' || treeAsked === '0') remember('proto-tree', treeAsked)
   let treeOn = !framed && localStorage.getItem('proto-tree') !== '0'
-  // Conversation first (a preview, ?conv=1 or Settings, kept in this browser): the page is scoped to
+  // Conversation first (the default; ?conv=0 or Settings turns it off, kept in this browser): the page is scoped to
   // this conversation, the map has a gallery and lists past conversations. Off, it shows the whole
   // project, the tree has its filters and the map is the canvas.
   const convAsked = new URLSearchParams(location.search).get('conv')
   if (convAsked === '1' || convAsked === '0') remember('proto-conv', convAsked)
-  let convOn = localStorage.getItem('proto-conv') === '1'
+  let convOn = localStorage.getItem('proto-conv') !== '0'
   const treeWatchers = new Set<() => void>()
   let treeSnap: TreeInput | null = null
   const placeRoute = () => st.place.view === 'variant' ? `${st.place.proto}/${st.place.variant}` : st.place.view === 'proto' ? `${st.place.proto}/` : ''
