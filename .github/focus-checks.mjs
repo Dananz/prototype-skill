@@ -54,7 +54,7 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     // The strip as designed: Move and Comment, the three layouts, the states panel (with Compare, since
     // home has two options), and nothing it had before is lost: the tree's rows keep the variant's menu.
     await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
-    await until(page, `!!document.querySelector('[data-strip] [data-shoot="strip-states"]')`, 'home B should have the states panel in the strip')
+    await until(page, `!!document.querySelector('[data-tree-dock] [data-act="tool:fhome:B:compare"]') && !document.querySelector('[data-strip] [data-shoot="strip-states"]')`, 'with the sidebar open, home B\'s states panel should be at the sidebar\'s foot, not in the strip')
     // The layouts moved to the zoom pill (bottom corner), which shows the zoom and on hover the rest.
     for (const sh of ['pill-size-desktop', 'pill-size-tablet', 'pill-size-phone']) assert(await page.run(`!!document.querySelector('[data-zoom-pill] [data-shoot="${sh}"]')`), `the zoom pill should hold ${sh}`)
     assert(await page.run(`!document.querySelector('[data-strip] [data-shoot^="strip-size-"]')`), 'the strip should no longer hold the layouts')
@@ -65,12 +65,21 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-zoom-pill] [data-shoot="pill-size-phone"]').click()`)
     await until(page, `document.querySelector('[data-zoom-pill] [data-shoot="pill-size-phone"]').getAttribute('aria-pressed') === 'false'`, 'the phone layout should toggle off again')
     for (const sh of ['strip-move', 'strip-comment']) assert(await page.run(`!!document.querySelector('[data-strip] [data-shoot="${sh}"]:not([disabled])')`), `the strip should have ${sh}`)
+    // The dock folds to one line and stays folded; with the sidebar hidden the strip's grid button holds the same list.
+    await page.run(`document.querySelector('[data-tree-dock-head]').click()`)
+    await until(page, `!document.querySelector('[data-tree-dock-list]') && localStorage.getItem('proto-tree-dock') === '0'`, 'the dock should fold')
+    await page.run(`document.querySelector('[data-tree-dock-head]').click()`)
+    await until(page, `!!document.querySelector('[data-tree-dock-list]')`, 'the dock should open again')
+    await page.run(`document.querySelector('[data-tree-side] button[aria-label="Hide sidebar"]').click()`)
+    await until(page, `!!document.querySelector('[data-strip] [data-shoot="strip-states"]')`, 'with the sidebar hidden, the strip should hold the states panel')
     await page.run(`document.querySelector('[data-strip] [data-shoot="strip-states"]').click()`)
     await until(page, `!!document.querySelector('[data-strip-states] [data-act="tool:fhome:B:compare"]')`, 'the states panel should offer Compare')
     const states = await page.run(`(() => { const p = document.querySelector('[data-strip-states]').getBoundingClientRect(), s = document.querySelector('[data-strip-tools]').getBoundingClientRect(); return p.left >= s.right - 1 || p.right <= s.left + 1 })()`)
     assert(states, 'the states panel should open beside the strip')
     await page.run(`document.querySelector('[data-strip-states] [data-act="tool:fhome:B:compare"]').click()`)
     await until(page, `/compare/.test(location.pathname + location.search) || !!document.querySelector('[data-act="tool:fhome:B:compare"][aria-pressed="true"]')`, 'Compare from the strip should start comparing')
+    await page.run(`document.querySelector('[data-act="side:1"]').click()`)
+    await until(page, `!!document.querySelector('[data-tree-dock]') && !document.querySelector('[data-strip] [data-shoot="strip-states"]')`, 'with the sidebar back, the states should return to its foot')
     await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
     await until(page, `!!document.querySelector('[data-tree-row="opt:fhome/A"] [data-act="vm:fhome:A"]')`, 'a tree option row should have its ⋯')
     await page.run(`document.querySelector('[data-tree-row="opt:fhome/A"] [data-act="vm:fhome:A"]').click()`)

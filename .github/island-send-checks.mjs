@@ -18,7 +18,7 @@ export async function islandSendChecks({ proto, app, openPage, fail, shots }) {
     const until = async f => { for (const end = Date.now() + 5000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
     const island = () => document.querySelector('[data-island]')
     const q = s => document.querySelector('[data-island] ' + s)
-    const saved = () => JSON.parse(localStorage.getItem('proto-comments-smoke') || '{}').items?.filter(i => i.proto === 'sendfx') ?? []
+    const saved = () => Object.keys(localStorage).filter(k => /^proto-comments-/.test(k) && k !== 'proto-comments-live').flatMap(k => JSON.parse(localStorage.getItem(k) || '{}').items ?? []).filter(i => i.proto === 'sendfx')
     const pill = () => q('[data-shoot=send]')
     const sendShown = async () => {
       if (!await until(() => pill() && pill().parentElement.offsetWidth > 40)) return 'its Send pill is ' + (pill()?.parentElement.offsetWidth ?? 'not') + ' px wide: the drafts cannot be sent'

@@ -605,6 +605,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const treeWatchers = new Set<() => void>()
   let treeSnap: TreeInput | null = null
   const placeRoute = () => st.place.view === 'variant' ? `${st.place.proto}/${st.place.variant}` : st.place.view === 'proto' ? `${st.place.proto}/` : ''
+  /** The open variant's states and tools, for the sidebar's foot. */
+  function dockInput(): TreeInput['dock'] {
+    const p = cur(), pv = st.place.view === 'variant' ? st.place : null, v = p && pv ? p.variants.find(x => x.id === pv.variant) : undefined
+    const html = v ? variantHere(false, false) : ''
+    if (!p || !pv || !v || !html) return null
+    const sts = statesOf(p, v.id), at = sts.findIndex(s => s.id === pv.state)
+    return { html, title: `${variantRef(p, v.id)} ${v.name}`, count: sts.length, total: sts.length + 1, at: at + 1, state: at < 0 ? t('At rest') : sts[at].name }
+  }
   function treeInput(): TreeInput {
     const by: Record<string, number> = {}
     for (const [k, n] of comments.counts().by) { const slug = k.split('/')[0]; by[slug] = (by[slug] ?? 0) + n }
@@ -613,6 +621,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       protos: all, designs, place: placeRoute(), me: session.conversation ?? null, conv: convOn, scope: scopeNow(), scopeName: scopeName(),
       building: new Set(Object.keys(session.building ?? {}).filter(k => buildingUntil(k) > Date.now())), counts: by,
       work: w ? t('Working on {name}', { name: `${w.p.title} ${variantLabel(w.p, w.v.id)}` }) : '',
+      dock: dockInput(),
       up: st.live && !st.stopped,
       live: st.stopped ? t('Server stopped') : [st.live ? t('Live') : t('Reconnecting'), st.lastEdit ? t('edited {when}', { when: ago(st.lastEdit) }) : ''].filter(Boolean).join(' · '),
     }
@@ -621,7 +630,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function paintTree() {
     if (!treeOn) return
     const next = treeInput(), was = treeSnap
-    const key = (x: TreeInput | null) => x && JSON.stringify({ ...x, protos: x.protos.map(p => [p.id, p.title, p.picked, p.archived, p.from, p.session, p.favorites, p.variants.map(v => v.id + v.name)]), building: [...x.building] })
+    const key = (x: TreeInput | null) => x && JSON.stringify({ ...x, protos: x.protos.map(p => [p.id, p.title, p.picked, p.archived, p.from, p.session, p.favorites, p.variants.map(v => v.id + v.name), p.states.map(s => [s.id, s.only])]), building: [...x.building] })
     if (key(next) === key(was)) return
     treeSnap = next
     treeWatchers.forEach(f => f())
@@ -743,6 +752,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const deskMq = matchMedia('(min-width: 1024px)')
   // The zoom pill (tree mode, a wide page): its zoom only, and on hover the layouts, Fit and −/+. It
   // drives the layout's zoom. The gallery has nothing to zoom: no pill over it.
+  /** The tree's sidebar is on screen, so the open variant's states sit at its foot instead of in the strip. */
+  const dockHome = () => st.side && deskMq.matches
   const zoomPillOn = () => treeOn && !framed && deskMq.matches && !st.focus && st.place.view === 'variant'
   let zoomKey = ''
   function paintZoom() {
@@ -826,8 +837,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       : [zoomBtn()]
     const sts = inScreen && p ? statesOf(p, pl.variant).length + TOOL_LIST.filter(x => toolOk(p, pl.variant, x)).length : 0
     const statesBtn = sts ? `<div class="relative">${tool('open:states-pop', 'strip-states', 'grid', t('States, Autoplay, Compare'), '', st.open === 'states-pop')}${pop(st.open === 'states-pop', `<div data-strip-states class="w-72 p-1.5">${variantHere(false)}</div>`, 'start-0 top-0')}</div>` : ''
-    const own = !inScreen ? [off('strip-tweaks', 'tweaks', t('Tweaks')), off('strip-try', 'key', t('Try it')), off('strip-copy', 'text', t('Copy options')), off('strip-motion', 'curves', t('Motion')), off('strip-states', 'grid', t('States, Autoplay, Compare'))]
-      : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), motionBtn(), statesBtn, replayBtn()]
+    const own = !inScreen ? [off('strip-tweaks', 'tweaks', t('Tweaks')), off('strip-try', 'key', t('Try it')), off('strip-copy', 'text', t('Copy options')), off('strip-motion', 'curves', t('Motion')), dockHome() ? '' : off('strip-states', 'grid', t('States, Autoplay, Compare'))]
+      : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), motionBtn(), dockHome() ? '' : statesBtn, replayBtn()]
     const fit = inScreen && frameOn() ? tool('center', 'strip-fit', 'center', t('Center the design'), '⌘0') : ''
     // The layouts and the zoom live in the zoom pill (bottom corner) when it shows.
     const groups = [[tourBtn, decide], hands, zoomPillOn() ? [] : sizes, own, zoomPillOn() ? [] : [fit]].map(g => g.filter(Boolean).join('')).filter(Boolean)
@@ -2216,7 +2227,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // requests change, said in words.
   /** The variant shown: its states (each opens it in that state) and its tools (Autoplay, All states,
    *  Compare, History). In the sidebar under the columns, and in the tool strip's States panel. */
-  function variantHere(boxed = true): string {
+  function variantHere(boxed = true, head = true): string {
     const p = cur(), pv = st.place.view === 'variant' ? st.place : null
     const v = p && pv ? p.variants.find(x => x.id === pv.variant) : undefined
     let here = ''
@@ -2229,7 +2240,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         return `<button data-act="pvs:${esc(p.id)}:${v.id}:${esc(id)}" aria-current="${on}" class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-start ${on ? ON : ROWC}">${dot(p, v.id, x, on)}<span class="min-w-0 flex-1"><span class="flex items-center gap-1.5 leading-4 ${on ? 'font-medium text-zinc-900 dark:text-white' : ''}"><span dir="auto" class="truncate">${esc(x?.name ?? t('At rest'))}</span>${on && tool === 'play' ? ic('play', 'size-3 text-sky-500') : ''}</span>${note && x ? `<span dir="auto" class="mt-0.5 block text-[10px] leading-[14px] ${noteCls(p, v.id, x)}">${esc(note)}</span>` : ''}</span></button>`
       }
       if (sts.length || tools.length) here = `<div class="${boxed ? 'mt-3 border-t border-black/[.06] pt-2 dark:border-white/[.07]' : ''}">
-          <div class="flex items-center gap-1 px-1.5 pb-1 text-[10px] font-medium text-zinc-400"><b class="text-zinc-500">${variantRef(p!, v.id)}</b><span dir="auto" class="truncate">${esc(v.name)}</span><span class="ms-auto">${sts.length ? tn(sts.length, '{n} state', '{n} states') : ''}</span></div>
+          ${head ? `<div class="flex items-center gap-1 px-1.5 pb-1 text-[10px] font-medium text-zinc-400"><b class="text-zinc-500">${variantRef(p!, v.id)}</b><span dir="auto" class="truncate">${esc(v.name)}</span><span class="ms-auto">${sts.length ? tn(sts.length, '{n} state', '{n} states') : ''}</span></div>` : ''}
           ${sts.length ? `<div>${leaf()}${sts.map(leaf).join('')}</div>` : ''}
           ${tools.length ? `<div class="flex flex-wrap gap-1 px-1 pt-1.5">${tools.map(tl => `<button data-act="tool:${esc(p.id)}:${v.id}:${tl}" aria-pressed="${tool === tl}" title="${TOOLS[tl].hint}${tool === tl ? t(' · click to stop') : ''}" class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] ${tool === tl ? 'bg-sky-500/15 font-medium text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.04] text-zinc-600 hover:bg-zinc-900/[.08] dark:bg-white/[.06] dark:text-zinc-300 dark:hover:bg-white/10'}">${ic(TOOLS[tl].icon, 'size-3')}${TOOLS[tl].name}${toolDetail(p, v.id, tl) ? `<span class="text-zinc-400">${toolDetail(p, v.id, tl)}</span>` : ''}</button>`).join('')}</div>` : ''}
         </div>`
