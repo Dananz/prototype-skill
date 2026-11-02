@@ -1,7 +1,6 @@
 // Screenshots: the design captured around an element, and the editor to mark it up
 // (Pinpoint's draw modal, cut to the tools that matter: box, arrow, pen, text, numbers).
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { domToCanvas } from 'modern-screenshot'
 import { find, zoomOf, targetMount } from './dom'
 import { Icon, MOD, PRIMARY } from './ui'
 import type { Target } from './types'
@@ -18,6 +17,7 @@ export async function capture(mount: HTMLElement | null, target: Target, dark: b
   const ow = o.width / z, oh = o.height / z
   // Sized explicitly: left to measure the root, it takes its zoomed screen size and draws only that much of the design.
   // Safari and Firefox redraw once per image to fill in images left blank; without a wait between redraws, not 100ms each.
+  const { domToCanvas } = await import('modern-screenshot')
   const full = await domToCanvas(root, { scale, width: ow, height: oh, backgroundColor: dark ? '#09090b' : '#ffffff', drawImageInterval: 0 })
   // A region is kept where it is in its element, which may have moved since it was dragged out.
   const g = target.region

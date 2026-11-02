@@ -1,5 +1,4 @@
 // A design's page as a picture, for a gallery card.
-import { domToCanvas } from 'modern-screenshot'
 import { useEffect, useState } from 'react'
 import type { Variant } from '../shell'
 
@@ -79,6 +78,7 @@ function stillOf(key: string, route: string, v: Variant, w: number, h: number, s
       late.catch(() => {}) // a still taken in time leaves it unheard
       off = mount(box, await Promise.race([v.load(), late]))
       await Promise.race([settle(box), late])
+      const { domToCanvas } = await import('modern-screenshot')
       const canvas = await Promise.race([domToCanvas(box, {
         scale, width: w, height: h, backgroundColor: dark ? '#09090b' : '#ffffff',
         style: { opacity: '1', position: 'static', zIndex: 'auto' },
@@ -113,5 +113,5 @@ export function Still({ v, route, w, h, size, want, stamp, mount }: { v: Variant
     return () => { gone = true }
   }, [key, want, v, mount]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!shot) return null
-  return <img data-gallery-still src={shot.thumb ?? shot.url} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover object-top" />
+  return <img data-gallery-still src={shot.thumb ?? shot.url} alt="" draggable={false} decoding="async" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-top" />
 }

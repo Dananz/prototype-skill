@@ -26,6 +26,9 @@ if (SHARE) {
 }
 
 const shell = SHARE ? null : createShell(app, { mount, protos, session, designs })
+// The first paint's desk (index.html) gives way to the page, which draws its own. A share's viewer sets its own theme.
+document.querySelector('style[data-boot]')?.remove()
+if (SHARE) document.documentElement.classList.remove('dark')
 
 if (import.meta.hot && shell) {
   // New or renamed prototype files re-run the registry; the shell takes the new list

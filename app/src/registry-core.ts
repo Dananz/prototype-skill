@@ -12,9 +12,8 @@ export type VersionMeta = { n: number; at: string; file: string; note?: string; 
 
 // A variant's earlier versions (app/history.mjs): src/history/<slug>/<letter>/<n>/, its
 // version.json and the copy of the variant's file, oldest first. A share build has none.
-const versionsOf = (id: string, letter: string, metas: Record<string, VersionMeta>, files: Record<string, () => Promise<unknown>>): Version[] => Object.entries(metas)
-  .map(([path, v]) => ({ parts: path.split('/'), v }))
-  .filter(({ parts, v }) => parts[2] === id && parts[3] === letter && v && Number.isInteger(v.n) && typeof v.file === 'string')
+const versionsOf = (id: string, letter: string, all: { parts: string[]; v: VersionMeta }[], files: Record<string, () => Promise<unknown>>): Version[] => all
+  .filter(({ parts, v }) => parts[3] === letter && v && Number.isInteger(v.n) && typeof v.file === 'string')
   .map(({ parts, v }) => {
     const key = `./${parts.slice(1, 5).join('/')}/${v.file}`
     return { n: v.n, at: v.at ?? '', note: v.note ?? '', before: Array.isArray(v.before) ? v.before : [], file: `/src${key.slice(1)}`, load: files[key] }
@@ -22,12 +21,40 @@ const versionsOf = (id: string, letter: string, metas: Record<string, VersionMet
   .filter((v): v is Version => !!v.load)
   .sort((a, b) => a.n - b.n)
 
+// Each list is grouped once by its prototype, so a project's load doesn't grow with prototypes times files.
+type FileRow = { file: string; load: () => Promise<unknown>; parts: string[] }
+const fileGroups = new WeakMap<object, Map<string, FileRow[]>>()
+const filesBy = (files: Record<string, () => Promise<unknown>>) => {
+  let groups = fileGroups.get(files)
+  if (!groups) {
+    groups = new Map()
+    for (const [file, load] of Object.entries(files)) {
+      const parts = file.split('/'), list = groups.get(parts[2])
+      if (list) list.push({ file, load, parts }); else groups.set(parts[2], [{ file, load, parts }])
+    }
+    fileGroups.set(files, groups)
+  }
+  return groups
+}
+const versionGroups = new WeakMap<object, Map<string, { parts: string[]; v: VersionMeta }[]>>()
+const versionsBy = (metas: Record<string, VersionMeta>) => {
+  let groups = versionGroups.get(metas)
+  if (!groups) {
+    groups = new Map()
+    for (const [path, v] of Object.entries(metas)) {
+      const parts = path.split('/'), list = groups.get(parts[2])
+      if (list) list.push({ parts, v }); else groups.set(parts[2], [{ parts, v }])
+    }
+    versionGroups.set(metas, groups)
+  }
+  return groups
+}
+
 export const protosOf = (metas: Record<string, Meta>, files: Record<string, () => Promise<unknown>>, history: { metas: Record<string, VersionMeta>; files: Record<string, () => Promise<unknown>> } = { metas: {}, files: {} }): Proto[] => Object.entries(metas)
   .map(([path, meta]) => {
     const id = path.split('/')[2]
-    const variants = Object.entries(files)
-      .map(([file, load]) => ({ file, load, parts: file.split('/') }))
-      .filter(f => f.parts[2] === id && /^[A-Z]{1,2}\.\w+$/.test(f.parts[3]))
+    const variants = (filesBy(files).get(id) ?? [])
+      .filter(f => /^[A-Z]{1,2}\.\w+$/.test(f.parts[3]))
       .map(f => {
         const vid = f.parts[3].replace(/\.\w+$/, '')
         // theme: the scope of the project's theme.css this prototype's look comes from (app/theme-merge.mjs).
@@ -40,7 +67,7 @@ export const protosOf = (metas: Record<string, Meta>, files: Record<string, () =
     const also = fp && Array.isArray(meta.also) ? meta.also.filter(r => typeof r === 'string' && r).map(r => { const [proto, variant = ''] = r.split('/'); return { proto, variant } }) : []
     // states: what is behind clicks in the variants, each reached by clicking its selectors in order.
     const states = (Array.isArray(meta.states) ? meta.states : []).filter(x => x && typeof x.id === 'string' && x.id && Array.isArray(x.click))
-    return { id, title: meta.title ?? id, ...(typeof meta.session === 'string' ? { session: meta.session } : {}), ...(typeof meta.owner === 'string' ? { owner: meta.owner } : {}), ...(meta.next ? { next: true } : {}), ask: meta.ask ?? '', kind: meta.kind ?? 'web', created: meta.created ?? '', archived: !!meta.archived, from: fp ? { proto: fp, variant: fv } : undefined, slot: typeof meta.slot === 'string' && meta.slot ? meta.slot : undefined, also, picked: meta.picked, versions: Object.fromEntries(variants.map(v => [v.id, versionsOf(id, v.id, history.metas, history.files)]).filter(([, list]) => list.length)), favorites: Array.isArray(meta.favorites) ? meta.favorites.filter(f => variants.some(v => v.id === f)) : [], count: Number.isInteger(meta.count) && meta.count! > 0 ? meta.count : undefined, screen: meta.screen ?? [393, 852], about: meta.about ?? {}, states, variants }
+    return { id, title: meta.title ?? id, ...(typeof meta.session === 'string' ? { session: meta.session } : {}), ...(typeof meta.owner === 'string' ? { owner: meta.owner } : {}), ...(meta.next ? { next: true } : {}), ask: meta.ask ?? '', kind: meta.kind ?? 'web', created: meta.created ?? '', archived: !!meta.archived, from: fp ? { proto: fp, variant: fv } : undefined, slot: typeof meta.slot === 'string' && meta.slot ? meta.slot : undefined, also, picked: meta.picked, versions: Object.fromEntries(variants.map(v => [v.id, versionsOf(id, v.id, versionsBy(history.metas).get(id) ?? [], history.files)]).filter(([, list]) => list.length)), favorites: Array.isArray(meta.favorites) ? meta.favorites.filter(f => variants.some(v => v.id === f)) : [], count: Number.isInteger(meta.count) && meta.count! > 0 ? meta.count : undefined, screen: meta.screen ?? [393, 852], about: meta.about ?? {}, states, variants }
   })
   .sort((a, b) => a.created.localeCompare(b.created))
 

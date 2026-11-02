@@ -27,6 +27,7 @@ for (const entry of ['page', 'CLI']) test(`${entry} parent picks preserve decisi
     if (entry === 'page') {
       const server = join(app, 'server.mjs')
       copyFileSync(join(skill, 'app/server.mjs'), server)
+      copyFileSync(join(skill, 'app/compress.mjs'), join(app, 'compress.mjs'))
       copyFileSync(join(skill, 'app/assignment.mjs'), join(app, 'assignment.mjs'))
       copyFileSync(join(skill, 'app/listener.mjs'), join(app, 'listener.mjs'))
       for (const f of ['history.mjs', 'brief.mjs', 'numbers.mjs']) copyFileSync(join(skill, 'app', f), join(app, f))

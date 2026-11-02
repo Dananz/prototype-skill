@@ -4,14 +4,17 @@
 // (as the design arrives, once it's on); using the design lets it run live, and an edit to its
 // files records it again. window.__protoMotion is the same take for
 // `proto shoot --at/--frames`, which has no dock.
+import { Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Comments } from '../comments/index'
-import { Dock } from './dock'
 import { createPlayer, type Player } from './player'
 import { motion } from './registry'
 import { frame } from './take'
 import { portaled } from '../portals'
 import { listen } from '../quiet'
+
+// The dock and its menus load with the first design that declares its motion.
+const Dock = lazy(() => import('./dock').then(m => ({ default: m.Dock })))
 
 export type MotionHost = {
   /** Where the dock is drawn: a box along the bottom of the stage. */
@@ -92,7 +95,7 @@ export function createMotion(o: MotionHost) {
     o.el.hidden = !shown
     room()
     // Put away, the dock stays mounted, so it comes back with what was chosen on it.
-    root.render(player && (shown || away) ? o.comments.wrap(<Dock key={gen} player={player} />) : null)
+    root.render(player && (shown || away) ? o.comments.wrap(<Suspense fallback={null}><Dock key={gen} player={player} /></Suspense>) : null)
   }
   motion.subscribe(sync)
 
