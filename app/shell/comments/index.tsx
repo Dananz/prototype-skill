@@ -6,7 +6,7 @@ import type { Inbox } from '../shell'
 import { createActions } from './actions'
 import { CommentsCtx, type Ctx, type Host } from './ctx'
 import { CopyBar, CopyMarks, CopySheet, createCopyActions, createCopyStore } from './copy'
-import { Decide, DecidePop, type DecidePopProps, type Subject } from './decide'
+import { Decide, DecidePop, type DecidePopProps, type Subject, type Tiles } from './decide'
 import { Layer } from './layer'
 import { ContextPop, type ContextPopProps } from './menu'
 import { climb, describe } from './dom'
@@ -67,7 +67,7 @@ export function createComments(host: Host, sessionId: string) {
     /** The right-click menu of everything but a variant (menu.tsx): mounted once, drawn with the rows the shell built. */
     mountContext(el: HTMLElement) { const root = createRoot(el); return (p: ContextPopProps) => root.render(wrap(<ContextPop {...p} />)) },
     /** The same choices for the phone's variant sheet, which renders them in its own root. */
-    decideIn: (subject: Subject) => wrap(<Decide key={`${subject.proto}/${subject.variant}`} subject={subject} sheet />),
+    decideIn: (subject: Subject, more: { tiles?: Tiles; onDone?: () => void } = {}) => wrap(<Decide key={`${subject.proto}/${subject.variant}`} subject={subject} sheet tiles={more.tiles} onDone={more.onDone} />),
     /** Comment on an element of the design on the stage (a right-click on it); the layout it is seen in goes with it. */
     commentOn(el: HTMLElement) {
       const mount = host.mount()

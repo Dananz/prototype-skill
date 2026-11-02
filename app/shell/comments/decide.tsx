@@ -28,7 +28,12 @@ const NOTE: Record<Ask, { title: (v: string) => string; hint: string; done: (v: 
   build: { title: v => t('Build {v}', { v }), hint: t('Optional: anything to know before building it'), done: v => t('Asked to build {v}', { v }) },
 }
 
-export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, commentLabel }: { subject: Subject; sheet?: boolean; onDone?: () => void; onComment?: () => void; rows?: MenuRow[]; lead?: MenuRow[]; commentLabel?: string }) {
+/** The phone's decide sheet with the project tree on: its tiles (Pick, the star, More like this, Build it,
+ *  a comment, share) and the quiet line under them (copy link, compare, Pick with a note), and Open when
+ *  it is about a variant other than the one on screen (a tree row's ⋯). */
+export type Tiles = { fav: boolean; comments: number; onFav: () => void; onComment: () => void; onShare: () => void; onLink: () => void; onCompare?: () => void; onOpen?: () => void }
+
+export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, commentLabel, tiles }: { subject: Subject; sheet?: boolean; onDone?: () => void; onComment?: () => void; rows?: MenuRow[]; lead?: MenuRow[]; commentLabel?: string; tiles?: Tiles }) {
   const labelComment = commentLabel ?? t('Comment on this')
   const agent = useAgentName()
   const { store, act } = useCtx()
@@ -55,6 +60,7 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
   // The prototype's decision brief, made by the server when asked (app/brief.mjs), shown in place.
   const [paper, setPaper] = useState<{ markdown: string; file: string } | 'loading' | null>(null)
   const [copied, setCopied] = useState(false)
+  const [linked, setLinked] = useState(false)
   const openBrief = async () => {
     setPaper('loading'); setError(''); setCopied(false)
     try {
@@ -73,7 +79,8 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
     if (flip) setWant(a === 'pick')
     try {
       await act.decide(subject, a, words)
-      if (flip) { setAsk(null); field.clear(); onDone?.() }
+      // The tiles stay open on a plain pick (it shows there, in green); a pick with a note closes them.
+      if (flip) { const noted = ask === 'pick'; setAsk(null); field.clear(); if (!tiles || noted) onDone?.() }
       else { setAsk(null); field.clear(); setSaid(a as Ask) }
     } catch (e) {
       if (flip) setWant(null)
@@ -175,6 +182,41 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
   // The choices: a menu down the side of a wide page, three quiet buttons across a phone's sheet.
   const pickLabel = picked ? `Picked ${v}` : `Pick ${v}`
   const pickTitle = picked ? t('Picked. Choose it again to take the pick back') : t('Mark this design as the one, now')
+  if (sheet && tiles) {
+    // Like a share sheet: the variant with where it stands, six tiles a thumb can't miss, then the quiet line.
+    const tile = 'flex h-[76px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl px-1 text-[12px] font-medium active:scale-[.97] disabled:opacity-50 transition-transform'
+    const off = 'bg-zinc-900/[.04] text-zinc-800 dark:bg-white/[.06] dark:text-zinc-100'
+    const badge = 'flex h-6 items-center gap-1 rounded-full px-2 text-[11px] font-medium'
+    const quiet = 'flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl px-1 text-[13px] text-zinc-600 active:bg-zinc-900/5 disabled:opacity-50 dark:text-zinc-300 dark:active:bg-white/10'
+    return (
+      <div data-decide-tiles className="px-2">
+        <div className="flex min-w-0 items-center gap-1.5 text-[17px] font-semibold"><span className="shrink-0 tabular-nums">{v}</span><span dir="auto" className="min-w-0 truncate">{subject.name}</span></div>
+        <div className="mt-1 flex min-h-6 flex-wrap items-center gap-1.5 text-zinc-500">
+          {picked && <span className={`${badge} bg-emerald-500/12 text-emerald-700 dark:text-emerald-300`}><Icon name="picked" className="size-3.5" />{t('Picked')}</span>}
+          {tiles.fav && <span className={`${badge} bg-amber-500/12 text-amber-700 dark:text-amber-300`}><Icon name="star-fill" className="size-3.5" />{t('Favorite')}</span>}
+          {tiles.comments > 0 && <span className={`${badge} bg-zinc-900/[.05] text-zinc-600 dark:bg-white/10 dark:text-zinc-300`}><Icon name="chat-circle" className="size-3.5" />{tiles.comments === 1 ? t('1 comment') : t('{n} comments', { n: tiles.comments })}</span>}
+          {!picked && !tiles.fav && !tiles.comments && <span className="text-[12px]">{t('Not picked yet')}</span>}
+        </div>
+        {tiles.onOpen && <button data-tile="open" onClick={() => { tiles.onOpen!(); onDone?.() }} className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-proto-primary text-[14px] font-semibold text-proto-primary-fg"><Icon name="open-out" className="size-4" />{t('Open {v}', { v })}</button>}
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <button data-tile="pick" onClick={() => send(picked ? 'unpick' : 'pick')} disabled={busy || field.adding} aria-pressed={picked} aria-label={pickTitle} className={`${tile} ${picked ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300' : off}`}><Icon name={picked ? 'picked' : 'pick'} className="size-6" />{picked ? t('Picked') : t('Pick')}</button>
+          <button data-tile="fav" onClick={tiles.onFav} aria-pressed={tiles.fav} className={`${tile} ${tiles.fav ? 'bg-amber-500/12 text-amber-700 dark:text-amber-300' : off}`}><Icon name={tiles.fav ? 'star-fill' : 'star'} className="size-6" />{t('Favorite')}</button>
+          <button data-tile="more" onClick={() => setAsk('more')} className={`${tile} ${off}`}><Icon name="more" className="size-6" />{t('More like this')}</button>
+          <button data-tile="build" onClick={() => setAsk('build')} className={`${tile} ${off}`}><Icon name="code" className="size-6" />{t('Build it')}</button>
+          <button data-tile="comment" onClick={() => { tiles.onComment(); onDone?.() }} className={`${tile} ${off}`}><Icon name="chat-circle" className="size-6" /><span className="max-w-full truncate">{t('Comment')}</span></button>
+          <button data-tile="share" onClick={() => { tiles.onShare(); onDone?.() }} className={`${tile} ${off}`}><Icon name="share" className="size-6" /><span className="max-w-full truncate">{t('Share')}</span></button>
+        </div>
+        <div className="mt-2 flex gap-1">
+          <button data-tile="link" onClick={() => { tiles.onLink(); setLinked(true); window.setTimeout(() => setLinked(false), 1600) }} className={quiet}><Icon name={linked ? 'check' : 'link-simple'} className="size-4" /><span className="truncate">{linked ? t('Copied') : t('Copy link')}</span></button>
+          {tiles.onCompare && <button data-tile="compare" onClick={() => { tiles.onCompare!(); onDone?.() }} className={quiet}><Icon name="diff" className="size-4" /><span className="truncate">{t('Compare')}</span></button>}
+          {!picked && <button data-tile="note" data-pick-note onClick={() => { field.clear(); setError(''); setAsk('pick') }} disabled={busy || field.adding} className={quiet}><Icon name="check" className="size-4" /><span className="truncate">{t('Pick with a note…')}</span></button>}
+        </div>
+        {extras}
+        {oops}
+        <p className="mt-2 flex items-center px-1">{status}</p>
+      </div>
+    )
+  }
   if (sheet) {
     // Labels stay whole (a word cut short reads as broken) and the buttons stay 44 px tall for a thumb.
     const btn = 'inline-flex h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl text-[13px] font-medium ring-1 ring-inset disabled:opacity-50'

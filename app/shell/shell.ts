@@ -20,7 +20,7 @@ import { hints, fillField, type Hint } from './hints'
 import { tweaks, isChanged } from './tweaks'
 import { createTweakControls, createTweaksDrawer } from './tweaks-ui'
 import { copy } from './copy'
-import { createSheet, createMenuSheet, createStatesSheet, createTrySheet } from './sheet'
+import { createSheet, createMenuSheet, createStatesSheet, createTrySheet, createPanelSheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
 import { describe as describeComment, targetMount, wholeTarget as wholeComment } from './comments/dom'
 import { plain as commentText } from './comments/ui'
@@ -35,7 +35,8 @@ import { createView } from './view/index'
 import { createIntake } from './intake/index'
 import type { Intake } from './intake/types'
 import { createSettings, type Appearance } from './settings'
-import { mountTree, type TreeInput } from './tree/index'
+import { mountTree, TreeView, type TreeApi, type TreeInput } from './tree/index'
+import { createElement } from 'react'
 import { mountMap, type MapApi, type MapInput } from './map/index'
 import { createJump } from './jump'
 import { jumpItems, linkState, whereOf } from './where'
@@ -241,6 +242,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     sheet: false,
     // The phone's states sheet, opened from the state line under the pill's name.
     states: false,
+    // With the project tree on, a phone's tree sheet (from the bar's title or the pill's name), and the
+    // decide sheet for a variant (slug/letter: the bar's Pick, or a tree row's ⋯; '' when shut).
+    tree: false,
+    decide: '',
     // The phone's bar opens its menus as sheets: the prototypes, or the session.
     menu: '' as '' | 'protos' | 'session',
     // On a phone the grid's phone cards open at half size; Fit leaves them tiny there.
@@ -577,6 +582,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     <div data-drawer></div>
     <div data-sheet></div>
     <div data-states-sheet></div>
+    <div data-tree-sheet></div>
+    <div data-decide-sheet></div>
     <div data-menu-sheet></div>
     <div data-comments-sheet></div>
     <div data-decide></div>
@@ -591,12 +598,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const treeAsked = new URLSearchParams(location.search).get('tree')
   if (treeAsked === '1' || treeAsked === '0') remember('proto-tree', treeAsked)
   let treeOn = !framed && localStorage.getItem('proto-tree') !== '0'
-  // Conversation first (a preview, ?conv=1 or Settings, kept in this browser): the page is scoped to
+  // Conversation first (the default; ?conv=0 or Settings turns it off, kept in this browser): the page is scoped to
   // this conversation, the map has a gallery and lists past conversations. Off, it shows the whole
   // project, the tree has its filters and the map is the canvas.
   const convAsked = new URLSearchParams(location.search).get('conv')
   if (convAsked === '1' || convAsked === '0') remember('proto-conv', convAsked)
-  let convOn = localStorage.getItem('proto-conv') === '1'
+  let convOn = localStorage.getItem('proto-conv') !== '0'
   const treeWatchers = new Set<() => void>()
   let treeSnap: TreeInput | null = null
   const placeRoute = () => st.place.view === 'variant' ? `${st.place.proto}/${st.place.variant}` : st.place.view === 'proto' ? `${st.place.proto}/` : ''
@@ -909,6 +916,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const pill = root.querySelector<HTMLElement>('[data-pill]')!
   const paintSheet = createSheet(root.querySelector<HTMLElement>('[data-sheet]')!)
   const paintStates = createStatesSheet(root.querySelector<HTMLElement>('[data-states-sheet]')!)
+  const paintTreeSheet = createPanelSheet(root.querySelector<HTMLElement>('[data-tree-sheet]')!)
+  const paintDecideSheet = createPanelSheet(root.querySelector<HTMLElement>('[data-decide-sheet]')!)
   const paintMenu = createMenuSheet(root.querySelector<HTMLElement>('[data-menu-sheet]')!)
   const cardHost = root.querySelector<HTMLElement>('[data-scale-card]')!
 
@@ -1598,7 +1607,24 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const up = view === 'session' ? null : line.length
       ? (a => ({ act: a.p.variants.some(x => x.id === a.v) ? `pv:${esc(a.p.id)}:${esc(a.v)}` : `lobby:proto:${esc(a.p.id)}`, label: a.p.title }))(line.at(-1)!)
       : { act: 'lobby:session', label: session.name }
-    const phoneBar = `<div class="grid min-w-0 flex-1 grid-cols-[1fr_auto_1fr] items-center gap-1 sm:hidden">
+    // With the project tree on, the phone's bar is two lines: the session's mark (it opens the menu),
+    // the title (it opens the tree) with the state line under it, and Pick, which says where the variant
+    // stands and opens its decide sheet. The variants are in the pill; the tree replaces the columns.
+    const dv = view === 'variant' && p && v ? v : null
+    const dvPicked = !!dv && pickOf(p!) === dv.id
+    const dvStates = dv ? statesOf(p!, dv.id) : []
+    const dvState = dv && pv ? pv.tool === 'all' ? t('All states') : pv.tool === 'compare' ? t('Compare with {variant}', { variant: variantRef(p!, otherOf(p!, dv.id)) }) : pv.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, dv.id)?.n ?? '' }) : dvStates.find(x => x.id === pv.state)?.name ?? t('At rest') : ''
+    const dvN = dv && pv && !pv.tool && dvStates.length ? `${Math.max(0, dvStates.findIndex(x => x.id === pv.state)) + (pv.state ? 2 : 1)}/${dvStates.length + 1}` : ''
+    const treeBar = `<div data-phone-bar class="flex min-w-0 flex-1 items-center gap-1 sm:hidden">
+        <button data-act="phone-menu" data-shoot="bar-session" aria-label="${t('Menu')}" aria-haspopup="dialog" class="relative grid size-9 shrink-0 place-items-center rounded-lg active:bg-zinc-900/5 dark:active:bg-white/10"><span class="grid size-7 place-items-center rounded-lg bg-zinc-900 text-[13px] font-bold text-white dark:bg-white dark:text-zinc-900">${initial}</span><span class="absolute end-0.5 top-0.5 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-2.5', st.live && !st.stopped)}</span></button>
+        <div class="flex min-w-0 flex-1 flex-col items-start">
+          <button data-act="phone-tree" data-shoot="bar-title" aria-haspopup="dialog" aria-label="${t('Project tree')}: ${esc(view === 'session' ? session.name : p!.title)}" class="max-w-full truncate rounded-md px-1.5 text-start font-semibold leading-tight active:bg-zinc-900/5 dark:active:bg-white/10"><span dir="auto">${esc(view === 'session' ? session.name : p!.title)}</span></button>
+          ${dv && (dvStates.length || versionsOf(p!, dv.id).length) ? `<button data-act="states" data-shoot="bar-state" aria-haspopup="dialog" aria-label="${t('States: {state}. Show all states', { state: esc(dvState) })}" class="mt-0.5 flex h-[18px] min-w-0 max-w-full items-center gap-1 rounded-full px-1.5 text-[12px] leading-none text-sky-700 active:bg-zinc-900/5 dark:text-sky-300 dark:active:bg-white/10"><span dir="auto" class="min-w-0 truncate">${esc(dvState)}</span>${dvN ? `<span class="shrink-0 tabular-nums text-zinc-400 dark:text-white/40">${dvN}</span>` : ''}${ic('caret-up', 'size-2.5 shrink-0 text-zinc-400')}</button>`
+            : dv ? `<span dir="auto" class="max-w-full truncate px-1.5 text-[11px] text-zinc-500">${variantRef(p!, dv.id)} · ${esc(dv.name)}</span>` : ''}
+        </div>
+        ${dv ? `<button data-act="phone-decide" data-shoot="bar-decide" aria-haspopup="dialog" class="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold ring-1 ring-inset ${dvPicked ? 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/30 dark:text-emerald-300' : 'bg-white text-zinc-800 ring-black/[.1] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/15'}">${ic(dvPicked ? 'picked' : 'pick', 'size-4')}${dvPicked ? `${t('Picked')} ${variantRef(p!, dv.id)}` : t('Pick')}</button>` : ''}
+      </div>`
+    const phoneBar = treeOn && !framed ? treeBar : `<div class="grid min-w-0 flex-1 grid-cols-[1fr_auto_1fr] items-center gap-1 sm:hidden">
         <div class="flex min-w-0">${up ? `<button data-act="${up.act}" class="flex h-9 min-w-0 items-center gap-0.5 rounded-lg pe-2 text-zinc-600 active:bg-zinc-900/5 dark:text-zinc-400 dark:active:bg-white/10">${ic('left', 'size-5')}<span dir="auto" class="truncate">${esc(up.label)}</span></button>` : ''}</div>
         <button data-act="menu:protos" aria-haspopup="dialog" class="flex h-10 min-w-0 max-w-[13rem] items-center gap-1 rounded-lg px-2 active:bg-zinc-900/5 dark:active:bg-white/10"><span class="min-w-0 leading-tight"><span dir="auto" class="block truncate font-semibold">${esc(view === 'session' ? session.name : p!.title)}</span>${where ? `<span dir="auto" class="block truncate text-[11px] font-medium text-sky-700 dark:text-sky-300">${whereHtml}</span>` : v ? `<span dir="auto" class="block truncate text-[11px] text-zinc-500">${variantRef(p!, v.id)} · ${esc(v.name)}</span>` : ''}</span>${ic('chev', 'size-3.5 shrink-0 text-zinc-400')}</button>
         <div class="flex justify-end">${settingsBtn(true)}</div>
@@ -1617,6 +1643,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           </span>${ic('chev', `size-3.5 shrink-0 text-zinc-400 transition-transform ${opened('switch') ? 'rotate-180' : ''}`)}</button>
         ${pop(opened('switch'), miller(), 'start-0 top-11')}</div>`
     const stepper = v && vs.length > 1 ? `<button data-act="step:-1" aria-label="${t('Previous variant')}" title="${t('Previous variant · ←')}" class="${IB} shrink-0">${ic('left')}</button><span class="w-9 shrink-0 text-center text-xs tabular-nums text-zinc-500">${at + 1}<span class="text-zinc-400 dark:text-zinc-600">/${vs.length}</span></span><button data-act="step:1" aria-label="${t('Next variant')}" title="${t('Next variant · →')}" class="${IB} shrink-0">${ic('right')}</button>` : ''
+    // The phone's two-line bar is taller than the old one.
+    bar.classList.toggle('max-sm:h-14', treeOn && !framed)
     // With the project tree on, the bar only says where you are (the crumb walks the flow), with
     // Jump and ⋯; the design's tools move to the strip down the stage's side (paintStrip).
     if (treeOn && !framed) {
@@ -1823,12 +1851,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const sOn = stateOn === null ? undefined : sts.find(x => x.id === stateOn)
         const stateText = pv?.tool === 'all' ? t('All states') : pv?.tool === 'compare' ? t('Compare with {variant}', { variant: variantRef(p!, otherOf(p!, pv.variant)) }) : pv?.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, pv.variant)?.n ?? '' }) : sOn?.name ?? t('At rest')
         const stateN = pv?.tool || !sts.length ? '' : `${sts.indexOf(sOn!) + 2}/${sts.length + 1}`
-        const stateLine = v && (sts.length || versionsOf(p!, v.id).length) ? `<button data-act="states" data-pill-state data-shoot="pill-state" aria-haspopup="dialog" aria-expanded="${st.states}" aria-label="${t('States: {state}. Show all states', { state: esc(stateText) })}" class="mx-auto flex h-[18px] min-w-0 max-w-full items-center gap-1 rounded-full px-2 text-[11px] leading-none text-sky-700 dark:text-sky-300 ${k.press}">${pv?.tool === 'play' ? ic('play', 'size-2.5 shrink-0') : ''}<span data-pill-state-name dir="auto" class="min-w-0 truncate">${esc(stateText)}</span>${stateN ? `<span class="shrink-0 tabular-nums ${k.n}">${stateN}</span>` : ''}${ic('caret-up', `size-2.5 shrink-0 ${k.n}`)}</button>` : ''
+        const stateLine = !(treeOn && !framed) && v && (sts.length || versionsOf(p!, v.id).length) ? `<button data-act="states" data-pill-state data-shoot="pill-state" aria-haspopup="dialog" aria-expanded="${st.states}" aria-label="${t('States: {state}. Show all states', { state: esc(stateText) })}" class="mx-auto flex h-[18px] min-w-0 max-w-full items-center gap-1 rounded-full px-2 text-[11px] leading-none text-sky-700 dark:text-sky-300 ${k.press}">${pv?.tool === 'play' ? ic('play', 'size-2.5 shrink-0') : ''}<span data-pill-state-name dir="auto" class="min-w-0 truncate">${esc(stateText)}</span>${stateN ? `<span class="shrink-0 tabular-nums ${k.n}">${stateN}</span>` : ''}${ic('caret-up', `size-2.5 shrink-0 ${k.n}`)}</button>` : ''
         const pillRow = (flush: boolean) => `<div data-ruler hidden class="pointer-events-none absolute left-1/2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-white/95 shadow-lg ring-1 ring-black/[.08] dark:bg-zinc-800/95 dark:ring-white/10 ${flush ? 'bottom-[calc(100%+var(--isl-h,0px)+.75rem)]' : 'bottom-full mb-2'} [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)]"></div>
             ${menuBtn}${sep}
             <button data-act="variant:${prev.id}" aria-label="${t('Previous variant: {label} {name}', { label: variantRef(p!, prev.id), name: prev.name })}" class="${btn}">${ic('left')}</button>
             <div class="flex h-10 ${flush ? 'flex-1' : end ? 'w-28' : 'w-40'} min-w-0 flex-col">
-              <div data-pill-handle role="button" tabindex="0" aria-label="${v ? t('{label} {name}, {current} of {total}. ', { label: variantRef(p!, v.id), name: esc(v.name), current: at + 1, total: vs.length }) : ''}${t('Show all variants')}" class="flex ${stateLine ? 'h-[22px]' : 'h-10'} min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 ${k.press}">
+              <div data-pill-handle role="button" tabindex="0" aria-label="${v ? t('{label} {name}, {current} of {total}. ', { label: variantRef(p!, v.id), name: esc(v.name), current: at + 1, total: vs.length }) : ''}${treeOn && !framed ? t('Project tree') : t('Show all variants')}" class="flex ${stateLine ? 'h-[22px]' : 'h-10'} min-w-0 cursor-grab touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 ${k.press}">
                 ${name}
               </div>${stateLine}
             </div>
@@ -1880,9 +1908,70 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onState: id => { st.states = false; if (p && sv) act('pvs', p.id, sv.id, id); render() },
       onTool: id => { st.states = false; if (p && sv) act('tool', p.id, sv.id, id); render() },
     })
+    paintWays()
   }
 
   let menus = { protos: '', session: '' }
+
+  // ---------- the phone's tree and decide sheets (the project tree on) ----------
+  /** The pill's name opens the way around: the tree with the project tree on, else the variant sheet. */
+  const openWays = () => { if (treeOn && !framed) st.tree = true; else st.sheet = true }
+  // The same tree as the sidebar, fed the same input; its rows close the sheet on their way.
+  const phoneTreeApi: TreeApi = {
+    get: () => treeSnap ?? (treeSnap = treeInput()), subscribe: f => { treeWatchers.add(f); return () => { treeWatchers.delete(f) } }, name: session.name,
+    go: route => { st.tree = false; const [proto, variant] = route.split('/'); go(variant ? { view: 'variant', proto, variant } : { view: 'proto', proto }) },
+    goWork: () => { st.tree = false; act('work', 'go', '') },
+    hide: () => { st.tree = false; render() },
+    // A design or a flow shows on the map, as on a wide page.
+    frame: key => { st.tree = false; mapFrame = `${key}#${++frames}`; if (st.place.view !== 'session') go({ view: 'session' }); else { paintMap(); render() } },
+    setScope,
+  }
+  // Rows a finger can hit (40 px, 14 px type), each row's ⋯ always there (no hover to find it), and no
+  // Hide sidebar: the sheet closes by a swipe, its backdrop or a row. The tree's buttons that work the
+  // page (the project's name, a row's ⋯) are outside the shell's root here, so they are handled here:
+  // a row's ⋯ opens that variant's decide sheet over the tree.
+  const treeSheetBody = () => createElement('div', {
+    'data-tree-touch': '', className: 'flex min-h-0 flex-1 flex-col [&_[data-tree-row]]:h-10 [&_[data-tree-row]]:text-[14px] [&_[data-act^="vm:"]]:opacity-100 [&_[data-tree-filters]_button]:h-8 [&_[data-tree-scope]_button]:h-8 [&_[data-tree-scope]_button]:text-[13px]',
+    onClickCapture: (e: { target: EventTarget; preventDefault(): void; stopPropagation(): void }) => {
+      const el = (e.target as Element).closest<HTMLElement>('[data-act]')
+      if (!el) return
+      e.preventDefault(); e.stopPropagation()
+      const [name, a = '', b = '', c = ''] = el.dataset.act!.split(':')
+      if (name === 'vm') { st.decide = `${a}/${b}`; return render() }
+      st.tree = false
+      if (name === 'settings') { settingsOrigin = 'bar'; settingsReturn = '[data-bar] [data-act="phone-menu"]' }
+      act(name, a, b, c)
+      render()
+    },
+  }, createElement('style', null, `[data-tree-touch] button[aria-label="${t('Hide sidebar')}"]{display:none}`), createElement(TreeView, { api: phoneTreeApi }))
+  // The decide sheet keeps drawing its variant while it slides away.
+  let decideShown = ''
+  function decideSheetBody(route: string) {
+    const [proto, variant] = route.split('/'), q = byId(proto), v = q?.variants.find(x => x.id === variant)
+    if (!q || !v) return null
+    const cur = decideOf(), here = !!cur && cur.proto === q.id && cur.variant === v.id
+    const subject: Subject = { proto: q.id, variant: v.id, label: variantRef(q, v.id), name: v.name, picked: pickOf(q) === v.id, hints: here ? cur!.hints : false, copy: here ? cur!.copy : false }
+    const away = () => { st.decide = ''; st.tree = false }
+    return comments.decideIn(subject, {
+      onDone: () => { st.decide = ''; render() },
+      tiles: {
+        fav: favOf(q, v.id), comments: comments.counts().by.get(route) ?? 0,
+        onFav: () => { void toggleFav(q.id, v.id).then(render) },
+        onComment: () => { away(); commentWhole(q.id, v.id); render() },
+        onShare: () => { away(); act('share', q.id, v.id) },
+        onLink: () => copyText(linkOf(pathOf({ view: 'variant', proto: q.id, variant: v.id }))),
+        onCompare: toolOk(q, v.id, 'compare') ? () => { away(); act('tool', q.id, v.id, 'compare') } : undefined,
+        // From a tree row's ⋯, about a variant not on screen: open it first.
+        onOpen: here ? undefined : () => { away(); go(keepIn(q, v.id)) },
+      },
+    })
+  }
+  function paintWays() {
+    const on = treeOn && !framed && matchMedia('(max-width: 639px)').matches
+    paintTreeSheet({ open: on && st.tree, label: t('Project tree'), halves: true, shoot: 'tree-sheet', body: treeSheetBody(), onClose: () => { st.tree = false; render() } })
+    if (st.decide) decideShown = st.decide
+    paintDecideSheet({ open: on && !!st.decide, label: t('Pick'), shoot: 'decide-sheet', body: decideShown ? decideSheetBody(decideShown) : null, onClose: () => { st.decide = ''; render() } })
+  }
 
   // ---------- the pill's menu ----------
   // The pill's menu holds the page's tools for the design on the stage: All variants, copy options,
@@ -1895,8 +1984,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const DARK_SEG = (on: boolean) => `h-9 min-w-0 flex-1 rounded-full text-xs font-medium tabular-nums ${on ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-black/[.06] dark:ring-0' : 'text-zinc-600 hover:bg-zinc-900/5 dark:text-white/70 dark:hover:bg-white/10'}`
   const CARD_CLS = 'absolute z-30 w-[17.5rem] max-w-[calc(100vw-1rem)] space-y-1 rounded-3xl bg-white/95 p-1.5 text-[14px] text-zinc-900 shadow-xl shadow-black/15 ring-1 ring-black/[.08] backdrop-blur dark:bg-zinc-800/95 dark:text-white dark:shadow-black/20 dark:ring-white/10'
   const menuRow = (o: { act: string; shoot: string; icon: string; label: string; detail?: string; on?: boolean; tint?: string }) =>
-    `<button data-act="${o.act}" data-shoot="${o.shoot}" aria-pressed="${!!o.on}" class="flex h-11 w-full items-center gap-3 rounded-[18px] px-3 text-start hover:bg-zinc-900/5 active:bg-zinc-900/5 dark:hover:bg-white/10 dark:active:bg-white/10 ${o.on ? 'bg-zinc-900/[.05] dark:bg-white/[.08]' : ''}">
-      <span class="grid size-7 shrink-0 place-items-center rounded-full ${o.on ? 'bg-proto-primary text-proto-primary-fg' : o.tint ?? 'text-zinc-600 dark:text-white/70'}">${ic(o.icon, 'size-[18px]')}</span>
+    `<button data-act="${o.act}" data-shoot="${o.shoot}" aria-pressed="${!!o.on}" class="flex h-11 w-full items-center gap-2 rounded-[18px] px-3 text-start hover:bg-zinc-900/5 active:bg-zinc-900/5 dark:hover:bg-white/10 dark:active:bg-white/10 ${o.on ? 'bg-zinc-900/[.05] dark:bg-white/[.08]' : ''}">
+      <span class="grid size-6 shrink-0 place-items-center rounded-full ${o.on ? 'bg-proto-primary text-proto-primary-fg' : o.tint ?? 'text-zinc-600 dark:text-white/70'}">${ic(o.icon, 'size-[18px]')}</span>
       <span class="min-w-0 flex-1 truncate font-medium">${o.label}</span>${o.detail ? `<span class="shrink-0 text-xs tabular-nums text-zinc-400 dark:text-white/45">${o.detail}</span>` : ''}</button>`
   const menuSegs = (label: string, segs: string, after = '') =>
     `<div class="flex items-center gap-1 ps-3"><span class="w-14 shrink-0 text-xs text-zinc-500 dark:text-white/50">${label}</span><div class="flex min-w-0 flex-1 gap-0.5 rounded-full bg-zinc-900/[.05] p-0.5 dark:bg-white/[.06]">${segs}</div>${after}</div>`
@@ -1906,6 +1995,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function cardHtml() {
     const p = cur()!, c = copyCounts(), n = tryCount(hintList())
     const rows = cardKind === 'layout' ? '' : [
+      // With the project tree on, the bar has no Settings: the session and Settings head the menu.
+      treeOn && !framed ? `<button data-act="settings:session" data-shoot="menu-session" class="flex h-11 w-full items-center gap-2 rounded-[18px] px-3 text-start hover:bg-zinc-900/5 active:bg-zinc-900/5 dark:hover:bg-white/10 dark:active:bg-white/10"><span class="relative grid size-6 shrink-0 place-items-center rounded-md bg-zinc-900 text-[11px] font-bold text-white dark:bg-white dark:text-zinc-900">${esc((session.name.trim()[0] || 'P').toUpperCase())}<span class="absolute -end-1 -top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-800">${pulse('size-2', st.live && !st.stopped)}</span></span><span dir="auto" class="min-w-0 flex-1 truncate font-medium">${esc(session.name)}</span><span class="shrink-0 text-xs text-zinc-400 dark:text-white/45">${t('Session')}</span></button>` : '',
+      treeOn && !framed ? menuRow({ act: 'settings', shoot: 'menu-settings', icon: 'settings', label: t('Settings') }) : '',
+      treeOn && !framed ? '<div class="mx-3 my-1 h-px bg-black/[.06] dark:bg-white/10"></div>' : '',
       // With the project tree on: the map and Jump come first (the phone's way around the project).
       treeOn && !framed ? menuRow({ act: 'lobby:session', shoot: 'menu-map', icon: 'map', label: t('Map') }) : '',
       treeOn && !framed ? menuRow({ act: 'jump', shoot: 'menu-jump', icon: 'search', label: t('Jump to') }) : '',
@@ -2033,8 +2126,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   })
   // The phone's sheets and the menu belong to the phone layout; widening past it closes them.
   matchMedia('(min-width: 640px)').addEventListener('change', e => {
-    if (!e.matches || !(st.menu || st.sheet || st.states || card || trySheet !== 'closed')) return
-    st.menu = ''; st.sheet = false; st.states = false; trySheet = 'closed'; closeCard(true); render()
+    if (!e.matches || !(st.menu || st.sheet || st.states || st.tree || st.decide || card || trySheet !== 'closed')) return
+    st.menu = ''; st.sheet = false; st.states = false; st.tree = false; st.decide = ''; trySheet = 'closed'; closeCard(true); render()
   })
 
   // The variant labels around the finger, above the pill, while it drags.
@@ -2133,7 +2226,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const pillUp = (e: PointerEvent) => {
     const d = pd
     if (!d || e.pointerId !== d.id || d.raf) return
-    if (!d.moved) { pd = null; if (e.type === 'pointerup') { st.sheet = true; render() } return }
+    if (!d.moved) { pd = null; if (e.type === 'pointerup') { openWays(); render() } return }
     // A flick carries on past the finger; a deliberate drag lands where it was let go.
     const v = e.timeStamp - d.lastT > 80 ? 0 : d.v
     const target = Math.min(d.ids.length - 1, Math.max(0, Math.round(d.pos - (Math.abs(v) > 0.45 ? v * 100 : 0) / STEP)))
@@ -2153,7 +2246,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   pill.addEventListener('pointerup', pillUp)
   pill.addEventListener('pointercancel', pillUp)
   pill.addEventListener('keydown', e => {
-    if ((e.key === 'Enter' || e.key === ' ') && (e.target as Element).closest('[data-pill-handle]')) { e.preventDefault(); st.sheet = true; render() }
+    if ((e.key === 'Enter' || e.key === ' ') && (e.target as Element).closest('[data-pill-handle]')) { e.preventDefault(); openWays(); render() }
   })
 
   // ---------- sidebar ----------
@@ -2313,6 +2406,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'copymode': return comments.copy.toggle()
       case 'motion': st.motion = !st.motion; return render()
       case 'states': st.states = true; return render()
+      // The phone's two-line bar (with the project tree on): the tree, the variant's decide sheet, the menu.
+      case 'phone-tree': st.tree = true; return render()
+      case 'phone-decide': if (here) { st.decide = `${here.proto}/${here.variant}`; render() } return
+      // While a tool opened from the menu (copy options, Try it) holds the pill's ≡ as its way out, the mark does nothing.
+      case 'phone-menu': if (menuBtn()?.dataset.pillMenu === 'mode') return; if (card && card.phase !== 'exit') closeCard(); else { if (card) closeCard(true); openCard('menu') } return
       // A state leaf: that variant in that state. Comparing keeps comparing.
       case 'pvs': {
         const keep = here?.tool === 'compare' && here.proto === arg && here.variant === arg2

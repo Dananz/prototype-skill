@@ -30,7 +30,7 @@ export type MapInput = {
   working?: string
   /** The route in Focus, drawn in place on its board: the map stays, the page's view of it sits in the board's slot. */
   focus?: string
-  /** Conversation first (a preview): the gallery and its switch. Off, the map is the canvas only. */
+  /** Conversation first: the gallery and its switch. Off, the map is the canvas only. */
   conv?: boolean
   /** What protos holds (shell.ts scope): 'all', 'favs' or 'conv:<conversation>'; me: this conversation. */
   scope?: string; me?: string

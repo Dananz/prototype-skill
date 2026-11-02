@@ -220,3 +220,45 @@ export function createSheet(host: HTMLElement) {
   const root = createRoot(host)
   return (props: SheetProps) => root.render(h(Sheet, props))
 }
+
+export type PanelSheetProps = {
+  open: boolean
+  /** Its accessible name (the panel draws its own heading, or none). */
+  label: string
+  body: ReactNode
+  onClose: () => void
+  /** Two heights: it opens at half the screen, and a drag on it or a tap on its handle takes it to full. */
+  halves?: boolean
+  shoot?: string
+}
+
+// A sheet that holds what it is given: the project tree, at two heights (half the screen, then full,
+// on Base UI's own snap points), or the decide tiles, as tall as they are. The same drawer as the others.
+function PanelSheet(p: PanelSheetProps) {
+  const HALF = 0.5, FULL = 1
+  const [snap, setSnap] = useState<number | string | null>(HALF)
+  useLayoutEffect(() => { if (p.open) setSnap(HALF) }, [p.open])
+  const tall = p.halves
+  return h(Drawer.Root, {
+    open: p.open, onOpenChange: (open: boolean) => { if (!open) p.onClose() },
+    ...(tall ? { snapPoints: [HALF, FULL], snapPoint: snap, onSnapPointChange: setSnap } : {}),
+  },
+    h(Drawer.Portal, { container: uiBox() },
+      // At two heights the swipe's progress starts halfway, so the shade is not tied to it there.
+      h(Drawer.Backdrop, { className: `[--backdrop-opacity:0.3] dark:[--backdrop-opacity:0.6] fixed inset-0 z-[200] min-h-dvh bg-black ${tall ? 'opacity-[var(--backdrop-opacity)]' : 'opacity-[calc(var(--backdrop-opacity)*(1-var(--drawer-swipe-progress)))]'} transition-opacity duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:duration-0 data-ending-style:opacity-0 data-starting-style:opacity-0 data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] supports-[-webkit-touch-callout:none]:absolute` }),
+      h(Drawer.Viewport, { className: 'fixed inset-0 z-[200] flex items-end justify-center' },
+        h(Drawer.Popup, {
+          'data-shoot': p.shoot, 'aria-label': p.label,
+          className: `flex w-full flex-col overflow-hidden rounded-t-3xl bg-white pt-2 text-[13px] text-zinc-900 shadow-2xl shadow-black/20 outline-none transition-transform duration-[450ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-swiping:select-none data-ending-style:[transform:translateY(100%)] data-starting-style:[transform:translateY(100%)] data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] dark:bg-zinc-900 dark:text-zinc-100 ${tall ? 'h-[calc(100dvh-2.5rem)] [transform:translateY(calc(var(--drawer-snap-point-offset)_+_var(--drawer-swipe-movement-y)))]' : 'max-h-[85dvh] pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] [transform:translateY(var(--drawer-swipe-movement-y))]'}`,
+        },
+          // The handle: on the tree, a tap goes between half and full.
+          tall ? h('button', { type: 'button', 'data-sheet-grip': '', 'aria-label': snap === FULL ? t('Half the screen') : t('Full screen'), onClick: () => setSnap(snap === FULL ? HALF : FULL), className: '-mt-2 flex h-6 w-full shrink-0 items-center justify-center' }, h('span', { className: 'h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700' }))
+            : h('div', { className: 'mx-auto mb-1 h-1 w-10 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-700' }),
+          h(Drawer.Content, { className: `min-h-0 flex-1 ${tall ? 'flex flex-col' : 'overflow-y-auto overscroll-contain pt-1'}` }, p.body)))))
+}
+
+/** Mounts a panel sheet once; call the returned function with new props to open, close or refresh it. */
+export function createPanelSheet(host: HTMLElement) {
+  const root = createRoot(host)
+  return (props: PanelSheetProps) => root.render(h(PanelSheet, props))
+}

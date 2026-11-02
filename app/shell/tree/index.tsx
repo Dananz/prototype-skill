@@ -17,7 +17,7 @@ export type TreeInput = {
   place: string
   /** This conversation ('' or null where there is none, as a share's viewer). */
   me: string | null
-  /** Conversation first (a preview): the page's scope replaces the tree's own filters. */
+  /** Conversation first: the page's scope replaces the tree's own filters. */
   conv?: boolean
   /** What the page shows (shell.ts scope): 'all', 'favs' or 'conv:<conversation>'. */
   scope?: string
@@ -204,6 +204,9 @@ function StaleNote({ n, protos, depth }: { n: TreeNode; protos: Proto[]; depth: 
     </div>
   )
 }
+
+/** The tree as a component, for a host that renders it in a root of its own (the phone's tree sheet). */
+export function TreeView({ api }: { api: TreeApi }) { return <Tree api={api} /> }
 
 /** Draws the tree into host; the shell calls the api's listeners when anything it reads changed. */
 export function mountTree(host: HTMLElement, api: TreeApi) {
