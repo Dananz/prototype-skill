@@ -178,7 +178,7 @@ listens and was seen last. `proto ls --mine` lists what this conversation made o
 
 With **Conversation first** on (the default; Settings › Browsing or `?conv=0` turns it off, kept in the browser),
 the page opens on **this conversation**: with the project tree on, the sidebar's top row (This
-conversation | Whole project · N | ★) scopes the tree, the gallery and the map together. The gallery
+conversation | Whole project · N | ★) scopes the tree and the gallery together. The gallery
 lists the earlier conversations as one line each, and opening one scopes the page to it, with a way
 back; a link to an exploration of another conversation widens the scope to that one. The choice is
 kept in the browser. Send the user links to what this conversation made; nothing else needs saying.
@@ -1016,9 +1016,6 @@ the text.
 | `copy-options` | queued only; no alternatives generated yet | check that the request is not withdrawn; add `useCopy` to the requested lines in this variant only (headline and primary text/CTA without a note), current words first, verify fit, then reply `--done`; reuse existing options. One with an element and quoted words (highlighted in the page) is for those words only: one `useCopy` line on that element, not the headline and primary text |
 | `share-fix` | nothing; sent from a share review (Ask Claude to fix this), the user's words first, then the findings | change the prototype so those findings are gone, the way the words say (a hosted font instead of uploaded files, an asset inlined, a secret taken out), never by quieting the review; check with `proto share file <route>` (same review, nothing published), then reply `--done` with what changed. The user makes the link again from the page; don't publish it yourself unless they ask |
 | `build-screen` | nothing; sent from a link's chip in the page (the project tree on): a `<Go to>` on this variant leads to a screen not built yet, its slug in the text | add it to the same design and flow with `proto add <slug> --design <id> --variants "…"` on the design's shared parts (its #1 stands in until a pick), then reply `--done` naming it |
-| `add-link` | nothing; a line drawn on the map from this screen to another, the target slug in the text | put `<Go to="<slug>">` on the element the text names, else on the one it most likely belongs on, then reply `--done` naming the element |
-| `map-note` | nothing; a note on a link line or a whole flow, written on the map | change the screens, links or flow the way it asks (`proto design <id>` shows them), then reply `--done` with what changed |
-| `build-design` | nothing; Build it on the map, the chosen screens in the text | `proto handoff --design <id> --screens <slugs>` for the plan, then build each screen as in step 7, its links as the app's navigation; ask before building a screen still marked open |
 | `copy` | nothing (one comment per line changed since the last send, on that line's element; the text says option k of n, their own words, or back to today's words) | put the chosen words first in that line's `useCopy` options and keep the rest; then one `proto reply <batch> "…" --done` for the batch, in one line. The page drops its own choice once the words are first |
 
 ## 7. Only if asked: build it
@@ -1065,7 +1062,7 @@ says which links (and variants) changed since shared, who is in them now and how
 | How a variant looked before ("what did 2 look like before the last change?", "compare with the old one") | History: `<slug>/<letter>/~history` in the page; `proto history <slug>/<letter>` lists the versions |
 | A write-up of the decision ("summarize what we picked and why", "a brief for the team", "what's left before we build?") | `proto brief <slug>`: give them the Markdown it prints (kept at `.proto/decisions/<slug>.md`); Decision brief in the Decide menu shows the same |
 | The winner built into the codebase ("build B", "ship it") | `proto pick` if not yet, then `proto handoff <slug>/<letter>` and step 7 |
-| A whole design built ("build the design", a `build-design` request from the map) | `proto handoff --design <id> [--screens a,b]`, then each screen's own `proto handoff` and step 7, its `<Go to>` links as the app's navigation |
+| A whole design built ("build the design", in chat) | `proto handoff --design <id> [--screens a,b]`, then each screen's own `proto handoff` and step 7, its `<Go to>` links as the app's navigation |
 | A pick, More like this or Build it from the page (`action:` in a batch) | the table under Comments from the page |
 | Other copy for some lines ("better headlines", "other button text") | `proto ask "…"`, then `useCopy` on those lines (Offer other copy when asked) |
 | Copy choices sent from the page (`action: copy`) | the table under Comments from the page |

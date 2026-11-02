@@ -1,8 +1,8 @@
-// The project tree as the sidebar (design #1 of the map prototype): designs › flows › screens, each
+// The project tree as the sidebar (design #1 of its prototype): designs › flows › screens, each
 // screen's options and the explorations built on them, then explorations on no screen. With
 // Conversation first on, the page's scope cuts it (this conversation, the whole project, starred);
 // off, four filters do (everything, still open, from this conversation, starred). The shell hands it what it needs through
-// an api and tells it when that changed; picking inline and the island's modes come with the map.
+// an api and tells it when that changed; picking inline and the island's modes come later.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Design, Proto } from '../shell'
@@ -36,7 +36,7 @@ export type TreeInput = {
 export type TreeApi = { get(): TreeInput; subscribe(fn: () => void): () => void; go(route: string): void; goWork(): void; hide(): void; name: string
   /** Scopes the page: this conversation, another ('conv:<id>'), the whole project ('all') or favorites ('favs'). */
   setScope?(scope: string): void
-  /** Shows a design or a flow (its tree key) on the map, leaving Focus. */
+  /** Opens a design's, a flow's or an exploration's card in the gallery (its tree key), leaving the screen. */
   frame(key: string): void }
 
 const FILTERS: [Filter, () => string][] = [['all', () => t('All')], ['open', () => t('Open')], ['mine', () => t('This conversation')], ['favs', () => t('Favorites')]]
@@ -45,7 +45,7 @@ const pickedOf = (n: TreeNode) => n.children.find(c => c.kind === 'option' && c.
 
 function Tree({ api }: { api: TreeApi }) {
   const input = useSyncExternalStore(api.subscribe, api.get)
-  // The scope is the page's (shell.ts): the tree, the gallery and the map show the same explorations.
+  // The scope is the page's (shell.ts): the tree and the gallery show the same explorations.
   const scope = input.scope ?? 'all', sid = scope.startsWith('conv:') ? scope.slice('conv:'.length) : null
   // Off, the tree keeps its own filter (kept in this browser).
   const [own, setOwn] = useState<Filter>(() => { try { return (localStorage.getItem('proto-tree-filter') as Filter) || 'all' } catch { return 'all' } })
@@ -96,7 +96,7 @@ function Tree({ api }: { api: TreeApi }) {
         {kids}
       </div>
     )
-    // A design or a flow: its caret folds it here, its name frames it on the map.
+    // A design or a flow: its caret folds it here, its name opens its first screen's card in the gallery.
     if (n.kind === 'flow') return <div key={n.key}><Row id={n.key} depth={depth} medium open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count} label={<span dir="auto">{n.label}</span>} />{kids}</div>
     if (n.kind === 'section') return (
       <div key={n.key}>
@@ -124,7 +124,7 @@ function Tree({ api }: { api: TreeApi }) {
     return (
       <div key={n.key}>
         <Row id={n.key} depth={depth} on={lit} open={shut} onCaret={() => flip(n)} mv={n.route}
-          /* An exploration's name shows all its options on the map (its stack spread); a screen's opens it. */
+          /* An exploration's name opens its card in the gallery, with its options; a screen's opens it. */
           onClick={() => { if (!shut) flip(n); if (n.kind === 'exploration') api.frame(`round:${n.route!.split('/')[0]}`); else api.go(n.route!) }}
           icon={n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" /> : <Ph name="shuffle" className={'size-3.5 ' + (n.state === 'waits' ? 'text-zinc-300' : 'text-violet-500')} />}
           label={<span className={n.state === 'waits' ? 'text-zinc-400' : ''}><span dir="auto">{n.label}</span>{parent && <span className="text-[11px] text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}

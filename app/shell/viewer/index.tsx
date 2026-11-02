@@ -11,7 +11,6 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Design, Proto, Session, Variant } from '../shell'
-import { mountMap, type MapApi, type MapInput } from '../map/index'
 import { Ph } from '../tree/row'
 import { shareInfo, shareScope } from '../mode'
 import { t } from '../i18n'
@@ -146,25 +145,6 @@ type Flag = ReturnType<typeof makeFlag>
 
 const screensOf = (p: Proto): Screen[] => p.variants.map((v, k) => ({ key: `${p.id}/${v.id}`, n: numberOf(v.id) || k + 1, name: v.name, v }))
 
-/** A shared design's map, look and open only: a screen double-clicked (or Open) leaves the map for it. */
-function ShareMap({ protos, designs, onOpen }: { protos: Proto[]; designs: Design[]; onOpen: (route: string) => void }) {
-  const host = useRef<HTMLDivElement>(null), mounts = useContext(MountsCtx)!
-  const open = useRef(onOpen)
-  open.current = onOpen
-  useEffect(() => {
-    const subs = new Set<() => void>()
-    let input: MapInput = { protos, designs, place: '', hidden: false, lines: 'selected', design: '', readOnly: true }
-    const set = (next: Partial<MapInput>) => { input = { ...input, ...next }; subs.forEach(f => f()) }
-    const api: MapApi = {
-      get: () => input, subscribe: f => { subs.add(f); return () => { subs.delete(f) } },
-      open: route => open.current(route), mount: (el, c) => mounts.mount(el, c), camera: null,
-      setLines: lines => set({ lines }), setDesign: design => set({ design }), ask: async () => {},
-    }
-    return mountMap(host.current!, api)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-  return <div ref={host} data-viewer-map className="absolute inset-0 z-10 bg-zinc-50 dark:bg-zinc-950" />
-}
-
 function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; designs: Design[] }) {
   const wide = useWide()
   const root = useRef<HTMLDivElement>(null)
@@ -185,12 +165,10 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
   const isNewer = useSyncExternalStore(newer.sub, newer.get)
   const facts = { owner: account.sharer?.login || (shareInfo?.owner ?? ''), avatar: account.sharer?.avatar ?? null, version: shareInfo?.version ?? 1, updatedAt: shareInfo?.updatedAt ?? new Date().toISOString() }
   const bar = useRef<HTMLDivElement>(null)
-  // A share with designs opens on their map; a screen opened from it leaves it, the Map button goes back.
-  const [mapOn, setMapOn] = useState(designs.length > 0)
   // A <Go to> link in a shared screen (adapters/go.react.ts) walks to that screen of the share: the
   // option its design shows, else its first; a screen not in the share stays put.
   const goTo = useRef<(route: string) => void>(() => {})
-  goTo.current = route => { setMapOn(false); setProtoId(route.split('/')[0]); if (wide) openDesign(route); else setSel(route) }
+  goTo.current = route => { setProtoId(route.split('/')[0]); if (wide) openDesign(route); else setSel(route) }
   useEffect(() => {
     const on = (e: Event) => {
       const to = String((e as CustomEvent).detail?.to ?? ''), p = protos.find(x => x.id === to)
@@ -371,13 +349,6 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
         </div>
       )}
       <div className="relative min-h-0 flex-1">
-        {mapOn && <ShareMap protos={protos} designs={designs} onOpen={route => goTo.current(route)} />}
-        {designs.length > 0 && !mapOn && (
-          <button type="button" data-viewer-map-btn onClick={() => { setOpen(null); setMapOn(true) }} title={t('Map')}
-            className="absolute start-3 top-3 z-10 inline-flex h-8 items-center gap-1.5 rounded-full bg-white/95 px-3 text-[12px] font-medium text-zinc-700 shadow ring-1 ring-black/[.06] backdrop-blur dark:bg-zinc-900/95 dark:text-zinc-200 dark:ring-white/10">
-            <Ph name="squaresFour" className="size-3.5" />{t('Map')}
-          </button>
-        )}
         {wide
           ? <>
             <Desk key={proto.id} screens={screens} size={size} phone={proto.kind === 'phone'} sel={cur.key} store={store} api={api}

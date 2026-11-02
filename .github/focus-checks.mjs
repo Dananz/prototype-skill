@@ -63,7 +63,7 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-zoom-pill] [data-shoot="pill-size-phone"]').click()`)
     await until(page, `(() => { const p = document.querySelector('[data-zoom-pct]')?.textContent, c = document.querySelector('[data-view-stage]')?.textContent.match(/· (\\d+)%/)?.[1]; return !!c && p === c + '%' })()`, 'with the phone fitted, the pill should show its real zoom')
     await page.run(`document.querySelector('[data-zoom-pill] [data-shoot="pill-size-phone"]').click()`)
-    await until(page, `!document.querySelector('[data-view-stage]')`, 'the phone layout should toggle off again')
+    await until(page, `document.querySelector('[data-zoom-pill] [data-shoot="pill-size-phone"]').getAttribute('aria-pressed') === 'false'`, 'the phone layout should toggle off again')
     for (const sh of ['strip-move', 'strip-comment']) assert(await page.run(`!!document.querySelector('[data-strip] [data-shoot="${sh}"]:not([disabled])')`), `the strip should have ${sh}`)
     await page.run(`document.querySelector('[data-strip] [data-shoot="strip-states"]').click()`)
     await until(page, `!!document.querySelector('[data-strip-states] [data-act="tool:fhome:B:compare"]')`, 'the states panel should offer Compare')
@@ -76,15 +76,14 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-tree-row="opt:fhome/A"] [data-act="vm:fhome:A"]').click()`)
     await until(page, `[...document.querySelectorAll('[data-pop], [role=menu]')].some(m => /Favorite|Share link/.test(m.textContent))`, 'the ⋯ should open the variant\'s menu (favorite, tools, share)')
     await page.run(`dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
-    // On the map the strip stays, the screen's tools off.
+    // Over the gallery the strip stays, the screen's tools off, and there is nothing to zoom.
     await page.run(`history.pushState(null, '', '/'); dispatchEvent(new PopStateEvent('popstate'))`)
-    await until(page, `!document.querySelector('[data-map-host]').hidden && !!document.querySelector('[data-strip] [data-shoot="strip-tweaks"][disabled]')`, 'on the map the strip should stay with the screen tools off')
-    assert(await page.run(`!!document.querySelector('[data-strip] [data-shoot="strip-links"]')`), 'on the map the strip should offer every link')
-    const z0 = await page.run(`document.querySelector('[data-zoom-pct]').textContent.match(/(\\d+)%/)?.[1]`)
-    await page.run(`document.querySelector('[data-map-zoom="in"]').click()`)
-    await until(page, `document.querySelector('[data-zoom-pct]').textContent.match(/(\\d+)%/)?.[1] !== '${z0}'`, 'the pill\'s + should zoom the map in')
+    await until(page, `!document.querySelector('[data-gallery-host]').hidden && !!document.querySelector('[data-strip] [data-shoot="strip-tweaks"][disabled]')`, 'over the gallery the strip should stay with the screen tools off')
+    assert(await page.run(`document.querySelector('[data-zoom-pill]').hidden`), 'the gallery should have no zoom pill')
     await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
-    await until(page, `!!document.querySelector('[data-shoot="f-to-about"]')`, 'back on home B after the map')
+    await until(page, `!!document.querySelector('[data-shoot="f-to-about"]')`, 'back on home B after the gallery')
+    // A screen fills its stage, on no canvas: the pill's + zooms the layout.
+    assert(await page.run(`!!document.querySelector('[data-layers] [data-shoot="f-to-about"]') && document.querySelector('[data-gallery-host]').hidden`), 'a screen should be in the stage, the gallery hidden')
 
     // The crumb's next arrow walks the flow.
     await page.run(`document.querySelector('[data-crumb-step="1"]').click()`)
@@ -101,9 +100,9 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
     await until(page, `!!document.querySelector('[data-shoot="f-to-about"]')`, 'back on home B')
 
-    // Zooming out of a screen (⌘/Ctrl + wheel, a pinch) goes on out to the map, which flies out from it.
+    // Zooming out of a screen (⌘/Ctrl + wheel, a pinch) goes on out to the gallery.
     await page.run(`(() => { const l = document.querySelector('[data-layers]'); for (let i = 0; i < 4; i++) l.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, ctrlKey: true, bubbles: true, cancelable: true, clientX: 600, clientY: 400 })) })()`)
-    await until(page, `!document.querySelector('[data-map-host]').hidden && location.pathname !== '/fhome/B'`, 'zooming out of a screen should land on the map')
+    await until(page, `!document.querySelector('[data-gallery-host]').hidden && location.pathname !== '/fhome/B'`, 'zooming out of a screen should land on the gallery')
     await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
     await until(page, `!!document.querySelector('[data-shoot="f-to-about"]')`, 'back on home B after the zoom out')
 

@@ -1,14 +1,14 @@
-// The map as a gallery: one card per exploration (its pick, else its first option), those waiting for a
-// pick first, each section a panel on the desk. A card opens its options in a drawer under its row; an
-// option opens it. The canvas map is a switch away (map/index.tsx MapRoot), and Focus still flies in there.
+// The gallery: one card per exploration (its pick, else its first option), those waiting for a pick
+// first, each section a panel on the desk. A card opens its options in a drawer under its row; an option
+// opens it.
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { Proto } from '../shell'
+import type { Design, Proto } from '../shell'
 import { t, tn } from '../i18n'
 import { numberOf } from '../variants'
 import { Ph } from '../tree/row'
-import type { MapInput } from './index'
+import type { GalleryInput } from './index'
 
-/** A still of a route, filling a box of its frame's shape (the map's own Still, so they share one cache). */
+/** A still of a route, filling a box of its frame's shape. */
 export type Pic = (p: Proto, letter: string, want: boolean) => ReactNode
 const frameOf = (p: Proto): [number, number] => p.kind === 'phone' ? p.screen : [1200, 750]
 const COLS_AT = [[1200, 4], [860, 3], [560, 2], [0, 1]] as const
@@ -114,6 +114,13 @@ function Section({ id, title, hint, list, cols, pic, open, openId, setOpenId, ba
   )
 }
 
+/** The first screen of a design or a flow, from its tree key (`design:<id>`, `flow:<id>:<name>`). */
+function firstOf(designs: Design[], key: string) {
+  const [kind, id, ...name] = key.split(':'), d = designs.find(x => x.id === id)
+  const flows = kind === 'design' ? d?.flows : kind === 'flow' ? d?.flows.filter(f => f.name === name.join(':')) : undefined
+  return flows?.flatMap(f => f.screens)[0]?.split('/')[0] ?? ''
+}
+
 type Conv = { sid: string; name: string; at: string; n: number; picked: number }
 
 /** The other conversations, one line each: opening one scopes the page (and the tree) to it. */
@@ -140,7 +147,7 @@ function Past({ convs, setScope }: { convs: Conv[]; setScope: (scope: string) =>
 }
 const Empty = ({ text }: { text: string }) => <p className="rounded-3xl bg-[var(--desk-card)] px-6 py-10 text-center text-sm text-zinc-400 ring-1 ring-[var(--desk-line)]">{text}</p>
 
-export function Gallery({ input, pic, open, safe, head, setScope }: { input: MapInput; pic: Pic; open: (route: string) => void; safe: { l: number; t: number; r: number; b: number }; head?: ReactNode; setScope: (scope: string) => void }) {
+export function Gallery({ input, pic, open, safe, setScope }: { input: GalleryInput; pic: Pic; open: (route: string) => void; safe: { l: number; t: number; r: number; b: number }; setScope: (scope: string) => void }) {
   const scroller = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   useEffect(() => {
@@ -163,16 +170,17 @@ export function Gallery({ input, pic, open, safe, head, setScope }: { input: Map
   // A new scope starts at the top.
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [scope])
   // The tree (or an exploration's own page) asked for one: its card opens, and the drawer scrolls it in.
+  // A design or a flow opens its first screen's card.
   useEffect(() => {
     const key = (input.frame ?? '').split('#')[0]
-    if (key.startsWith('round:')) setOpenId(key.slice('round:'.length))
-  }, [input.frame])
+    const slug = key.startsWith('round:') ? key.slice('round:'.length) : firstOf(input.designs, key)
+    if (slug) setOpenId(slug)
+  }, [input.frame]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div ref={scroller} data-gallery className={'absolute inset-0 overflow-y-auto overscroll-contain ' + (input.hidden ? 'hidden' : '')}
       style={{ paddingLeft: safe.l + pad, paddingRight: safe.r + pad, paddingTop: safe.t + 14, paddingBottom: safe.b + 120 }}>
       <style>{'@keyframes proto-gallery-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}'}</style>
       <div className="mx-auto max-w-[1600px]">
-        {head && <div className="mb-4 flex justify-center">{head}</div>}
         {scope === 'favs' ? (live.length ? <Section id="favs" title={t('Favorites')} hint={t('From the whole project')} list={live} bare {...same} /> : <Empty text={t('No favorites yet')} />)
           : scope === 'all' ? convs.map(c => <Section key={c.sid} id={`conv:${c.sid}`} title={c.name || t('A past conversation')} hint={c.sid === input.me ? t('This conversation') : day(c.at)} list={live.filter(p => (p.session ?? '') === c.sid)} bare={convs.length === 1} {...same} />)
           : <>

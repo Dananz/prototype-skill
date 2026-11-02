@@ -89,7 +89,7 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-tree-session]').click()`)
     await until(page, `document.querySelector('[data-settings-category=session]')?.getAttribute('aria-current') === 'page'`, 'the project name should open Settings on Session')
     await page.run(`document.querySelector('[data-settings-category=shortcuts]').click()`)
-    await until(page, `/Map\\s*M/.test(document.querySelector('[data-settings-dialog]')?.textContent ?? '') && /Jump to a screen/.test(document.querySelector('[data-settings-dialog]').textContent)`, 'Shortcuts should list M and Jump with the tree on')
+    await until(page, `/Gallery\\s*M/.test(document.querySelector('[data-settings-dialog]')?.textContent ?? '') && /Jump to a screen/.test(document.querySelector('[data-settings-dialog]').textContent)`, 'Shortcuts should list M and Jump with the tree on')
     await page.run(`document.querySelector('[data-settings-close]').click()`)
     await until(page, `!document.querySelector('[data-settings-dialog]')`, 'Settings should close')
 
@@ -103,19 +103,21 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await page.run(`location.assign('/thome/C')`)
     await wait(500)
     await until(page, `!window.__treeMark && !!document.querySelector('[data-tree-row="design:acme"]')`, 'the switch should survive a load without ?tree')
-    // A design's row: its name frames the design on the map (leaving Focus), its caret folds it.
+    // A design's row: its name opens its first screen's card in the gallery (leaving Focus), its caret folds it.
     await page.run(`document.querySelector('[data-tree-row="design:acme"] button[aria-expanded]').click()`)
     await until(page, `!document.querySelector('[data-tree-row="screen:thome"]')`, 'the caret should fold the design')
     assert(await page.run(`location.pathname === '/thome/C'`), 'folding a design should not move the page')
     await page.run(`document.querySelector('[data-tree-row="design:acme"] button[aria-expanded]').click()`)
     await until(page, `!!document.querySelector('[data-tree-row="screen:thome"]')`, 'the caret should open the design again')
     await page.run(`document.querySelector('[data-tree-row="design:acme"] button:not([aria-expanded])').click()`)
-    await until(page, `location.pathname === '/' && !document.querySelector('[data-map-slot]')`, 'the design\'s name should leave Focus for the map')
-    await until(page, `(() => { const m = document.querySelector('[data-map]').getBoundingClientRect(), l = document.querySelector('[data-map-label="design:acme"]')?.getBoundingClientRect(), b = document.querySelector('[data-map-board="screen:thome"]')?.getBoundingClientRect(); return !!l && !!b && l.top >= m.top - 2 && b.bottom <= m.bottom + 2 && b.right <= m.right + 2 && b.width < m.width })()`, 'the map should frame the design: its name and screens in view')
-    // An exploration's row: its name spreads its stack on the map and frames all its options; its pick's mark opens the pick.
+    await until(page, `location.pathname === '/' && !document.querySelector('[data-gallery-host]').hidden`, 'the design\'s name should leave the screen for the gallery')
+    await until(page, `!!document.querySelector('[data-gallery-options="thome"]')`, 'the design\'s name should open its first screen\'s card')
+    await until(page, `!!document.querySelector('[data-gallery-card="thome"] img[data-gallery-still]')`, 'a card should show a still of its page')
+    assert(await page.run(`!document.querySelector('[data-map], [data-map-view], [data-map-host]')`), 'nothing of the map should be left')
+    // An exploration's row: its name opens its card in the gallery, with all its options; its pick's mark opens the pick.
     await until(page, `!!document.querySelector('[data-tree-row="exp:tlogo"]')`, 'the picked exploration tlogo should be in the tree')
     await page.run(`document.querySelector('[data-tree-row="exp:tlogo"] button:not([aria-expanded]):not([data-act]):not([data-tree-picked])').click()`)
-    await until(page, `location.pathname === '/' && !document.querySelector('[data-map-board^="opt:tlogo/"][data-map-pile]') && [...document.querySelectorAll('[data-map-board^="opt:tlogo/"]')].every(b => { const r = b.getBoundingClientRect(), m = document.querySelector('[data-map]').getBoundingClientRect(); return r.left >= m.left - 1 && r.right <= m.right + 1 && r.top >= m.top - 1 && r.bottom <= m.bottom + 1 })`, 'an exploration\'s name should spread its stack and show all its options')
+    await until(page, `location.pathname === '/' && !!document.querySelector('[data-gallery-options="tlogo"] [data-gallery-option="tlogo/B"]')`, 'the exploration\'s name should open its options in the gallery')
     await page.run(`document.querySelector('[data-tree-row="exp:tlogo"] [data-tree-picked]').click()`)
     await until(page, `location.pathname === '/tlogo/B'`, 'the pick\'s mark should open the pick')
     await page.run(`history.pushState(null, '', '/'); dispatchEvent(new PopStateEvent('popstate'))`)
