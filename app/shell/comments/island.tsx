@@ -259,7 +259,9 @@ export function Island({ dock }: { dock: HTMLElement }) {
     <div data-island-grip className="flex shrink-0 cursor-grab items-center gap-2 px-3.5 pb-1 pt-3">
       <h2 className="text-[13px] font-semibold">{t('Comments')}</h2>
       <Listening on={!!s.inbox?.listening} stalled={stalled > 0} className="ms-auto" />
-      {fold}
+      {fold || (!docked && <button type="button" data-shoot="island-collapse" onClick={() => act.openIsland(false)} aria-label={t('Collapse the comments')} title={t('Collapse the comments')} className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 active:bg-zinc-900/10 dark:text-zinc-400 dark:hover:bg-white/10 dark:active:bg-white/15">
+        <Icon name="chev" className="size-4" />
+      </button>)}
     </div>
     {/* The list fades out at its own foot, so the fade never lies over what comes after it (a notice,
         the tags over the box). */}
