@@ -26,6 +26,7 @@ import { commentCompareChecks } from './comment-compare-checks.mjs'
 import { commentNavigationChecks } from './comment-navigation-checks.mjs'
 import { commentImagesChecks } from './comment-images-checks.mjs'
 import { commentPicturesChecks } from './comment-pictures-checks.mjs'
+import { commentRtlChevronChecks } from './comment-rtl-chevron-checks.mjs'
 import { shootPinChecks } from './shoot-pin-checks.mjs'
 import { commentUntilChecks } from './comment-until-checks.mjs'
 import { hostLabelChecks } from './host-label-checks.mjs'
@@ -292,10 +293,17 @@ if (process.argv.includes('--comment-gone-only')) {
   console.log('OK: focused gone-target comment checks')
   process.exit(0)
 }
+if (process.argv.includes('--rtl-chevron-only')) {
+  await commentRtlChevronChecks({ proto, app, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  process.exit(0)
+}
 if (process.argv.includes('--comment-core-only')) {
   await commentWholeChecks({ proto, app, openPage, fail })
   await commentImagesChecks({ proto, app, openPage, fail })
   await commentPicturesChecks({ proto, app, openPage, fail })
+await commentRtlChevronChecks({ proto, app, openPage, fail })
   await commentReplyThreadChecks({ proto, app, local, openPage, fail })
   await pickNoteChecks({ proto, app, local, openPage, fail, keepShots })
   proto(['rm', '--all'])
@@ -429,6 +437,7 @@ await commentRoutesChecks({ proto, app, openPage, fail })
 await commentNavigationChecks({ app, openPage, fail })
 await commentCompareChecks({ proto, app, openPage, fail })
 await commentPicturesChecks({ proto, app, openPage, fail })
+await commentRtlChevronChecks({ proto, app, openPage, fail })
 await shootPinChecks({ proto, app, local, fail })
 await commentUntilChecks({ proto, app, fail })
 await commentReplyThreadChecks({ proto, app, local, openPage, fail })
