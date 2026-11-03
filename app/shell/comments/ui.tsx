@@ -6,7 +6,7 @@ import { useAgentName, useCtx } from './ctx'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { uiBox } from '../portals'
 import { SIZE_PATHS, sizeIcon, sizeName, type ViewSize } from '../view/sizes'
-import { ago, ic } from '../ui'
+import { ago, ALONG, ic } from '../ui'
 import { t, tn } from '../i18n'
 import type { Action, CState, Item, Seg, Target } from './types'
 import { variantLabel, variantRef } from '../variants'
@@ -36,7 +36,7 @@ const PHOSPHOR = new Set(['dots', 'pick', 'picked'])
 export function Icon({ name, className = 'size-4' }: { name: string; className?: string }) {
   // Names this file has no path for (link, play, grid, the theme's sun and moon) are the shell's own.
   if (PHOSPHOR.has(name) || !PATHS[name]) return <span className="contents" dangerouslySetInnerHTML={{ __html: ic(name, className) }} />
-  return <svg className={`${className} shrink-0`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PATHS[name]} /></svg>
+  return <svg className={`${className} shrink-0${ALONG.has(name) ? ' rtl:-scale-x-100' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PATHS[name]} /></svg>
 }
 
 /** One row of pictures, fading only the edges that have more content offscreen. */

@@ -207,7 +207,7 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
           <PinDot n={item.n} done whole={item.target?.whole} />
           <span className={`min-w-0 flex-1 truncate text-zinc-500 transition-colors duration-150 group-hover:text-zinc-800 dark:group-hover:text-zinc-200 ${roomy ? 'text-[13.5px]' : 'text-[12.5px]'}`}>{item.action ? <span dir="auto">{aboutOf(item)}{item.body.length ? <>: <Body c={item} /></> : ''}</span> : <Body c={item} />}</span>
           <Where item={item} here={r.here} />
-          <Icon name="right" className={`size-4 text-zinc-400 transition-[transform,color] group-hover:text-zinc-600 dark:group-hover:text-zinc-300 ${open ? 'rotate-90' : ''}`} />
+          <Icon name="right" className={`size-4 text-zinc-400 transition-[transform,color] group-hover:text-zinc-600 dark:group-hover:text-zinc-300 ${open ? 'rotate-90 rtl:-rotate-90' : ''}`} />
         </button>
         <Remove item={item} />
       </div>

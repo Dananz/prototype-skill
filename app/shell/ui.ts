@@ -94,7 +94,7 @@ const PATHS: Record<string, string> = {
 }
 
 // Icons that point along the line mirror with it: in a right-to-left page, forward points left.
-const ALONG = new Set(['right', 'left', 'branch', 'from', 'fold-right', 'open-out', 'reply-back', 'send-plane'])
+export const ALONG = new Set(['right', 'left', 'branch', 'from', 'fold-right', 'open-out', 'reply-back', 'send-plane'])
 export const ic = (name: string, size = 'size-4', cls = ALONG.has(name) ? `${size} rtl:-scale-x-100` : size) => PHOSPHOR[name]
   ? PHOSPHOR[name].replace('<svg', `<svg class="${cls} shrink-0" aria-hidden="true"`)
   : `<svg class="${cls} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${PATHS[name]}"/></svg>`
