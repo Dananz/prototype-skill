@@ -109,11 +109,10 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
     await until(page, `!!document.querySelector('[data-shoot="f-to-about"]')`, 'back on home B')
 
-    // Zooming out of a screen (⌘/Ctrl + wheel, a pinch) goes on out to the gallery.
+    // Zooming out of a screen (⌘/Ctrl + wheel, a pinch) stays on the screen: only M or the crumb leave it.
     await page.run(`(() => { const l = document.querySelector('[data-layers]'); for (let i = 0; i < 4; i++) l.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, ctrlKey: true, bubbles: true, cancelable: true, clientX: 600, clientY: 400 })) })()`)
-    await until(page, `!document.querySelector('[data-gallery-host]').hidden && location.pathname !== '/fhome/B'`, 'zooming out of a screen should land on the gallery')
-    await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
-    await until(page, `!!document.querySelector('[data-shoot="f-to-about"]')`, 'back on home B after the zoom out')
+    await wait(400)
+    assert(await page.run(`document.querySelector('[data-gallery-host]').hidden && location.pathname === '/fhome/B'`), 'zooming out of a screen should stay on the screen, not open the gallery')
 
     // ⌘K: Jump.
     await page.run(`document.body.focus(); dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))`)

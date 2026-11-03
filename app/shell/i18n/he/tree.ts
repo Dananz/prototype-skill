@@ -84,8 +84,6 @@ export default {
   'States, Autoplay, Compare': 'מצבים, הפעלה אוטומטית, השוואה',
   // Settings' shortcuts with the tree on.
   'Jump to a screen': 'קפיצה למסך',
-  'Zoom out past the screen to the gallery': 'התרחקות מהמסך אל הגלריה',
-  'Pinch': 'צביטה',
   // A round's row (tree/index.tsx).
   'Open #{n}, the pick': 'פתח את #{n}, שנבחר',
   // The strip's map tools (shell.ts paintStrip).
