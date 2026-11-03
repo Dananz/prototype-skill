@@ -397,7 +397,7 @@ export function receive(data, root = dir, { check = false } = {}) {
       if (c.action === 'pick' || c.action === 'unpick') {
         let meta
         try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { throw bad(i, `: src/protos/${slug}/meta.ts is missing or isn't plain JSON, so a pick can't be marked in it`) }
-        if (!meta?.variants?.[letter]) throw bad(i, `: ${slug} has no variant ${letter}`)
+        if (!meta?.variants?.[letter] && !hasVariant(slug, letter)) throw bad(i, `: ${slug} has no variant ${letter}`)
       } else if (!hasVariant(slug, letter)) throw bad(i, `: ${slug} has no variant ${letter}`)
     }
     const images = (Array.isArray(c.images) ? c.images : []).map(img => {
