@@ -271,6 +271,13 @@ if (process.argv.includes('--labels-favorites-only')) {
   console.log('OK: focused variant label and favorites checks')
   process.exit(0)
 }
+if (process.argv.includes('--middle-drag-only')) {
+  await middleDragChecks({ proto, app, local, openPage, fail, keepShots: process.env.PROTO_DRAG_SHOTS || '', before: !!process.env.PROTO_DRAG_BEFORE })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused view drag checks')
+  process.exit(0)
+}
 if (process.argv.includes('--zoom-reset-only')) {
   await zoomResetChecks({ proto, app, local, openPage, fail, keepShots })
   proto(['rm', '--all'])

@@ -169,4 +169,46 @@ export default function A() {
     assert(g3.fx === g4.fx && g3.fy === g4.fy && !await animating(), 'after a trackpad zoom the phone kept moving: it should stay where the zoom left it')
     assert(!near(g4.fx + g4.fw / 2, g4.ax + g4.aw / 2, 20), 'after a trackpad zoom the phone went back to the middle')
   } finally { page.close() }
+
+  // 6. Right to left, the same canvas: a mouse on the space around the device, then the middle button
+  //    over it, follow the hand both ways along the x axis, and a zoom holds the spot under the pointer.
+  const he = await openPage(`${local}mdrag/A?theme=light&lang=he`)
+  try {
+    for (const end = Date.now() + 15_000; !await he.run(ready); await wait(100)) if (Date.now() > end) fail('middle-button drag: the design never showed in Hebrew')
+    await wait(400)
+    assert(await he.run(`document.documentElement.dir`) === 'rtl', 'the Hebrew page is not right to left')
+    let shot = false
+    const drag = async (button, buttons, [x0, y0], dx, dy) => {
+      await he.mouse('mouseMoved', x0, y0, { button: 'none' })
+      await he.mouse('mousePressed', x0, y0, { button, buttons, clickCount: 1 })
+      for (let i = 1; i <= 8; i++) {
+        await he.mouse('mouseMoved', x0 + dx * i / 8, y0 + dy * i / 8, { button, buttons })
+        if (keepShots && !shot) await he.screenshot(join(keepShots, `rtl-${before ? 'before' : 'after'}-${i}.png`))
+      }
+      shot = true
+      await he.mouse('mouseReleased', x0 + dx, y0 + dy, { button, buttons: 0, clickCount: 1 })
+    }
+    for (const dx of [-140, 140, 140, -140]) {
+      const a = await he.run(geo)
+      await drag('left', 1, [a.fx + a.fw / 2, a.ay + 6], dx, 30)
+      const b = await he.run(geo)
+      assert(near(b.fx - a.fx, dx) && near(b.fy - a.fy, 30), `in Hebrew a mouse drag beside the device moved it ${Math.round(b.fx - a.fx)}, ${Math.round(b.fy - a.fy)} for ${dx}, 30`)
+    }
+    for (const dx of [-120, 120]) {
+      const a = await he.run(geo)
+      await drag('middle', 4, [a.fx + a.fw / 2, a.fy + a.fh / 2], dx, 0)
+      const b = await he.run(geo)
+      assert(near(b.fx - a.fx, dx), `in Hebrew the middle button moved the device ${Math.round(b.fx - a.fx)} for ${dx}`)
+    }
+    const z0 = await he.run(geo), at = [z0.fx + z0.fw * 0.3, z0.fy + z0.fh * 0.5], u = (at[0] - z0.fx) / z0.fw
+    await he.mouse('mouseWheel', at[0], at[1], { button: 'none', deltaX: 0, deltaY: -60, modifiers: 2 })
+    await wait(400)
+    const z1 = await he.run(geo)
+    assert(z1.fw > z0.fw + 20 && near(z1.fx + z1.fw * u, at[0], 3), `in Hebrew a zoom slid the page ${Math.round(z1.fx + z1.fw * u - at[0])} px from under the pointer`)
+    const m = await he.run(geo)
+    await he.mouse('mouseWheel', m.fx + m.fw / 2, m.fy + 80, { button: 'none', deltaX: 90, deltaY: 0 })
+    await wait(300)
+    const n = await he.run(geo)
+    assert(near(m.fx - n.fx, 90), `in Hebrew a sideways wheel on a zoomed view moved it ${Math.round(m.fx - n.fx)} for 90`)
+  } finally { he.close() }
 }

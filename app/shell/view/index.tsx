@@ -257,8 +257,9 @@ function ViewStage({ view, path, dark, set, route, onKey, safe }: ViewProps & { 
             )}
           </div>}
       {/* No scrollbars, as on a canvas: one coming and going changes the area's width, and with it Fit, which
-          brings it back (the zoom flickered between two values). It moves by drag, wheel and fingers. */}
-      <div ref={area} data-view-area className={`${safe ? 'absolute inset-0' : 'min-h-0 flex-1'} overflow-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`} style={{ touchAction: 'pan-x pan-y' }}>
+          brings it back (the zoom flickered between two values). It moves by drag, wheel and fingers. Left to right
+          in every language: a canvas has no reading direction, and its place is laid out as a positive scrollLeft. */}
+      <div ref={area} dir="ltr" data-view-area className={`${safe ? 'absolute inset-0' : 'min-h-0 flex-1'} overflow-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`} style={{ touchAction: 'pan-x pan-y' }}>
         <div ref={wrap} className="flex h-max min-h-full w-max min-w-full items-start justify-start">
           <LiveFrame path={path} dark={dark} w={d.w} h={d.h} scale={scale} route={route} bind={bind}
             ring={!view.size ? `bg-white dark:bg-zinc-950 ${desk ? 'rounded-[10px] ring-1 ring-black/[.08] shadow-[0_18px_44px_-18px_rgb(0_0_0/.35)] dark:ring-white/[.12]' : ''}` : `bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${pad ? 'rounded-[10px]' : ''}`}>
