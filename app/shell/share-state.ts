@@ -15,6 +15,8 @@ export type ShareRow = {
   id: string; title: string; scope: { protos: { id: string; variants: string[] }[]; start: string }; version: number; publishedAt: string
   note?: string; message?: string | null; host: string; link: string | null; changed: boolean; comments: { total: number; new: number }; live?: boolean | null
   views?: number | null; viewers?: LinkViewer[]; changedVariants?: { key: string; name: string }[]
+  /** Its owner turned it off: viewers are refused until it is turned back on. */
+  disabled?: boolean
 }
 export type Listed = { host: { name: string; stage: string; owner: string } | null; hostError: string | null; shares: ShareRow[]; setup?: string }
 /**
@@ -111,7 +113,8 @@ export const nowIn = (s: ShareRow) => (s.viewers ?? []).filter(isNow)
 
 /** What the bar's Share button shows: a link behind its edits, and how many people are in the links now. */
 export function badge() {
-  const shares = state.listed?.shares ?? []
+  // A link that is off asks for nothing: it isn't behind, and nobody is in it.
+  const shares = (state.listed?.shares ?? []).filter(s => !s.disabled)
   const people = new Set(shares.flatMap(s => nowIn(s).map(v => v.login)))
   return { behind: shares.some(s => s.changed), now: people.size }
 }

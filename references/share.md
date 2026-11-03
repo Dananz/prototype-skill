@@ -113,6 +113,8 @@ proto share update <id> [--note "…"] [--message "…" | --message=] [--yes]
 proto share comments [<id>] [--new]       viewer comments on this session's links, fenced as quoted feedback
 proto share take <commentId…> | --new [<id>]   send them to the inbox, as the page's Send to Claude does
                                           (only when the user asks in chat)
+proto share disable <id>                  turn a link off; it says "This link is turned off", its page and comments kept
+proto share enable <id>                   turn it back on, at the same link
 proto share rm <id>                       take a link down; it then says "This link was removed"
 proto share file <slug>[/<n>…] [--out <file.html>]   the same build as one HTML file, comments off
 proto share stop                          stop the local host; the next share starts it again
@@ -280,6 +282,7 @@ points at the card.
 | A link opens in Chrome but not in Safari | Safari may not resolve `*.localhost` (not yet checked by hand). Open the path form instead, `http://127.0.0.1:<port>/s/<id>/`, which the host always serves. |
 | "No owner token for the host" | The token was lost (Keychain item deleted). Online: `proto share signin`. The host on this Mac: `proto share setup --local`. |
 | A `<id>.localhost` link shows another app | The host listens on 127.0.0.1 and links say `localhost`, so a server of yours on `::1` at the same port can answer them. Open the path form `http://127.0.0.1:<port>/s/<id>/`, or stop that server and share again. |
+| A link says "This link is turned off" | It was disabled from the Share popover or with `proto share disable`; `proto share enable <id>` or Enable in the popover brings it back. A disabled link still counts toward the 25 live links: remove it to free the slot. |
 | A link says "This link was removed" | It was taken down with `proto share rm`; share again for a new link. |
 | The tray says the host can't be reached | A local host is stopped: `proto share ls` starts it. An online one: check the network. Replies and statuses waiting in the outbox go once it answers. |
 | "Already sent from another session" | Another session or tab sent that comment to Claude first; it is in that session's inbox. |

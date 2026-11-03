@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS shares   (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL
                        html_key TEXT,                 -- the live version's KV key; NULL: html:<id>:<version>
                        message TEXT,                  -- the owner's words for viewers, at most 280 characters
                        card_key TEXT,                 -- the preview card's KV key; NULL: none of its own
-                       purged_at INTEGER);            -- expired 30 days: the page and card are gone, the row and comments stay
+                       purged_at INTEGER,             -- expired 30 days: the page and card are gone, the row and comments stay
+                       disabled_at INTEGER);          -- turned off by its owner: viewers are refused, the page and comments stay
 CREATE TABLE IF NOT EXISTS links    (id TEXT PRIMARY KEY, share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
                        kind TEXT NOT NULL CHECK (kind IN ('open','person')), name TEXT,
                        revoked_at INTEGER, created_at INTEGER NOT NULL, last_seen_at INTEGER);

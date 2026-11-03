@@ -1,5 +1,5 @@
 // The session server's /__proto/share/* routes: the page's Share sheet (list, publish, update,
-// remove) and its "From links" tray (comments, send, reply, hide, dismiss), plus the poll that fills
+// disable, remove) and its "From links" tray (comments, send, reply, hide, dismiss), plus the poll that fills
 // the tray (spec: In the owner's page). The owner token stays in this process; the page only ever
 // talks to this server. Every route is a POST with JSON, behind the server's own origin check.
 //
@@ -8,7 +8,7 @@
 // session runs that way, so it can never reach the owner's real host or Keychain; what the person
 // does (publish, send, reply) still goes out.
 import { SIGN_IN_FIRST, client, clientFor, defaultHost, dismiss, flush, forget, getToken, hostHealth, hostNamed, isLocal, linkOf, mergeTray, outboxFile, pollOnce, queue, readShares, sendComments, setupHint, signIn, trayItems, trayView } from './owner.mjs'
-import { changedSince, changedVariants, messageOf, protosOf, publishShare, removeShare, titleOf, updateShare } from './publish.mjs'
+import { changedSince, changedVariants, disableShare, messageOf, protosOf, publishShare, removeShare, titleOf, updateShare } from './publish.mjs'
 import { ShareError, parseScope } from './scope.mjs'
 import { spawn } from 'node:child_process'
 import { statSync } from 'node:fs'
@@ -137,7 +137,7 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
     return {
       id: e.id, title: e.title, scope: e.scope, version: e.version, publishedAt: e.publishedAt, ...(e.note ? { note: e.note } : {}),
       host: e.host, link: host ? linkOf(host, e.id) : null, changed: changedSince(root, e), changedVariants: changedVariants(root, e),
-      message: e.message ?? null,
+      message: e.message ?? null, disabled: e.disabled === true,
       comments: { total: mine.length, new: mine.filter(c => c.status === 'new' && !c.dismissed).length },
     }
   }
@@ -191,7 +191,7 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
           for (const s of shares) {
             if (s.host !== name) continue
             const r = byId.get(s.id)
-            Object.assign(s, { live: !!r, views: r?.views ?? null, viewers: facesOf(r?.viewers), ...(r && 'message' in r ? { message: r.message ?? null } : {}) })
+            Object.assign(s, { live: !!r, views: r?.views ?? null, viewers: facesOf(r?.viewers), ...(r && 'message' in r ? { message: r.message ?? null } : {}), ...(r && 'disabled' in r ? { disabled: r.disabled === true } : {}) })
           }
         } catch (e) { if (e?.status === 401) forget(name); hostError = String(e?.message || e) }
       }
@@ -281,6 +281,13 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
       // The tray's comments on the old version now say it has changed since.
       if (r.ok) tell()
       return r
+    },
+    async disable(data) {
+      if (typeof data.id !== 'string' || typeof data.disabled !== 'boolean') throw failure(400, 'send { id, disabled }')
+      const e = entryOf(data.id)
+      const { host, token } = await reach(e.host)
+      await disableShare({ sessionDir: root, host, token, id: e.id, disabled: data.disabled })
+      return { ok: true, id: e.id, disabled: data.disabled }
     },
     async remove(data) {
       if (typeof data.id !== 'string') throw failure(400, 'send { id }')

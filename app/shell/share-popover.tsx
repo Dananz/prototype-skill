@@ -14,8 +14,8 @@ import { ago } from './ui'
 import { variantLabel } from './variants'
 import { Icon } from './comments/ui'
 import {
-  Again, CopyButton, Gate, ICON_BTN, MESSAGE_MAX, Made, MessageField, NoHost, PRIMARY_BTN, Preview, Quick, ReviewBox, SECTION, SMALL, Spinner, TEXT_BTN,
-  keyOf, type P, type Step,
+  Again, CopyButton, Gate, ICON_BTN, LinkActions, MESSAGE_MAX, Made, MessageField, NoHost, PRIMARY_BTN, Preview, Quick, ReviewBox, SECTION, SMALL, Spinner, TEXT_BTN,
+  keyOf, useLinkActions, type P, type Step,
 } from './share-link-sheet'
 import { isNow, loadList, loadOwner, mustSignIn, mustWait, notLetIn, nowIn, route, shareState, signedOut, type LinkViewer, type Owner, type ShareRow } from './share-state'
 
@@ -96,9 +96,47 @@ function UpdateTrouble({ u, note }: { u: ReturnType<typeof useUpdate>; note: str
   return null
 }
 
+const MORE_BTN = 'grid size-7 shrink-0 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'
+const ENABLE_BTN = 'inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-zinc-900/[.06] px-2.5 text-[11px] font-semibold text-zinc-800 hover:bg-zinc-900/10 disabled:opacity-60 dark:bg-white/10 dark:text-zinc-100 dark:hover:bg-white/15'
+
+/**
+ * A link's rarer actions, opened from its ⋯. A remove loses the button that had the focus, so the
+ * focus goes to the popover first, for Esc and the keyboard.
+ */
+function useMore(s: ShareRow) {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLElement | null>(null)
+  const a = useLinkActions(s, async () => {
+    box.current?.closest<HTMLElement>('[data-share-pop]')?.focus({ preventScroll: true })
+    await loadList()
+    setOpen(false)
+  })
+  return { open, setOpen, a, box }
+}
+
+function MoreButton({ s, m }: { s: ShareRow; m: ReturnType<typeof useMore> }) {
+  return <button type="button" data-pop-more aria-expanded={m.open} aria-label={t('More for {title}', { title: s.title })} title={t('More for {title}', { title: s.title })} onClick={() => m.setOpen(!m.open)} className={MORE_BTN}><Icon name="dots" className="size-4" /></button>
+}
+
+function EnableButton({ m }: { m: ReturnType<typeof useMore> }) {
+  return <button type="button" data-pop-enable disabled={m.a.busy} onClick={() => void m.a.toggle()} title={t('Open it to viewers again, at the same link')} className={ENABLE_BTN}><Icon name="eye" className="size-3.5" />{t('Enable')}</button>
+}
+
+const DisabledTag = () => <span data-pop-disabled className="shrink-0 rounded-full bg-zinc-900/[.06] px-1.5 text-[10px] font-semibold text-zinc-600 dark:bg-white/10 dark:text-zinc-300">{t('Disabled')}</span>
+
+function MoreStrip({ s, m, className }: { s: ShareRow; m: ReturnType<typeof useMore>; className: string }) {
+  return (
+    <>
+      {m.open && <div data-pop-actions className={`flex flex-wrap items-center justify-end gap-1 ${className}`}>{m.a.busy && <Spinner />}<LinkActions s={s} a={m.a} hideEnable /></div>}
+      {m.a.error && <p role="alert" className="px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300">{m.a.error}</p>}
+    </>
+  )
+}
+
 /** The link of the prototype on screen: who is in it now, views and comments, and Update when it fell behind. */
 function HereCard({ s, protos, routeName, open, dark, pathOf }: { s: ShareRow; protos: P[]; routeName: (r: string | null) => string; open: boolean; dark: boolean; pathOf: PopProps['pathOf'] }) {
   const u = useUpdate(s)
+  const m = useMore(s)
   const note = u.note, setNote = u.setNote
   const now = nowIn(s)
   const viewers = s.viewers ?? []
@@ -112,20 +150,20 @@ function HereCard({ s, protos, routeName, open, dark, pathOf }: { s: ShareRow; p
     return `#${variantLabel(protos.find(x => x.id === proto) ?? null, letter)} ${name}`
   }
   return (
-    <section data-pop-here={s.id} data-version={s.version} className="overflow-hidden rounded-xl border border-black/[.08] bg-zinc-900/[.015] dark:border-white/10 dark:bg-white/[.03]">
+    <section ref={el => { m.box.current = el }} data-pop-here={s.id} data-version={s.version} className="overflow-hidden rounded-xl border border-black/[.08] bg-zinc-900/[.015] dark:border-white/10 dark:bg-white/[.03]">
       <div className="flex items-center gap-3 p-3">
-        {open && startVariant && <Preview path={pathOf(startProto, startVariant)} screen={startP?.screen} dark={dark} className="w-[72px]" />}
+        {open && startVariant && <Preview path={pathOf(startProto, startVariant)} screen={startP?.screen} dark={dark} className={`w-[72px] ${s.disabled ? 'opacity-40' : ''}`} />}
         <span className="min-w-0 flex-1">
-          <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold"><span dir="auto" className="truncate">{s.title}</span><span className="shrink-0 font-normal text-zinc-500">v{s.version}</span></span>
+          <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold"><span dir="auto" className={`truncate ${s.disabled ? 'text-zinc-500 dark:text-zinc-400' : ''}`}>{s.title}</span><span className="shrink-0 font-normal text-zinc-500">v{s.version}</span>{s.disabled && <DisabledTag />}</span>
           {s.link && <span dir="ltr" className="mt-0.5 block truncate text-start font-mono text-[11px] text-zinc-500 dark:text-zinc-400">{s.link.replace(/^https?:\/\//, '')}</span>}
-          <span className="mt-1.5 flex min-w-0 items-center gap-2">
+          {s.disabled ? <span className={`mt-1.5 block ${SMALL}`}>{t('Disabled. Viewers can’t open it.')}</span> : <span className="mt-1.5 flex min-w-0 items-center gap-2">
             <Faces viewers={viewers} />
             <span data-pop-looking className="min-w-0 truncate text-xs text-zinc-600 dark:text-zinc-300">
               {now.length
                 ? <span className="text-emerald-700 dark:text-emerald-300">{t('{name} is looking at {route}', { name: now[0].name || now[0].login, route: routeName(now[0].route) })}</span>
                 : viewers[0] ? t('{name} · {when}', { name: viewers[0].name || viewers[0].login, when: ago(viewers[0].at) }) : t('Not opened lately')}
             </span>
-          </span>
+          </span>}
         </span>
         {s.link && <><CopyButton text={s.link} data-pop-copy="" /><a href={s.link} target="_blank" rel="noopener noreferrer" aria-label={t('Open the link')} title={t('Open the link')} className={ICON_BTN}><Icon name="open-out" className="size-4" /></a></>}
       </div>
@@ -134,8 +172,10 @@ function HereCard({ s, protos, routeName, open, dark, pathOf }: { s: ShareRow; p
         <span className="inline-flex items-center gap-1"><Icon name="chat-circle" className="size-3.5" />{tn(s.comments.total, '{n} comment', '{n} comments')}
           {s.comments.new > 0 && <span data-pop-new className="ms-1 rounded-full bg-sky-500/15 px-1.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300">{tn(s.comments.new, '{n} new', '{n} new')}</span>}
         </span>
+        <span className="ms-auto flex items-center gap-1">{s.disabled && <EnableButton m={m} />}<MoreButton s={s} m={m} /></span>
       </div>
-      {s.changed && !u.done && (
+      <MoreStrip s={s} m={m} className="border-t border-black/[.06] px-2 py-1.5 dark:border-white/[.06]" />
+      {s.changed && !u.done && !s.disabled && (
         <div data-pop-behind className="space-y-2.5 border-t border-amber-500/20 bg-amber-500/[.07] p-3">
           <p className="flex items-center gap-2 text-xs font-semibold text-amber-800 dark:text-amber-200"><span className="size-1.5 rounded-full bg-amber-500" />
             {counted ? tn(counted, 'You changed {n} variant since v{v}', 'You changed {n} variants since v{v}', { v: s.version }) : t('You changed it since v{v}', { v: s.version })}
@@ -161,23 +201,27 @@ function HereCard({ s, protos, routeName, open, dark, pathOf }: { s: ShareRow; p
 /** One of the session's other links: views, comments, who was in it last, Update when behind, Copy. */
 function OtherRow({ s }: { s: ShareRow }) {
   const u = useUpdate(s)
+  const m = useMore(s)
   const last = (s.viewers ?? [])[0]
   const now = nowIn(s)
   return (
-    <li data-pop-row={s.id} className="rounded-xl px-2 py-1.5 hover:bg-zinc-900/[.03] dark:hover:bg-white/[.04]">
+    <li ref={el => { m.box.current = el }} data-pop-row={s.id} className="rounded-xl px-2 py-1.5 hover:bg-zinc-900/[.03] dark:hover:bg-white/[.04]">
       <div className="flex min-h-9 items-center gap-2.5">
         <span className="min-w-0 flex-1">
-          <span className="flex min-w-0 items-center gap-1.5"><span dir="auto" className="truncate text-[13px] font-medium">{s.title}</span><span className="shrink-0 text-[11px] text-zinc-500">v{u.done || s.version}</span></span>
+          <span className="flex min-w-0 items-center gap-1.5"><span dir="auto" className={`truncate text-[13px] font-medium ${s.disabled ? 'text-zinc-500 dark:text-zinc-400' : ''}`}>{s.title}</span><span className="shrink-0 text-[11px] text-zinc-500">v{u.done || s.version}</span>{s.disabled && <DisabledTag />}</span>
           <span className={`flex min-w-0 items-center gap-2 ${SMALL}`}>
             {s.views != null && <span className="inline-flex shrink-0 items-center gap-1"><Icon name="eye" className="size-3" />{s.views}</span>}
             <span className="inline-flex shrink-0 items-center gap-1"><Icon name="chat-circle" className="size-3" />{s.comments.total}</span>
-            <span className="min-w-0 truncate">{now.length ? <span className="text-emerald-700 dark:text-emerald-300">{tn(now.length, '{n} looking now', '{n} looking now')}</span> : last ? t('{name} · {when}', { name: last.name || last.login, when: ago(last.at) }) : t('Not opened lately')}</span>
+            <span className="min-w-0 truncate">{s.disabled ? null : now.length ? <span className="text-emerald-700 dark:text-emerald-300">{tn(now.length, '{n} looking now', '{n} looking now')}</span> : last ? t('{name} · {when}', { name: last.name || last.login, when: ago(last.at) }) : t('Not opened lately')}</span>
           </span>
         </span>
-        {s.changed && !u.done && !u.busy && <button type="button" data-pop-row-update onClick={() => void u.run('')} className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-amber-400/15 px-2.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-400/25 dark:text-amber-200"><Icon name="refresh" className="size-3" />{t('Update')}</button>}
+        {s.disabled && <EnableButton m={m} />}
+        {s.changed && !u.done && !u.busy && !s.disabled && <button type="button" data-pop-row-update onClick={() => void u.run('')} className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-amber-400/15 px-2.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-400/25 dark:text-amber-200"><Icon name="refresh" className="size-3" />{t('Update')}</button>}
         {u.busy && <Spinner />}
         {s.link && <CopyButton text={s.link} />}
+        <MoreButton s={s} m={m} />
       </div>
+      <MoreStrip s={s} m={m} className="mt-1" />
       {u.step && u.step.phase !== 'busy' && <div className="mt-1.5"><UpdateTrouble u={u} note="" /></div>}
     </li>
   )

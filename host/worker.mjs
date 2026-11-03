@@ -192,6 +192,7 @@ async function api(req, env, url, path) {
   if (!isId(id)) return fail(404, 'No such share.')
   if (req.method === 'PUT') return putShare(req, env, owner, id)
   if (req.method === 'DELETE') return deleteShare(env, owner, id)
+  if (req.method === 'PATCH') return setDisabled(req, env, owner, id)
   return fail(405, 'Method not allowed.')
 }
 
@@ -229,7 +230,7 @@ async function createShare(env) {
 // their views, and their latest faces.
 async function listShares(env, owner) {
   const { results } = await env.DB.prepare(
-    'SELECT id, title, version, bytes, updated_at, expires_at, message FROM shares WHERE owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC, id',
+    'SELECT id, title, version, bytes, updated_at, expires_at, message, disabled_at FROM shares WHERE owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC, id',
   ).bind(owner.id).all()
   const views = new Map(), faces = new Map()
   if (results.length) {
@@ -250,7 +251,7 @@ async function listShares(env, owner) {
   }
   return json(results.map(s => ({
     id: s.id, title: s.title, version: s.version, bytes: s.bytes, updatedAt: s.updated_at, expiresAt: s.expires_at ?? null,
-    message: s.message ?? null, views: views.get(s.id) ?? 0, viewers: faces.get(s.id) ?? [],
+    message: s.message ?? null, disabled: !!s.disabled_at, views: views.get(s.id) ?? 0, viewers: faces.get(s.id) ?? [],
   })))
 }
 
@@ -396,6 +397,17 @@ async function deleteShare(env, owner, id) {
   return json({ id })
 }
 
+// Turns a link off or back on. Nothing else about it changes: the page, its comments and its expiry
+// stay, it still counts as one of the owner's links, and an update of a link that is off stays off.
+async function setDisabled(req, env, owner, id) {
+  const row = await getShare(env, id)
+  if (!row || row.owner_id !== owner.id || row.deleted_at) return fail(404, 'No such share.')
+  const body = await req.json().catch(() => null)
+  if (typeof body?.disabled !== 'boolean') return fail(400, 'Send { disabled: true } or { disabled: false }.')
+  await env.DB.prepare('UPDATE shares SET disabled_at = ? WHERE id = ? AND deleted_at IS NULL').bind(body.disabled ? row.disabled_at ?? Date.now() : null, id).run()
+  return json({ id, disabled: body.disabled })
+}
+
 // Where a share lives, for the visitor of the apex page. On this Mac it stays on the name the
 // visitor came in on (the page answers on both loopback names), and 127.0.0.1 can only take the path
 // form; anywhere else it is BASE.
@@ -418,6 +430,7 @@ function unavailable(row) {
   if (!row) return page('notfound', {})
   if (row.deleted_at) return page('removed', { lang: row.lang })
   if (row.expires_at && row.expires_at <= Date.now()) return page('expired', { lang: row.lang })
+  if (row.disabled_at) return page('disabled', { lang: row.lang })
   return null
 }
 

@@ -85,6 +85,7 @@
 //   proto share comments [<id>] [--new]   viewer comments on this session's links, fenced as quoted feedback
 //   proto share take <commentId…> | --new [<id>]   send viewer comments to the inbox, as the page's Send to Claude
 //             does (only when the user asks for it in chat)
+//   proto share disable <id> | enable <id>   turn a link off and back on (its page and comments are kept)
 //   proto share rm <id>      take a link down (it then says it was removed)
 //   proto share file <slug>[/<n>…] [--out <file.html>]   the same build as one HTML file, comments off
 //   proto share stop         stop the local host (the next share starts it again)

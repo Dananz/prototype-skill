@@ -763,6 +763,18 @@ test('schema.sql runs on a local database from before 0004 (owners without gh_id
   assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
 })
 
+test('migration 0008 on top of 0001-0007: shares gain disabled_at, old links stay on; schema.sql and upgrade() agree', async () => {
+  const list = migrations()
+  assert.equal(list[7]?.[0], '0008_disabled.sql')
+  const sql = new DatabaseSync(':memory:'), local = new DatabaseSync(':memory:')
+  for (const [f, text] of list) if (f < '0008') { sql.exec(text); local.exec(text) }
+  sql.exec(list[7][1])
+  assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
+  assert.throws(() => sql.exec(list[7][1]), /duplicate column/i)
+  await upgrade(d1Of(local))
+  assert.deepEqual(shapeOf(local), shapeOf(await fromSchema()))
+})
+
 test('migration 0007 on top of 0001-0006: reports gain source, old reports keep theirs as none; schema.sql and upgrade() agree', async () => {
   const list = migrations()
   assert.equal(list[6]?.[0], '0007_report_source.sql')
@@ -772,6 +784,7 @@ test('migration 0007 on top of 0001-0006: reports gain source, old reports keep 
   const local = new DatabaseSync(':memory:')
   for (const [f, text] of list) if (f < '0007') local.exec(text)
   sql.exec(list[6][1])
+  for (const [f, text] of list) if (f >= '0008') sql.exec(text)
   assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
   assert.equal(sql.prepare("SELECT source FROM reports WHERE id = 'r1'").get().source, null)
   assert.throws(() => sql.exec(list[6][1]), /duplicate column/i)

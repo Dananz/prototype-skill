@@ -94,6 +94,7 @@ export async function viewerApi(req, env, url, share, path, pathForm) {
   if (!share) return fail(404, 'No such share.', { code: 'no_share' })
   if (share.deleted_at) return fail(410, 'This share was removed.', { code: 'removed' })
   if (share.expires_at && share.expires_at <= Date.now()) return fail(410, 'This link has expired.', { code: 'expired' })
+  if (share.disabled_at) return fail(403, 'This link is turned off.', { code: 'disabled' })
   const m = req.method
   const only = () => fail(405, 'Method not allowed.', { code: 'method' })
   // Only the viewer cookie this origin sets is read (viewerOf).

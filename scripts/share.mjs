@@ -8,7 +8,7 @@ import { receive } from '../app/server.mjs'
 import { buildShare } from '../app/share/build.mjs'
 import { SIGN_IN_FIRST, apiTooOld, flush, pollOnce, readShares, sendComments, signIn, signedInLine, trayView } from '../app/share/owner.mjs'
 import { existsSync, readdirSync } from 'node:fs'
-import { changedSince, changedVariants, describe, protosOf, publishShare, removeShare, reviewOf, titleOf, updateShare } from '../app/share/publish.mjs'
+import { changedSince, changedVariants, describe, disableShare, protosOf, publishShare, removeShare, reviewOf, titleOf, updateShare } from '../app/share/publish.mjs'
 import { ShareError, parseScope } from '../app/share/scope.mjs'
 import { hostCommentLines, trayRow } from '../app/share/viewer-text.mjs'
 import { client, defaultHost, deleteToken, ensureTools, getToken, hostHash, hostNamed, linkOf, localRunning, readHosts, setupHint, shortLinkOf, startLocal, stopLocal } from './share-host.mjs'
@@ -245,7 +245,7 @@ async function ls(flags, { sessionDir, die }) {
   const byId = new Map(rows.map(r => [r.id, r]))
   for (const e of mine) {
     const r = byId.get(e.id), fresh = tray.filter(c => c.share.id === e.id && c.status === 'new').length
-    const notes = [changedSince(sessionDir, e) && 'changed since shared: proto share update ' + e.id, fresh && `${fresh} new comment${fresh === 1 ? '' : 's'}: proto share comments ${e.id}`].filter(Boolean)
+    const notes = [r?.disabled && 'disabled: proto share enable ' + e.id, changedSince(sessionDir, e) && 'changed since shared: proto share update ' + e.id, fresh && `${fresh} new comment${fresh === 1 ? '' : 's'}: proto share comments ${e.id}`].filter(Boolean)
     console.log(line(e.id, r?.version ?? e.version, r?.title ?? e.title, !r, notes.length ? `  (${notes.join('; ')})` : ''))
     if (!r) continue
     // Who is in it now (a ping in the last two minutes), its views, and what changed since.
@@ -256,6 +256,13 @@ async function ls(flags, { sessionDir, die }) {
     if (changed.length) console.log(`    changed since v${e.version}: ${changed.map(c => c.key.endsWith('/*') ? `${c.name} (${c.key.slice(0, -2)})` : `${c.key} ${c.name}`).join(', ')}`)
   }
   if (online) await usageLine(api)
+}
+
+async function setDisabled(verb, id, flags, { sessionDir, die }) {
+  if (!id) die(`proto share ${verb} <id>: which share? proto share ls lists them`)
+  const { host, token } = await liveHost(die, hostOfShare(sessionDir, id, flags))
+  await disableShare({ sessionDir, host, token, id, disabled: verb === 'disable' })
+  console.log(verb === 'disable' ? `disabled ${id}: the link now says it is turned off (its page and comments are kept; proto share enable ${id} brings it back)` : `enabled ${id}: the link opens again`)
 }
 
 async function rm(id, flags, { sessionDir, die }) {
@@ -361,6 +368,7 @@ export async function main(args, flags, ctx) {
     if (sub === 'signin') return await signin(flags, ctx)
     if (sub === 'signout') return await signout(flags, ctx)
     if (sub === 'admin') return await admin(rest, flags, ctx)
+    if (sub === 'disable' || sub === 'enable') return await setDisabled(sub, rest[0], flags, ctx)
     if (sub === 'rm') return await rm(rest[0], flags, ctx)
     if (sub === 'update') return await update(rest[0], flags, ctx)
     if (sub === 'comments') return await comments(rest, flags, ctx)
