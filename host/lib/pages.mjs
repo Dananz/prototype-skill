@@ -2,6 +2,7 @@
 // viewer's colour scheme, and never indexed.
 const COPY = {
   removed: { status: 410, en: ['This link was removed', 'The person who shared it took it down.'], he: ['הקישור הוסר', 'מי ששיתף אותו הסיר אותו.'] },
+  disabled: { status: 403, en: ['This link is turned off', 'The person who shared it turned it off for now.'], he: ['הקישור כבוי', 'מי ששיתף אותו כיבה אותו בינתיים.'] },
   notfound: { status: 404, en: ['Link not found', 'Check the address, or ask for a new link.'], he: ['הקישור לא נמצא', 'כדאי לבדוק את הכתובת או לבקש קישור חדש.'] },
   expired: { status: 410, en: ['This link has expired', 'Ask the person who shared it for a new one.'], he: ['תוקף הקישור פג', 'אפשר לבקש ממי ששיתף קישור חדש.'] },
   signin: { status: 400, en: ['Sign-in didn\'t finish', 'Go back to the link and try again.'], he: ['ההתחברות לא הושלמה', 'אפשר לחזור לקישור ולנסות שוב.'] },

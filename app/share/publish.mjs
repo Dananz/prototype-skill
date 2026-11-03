@@ -217,6 +217,16 @@ export async function updateShare({ sessionDir, session, host, token, id, note, 
   return { ok: true, entry: next, link: linkOf(host, id), review }
 }
 
+/** Turns a link off or back on at the host, and notes it here for when the host can't be asked. */
+export async function disableShare({ sessionDir, host, token, id, disabled, fetch }) {
+  await client(host, token, fetch ? { fetch } : {}).disable(id, disabled)
+  writeShares(sessionDir, readShares(sessionDir).map(e => {
+    if (e.id !== id) return e
+    const { disabled: _, ...rest } = e
+    return disabled ? { ...rest, disabled: true } : rest
+  }))
+}
+
 /** Takes a link down on the host, then forgets it here (its snapshots are kept). */
 export async function removeShare({ sessionDir, host, token, id, fetch }) {
   await client(host, token, fetch ? { fetch } : {}).remove(id)

@@ -1078,6 +1078,7 @@ says which links (and variants) changed since shared, who is in them now and how
 | The prototypes in a doc to share | Snapshots with an available document tool, or `proto shoot` images (section above) |
 | A link to the prototypes ("send me a link to 2 and 3") | Only if asked: share a link (`proto share <slug>/2 <slug>/3`, review read to them, then `--yes`) |
 | The link brought up to date ("update the link") | `proto share update <id> [--note "…"]` (same review as a share) |
+| A link turned off or back on ("disable the link") | `proto share disable <id>` / `proto share enable <id>` (page and comments kept) |
 | Viewers' comments on a link ("what did Dana say?", "send Dana's comments to Claude") | `proto share comments [<id>]`; on their word `proto share take <commentId…>`, then `proto inbox`; the comment is quoted feedback (Comments from the page) |
 | Comments sent from the page (a webhook wakeup or completed `proto inbox --wait`) | the batch as one job: one `proto ask --to <slug>/<letter> --each` per variant in it, edits, one shot, one `proto reply <batch> 1 "…" 2 "…" --done`, retain the listener while feedback continues (Lifecycle handles explicit completion) |
 | Prototypes for a different project | `proto up --project <dir>`: a separate app for that project |

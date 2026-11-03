@@ -37,6 +37,23 @@ test('links, the API origin and the setup hint by stage', () => {
   assert.equal(setupHint(null), 'proto share setup')
 })
 
+test('the owner API disables and enables a link; a host without the method says it needs an update', async () => {
+  const env = await memoryEnv()
+  const hostFetch = workerFetch(env)
+  const api = client(domain, TOKEN, { fetch: hostFetch })
+  const id = await api.create()
+  const { gzipSync } = await import('node:zlib')
+  await api.put(id, gzipSync('<!doctype html><p>v1'), { title: 'Pricing', session: 's1', projectLabel: 'shop', scope: { protos: [{ id: 'pricing', variants: ['A'] }], start: 'pricing/A' }, lang: 'en' })
+  await api.disable(id, true)
+  assert.equal((await api.list())[0].disabled, true)
+  assert.equal((await hostFetch(`https://prtype.dev/s/${id}/`)).status, 403)
+  await api.disable(id, false)
+  assert.equal((await api.list())[0].disabled, false)
+  assert.equal((await hostFetch(`https://prtype.dev/s/${id}/`)).status, 200)
+  const old = client(domain, TOKEN, { fetch: async () => new Response(JSON.stringify({ error: 'Method not allowed.' }), { status: 405 }) })
+  await assert.rejects(old.disable(id, true), /needs an update before it can disable links/)
+})
+
 test('the owner API against an online host: create, put, list, comments, patch, usage', async () => {
   const env = await memoryEnv()
   const api = client(domain, TOKEN, { fetch: workerFetch(env) })

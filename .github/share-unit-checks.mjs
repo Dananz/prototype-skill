@@ -599,6 +599,43 @@ test('robots.txt keeps crawlers off every page, and lets link previewers in', as
     assert.match(text, /User-agent: Twitterbot[^]*User-agent: WhatsApp\nDisallow: \/api\nDisallow: \/auth\//)
   }
 })
+test('a disabled link refuses viewers, keeps its page and comes back; only its owner can do it', async () => {
+  const env = await makeEnv({ BASE: 'prtype.dev', PATH_MODE: '1' })
+  const { id } = await publish(env)
+  const flip = (disabled, headers = auth) => call(env, `https://prtype.dev/api/shares/${id}`, { method: 'PATCH', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ disabled }) })
+  const page = () => call(env, `https://prtype.dev/s/${id}/`)
+  const listed = async () => (await (await call(env, 'https://prtype.dev/api/shares', { headers: auth })).json()).find(s => s.id === id)
+  assert.equal((await page()).status, 200)
+  assert.equal((await listed()).disabled, false)
+  assert.equal((await flip('yes')).status, 400)
+  env.DB.sql.prepare('INSERT INTO owners (id, name, created_at) VALUES (?, ?, ?)').run('o2', 'Other', 1)
+  env.DB.sql.prepare('INSERT INTO owner_tokens (sha256, owner_id, device, created_at) VALUES (?, ?, ?, ?)').run(await hex('other'), 'o2', 'x', 1)
+  assert.equal((await flip(true, { authorization: 'Bearer other' })).status, 404)
+  assert.equal((await page()).status, 200)
+
+  assert.equal((await flip(true)).status, 200)
+  const off = await page()
+  assert.equal(off.status, 403)
+  assert.match(await off.text(), /This link is turned off/)
+  assert.equal((await call(env, `https://prtype.dev/${id}`)).status, 403)
+  const viewer = await call(env, `https://prtype.dev/s/${id}/api/state`, { headers: { 'x-proto': '1' } })
+  assert.equal(viewer.status, 403)
+  assert.equal((await viewer.json()).code, 'disabled')
+  assert.equal((await listed()).disabled, true)
+  // The page is kept, an update stays off, and it comes back at the same link.
+  assert.equal(htmlKeys(env, id).length, 1)
+  assert.equal((await call(env, `https://prtype.dev/api/shares/${id}`, { method: 'PUT', headers: { ...auth, 'x-share-meta': meta() }, body: gzipSync('updated') })).status, 200)
+  assert.equal((await page()).status, 403)
+  assert.equal((await flip(false)).status, 200)
+  assert.equal((await page()).status, 200)
+  assert.equal((await listed()).disabled, false)
+  // Disabled, it can still be removed; a removed link can't be turned back on.
+  assert.equal((await flip(true)).status, 200)
+  assert.equal((await call(env, `https://prtype.dev/api/shares/${id}`, { method: 'DELETE', headers: auth })).status, 200)
+  assert.equal((await page()).status, 410)
+  assert.equal((await flip(false)).status, 404)
+})
+
 test('removed is 410', async () => {
   const env = await makeEnv()
   const { id } = await publish(env)

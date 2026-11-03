@@ -85,11 +85,11 @@ const shareRows = () => [
   { id: 'p2v7wd', title: 'Portion drawer', scope: { protos: [{ id: 'portion', variants: ['A', 'B'] }], start: 'portion/A' }, version: 3, publishedAt: iso(50 * 3600e3), host: 'Smoke',
     link: 'https://prtype.dev/p2v7wd', changed: true, comments: { total: 0, new: 0 }, live: true, views: 2, viewers: [], changedVariants: [{ key: 'portion/B', name: 'Stacked' }] },
 ]
-const stub = { owner: OWNER_OUT, hereVersion: 2, publish: [], update: [], signin: 0, publishRefuse: false, publishDelay: 0 }
+const stub = { disabled: {}, removed: [], owner: OWNER_OUT, hereVersion: 2, publish: [], update: [], signin: 0, publishRefuse: false, publishDelay: 0 }
 const answer = (name, body) => {
   if (name === 'owner') return [200, stub.owner]
   if (name === 'signin') { stub.signin++; return [200, { url: `${local}__claim-test?claim=abc` }] }
-  if (name === 'list') return [200, { host: { name: 'Smoke', stage: 'online', owner: stub.owner.login || '' }, hostError: null, shares: shareRows(), setup: 'proto share setup' }]
+  if (name === 'list') return [200, { host: { name: 'Smoke', stage: 'online', owner: stub.owner.login || '' }, hostError: null, shares: shareRows().filter(s => !stub.removed.includes(s.id)).map(s => ({ ...s, disabled: !!stub.disabled[s.id] })), setup: 'proto share setup' }]
   if (name === 'publish') {
     stub.publish.push(body)
     if (stub.publishRefuse) return [409, { code: 'sign_in', error: 'Sign in with GitHub first.' }]
@@ -97,6 +97,8 @@ const answer = (name, body) => {
     return [200, { ok: true, link: 'https://prtype.dev/x7c4hq', share: { id: 'x7c4hq', title: 'Share link', version: 1 } }]
   }
   if (name === 'update') { stub.update.push(body); stub.hereVersion = 3; return [200, { ok: true, link: 'https://prtype.dev/k3x9p2', share: { id: body.id, version: 3 } }] }
+  if (name === 'disable') { stub.disabled[body.id] = body.disabled; return [200, { ok: true, id: body.id, disabled: body.disabled }] }
+  if (name === 'remove') { stub.removed.push(body.id); return [200, { ok: true, id: body.id }] }
   if (name === 'comments') return [200, { comments: [], new: 0 }]
   return [404, { error: `no route ${name}` }]
 }
@@ -181,6 +183,27 @@ async function main() {
   await page.locator('[data-pop-here][data-version="3"]').waitFor()
   ok(await page.locator('[data-pop-behind]').count() === 0, 'updated: the link is at v3 and no longer behind')
   ok(await page.locator('[data-share-behind]').count() === 1, 'the bar keeps its amber dot while another link is behind')
+
+  // 3b. A link's ⋯: disable it and back on, the row saying so; remove it in two presses.
+  const row = page.locator('[data-pop-row="r8m2kq"]')
+  ok(await row.locator('[data-pop-actions]').count() === 0, 'a link\'s Disable and Remove wait behind its ⋯')
+  await row.locator('[data-pop-more]').click()
+  await row.locator('[data-link-disable]').click()
+  await row.locator('[data-pop-disabled]').waitFor()
+  ok(stub.disabled.r8m2kq === true, 'Disable turns the link off')
+  ok(await row.locator('[data-pop-enable]').count() === 1, 'a disabled link offers Enable in plain sight')
+  await shot(page, 'popover-link-disabled')
+  await row.locator('[data-pop-enable]').click()
+  await page.waitForFunction(() => !document.querySelector('[data-pop-row="r8m2kq"] [data-pop-disabled]'))
+  ok(stub.disabled.r8m2kq === false, 'Enable turns it back on')
+  await row.locator('[data-pop-more]').click()
+  await shot(page, 'popover-link-actions')
+  await row.locator('[data-link-remove]').click()
+  ok((await row.locator('[data-link-remove]').innerText()).includes('5 comments') && stub.removed.length === 0, 'Remove asks once, naming the comments')
+  await row.locator('[data-link-remove]').click()
+  await page.waitForFunction(() => !document.querySelector('[data-pop-row="r8m2kq"]'))
+  ok(stub.removed.join() === 'r8m2kq', 'the second press removes the link')
+  ok(await isOpen(page) && await page.evaluate(() => !!document.activeElement?.closest('[data-share-pop]')), 'after a remove the popover stays open, with the focus in it')
 
   // 4. New link: a starter, then the owner's own words; the review; Create link; the link with the message quoted.
   await page.locator('[data-pop-new-link]').click()
@@ -279,6 +302,21 @@ async function main() {
   ok((await page.locator('[data-share-pop] header').innerText()).includes('בתור Dananz'), 'Hebrew: the popover speaks Hebrew')
   await shot(page, 'popover-home-he')
   await context.close()
+
+  // 7b. A disabled link at the top of home, in both directions: Enable in sight, no Update, no looking line.
+  stub.disabled.k3x9p2 = true
+  for (const [query, name] of [['', 'popover-here-disabled'], ['&lang=he', 'popover-here-disabled-he']]) {
+    ;({ page, context } = await newPage(`share-link/A?theme=dark${query}`))
+    await page.locator('[data-share-btn]').click()
+    const here = page.locator('[data-pop-here]')
+    await here.locator('[data-pop-disabled]').waitFor()
+    ok(await here.locator('[data-pop-enable]').count() === 1 && await here.locator('[data-pop-looking]').count() === 0 && await here.locator('[data-pop-behind]').count() === 0, `disabled at the top of home${query}: Enable in sight, no Update, nobody looking`)
+    await here.locator('[data-pop-more]').click()
+    await page.locator('[data-link-preview] canvas.opacity-100').waitFor({ timeout: 30_000 }).catch(() => {})
+    await shot(page, name)
+    await context.close()
+  }
+  stub.disabled.k3x9p2 = false
 
   // 8. A phone: no Share in the bar; the pill's menu opens the sheet's drawer.
   ;({ page, context } = await newPage('share-link/A?theme=dark', { width: 390, height: 844, phone: true }))

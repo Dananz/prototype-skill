@@ -20,7 +20,7 @@ const COLUMNS = {
     ['gh_id', 'INTEGER'], ['variant', 'TEXT'], ['target', 'TEXT'], ['owner_reply_at', 'INTEGER'],
     ['deleted', 'INTEGER NOT NULL DEFAULT 0'], ['withdrawn', 'INTEGER NOT NULL DEFAULT 0'],
   ],
-  shares: [['html_key', 'TEXT'], ['message', 'TEXT'], ['card_key', 'TEXT'], ['purged_at', 'INTEGER']],
+  shares: [['html_key', 'TEXT'], ['message', 'TEXT'], ['card_key', 'TEXT'], ['purged_at', 'INTEGER'], ['disabled_at', 'INTEGER']],
   owners: [['gh_id', 'INTEGER'], ['gh_login', 'TEXT'], ['gh_name', 'TEXT'], ['gh_avatar', 'TEXT'], ['role', "TEXT NOT NULL DEFAULT 'user'"], ['status', "TEXT NOT NULL DEFAULT 'active'"]],
   owner_tokens: [['expires_at', 'INTEGER']],
   signins: [['words', 'TEXT']],

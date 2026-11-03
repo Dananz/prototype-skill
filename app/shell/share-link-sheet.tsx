@@ -351,10 +351,48 @@ export function useOwner() {
   return s.owner
 }
 
-function Row({ s, protos, hold, onChanged }: { s: ShareRow; protos: P[]; hold: (on: boolean) => void; onChanged: () => void }) {
-  const [step, setStep] = useState<Step | null>(null)
+/**
+ * A link's Disable or Enable and its two-press Remove, for the sheet's row and the popover's. onChanged
+ * runs before busy ends, so the buttons don't flicker back to what they said. Keeps its own error.
+ */
+export function useLinkActions(s: ShareRow, onChanged: () => void | Promise<void>, hold: (on: boolean) => void = () => {}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
   const [ask, setAsk] = useState(false)
   useEffect(() => { if (!ask) return; const id = window.setTimeout(() => setAsk(false), 4000); return () => clearTimeout(id) }, [ask])
+  const run = async (name: string, body: Record<string, unknown>) => {
+    setBusy(true); setError(''); hold(true)
+    const r = await route(name, { id: s.id, ...body })
+    if (r.status === 200) await onChanged()
+    else setError(r.status === 503 ? t('Can’t reach the share host. Ask Claude to share again (it starts the host), then retry.') : r.body.error || t('The session server answered {status}.', { status: r.status }))
+    hold(false); setBusy(false)
+  }
+  return {
+    busy, error, ask,
+    toggle: () => run('disable', { disabled: !s.disabled }),
+    remove: () => { if (!ask) return setAsk(true); setAsk(false); return run('remove', {}) },
+  }
+}
+
+/** Disable or Enable, then Remove; a link the host no longer has can only be removed. hideEnable: the row offers Enable on its own, in plain sight. */
+export function LinkActions({ s, a, hideEnable = false }: { s: ShareRow; a: ReturnType<typeof useLinkActions>; hideEnable?: boolean }) {
+  return (
+    <>
+      {s.live !== false && !(hideEnable && s.disabled) && (
+        <button type="button" data-link-disable disabled={a.busy} onClick={() => void a.toggle()} title={s.disabled ? t('Open it to viewers again, at the same link') : t('Viewers can’t open it until you enable it. Its comments stay.')} className={TEXT_BTN}>
+          <Icon name={s.disabled ? 'eye' : 'eyeoff'} className="size-4" />{s.disabled ? t('Enable') : t('Disable')}
+        </button>
+      )}
+      <button type="button" data-link-remove disabled={a.busy} onClick={() => void a.remove()} title={a.ask ? undefined : t('Deletes the link and its comments for good')} className={`${TEXT_BTN} ${a.ask ? '!bg-rose-500/10 !text-rose-700 dark:!text-rose-300' : ''}`}>
+        {!a.ask && <Icon name="trash-simple" className="size-4" />}{a.ask ? (s.comments.total ? tn(s.comments.total, 'Remove it and its {n} comment?', 'Remove it and its {n} comments?') : t('Remove it?')) : t('Remove')}
+      </button>
+    </>
+  )
+}
+
+function Row({ s, protos, hold, onChanged }: { s: ShareRow; protos: P[]; hold: (on: boolean) => void; onChanged: () => void }) {
+  const [step, setStep] = useState<Step | null>(null)
+  const a = useLinkActions(s, onChanged, hold)
   const n = s.scope.protos.reduce((a, x) => a + x.variants.length, 0)
   const names = s.scope.protos.map(x => protos.find(q => q.id === x.id)?.title ?? x.id).join(', ')
   const update = async (yes = false) => {
@@ -365,35 +403,29 @@ function Row({ s, protos, hold, onChanged }: { s: ShareRow; protos: P[]; hold: (
     else if (r.status === 422) setStep({ phase: 'blocked', review: r.body.review })
     else setStep({ phase: r.status === 503 ? 'down' : 'error', error: r.body.error || t('The session server answered {status}.', { status: r.status }) })
   }
-  const remove = async () => {
-    if (!ask) return setAsk(true)
-    setAsk(false); setStep({ phase: 'busy' }); hold(true)
-    const r = await route('remove', { id: s.id }).finally(() => hold(false))
-    if (r.status === 200) onChanged()
-    else setStep({ phase: r.status === 503 ? 'down' : 'error', error: r.body.error || t('The session server answered {status}.', { status: r.status }) })
-  }
-  const busy = step?.phase === 'busy'
+  const uploading = step?.phase === 'busy'
+  const busy = uploading || a.busy
   return (
     <li data-link-row={s.id} data-version={s.version} className="rounded-xl border border-black/[.08] p-3 dark:border-white/10">
       <div className="flex min-w-0 items-start gap-2">
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-1.5">
-            {s.live === true && <span title={t('On the host')} className="size-1.5 shrink-0 rounded-full bg-emerald-500" />}
-            <span dir="auto" className="truncate text-[13px] font-medium">{s.title}</span>
+            {s.live === true && !s.disabled && <span title={t('On the host')} className="size-1.5 shrink-0 rounded-full bg-emerald-500" />}
+            <span dir="auto" className={`truncate text-[13px] font-medium ${s.disabled ? 'text-zinc-500 dark:text-zinc-400' : ''}`}>{s.title}</span>
           </span>
           <span className={`mt-0.5 block truncate ${SMALL}`}><bdi>{names}</bdi> · {tn(n, '{n} variant', '{n} variants')} · v{s.version} · {t('Updated {when}', { when: ago(Date.parse(s.publishedAt)) })}</span>
           {s.comments.total > 0 && <span className="mt-1 flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">{s.comments.new > 0 && <span className="size-1.5 rounded-full bg-sky-500" />}{s.comments.new > 0 ? tn(s.comments.new, '{n} new comment', '{n} new comments') : tn(s.comments.total, '{n} comment', '{n} comments')}</span>}
           {s.live === false && <span className="mt-1 block text-xs text-zinc-500">{t('Not on the host any more')}</span>}
+          {s.disabled && s.live !== false && <span data-link-disabled className="mt-1 block text-xs text-zinc-500">{t('Disabled. Viewers can’t open it.')}</span>}
         </span>
         {s.link && <><CopyButton text={s.link} data-link-row-copy="" /><a href={s.link} target="_blank" rel="noopener noreferrer" aria-label={t('Open the link')} title={t('Open the link')} className={ICON_BTN}><Icon name="open-out" className="size-4" /></a></>}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {s.changed && <span data-link-changed className="me-auto inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300"><span className="size-1.5 rounded-full bg-amber-500" />{t('Changed since shared')}</span>}
         {!s.changed && <span className="me-auto" />}
-        {busy && <span className={`inline-flex items-center gap-1.5 ${SMALL}`}><Spinner />{t('Building and uploading…')}</span>}
-        <button type="button" data-link-remove disabled={busy} onClick={() => void remove()} className={`${TEXT_BTN} ${ask ? '!bg-rose-500/10 !text-rose-700 dark:!text-rose-300' : ''}`}>
-          {!ask && <Icon name="trash-simple" className="size-4" />}{ask ? (s.comments.total ? tn(s.comments.total, 'Remove it and its {n} comment?', 'Remove it and its {n} comments?') : t('Remove it?')) : t('Remove')}
-        </button>
+        {uploading && <span className={`inline-flex items-center gap-1.5 ${SMALL}`}><Spinner />{t('Building and uploading…')}</span>}
+        {a.busy && <Spinner />}
+        <LinkActions s={s} a={{ ...a, busy }} />
         <button type="button" data-link-update disabled={busy} onClick={() => void update()} title={t('Publish what the variants look like now, at the same link')}
           className={s.changed ? `${TEXT_BTN} !text-proto-primary-soft-fg !font-semibold` : TEXT_BTN}><Icon name="refresh" className="size-4" />{t('Update link')}</button>
       </div>
@@ -405,6 +437,7 @@ function Row({ s, protos, hold, onChanged }: { s: ShareRow; protos: P[]; hold: (
           </div>
         </ReviewBox></div>
       )}
+      {a.error && <p role="alert" className="mt-2 text-xs text-rose-700 dark:text-rose-300">{a.error}</p>}
       {(step?.phase === 'error' || step?.phase === 'down') && <p role="alert" className="mt-2 text-xs text-rose-700 dark:text-rose-300">{step.phase === 'down' ? t('Can’t reach the share host. Ask Claude to share again (it starts the host), then retry.') : step.error}</p>}
     </li>
   )

@@ -198,6 +198,13 @@ export function client(host, token, { fetch = globalThis.fetch, timeout = 60_000
     card: (id, jpeg) => call('PUT', `/api/shares/${id}/card`, { body: jpeg, headers: { 'content-type': 'image/jpeg' } }),
     list: () => call('GET', '/api/shares'),
     remove: async id => { await call('DELETE', `/api/shares/${id}`) },
+    /** Turns a link off or back on. A host from before this has no such method (405): it says so. */
+    disable: async (id, disabled) => {
+      try { await call('PATCH', `/api/shares/${id}`, { body: JSON.stringify({ disabled }), headers: json }) } catch (e) {
+        if (e?.status === 405) throw Object.assign(new ShareError(`The share host "${host.name}" needs an update before it can disable links${host.builtin ? '' : `: ${setupHint(host)}`}`), { status: 405, code: 'update' })
+        throw e
+      }
+    },
     /** The owner's GitHub identity on this host: { login, name, avatar, signin }, nulls before they sign in. */
     owner: () => call('GET', '/api/owner'),
     /** { url }: the 10-minute sign-in link that ties the owner to a GitHub account (refused with signin_off). */
