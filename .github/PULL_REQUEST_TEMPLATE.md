@@ -29,8 +29,8 @@ CI runs quick checks only; report full browser verification separately. -->
 
 <!-- Required for visual changes. Publish actual before/after screenshots as part
 of opening or updating this PR, without waiting for another request. Use matching
-states and viewports. Upload images to GitHub, or commit them under docs/pr/<slug>/
-and embed absolute GitHub URLs pinned to the pushed commit (see CLAUDE.md).
+states and viewports. Upload images as GitHub attachments with gh --attach, or by
+dragging them in here; never commit them to the repository (see AGENTS.md).
 Each applicable Before/After cell must contain ![descriptive alt text](image-url).
 Text descriptions, local paths, and "screenshots taken locally; happy to attach
 them" do not count. Verify the published images before marking the PR ready.
