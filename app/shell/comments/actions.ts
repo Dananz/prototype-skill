@@ -10,6 +10,7 @@ import { progress, threadOf, type Store } from './store'
 import type { Action, Draft, Item, Note, Place, Seg, Target, Time, Source, Shot } from './types'
 import { noteSays, shotsOf } from './types'
 import { inScope, routeOf } from './types'
+import type { State } from './types'
 import { sameView } from '../view/sizes'
 import { t } from '../i18n'
 import { variantRef } from '../variants'
@@ -23,6 +24,8 @@ export function createActions(store: Store, host: Host) {
   const get = store.get, set = store.set
   const here = (i: Pick<Item, 'proto' | 'variant' | 'state'>) => { if (host.visible?.(i)) return true; const p = get().place; return !!p && i.proto === p.proto && i.variant === p.variant && (i.state ?? '') === (p.state ?? '') }
   let opening = 0
+  // A comment's words trimmed at both ends; the tags stay where they were written among them.
+  const trimmed = (segs: Seg[]) => segs.map((s, i) => typeof s === 'string' && i === 0 ? s.trimStart() : s).map((s, i, all) => typeof s === 'string' && i === all.length - 1 ? s.trimEnd() : s).filter(s => s !== '')
   // Sent from the prototype the page was on when it began: a continuation after navigating on must not
   // widen to what the new page holds (in the session lobby, which holds every prototype's comments).
   const drafts = (scope: string | null) => get().items.filter(i => !i.sent && inScope(scope, i.proto))
@@ -70,6 +73,7 @@ export function createActions(store: Store, host: Host) {
 
     /** The prototype the page is on, or null in the session lobby. */
     setScope(scope: string | null) { if (get().scope !== scope) set({ scope }) },
+    setCard(card: State['card']) { const was = get().card; if (was?.proto !== card?.proto || was?.title !== card?.title) set({ card }) },
 
     /** The page moved (or stopped being somewhere comments can go). */
     setPlace(place: Place | null) {
@@ -139,12 +143,20 @@ export function createActions(store: Store, host: Host) {
      */
     commentWhole(segs: Seg[], tags: Target[] = [], shots: Shot[] = []) {
       const p = get().place, t = act.wholeTarget()
-      // Its words trimmed at both ends; the tags stay where they were written among them.
-      const body = segs.map((s, i) => typeof s === 'string' && i === 0 ? s.trimStart() : s).map((s, i, all) => typeof s === 'string' && i === all.length - 1 ? s.trimEnd() : s).filter(s => s !== '')
+      const body = trimmed(segs)
       if (!p || !t || (!body.some(s => typeof s !== 'string' || s.trim()) && !shots.length)) return false
       const n = Math.max(0, ...get().items.filter(i => i.proto === p.proto && i.variant === p.variant).map(i => i.n)) + 1
       const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, body, tags, shots, target: t, at: Date.now() }
       set(s => ({ items: [...s.items, item] }))
+      if (get().live) void act.send()
+      return true
+    },
+    /** A comment on the exploration as a whole, all its variants, from its own page: on no variant and no element. */
+    commentProto(segs: Seg[], tags: Target[] = [], shots: Shot[] = []) {
+      const c = get().card, body = trimmed(segs)
+      if (!c || (!body.some(s => typeof s !== 'string' || s.trim()) && !shots.length)) return false
+      const n = Math.max(0, ...get().items.filter(i => i.proto === c.proto && !i.variant).map(i => i.n)) + 1
+      set(s => ({ items: [...s.items, { id: uid(), proto: c.proto, variant: '', n, body, tags, shots, at: Date.now() }] }))
       if (get().live) void act.send()
       return true
     },

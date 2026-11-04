@@ -60,7 +60,7 @@ const Remove = ({ item, className = '' }: { item: Item; className?: string }) =>
   const sent = !!item.sent
   return <button data-shoot="remove" onClick={e => { e.stopPropagation(); act.remove(item.id) }} aria-label={t('Delete this comment')} title={sent ? t('Delete this comment ({agent} is told to leave it)', { agent }) : t('Delete this comment')} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10 ${className}`}><Icon name="trash" className="size-4" /></button>
 }
-const Where = ({ item, here }: { item: Item; here: boolean }) => { const { store } = useCtx(); return here && !store.get().place?.compare ? null : <span className="shrink-0 rounded bg-zinc-900/[.05] px-1 font-mono text-[10px] text-zinc-500 dark:bg-white/10">{variantRef(null, item.variant)}</span> }
+const Where = ({ item, here }: { item: Item; here: boolean }) => { const { store } = useCtx(); return !item.variant || (here && !store.get().place?.compare) ? null : <span className="shrink-0 rounded bg-zinc-900/[.05] px-1 font-mono text-[10px] text-zinc-500 dark:bg-white/10">{variantRef(null, item.variant)}</span> }
 /** What a row is about: the element a comment is on, or a decision with its icon (it is on no element). */
 const About = ({ item }: { item: Item }) => item.action
   ? <span className="inline-flex min-w-0 items-center gap-1.5"><Icon name={ACTION[item.action].icon} className="size-3.5" /><span className="truncate">{aboutOf(item)}</span></span>
@@ -83,7 +83,7 @@ function Draft({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: b
   return (
     <div data-comment={item.id} data-shoot="comment-row" className={`rounded-2xl border p-3 transition ${active ? 'border-proto-primary-ring bg-proto-primary-soft' : 'border-black/[.08] bg-white hover:border-black/20 dark:border-white/10 dark:bg-zinc-900 dark:hover:border-white/25'}`}>
       <div className="flex items-center gap-2">
-        <PinDot n={item.n} whole={item.target?.whole} />
+        <PinDot n={item.n} whole={item.target?.whole || !item.variant} />
         <button onClick={onOpen} className="min-w-0 flex-1 truncate text-start text-xs font-medium text-zinc-500 dark:text-zinc-400"><span dir="auto">{aboutOf(item)}</span></button>
         <Where item={item} here={r.here} />
         <button onClick={() => act.remove(item.id)} aria-label={t('Remove this comment')} className="-me-1 grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10"><Icon name="trash" className="size-4" /></button>
@@ -204,7 +204,7 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
       {/* Under the pointer the line lights up and its words come forward, so it reads as one to open. */}
       <div className={`group flex items-center rounded-xl transition-colors duration-150 ${active ? 'bg-emerald-500/10' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.05]'}`}>
         <button onClick={() => setOpen(!open)} aria-expanded={open} className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-1 text-start active:bg-zinc-900/[.04] dark:active:bg-white/5 ${roomy ? 'h-11' : 'h-9'}`}>
-          <PinDot n={item.n} done whole={item.target?.whole} />
+          <PinDot n={item.n} done whole={item.target?.whole || !item.variant} />
           <span className={`min-w-0 flex-1 truncate text-zinc-500 transition-colors duration-150 group-hover:text-zinc-800 dark:group-hover:text-zinc-200 ${roomy ? 'text-[13.5px]' : 'text-[12.5px]'}`}>{item.action ? <span dir="auto">{aboutOf(item)}{item.body.length ? <>: <Body c={item} /></> : ''}</span> : <Body c={item} />}</span>
           <Where item={item} here={r.here} />
           <Icon name="right" className={`size-4 text-zinc-400 transition-[transform,color] group-hover:text-zinc-600 dark:group-hover:text-zinc-300 ${open ? 'rotate-90 rtl:-rotate-90' : ''}`} />

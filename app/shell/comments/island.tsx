@@ -98,6 +98,9 @@ export function Island({ dock }: { dock: HTMLElement }) {
   const prefs = useIslandPrefs()
   const phone = usePhone()
   const docked = !!prefs.docked && !phone
+  // On an exploration's own page there is no design to point at: the box is on all of it.
+  const onCard = !s.place && !!s.card
+  const wholeLabel = onCard ? t('Comment on the entire prototype') : t('Comment on the entire variant')
   const { news, unread, read } = useNews(rows, agent, prefs.news, !!s.inbox)
   const { shown, leaving } = useShown(news)
   const [focus, setFocus] = useState(false)
@@ -170,7 +173,7 @@ export function Island({ dock }: { dock: HTMLElement }) {
   // still-large card for a frame and the pointer over it reads as a hover.
   const folding = closing || (wasOpen.current && !open && !!side)
   useEdgeDrag({
-    card, on: !phone && !docked && !!s.place && !copying, place: prefs.place, along: prefs.along, full: !!side && open,
+    card, on: !phone && !docked && (!!s.place || onCard) && !copying, place: prefs.place, along: prefs.along, full: !!side && open,
     onSide: next => { setSide(next); setRail(false) },
     // Picked up, the open list folds out of the way.
     onHold: on => { setRail(false); if (on && s.island) act.openIsland(false) },
@@ -188,13 +191,13 @@ export function Island({ dock }: { dock: HTMLElement }) {
     const f = () => {
       const cs = getComputedStyle(el)
       c.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
-      setFits(c.measureText(t('Comment on the entire variant')).width <= el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight))
+      setFits(c.measureText(wholeLabel).width <= el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight))
     }
     f()
     const ro = new ResizeObserver(f)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [phone, docked, !!s.place])
+  }, [phone, docked, !!s.place, onCard])
   // One button beside the box goes through every state, its width gliding between them: hidden, the
   // add arrow while there is text, the Send n pill while drafts wait, hidden again. Leaving, it keeps
   // what it showed until it has shrunk away; the pill's width is measured off a hidden copy.
@@ -208,10 +211,10 @@ export function Island({ dock }: { dock: HTMLElement }) {
   const pillEl = useRef<HTMLSpanElement | null>(null)
   const [pillW, setPillW] = useState(0)
   const pillRef = useCallback((el: HTMLSpanElement | null) => { pillEl.current = el; if (el) setPillW(el.offsetWidth) }, [])
-  useLayoutEffect(() => { if (pillEl.current) setPillW(pillEl.current.offsetWidth) }, [sendLabel, phone, docked, !!s.place])
-  if (!docked && (!s.place || (copying && !phone))) return null
+  useLayoutEffect(() => { if (pillEl.current) setPillW(pillEl.current.offsetWidth) }, [sendLabel, phone, docked, !!s.place, onCard])
+  if (!docked && ((!s.place && !onCard) || (copying && !phone))) return null
 
-  const add = () => { const n = field.read(); if (act.commentWhole(n.body, n.tags, n.shots)) field.clear() }
+  const add = () => { const n = field.read(); if ((onCard ? act.commentProto : act.commentWhole)(n.body, n.tags, n.shots)) field.clear() }
   const typing = focus || !empty
   const working = rows.some(r => r.state === 'seen' && !r.stopped)
   const live = news && !open ? news : null
@@ -279,17 +282,17 @@ export function Island({ dock }: { dock: HTMLElement }) {
     </div>
   )
 
-  const placeholder = picking ? (s.wholeTag ? t('Click what to tag') : phone ? t('Tap an element') : t('Click what to comment on')) : (typing || phone) && !sendShown && fits ? t('Comment on the entire variant') : t('Comment…')
+  const placeholder = picking ? (s.wholeTag ? t('Click what to tag') : phone ? t('Tap an element') : t('Click what to comment on')) : (typing || phone || onCard) && !sendShown && fits ? wholeLabel : t('Comment…')
   const bar = (
     <div className={`relative flex shrink-0 items-end ${phone ? 'gap-2 p-2' : 'gap-1.5 p-1.5'}`}>
-      <button type="button" data-act="comment:toggle" data-shoot="comment" aria-pressed={picking} aria-label={t('Select an element to comment on')}
+      {!onCard && <button type="button" data-act="comment:toggle" data-shoot="comment" aria-pressed={picking} aria-label={t('Select an element to comment on')}
         title={picking ? t('Stop selecting · Esc') : `${t('Select an element to comment on')} · C`}
         className={`grid shrink-0 place-items-center rounded-full transition-colors ${phone ? 'size-10' : 'size-8'} ${picking ? 'bg-proto-primary text-proto-primary-fg' : 'bg-zinc-900/[.05] text-zinc-600 hover:bg-zinc-900/10 hover:text-zinc-900 dark:bg-white/[.08] dark:text-zinc-300 dark:hover:bg-white/15 dark:hover:text-white'}`}>
         <Icon name={phone ? (picking ? 'tap-on' : 'tap') : picking ? 'select-on' : 'select'} className={phone ? 'size-5' : 'size-4'} />
-      </button>
+      </button>}
       <div className="relative min-w-0 flex-1">
         <div {...field.props} data-shoot="whole-input" enterKeyHint="enter"
-          aria-label={t('Comment on the entire variant')} aria-placeholder={placeholder} title={`${t('Comment on the whole variant')} · ⇧C`}
+          aria-label={wholeLabel} aria-placeholder={placeholder} title={`${onCard ? wholeLabel : t('Comment on the whole variant')} · ⇧C`}
           onFocus={() => { setFocus(true); act.wholeFocus(true) }} onBlur={() => { field.props.onBlur(); setFocus(false); act.wholeFocus(false) }}
           className={`max-h-[116px] w-full overflow-y-auto whitespace-pre-wrap break-words outline-none ${phone ? 'min-h-10 rounded-[20px] px-4 py-2 text-base leading-6' : 'min-h-8 rounded-2xl px-3 py-1.5 text-[13px] leading-5 [@media(pointer:coarse)]:text-base'} bg-zinc-900/[.05] dark:bg-white/[.08] ${phone ? '' : 'focus:ring-2 focus:ring-proto-primary-ring'}`} />
         {empty && <span aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 truncate text-start text-zinc-400 ${phone ? 'px-4 py-2 text-base leading-6' : 'px-3 py-1.5 text-[13px] leading-5 [@media(pointer:coarse)]:text-base'}`}>{placeholder}</span>}
@@ -327,7 +330,7 @@ export function Island({ dock }: { dock: HTMLElement }) {
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 pt-3"><CommentList /></div>
       <div className="shrink-0 space-y-2 px-2 pb-2 empty:hidden"><Notices /></div>
       <div className="shrink-0 border-t border-black/[.07] dark:border-white/10">
-        {s.place ? bar : <p className="px-3 py-3 text-center text-xs text-zinc-400">{t('Open a variant to comment on it.')}</p>}
+        {s.place || onCard ? bar : <p className="px-3 py-3 text-center text-xs text-zinc-400">{t('Open a variant to comment on it.')}</p>}
         {field.pictures}
         <div className="flex justify-center pb-2"><Listening on={!!s.inbox?.listening} stalled={stalled > 0} /></div>
       </div>

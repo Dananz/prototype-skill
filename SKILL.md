@@ -847,7 +847,9 @@ open and what is in it can be commented on. Hover-only parts work the same way, 
 commenting, whatever a hover made appear (a dot's readout, a panel that opens under the pointer) stays
 up while the pointer moves onto it, parts drawn with `pointer-events: none` can be picked, and the
 hover is held while that comment is written. Nothing to build for it: plain hover state in the
-variant is enough (a CSS-only `:hover` is the exception in a device view). The comments island's list shows
+variant is enough (a CSS-only `:hover` is the exception in a device view). On a prototype's own page
+(`/<slug>`, its card open in the gallery) the island takes a comment on the whole prototype: its route is
+`<slug>` with no letter and it has no element, so weigh it against all the variants. The comments island's list shows
 them and shows what became of each. `@` opens the existing visual picker to tag another
 element. Do not author special comment-element names or a catalog of elements. The outline
 and numbered references identify selected targets; source locations are stamped automatically.

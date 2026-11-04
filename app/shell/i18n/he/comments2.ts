@@ -114,6 +114,7 @@ export default {
   '{n} more variant': 'עוד {n} וריאנט',
   '{n} more variants': 'עוד {n} וריאנטים',
   'Comment on the entire variant': 'הערה על כל הווריאנט',
+  'Comment on the entire prototype': 'הערה על כל אב הטיפוס',
   'Add the comment': 'הוסף את ההערה',
   // The comments island (comments/island.tsx) and its settings.
   '{agent} replied': '{agent} ענה',

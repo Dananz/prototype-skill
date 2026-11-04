@@ -2019,6 +2019,8 @@ function printBatch(dir, b) {
     console.log(`\n${c.n}. ${routeShown(c.route)}${c.re ? `  (reply to ${c.re.batch}/${c.re.n})` : ''}`)
     if (c.re) for (const t of turnsBefore(dir, c.re)) console.log(t.gone ? `   earlier: ${t.gone} (no longer in the inbox)` : `   earlier: "${oneLine(t.text, 160)}"  ->  ${t.reply ? `${WHO[t.reply.by] ?? 'Claude'}: "${oneLine(t.reply.text, 160)}"` : 'no reply'}`)
     console.log(`   ${c.text.split('\n').join('\n   ')}`)
+    // The box on an exploration's own page: about all of it, so no element and no one variant.
+    if (!c.action && !c.route.includes('/')) console.log(`   on: the whole prototype, all its variants`)
     if (c.action === 'more-variants') console.log(`   count: ${c.count} new variant${c.count === 1 ? '' : 's'}`)
     if (c.action) console.log(`   action: ${c.action} (${actionText(dir, c)})`)
     // A comment pinned with a long press is on a spot; its element is only where that spot is.

@@ -34,6 +34,7 @@ export default {
   'Continue your comment': 'המשך את ההערה שלך',
   'Comment': 'הערה',
   'Whole variant': 'כל הווריאנט',
+  'Whole prototype': 'כל אב הטיפוס',
   'Comment on the element around it': 'הער על הרכיב שמסביב',
   'Parent': 'רכיב אב',
   'Back to the element inside': 'חזור לרכיב שבפנים',
