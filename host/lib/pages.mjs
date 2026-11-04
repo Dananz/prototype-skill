@@ -72,11 +72,11 @@ export function confirmPage({ device, login, words, form, action }) {
   const btn = 'font:inherit;font-size:15px;padding:10px 18px;border-radius:10px;cursor:pointer'
   const html = `<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Sign in ${esc(device)}?</title><style>${STYLE}
+<title>Sign in on another device?</title><style>${STYLE}
 code{display:block;margin:1rem 0;font:600 1.75rem/1.2 ui-monospace,monospace;letter-spacing:.12em;color:var(--fg)}
 form{display:flex;gap:.75rem;justify-content:center;margin-top:1.25rem}</style></head>
-<body><main><h1>Sign in ${esc(device)} as @${esc(login)}?</h1>
-<p>Check that this code matches what you see on your Mac. If it doesn't, or you didn't start this, cancel.</p>
+<body><main><h1>Sign in on another device as @${esc(login)}?</h1>
+<p>Approve only if you started this yourself on the device named "${esc(device)}" and it shows this same code. If someone sent you this link, cancel: approving lets them share under your GitHub name.</p>
 <code data-words>${esc(words)}</code>
 <form method="post" action="${esc(action)}"><input type="hidden" name="t" value="${esc(form)}">
 <button name="do" value="cancel" style="${btn};border:1px solid var(--dim);background:transparent;color:var(--fg)">Cancel</button>

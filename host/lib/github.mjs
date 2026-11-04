@@ -1,6 +1,7 @@
 // Signing in with GitHub (spec: Access and identity › Signing in with GitHub). The apex runs the
 // OAuth web flow; the share origin turns a 60 s ticket into its own viewer cookie. The access token
 // is used for one /user read and dropped: only the id, login, name and avatar are kept.
+import { sha256hex } from './auth.mjs'
 import { isId } from './ids.mjs'
 import { namesOf } from './routes.mjs'
 import { confirmPage, page } from './pages.mjs'
@@ -253,17 +254,19 @@ export async function admits(env, raw, user, access, now = Date.now()) {
   return false
 }
 
-// A sign-in from a Mac without a token, back from GitHub. Nothing is signed in yet: a link someone
-// else started (and sent here) would otherwise hand them a token for this account. The page names the
-// device that asked and shows the code that Mac printed; only the person's Approve, from this browser,
-// finishes it. Whether a new or pending user is let in is settled now, while GitHub's token is in
-// hand, and rides in the signed form token with who they are.
+// A sign-in from a Mac without a token, back from GitHub. A link someone else started (and sent here)
+// must not hand them a token for this account. With a loopback address the browser goes on to the
+// machine that asked, carrying the proof its poll needs: on anyone else's link nothing is listening
+// there, so nothing reaches them. Without one, nothing is signed in yet: the page shows the code that
+// machine printed, and only the person's Approve, from this browser, finishes it. Whether a new or
+// pending user is let in is settled now, while GitHub's token is in hand.
 async function confirmSignin(env, url, code, user, admit, now, clear) {
   const bad = () => { const r = page('claimfail', {}); r.headers.append('set-cookie', clear); return r }
-  const row = await env.DB.prepare('SELECT exp, owner_id, device, words FROM signins WHERE code = ?').bind(code).first()
+  const row = await env.DB.prepare('SELECT exp, owner_id, device, words, loopback FROM signins WHERE code = ?').bind(code).first()
   if (!row || row.owner_id || row.exp <= now) return bad()
   const known = await env.DB.prepare('SELECT status FROM owners WHERE gh_id = ?').bind(user.gh_id).first()
   const admitted = !known || known.status === 'pending' ? await admit() : false
+  if (row.loopback) return signedIn(env, code, user, admitted, now, clear)
   const nonce = random(16)
   const form = await sign(env.VIEWER_KEY, 'approve', { c: code, u: user, a: admitted, n: nonce, exp: now + STATE_MS })
   const ac = approveCookie(url)
@@ -317,7 +320,7 @@ export async function approveSignin(req, env, url) {
 // the client polls, never here.
 async function signedIn(env, code, user, admitted, now, clear) {
   const bad = () => { const r = page('claimfail', {}); r.headers.append('set-cookie', clear); return r }
-  const row = await env.DB.prepare('SELECT exp, owner_id FROM signins WHERE code = ?').bind(code).first()
+  const row = await env.DB.prepare('SELECT exp, owner_id, loopback FROM signins WHERE code = ?').bind(code).first()
   if (!row || row.owner_id || row.exp <= now) return bad()
   let owner = await env.DB.prepare('SELECT id, status FROM owners WHERE gh_id = ?').bind(user.gh_id).first()
   if (!owner) {
@@ -336,8 +339,13 @@ async function signedIn(env, code, user, admitted, now, clear) {
     owner = { ...owner, status }
   }
   if (!owner) return bad()
-  const done = await env.DB.prepare('UPDATE signins SET gh_id = ?, owner_id = ?, done_at = ? WHERE code = ? AND owner_id IS NULL AND exp > ?').bind(user.gh_id, owner.id, now, code, now).run()
+  const proof = row.loopback ? random(32) : null
+  const done = await env.DB.prepare('UPDATE signins SET gh_id = ?, owner_id = ?, done_at = ?, proof = ? WHERE code = ? AND owner_id IS NULL AND exp > ?').bind(user.gh_id, owner.id, now, proof && await sha256hex(proof), code, now).run()
   if (!done.meta?.changes) return bad()
+  if (proof) {
+    const [port, key] = row.loopback.split('/')
+    return redirect(`http://127.0.0.1:${port}/${key}?code=${encodeURIComponent(code)}&proof=${encodeURIComponent(proof)}`, [clear])
+  }
   const r = page(owner.status === 'active' ? 'signedin' : owner.status === 'pending' ? 'waiting' : 'blocked', { login: user.login })
   r.headers.append('set-cookie', clear)
   return r

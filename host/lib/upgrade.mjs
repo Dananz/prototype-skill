@@ -11,7 +11,7 @@ const TABLES = [
   `CREATE TABLE IF NOT EXISTS kv_trash (key TEXT PRIMARY KEY, at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS presence (share_id TEXT NOT NULL, gh_id INTEGER NOT NULL, route TEXT, at INTEGER NOT NULL, PRIMARY KEY (share_id, gh_id))`,
-  `CREATE TABLE IF NOT EXISTS signins (code TEXT PRIMARY KEY, poll TEXT NOT NULL, device TEXT NOT NULL, words TEXT, exp INTEGER NOT NULL, gh_id INTEGER, owner_id TEXT, done_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS signins (code TEXT PRIMARY KEY, poll TEXT NOT NULL, device TEXT NOT NULL, words TEXT, exp INTEGER NOT NULL, gh_id INTEGER, owner_id TEXT, done_at INTEGER, loopback TEXT, proof TEXT)`,
   `CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, share_id TEXT NOT NULL, reason TEXT NOT NULL, gh_id INTEGER, created_at INTEGER NOT NULL, source TEXT)`,
   `CREATE TABLE IF NOT EXISTS offers (origin_id TEXT NOT NULL, share_id TEXT NOT NULL, owner_id TEXT NOT NULL, base_version INTEGER, changed TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, dismissed_at INTEGER, PRIMARY KEY (origin_id, share_id))`,
 ]
@@ -24,7 +24,7 @@ const COLUMNS = {
   shares: [['html_key', 'TEXT'], ['message', 'TEXT'], ['card_key', 'TEXT'], ['purged_at', 'INTEGER'], ['disabled_at', 'INTEGER']],
   owners: [['gh_id', 'INTEGER'], ['gh_login', 'TEXT'], ['gh_name', 'TEXT'], ['gh_avatar', 'TEXT'], ['role', "TEXT NOT NULL DEFAULT 'user'"], ['status', "TEXT NOT NULL DEFAULT 'active'"]],
   owner_tokens: [['expires_at', 'INTEGER']],
-  signins: [['words', 'TEXT']],
+  signins: [['words', 'TEXT'], ['loopback', 'TEXT'], ['proof', 'TEXT']],
   reports: [['source', 'TEXT']],
 }
 // After the columns, since they name gh_id: schema.sql can't create this index, because on a local

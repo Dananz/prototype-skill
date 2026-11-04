@@ -104,6 +104,30 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
   await waitFor(page, '!!document.querySelector("[data-share-link] [data-link-gate] [data-link-signin]")', 'no hosts.json: the sheet does not ask to sign in with GitHub')
   assert(await page.run('!document.querySelector("[data-link-nohost]")'), 'no hosts.json: the sheet says there is no host')
   await shot(page, 'sheet-signin-desktop-light')
+  // Waiting on GitHub: a browser on this machine has no code to compare (loopback); one on another
+  // machine shows the code the sign-in page will repeat. The session server's answer is stood in for.
+  const pressSignIn = async (p, body) => {
+    await p.run(`(()=>{window.__signin=window.__signin||window.fetch;window.fetch=(u,o)=>String(u).includes('/share/signin')?Promise.resolve(new Response(${JSON.stringify(JSON.stringify(body))},{status:200,headers:{'content-type':'application/json'}})):window.__signin(u,o);window.open=()=>null})()`)
+    await click(p, '[data-link-signin]')
+    await waitFor(p, '!!document.querySelector("[data-link-signin-url]")', 'pressing Sign in with GitHub did not start waiting')
+  }
+  const cancelSignIn = async p => {
+    await p.run('[...document.querySelectorAll("[data-link-gate] button")].find(b=>!b.hasAttribute("data-link-signin"))?.click()')
+    await waitFor(p, '!document.querySelector("[data-link-signin-url]")', 'Cancel did not stop waiting')
+  }
+  for (const [form, p] of [['desktop', page], ['phone', await open('share-link/A?theme=light', { width: 390, height: 844, phone: true })]]) {
+    if (form === 'phone') await sheetOpen(p)
+    await waitFor(p, '!!document.querySelector("[data-link-signin]")', `${form}: no Sign in with GitHub`)
+    await pressSignIn(p, { url: 'about:blank', words: 'BCDF-GHJK' })
+    assert(await p.run('document.querySelector("[data-link-signin-words]")?.textContent.includes("BCDF-GHJK")'), `${form}: another machine's sign-in shows no code`)
+    await shot(p, `sheet-signin-code-${form}-light`)
+    await cancelSignIn(p)
+    await pressSignIn(p, { url: 'about:blank' })
+    assert(await p.run('!document.querySelector("[data-link-signin-words]")'), `${form}: this machine's sign-in asks to compare a code`)
+    await shot(p, `sheet-signin-nocode-${form}-light`)
+    await cancelSignIn(p)
+    if (form === 'phone') { p.close(); pages.splice(pages.indexOf(p), 1) }
+  }
 
   // 2. A host on this Mac: the page opened again finds it, and the New link view shows the prototypes and their variants.
   assert(share(['setup', '--local', '--name', 'Smoke']).status === 0, 'setup --local failed')

@@ -7,6 +7,7 @@
 import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, chmodSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { homedir, hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { ShareError } from './scope.mjs'
@@ -248,15 +249,60 @@ export function client(host, token, { fetch = globalThis.fetch, timeout = 60_000
 
 const SIGNIN_WAIT_MS = 5 * 60e3
 
-/** { code, poll, url, exp }: a sign-in to open at `url`, ten minutes. Refused 429 `rate`, 503 `signin_off`. */
-export async function signinStart(host, { fetch = globalThis.fetch, device = hostname() } = {}) {
-  return (await request(host, null, 'POST', '/api/signin/start', { body: JSON.stringify({ device }), headers: json, fetch, timeout: 15_000 })).data
+/** { code, poll, url, exp } and words or loopback: a sign-in to open at `url`, ten minutes. Refused 429 `rate`, 503 `signin_off`. */
+export async function signinStart(host, { fetch = globalThis.fetch, device = hostname(), loopback } = {}) {
+  return (await request(host, null, 'POST', '/api/signin/start', { body: JSON.stringify({ device, ...(loopback ? { loopback } : {}) }), headers: json, fetch, timeout: 15_000 })).data
 }
 
 /** One poll: { state: 'waiting' }, or once signed in { token, login, name, avatar, status }. 410 `expired`, 404 unknown. */
-export async function signinPoll(host, code, poll, { fetch = globalThis.fetch } = {}) {
-  const { status, data } = await request(host, null, 'POST', '/api/signin/poll', { body: JSON.stringify({ code, poll }), headers: json, fetch, timeout: 15_000 })
+export async function signinPoll(host, code, poll, { fetch = globalThis.fetch, proof } = {}) {
+  const { status, data } = await request(host, null, 'POST', '/api/signin/poll', { body: JSON.stringify({ code, poll, ...(proof ? { proof } : {}) }), headers: json, fetch, timeout: 15_000 })
   return status === 202 || !data?.token ? { state: 'waiting' } : data
+}
+
+const SIGNIN_LOST = ['Sign-in didn\u2019t finish', 'Go back and try again.']
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
+
+/**
+ * The temporary address on this machine that the host sends the browser back to after GitHub: the IP
+ * literal and a port of the system's choosing (RFC 8252), and a random path, so nothing else on this
+ * machine can answer in its place. It takes one proof for the one sign-in it is told to expect, and
+ * holds the tab until `close` says how the sign-in ended.
+ */
+export async function signinDoor() {
+  const key = randomBytes(24).toString('base64url')
+  let expected = null, held = null, arrived, timer
+  const door = {
+    key, port: 0, proof: null,
+    got: new Promise(ok => { arrived = ok }),
+    expect: code => { expected = code },
+    close: ([title, line] = SIGNIN_LOST) => {
+      clearTimeout(timer)
+      const finish = () => { server.close(); server.closeAllConnections() }
+      if (!held) return finish()
+      const tab = held
+      held = null
+      tab.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' })
+      tab.end(`<!doctype html><html lang="en" style="color-scheme:light dark"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><body style="font:16px/1.5 system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;margin:0;padding:1rem;text-align:center"><main><h1 style="font-size:1.25rem;margin:0 0 .5rem">${escapeHtml(title)}</h1><p style="margin:0;opacity:.7">${escapeHtml(line)}</p></main></body></html>`, finish)
+    },
+  }
+  const server = createServer((req, res) => {
+    const u = new URL(req.url, 'http://127.0.0.1')
+    const proof = u.searchParams.get('proof')
+    if (req.method !== 'GET' || u.pathname !== `/${key}` || !expected || u.searchParams.get('code') !== expected || !proof || door.proof) {
+      res.writeHead(404, { 'cache-control': 'no-store' })
+      return res.end()
+    }
+    held = res
+    door.proof = proof
+    timer = setTimeout(() => door.close(), 20_000)
+    timer.unref?.()
+    arrived(proof)
+  })
+  await new Promise((ok, no) => { server.once('error', no); server.listen(0, '127.0.0.1', ok) })
+  server.unref()
+  door.port = server.address().port
+  return door
 }
 
 /**
@@ -264,21 +310,28 @@ export async function signinPoll(host, code, poll, { fetch = globalThis.fetch } 
  * then polls every `every` ms until the host answers the token, the link expires or `wait` passes.
  * The token is stored under the host's name. Resolves { login, name, avatar, status }; throws a
  * ShareError that says what to do. A poll the network drops is asked again; `stopped()` true ends it
- * quietly (resolves null): another sign-in took over.
+ * quietly (resolves null): another sign-in took over. `listen`: the browser is on this machine, so the
+ * host sends it back here (signinDoor) and there is no code to compare. A host that doesn't offer that
+ * answers `words` instead, as it does when `listen` is off, for the person to check on its page.
  */
 // PROTO_SHARE_SIGNIN_EVERY_MS and PROTO_SHARE_SIGNIN_WAIT_MS shorten both for the tests.
-export async function signIn(host, { fetch = globalThis.fetch, onUrl = () => {}, every = Number(process.env.PROTO_SHARE_SIGNIN_EVERY_MS) || 2000, wait = Number(process.env.PROTO_SHARE_SIGNIN_WAIT_MS) || SIGNIN_WAIT_MS, sleep = ms => new Promise(r => setTimeout(r, ms)), stopped = () => false, device } = {}) {
-  const start = await signinStart(host, { fetch, device })
+export async function signIn(host, { listen = false, fetch = globalThis.fetch, onUrl = () => {}, every = Number(process.env.PROTO_SHARE_SIGNIN_EVERY_MS) || 2000, wait = Number(process.env.PROTO_SHARE_SIGNIN_WAIT_MS) || SIGNIN_WAIT_MS, sleep = ms => new Promise(r => setTimeout(r, ms)), stopped = () => false, device } = {}) {
+  let door = listen ? await signinDoor().catch(() => null) : null
+  let ending = SIGNIN_LOST
+  try {
+  const start = await signinStart(host, { fetch, device, ...(door ? { loopback: { port: door.port, key: door.key } } : {}) })
+  if (door && start?.loopback !== true) { door.close(); door = null }
+  door?.expect(start?.code)
   if (typeof start?.url !== 'string' || typeof start.code !== 'string' || typeof start.poll !== 'string') throw new ShareError(`The share host "${host.name}" answered a sign-in without its link`)
   await onUrl(start.url, start)
   // Not capped at the link's `exp`: the host still answers a sign-in finished just before it, and
   // says 410 expired once it won't.
   const end = Date.now() + wait
   while (Date.now() < end) {
-    await sleep(every)
+    await (door && !door.proof ? Promise.race([sleep(every), door.got]) : sleep(every))
     if (stopped()) return null
     let r
-    try { r = await signinPoll(host, start.code, start.poll, { fetch }) } catch (e) {
+    try { r = await signinPoll(host, start.code, start.poll, { fetch, proof: door?.proof }) } catch (e) {
       if (e?.unreachable || e?.status === 429 || e?.status >= 500) continue
       if (e?.status === 410) throw Object.assign(new ShareError('The sign-in link expired: run proto share signin again'), { code: 'expired' })
       throw e
@@ -286,9 +339,16 @@ export async function signIn(host, { fetch = globalThis.fetch, onUrl = () => {},
     if (stopped()) return null
     if (r.state === 'waiting') continue
     setToken(host.name, r.token)
+    ending = r.status === 'pending' ? [`Thanks, @${r.login}`, 'Sharing opens once the maintainer approves you. You can close this tab.'] : [`Signed in as @${r.login}`, 'You can close this tab.']
     return { login: r.login ?? null, name: r.name ?? null, avatar: r.avatar ?? null, status: r.status ?? 'active' }
   }
   throw Object.assign(new ShareError('No sign-in within five minutes: run proto share signin again'), { code: 'expired' })
+  } catch (e) {
+    if (e?.message) ending = [SIGNIN_LOST[0], e.message]
+    throw e
+  } finally {
+    door?.close(ending)
+  }
 }
 
 /** What a finished sign-in says: who, or that the maintainer still has to let them in. */

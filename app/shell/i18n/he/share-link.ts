@@ -130,7 +130,7 @@ export default {
   'This GitHub account can’t share on this host.': 'חשבון ה-GitHub הזה לא יכול לשתף בשרת הזה.',
   'Waiting for GitHub…': 'מחכה ל-GitHub…',
   'Open the sign-in page again': 'פתח שוב את דף ההתחברות',
-  'Approve on the GitHub sign-in page only if it shows this code:': 'אשר בדף ההתחברות רק אם מופיע בו הקוד הזה:',
+  'Approve on the sign-in page only if it shows this code:': 'אשר בדף ההתחברות רק אם מופיע בו הקוד הזה:',
   'Your public GitHub name and picture only. No access to your repositories.': 'רק השם והתמונה הציבוריים שלך ב-GitHub. בלי גישה למאגרים שלך.',
   'This share host can’t run GitHub sign-in yet. Ask Claude to set it up.': 'שרת השיתוף הזה עדיין לא יכול להריץ התחברות עם GitHub. בקש מ-Claude להגדיר את זה.',
   'Replying to': 'בתשובה ל',

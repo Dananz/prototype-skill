@@ -16,8 +16,10 @@ open only here, while it runs. `proto share file` needs no host at all.
 
 Nothing to set up. The first share on a Mac asks for a GitHub sign-in: the page's Share button shows
 Sign in with GitHub, and `proto share` stops with "Sign in with GitHub first: proto share signin".
-Run that only when the user asks to share; the user approves in their browser. The host gives this
-Mac its own token (the Keychain item `prototype-share-online`), and from then on sharing just works.
+Run that only when the user asks to share; the user approves on GitHub in their browser, which then
+comes back to this Mac, so there is no code to compare. With the browser on another machine (over SSH,
+a page reached over the network, or `--code`), a page on the host shows a code to check against the one
+printed here. The host gives this Mac its own token (the Keychain item `prototype-share-online`), and from then on sharing just works.
 `proto share signout` takes it back.
 
 The host is invite-only: a new account waits for the maintainer to approve it ("Waiting for the
@@ -50,7 +52,7 @@ The first command puts the host on its workers.dev name:
 5. Finds or makes the KV namespace and the D1 database `proto-share`.
 6. Writes `~/.prototypes/host/online/wrangler.jsonc` (generated; never edit it).
 7. Applies the database migrations (`host/migrations/`), then deploys the host.
-8. Sets the secrets from `~/.prototypes/host/prod.vars` (the prtype.dev OAuth App's
+8. Sets the secrets from `~/.prototypes/host/prod.vars` (the prtype.dev GitHub App's
    `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, mode 600) on stdin, and a viewer key once.
 9. Makes the owner (`--name`, else your `gh` login), the host's admin, and this Mac's token in the
    Keychain.
@@ -95,7 +97,7 @@ with `--restart`; else `proto share stop && proto share setup --local` applies t
 ## Commands
 
 ```
-proto share signin [--no-open] [--again]  sign in with GitHub: prints and opens a link (10 minutes,
+proto share signin [--no-open] [--code] [--again]  sign in with GitHub: prints and opens a link (10 minutes,
                                           works once), waits up to five minutes, keeps this Mac's token
 proto share signout                       revoke this Mac's token on the host and forget it
 proto share <slug>[/<n>…] | --all [--title "…"] [--message "…"] [--no-fork] [--yes] [--host local|online]
@@ -218,7 +220,7 @@ acts on them; nothing reaches Claude by itself.
 | The share tools | `~/.prototypes/share-tools/` |
 | The share tool's Cloudflare login | `~/.prototypes/share-tools/wrangler-home/` (`XDG_CONFIG_HOME` for every manual wrangler command) |
 | The online host's config (generated) | `~/.prototypes/host/online/wrangler.jsonc` |
-| The prtype.dev OAuth App | `~/.prototypes/host/prod.vars` (mode 600) |
+| The prtype.dev GitHub App | `~/.prototypes/host/prod.vars` (mode 600) |
 | The local host: config, database and pages, pid and log | `~/.prototypes/host/` (`wrangler.jsonc`, `state/`, `host.pid`, `host.log`) |
 | The local OAuth App and viewer key | `~/.prototypes/host/.dev.vars` (mode 600) |
 | Which hosts exist, and the default | `~/.config/prototype/hosts.json` (no secrets) |
@@ -297,7 +299,7 @@ points at the card.
 | "doesn't answer over TLS yet" | The first certificate takes 15 minutes to 24 hours after the zone went active. Nothing to undo: run `proto share setup --domain prtype.dev` again later. |
 | "the site Worker has no HOST binding live" | `site/wrangler.jsonc` needs `"services": [{ "binding": "HOST", "service": "proto-share" }]`; run `proto share setup --domain prtype.dev` again (it deploys the site). |
 | "The host's daily upload budget is used up" | It resets at 00:00 UTC (the message says the time in Israel). Past the stored-bytes cap it names the biggest shares: `proto share rm <id>` frees room. |
-| "Sign in with GitHub first: proto share signin" | `proto share signin`; the user approves in the browser tab it opens (the link works once, for 10 minutes). |
+| "Sign in with GitHub first: proto share signin" | `proto share signin`; the user approves in the browser tab it opens (the link works once, for 10 minutes; `--code` when the browser is on another machine). |
 | "Waiting for the maintainer to approve @login" | Nothing to do on this Mac: the maintainer runs `proto share admin approve <login>`, then share again. |
 | "You've uploaded 30 times today" / "You have 25 live links" / "Your links hold at most 75 MB" | The user's own limit: `proto share rm <id>` frees links and room; uploads reset at 00:00 UTC. |
 | "Update the skill to share" | The host needs a newer skill: update it (`proto up` in a clean clone updates itself). |

@@ -87,7 +87,9 @@ CREATE TABLE IF NOT EXISTS signins  (code TEXT PRIMARY KEY,          -- the shor
                        words TEXT,                     -- the code the Mac shows and the confirm page repeats, ABCD-EFGH
                        exp INTEGER NOT NULL,           -- 10 minutes after the start
                        gh_id INTEGER, owner_id TEXT,   -- who signed in, once GitHub sent them back
-                       done_at INTEGER);
+                       done_at INTEGER,
+                       loopback TEXT,                  -- "<port>/<key>": the temporary address on the machine that asked
+                       proof TEXT);                    -- SHA-256 of the one-time secret sent to that address
 CREATE TABLE IF NOT EXISTS reports  (id TEXT PRIMARY KEY, share_id TEXT NOT NULL,
                        reason TEXT NOT NULL,           -- the viewer's words, at most 500 characters
                        gh_id INTEGER,                  -- the viewer, when signed in on the link

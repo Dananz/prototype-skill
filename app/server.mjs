@@ -708,7 +708,7 @@ export function prototypeServer(session) {
             if (!data || typeof data !== 'object' || Array.isArray(data)) return fail(400, 'send a JSON object')
             // Share links (app/share/routes.mjs): the Share sheet and the "From links" tray.
             if (route.startsWith('/share/')) {
-              sharesReady.then(sh => sh.handle(route.slice('/share/'.length), data)).then(({ status, body }) => {
+              sharesReady.then(sh => sh.handle(route.slice('/share/'.length), data, { host: req.headers.host })).then(({ status, body }) => {
                 res.statusCode = status
                 res.setHeader('content-type', 'application/json')
                 res.end(JSON.stringify(body))

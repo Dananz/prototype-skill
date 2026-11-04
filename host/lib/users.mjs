@@ -14,6 +14,7 @@ const SIGNIN_MS = 10 * 60_000
 const POLL_GRACE_MS = 60_000
 const STARTS_PER_HOUR = 20 // per IP: /api/signin/start needs no token
 const DEVICE = /^[^\u0000-\u001f\u007f]{1,80}$/
+const LOOPBACK_KEY = /^[\w-]{22,64}$/
 // The code the Mac shows beside the link and the confirm page repeats: 8 letters, no vowels (no
 // words, no I or O to mistake for 1 or 0). 20 letters; bytes from 240 up are drawn again (no bias).
 const LETTERS = 'BCDFGHJKLMNPQRSTVWXZ'
@@ -35,22 +36,30 @@ const DAY = () => Math.floor(Date.now() / 86_400_000)
 // ---------- sign-in from a Mac without a token ----------
 
 /**
- * POST /api/signin/start { device? }: { code, poll, url, exp, words }. The client opens url, shows
- * words beside it, and polls with the secret; only its hash rests here. The person approves on the
- * host's confirm page, which shows the same words. 20 starts an hour per IP.
+ * POST /api/signin/start { device?, loopback? }: { code, poll, url, exp } and either words or
+ * loopback: true. The client opens url and polls with the secret; only its hash rests here. With
+ * loopback { port, key }, a temporary address on the client's machine, the host sends the browser
+ * there after GitHub with a one-time proof the poll must show, so a link someone else started gets
+ * them nothing. Without it, the person approves on the confirm page, which repeats the words the
+ * client shows (a browser on another machine, or an older client). 20 starts an hour per IP.
  */
 export async function signinBegin(req, env, url) {
   if (!signinReady(env)) return fail(503, 'GitHub sign-in is not set up on this host.', { code: 'signin_off' })
   // Past the per-IP count (which many addresses get around), the host's own day: a start writes a
   // few rows, and stops with everything else once the day's D1 writes are used up.
   if (!await room(env.DB, 'd1_write', 10)) return fail(503, `The host's daily budget is used up. ${resetText()}`, { code: 'budget' })
-  let device = 'device'
+  let device = 'device', loopback = null
   if (req.headers.get('content-type')) {
     const b = await bodyOf(req)
     if (b instanceof Response) return b
     if (b.device !== undefined && b.device !== null) {
       if (typeof b.device !== 'string' || !DEVICE.test(b.device.trim())) return fail(400, 'device is text of at most 80 characters.', { code: 'invalid' })
       device = b.device.trim()
+    }
+    if (b.loopback !== undefined && b.loopback !== null) {
+      const { port, key } = b.loopback
+      if (!Number.isInteger(port) || port < 1024 || port > 65535 || typeof key !== 'string' || !LOOPBACK_KEY.test(key)) return fail(400, 'loopback is { port, key }.', { code: 'invalid' })
+      loopback = `${port}/${key}`
     }
   }
   const now = Date.now()
@@ -59,15 +68,16 @@ export async function signinBegin(req, env, url) {
   const code = newId()
   const poll = b64url(crypto.getRandomValues(new Uint8Array(32)))
   const exp = now + SIGNIN_MS
-  const words = wordsOf()
-  await env.DB.prepare('INSERT INTO signins (code, poll, device, words, exp) VALUES (?, ?, ?, ?, ?)').bind(code, await sha256hex(poll), device, words, exp).run()
-  return json({ code, poll, url: `${url.protocol}//${env.BASE}/auth/github?signin=${code}`, exp, words })
+  const words = loopback ? null : wordsOf()
+  await env.DB.prepare('INSERT INTO signins (code, poll, device, words, exp, loopback) VALUES (?, ?, ?, ?, ?, ?)').bind(code, await sha256hex(poll), device, words, exp, loopback).run()
+  return json({ code, poll, url: `${url.protocol}//${env.BASE}/auth/github?signin=${code}`, exp, ...(loopback ? { loopback: true } : { words }) })
 }
 
 /**
- * POST /api/signin/poll { code, poll }: 202 while the person is on GitHub; once they are back, the
- * device token is minted now, its hash stored, the row deleted, and the token answered this once.
- * A wrong secret is a 404, as an unknown code is.
+ * POST /api/signin/poll { code, poll, proof? }: 202 while the person is on GitHub; once they are
+ * back, the device token is minted now, its hash stored, the row deleted, and the token answered this
+ * once. A wrong secret is a 404, as an unknown code is. A sign-in that came back to its own machine
+ * needs the proof sent there too: whoever holds only the poll secret goes on waiting.
  */
 export async function signinPoll(req, env) {
   const b = await bodyOf(req)
@@ -79,6 +89,7 @@ export async function signinPoll(req, env) {
   const now = Date.now()
   if (row.exp + (row.owner_id ? POLL_GRACE_MS : 0) <= now) return fail(410, 'This sign-in expired. Start again.', { code: 'expired' })
   if (!row.owner_id) return json({ state: 'waiting' }, 202)
+  if (row.loopback && !(typeof b.proof === 'string' && b.proof.length <= 100 && same(row.proof, await sha256hex(b.proof)))) return json({ state: 'waiting' }, 202)
   // Once: of two polls at once, only the one that deletes the row mints.
   const taken = await env.DB.prepare('DELETE FROM signins WHERE code = ? AND owner_id IS NOT NULL').bind(b.code).run()
   if (!taken.meta?.changes) return unknown()

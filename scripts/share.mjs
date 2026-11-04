@@ -123,6 +123,9 @@ const openUrl = (url, flags) => {
   if (!opensBrowser(flags)) return
   try { spawn('open', [url], { stdio: 'ignore', detached: true }).unref() } catch { /* printed above */ }
 }
+/** Whether the browser is on this machine, so the host can send it back here: not with --code or over SSH. */
+export const listensHere = (flags = {}, env = process.env) => flags.code !== true && !env.SSH_CONNECTION && !env.SSH_TTY
+
 const signinWait = () => Number(process.env.PROTO_SHARE_SIGNIN_WAIT_MS) || SIGNIN_WAIT_MS
 const signinEvery = () => Number(process.env.PROTO_SHARE_SIGNIN_EVERY_MS) || 2000
 
@@ -133,12 +136,14 @@ export async function signin(flags, { die }, { fetch = globalThis.fetch } = {}) 
     if (host.stage === 'local') die(`No owner token for the host "${host.name}" on this machine: run ${setupHint(host)}`)
     const who = await signIn(host, {
       fetch,
-      // The host's page asks the person to check this code before it signs anyone in: a link someone
-      // else started shows a code this Mac never printed.
+      listen: listensHere(flags),
+      // Without a way back to this machine, the host's page asks the person to check this code before
+      // it signs anyone in: a link someone else started shows a code this machine never printed.
       onUrl: (url, start) => {
         console.log(`Sign in with GitHub: ${url}`)
         if (start?.words) console.log(`Your code: ${start.words} (approve on that page only if it shows this code)`)
         console.log('The link works once, for 10 minutes.')
+        if (start?.loopback === true) console.log('Browser on another machine? Run proto share signin --code')
         openUrl(url, flags)
       },
     })
