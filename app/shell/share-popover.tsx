@@ -428,7 +428,7 @@ function SharePop(p: PopProps) {
     : <Home p={p} owner={s.owner} onNew={() => setView('new')} />
   // Closed, it is an empty hidden box (what it holds is kept above for the next open).
   return (
-    <div ref={box} {...(shown ? { 'data-pop': '' } : {})} data-share-pop={shown ? 'open' : 'closed'} role="dialog" aria-label={t('Share')} tabIndex={-1} hidden={!shown}
+    <div ref={box} {...(shown ? { 'data-pop': '', 'data-pop-for': 'share' } : {})} data-share-pop={shown ? 'open' : 'closed'} role="dialog" aria-label={t('Share')} tabIndex={-1} hidden={!shown}
       onClick={e => e.stopPropagation()}
       className="fixed z-40 flex max-h-[min(48rem,calc(100dvh-5rem))] w-[min(26rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 outline-none dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100"
       style={place}>

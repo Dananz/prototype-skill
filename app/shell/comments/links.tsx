@@ -217,7 +217,7 @@ export function LinksTray() {
           <Menu.Trigger data-link-tray-menu aria-label={t('From links options')} className="ms-auto grid size-7 place-items-center rounded-md text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"><Icon name="dots" className="size-4" /></Menu.Trigger>
           <Menu.Portal container={uiBox()}>
             <Menu.Positioner side="bottom" align="end" sideOffset={6} collisionPadding={8} className="z-[260] outline-none">
-              <Menu.Popup data-comment-ui="" className="min-w-52 rounded-xl border border-black/10 bg-white p-1 text-[13px] text-zinc-800 shadow-lg outline-none dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">
+              <Menu.Popup data-comment-ui="" className="min-w-52 rounded-xl border border-black/10 bg-white p-1 text-[13px] text-zinc-800 shadow-lg outline-none transition-opacity duration-200 ease-[ease-out] data-ending-style:opacity-0 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">
                 <Menu.CheckboxItem checked={showDismissed} onCheckedChange={v => setShowDismissed(v)} data-link-show-dismissed className="flex h-9 items-center gap-2.5 rounded-lg px-2 outline-none data-[highlighted]:bg-zinc-900/[.05] dark:data-[highlighted]:bg-white/[.07]">
                   <span className="min-w-0 flex-1">{t('Dismissed')}</span><span className="text-xs tabular-nums text-zinc-400">{tray.dismissed}</span>
                   <span className="w-4">{showDismissed && <Icon name="check-simple" className="size-4" />}</span>

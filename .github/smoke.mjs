@@ -252,6 +252,13 @@ if (process.argv.includes('--share-design-only')) {
   console.log('OK: focused share of a design checks')
   process.exit(0)
 }
+if (process.argv.includes('--context-menu-only')) {
+  await contextMenuChecks({ proto, app, local, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused context menu checks')
+  process.exit(0)
+}
 if (process.argv.includes('--focus-only')) {
   await focusChecks({ proto, app, local, openPage, fail })
   proto(['rm', '--all'])

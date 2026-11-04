@@ -43,6 +43,49 @@ export async function contextMenuChecks({ proto, app, local, openPage, fail }) {
     })()`)
     if (row !== 'ok') fail(`context menu: ${row}`)
 
+    // Opens at once, leaves with a 200ms fade: the menu is gone on the spot, an inert copy fades.
+    const fade = await page.run(`(async () => {
+      ${helpers}
+      rc(document.querySelector('[data-act="mp:ctxfx"]'))
+      if (!await until(menu)) return 'no menu'
+      if (getComputedStyle(menu()).opacity !== '1' || menu().getAnimations().length) return 'the menu should open at once'
+      esc()
+      if (!await until(() => !menu())) return 'Esc did not close the menu'
+      const copy = document.querySelector('[data-leaving]')
+      if (!copy?.inert) return 'nothing fades as the menu leaves'
+      const motion = copy.getAnimations()[0]?.effect.getTiming()
+      if (motion?.duration !== 200) return 'the fade should take 200ms, got ' + motion?.duration
+      if (getComputedStyle(copy).pointerEvents !== 'none') return 'the fading copy takes clicks'
+      if (!await until(() => !document.querySelector('[data-leaving]'))) return 'the fading copy stayed'
+      // The bar's popovers, drawn from the shell's HTML, go the same way.
+      for (const act of ['more', 'switch', 'device', 'share']) {
+        const btn = document.querySelector('[data-act="open:' + act + '"]')
+        if (!btn) return 'no button for ' + act
+        btn.click()
+        const open = () => document.querySelector('[data-pop-for="' + act + '"]:not([hidden])')
+        if (!await until(open)) return act + ' did not open'
+        if (open().getAnimations().length) return act + ' should open at once'
+        const r = open().getBoundingClientRect()
+        esc()
+        if (!await until(() => !open() && document.querySelector('[data-leaving]'))) return act + ' left no fade'
+        const g = document.querySelector('[data-leaving]'), b = g.getBoundingClientRect()
+        if (Math.abs(b.left - r.left) > 1 || Math.abs(b.top - r.top) > 1 || Math.abs(b.width - r.width) > 1) return act + ' fades somewhere else'
+        if (document.querySelector('[data-leaving] [data-act]')) return act + ' fades with live buttons'
+        if (!await until(() => !document.querySelector('[data-leaving]'))) return act + ' left its copy'
+      }
+      // Reopened mid-fade, the old copy goes at once.
+      const more = document.querySelector('[data-act="open:more"]')
+      more.click(); await until(() => document.querySelector('[data-pop-for="more"]'))
+      esc(); await until(() => document.querySelector('[data-leaving]'))
+      document.querySelector('[data-act="open:more"]').click()
+      if (!await until(() => document.querySelector('[data-pop-for="more"]'))) return 'more did not reopen'
+      if (document.querySelector('[data-leaving]')) return 'the old copy stayed under the reopened menu'
+      esc()
+      await until(() => !document.querySelector('[data-leaving]'))
+      return 'ok'
+    })()`)
+    if (fade !== 'ok') fail(`context menu fade: ${fade}`)
+
     const more = await page.run(`(async () => {
       ${helpers}
       rc(document.querySelector('[data-act="mp:ctxfx"]'))

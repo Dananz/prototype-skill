@@ -142,7 +142,7 @@ export function ContextPop({ open, at, title, sub, rows, onClose }: ContextPopPr
   // The shell closes it on Esc and on a click outside; a click inside goes no further, since a
   // choice redraws the menu under it and a click on a removed button reads as one outside.
   return (
-    <div ref={box} data-pop data-context-menu onClick={e => e.stopPropagation()} onContextMenu={e => { if (!e.shiftKey) e.preventDefault() }}
+    <div ref={box} data-pop data-pop-for="ctx" data-context-menu onClick={e => e.stopPropagation()} onContextMenu={e => { if (!e.shiftKey) e.preventDefault() }}
       className="fixed z-40 w-72 overflow-hidden rounded-2xl transition-opacity has-[[data-tag-picking]]:pointer-events-none has-[[data-tag-picking]]:opacity-40 border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={pos}>
       {ask
         ? <AskForm ask={ask} onBack={() => setAsk(null)} onDone={onClose} />

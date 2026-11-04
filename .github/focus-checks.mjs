@@ -38,7 +38,16 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await until(page, `!!document.querySelector('[data-pop][class*="fixed"]')`, 'Decide from the strip should open its menu')
     const beside = await page.run(`(() => { const m = document.querySelector('[data-pop][class*="fixed"]').getBoundingClientRect(), b = document.querySelector('[data-strip]').getBoundingClientRect(); return m.left >= b.right - 1 || m.right <= b.left + 1 })()`)
     assert(beside, 'the menu should open beside the strip, not over it')
-    await page.run(`dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+    assert(await page.run(`!document.querySelector('[data-pop][class*="fixed"]').getAnimations().length`), 'the menu should open at once')
+    const left = await page.run(`(async () => {
+      dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      for (let i = 0; i < 40 && document.querySelector('[data-decide] [data-pop]'); i++) await new Promise(r => setTimeout(r, 5))
+      const copy = document.querySelector('[data-leaving]')
+      const opacity = copy ? +getComputedStyle(copy).opacity : -1, ms = copy?.getAnimations()[0]?.effect.getTiming().duration
+      await new Promise(r => setTimeout(r, 300))
+      return { gone: !document.querySelector('[data-decide] [data-pop]'), fading: !!copy?.inert && opacity > 0 && ms === 200, cleared: !document.querySelector('[data-leaving]') }
+    })()`)
+    assert(left.gone && left.fading && left.cleared, `the menu should leave with a 200ms fade: ${JSON.stringify(left)}`)
 
     // Tour walks the flow: from its first screen, a bar with where you are, next with → (or its button), End.
     await page.run(`history.pushState(null, '', '/fabout/A'); dispatchEvent(new PopStateEvent('popstate'))`)
@@ -127,7 +136,7 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await until(page, `!!document.querySelector('[data-jump-field]')`, '⌘K should open Jump')
     await page.run(`(() => { const f = document.querySelector('[data-jump-field]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(f, 'focus about'); f.dispatchEvent(new Event('input', { bubbles: true })) })()`)
     await until(page, `document.querySelector('[data-jump-at="0"]')?.dataset.jumpItem === 'screen:fabout'`, 'Jump should find the about screen first')
-    await page.run(`document.querySelector('[data-jump-field]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`)
+    assert(await page.run(`(() => { document.querySelector('[data-jump-field]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return !!document.querySelector('[data-leaving]') })()`), 'Jump should fade as it closes')
     await until(page, `location.pathname === '/fabout/A' && !document.querySelector('[data-jump]')`, 'Enter in Jump should open it and close Jump')
 
     // A link asks first.
