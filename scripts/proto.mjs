@@ -70,7 +70,7 @@
 //   proto share setup --domain prtype.dev   the host behind prtype.dev: short links, GitHub sign-in to comment
 //   proto share setup --local [--name <owner>]   a share host on this Mac (wrangler dev); links open only here
 //   proto share setup --github [--client-id <id>] [--restart]   the local host's GitHub OAuth App (secret on stdin)
-//   proto share signin [--no-open] [--again]   sign in with GitHub to share (prtype.dev with no setup; a new link needs
+//   proto share signin [--no-open] [--code] [--again]   sign in with GitHub to share (prtype.dev with no setup; a new link needs
 //             it): prints and opens the link, waits up to five minutes, keeps this Mac's token in the Keychain
 //   proto share signout      revoke this Mac's token on the host and forget it here
 //   proto share admin users [--pending] | approve <login> | ban <login> | rm <id> | reports   the host's maintainer:
@@ -151,7 +151,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'again', 'no-serve', 'join', 'install', 'no-fork', 'fork'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'code', 'again', 'no-serve', 'join', 'install', 'no-fork', 'fork'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }

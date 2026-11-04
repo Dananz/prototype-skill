@@ -132,7 +132,7 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
   // first (whose tab may be gone). It runs here, where the token is stored; the page only gets the link
   // and the code the host's confirm page will show (words), for the person to check.
   const signins = new Map()
-  const signInHere = async host => {
+  const signInHere = async (host, listen) => {
     const mine = {}
     signins.set(host.name, mine)
     const stopped = () => signins.get(host.name) !== mine
@@ -140,7 +140,7 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
     const opened = new Promise((ok, no) => { link = { ok, no } })
     // The poll waits on a sleep that never holds the server open.
     const sleep = ms => new Promise(r => setTimeout(r, ms).unref?.())
-    signIn(host, { onUrl: (u, start) => link.ok({ url: u, ...(typeof start?.words === 'string' ? { words: start.words } : {}) }), stopped, sleep })
+    signIn(host, { onUrl: (u, start) => link.ok({ url: u, ...(typeof start?.words === 'string' ? { words: start.words } : {}) }), stopped, sleep, listen })
       .then(who => { if (who && !stopped()) { owners.delete(host.name); signedInAs.set(host.name, who) } })
       .catch(e => link.no(e))
       .finally(() => { if (!stopped()) signins.delete(host.name) })
@@ -257,13 +257,15 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
      * owner's claim; with none (online), the host's sign-in, which this server then waits on and whose
      * token it stores: the page's owner, asked again, is signed in once GitHub has answered.
      */
-    async signin() {
+    async signin(_, from) {
       const host = await hostOf()
       owners.delete(host.name)
       try {
         if (!getToken(host.name) && !isLocal(host)) {
           await up(host)
-          return await signInHere(host)
+          // The page on this machine: the host can send its browser back here. Reached over the
+          // network (Tailscale), 127.0.0.1 would be the browser's own machine, so it gets the code.
+          return await signInHere(host, /^(localhost|127\.0\.0\.1|\[::1\])(:|$)/i.test(from?.host || ''))
         }
         const { token } = await reach()
         return { url: (await client(host, token).claim()).url }
@@ -367,11 +369,11 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
     /** The page is there (its minute's ping): the poll runs while one pinged in the last 10 minutes. */
     ping() { seen = Date.now() },
     /** Answers /__proto/share/<name>: resolves { status, body }. */
-    async handle(name, data) {
+    async handle(name, data, from) {
       seen = Date.now()
       const route = Object.hasOwn(routes, name) ? routes[name] : null
       if (!route) return { status: 404, body: { error: `no /__proto/share/${name}` } }
-      try { return { status: 200, body: await route(data) } } catch (e) {
+      try { return { status: 200, body: await route(data, from) } } catch (e) {
         if (e?.unreachable) return { status: 503, body: { error: e.message, code: 'host_down' } }
         // The host refused (its status and code), or the request itself was wrong (a scope, a build).
         if (e instanceof ShareError) return { status: e.status ? 502 : 400, body: { error: e.message, ...(e.code ? { code: e.code } : {}) } }

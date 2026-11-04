@@ -6,9 +6,13 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { gzipSync } from 'node:zlib'
+import { createServer } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
-import { readFileSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { getToken, signIn as signIn2 } from '../app/share/owner.mjs'
 import worker from '../host/worker.mjs'
 import { cron, purge } from '../host/lib/cron.mjs'
 import { upgrade } from '../host/lib/upgrade.mjs'
@@ -237,7 +241,9 @@ test('sign-in asks before it signs in: the device and the Mac\'s code shown, App
   assert.match(s.words, /^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$/)
   const w = await walk(env, s.url)
   assert.equal(w.status, 200)
-  assert.match(w.text, /Sign in Studio &lt;b&gt; as @dana-test\?/)
+  assert.match(w.text, /Sign in on another device as @dana-test\?/)
+  assert.match(w.text, /the device named "Studio &lt;b&gt;"/)
+  assert.match(w.text, /If someone sent you this link, cancel/)
   assert.ok(w.text.includes(`<code data-words>${s.words}</code>`), 'the code the Mac shows')
   assert.match(w.set, /^__Host-gha=[\w-]+; Path=\/; Max-Age=600; HttpOnly; SameSite=Lax; Secure$/)
   assert.equal(env.DB.sql.prepare("SELECT COUNT(*) AS n FROM owners WHERE gh_id = 4242").get().n, 0, 'nobody made before Approve')
@@ -763,6 +769,21 @@ test('schema.sql runs on a local database from before 0004 (owners without gh_id
   assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
 })
 
+test('migration 0010 on top of 0001-0009: signins gain loopback and proof, a sign-in under way keeps its code; schema.sql and upgrade() agree', async () => {
+  const list = migrations()
+  assert.equal(list[9]?.[0], '0010_signin_loopback.sql')
+  const sql = new DatabaseSync(':memory:'), local = new DatabaseSync(':memory:')
+  for (const [f, text] of list) if (f < '0010') { sql.exec(text); local.exec(text) }
+  sql.exec("INSERT INTO signins (code, poll, device, words, exp) VALUES ('c', 'p', 'Mac', 'BCDF-GHJK', 1)")
+  sql.exec(list[9][1])
+  assert.deepEqual({ ...sql.prepare("SELECT words, loopback, proof FROM signins WHERE code = 'c'").get() }, { words: 'BCDF-GHJK', loopback: null, proof: null })
+  sql.exec("DELETE FROM signins")
+  assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
+  assert.throws(() => sql.exec(list[9][1]), /duplicate column/i)
+  await upgrade(d1Of(local))
+  assert.deepEqual(shapeOf(local), shapeOf(await fromSchema()))
+})
+
 test('migration 0009 on top of 0001-0008: offers appear, and running it again is harmless; schema.sql and upgrade() agree', async () => {
   const list = migrations()
   assert.equal(list[8]?.[0], '0009_offers.sql')
@@ -770,6 +791,8 @@ test('migration 0009 on top of 0001-0008: offers appear, and running it again is
   for (const [f, text] of list) if (f < '0009') { sql.exec(text); local.exec(text) }
   sql.exec(list[8][1])
   sql.exec(list[8][1])
+  // The migrations after it change none of what this one checks.
+  for (const [, text] of list.slice(9)) sql.exec(text)
   assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
   await upgrade(d1Of(local))
   assert.deepEqual(shapeOf(local), shapeOf(await fromSchema()))
@@ -914,4 +937,104 @@ test('the scan reads at most the first 2 MiB of the page, its D1 write is counte
   await Promise.all(waited)
   assert.equal(reportsOf(env).length, 1)
   assert.equal(writes(), before + 1, 'the report row is counted in today\'s D1 writes')
+})
+
+// ---------- the browser comes back to the machine that asked ----------
+
+// The browser's walk up to where the host sends it: the sign-in link, GitHub (the fake), the callback.
+async function walkTo(env, url) {
+  let r = await call(env, url, { redirect: 'manual' })
+  const state = r.headers.getSetCookie()[0].split(';')[0]
+  r = await fetch(r.headers.get('location'), { redirect: 'manual' })
+  return call(env, r.headers.get('location'), { redirect: 'manual', headers: { cookie: state } })
+}
+const KEY_22 = 'k'.repeat(32)
+const pollWith = (env, code, secret, proof) => call(env, '/api/signin/poll', { method: 'POST', headers: JSONH, body: JSON.stringify({ code, poll: secret, proof }) })
+const here = (env, port = 45871, key = KEY_22) => start(env, { device: 'Test Mac', loopback: { port, key } })
+
+test('sign-in that comes back to its machine: no code and no confirm page, the proof goes to that address, and the poll needs it', async () => {
+  const env = await hostEnv({ ALLOW_LOGINS: 'dana-test' })
+  gh.setUser(DANA)
+  const s = await (await here(env)).json()
+  assert.equal(s.loopback, true)
+  assert.equal('words' in s, false, 'nothing to compare')
+  assert.equal(env.DB.sql.prepare('SELECT words FROM signins WHERE code = ?').get(s.code).words, null)
+  const r = await walkTo(env, s.url)
+  assert.equal(r.status, 302, 'no confirm page')
+  const to = new URL(r.headers.get('location'))
+  assert.equal(`${to.protocol}//${to.host}${to.pathname}`, `http://127.0.0.1:45871/${KEY_22}`)
+  assert.equal(to.searchParams.get('code'), s.code)
+  const proof = to.searchParams.get('proof')
+  assert.match(proof, /^[\w-]{43}$/)
+  // Only its hash rests here.
+  assert.equal(env.DB.sql.prepare('SELECT proof FROM signins WHERE code = ?').get(s.code).proof, await hex(proof))
+  // Holding only the poll secret, as whoever started someone else's link does, is waiting forever.
+  for (const without of [undefined, '', 'x'.repeat(43), 'y'.repeat(101), 7]) {
+    const w = await pollWith(env, s.code, s.poll, without)
+    assert.equal(w.status, 202, `proof ${without}`)
+    assert.deepEqual(await w.json(), { state: 'waiting' })
+  }
+  assert.equal(env.DB.sql.prepare('SELECT COUNT(*) AS n FROM owner_tokens WHERE owner_id = (SELECT id FROM owners WHERE gh_id = 4242)').get().n, 0, 'no token minted yet')
+  // The proof alone isn't enough either: it needs the secret only the asking machine holds.
+  assert.equal((await pollWith(env, s.code, s.poll + 'x', proof)).status, 404)
+  const done = await pollWith(env, s.code, s.poll, proof)
+  assert.equal(done.status, 200)
+  assert.equal((await done.json()).login, 'dana-test')
+  assert.equal((await pollWith(env, s.code, s.poll, proof)).status, 404, 'once')
+  // The link works once.
+  assert.equal((await call(env, s.url, { redirect: 'manual' })).status, 400)
+})
+
+test('sign-in that comes back to its machine: a banned account gets no token, and a bad address is refused', async () => {
+  const env = await hostEnv({ ALLOW_LOGINS: 'dana-test' })
+  gh.setUser(DANA)
+  await signIn(env)
+  env.DB.sql.prepare("UPDATE owners SET status = 'banned' WHERE gh_id = 4242").run()
+  const s = await (await here(env)).json()
+  const proof = new URL((await walkTo(env, s.url)).headers.get('location')).searchParams.get('proof')
+  assert.equal((await pollWith(env, s.code, s.poll, proof)).status, 403)
+  for (const loopback of [{ port: 80, key: KEY_22 }, { port: 70000, key: KEY_22 }, { port: '45871', key: KEY_22 }, { port: 45871, key: 'short' }, { port: 45871, key: `${KEY_22}/../x` }, { port: 45871 }, 'http://evil.example/']) {
+    assert.equal((await start(env, { device: 'Test Mac', loopback })).status, 400, JSON.stringify(loopback))
+  }
+})
+
+test('the attack, end to end: a link someone else started reaches their machine with nothing, and the real one signs in', async t => {
+  const env = await hostEnv({ ALLOW_LOGINS: 'dana-test' })
+  gh.setUser(DANA)
+  const home = mkdtempSync(join(tmpdir(), 'proto-loopback-'))
+  const was = { home: process.env.HOME, store: process.env.PROTO_SHARE_TOKEN_STORE }
+  process.env.HOME = home; process.env.PROTO_SHARE_TOKEN_STORE = 'file'
+  t.after(() => {
+    for (const [k, v] of [['HOME', was.home], ['PROTO_SHARE_TOKEN_STORE', was.store]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v }
+    rmSync(home, { recursive: true, force: true })
+  })
+  const host = { name: 'online', url: 'https://prtype.dev', stage: 'domain', base: 'prtype.dev', pathMode: false }
+  const toHost = (url, init) => call(env, new URL(String(url)).pathname, init)
+
+  // The attacker runs a sign-in, and their door is on their own machine. The victim opens the link:
+  // the victim's browser is sent to 127.0.0.1 on the victim's machine, where nothing answers.
+  const closed = createServer()
+  await new Promise(ok => closed.listen(0, '127.0.0.1', ok))
+  const nobody = closed.address().port
+  await new Promise(ok => closed.close(ok))
+  const attacker = await (await here(env, nobody)).json()
+  const r = await walkTo(env, attacker.url)
+  const sent = new URL(r.headers.get('location'))
+  assert.equal(sent.hostname, '127.0.0.1')
+  await assert.rejects(fetch(sent), 'nothing listens on the victim\'s machine')
+  const w = await poll(env, attacker.code, attacker.poll)
+  assert.equal(w.status, 202, 'the attacker is left waiting')
+  assert.equal(env.DB.sql.prepare('SELECT COUNT(*) AS n FROM owner_tokens WHERE owner_id = (SELECT id FROM owners WHERE gh_id = 4242)').get().n, 0, 'no token for the attacker')
+
+  // The person's own sign-in, through a real door on this machine, in the browser's place.
+  let page
+  const who = await signIn2(host, {
+    listen: true, fetch: toHost, every: 5, wait: 5000, device: 'Test Mac',
+    onUrl: url => { void walkTo(env, url).then(b => fetch(b.headers.get('location'))).then(async b => { page = { status: b.status, text: await b.text() } }) },
+  })
+  assert.equal(who.login, 'dana-test')
+  assert.ok(getToken('online'), 'the token is stored')
+  for (const end = Date.now() + 2000; !page && Date.now() < end;) await new Promise(ok => setTimeout(ok, 5))
+  assert.equal(page.status, 200)
+  assert.match(page.text, /Signed in as @dana-test/)
 })

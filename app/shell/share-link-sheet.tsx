@@ -326,7 +326,7 @@ export function Gate({ signin = true, owner }: { signin?: boolean; owner?: Owner
           </button>
           {waiting && s.words && (
             <div data-link-signin-words className="rounded-xl bg-zinc-900/[.04] px-3 py-2.5 dark:bg-white/[.06]">
-              <p className={`leading-5 ${SMALL}`}>{t('Approve on the GitHub sign-in page only if it shows this code:')}</p>
+              <p className={`leading-5 ${SMALL}`}>{t('Approve on the sign-in page only if it shows this code:')}</p>
               <p dir="ltr" className="mt-1 font-mono text-[17px] font-semibold tracking-[.12em]">{s.words}</p>
             </div>
           )}

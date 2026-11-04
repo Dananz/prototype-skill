@@ -7,11 +7,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { request as httpGet } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BUILTIN, client, defaultHost, forget, getToken, hostNamed, linkOf, setupHint, shortLinkOf, signIn, signedInLine, tokenFile, writeShares } from '../app/share/owner.mjs'
 import { shareServer } from '../app/share/routes.mjs'
-import { admin, main, opensBrowser, reachHost, signin, signout } from '../scripts/share.mjs'
+import { admin, listensHere, main, opensBrowser, reachHost, signin, signout } from '../scripts/share.mjs'
 
 const id = 'k3x9p2m4q7'
 const POLL = 'p'.repeat(43)
@@ -285,4 +286,99 @@ test('the session server: a named host that isn\'t here is no_host; the local ho
   assert.deepEqual([r.status, r.body.code], [409, 'no_token'])
   r = await server.handle('owner', { refresh: true })
   assert.equal(r.body.code, 'no_token')
+})
+
+// A GET that keeps to the real network, past the stubbed fetch: the browser arriving at the door.
+const visit = (port, path) => new Promise((ok, no) => {
+  const req = httpGet({ host: '127.0.0.1', port, path }, res => { let text = ''; res.on('data', c => { text += c }); res.on('end', () => ok({ status: res.statusCode, text })) })
+  req.on('error', no)
+  req.end()
+})
+
+test('signIn, listening: asks for the way back, answers only its own sign-in, polls with the proof, and tells the tab', async t => {
+  const seen = []
+  const base = fakeHost({ answers: {} })
+  const host = {
+    ...base,
+    fetch: async (url, init = {}) => {
+      if (String(url).endsWith('/api/signin/start')) {
+        seen.push(JSON.parse(init.body))
+        return new Response(JSON.stringify({ code: 'c0de', poll: POLL, url: 'https://prtype.dev/auth/github?signin=c0de', exp: Date.now() + 600e3, loopback: true }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      if (String(url).endsWith('/api/signin/poll')) {
+        const b = JSON.parse(init.body)
+        if (b.proof !== 'the-proof') return new Response(JSON.stringify({ state: 'waiting' }), { status: 202, headers: { 'content-type': 'application/json' } })
+        return new Response(JSON.stringify({ token: 'tok-door', login: 'dana', name: 'Dana', avatar: null, status: 'pending' }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      return base.fetch(url, init)
+    },
+  }
+  fresh(t, host)
+  let tab
+  const who = await signIn(BUILTIN, {
+    listen: true,
+    onUrl: async (u, start) => {
+      assert.equal(start.words, undefined)
+      const { port, key } = seen[0].loopback
+      assert.match(key, /^[\w-]{22,64}$/)
+      // Anything else that finds the port gets nothing: a wrong path, another sign-in, no proof.
+      for (const path of ['/', `/${key}x?code=c0de&proof=p`, `/${key}?code=other&proof=p`, `/${key}?code=c0de`]) assert.equal((await visit(port, path)).status, 404, path)
+      tab = visit(port, `/${key}?code=c0de&proof=the-proof`)
+    },
+  })
+  assert.equal(who.status, 'pending')
+  assert.equal(getToken('online'), 'tok-door')
+  const page = await tab
+  assert.equal(page.status, 200)
+  assert.match(page.text, /Thanks, @dana/)
+  assert.match(page.text, /maintainer approves you/)
+  await assert.rejects(visit(seen[0].loopback.port, '/'), 'the door is closed once it is done')
+})
+
+test('signIn, listening: a host that doesn\'t offer the way back answers a code, and the door closes', async t => {
+  const seen = []
+  const base = fakeHost()
+  fresh(t, { ...base, fetch: (url, init = {}) => { if (String(url).endsWith('/api/signin/start')) seen.push(JSON.parse(init.body)); return base.fetch(url, init) } })
+  let words
+  await signIn(BUILTIN, { listen: true, onUrl: (u, start) => { words = start.words } })
+  assert.equal(words, 'BCDF-GHJK')
+  await assert.rejects(visit(seen[0].loopback.port, '/'))
+})
+
+test('the browser is on this machine unless it is asked otherwise or this is SSH; a page reached over the network gets the code', async t => {
+  assert.equal(listensHere({}, {}), true)
+  assert.equal(listensHere({ code: true }, {}), false)
+  assert.equal(listensHere({}, { SSH_CONNECTION: '1 2 3 4' }), false)
+  assert.equal(listensHere({}, { SSH_TTY: '/dev/ttys001' }), false)
+  // --code prints the code, and asks for no way back.
+  const seen = []
+  const base = fakeHost()
+  fresh(t, { ...base, fetch: (url, init = {}) => { if (String(url).endsWith('/api/signin/start')) seen.push(JSON.parse(init.body)); return base.fetch(url, init) } })
+  const out = logs(t)
+  await signin({ code: true, 'no-open': true }, { die: dies })
+  assert.equal(seen[0].loopback, undefined)
+  assert.ok(out.some(l => l.startsWith('Your code: BCDF-GHJK')))
+})
+
+test('the session server: the page on this machine gets no code; a page reached over the network does', async t => {
+  const base = fakeHost({ polls: [[202, { state: 'waiting' }]] })
+  const asked = []
+  fresh(t, { ...base, fetch: async (url, init = {}) => {
+    if (!String(url).endsWith('/api/signin/start')) return base.fetch(url, init)
+    const b = JSON.parse(init.body)
+    asked.push(b.loopback ? 'door' : 'code')
+    return new Response(JSON.stringify({ code: 'c0de', poll: POLL, url: 'https://prtype.dev/auth/github?signin=c0de', exp: Date.now() + 600e3, ...(b.loopback ? { loopback: true } : { words: 'BCDF-GHJK' }) }), { status: 200, headers: { 'content-type': 'application/json' } })
+  } })
+  const root = mkdtempSync(join(tmpdir(), 'proto-signin-page-'))
+  const server = shareServer({ root, session: () => ({}), receive: async () => ({}), emit: () => {}, pollMs: 0 })
+  t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }) })
+  for (const local of ['localhost:5173', '127.0.0.1:5173', '[::1]:5173', 'LOCALHOST:5173']) {
+    const r = await server.handle('signin', {}, { host: local })
+    assert.deepEqual([r.status, r.body.words], [200, undefined], local)
+  }
+  for (const far of ['studio.tail1234.ts.net:5173', '100.64.0.1:5173', 'localhost.evil.example:5173', undefined]) {
+    const r = await server.handle('signin', {}, { host: far })
+    assert.deepEqual([r.status, r.body.words], [200, 'BCDF-GHJK'], String(far))
+  }
+  assert.deepEqual(asked, ['door', 'door', 'door', 'door', 'code', 'code', 'code', 'code'])
 })
