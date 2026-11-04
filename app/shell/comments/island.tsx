@@ -18,6 +18,7 @@ import { CommentList, Notices, useRows } from './list'
 import { linksNew } from './links'
 import { Icon, Listening, MOD, plain } from './ui'
 import { useKeyboard } from './keyboard'
+import { usePhoneDrawer } from './phone-drawer'
 import type { CState } from './types'
 import { useTagField } from './tag-field'
 
@@ -124,6 +125,7 @@ export function Island({ dock }: { dock: HTMLElement }) {
   const open = s.island || docked
   // Typing on a phone, the bar rides the keyboard and the pill row under it steps aside (shell.ts).
   const kb = useKeyboard(phone && focus)
+  const drawer = usePhoneDrawer(phone, open, cap, kb, () => act.openIsland(false))
   useEffect(() => {
     const zone = cap.current?.closest('[data-zone]')
     zone?.toggleAttribute('data-typing', phone && focus)
@@ -259,7 +261,11 @@ export function Island({ dock }: { dock: HTMLElement }) {
   )
 
   const listBody = (fold?: ReactNode) => (<>
-    <div data-island-grip className="flex shrink-0 cursor-grab items-center gap-2 px-3.5 pb-1 pt-3">
+    <div data-island-grip {...(phone ? drawer.grip : {})} className={`relative flex shrink-0 cursor-grab items-center gap-2 px-3.5 pb-1 ${phone ? 'touch-none select-none pt-6 active:cursor-grabbing' : 'pt-3'}`}>
+      {phone && <button type="button" data-comment-drawer-handle aria-label={drawer.full ? t('Half the screen') : t('Full screen')} onClick={drawer.toggle}
+        className="absolute inset-x-12 top-0 flex h-6 items-center justify-center rounded-full">
+        <span aria-hidden className="h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-600" />
+      </button>}
       <h2 className="text-[13px] font-semibold">{t('Comments')}</h2>
       <Listening on={!!s.inbox?.listening} stalled={stalled > 0} className="ms-auto" />
       {fold || (!docked && <button type="button" data-shoot="island-collapse" onClick={() => act.openIsland(false)} aria-label={t('Collapse the comments')} title={t('Collapse the comments')} className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 active:bg-zinc-900/10 dark:text-zinc-400 dark:hover:bg-white/10 dark:active:bg-white/15">
@@ -274,10 +280,12 @@ export function Island({ dock }: { dock: HTMLElement }) {
     </div>
     <div className="shrink-0 space-y-2 px-2 empty:hidden"><Notices /></div>
   </>)
+  // On a phone only the list's height animates, including to zero on dismissal. Combining that
+  // with the grid's desktop fold would grow the list back to its snap height as a swipe ends.
   const list = (
-    <div data-island-list className="grid transition-[grid-template-rows] duration-500 ease-[cubic-bezier(.2,.9,.25,1)]" style={{ gridTemplateRows: open ? '1fr' : '0fr' }} inert={!open}>
+    <div data-island-list className={`grid ${phone ? '' : 'transition-[grid-template-rows] duration-500 ease-[cubic-bezier(.2,.9,.25,1)]'}`} style={{ gridTemplateRows: phone || open ? '1fr' : '0fr' }} inert={!open}>
       <div className="min-h-0 overflow-hidden">
-        <div data-shoot="comments" className="flex max-h-[min(30rem,calc(100dvh-12rem))] flex-col" style={size.listH ? { height: size.listH, maxHeight: 'calc(100dvh - 9rem)' } : undefined}>{listBody()}</div>
+        <div data-shoot="comments" className={`flex flex-col ${phone ? (drawer.dragging ? '' : 'transition-[height] duration-300 ease-out motion-reduce:transition-none') : 'max-h-[min(30rem,calc(100dvh-12rem))]'}`} style={phone ? { height: open ? drawer.height : 0 } : size.listH ? { height: size.listH, maxHeight: 'calc(100dvh - 9rem)' } : undefined}>{listBody()}</div>
       </div>
     </div>
   )

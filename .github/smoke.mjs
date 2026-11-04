@@ -57,6 +57,7 @@ import { treeChecks } from './tree-checks.mjs'
 import { goChecks } from './go-checks.mjs'
 import { shareDesignChecks } from './share-design-checks.mjs'
 import { focusChecks } from './focus-checks.mjs'
+import { commentDrawerChecks } from './comment-drawer-checks.mjs'
 import { islandTreeChecks } from './island-tree-checks.mjs'
 import { headerChecks } from './header-checks.mjs'
 import { phoneFrameChecks } from './phone-frame-checks.mjs'
@@ -227,6 +228,13 @@ if (process.argv.includes('--go-only')) {
   proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused Go checks')
+  process.exit(0)
+}
+if (process.argv.includes('--comment-drawer-only')) {
+  await commentDrawerChecks({ proto, app, local, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused comment drawer checks')
   process.exit(0)
 }
 if (process.argv.includes('--island-tree-only')) {
@@ -461,6 +469,7 @@ await treeChecks({ proto, app, local, openPage, fail })
 await goChecks({ proto, app, local, openPage, fail })
 await focusChecks({ proto, app, local, openPage, fail })
 await shareDesignChecks({ proto, app, openPage, fail })
+await commentDrawerChecks({ proto, app, local, openPage, fail })
 await islandTreeChecks({ proto, app, local, openPage, fail })
 await headerChecks({ proto, app, local, openPage, fail })
 await phoneFrameChecks({ proto, app, local, openPage, fail })
