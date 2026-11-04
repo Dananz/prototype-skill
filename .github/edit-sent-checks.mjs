@@ -88,6 +88,8 @@ export async function editSentChecks({ proto, app, openPage, fail, shots }) {
       await openList()
       return ''
     }
+    // Where the status ends and the trash starts: the pencil coming and going must not move them.
+    const edges = r => [r.querySelector('span.shrink-0.text-proto-primary-soft-fg').getBoundingClientRect().right, r.querySelector('[data-shoot=remove]').getBoundingClientRect().left].map(Math.round)
     const row = words => [...document.querySelectorAll('[data-comment]')].find(r => r.textContent.includes(words))
   `
   const run = async (step, body) => {
@@ -117,6 +119,7 @@ export async function editSentChecks({ proto, app, openPage, fail, shots }) {
       if (!await until(() => !q('[data-composer]'))) return 'Save did not close the composer: ' + (q('[data-composer] [role=alert]')?.textContent ?? '')
       await openList()
       if (!await until(() => row('Second words'))) return 'the list did not show the new words'
+      window.__before = edges(row('Second words'))
       return ''
     `)
     if (waiting().join() !== 'Second words') fail(`edit sent: the batch holds ${JSON.stringify(waiting())}, not the new words`)
@@ -124,6 +127,9 @@ export async function editSentChecks({ proto, app, openPage, fail, shots }) {
     if (!/Second words/.test(got) || /First words/.test(got)) fail(`edit sent: proto inbox printed ${got}`)
     await run('after it is taken', `
       if (!await until(() => row('Second words') && !row('Second words').querySelector('[data-shoot=edit-sent]'))) return 'a taken comment still offers the pencil'
+      await new Promise(r => setTimeout(r, 300))
+      const after = edges(row('Second words'))
+      if (after.join() !== window.__before.join()) return 'the row moved when the pencil left: ' + window.__before + ' then ' + after
       return ''
     `)
     if (shots) await page.screenshot(join(shots, `${name}-taken-row.png`))

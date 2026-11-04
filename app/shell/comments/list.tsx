@@ -60,8 +60,11 @@ const Remove = ({ item, className = '' }: { item: Item; className?: string }) =>
   const sent = !!item.sent
   return <button data-shoot="remove" onClick={e => { e.stopPropagation(); act.remove(item.id) }} aria-label={t('Delete this comment')} title={sent ? t('Delete this comment ({agent} is told to leave it)', { agent }) : t('Delete this comment')} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10 ${className}`}><Icon name="trash" className="size-4" /></button>
 }
-/** Changes a sent comment, while it waits for the agent to take it. */
-const Edit = ({ onClick, className = '' }: { onClick: () => void; className?: string }) => <button data-shoot="edit-sent" onClick={e => { e.stopPropagation(); onClick() }} aria-label={t('Edit this comment')} title={t('Edit this comment')} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-zinc-700 active:bg-zinc-900/5 dark:hover:text-zinc-200 dark:active:bg-white/10 ${className}`}><Icon name="share-pencil" className="size-4" /></button>
+/**
+ * Changes a sent comment, while it waits for the agent to take it. It keeps its place when it can't
+ * be used, fading out there, so the status and the trash beside it never move as a comment is taken.
+ */
+const Edit = ({ on, onClick, className = '' }: { on: boolean; onClick: () => void; className?: string }) => <button data-shoot={on ? 'edit-sent' : undefined} inert={!on} aria-hidden={!on} onClick={e => { e.stopPropagation(); onClick() }} aria-label={t('Edit this comment')} title={t('Edit this comment')} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 transition-[opacity,transform,color] duration-200 ease-out hover:text-zinc-700 active:bg-zinc-900/5 motion-reduce:transition-none dark:hover:text-zinc-200 dark:active:bg-white/10 ${on ? 'scale-100 opacity-100' : 'pointer-events-none scale-75 opacity-0'} ${className}`}><Icon name="share-pencil" className="size-4" /></button>
 const Where = ({ item, here }: { item: Item; here: boolean }) => { const { store } = useCtx(); return !item.variant || (here && !store.get().place?.compare) ? null : <span className="shrink-0 rounded bg-zinc-900/[.05] px-1 font-mono text-[10px] text-zinc-500 dark:bg-white/10">{variantRef(null, item.variant)}</span> }
 /** What a row is about: the element a comment is on, or a decision with its icon (it is on no element). */
 const About = ({ item }: { item: Item }) => item.action
@@ -104,7 +107,7 @@ function Thread({ r, onEdit }: { r: Row; onEdit?: (id: string) => void }) {
     <>
       {r.turns.slice(1).map(t => (
         <span key={t.item.id} data-shoot="comment-turn" data-turn={t.item.sent ? `${t.item.sent.batch}/${t.item.sent.i}` : undefined} className="mt-2 block space-y-1.5">
-          <span className="flex items-center justify-end">{onEdit && editable(t.item, t.state) && <Edit onClick={() => onEdit(t.item.id)} />}<Body c={t.item} className="block max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-se-sm bg-proto-primary-soft px-2 py-1 text-[11px] leading-4 text-zinc-800 ring-1 ring-proto-primary-ring/40 dark:text-zinc-100" /></span>
+          <span className="flex items-center justify-end">{onEdit && <Edit on={editable(t.item, t.state)} onClick={() => onEdit(t.item.id)} />}<Body c={t.item} className="block max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-se-sm bg-proto-primary-soft px-2 py-1 text-[11px] leading-4 text-zinc-800 ring-1 ring-proto-primary-ring/40 dark:text-zinc-100" /></span>
           {!!shotsOf(t.item).length && <PictureStrip>{shotsOf(t.item).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</PictureStrip>}
           {t.reply && <span data-shoot="comment-reply" className="block"><Reply text={t.reply.text} by={t.reply.by} small /></span>}
         </span>
@@ -189,7 +192,7 @@ function WithAgent({ r, active, roomy, onOpen, onEdit }: { r: Row; active: boole
           {reply && <span data-shoot="comment-reply" className="mt-2 block"><Reply text={reply.text} by={reply.by} small /></span>}
         </span>
       </button>
-      <span className="me-1 mt-1.5 flex shrink-0">{editable(item, r.turns[0].state) && <Edit onClick={() => onEdit(item.id)} />}<Remove item={item} /></span>
+      <span className="me-1 mt-1.5 flex shrink-0"><Edit on={editable(item, r.turns[0].state)} onClick={() => onEdit(item.id)} /><Remove item={item} /></span>
       </div>
       <div className="-mt-1 pb-3 pe-3 ps-8 empty:hidden"><Thread r={r} onEdit={onEdit} /></div>
     </div>
