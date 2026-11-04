@@ -51,6 +51,10 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
 [data-switch-description]::-webkit-scrollbar { width: 6px; }
 [data-switch-description]::-webkit-scrollbar-thumb { background: rgb(128 128 128 / .5); border-radius: 3px; }
 
+/* The same for the motion dock's list of curves, which scrolls beside the graph. */
+[data-legend]::-webkit-scrollbar { width: 6px; }
+[data-legend]::-webkit-scrollbar-thumb { background: rgb(128 128 128 / .5); border-radius: 3px; }
+
 /* A grid card is a text-left button; without this its physical alignment leaks into the
    variant and an RTL screen's text sits on the left there, though the variant page is right. */
 [data-mount] { text-align: start; }
