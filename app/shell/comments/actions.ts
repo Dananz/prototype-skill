@@ -17,6 +17,8 @@ import { variantRef } from '../variants'
 
 const noteImages = (note: Note) => note.shots?.length ? { images: note.shots.map(s => ({ dataUrl: s.src, name: 'attached by the user' })) } : {}
 
+const picturesOf = (d: Draft) => shotsOf(d).map(s => ({ dataUrl: s.src, name: s.pasted ? 'pasted by the user' : s.region ? 'the region, as dragged out' : 'marked up' }))
+
 const uid = () => Math.random().toString(36).slice(2, 9)
 const hasWords = (d: Draft) => d.body.some(s => typeof s !== 'string' || s.trim()) || d.tags.length > 0 || shotsOf(d).length > 0
 
@@ -49,7 +51,7 @@ export function createActions(store: Store, host: Host) {
         // On the motion: a moment or a range, in ms of the take, and how long the take is.
         ...(i.time ? { at: i.time.at, ...(i.time.to !== undefined ? { to: i.time.to } : {}), take: i.time.take } : {}),
         ...(i.tags.length ? { tags: i.tags } : {}),
-        ...(shotsOf(i).length ? { images: shotsOf(i).map(s => ({ dataUrl: s.src, name: s.pasted ? 'pasted by the user' : s.region ? 'the region, as dragged out' : 'marked up' })) } : {}),
+        ...(shotsOf(i).length ? { images: picturesOf(i) } : {}),
       })),
     }
     set({ sending: true, error: '' })
@@ -173,7 +175,9 @@ export function createActions(store: Store, host: Host) {
         : s.mode.kind === 'time' && s.mode.tagging ? { mode: { ...s.mode, tagging: false }, pendingTag: picked } : {})
     },
     tagTaken() { set({ pendingTag: null }) },
-    open(id: string, reference = true) {
+    /** Opens a sent comment the agent has not taken in the composer, the way a draft opens. */
+    edit(id: string) { act.open(id, false, true) },
+    open(id: string, reference = true, edit = false) {
       const found = get().items.find(x => x.id === id)
       if (!found) return
       const i = get().place?.compare && found.target ? { ...found, target: { ...found.target, source: { proto: found.proto, variant: found.variant, ...(found.state ? { state: found.state } : {}) } } } : found
@@ -182,7 +186,7 @@ export function createActions(store: Store, host: Host) {
       // A comment on the design shows on the layout it was written on: its device view, or none.
       if (i.target || i.time) host.setView?.(i.target?.view ?? null)
       // An element in a closed menu, tab or popup is shown first: what opens it is pressed.
-      const mode = () => ({ active: id, mode: i.sent ? { kind: 'idle' as const } : i.time ? { kind: 'time' as const, time: i.time, id } : i.target ? { kind: 'compose' as const, target: i.target, id } : { kind: 'idle' as const } })
+      const mode = () => ({ active: id, mode: i.sent && !edit ? { kind: 'idle' as const } : i.time ? { kind: 'time' as const, time: i.time, id } : i.target ? { kind: 'compose' as const, target: i.target, id } : { kind: 'idle' as const } })
       const show = async () => {
         if (!i.target) return
         // The destination and its iframe can finish mounting after navigation. A later selection
@@ -251,6 +255,19 @@ export function createActions(store: Store, host: Host) {
         // Send as I add: it goes now, and Claude starts on it while the next one is written.
         if (get().live) void act.send()
       }
+    },
+    /**
+     * Saves a change to a sent comment: on the server first, so the list never shows words the agent
+     * won't get. Throws when it could not (with `taken` once the agent has it); the words are the caller's to keep.
+     */
+    async saveSent(id: string, d: Draft) {
+      const i = get().items.find(x => x.id === id)
+      if (!i?.sent) return
+      const next = { ...i, ...d }
+      const srcs = (x: Draft) => shotsOf(x).map(s => s.src).join()
+      await host.edit(i.sent.batch, i.sent.i, { text: plain(next), tags: next.tags, ...(srcs(i) === srcs(next) ? {} : { images: picturesOf(next) }) })
+      opening++
+      set(s => ({ items: s.items.map(x => x.id === id ? { ...x, ...d } : x), ...((s.mode.kind === 'compose' || s.mode.kind === 'tag' || s.mode.kind === 'time') && s.mode.id === id ? { mode: { kind: 'idle' as const }, active: null } : {}) }))
     },
     setLive(on: boolean) { set({ live: on }) },
     cancel() { opening++; set({ held: null, mode: { kind: 'idle' }, active: null, pendingTag: null }) },

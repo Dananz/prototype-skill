@@ -12,6 +12,7 @@ import { listen } from '../quiet'
 import { useAgentName, useCtx } from './ctx'
 import { find } from './dom'
 import { useKeyboard } from './keyboard'
+import { progress, useStore } from './store'
 import { capture, ShotEditor } from './shot'
 import type { Box, Draft, Seg, Shot, Target, Time } from './types'
 import { MAX_SHOTS, shotsOf } from './types'
@@ -104,6 +105,13 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const sel = Math.min(menuAt?.index ?? 0, variants.length)
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => { menuRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }) }, [sel, !!mention])
+  // A sent comment, changed while the agent hasn't taken it. If it takes it meanwhile the change can't
+  // reach it there, so the words can go as a new comment instead.
+  const s = useStore(store), sentItem = id ? s.items.find(i => i.id === id && i.sent) : undefined
+  const [taken, setTaken] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const late = !!sentItem && (taken || progress(sentItem, s.inbox).state !== 'sent')
   const nudge = store.get().nudge
   const pending = store.get().pendingTag
   const ed = useRef<HTMLDivElement>(null)
@@ -179,7 +187,12 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const submit = () => {
     const body = readEditor(ed.current!)
     if (!body.some(s => typeof s !== 'string' || s.trim()) && !tags.length && !shots.length) return
-    act.save({ body, tags, shots, shot: undefined, pasted: undefined }, target, id, time)
+    const d = { body, tags, shots, shot: undefined, pasted: undefined }
+    if (late) { act.save(d, target, undefined, time); void act.send(); return }
+    if (!sentItem) return act.save(d, target, id, time)
+    if (busy) return
+    setBusy(true); setError('')
+    act.saveSent(sentItem.id, d).catch((e: Error & { taken?: boolean }) => { if (e.taken) setTaken(true); else setError(e.message || t('Could not send')) }).finally(() => setBusy(false))
   }
   const shoot = async () => {
     if (shotsRef.current.length >= MAX_SHOTS) return
@@ -244,7 +257,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
         return
       }
     }
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); void act.send() }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); if (!sentItem) void act.send() }
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); act.close() }
   }
   const refocus = () => requestAnimationFrame(() => ed.current?.focus())
@@ -311,6 +324,8 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             {capturing && <span className="grid h-12 w-20 place-items-center rounded-lg bg-zinc-900/[.04] text-[11px] text-zinc-400 dark:bg-white/[.06]">{capturing}</span>}
           </PictureStrip>
         )}
+        {late && <p data-shoot="composer-late" role="alert" className="mx-3 mt-1.5 text-[11px] leading-4 text-amber-700 dark:text-amber-300">{t('{agent} has started on this, so it can\'t change now. Your words can go as a new comment.', { agent })}</p>}
+        {error && <p role="alert" className="mx-3 mt-1.5 text-[11px] leading-4 text-rose-600 dark:text-rose-400">{error}</p>}
         <div className="flex items-center gap-1 px-2 pb-2 pt-1">
           <button onClick={() => { setMention(null); saveRange(); act.tagPick() }} title={t('Tag another element on the design')} aria-label={t('Tag another element')} className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="target" /></button>
           <button onClick={shoot} disabled={full} title={full ? t('{n} pictures is the most one comment takes; remove one to add another', { n: MAX_SHOTS }) : t('Add a screenshot of this part of the design, then draw on it (or paste an image: {mod} V, or drop one here; each adds a picture)', { mod: MOD })} aria-label={t('Attach a screenshot')} className={`${IB} h-8 min-w-8 px-1.5 disabled:opacity-40`}><Icon name="camera" /></button>
@@ -318,7 +333,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           <span className="ms-auto" />
           {docked && <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>}
           {/* Sent as it is added (Settings), it says so: Send, with the plane. */}
-          <button data-shoot="composer-add" onClick={submit} disabled={empty && !tags.length && !shots.length} title={live && !editing ? t('Send to {agent}', { agent }) : t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={editing ? 'check' : live ? 'send' : 'plus'} className="size-3.5" />{editing ? t('Save') : live ? t('Send') : t('Add')}</button>
+          <button data-shoot="composer-add" onClick={submit} disabled={busy || (empty && !tags.length && !shots.length)} title={late || (live && !editing) ? t('Send to {agent}', { agent }) : sentItem ? t('Save') : t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={late ? 'send' : editing ? 'check' : live ? 'send' : 'plus'} className="size-3.5" />{late ? t('Send as new comment') : editing ? t('Save') : live ? t('Send') : t('Add')}</button>
         </div>
       </div>
   )

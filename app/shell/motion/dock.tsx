@@ -79,7 +79,7 @@ function useDock(player: Player) {
 
   // The comments on the motion of the variant on screen, and the one open in the dock.
   const points = rows.filter(r => r.here && r.item.time)
-  const open = points.find(r => r.item.id === s.active && (r.item.sent || s.mode.kind !== 'time')) ?? null
+  const open = points.find(r => r.item.id === s.active && (s.mode.kind !== 'time' || (!!r.item.sent && s.mode.id !== r.item.id))) ?? null
   const composing = s.mode.kind === 'time' ? s.mode : null
   // Opening a comment (its point, or its row in the list) goes to its moment, or loops its range.
   const shown = useRef<string | null>(null)

@@ -908,7 +908,8 @@ and `in:` the smallest element around it: the change is about what is in that bo
 The user can delete a comment after sending it: one deleted before you took its batch
 never reaches you, and one deleted after is withdrawn: `proto inbox` leaves it out (the batch
 line counts it, `(1 withdrawn in the page)`) and `proto reply` to it says so. Leave a withdrawn
-comment alone. Under each comment with an element, the source around its line is printed (`>`
+comment alone. Until you take its batch they can also edit a sent comment, and you only ever see
+the latest words. Under each comment with an element, the source around its line is printed (`>`
 marks the line), so most comments can be acted on without opening a file.
 
 **A comment is about the one element it is on.** Its `used:` line says where the components around

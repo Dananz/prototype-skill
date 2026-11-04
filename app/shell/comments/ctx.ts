@@ -32,6 +32,8 @@ export type Host = {
   send: (batch: CommentBatch) => Promise<Sent>
   /** Takes back a sent comment the user deleted (batch, and its number in it); never throws. */
   withdraw: (batch: string, n: number) => Promise<void>
+  /** Changes a sent comment the agent has not taken yet; throws with `taken` once it has. */
+  edit: (batch: string, n: number, change: { text: string; tags: Target[]; images?: { dataUrl: string; name: string }[] }) => Promise<void>
   agentName?: () => string
   dark: () => boolean
 }

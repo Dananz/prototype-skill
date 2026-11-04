@@ -148,4 +148,7 @@ export default {
   'Could not copy': 'לא ניתן להעתיק',
   'Making the brief…': 'מכין את התקציר…',
   'Kept for {agent} in this file:': 'נשמר עבור {agent} בקובץ הזה:',
+  'Edit this comment': 'ערוך הערה זו',
+  '{agent} has started on this, so it can\'t change now. Your words can go as a new comment.': '{agent} כבר התחיל לעבוד על זה, אז אי אפשר לשנות עכשיו. אפשר לשלוח את הטקסט כהערה חדשה.',
+  'Send as new comment': 'שלח כהערה חדשה',
 } satisfies Record<string, string>

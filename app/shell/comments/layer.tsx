@@ -8,6 +8,7 @@ import { frameClicks } from '../view/frame'
 import { climb, describe, find } from './dom'
 import { listen } from '../quiet'
 import { Glide, HoldRing, HoverBox, Marquee, MIN_REGION, useBoxes, usePick } from './inspect'
+import { editable } from './types'
 import { Composer } from './composer'
 import { freeze, release, watch } from './hover'
 import { useRows } from './list'
@@ -142,11 +143,11 @@ export function Layer() {
       )}
       <Pins items={here.map(r => ({ item: r.item, done: r.state === 'done' }))} boxes={boxes} active={s.active} onOpen={act.open} compare={s.place.compare} />
       {editing && (
-        <Composer key={editing.id ?? '__new'} target={editing.target} n={editedItem?.n ?? nextN} place={boxes[editing.id ?? '__new'] ?? null}
+        <Composer key={editing.id ?? '__new'} target={editing.target} n={editedItem?.n ?? nextN} place={boxes[editing.id ?? '__new'] ?? (editedItem?.re && boxes[editedItem.re.id]) ?? null}
           sheet={phone} tagging={m.kind === 'tag'} editing={!!editedItem} id={editedItem?.id}
           initial={editedItem ?? (editing.kind === 'compose' && editing.quote ? { body: [`“${editing.quote}” `], tags: [] } : held?.target ? held : undefined)} />
       )}
-      {opened && <ReadCard row={opened} box={boxes[opened.item.id]} />}
+      {opened && <ReadCard row={opened} box={boxes[opened.item.id]} canEdit={editable(opened.item, opened.turns[0].state)} />}
     </>
   )
 }
@@ -261,7 +262,7 @@ function Climb({ box, up, down }: { box: Box; up: boolean; down: boolean }) {
 }
 
 /** A sent or answered comment, opened from the list: what was asked and what Claude did, small, under its element. */
-function ReadCard({ row, box }: { row: { item: Item; state: ReturnType<typeof progress>['state']; reply: Said | null; here: boolean }; box?: Box }) {
+function ReadCard({ row, box, canEdit }: { row: { item: Item; state: ReturnType<typeof progress>['state']; reply: Said | null; here: boolean }; box?: Box; canEdit: boolean }) {
   const agent = useAgentName()
   const { host, act } = useCtx()
   const el = useRef<HTMLDivElement>(null)
@@ -299,6 +300,7 @@ function ReadCard({ row, box }: { row: { item: Item; state: ReturnType<typeof pr
       </div>
       <Body c={item} className="mt-1 block text-zinc-800 dark:text-zinc-200" />
       {reply && <span className="mt-1.5 block"><Reply text={reply.text} by={reply.by} small /></span>}
+      {canEdit && <button data-shoot="edit-sent" onClick={() => act.edit(item.id)} className="mt-1 inline-flex h-6 items-center gap-1 rounded-md px-1 text-[11px] font-medium text-proto-primary-soft-fg hover:bg-zinc-900/5 dark:hover:bg-white/10"><Icon name="share-pencil" className="size-3" />{t('Edit')}</button>}
     </div>
   )
 }

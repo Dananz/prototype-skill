@@ -580,6 +580,43 @@ function withdraw(data) {
   return 'gone'
 }
 
+/**
+ * A sent comment changed in the page while its batch still waits in new/. Its words and tags are
+ * replaced, and its pictures when `images` comes (left out, they stay: the page may have dropped its
+ * copies to fit localStorage). `proto inbox` renames the folder before it reads the batch, so a write
+ * either lands before the agent reads it or fails on the moved folder: never a change it doesn't see.
+ * Once taken the answer is 409, and the page keeps the words.
+ */
+function editSent(data) {
+  const id = data.batch, n = Number(data.n)
+  if (typeof id !== 'string' || !/^[\w-]{1,64}$/.test(id) || !Number.isInteger(n) || n < 1 || typeof data.text !== 'string') throw Object.assign(new Error('edit takes { batch, n, text }: a batch id, a comment number from 1, and its words'), { status: 400 })
+  const taken = () => Object.assign(new Error('the agent has already started on this comment'), { status: 409 })
+  const folder = join(inbox, 'new', id), f = join(folder, 'batch.json')
+  const b = readJson(f, null), c = b?.comments.find(x => x.n === n)
+  if (!c || c.done || c.withdrawn || c.action || c.from) throw taken()
+  const files = []
+  const images = data.images === undefined ? c.images ?? [] : (Array.isArray(data.images) ? data.images : []).map((img, k) => {
+    const m = String(img?.dataUrl ?? img).match(/^data:image\/(png|jpeg|webp);base64,(.+)$/)
+    if (!m) return null
+    // Named anew each time: the batch keeps the pictures it has until the new ones are in place.
+    const file = `${n}-${randomBytes(3).toString('hex')}-${k + 1}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`
+    files.push([file, Buffer.from(m[2], 'base64')])
+    return { file, name: clip(img?.name, 100) }
+  }).filter(Boolean)
+  if (!data.text.trim() && !images.length) throw Object.assign(new Error('a comment needs words or a picture'), { status: 400 })
+  const before = c.images ?? []
+  Object.assign(c, { text: data.text.trim().slice(0, 4000), tags: (Array.isArray(data.tags) ? data.tags : []).map(element).filter(Boolean).slice(0, 20), images })
+  try {
+    for (const [file, bytes] of files) writeFileSync(join(folder, file), bytes)
+    writeWhole(f, JSON.stringify(b, null, 2) + '\n')
+  } catch (e) {
+    if (e?.code === 'ENOENT') throw taken()
+    for (const [file] of files) rmSync(join(folder, file), { force: true })
+    throw e
+  }
+  for (const img of before) if (!images.some(x => x.file === img.file)) rmSync(join(folder, img.file), { force: true })
+}
+
 export function prototypeServer(session) {
   let activity = Date.now()
   // With the working variant as the server left it, so the page knows a move it asked for when
@@ -741,6 +778,10 @@ export function prototypeServer(session) {
             let took
             if (route === '/withdraw') {
               try { took = withdraw(data) } catch (e) { return fail(e.status || 500, e.message) }
+            }
+            if (route === '/edit') {
+              activity = Date.now()
+              try { editSent(data) } catch (e) { return fail(e.status || 500, e.message) }
             }
             // Decision brief in the page: made now, kept at .proto/decisions/<slug>.md, and shown.
             if (route === '/brief') {
