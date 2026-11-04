@@ -84,7 +84,7 @@ export function ImageChip({ src, onOpen, onRemove, size = 'md' }: { src: string;
       </Tooltip.Trigger>
       <Tooltip.Portal container={uiBox()}>
         <Tooltip.Positioner side="top" align="start" sideOffset={8} collisionPadding={8} className="pointer-events-none z-[250]">
-          <Tooltip.Popup className="w-56 overflow-hidden rounded-lg bg-white shadow-xl ring-1 ring-black/10 dark:bg-zinc-900 dark:ring-white/15"><img src={src} alt={t('Image preview')} className="block max-h-64 w-full object-contain" /></Tooltip.Popup>
+          <Tooltip.Popup className="w-56 overflow-hidden rounded-lg bg-white shadow-xl ring-1 ring-black/10 transition-opacity duration-200 ease-[ease-out] data-ending-style:opacity-0 dark:bg-zinc-900 dark:ring-white/15"><img src={src} alt={t('Image preview')} className="block max-h-64 w-full object-contain" /></Tooltip.Popup>
         </Tooltip.Positioner>
       </Tooltip.Portal>
     </Tooltip.Root>

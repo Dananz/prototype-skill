@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { t } from './i18n'
+import { dropGhosts, leaveFade } from './leave-fade'
 import { uiBox } from './portals'
 import { Ph, type PhName } from './tree/row'
 import { jumpMatch, type JumpItem } from './where'
@@ -58,5 +59,10 @@ export function createJump() {
   const host = document.createElement('div'); uiBox().append(host)
   const root = createRoot(host)
   let id = 0
-  return (props: JumpProps | null) => root.render(props ? <Jump key={++id} {...props} /> : null)
+  return (props: JumpProps | null) => {
+    const shown = host.firstElementChild as HTMLElement | null
+    if (props) dropGhosts(key => key === 'jump')
+    else if (shown) leaveFade(shown, 'jump')
+    root.render(props ? <Jump key={++id} {...props} /> : null)
+  }
 }

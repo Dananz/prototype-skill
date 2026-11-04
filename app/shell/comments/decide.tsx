@@ -280,10 +280,13 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
 }
 
 /** Where the menu opens on a wide page: under the bar's check button, its right edge on the button's. */
-export type DecidePopProps = { open: boolean; anchor: () => HTMLElement | null; subject: Subject | null; onClose: () => void; at?: { x: number; y: number }; onComment?: () => void; rows?: MenuRow[]; lead?: MenuRow[]; commentLabel?: string
+export type DecidePopProps = {
+  /** Which of the shell's menus this is: it fades as it closes (leave-fade.ts). */
+  popFor: string
+  open: boolean; anchor: () => HTMLElement | null; subject: Subject | null; onClose: () => void; at?: { x: number; y: number }; onComment?: () => void; rows?: MenuRow[]; lead?: MenuRow[]; commentLabel?: string
   /** Opened by right-click: says how to reach the browser's own menu. */
   hint?: boolean }
-export function DecidePop({ open, anchor, subject, onClose, at: pointer, onComment, rows, lead, commentLabel, hint }: DecidePopProps) {
+export function DecidePop({ popFor, open, anchor, subject, onClose, at: pointer, onComment, rows, lead, commentLabel, hint }: DecidePopProps) {
   const [, redraw] = useState(0)
   useEffect(() => {
     if (!open) return
@@ -303,7 +306,7 @@ export function DecidePop({ open, anchor, subject, onClose, at: pointer, onComme
   // The shell closes it on Esc and on a click outside. A click inside goes no further: a choice
   // redraws the menu under it, and the shell would take a click on a removed button for one outside.
   return (
-    <div data-pop data-context-menu={pointer ? '' : undefined} onClick={e => e.stopPropagation()} onContextMenu={e => { if (pointer && !e.shiftKey) e.preventDefault() }} className="fixed z-40 w-80 overflow-hidden rounded-2xl transition-opacity has-[[data-tag-picking]]:pointer-events-none has-[[data-tag-picking]]:opacity-40 border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={place}>
+    <div data-pop data-pop-for={popFor} data-context-menu={pointer ? '' : undefined} onClick={e => e.stopPropagation()} onContextMenu={e => { if (pointer && !e.shiftKey) e.preventDefault() }} className="fixed z-40 w-80 overflow-hidden rounded-2xl transition-opacity has-[[data-tag-picking]]:pointer-events-none has-[[data-tag-picking]]:opacity-40 border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={place}>
       <Decide key={`${subject.proto}/${subject.variant}`} subject={subject} onDone={onClose} onComment={onComment} rows={rows} lead={lead} commentLabel={commentLabel} />
       {hint && <p className="border-t border-black/[.06] px-3.5 py-2 text-xs text-zinc-400 dark:border-white/10">{BROWSER_HINT}</p>}
     </div>

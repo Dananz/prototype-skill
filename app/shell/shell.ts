@@ -31,6 +31,7 @@ import { motion } from './motion/registry'
 import type { Action } from './comments/types'
 import { tabIcon } from './favicon'
 import { setShellRoot } from './portals'
+import { dropGhosts, leaveFade } from './leave-fade'
 import { createView } from './view/index'
 import { createIntake } from './intake/index'
 import type { Intake } from './intake/types'
@@ -863,7 +864,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       : viewOk() ? [...ORDER.map(z => tool(`size:${z}`, `strip-size-${z}`, sizeIcon(z, z === 'tablet' && st.view.land), `${SIZES[z].name} · ${dims(z, z === 'tablet' && st.view.land).w} × ${dims(z).h}`, '', shownSize() === z)), frameOn() ? zoomBtn() : '']
       : [zoomBtn()]
     const sts = inScreen && p ? statesOf(p, pl.variant).length + TOOL_LIST.filter(x => toolOk(p, pl.variant, x)).length : 0
-    const statesBtn = sts ? `<div class="relative">${tool('open:states-pop', 'strip-states', 'grid', t('States, Autoplay, Compare'), '', st.open === 'states-pop')}${pop(st.open === 'states-pop', `<div data-strip-states class="w-72 p-1.5">${variantHere(false)}</div>`, 'start-0 top-0')}</div>` : ''
+    const statesBtn = sts ? `<div class="relative">${tool('open:states-pop', 'strip-states', 'grid', t('States, Autoplay, Compare'), '', st.open === 'states-pop')}${pop(st.open === 'states-pop', `<div data-strip-states class="w-72 p-1.5">${variantHere(false)}</div>`, 'start-0 top-0', 'states-pop')}</div>` : ''
     const own = !inScreen ? [off('strip-tweaks', 'tweaks', t('Tweaks')), off('strip-try', 'key', t('Try it')), off('strip-copy', 'text', t('Copy options')), off('strip-motion', 'curves', t('Motion')), dockHome() ? '' : off('strip-states', 'grid', t('States, Autoplay, Compare'))]
       : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), motionBtn(), dockHome() ? '' : statesBtn, replayBtn()]
     const fit = inScreen && frameOn() ? tool('center', 'strip-fit', 'center', t('Center the design'), '⌘0') : ''
@@ -1499,7 +1500,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
 
   // ---------- chrome ----------
+  // A popover the state just closed fades before it is drawn away (leave-fade.ts).
+  function fadeClosedPops() {
+    const isOpen = (k: string) => st.open === k || (st.open === 'vmenu' && st.under === k)
+    dropGhosts(isOpen)
+    for (const el of document.querySelectorAll<HTMLElement>('[data-pop-for]:not([hidden])')) if (!isOpen(el.dataset.popFor!)) leaveFade(el, el.dataset.popFor!)
+  }
   function render() {
+    fadeClosedPops()
     layers.querySelectorAll<HTMLElement>('[data-route]').forEach(markBuilding)
     // Scrolled lists in the chrome keep their place when it is redrawn (a status ping, an edit).
     const keepScroll = (host: HTMLElement, html: string) => {
@@ -1561,7 +1569,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         // On the stage the design is at its own size: the button stays, so choosing a layout doesn't move the bar.
         : `${SEP}<p class="px-3.5 py-3 text-xs text-zinc-500">${t('The design is at its full size here. Choose a layout to zoom it.')}</p>`
       const joined = frameOn()
-      return `<div class="relative flex shrink-0 items-center ${joined ? 'rounded-md ring-1 ring-inset ring-black/[.08] dark:ring-white/10' : ''}"><button data-act="open:device" data-shoot="device" aria-haspopup="menu" aria-expanded="${on}" aria-label="${t('Layout and zoom')}" title="${fits ? `${frameOn() ? t('Layout and zoom') : t('Phone scale')}` : t('Layout')}" class="${IB} text-xs tabular-nums ${joined ? 'rounded-e-none' : ''} ${on ? ON : ''}">${ic(icon)}<span data-scale-label${fits ? '' : ' class="opacity-60"'}>${label}</span>${ic('chev', 'size-3 opacity-60')}</button>${joined ? centerBtn : ''}${pop(on, `${sizes}${zoom}`, 'end-0 top-11 w-72')}</div>`
+      return `<div class="relative flex shrink-0 items-center ${joined ? 'rounded-md ring-1 ring-inset ring-black/[.08] dark:ring-white/10' : ''}"><button data-act="open:device" data-shoot="device" aria-haspopup="menu" aria-expanded="${on}" aria-label="${t('Layout and zoom')}" title="${fits ? `${frameOn() ? t('Layout and zoom') : t('Phone scale')}` : t('Layout')}" class="${IB} text-xs tabular-nums ${joined ? 'rounded-e-none' : ''} ${on ? ON : ''}">${ic(icon)}<span data-scale-label${fits ? '' : ' class="opacity-60"'}>${label}</span>${ic('chev', 'size-3 opacity-60')}</button>${joined ? centerBtn : ''}${pop(on, `${sizes}${zoom}`, 'end-0 top-11 w-72', 'device')}</div>`
     }
 
     const replayBtn = () => canReplay() ? `<button data-act="replay" data-shoot="replay" aria-label="${t('Replay')}" title="${t('Replay: load the design again · R')}" class="${IB} shrink-0">${ic('replay')}</button>` : ''
@@ -1580,7 +1588,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ].join('')
       // With the sidebar out of the way, the live dot (its mark carries it otherwise) rides here.
       const dot = wide() && st.side ? '' : `<span class="absolute end-1 top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-1.5', st.live && !st.stopped)}</span>`
-      return `<div class="relative shrink-0"><button data-act="open:more" data-shoot="more" aria-haspopup="menu" aria-expanded="${on}" aria-label="${t('More')}" title="${t('More')}" class="${IB} relative ${on ? ON : ''}">${ic('dots')}${dot}</button>${pop(on, `<div class="p-1.5">${rows}</div>`, 'end-0 top-11 w-60')}</div>`
+      return `<div class="relative shrink-0"><button data-act="open:more" data-shoot="more" aria-haspopup="menu" aria-expanded="${on}" aria-label="${t('More')}" title="${t('More')}" class="${IB} relative ${on ? ON : ''}">${ic('dots')}${dot}</button>${pop(on, `<div class="p-1.5">${rows}</div>`, 'end-0 top-11 w-60', 'more')}</div>`
     }
 
     const protoRow = ({ p: q, depth }: { p: Proto; depth: number }) => { const on = q.id === p?.id && view !== 'session'; return `<button data-act="proto:${esc(q.id)}" aria-current="${on}" class="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-start ${on ? 'bg-zinc-900/[.05] dark:bg-white/[.08]' : 'hover:bg-zinc-900/[.03] dark:hover:bg-white/5'}" style="padding-inline-start:${10 + nestIndent(depth)}px">
@@ -1642,7 +1650,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             <span class="flex min-w-0 items-center gap-1.5 font-semibold">${view === 'session' ? `<span dir="auto" class="truncate">${esc(session.name)}</span>` : `<span dir="auto" class="truncate">${esc(p!.title)}</span><span class="shrink-0 font-normal text-zinc-400">·</span>${v ? `<b class="shrink-0">${variantRef(p!, v.id)}</b><span dir="auto" class="min-w-0 truncate">${esc(v.name)}</span>` : `<span class="shrink-0 font-normal text-zinc-500">${t('All variants')}</span>`}`}${p && pickOf(p) && v?.id === pickOf(p) ? ic('check', `size-3.5 shrink-0 ${PICK}`) : ''}</span>
             <span class="flex min-w-0 items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">${sub}${where ? `<span class="shrink-0 text-zinc-300 dark:text-zinc-600">·</span><span dir="auto" class="min-w-0 truncate font-medium text-sky-700 dark:text-sky-300">${whereHtml}</span>` : ''}</span>
           </span>${ic('chev', `size-3.5 shrink-0 text-zinc-400 transition-transform ${opened('switch') ? 'rotate-180' : ''}`)}</button>
-        ${pop(opened('switch'), miller(), 'start-0 top-11')}</div>`
+        ${pop(opened('switch'), miller(), 'start-0 top-11', 'switch')}</div>`
     const stepper = v && vs.length > 1 ? `<button data-act="step:-1" aria-label="${t('Previous variant')}" title="${t('Previous variant · ←')}" class="${IB} shrink-0">${ic('left')}</button><span class="w-9 shrink-0 text-center text-xs tabular-nums text-zinc-500">${at + 1}<span class="text-zinc-400 dark:text-zinc-600">/${vs.length}</span></span><button data-act="step:1" aria-label="${t('Next variant')}" title="${t('Next variant · →')}" class="${IB} shrink-0">${ic('right')}</button>` : ''
     // The phone's two-line bar is taller than the old one.
     bar.classList.toggle('max-sm:h-14', treeOn && !framed)
@@ -1737,7 +1745,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ${building(p.id, vid) ? `<div data-building-chip title="${t('{agent} is still building this one', { agent: esc(agentName(session.agent)) })}" class="pointer-events-none absolute start-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}${t('Building')}</div>` : ''}
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
       ${st.focus ? `
-      ${st.open === 'fproto' ? `<div data-pop class="fixed bottom-[76px] left-1/2 z-20 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">${protoMenu}</div>` : ''}
+      ${st.open === 'fproto' ? `<div data-pop data-pop-for="fproto" class="fixed bottom-[76px] left-1/2 z-20 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">${protoMenu}</div>` : ''}
       <div class="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex justify-center pb-[env(safe-area-inset-bottom)]" style="bottom:calc(var(--dock-h,0px) + var(--copy-h,0px))">
         <div data-dock data-locked="${st.open === 'fproto' ? 1 : 0}" class="pointer-events-auto relative overflow-hidden rounded-full shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur" style="width:72px;height:6px;margin-bottom:4px;background-color:rgb(24 24 27/.35)">
           <div data-dock-full class="absolute left-1/2 top-1/2 flex w-max items-center gap-0.5 px-1 text-white" style="opacity:0;transform:translate(-50%,-50%)">
@@ -3273,6 +3281,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const drawDecide = comments.mountDecide(root.querySelector<HTMLElement>('[data-decide]')!)
   // The button is redrawn with the bar, so the menu finds it again each time it is drawn.
   const paintDecide = () => drawDecide({
+    popFor: 'decide',
     open: st.open === 'decide', subject: decideOf(),
     anchor: () => chromeEl('[data-decide-btn]'),
     onClose: () => { if (st.open === 'decide') { st.open = null; render() } },
@@ -3305,10 +3314,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     st.under = null
     // Only the options close now: redrawing the switcher here would replace the row under the
     // pointer and lose its click, so the rest is drawn once the press is over.
+    fadeClosedPops()
     paintVmenu()
     addEventListener('pointerup', () => setTimeout(render), { once: true })
   }, true)
   const paintVmenu = () => drawVmenu({
+    popFor: 'vmenu',
     open: st.open === 'vmenu', subject: vmenuSubject(), anchor: () => null,
     at: st.vmenu ? { x: st.vmenu.x, y: st.vmenu.y } : undefined,
     // Closing the options goes back to the switcher they opened from, still open.
@@ -3496,7 +3507,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <div data-cbody class="min-h-0 flex-1" hidden></div>
       <div data-caveats></div>
     </div>
-    <div data-pop data-tweaks-pop role="dialog" aria-label="${t('Tweaks')}" hidden class="fixed z-40 flex max-h-[min(70vh,36rem)] w-80 flex-col overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">
+    <div data-pop data-pop-for="tweaks" data-tweaks-pop role="dialog" aria-label="${t('Tweaks')}" hidden class="fixed z-40 flex max-h-[min(70vh,36rem)] w-80 flex-col overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">
       <div class="px-4 pb-1 pt-3 text-[11px] font-medium text-zinc-400">${t('Tweaks')}</div>
       <div data-tweak-body class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-2"></div>
     </div>

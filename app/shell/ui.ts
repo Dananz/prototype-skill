@@ -117,8 +117,8 @@ export const pulse = (cls = 'size-2', live = true) => live
   ? `<span class="relative inline-flex ${cls}"><span class="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60"></span><span class="relative inline-flex size-full rounded-full bg-emerald-500"></span></span>`
   : `<span class="relative inline-flex ${cls} rounded-full bg-zinc-400"></span>`
 
-export const pop = (open: boolean, html: string, cls: string) => open
-  ? `<div data-pop class="absolute z-40 ${cls} overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900">${html}</div>`
+export const pop = (open: boolean, html: string, cls: string, key: string) => open
+  ? `<div data-pop data-pop-for="${key}" class="absolute z-40 ${cls} overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900">${html}</div>`
   : ''
 
 export const item = (act: string, label: string, meta = '', on = false, lead = '') =>
