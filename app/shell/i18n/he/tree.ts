@@ -3,6 +3,16 @@
 // screen "מסך"; variant numbers and placeholders stay as they are.
 export default {
   'Project tree': 'עץ הפרויקט',
+  'Selected rows': 'שורות שנבחרו',
+  '1 selected': 'נבחר אחד',
+  '{n} selected': '{n} נבחרו',
+  'Select': 'בחר',
+  'Copy links': 'העתק קישורים',
+  'Copy IDs': 'העתק מזהים',
+  'Clear selection': 'נקה בחירה',
+  'Select several rows in the tree': 'בחירת כמה שורות בעץ',
+  'Select a run of rows': 'בחירת רצף שורות',
+  'Copy the links of the rows selected': 'העתקת הקישורים של השורות שנבחרו',
   'Conversation first': 'השיחה קודם',
   'The page opens on this conversation, with a gallery and past conversations.': 'הדף נפתח על השיחה הזו, עם גלריה ושיחות קודמות.',
   'The sidebar shows designs, screens and explorations as one tree.': 'הסרגל מציג עיצובים, מסכים וסבבים כעץ אחד.',

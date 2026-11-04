@@ -25,6 +25,11 @@ Pick with a note; a tree row's ⋯ opens the same tiles for that variant), a com
 floating over the stage, edge arrows, a focus mode with a dock, light and dark, phone frames, "editing" dots, a
 strip naming the variant your requests change). You only write variant files.
 
+To act on several variants, Cmd/Ctrl-click tree rows, and the one on screen comes along (Shift-click
+takes a run, Esc lets go; on a
+phone a row's ⋯ has Select, then each tap adds a row). A bar and the right-click menu then copy
+their links (or Cmd/Ctrl+C) or IDs (`slug/number`, one a line) and star them all.
+
 A variant's context menu (right-click its row or open its ⋯) offers Share screenshots for
 that variant or all variants. Share is also in the pill menu on a phone. Edit each caption,
 select individual shots, and choose No name, With name or Canvas, at As shown, Phone, Tablet or Desktop sizes. The board previews the actual PNGs

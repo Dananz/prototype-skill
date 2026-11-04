@@ -33,11 +33,16 @@ import rows from '@phosphor-icons/core/assets/regular/rows.svg?raw'
 import tray from '@phosphor-icons/core/assets/regular/tray.svg?raw'
 import foldAll from '@phosphor-icons/core/assets/regular/arrows-in-line-vertical.svg?raw'
 import openAll from '@phosphor-icons/core/assets/regular/arrows-out-line-vertical.svg?raw'
-import { useEffect, useState } from 'react'
+import linkSimple from '@phosphor-icons/core/assets/regular/link-simple.svg?raw'
+import hash from '@phosphor-icons/core/assets/regular/hash.svg?raw'
+import star from '@phosphor-icons/core/assets/regular/star.svg?raw'
+import check from '@phosphor-icons/core/assets/bold/check-bold.svg?raw'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { t } from '../i18n'
 import type { ExpState } from './model'
+import { selection } from './selection'
 
-const ICONS = { browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle, x, dots, starFill, plus, minus, foldIn, spreadOut, chatCircle, eye, eyeSlash, mapPin, gitBranch, rows, tray, foldAll, openAll }
+const ICONS = { browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle, x, dots, starFill, plus, minus, foldIn, spreadOut, chatCircle, eye, eyeSlash, mapPin, gitBranch, rows, tray, foldAll, openAll, linkSimple, hash, star, check }
 export type PhName = keyof typeof ICONS
 /** A Phosphor icon, drawn from @phosphor-icons/core like the rest of the shell's (ui.ts ic()). */
 export function Ph({ name, className = 'size-4' }: { name: PhName; className?: string }) {
@@ -102,7 +107,14 @@ export function Inside({ children }: { children: ReactNode }) {
   return <div className="ms-[21px] border-s border-black/[.06] dark:border-white/[.08] [@media(pointer:coarse)]:ms-[25px]">{children}</div>
 }
 
-export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onClick, strong, medium, mv, flat, slim }: {
+/** The rows that can be chosen, top to bottom. An open exploration's own row leaves that to its options. */
+const rowsIn = (el: Element) => [...(el.closest('[data-tree-root]')?.querySelectorAll<HTMLElement>('[data-mv]') ?? [])]
+  .filter(r => !r.querySelector(':scope > button[aria-expanded="true"]')).map(r => r.dataset.mv!.replace(':', '/'))
+
+/** The option on screen. An exploration's own row can be lit on its page, with no variant open. */
+const hereIn = (el: Element) => el.closest('[data-tree-root]')?.querySelector<HTMLElement>('[data-tree-row^="opt:"][data-on="true"]')?.dataset.mv?.replace(':', '/') ?? ''
+
+export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onClick, strong, medium, mv, flat, slim, stands }: {
   id: string; depth: number; label: ReactNode; icon?: ReactNode; end?: ReactNode; count?: number; on?: boolean
   /** Part of a block that wears the colour and the hover itself. */
   flat?: boolean
@@ -110,17 +122,32 @@ export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onC
   slim?: boolean
   /** A variant's route (slug/letter): the row has its options, on right-click (data-mv) and a ⋯ (the shell's vm). */
   mv?: string
+  /** The variant this row chooses when it has no options of its own: a decided row's winner. */
+  stands?: string
   /** undefined: no caret (a leaf). */
   open?: boolean; onCaret?: () => void; onClick: () => void; strong?: boolean; medium?: boolean
 }) {
+  const chosen = useSyncExternalStore(selection.subscribe, () => !!mv && !open && selection.has(mv))
+  const route = mv ?? stands
+  // Cmd or Ctrl adds a row, Shift a run of them; once choosing, a finger has only the tap to add with.
+  const click = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey) {
+      const here = hereIn(e.currentTarget)
+      if (route) { if (e.shiftKey) selection.extend(route, rowsIn(e.currentTarget), here); else selection.toggle(route, here) }
+      return
+    }
+    if (route && selection.get().length && matchMedia('(pointer: coarse)').matches) return selection.toggle(route)
+    selection.clear()
+    onClick()
+  }
   return (
-    <div data-tree-row={id} data-on={on ? 'true' : undefined} data-mv={mv ? mv.replace('/', ':') : undefined}
-      className={'group flex items-center gap-1.5 rounded-lg pe-1.5 ' + (slim ? 'h-6! [@media(pointer:coarse)]:h-8! ' : 'h-8 [@media(pointer:coarse)]:h-10 ') + (flat ? '' : 'mx-1.5 ' + (on ? 'bg-sky-50 text-sky-900 dark:bg-sky-950/60 dark:text-sky-100' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]'))}
+    <div data-tree-row={id} data-on={on ? 'true' : undefined} data-mv={mv ? mv.replace('/', ':') : undefined} data-tree-chosen={chosen ? 'true' : undefined}
+      className={'group flex items-center gap-1.5 rounded-lg pe-1.5 ' + (slim ? 'h-6! [@media(pointer:coarse)]:h-8! ' : 'h-8 [@media(pointer:coarse)]:h-10 ') + (flat ? '' : 'mx-1.5 ') + (chosen ? 'bg-sky-500/15 ' + (on ? 'text-sky-900 dark:text-sky-100' : '') : flat ? '' : on ? 'bg-sky-50 text-sky-900 dark:bg-sky-950/60 dark:text-sky-100' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]')}
       style={{ paddingInlineStart: 2 + depth * 8 }}>
       {open != null && onCaret
         ? <Caret open={open} onFlip={onCaret} />
         : <span className="w-7 shrink-0 [@media(pointer:coarse)]:w-9" />}
-      <button type="button" onClick={onClick} className={'flex h-full min-w-0 flex-1 items-center gap-1.5 text-start ' + (strong ? 'font-semibold' : medium ? 'font-medium' : '')}>
+      <button type="button" onClick={click} onMouseDown={e => { if (e.shiftKey) e.preventDefault() }} aria-pressed={mv ? chosen : undefined} className={'flex h-full min-w-0 flex-1 items-center gap-1.5 text-start ' + (strong ? 'font-semibold' : medium ? 'font-medium' : '')}>
         {icon}<span className="truncate">{label}</span>{count != null && <span className="text-xs font-normal text-zinc-400 tabular-nums">{count}</span>}
       </button>
       {end}
