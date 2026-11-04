@@ -21,6 +21,10 @@ export type TreeNode = {
   children: TreeNode[]
 }
 export type Filter = 'all' | 'open' | 'mine' | 'favs'
+/** How long a finished chain stays in the tree after its last touch. */
+export const SETTLE_AFTER = 3 * 864e5
+/** What deciding the shelf takes. keep: what must stay in the tree (the agent is on it, comments are open). */
+export type Settle = { now: number; keep(id: string): boolean; touched(p: Proto): number; seen(route: string, p: Proto): boolean; aside(id: string): 'settled' | 'active' | undefined }
 
 /** Its parent, unless the chain up from it loops or names a prototype that isn't there. */
 function parentOf(p: Proto, byId: Map<string, Proto>): Proto | null {
@@ -47,7 +51,7 @@ export function stateOf(p: Proto, byId: Map<string, Proto>, building: Set<string
 const NEEDS: ExpState[] = ['open', 'stale', 'building']
 const shown = (p: Proto) => p.picked ?? p.variants[0]?.id ?? 'A'
 
-export function treeOf(protos: Proto[], designs: Design[], o: { filter: Filter; me: string | null; building: Set<string> }): { nodes: TreeNode[]; waiting: number } {
+export function treeOf(protos: Proto[], designs: Design[], o: { filter: Filter; me: string | null; building: Set<string>; settle?: Settle }): { nodes: TreeNode[]; waiting: number; settled: TreeNode[] } {
   const live = protos.filter(p => !p.archived)
   const byId = new Map(live.map(p => [p.id, p]))
   const state = (p: Proto) => stateOf(p, byId, o.building)
@@ -91,10 +95,25 @@ export function treeOf(protos: Proto[], designs: Design[], o: { filter: Filter; 
     if (flows.length) nodes.push({ kind: 'design', key: `design:${d.id}`, label: d.title, count: flows.reduce((n, f) => n + f.children.length, 0), children: flows })
   }
   // Roots that are no screen, newest first. A root's parent chain is broken or it has none.
-  const loose = live.filter(p => !onScreen.has(p.id) && !parentOf(p, byId)).sort((a, b) => b.created.localeCompare(a.created))
-    .map(p => explore(p, 'exploration')).filter((n): n is TreeNode => !!n)
+  const roots = live.filter(p => !onScreen.has(p.id) && !parentOf(p, byId)).sort((a, b) => b.created.localeCompare(a.created))
+  // A root goes to the shelf with everything built on it, when all of it is decided or was seen and
+  // left, nothing needs anyone, and it sat untouched long enough. A hand on it beats all of that.
+  const chainOf = (p: Proto): Proto[] => [p, ...(kids.get(p.id) ?? []).flatMap(chainOf)]
+  const rests = (p: Proto) => {
+    const s = o.settle
+    if (!s || o.filter === 'open' || o.filter === 'favs') return false
+    const chain = chainOf(p), hand = s.aside(p.id)
+    if (chain.some(x => state(x) === 'building') || hand === 'active') return false
+    if (hand === 'settled') return true
+    return !chain.some(x => s.keep(x.id) || state(x) === 'stale')
+      && chain.every(x => x.picked || x.variants.every(v => s.seen(`${x.id}/${v.id}`, x)))
+      && chain.every(x => s.now - s.touched(x) >= SETTLE_AFTER)
+  }
+  const resting = new Set(roots.filter(rests).flatMap(chainOf).map(p => p.id))
+  const draw = (list: Proto[]) => list.map(p => explore(p, 'exploration')).filter((n): n is TreeNode => !!n)
+  const loose = draw(roots.filter(p => !resting.has(p.id)))
   if (loose.length) nodes.push({ kind: 'section', key: 'section:loose', label: 'Explorations on no screen', children: loose })
   const archived = protos.filter(p => p.archived)
   if (o.filter === 'all' && archived.length) nodes.push({ kind: 'section', key: 'section:archive', label: 'Archive', count: archived.length, children: archived.map(p => ({ kind: 'exploration', key: `exp:${p.id}`, label: p.title, route: `${p.id}/${shown(p)}`, children: [] })) })
-  return { nodes, waiting: live.filter(p => ['open', 'stale'].includes(state(p))).length }
+  return { nodes, settled: draw(roots.filter(p => resting.has(p.id))), waiting: live.filter(p => !resting.has(p.id) && ['open', 'stale'].includes(state(p))).length }
 }

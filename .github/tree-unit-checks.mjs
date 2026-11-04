@@ -99,3 +99,46 @@ test('a pinned screen (slug/letter) shows that variant in its own design', () =>
   assert.equal(pinned.route, 'home/B'); assert.equal(pinned.standIn, undefined)
   assert.ok(find(nodes, 'screen:home'), 'the unpinned screen stays in the first design')
 })
+
+// The shelf: a chain leaves the tree when all of it is decided or seen and left, nothing needs anyone,
+// and it sat untouched long enough. A hand on it beats that.
+const NOW = Date.parse('2026-11-05T10:00:00Z'), DAY = 864e5
+const shelf = (list, more = {}) => treeOf(list, [], { filter: 'all', me: null, building: none, settle: { now: NOW, keep: () => false, touched: () => NOW - 4 * DAY, seen: () => false, aside: () => undefined, ...more } })
+const loosed = t => find(t.nodes, 'section:loose')?.children.map(n => n.key) ?? []
+
+test('shelf: a decided chain untouched for 3 days moves, with what is built on it', () => {
+  const list = [P('a', { picked: 'A' }), P('b', { from: { proto: 'a', variant: 'A' }, picked: 'B' })]
+  const t = shelf(list)
+  assert.deepEqual(t.settled.map(n => n.key), ['exp:a']); assert.deepEqual(loosed(t), [])
+  assert.deepEqual(find(t.settled, 'exp:a').children.filter(n => n.kind === 'exploration').map(n => n.key), ['exp:b'])
+})
+
+test('shelf: what keeps a chain in the tree', () => {
+  const picked = [P('a', { picked: 'A' })]
+  assert.deepEqual(shelf(picked, { touched: () => NOW - 2 * DAY }).settled, [], 'touched within 3 days')
+  assert.deepEqual(shelf(picked, { keep: id => id === 'a' }).settled, [], 'the agent is on it, or comments are open')
+  const chain = [P('a', { picked: 'A' }), P('b', { from: { proto: 'a', variant: 'A' } })]
+  assert.deepEqual(shelf(chain).settled, [], 'something under it waits and was not seen')
+  assert.deepEqual(treeOf(picked, [], { filter: 'all', me: null, building: none }).settled, [], 'no settle given, no shelf')
+  assert.deepEqual(treeOf([P('a', { picked: 'A', favorites: ['A'] })], [], { filter: 'favs', me: null, building: none, settle: { now: NOW, keep: () => false, touched: () => 0, seen: () => true, aside: () => undefined } }).settled, [], 'Favorites has no shelf')
+})
+
+test('shelf: undecided but every option seen and left counts, and leaves the waiting count', () => {
+  const list = [P('a'), P('c')]
+  const t = shelf(list, { seen: route => route.startsWith('a/') })
+  assert.deepEqual(t.settled.map(n => n.key), ['exp:a']); assert.deepEqual(loosed(t), ['exp:c']); assert.equal(t.waiting, 1)
+})
+
+test('shelf: a hand beats the rules, except a build under way', () => {
+  const list = [P('a'), P('c', { picked: 'A' })]
+  const t = shelf(list, { aside: id => id === 'a' ? 'settled' : id === 'c' ? 'active' : undefined, touched: () => NOW })
+  assert.deepEqual(t.settled.map(n => n.key), ['exp:a']); assert.deepEqual(loosed(t), ['exp:c'])
+  const busy = treeOf(list, [], { filter: 'all', me: null, building: new Set(['a/A']), settle: { now: NOW, keep: () => false, touched: () => 0, seen: () => true, aside: () => 'settled' } })
+  assert.ok(!busy.settled.some(n => n.key === 'exp:a'), 'what is being built stays in the tree')
+})
+
+test('shelf: only explorations on no screen move', () => {
+  const t = shelf([P('a', { picked: 'A' })].concat(P('s', { picked: 'A' })), {})
+  const screened = treeOf([P('s', { picked: 'A' })], [{ id: 'd', title: 'D', created: '', flows: [{ name: 'M', screens: ['s'] }] }], { filter: 'all', me: null, building: none, settle: { now: NOW, keep: () => false, touched: () => 0, seen: () => true, aside: () => undefined } })
+  assert.equal(t.settled.length, 2); assert.deepEqual(screened.settled, []); assert.ok(find(screened.nodes, 'screen:s'))
+})

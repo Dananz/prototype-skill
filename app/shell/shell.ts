@@ -36,6 +36,7 @@ import { createIntake } from './intake/index'
 import type { Intake } from './intake/types'
 import type { Appearance } from './settings'
 import { mountTree, TreeView, type TreeApi, type TreeInput } from './tree/index'
+import { memory as treeMemory } from './tree/memory'
 import { createElement } from 'react'
 import type { GalleryApi, GalleryInput } from './gallery/index'
 import { lazyDraw, preloadWhenIdle } from './lazy'
@@ -635,6 +636,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     return {
       protos: all, designs, place: placeRoute(), me: session.conversation ?? null, conv: convOn, scope: scopeNow(), scopeName: scopeName(),
       building: new Set(Object.keys(session.building ?? {}).filter(k => buildingUntil(k) > Date.now())), counts: by,
+      workSlug: w?.p.id ?? '', edits: st.status?.edits,
       work: w ? t('Working on {name}', { name: `${w.p.title} ${variantLabel(w.p, w.v.id)}` }) : '',
       dock: dockInput(),
       up: st.live && !st.stopped,
@@ -3387,6 +3389,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (!here) rows.push({ id: 'open', label: t('Open {v}', { v: variantRef(q, v.id) }), icon: 'right', run: () => go(keepIn(q, v.id)) })
       for (const t of TOOL_LIST.filter(t => toolOk(q, v.id, t))) {
         rows.push({ id: `tool-${t}`, label: TOOLS[t].name, icon: TOOLS[t].icon, hint: toolDetail(q, v.id, t), on: here && st.place.view === 'variant' && st.place.tool === t, run: () => act('tool', q.id, v.id, t) })
+      }
+      // A chain moves to the shelf or back as one, by its root.
+      let shelfRoot = q
+      for (const seen = new Set([q.id]), up = (x: Proto) => x.from && byId(x.from.proto); ;) { const a = up(shelfRoot); if (!a || seen.has(a.id)) break; seen.add(a.id); shelfRoot = a }
+      if (treeOn && treeMemory.loose.has(shelfRoot.id)) {
+        const aside = treeMemory.settled.has(shelfRoot.id)
+        rows.push({ id: 'aside', label: aside ? t('Bring back') : t('Set aside'), icon: aside ? 'eye' : 'eyeoff', run: () => treeMemory.setAside(shelfRoot.id, aside ? 'active' : 'settled') })
       }
       rows.push({ id: 'share-link', label: t('Share link…'), icon: 'link-simple', run: () => act('share-link', q.id, v.id) })
       rows.push({ id: 'share', label: t('Share screenshots'), icon: 'share', run: () => act('share', q.id, v.id) })
