@@ -18,25 +18,26 @@ to attach images.
    Screenshots table; descriptions of what an image would show do not count.
    For a new screen or state, use `N/A: new screen/state` in Before and an actual
    image in After. For nonvisual changes, use `N/A: no visual changes`.
-3. Publish the captures automatically. Use GitHub attachment URLs if an available
-   upload tool returns them. Otherwise, copy the images into
-   `docs/pr/<change-slug>/`, commit only those captures with the PR's owned changes,
-   and push them to the PR head branch. This repository already uses `docs/pr/`
-   for visual evidence. Do not leave the images only in a local or ignored folder.
-4. For committed captures, obtain the pushed commit SHA with `git rev-parse HEAD`
-   and the repository owner/name with `gh repo view --json nameWithOwner`.
-   Embed each image using an absolute URL pinned to that commit:
+3. Publish the captures automatically as GitHub attachments, with `gh --attach`
+   (GitHub CLI 2.99 or newer, push access to the repository). Never commit captures
+   to this repository: every install carries what is committed. Without push access,
+   drag the images into the PR description in the browser.
+4. Write the completed PR body to a temporary file, next to the captures, and
+   reference each image by its path relative to that file:
 
    ```markdown
-   ![Menu before, desktop](https://github.com/OWNER/REPO/blob/COMMIT_SHA/docs/pr/CHANGE_SLUG/menu-before.png?raw=true)
+   ![Menu before, desktop](./menu-before.png)
    ```
 
-   Replace every uppercase placeholder. Keep filenames URL-safe. Local filesystem
-   paths and relative links in a PR body are not published screenshots.
-5. Write the completed PR body to a temporary file. Create the PR with
-   `gh pr create --body-file <file>`, or update it with
-   `gh pr edit <number> --body-file <file>`. Updating screenshots must preserve
-   the rest of an existing PR's description.
+   Keep filenames URL-safe. `--attach` rewrites each reference to the uploaded URL.
+   A local path still in the published body is not a published screenshot.
+5. Create the PR with
+   `gh pr create --body-file <file> --attach ./menu-before.png --attach ./menu-after.png`,
+   or update it with `gh pr edit <number> --body-file <file> --attach ...` (up to 50
+   files per command). Updating screenshots must preserve the rest of an existing
+   PR's description. A non-zero exit can mean some files failed while the PR was still
+   created or updated with the rest, so treat it as a failed publication until step 6
+   passes.
 6. Read back the published body with
    `gh pr view <number> --json body --jq .body`. Confirm that each affected state
    has image Markdown, the URLs serve the intended images (using authenticated
