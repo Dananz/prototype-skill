@@ -951,7 +951,7 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
    call per comment.
 3. Make every edit in as few calls as the files allow. Then check what each change pushes into:
    text that grew, a button that moved or widened, a size that changed can now overlap its
-   neighbour or overflow its box. Fix that in the same pass, and name it in the reply.
+   neighbour or overflow its box. Fix that in the same pass.
    For optional extras, recheck the batch's `batch.json` for `withdrawn` before editing and
    before replying. A withdrawn request is canceled: stop optional work, and do not claim delivery.
    If no useful extra applies, reply with that reason and `--done`, so it can be requested again.
@@ -974,7 +974,11 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
    it in a state from meta.ts, `--hover` keeps the pointer on it, `--after <ms>` waits longer
    before the shot.
 5. One reply call for the batch: `proto reply <batch> 1 "<what you changed>" 2 "…" … --done`
-   (use `--as codex`, `--as claude` or `--as agent` to override the detected reply mark). A comment
+   (use `--as codex`, `--as claude` or `--as agent` to override the detected reply mark).
+   **Each reply is one line of at most 10 words**, because the user sees the change and rarely
+   reads the reply: "Popover rises and fades in." No values, durations, curves, how to check it, or
+   what stayed the same, unless their comment asked. Only a question or a comment you can't act on
+   gets more, and only what the answer needs. Don't repeat the replies in chat. A comment
    you can't act on is left out of that call and gets its own reply without `--done` saying why.
    A comment whose answer is new variants or a new prototype ("more variants for this", a `more`
    decision; from one variant they nest under it, step 4) is answered as soon as they are added, not when they are built: `proto add` them,
@@ -1003,7 +1007,7 @@ comment withdrawn in the page after it was handled is answered by undoing it, if
 line, `view: desktop 1440x900`, and is about that layout, not the one the batch's page size says.
 Run the shoot the line names (`proto shoot <route> --size 1440x900`) and read it, change that
 layout (its breakpoints, so the other sizes stay as they were), shoot it again, and name the size
-in the reply ("On desktop the heading is 28 px now; phone and tablet as before").
+in the reply ("Desktop heading is smaller.").
 
 **Decisions from the page** arrive in the same batches, as comments with an `action:` line and
 no element (a `copy` choice is on its line's element); the user's optional note follows a colon in
@@ -1091,7 +1095,7 @@ the original, so the two sit side by side. `proto fork dismiss <its id>` waves i
 | It feels slow or stutters ("the fps isn't fast enough", "dragging lags") | `proto perf <slug>/<letter>` (with `--drag` on what lags, `--dpr` of their screen), fix what the verdict names, measure again |
 | A change to another variant ("now D, same idea") | `proto work <slug>/<letter> --ask "…"`, then edit it |
 | To review an animation ("how should the sheet open?", "the toast lands too hard") | the motion in CSS or `element.animate()`, `useMotion` in each variant, then `proto shoot <slug>/<letter> --frames 12` |
-| A comment on the motion (`at: 0.30–0.62 s` in a batch) | the shoot its line names, change the motion, reply with the new timing (Comments from the page) |
+| A comment on the motion (`at: 0.30–0.62 s` in a batch) | the shoot its line names, change the motion, reply in one short line (Comments from the page) |
 | A comment in a view (`view: tablet 834x1194` in a batch) | the shoot its line names, change that layout's breakpoints, reply naming the size (Comments from the page) |
 | To drop a direction or prototype | `proto archive <slug>` (still reachable under Archived) |
 | The prototypes in a doc to share | Snapshots with an available document tool, or `proto shoot` images (section above) |
