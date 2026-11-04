@@ -9,7 +9,8 @@ import type { Design, Proto } from '../shell'
 import { rtl, t, tn } from '../i18n'
 import { numberOf } from '../variants'
 import { treeOf, type Filter, type TreeNode } from './model'
-import { Mark, Ph, Row } from './row'
+import { Caret, Collapse, Inside, Mark, Ph, Row } from './row'
+import { memory } from './memory'
 import { Near } from '../near'
 
 export type TreeInput = {
@@ -35,6 +36,10 @@ export type TreeInput = {
   up: boolean
   /** Open comments per slug. */
   counts: Record<string, number>
+  /** The prototype the agent is on ('' when none). */
+  workSlug?: string
+  /** When each variant was last edited, known to the server since it started. */
+  edits?: Record<string, number>
 }
 export type TreeApi = { get(): TreeInput; subscribe(fn: () => void): () => void; go(route: string): void; goWork(): void; hide(): void; name: string
   /** Scopes the page: this conversation, another ('conv:<id>'), the whole project ('all') or favorites ('favs'). */
@@ -43,10 +48,53 @@ export type TreeApi = { get(): TreeInput; subscribe(fn: () => void): () => void;
   frame(key: string): void }
 
 const FILTERS: [Filter, () => string][] = [['all', () => t('All')], ['open', () => t('Open')], ['mine', () => t('This conversation')], ['favs', () => t('Favorites')]]
-const SECTION: Record<string, () => string> = { 'section:loose': () => t('Explorations on no screen'), 'section:archive': () => t('Archive') }
+const SECTION: Record<string, () => string> = { 'section:loose': () => t('Explorations on no screen') }
 /** A tree with more rows than this draws only the explorations near the view. */
 const WINDOW_ROWS = 120, ROW_H = 32
 const pickedOf = (n: TreeNode) => n.children.find(c => c.kind === 'option' && c.picked)?.route
+const HOVER = 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]'
+const LIT = 'bg-sky-50 text-sky-900 dark:bg-sky-950/60 dark:text-sky-100'
+/** Designs, flows, sections and what still waits on the user start open; the rest starts folded. */
+const opensByDefault = (n: TreeNode) => ['design', 'flow', 'section'].includes(n.kind) || (n.kind === 'exploration' && ['open', 'stale', 'building'].includes(n.state ?? ''))
+/** Where the open screen is; a pin, since a dot on these rows means new. */
+const Here = () => <span title={t('The open screen is here')} aria-label={t('The open screen is here')} data-tree-here className="shrink-0"><Ph name="mapPin" className="size-3.5 text-sky-500" /></span>
+
+/** The foot's shelf: what is finished or was left alone, with the archive inside it. It stays shut
+ *  (kept in this browser) except for the one thing it can't hide: what is on screen. */
+function Shelf({ nodes, archive, slug, draw, go }: { nodes: TreeNode[]; archive: TreeNode | undefined; slug: string; draw(n: TreeNode): React.ReactNode; go(route: string): void }) {
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem('proto-tree-shelf') === '1' } catch { return false } })
+  const [arch, setArch] = useState(false)
+  const flip = () => { const next = !open; setOpen(next); try { localStorage.setItem('proto-tree-shelf', next ? '1' : '0') } catch { /* private window */ } }
+  const holds = (n: TreeNode): boolean => (!!n.route && n.route.split('/')[0] === slug) || n.children.some(holds)
+  const here = nodes.find(holds)
+  const held = !!(here || (archive?.children.some(holds)))
+  return (
+    <section data-tree-shelf aria-label={t('Settled')} className="shrink-0 border-t border-black/[.06] text-[12px] dark:border-white/10">
+      <div className="mx-1.5 flex items-center gap-1.5 py-0.5 pe-2" style={{ paddingInlineStart: 2 }}>
+        <Caret open={open} onFlip={flip} label={open ? t('Collapse {name}', { name: t('Settled') }) : t('Expand {name}', { name: t('Settled') })} />
+        <button type="button" data-tree-shelf-head onClick={flip} className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 text-start font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white"><Ph name="tray" className="size-3.5" />{t('Settled')}</button>
+        {held && !open && <Here />}
+        <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{nodes.length}</span>
+      </div>
+      {!open && here && <div className="pb-1 text-zinc-500">{draw(here)}</div>}
+      <Collapse open={open}>
+        <div className="max-h-56 overflow-y-auto overscroll-contain pb-1.5"><Inside>
+          <div className="text-zinc-500">{nodes.map(draw)}</div>
+          {archive && (
+            <>
+              <div className="mx-1.5 mt-1 flex items-center gap-1.5 pe-2" style={{ paddingInlineStart: 2 }}>
+                <Caret open={arch} onFlip={() => setArch(!arch)} />
+                <button type="button" data-tree-archive onClick={() => setArch(!arch)} className="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-start text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"><Ph name="archive" className="size-3.5" />{t('Archive')}</button>
+                <span className="text-[11px] tabular-nums text-zinc-400 dark:text-zinc-600">{archive.children.length}</span>
+              </div>
+              <Collapse open={arch}><Inside>{archive.children.map(n => <Row key={n.key} id={n.key} depth={0} on={!!n.route && n.route.split('/')[0] === slug} onClick={() => go(n.route!)} mv={n.route} label={<span dir="auto" className="text-zinc-400 dark:text-zinc-600">{n.label}</span>} />)}</Inside></Collapse>
+            </>
+          )}
+        </Inside></div>
+      </Collapse>
+    </section>
+  )
+}
 
 /** The sidebar's foot: the open variant's states, in one place however far the tree scrolls. It folds to
  *  one line naming the state showing, and stays folded (kept in this browser). */
@@ -79,34 +127,52 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
   const [open, setOpen] = useState<Set<string>>(() => new Set())
   const [shutFavs, setShutFavs] = useState<Set<string>>(() => new Set())
   const list = useRef<HTMLDivElement>(null)
-  const { nodes, waiting } = treeOf(input.protos, input.designs, { filter, me: input.conv ? sid : input.me, building: input.building })
+  useSyncExternalStore(memory.subscribe, memory.version)
+  const touched = (p: Proto) => Math.max(Date.parse(p.created) || 0, memory.visitedAt(p.id), ...p.variants.flatMap(v => [input.edits?.[`${p.id}/${v.id}`] ?? 0, ...(p.versions?.[v.id] ?? []).map(x => Date.parse(x.at) || 0)]))
+  const { nodes: tree, waiting, settled } = treeOf(input.protos, input.designs, { filter, me: input.conv ? sid : input.me, building: input.building, settle: {
+    now: Date.now(), touched, aside: memory.asideOf, seen: (route, p) => memory.isSeen(route, p.created),
+    keep: id => id === input.workSlug || (input.counts[id] ?? 0) > 0,
+  } })
+  const nodes = tree.filter(n => n.key !== 'section:archive'), archive = tree.find(n => n.key === 'section:archive')
+  useEffect(() => {
+    memory.settled = new Set(settled.map(n => n.route!.split('/')[0]))
+    memory.loose = new Set([...memory.settled, ...(tree.find(n => n.key === 'section:loose')?.children ?? []).map(n => n.route!.split('/')[0])])
+  })
   const total = input.protos.filter(p => !p.archived).length
-  const toggle = (k: string) => setOpen(o => { const n = new Set(o); if (n.has(k)) n.delete(k); else n.add(k); return n })
+  const toggle = (k: string) => { auto.current.delete(k); setOpen(o => { const n = new Set(o); if (n.has(k)) n.delete(k); else n.add(k); return n }) }
+  /** What the place opened by itself, not the user: it folds again when the place moves on. */
+  const auto = useRef(new Set<string>())
 
   // The place on screen opens the tree down to its row, which scrolls into view.
   const slug = input.place.split('/')[0]
   useEffect(() => {
     if (!slug) return
-    // Its ancestors, opened (a design, flow or section is open while its key is not in the set).
+    memory.visit(input.place)
+    // Its ancestors, opened (a design, flow or section is open while its key is not in the set). Its
+    // own row opens too, unless the row already shows what is on screen: its winner.
     const path: TreeNode[] = []
     const walk = (list: TreeNode[], up: TreeNode[]): boolean => list.some(n => {
-      if (n.route?.split('/')[0] === slug && n.kind !== 'option') { path.push(...up, n); return true }
+      if (n.route?.split('/')[0] === slug && n.kind !== 'option') { const showsIt = !input.place.split('/')[1] || pickedOf(n) === input.place; path.push(...up, ...(showsIt ? [] : [n])); return true }
       return walk(n.children, [...up, n])
     })
     walk(nodes, [])
-    const opensByDefault = (n: TreeNode) => ['design', 'flow', 'section'].includes(n.kind) && n.key !== 'section:archive'
-    if (path.length) setOpen(o => {
+    const keys = new Set(path.map(n => n.key))
+    setOpen(o => {
       const next = new Set(o)
-      for (const n of path) if (opensByDefault(n)) next.delete(n.key); else next.add(n.key)
+      for (const k of auto.current) if (!keys.has(k)) { next.delete(k); auto.current.delete(k) }
+      for (const n of path) {
+        if (opensByDefault(n)) next.delete(n.key)
+        else if (!next.has(n.key)) { next.add(n.key); auto.current.add(n.key) }
+      }
       return [...next].length === o.size && [...next].every(k => o.has(k)) ? o : next
     })
     requestAnimationFrame(() => list.current?.querySelector('[data-on="true"]')?.scrollIntoView({ block: 'nearest' }))
     // nodes change with every edit; the place is what moves the tree.
-  }, [slug]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [input.place]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Designs, flows and sections start open; screens and explorations start closed.
+  // Designs, flows, sections and undecided explorations start open; the rest starts closed.
   // Under Favorites everything kept starts open, to show the starred options; what is closed there is its own.
-  const isOpen = (n: TreeNode) => filter === 'favs' ? !shutFavs.has(n.key) : ['design', 'flow', 'section'].includes(n.kind) && n.key !== 'section:archive' ? !open.has(n.key) : open.has(n.key)
+  const isOpen = (n: TreeNode) => filter === 'favs' ? !shutFavs.has(n.key) : opensByDefault(n) ? !open.has(n.key) : open.has(n.key)
   const flip = (n: TreeNode) => filter === 'favs' ? setShutFavs(o => { const s = new Set(o); if (s.has(n.key)) s.delete(n.key); else s.add(n.key); return s }) : toggle(n.key)
 
   const shownRows = (n: TreeNode): number => 1 + (n.children.length && isOpen(n) ? n.children.reduce((sum, c) => sum + shownRows(c), 0) : 0)
@@ -114,67 +180,143 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
   const holdsPlace = (n: TreeNode): boolean => (!!n.route && n.route.split('/')[0] === slug) || n.children.some(holdsPlace)
   // The first screenfuls are drawn from the first render, so a long tree never opens empty.
   let firstRows = 60
-  const draw = (n: TreeNode, depth: number, inside = false): React.ReactNode => {
+  // Every level folds alike, so the depth is in the nesting (Inside), not in the padding.
+  const foldable = (list: TreeNode[]): TreeNode[] => list.flatMap(n => [...(n.kind === 'option' || n.kind === 'section' || !n.children.length ? [] : [n]), ...foldable(n.children)])
+  const anyOpen = () => foldable(nodes).some(isOpen)
+  const foldAll = () => { const shut = anyOpen(); auto.current.clear(); setOpen(o => { const next = new Set(o); for (const n of foldable(nodes)) { if (opensByDefault(n) === shut) next.add(n.key); else next.delete(n.key) } return next }) }
+  const FoldAll = () => filter === 'favs' ? null : (
+    <button type="button" data-tree-fold-all onClick={foldAll} aria-label={anyOpen() ? t('Fold everything') : t('Open everything')} title={anyOpen() ? t('Fold everything') : t('Open everything')}
+      className="grid size-7 shrink-0 place-items-center rounded-md text-zinc-400 hover:bg-zinc-900/[.06] hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-white/10 dark:hover:text-zinc-200 [@media(pointer:coarse)]:size-9"><Ph name={anyOpen() ? 'foldAll' : 'openAll'} className="size-3.5" /></button>
+  )
+  const favOf = (route: string) => input.protos.find(p => p.id === route.split('/')[0])?.favorites.includes(route.split('/')[1])
+  const statesOf = (route: string) => { const letter = route.split('/')[1]; return desk ? (input.protos.find(p => p.id === route.split('/')[0])?.states.filter(s => !s.only?.length || s.only.includes(letter)).length ?? 0) : 0 }
+  const protoOf = (n: TreeNode) => input.protos.find(p => p.id === n.route!.split('/')[0])
+  const isNew = (route: string) => { const p = input.protos.find(x => x.id === route.split('/')[0]); return !!p && !memory.isSeen(route, p.created) }
+  const optionEnd = (n: TreeNode) => {
+    const states = statesOf(n.route!)
+    return <>{n.became ? <span className="shrink-0 truncate text-[11px] text-indigo-500" dir="auto">{t('became {name}', { name: n.became })}</span> : null}
+      {states > 0 && <span data-tree-states={states} title={tn(states, '{n} state', '{n} states')} className="shrink-0 text-[11px] tabular-nums text-zinc-400">{states}</span>}</>
+  }
+  /** tone: picked (the plain row, under Favorites), passed (grey, a step back), candidate (undecided: new or seen). */
+  const option = (n: TreeNode, tone: 'picked' | 'passed' | 'candidate') => {
+    const num = numberOf(n.route!.split('/')[1]), on = n.route === input.place
+    const seen = tone === 'candidate' && !isNew(n.route!), fresh = tone === 'candidate' && !seen
+    const faint = !on && (tone === 'passed' || seen)
+    return (
+      <Row key={n.key} id={n.key} depth={0} on={on} onClick={() => api.go(n.route!)} mv={n.route}
+        icon={<span className={'grid size-4 shrink-0 place-items-center rounded text-[10px] font-semibold tabular-nums ' + (n.picked ? 'bg-emerald-500 text-white' : 'bg-zinc-900/[.06] text-zinc-500 dark:bg-white/10 dark:text-zinc-400 ') + (faint ? 'opacity-60' : '')}>{num}</span>}
+        label={<span className="flex min-w-0 items-center gap-1"><span dir="auto" className={'truncate ' + (faint ? 'text-zinc-500' : fresh ? 'font-medium' : '')}>{n.label}</span>{favOf(n.route!) && <Ph name="starFill" className="size-3 shrink-0 text-amber-400" />}</span>}
+        end={<>{optionEnd(n)}
+          {tone === 'picked' && n.picked && !n.became && <span className="shrink-0 text-[11px] text-emerald-600 dark:text-emerald-400">{t('Picked')}</span>}
+          {fresh && <span data-tree-new className="flex shrink-0 items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400"><span className="size-1.5 rounded-full bg-amber-500" />{t('New')}</span>}
+          {seen && <span title={t('Seen')} data-tree-seen><Ph name="eye" className="size-3.5 text-zinc-300 dark:text-zinc-600" /></span>}</>} />
+    )
+  }
+  const draw = (n: TreeNode, inside = false): React.ReactNode => {
     const here = !!n.route && n.kind !== 'option' && n.route.split('/')[0] === slug
     const lit = n.kind === 'option' ? n.route === input.place : here && !n.children.some(c => c.kind === 'option' && c.route === input.place)
     const shut = n.children.length ? isOpen(n) : undefined
-    const kids = () => shut ? n.children.map(c => draw(c, depth + 1, inside)) : null
+    const kids = (nest = inside) => <Collapse open={!!shut}><Inside>{n.children.map(c => draw(c, nest))}</Inside></Collapse>
     if (n.kind === 'design') return (
       <div key={n.key}>
-        <Row id={n.key} depth={depth} strong open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count}
-          icon={<span className="size-2.5 shrink-0 rounded-full bg-indigo-500" />} label={<span dir="auto">{n.label}</span>} />
+        <Row id={n.key} depth={0} strong open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count}
+          icon={<span className="size-2.5 shrink-0 rounded-full bg-indigo-500" />} label={<span dir="auto">{n.label}</span>} end={nodes[0] === n ? <FoldAll /> : null} />
         {kids()}
       </div>
     )
     // A design or a flow: its caret folds it here, its name goes to its first screen's page (/slug).
-    if (n.kind === 'flow') return <div key={n.key}><Row id={n.key} depth={depth} medium open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count} label={<span dir="auto">{n.label}</span>} />{kids()}</div>
+    if (n.kind === 'flow') return <div key={n.key}><Row id={n.key} depth={0} medium open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count} label={<span dir="auto">{n.label}</span>} />{kids()}</div>
     if (n.kind === 'section') return (
       <div key={n.key}>
-        <div className="flex items-center px-3 pb-1 pt-3">
-          <button type="button" onClick={() => flip(n)} aria-expanded={!!shut} className="flex items-center gap-1 text-[11px] font-medium text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-            {n.key === 'section:archive' && <Ph name="archive" className="size-3" />}{SECTION[n.key]()}{n.count != null && ` · ${n.count}`}
+        <div className="mx-1.5 mt-1 flex items-center gap-1.5 pe-1.5" style={{ paddingInlineStart: 2 }}>
+          <Caret open={!!shut} onFlip={() => flip(n)} />
+          <button type="button" onClick={() => flip(n)} className="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-start text-[11px] font-medium text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300">
+            <Ph name="squaresFour" className="size-3.5" /><span className="truncate">{SECTION[n.key]()}</span>{n.count != null && ` · ${n.count}`}
           </button>
+          {nodes[0] === n && <FoldAll />}
         </div>
-        {kids()}
+        <Collapse open={!!shut}>{n.children.map(c => draw(c, inside))}</Collapse>
       </div>
     )
-    if (n.kind === 'option') {
-      const letter = n.route!.split('/')[1], num = numberOf(letter)
-      const states = desk ? (input.protos.find(p => p.id === n.route!.split('/')[0])?.states.filter(s => !s.only?.length || s.only.includes(letter)).length ?? 0) : 0
-      return (
-        <Row key={n.key} id={n.key} depth={depth} on={lit} onClick={() => api.go(n.route!)} mv={n.route}
-          icon={<span className={'grid size-4 shrink-0 place-items-center rounded text-[10px] font-semibold tabular-nums ' + (n.picked ? 'bg-emerald-500 text-white' : 'bg-zinc-900/[.06] text-zinc-500 dark:bg-white/10')}>{num}</span>}
-          label={<span className="flex min-w-0 items-center gap-1"><span dir="auto" className="truncate">{n.label}</span>{input.protos.find(p => p.id === n.route!.split('/')[0])?.favorites.includes(n.route!.split('/')[1]) && <Ph name="starFill" className="size-3 shrink-0 text-amber-400" />}</span>}
-          end={<>{n.became ? <span className="shrink-0 truncate text-[11px] text-indigo-500" dir="auto">{t('became {name}', { name: n.became })}</span>
-            : n.picked ? <span className="shrink-0 text-[11px] text-emerald-600 dark:text-emerald-400">{t('Picked')}</span> : null}
-            {states > 0 && <span data-tree-states={states} title={tn(states, '{n} state', '{n} states')} className="shrink-0 text-[11px] tabular-nums text-zinc-400">{states}</span>}</>} />
-      )
-    }
+    if (n.kind === 'option') return option(n, n.picked ? 'picked' : 'candidate')
     const picked = pickedOf(n)
     const comments = input.counts[n.route!.split('/')[0]] ?? 0
     const parent = n.kind === 'exploration' && n.on ? n : null
-    const block = () => (
-      <>
-        <Row id={n.key} depth={depth} on={lit} open={shut} onCaret={() => flip(n)} mv={n.route}
-          /* An exploration's name goes to its own page (/slug), its card open in the gallery; a screen's opens it. */
-          onClick={() => { if (!shut) flip(n); api.go(n.kind === 'exploration' ? n.route!.split('/')[0] : n.route!) }}
-          icon={n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" /> : <Ph name="shuffle" className={'size-3.5 ' + (n.state === 'waits' ? 'text-zinc-300' : 'text-violet-500')} />}
-          label={<span className={n.state === 'waits' ? 'text-zinc-400' : ''}><span dir="auto">{n.label}</span>{parent && <span className="text-[11px] text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
-          end={<span className="flex shrink-0 items-center gap-1.5">
-            {n.standIn && <span title={t('#1 stands in until one is picked')} className="rounded bg-zinc-900/[.05] px-1 text-[10px] text-zinc-500 dark:bg-white/10">{t('not picked')}</span>}
-            {comments > 0 && <span title={t('Open comments')} className="rounded-full bg-zinc-900/[.06] px-1.5 text-[10px] font-medium tabular-nums text-zinc-600 dark:bg-white/10 dark:text-zinc-300">{comments}</span>}
-            {n.state && !(n.kind === 'screen' && n.state === 'open') && (n.kind === 'exploration' && picked
-              ? /* The pick's mark opens the pick. */ <button type="button" data-tree-picked={picked} onClick={() => api.go(picked)} title={t('Open #{n}, the pick', { n: numberOf(picked.split('/')[1]) })} aria-label={t('Open #{n}, the pick', { n: numberOf(picked.split('/')[1]) })}
-                  className="-mx-1 rounded-md px-1 py-0.5 hover:bg-zinc-900/[.06] dark:hover:bg-white/10"><Mark state={n.state} picked={numberOf(picked.split('/')[1])} /></button>
-              : <Mark state={n.state} picked={picked ? numberOf(picked.split('/')[1]) : undefined} />)}
-          </span>} />
-        {shut && n.state === 'stale' && <StaleNote n={n} protos={input.protos} depth={depth} />}
-        {shut ? n.children.map(c => draw(c, depth + 1, inside || windowed)) : null}
-      </>
-    )
+    const options = n.children.filter(c => c.kind === 'option'), below = n.children.filter(c => c.kind !== 'option')
+    const winner = options.find(c => c.picked), passed = options.filter(c => !c.picked)
+    const title = <span dir="auto">{n.label}</span>
+    const working = !!input.workSlug && (n.route!.split('/')[0] === input.workSlug || (!shut && JSON.stringify(n).includes(`"route":"${input.workSlug}/`)))
+    const pulse = working && <span title={t('The agent is working on this')} data-tree-working className="size-1.5 shrink-0 animate-pulse rounded-full bg-emerald-500" />
+    const comment = comments > 0 && <span title={t('Open comments')} className="flex shrink-0 items-center gap-0.5 text-[11px] tabular-nums text-zinc-500 dark:text-zinc-300"><Ph name="chatCircle" className="size-3.5" />{comments}</span>
+    const icon = n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" /> : <Ph name="shuffle" className={'size-3.5 ' + (n.state === 'waits' ? 'text-zinc-300' : n.state === 'open' ? 'text-amber-500' : 'text-violet-500')} />
+    const page = () => api.go(n.kind === 'exploration' ? n.route!.split('/')[0] : n.route!)
+    const block = () => {
+      // Decided: one block, its name above its winner. Folded it says what it holds; open, what was
+      // built on it comes first and the options passed on stay behind one more row.
+      if (winner && filter !== 'favs') {
+        const onIt = winner.route === input.place || lit, hidden = !shut && !onIt && holdsPlace(n)
+        return (
+          <>
+            <div data-tree-decided className={'mx-1.5 rounded-lg ' + (onIt ? LIT : HOVER)}>
+              <Row flat id={n.key} depth={0} on={lit} open={shut} onCaret={() => flip(n)} onClick={page} strong={!parent && !!below.length} medium={!parent && !below.length} icon={icon}
+                label={<span className={parent ? 'font-medium dark:text-zinc-200' : ''}>{title}{parent && <span className="text-[11px] font-normal text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
+                end={<span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-zinc-400">{pulse}{comment}{hidden && <Here />}
+                  {!shut && !!below.length && <span title={tn(below.length, '{n} exploration built on this', '{n} explorations built on this')} className="flex items-center gap-0.5"><Ph name="gitBranch" className="size-3.5" />{below.length}</span>}
+                  {!shut && !!passed.length && <span title={tn(passed.length, '{n} more option', '{n} more options')} className="flex items-center gap-0.5"><Ph name="rows" className="size-3.5" />{passed.length}</span>}</span>} />
+              <Row flat slim id={winner.key} depth={0} on={winner.route === input.place} onClick={() => api.go(winner.route!)} mv={winner.route}
+                icon={<Mark state="done" picked={numberOf(winner.route!.split('/')[1])} />}
+                label={<span className="flex min-w-0 items-center gap-1 text-[12px] text-zinc-500 dark:text-zinc-400"><span dir="auto" className="truncate">{winner.label}</span>{favOf(winner.route!) && <Ph name="starFill" className="size-3 shrink-0 text-amber-400" />}</span>}
+                end={optionEnd(winner)} />
+            </div>
+            <Collapse open={!!shut}><Inside>
+              {below.map(c => draw(c, inside || windowed))}
+              {below.length > 0 && passed.length > 0 ? <PassedRows n={n} hold={passed.some(c => c.route === input.place)}>{passed.map(c => option(c, 'passed'))}</PassedRows> : passed.map(c => option(c, 'passed'))}
+            </Inside></Collapse>
+          </>
+        )
+      }
+      const fresh = passed.filter(c => isNew(c.route!)).length
+      return (
+        <>
+          <Row id={n.key} depth={0} on={lit} open={shut} onCaret={() => flip(n)} mv={n.route}
+            /* An exploration's name goes to its own page (/slug), its card open in the gallery; a screen's opens it. */
+            onClick={() => { if (!shut) flip(n); page() }}
+            icon={icon}
+            label={<span className={n.state === 'waits' ? 'text-zinc-400' : n.state === 'open' ? 'font-medium' : ''}>{title}{parent && <span className="text-[11px] font-normal text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
+            end={<span className="flex shrink-0 items-center gap-1.5">
+              {pulse}
+              {n.standIn && <span title={t('#1 stands in until one is picked')} className="rounded bg-zinc-900/[.05] px-1 text-[10px] text-zinc-500 dark:bg-white/10">{t('not picked')}</span>}
+              {comment}
+              {!shut && !lit && holdsPlace(n) && <Here />}
+              {n.state === 'open' && n.kind === 'exploration' && !comments && <span data-mark="open" title={t('Waiting for your pick')} className="shrink-0 text-[11px] text-amber-600 dark:text-amber-400">{fresh ? tn(fresh, '{n} new', '{n} new') : t('Waiting for you')}</span>}
+              {n.state && n.state !== 'open' && <Mark state={n.state} picked={picked ? numberOf(picked.split('/')[1]) : undefined} />}
+            </span>} />
+          <Collapse open={!!shut}><Inside>
+            {n.state === 'stale' && <StaleNote n={n} protos={input.protos} />}
+            {options.map(c => option(c, c.picked ? 'picked' : 'candidate'))}
+            {below.map(c => draw(c, inside || windowed))}
+          </Inside></Collapse>
+        </>
+      )
+    }
     return windowed && !inside
       ? <Near key={n.key} estimate={shownRows(n) * ROW_H} scroller={() => list.current} force={holdsPlace(n)} start={(firstRows -= shownRows(n)) + shownRows(n) > 0}>{block}</Near>
       : <div key={n.key}>{block()}</div>
+  }
+  /** A shelf row: one quiet line, its pick or that none was made. What was built on it opens under it. */
+  const shelved = (n: TreeNode): React.ReactNode => {
+    const options = n.children.filter(c => c.kind === 'option'), below = n.children.filter(c => c.kind !== 'option')
+    const winner = options.find(c => c.picked), here = !!n.route && n.route.split('/')[0] === slug
+    const shut = !!isOpen(n)
+    return (
+      <div key={n.key}>
+        <Row id={n.key} depth={0} on={here} open={below.length ? shut : undefined} onCaret={() => flip(n)} onClick={() => api.go(n.route!)} mv={n.route}
+          label={<span dir="auto" className="text-[12px]">{n.label}</span>}
+          end={winner ? <span className="opacity-60"><Mark state="done" picked={numberOf(winner.route!.split('/')[1])} /></span>
+            : <span className="flex shrink-0 items-center gap-1 text-[11px] text-zinc-400 dark:text-zinc-600"><Ph name="eyeSlash" className="size-3.5" />{t('Not picked')}</span>} />
+        {below.length > 0 && <Collapse open={shut}><Inside>{below.map(shelved)}</Inside></Collapse>}
+      </div>
+    )
   }
 
   return (
@@ -219,9 +361,10 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
         })}
       </div>}
       <div ref={list} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3 pt-1 text-[13px]">
-        {nodes.length ? nodes.map(n => draw(n, 0))
+        {nodes.length ? nodes.map(n => draw(n))
           : <p className="px-4 py-6 text-center text-[12px] text-zinc-400">{filter === 'open' ? t('Nothing waits for you') : filter === 'mine' ? t('Nothing from this conversation yet') : filter === 'favs' ? t('No favorites yet') : t('No prototypes yet')}</p>}
       </div>
+      {(settled.length > 0 || archive) && <Shelf nodes={settled} archive={archive} slug={slug} draw={shelved} go={api.go} />}
       {desk && input.dock && <Dock dock={input.dock} />}
       <div className="flex h-10 shrink-0 items-center gap-2 border-t border-black/[.06] px-3 text-[12px] text-zinc-500 dark:border-white/10">
         <span className={'size-2 rounded-full ' + (input.up ? 'bg-emerald-500' : 'bg-zinc-400')} /><span className="truncate">{input.live}</span>
@@ -230,12 +373,26 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
   )
 }
 
+/** The options passed on, behind one row, under what was built on a decided exploration. */
+function PassedRows({ n, hold, children }: { n: TreeNode; hold: boolean; children: React.ReactNode[] }) {
+  const [more, setMore] = useState(false), open = more || hold
+  return (
+    <>
+      <button type="button" data-tree-more={n.key} aria-expanded={open} onClick={() => setMore(!more)} className="mx-1.5 flex h-8 w-[calc(100%-12px)] items-center gap-1.5 rounded-lg px-2 text-start text-[12px] text-zinc-400 hover:bg-zinc-900/[.04] dark:text-zinc-500 dark:hover:bg-white/[.06] [@media(pointer:coarse)]:h-10">
+        <span className={'grid place-items-center transition-transform duration-200 ease-out motion-reduce:transition-none ' + (open ? '' : 'ltr:-rotate-90 rtl:rotate-90')}><Ph name="caretDown" className="size-2.5" /></span>
+        <Ph name="rows" className="size-3.5" />{open ? t('Hide') : tn(children.length, '{n} more option', '{n} more options')}
+      </button>
+      <Collapse open={open}>{children}</Collapse>
+    </>
+  )
+}
+
 /** A stale exploration, open: which option it was built on and which one is picked now. */
-function StaleNote({ n, protos, depth }: { n: TreeNode; protos: Proto[]; depth: number }) {
+function StaleNote({ n, protos }: { n: TreeNode; protos: Proto[] }) {
   const p = protos.find(x => `exp:${x.id}` === n.key), parent = p?.from && protos.find(x => x.id === p.from!.proto)
   if (!p?.from || !parent?.picked) return null
   return (
-    <div className="mb-1 rounded-lg bg-rose-50 px-2 py-1.5 text-[12px] text-rose-800 dark:bg-rose-950/50 dark:text-rose-200" style={{ marginInlineStart: 8 + (depth + 1) * 8, marginInlineEnd: 8 }}>
+    <div className="mb-1 rounded-lg bg-rose-50 px-2 py-1.5 text-[12px] text-rose-800 dark:bg-rose-950/50 dark:text-rose-200" style={{ marginInlineStart: 8, marginInlineEnd: 8 }}>
       {t('Built on #{was}, and #{now} is picked now', { was: numberOf(p.from.variant), now: numberOf(parent.picked) })}
     </div>
   )

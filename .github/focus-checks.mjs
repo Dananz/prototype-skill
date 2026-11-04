@@ -82,8 +82,8 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-act="side:1"]').click()`)
     await until(page, `!!document.querySelector('[data-tree-dock]') && !document.querySelector('[data-strip] [data-shoot="strip-states"]')`, 'with the sidebar back, the states should return to its foot')
     await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
-    await until(page, `!!document.querySelector('[data-tree-row="opt:fhome/A"] [data-act="vm:fhome:A"]')`, 'a tree option row should have its ⋯')
-    await page.run(`document.querySelector('[data-tree-row="opt:fhome/A"] [data-act="vm:fhome:A"]').click()`)
+    await until(page, `!!document.querySelector('[data-tree-row="opt:fhome/B"] [data-act="vm:fhome:B"]')`, 'a tree option row should have its ⋯')
+    await page.run(`document.querySelector('[data-tree-row="opt:fhome/B"] [data-act="vm:fhome:B"]').click()`)
     await until(page, `[...document.querySelectorAll('[data-pop], [role=menu]')].some(m => /Favorite|Share link/.test(m.textContent))`, 'the ⋯ should open the variant\'s menu (favorite, tools, share)')
     await page.run(`dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
     // Over the gallery the strip stays, the screen's tools off, and there is nothing to zoom.

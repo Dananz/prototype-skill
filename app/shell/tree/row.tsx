@@ -25,10 +25,19 @@ import spreadOut from '@phosphor-icons/core/assets/regular/arrows-out-line-horiz
 import plus from '@phosphor-icons/core/assets/bold/plus-bold.svg?raw'
 import minus from '@phosphor-icons/core/assets/bold/minus-bold.svg?raw'
 import chatCircle from '@phosphor-icons/core/assets/regular/chat-circle.svg?raw'
-import { rtl, t } from '../i18n'
+import eye from '@phosphor-icons/core/assets/regular/eye.svg?raw'
+import eyeSlash from '@phosphor-icons/core/assets/regular/eye-slash.svg?raw'
+import mapPin from '@phosphor-icons/core/assets/fill/map-pin-fill.svg?raw'
+import gitBranch from '@phosphor-icons/core/assets/regular/git-branch.svg?raw'
+import rows from '@phosphor-icons/core/assets/regular/rows.svg?raw'
+import tray from '@phosphor-icons/core/assets/regular/tray.svg?raw'
+import foldAll from '@phosphor-icons/core/assets/regular/arrows-in-line-vertical.svg?raw'
+import openAll from '@phosphor-icons/core/assets/regular/arrows-out-line-vertical.svg?raw'
+import { useEffect, useState } from 'react'
+import { t } from '../i18n'
 import type { ExpState } from './model'
 
-const ICONS = { browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle, x, dots, starFill, plus, minus, foldIn, spreadOut, chatCircle }
+const ICONS = { browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle, x, dots, starFill, plus, minus, foldIn, spreadOut, chatCircle, eye, eyeSlash, mapPin, gitBranch, rows, tray, foldAll, openAll }
 export type PhName = keyof typeof ICONS
 /** A Phosphor icon, drawn from @phosphor-icons/core like the rest of the shell's (ui.ts ic()). */
 export function Ph({ name, className = 'size-4' }: { name: PhName; className?: string }) {
@@ -51,8 +60,54 @@ export function Mark({ state, picked }: { state: ExpState; picked?: number }) {
   return <span data-mark={state} title={label} aria-label={label} className="grid size-4 shrink-0 place-items-center"><Ph name={icon} className={cls} /></span>
 }
 
-export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onClick, strong, medium, mv }: {
+/** The one fold control of the tree: it turns instead of swapping, and the arrow keys work it. */
+export function Caret({ open, onFlip, label }: { open: boolean; onFlip(): void; label?: string }) {
+  const keys = (e: React.KeyboardEvent) => {
+    const rtlNow = getComputedStyle(e.currentTarget).direction === 'rtl'
+    if (e.key === (rtlNow ? 'ArrowLeft' : 'ArrowRight') && !open) { e.preventDefault(); onFlip() }
+    if (e.key === (rtlNow ? 'ArrowRight' : 'ArrowLeft') && open) { e.preventDefault(); onFlip() }
+  }
+  return (
+    <button type="button" aria-label={label ?? (open ? t('Collapse') : t('Expand'))} aria-expanded={open} onClick={onFlip} onKeyDown={keys}
+      className="grid size-7 shrink-0 place-items-center rounded-md text-zinc-400 hover:bg-zinc-900/[.06] hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-white/10 dark:hover:text-zinc-200 [@media(pointer:coarse)]:size-9">
+      <span className={'grid place-items-center transition-transform duration-200 ease-out motion-reduce:transition-none ' + (open ? '' : 'ltr:-rotate-90 rtl:rotate-90')}><Ph name="caretDown" className="size-2.5" /></span>
+    </button>
+  )
+}
+
+/** Height and fade together. What is folded leaves the page once it has closed, so a long tree stays light. */
+export function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
+  const [held, setHeld] = useState(open), [full, setFull] = useState(open)
+  useEffect(() => {
+    if (open) {
+      setHeld(true)
+      let second = 0
+      const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => setFull(true)) })
+      return () => { cancelAnimationFrame(first); cancelAnimationFrame(second) }
+    }
+    setFull(false)
+    const out = setTimeout(() => setHeld(false), 220)
+    return () => clearTimeout(out)
+  }, [open])
+  if (!held && !open) return null
+  return (
+    <div inert={!open} className={'grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ' + (full ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')}>
+      <div className="min-h-0 overflow-hidden">{children}</div>
+    </div>
+  )
+}
+
+/** What hangs under a row: a thin line from its caret, so a level reads at a glance. */
+export function Inside({ children }: { children: ReactNode }) {
+  return <div className="ms-[21px] border-s border-black/[.06] dark:border-white/[.08] [@media(pointer:coarse)]:ms-[25px]">{children}</div>
+}
+
+export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onClick, strong, medium, mv, flat, slim }: {
   id: string; depth: number; label: ReactNode; icon?: ReactNode; end?: ReactNode; count?: number; on?: boolean
+  /** Part of a block that wears the colour and the hover itself. */
+  flat?: boolean
+  /** The second line of a decided row. */
+  slim?: boolean
   /** A variant's route (slug/letter): the row has its options, on right-click (data-mv) and a ⋯ (the shell's vm). */
   mv?: string
   /** undefined: no caret (a leaf). */
@@ -60,14 +115,11 @@ export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onC
 }) {
   return (
     <div data-tree-row={id} data-on={on ? 'true' : undefined} data-mv={mv ? mv.replace('/', ':') : undefined}
-      className={'group mx-1.5 flex h-8 items-center gap-1.5 rounded-lg pe-1.5 ' + (on ? 'bg-sky-50 text-sky-900 dark:bg-sky-950/60 dark:text-sky-100' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]')}
+      className={'group flex items-center gap-1.5 rounded-lg pe-1.5 ' + (slim ? 'h-6! [@media(pointer:coarse)]:h-8! ' : 'h-8 [@media(pointer:coarse)]:h-10 ') + (flat ? '' : 'mx-1.5 ' + (on ? 'bg-sky-50 text-sky-900 dark:bg-sky-950/60 dark:text-sky-100' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]'))}
       style={{ paddingInlineStart: 2 + depth * 8 }}>
-      {open != null
-        ? <button type="button" aria-label={open ? t('Collapse') : t('Expand')} aria-expanded={open} onClick={onCaret}
-            className="grid size-5 shrink-0 place-items-center rounded text-zinc-400 hover:bg-zinc-900/[.06] dark:hover:bg-white/10">
-            <Ph name={open ? 'caretDown' : 'caretRight'} className={'size-2.5 ' + (!open && rtl ? '-scale-x-100' : '')} />
-          </button>
-        : <span className="w-5 shrink-0" />}
+      {open != null && onCaret
+        ? <Caret open={open} onFlip={onCaret} />
+        : <span className="w-7 shrink-0 [@media(pointer:coarse)]:w-9" />}
       <button type="button" onClick={onClick} className={'flex h-full min-w-0 flex-1 items-center gap-1.5 text-start ' + (strong ? 'font-semibold' : medium ? 'font-medium' : '')}>
         {icon}<span className="truncate">{label}</span>{count != null && <span className="text-xs font-normal text-zinc-400 tabular-nums">{count}</span>}
       </button>
