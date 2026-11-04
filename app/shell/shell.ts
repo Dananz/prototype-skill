@@ -1989,6 +1989,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     `<button data-act="${o.act}" data-shoot="${o.shoot}" aria-pressed="${!!o.on}" class="flex h-11 w-full items-center gap-2 rounded-[18px] px-3 text-start hover:bg-zinc-900/5 active:bg-zinc-900/5 dark:hover:bg-white/10 dark:active:bg-white/10 ${o.on ? 'bg-zinc-900/[.05] dark:bg-white/[.08]' : ''}">
       <span class="grid size-6 shrink-0 place-items-center rounded-full ${o.on ? 'bg-proto-primary text-proto-primary-fg' : o.tint ?? 'text-zinc-600 dark:text-white/70'}">${ic(o.icon, 'size-[18px]')}</span>
       <span class="min-w-0 flex-1 truncate font-medium">${o.label}</span>${o.detail ? `<span class="shrink-0 text-xs tabular-nums text-zinc-400 dark:text-white/45">${o.detail}</span>` : ''}</button>`
+  const MENU_LINE = '<div class="mx-3 my-1 h-px bg-black/[.06] dark:bg-white/10"></div>'
+  const menuTool = (o: { act: string; shoot: string; icon: string; label: string }) =>
+    `<button data-act="${o.act}" data-shoot="${o.shoot}" aria-label="${o.label}" title="${o.label}" class="grid h-10 min-w-0 flex-1 place-items-center rounded-[18px] bg-zinc-900/[.05] text-zinc-600 hover:bg-zinc-900/10 active:bg-zinc-900/10 dark:bg-white/[.06] dark:text-white/70 dark:hover:bg-white/10 dark:active:bg-white/10">${ic(o.icon, 'size-[18px]')}</button>`
   const menuSegs = (label: string, segs: string, after = '') =>
     `<div class="flex items-center gap-1 ps-3"><span class="w-14 shrink-0 text-xs text-zinc-500 dark:text-white/50">${label}</span><div class="flex min-w-0 flex-1 gap-0.5 rounded-full bg-zinc-900/[.05] p-0.5 dark:bg-white/[.06]">${segs}</div>${after}</div>`
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
@@ -1996,28 +1999,29 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let cardKind: 'menu' | 'layout' = 'menu'
   function cardHtml() {
     const p = cur()!, c = copyCounts(), n = tryCount(hintList())
+    // Groups, with a line only between the ones that have rows: most rows depend on the design.
     const rows = cardKind === 'layout' ? '' : [
-      // With the project tree on, the bar has no Settings: the session and Settings head the menu.
-      treeOn && !framed ? `<button data-act="settings:session" data-shoot="menu-session" class="flex h-11 w-full items-center gap-2 rounded-[18px] px-3 text-start hover:bg-zinc-900/5 active:bg-zinc-900/5 dark:hover:bg-white/10 dark:active:bg-white/10"><span class="relative grid size-6 shrink-0 place-items-center rounded-md bg-zinc-900 text-[11px] font-bold text-white dark:bg-white dark:text-zinc-900">${esc((session.name.trim()[0] || 'P').toUpperCase())}<span class="absolute -end-1 -top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-800">${pulse('size-2', st.live && !st.stopped)}</span></span><span dir="auto" class="min-w-0 flex-1 truncate font-medium">${esc(session.name)}</span><span class="shrink-0 text-xs text-zinc-400 dark:text-white/45">${t('Session')}</span></button>` : '',
-      treeOn && !framed ? menuRow({ act: 'settings', shoot: 'menu-settings', icon: 'settings', label: t('Settings') }) : '',
-      treeOn && !framed ? '<div class="mx-3 my-1 h-px bg-black/[.06] dark:bg-white/10"></div>' : '',
-      // With the project tree on: the gallery and Jump come first (the phone's way around the project).
-      treeOn && !framed ? menuRow({ act: 'lobby:session', shoot: 'menu-gallery', icon: 'grid', label: t('Gallery') }) : '',
-      treeOn && !framed ? menuRow({ act: 'jump', shoot: 'menu-jump', icon: 'search', label: t('Jump to') }) : '',
-      menuRow({ act: 'lobby:proto', shoot: 'all-variants', icon: 'grid', label: t('All variants'), detail: String(visible(p).length), on: st.place.view === 'proto' }),
-      !framed ? menuRow({ act: 'share-link', shoot: 'share-link', icon: 'link-simple', label: t('Share link…') }) : '',
-      !framed ? menuRow({ act: 'share', shoot: 'share', icon: 'share', label: t('Share screenshots') }) : '',
-      c.lines ? menuRow({ act: 'copymode', shoot: 'copy-mode', icon: 'text', label: t('Copy options'), detail: tn(c.lines, '{n} line', '{n} lines') }) : '',
-      n ? menuRow({ act: 'try', shoot: 'try-it', icon: 'key', tint: 'text-amber-600 dark:text-amber-300', label: t('Try it'), detail: t('{n} to try', { n }) }) : '',
-      hasMotion() ? menuRow({ act: 'motion', shoot: 'motion', icon: 'curves', label: st.motion ? t('Hide motion') : t('Motion'), detail: st.motion ? '' : t('Timeline'), on: st.motion }) : '',
-      canReplay() ? menuRow({ act: 'replay', shoot: 'replay', icon: 'replay', label: t('Replay') }) : '',
-      st.place.view === 'variant' ? menuRow({ act: 'focus', shoot: 'focus', icon: 'grow', label: t('Focus mode') }) : '',
+      // With the project tree on, the bar has no Settings: the session's row heads the menu and opens them.
+      [treeOn && !framed ? `<button data-act="settings" data-shoot="menu-session" aria-label="${esc(session.name)}, ${t('Settings')}" class="flex h-11 w-full items-center gap-2 rounded-[18px] px-3 text-start hover:bg-zinc-900/5 active:bg-zinc-900/5 dark:hover:bg-white/10 dark:active:bg-white/10"><span class="relative grid size-6 shrink-0 place-items-center rounded-md bg-zinc-900 text-[11px] font-bold text-white dark:bg-white dark:text-zinc-900">${esc((session.name.trim()[0] || 'P').toUpperCase())}<span class="absolute -end-1 -top-1 flex rounded-full ring-2 ring-white dark:ring-zinc-800">${pulse('size-2', st.live && !st.stopped)}</span></span><span dir="auto" class="min-w-0 flex-1 truncate font-medium">${esc(session.name)}</span><span class="grid size-6 shrink-0 place-items-center text-zinc-600 dark:text-white/70">${ic('settings', 'size-[18px]')}</span></button>` : ''],
+      // Getting around and what this design holds. Jump is the phone's way around the project with the tree on.
+      [treeOn && !framed ? menuRow({ act: 'jump', shoot: 'menu-jump', icon: 'search', label: t('Jump to') }) : '',
+        menuRow({ act: 'lobby:proto', shoot: 'all-variants', icon: 'grid', label: t('All variants'), detail: String(visible(p).length), on: st.place.view === 'proto' }),
+        c.lines ? menuRow({ act: 'copymode', shoot: 'copy-mode', icon: 'text', label: t('Copy options'), detail: tn(c.lines, '{n} line', '{n} lines') }) : '',
+        n ? menuRow({ act: 'try', shoot: 'try-it', icon: 'key', tint: 'text-amber-600 dark:text-amber-300', label: t('Try it'), detail: t('{n} to try', { n }) }) : '',
+        hasMotion() ? menuRow({ act: 'motion', shoot: 'motion', icon: 'curves', label: st.motion ? t('Hide motion') : t('Motion'), detail: st.motion ? '' : t('Timeline'), on: st.motion }) : ''],
+      [!framed ? menuRow({ act: 'share-link', shoot: 'share-link', icon: 'link-simple', label: t('Share link') }) : '',
+        !framed ? menuRow({ act: 'share', shoot: 'share', icon: 'share', label: t('Share screenshots') }) : ''],
+    ].map(group => group.join('')).filter(Boolean).join(MENU_LINE)
+    // Replay and Focus mode are icon buttons side by side, above the layout.
+    const tools = cardKind === 'layout' ? '' : [
+      canReplay() ? menuTool({ act: 'replay', shoot: 'replay', icon: 'replay', label: t('Replay') }) : '',
+      st.place.view === 'variant' ? menuTool({ act: 'focus', shoot: 'focus', icon: 'grow', label: t('Focus mode') }) : '',
     ].join('')
     const layout = viewOk() ? menuSegs(t('Layout'), ORDER.map(s => `<button data-act="size:${s}:card" data-shoot="size-${s}" aria-label="${SIZES[s].name}" aria-pressed="${shownSize() === s}" class="grid place-items-center ${DARK_SEG(shownSize() === s)}">${ic(sizeIcon(s, s === 'tablet' && st.view.land), 'size-[18px]')}</button>`).join(''),
       viewOn() && st.view.size === 'tablet' ? `<button data-act="turn" data-shoot="turn" aria-label="${st.view.land ? t('Turn upright') : t('Turn on its side')}" class="grid size-10 shrink-0 place-items-center rounded-full text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white">${ic('rotate', 'size-5')}</button>` : '') : ''
     const scale = p.kind === 'phone' || frameOn() ? menuSegs(frameOn() ? t('Zoom') : t('Scale'), SCALES.map(s => `<button data-act="scale:${s}" data-scale-seg="${s}" data-dark aria-pressed="${scaleNow() === s}" class="${DARK_SEG(scaleNow() === s)}">${s ? s + '%' : t('Fit')}</button>`).join('')) : ''
     return `<div data-scale-backdrop class="fixed inset-0 z-20"></div>
-      <div data-card data-menu-card role="dialog" aria-label="${cardKind === 'layout' ? t('Layout') : t('Menu')}" class="${CARD_CLS}" style="transform-origin:0 0">${rows ? `<div class="space-y-px">${rows}</div>` : ''}${layout}${scale}</div>`
+      <div data-card data-menu-card role="dialog" aria-label="${cardKind === 'layout' ? t('Layout') : t('Menu')}" class="${CARD_CLS}" style="transform-origin:0 0">${rows ? `<div class="space-y-px">${rows}</div>` : ''}${rows && (tools || layout || scale) ? MENU_LINE : ''}${tools ? `<div class="flex gap-1">${tools}</div>` : ''}${layout}${scale}</div>`
   }
   let card: { el: HTMLElement; phase: 'enter' | 'open' | 'exit'; anims: Animation[] } | null = null
   /** The menu's button: white while its card is open (dark on the light bar). */
