@@ -841,9 +841,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // A screen's tool, off over the gallery: the same place, a word on why.
     const off = (shoot: string, icon: string, label: string) => `<button disabled data-shoot="${shoot}" aria-label="${label}" title="${label} · ${t('in a screen')}" class="${IB} opacity-30">${ic(icon)}</button>`
     const tourBtn = !inScreen ? off('strip-tour', 'signpost', t('Tour')) : w?.flow && w.flow.routes.length > 1 ? tool(tour ? 'tour:end' : 'tour', 'strip-tour', 'signpost', tour ? t('End the tour') : t('Walk this flow from its first screen'), '', !!tour) : ''
-    // Decide: the bar's button is a dot and a word; upright it is the pick's check, filled once picked.
+    // Decide: the one tool here that says what it does, its word under the pick's check, tinted as the
+    // menu's Pick is, green once picked. Off over the gallery it holds the same place.
     const d = decideOf()
-    const decide = !inScreen ? off('strip-decide', 'pick', t('Decide')) : d ? `<button data-act="open:decide" data-decide-btn data-shoot="strip-decide" aria-haspopup="menu" aria-expanded="${st.open === 'decide'}" aria-label="${d.picked ? t('Picked') : t('Decide')}" title="${d.picked ? t('Picked') : t('Decide')} · P" class="${IB} ${st.open === 'decide' ? ON : ''} ${d.picked ? '!text-emerald-600 dark:!text-emerald-400' : ''}">${ic(d.picked ? 'picked' : 'pick')}</button>` : ''
+    const decideWord = (word: string) => `<span data-keep class="text-[10px] font-medium leading-none">${word}</span>`
+    const decideShape = '!h-12 !w-10 flex-col !gap-1'
+    const decideSay = d?.picked ? t('Picked {label} · design actions, Try it and copy options', { label: d.label }) : t('Design actions: pick, more like this, Try it and copy options')
+    const decide = !inScreen ? `<button disabled data-strip-word data-shoot="strip-decide" aria-label="${t('Decide')}" title="${t('Decide')} · ${t('in a screen')}" class="${IB} ${decideShape} opacity-30">${ic('pick')}${decideWord(t('Decide'))}</button>`
+      : d ? `<button data-act="open:decide" data-decide-btn data-strip-word data-shoot="strip-decide" aria-haspopup="menu" aria-expanded="${st.open === 'decide'}" aria-label="${d.picked ? t('Picked') : t('Decide')}" title="${decideSay} · P" class="${IB} ${decideShape} ${d.picked ? '!bg-emerald-500/10 !text-emerald-700 hover:!bg-emerald-500/15 dark:!text-emerald-300' : '!bg-proto-primary-soft !text-proto-primary-soft-fg hover:!bg-proto-primary-soft'} ${st.open === 'decide' ? `ring-1 ring-inset ${d.picked ? 'ring-emerald-500/40' : 'ring-proto-primary-ring'}` : ''}">${ic(d.picked ? 'picked' : 'pick')}${decideWord(d.picked ? t('Picked') : t('Decide'))}</button>` : ''
     // Move is the page as it is (clicks reach the design); Comment picks what to comment on (C).
     const hands = inScreen && commentHost()
       ? [tool(picking ? 'comment:toggle' : 'noop', 'strip-move', picking ? 'tap' : 'tap-on', t('Move'), 'Esc', !picking), tool('comment:toggle', 'strip-comment', picking ? 'select-on' : 'select', t('Comment'), 'C', picking)]
@@ -867,8 +872,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // The bar's own buttons drawn upright: their words, carets and counts' text stay out (only the
     // strip's own buttons, never the rows of a menu opening beside it).
     strip.innerHTML = `<div data-strip-tools class="flex flex-col items-center gap-0.5 rounded-2xl bg-white p-1 shadow-[0_8px_24px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:ring-white/10
-      [&>div.flex]:flex-col [&>button>span:not(.absolute)]:!hidden [&>div>button>span:not(.absolute):not([data-keep])]:!hidden [&_[data-strip-zoom]>svg]:!hidden [&_[data-strip-zoom]]:!text-[10px] [&>button_kbd]:!hidden [&>div>button_kbd]:!hidden [&>button>svg+svg]:!hidden [&>div>button>svg+svg]:!hidden
-      [&>button]:!size-9 [&>button]:!px-0 [&>button]:!rounded-xl [&>div>button]:!size-9 [&>div>button]:!px-0 [&>div>button]:!rounded-xl [&>div>span]:!hidden
+      [&>div.flex]:flex-col [&>button>span:not(.absolute):not([data-keep])]:!hidden [&>div>button>span:not(.absolute):not([data-keep])]:!hidden [&_[data-strip-zoom]>svg]:!hidden [&_[data-strip-zoom]]:!text-[10px] [&>button_kbd]:!hidden [&>div>button_kbd]:!hidden [&>button>svg+svg]:!hidden [&>div>button>svg+svg]:!hidden
+      [&>button:not([data-strip-word])]:!size-9 [&>button]:!px-0 [&>button]:!rounded-xl [&>div>button]:!size-9 [&>div>button]:!px-0 [&>div>button]:!rounded-xl [&>div>span]:!hidden
       [&_[data-pop]]:!top-0 [&_[data-pop]]:!end-auto [&_[data-pop]]:!start-[calc(100%+.75rem)]">${groups.join('<span class="my-1 h-px w-5 shrink-0 bg-zinc-900/10 dark:bg-white/10"></span>')}</div>`
   }
   /** A button of the chrome, in the bar or the strip: what a menu opens from. */
