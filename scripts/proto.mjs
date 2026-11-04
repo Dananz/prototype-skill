@@ -2046,7 +2046,7 @@ function printBatch(dir, b) {
     for (const img of c.images || []) console.log(`   image: ${join(inboxDir(dir), 'taken', b.id, img.file)}${img.name ? `  (${img.name})` : ''}`)
   }
   if (live.some(c => c.target && !c.action)) console.log(`\nSee one as the user saw it (their page size, the way to it opened, beside their pictures): proto shoot --pin ${b.id}/<n>`)
-  console.log(`\nReply to all at once: proto reply ${b.id} 1 "…" 2 "…" … --done   (or ${b.id}/<n> "…" for one, ${b.id} "…" for the batch)\n`)
+  console.log(`\nReply to all at once: proto reply ${b.id} 1 "…" 2 "…" … --done   (or ${b.id}/<n> "…" for one, ${b.id} "…" for the batch). Each reply: one line, at most 10 words, no values unless asked.\n`)
 }
 
 // proto intake set <file|->  |  proto intake [status]  |  proto intake clear

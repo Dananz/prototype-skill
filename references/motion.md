@@ -56,6 +56,6 @@ there.
 moment or a range of its take rather than an element: its `at:` is a time, `at: 0.35 s` or
 `at: 0.30–0.62 s`, with the take's length and the shoot that shows it. Run that shoot (`--at 350`,
 or `--frames 8 --at 300-620` for a range) and read it, change the motion, shoot it again to see the
-change landed, and reply with the new timing in numbers ("damping 0.75 now: the sheet overshoots
-4 px instead of 14 and settles by 0.50 s"). The page records the take again after your edit, and
+change landed, and reply in one short line, no numbers unless they asked ("Sheet overshoots less
+now."). The page records the take again after your edit, and
 the reply shows on the comment's point on the slider.
