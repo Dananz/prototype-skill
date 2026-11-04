@@ -57,6 +57,25 @@ export async function commentRtlChevronChecks({ proto, app, openPage, fail }) {
       if (seen !== `${closed},down`) fail(`rtl chevron: in ${lang} it should point ${closed}, then down when open; it points ${seen}`)
     }
   } finally { page.close() }
+
+  // The note a phone's Build opens: its Back chevron points the way back along the line, so right in Hebrew.
+  for (const [lang, back] of [['en', 'left'], ['he', 'right']]) {
+    const phone = await openPage(`${local}rtlchev/A?theme=dark&lang=${lang}`, { width: 390, height: 844, phone: true })
+    try {
+      const seen = await phone.run(`(async () => {
+        ${helpers}
+        ;(await until(() => document.querySelector('[data-pill-handle]'), 25000)).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+        const he = '${lang}' === 'he'
+        const build = await until(() => [...document.querySelectorAll('button')].find(b => b.textContent === (he ? 'בנה את זה' : 'Build it')))
+        if (!build) return 'no Build button in the sheet'
+        build.click()
+        const svg = await until(() => document.querySelector('button[aria-label="' + (he ? 'חזור' : 'Back') + '"] svg'))
+        if (!svg) return 'no Back chevron'
+        return svg.querySelector('path').getScreenCTM().a > 0 ? 'left' : 'right'
+      })()`)
+      if (seen !== back) fail(`rtl chevron: the phone note's Back in ${lang} should point ${back}; it says ${seen}`)
+    } finally { phone.close() }
+  }
   proto(['archive', 'rtlchev'])
   console.log('\nOK: a done comment\'s chevron points along the line in both directions, and down when open')
 }
