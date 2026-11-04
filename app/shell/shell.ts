@@ -2685,6 +2685,48 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
   })
 
+  // Up and down walk the open variant's states, as left and right walk its variants: At rest comes
+  // first and the walk wraps. On a state's row the focus walks too, and Home and End reach the ends.
+  let stateRowFocus: { scope: string; act: string } | null = null
+  const STATE_ROW = '[data-act^="pvs:"]'
+  // Roles that use the up and down arrows themselves, in a design or in the shell.
+  const OWN_ARROWS = '[role="radio"], [role="radiogroup"], [role="tab"], [role="tablist"], [role="tree"], [role="treeitem"], [role="grid"], [role="option"], [role="combobox"], [role="menuitem"], [role="spinbutton"]'
+  // The list is drawn anew for the state, so the focus lands once its row is the lit one.
+  function landStateFocus(frames = 30) {
+    requestAnimationFrame(() => {
+      if (!stateRowFocus) return
+      const el = document.querySelector<HTMLElement>(`${stateRowFocus.scope} [data-act="${CSS.escape(stateRowFocus.act)}"][aria-current="true"]`)
+      if (!el && frames) return landStateFocus(frames - 1)
+      stateRowFocus = null
+      el?.focus({ preventScroll: true })
+      el?.scrollIntoView({ block: 'nearest' })
+    })
+  }
+  function stateKey(e: KeyboardEvent, t: Element) {
+    const end = e.key === 'Home' || e.key === 'End'
+    if (e.shiftKey || e.defaultPrevented || !(end || e.key === 'ArrowDown' || e.key === 'ArrowUp')) return
+    // A press right after the last one counts from where that one went, not from where the page still is.
+    if (!atUrl(st.place)) follow()
+    const row = t.closest?.<HTMLElement>(STATE_ROW), p = cur(), pv = st.place.view === 'variant' ? st.place : null
+    if (!p || !pv || tour || (pv.tool && pv.tool !== 'compare') || comments.counts().picking) return
+    if (end && !row) return
+    // Outside a state's row, an open menu, the sidebar's tree and a control with arrows of its own keep them.
+    if (!row && (st.open || t.closest?.('[data-side], [data-tree-side], [data-drawer]') || t.closest?.(OWN_ARROWS))) return
+    const ids = ['', ...statesOf(p, pv.variant).map(s => s.id)], n = ids.length
+    if (n < 2) return
+    const i = Math.max(0, ids.indexOf(pv.state ?? ''))
+    const to = ids[e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n]
+    e.preventDefault()
+    // A key held down can press again before the row is back: the focus stays meant for the list.
+    const scope = row ? ['[data-pop]', '[data-tree-dock-list]'].find(x => row.closest(x)) ?? '[data-side]' : stateRowFocus?.scope
+    if (scope) {
+      if (!stateRowFocus) landStateFocus()
+      stateRowFocus = { scope, act: `pvs:${p.id}:${pv.variant}:${to}` }
+      keepOpen = true
+    }
+    act('pvs', p.id, pv.variant, to)
+  }
+
   listen(window, 'keydown', e => {
     const t = e.target as Element
     if (settingsOpen || shareOpen || linkOpen) return
@@ -2727,6 +2769,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // On a tour the arrows walk the flow's screens, not the screen's options.
     if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant' && tour) { e.preventDefault(); act('tour', e.key === FWD ? 'next' : 'prev', '') }
     else if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant') { e.preventDefault(); step(e.key === FWD ? 1 : -1) }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') stateKey(e, t)
     else if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
     else if (e.key === 'C' && (commentHost() && st.place.view === 'variant' || cardOn())) { e.preventDefault(); commentWhole() }
     // Focus mode and the design's actions are the page outside's, when this page is in its view (viewKey).

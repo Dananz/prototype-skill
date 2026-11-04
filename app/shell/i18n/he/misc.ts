@@ -14,6 +14,7 @@ export default {
   'Use these while browsing, outside text fields.': 'השתמש בהם בזמן עיון, מחוץ לשדות טקסט.',
   'Could not copy automatically. Select and copy the text below.': 'לא ניתן היה להעתיק אוטומטית. בחר והעתק את הטקסט למטה.',
   'Previous / next variant': 'הווריאנט הקודם / הבא',
+  'Previous / next state': 'המצב הקודם / הבא',
   'Comment on an element': 'הוסף הערה על רכיב',
   'Send draft comments': 'שלח טיוטות של הערות',
   'Toggle sidebar': 'הצג או הסתר את סרגל הצד',
