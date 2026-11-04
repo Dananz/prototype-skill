@@ -312,13 +312,13 @@ function Curves({ ctl, w, top, base }: { ctl: Ctl; w: number; top: number; base:
  *  a name brings its curve out, again puts it back. */
 function Legend({ ctl, short = false, className = '' }: { ctl: Ctl; short?: boolean; className?: string }) {
   return (
-    <div role="group" aria-label={t('Curves')} data-legend className={`flex flex-wrap items-center gap-x-0.5 ${className}`}>
+    <div role="group" aria-label={t('Curves')} data-legend className={`flex flex-wrap items-center gap-x-0.5 overflow-x-hidden overflow-y-auto overscroll-contain ${className}`}>
       {ctl.p.tracks.map(tr => {
         const on = ctl.emph === tr.id, dim = !!ctl.emph && !on
         return (
           <Tip key={tr.id} label={<>{on ? t('Show every curve') : t('Bring out {name}', { name: tr.name })}<span className="ms-1.5 text-white/55">{tr.props} · {fmtSpan(tr.start, tr.end)}</span></>}>
             <button data-motion={`curve-${tr.id}`} aria-pressed={on} onClick={() => ctl.setEmph(on ? null : tr.id)}
-              className={`inline-flex h-7 max-w-full cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 text-[11px] outline-none transition-colors hover:bg-zinc-900/5 focus-visible:ring-2 focus-visible:ring-proto-primary-ring dark:hover:bg-white/10 [@media(pointer:coarse)]:h-9 ${on ? 'font-medium text-zinc-900 dark:text-white' : dim ? 'text-zinc-400 dark:text-zinc-500' : 'text-zinc-500 dark:text-zinc-400'}`}>
+              className={`inline-flex h-7 max-w-full shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 text-[11px] transition-colors hover:bg-zinc-900/5 dark:hover:bg-white/10 [@media(pointer:coarse)]:h-9 ${on ? 'font-medium text-zinc-900 dark:text-white' : dim ? 'text-zinc-400 dark:text-zinc-500' : 'text-zinc-500 dark:text-zinc-400'}`}>
               <span className="h-0.5 w-3 shrink-0 rounded-full transition-opacity" style={{ background: tr.color, opacity: dim ? 0.35 : 1 }} /><span dir="auto" className="truncate">{tr.name}</span>{!short && tr.props.toLowerCase() !== tr.name.toLowerCase() && <span className="truncate text-zinc-400 dark:text-zinc-500">{tr.props}</span>}
             </button>
           </Tip>
@@ -630,7 +630,7 @@ export function Dock({ player }: { player: Player }) {
               <Reveal open={!!ctl.composing || !!ctl.open}><div className="pt-2.5">{detail}</div></Reveal>
               <Reveal open={curvesOn}>
                 <div className="pt-3">
-                  <Legend ctl={ctl} short className="px-1.5" />
+                  <Legend ctl={ctl} short className="max-h-[70px] px-1.5 [@media(pointer:coarse)]:max-h-[90px]" />
                   <Timeline ctl={ctl} graph={busy ? 96 : 150} track={false} className={`transition-[height] duration-[420ms] ${EASE}`} />
                 </div>
               </Reveal>
@@ -647,7 +647,7 @@ export function Dock({ player }: { player: Player }) {
               <Reveal open={curvesOn} className="col-start-2 col-end-4">
                 <div className="grid grid-cols-[minmax(0,1fr)_188px] gap-x-3 pt-3 [@media(pointer:coarse)]:grid-cols-[minmax(0,1fr)_196px]">
                   <Timeline ctl={ctl} graph={176} track={false} />
-                  <Legend ctl={ctl} className="min-w-0 flex-col !items-start pt-[22px]" />
+                  <Legend ctl={ctl} className="mt-[22px] max-h-[154px] min-w-0 flex-col !flex-nowrap !items-start" />
                 </div>
               </Reveal>
               <LeftControls ctl={ctl} className="col-start-1 h-14" />
