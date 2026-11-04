@@ -131,6 +131,12 @@ export type LinkComment = {
 export type LinkTray = { comments: LinkComment[]; new: number; dismissed: number; checkedAt: number | null; error: string | null }
 
 export type CState = 'draft' | 'sent' | 'seen' | 'done'
+/**
+ * Whether a sent comment can still be changed: the agent has not taken it, and it is the user's own
+ * words on the design (a decision has already acted, a viewer's words are the viewer's, and one on
+ * no element or moment has nothing for the composer to open on).
+ */
+export const editable = (i: Item, state: CState) => state === 'sent' && !!i.sent && !i.action && !i.from && !!(i.target || i.time)
 export type Mode =
   | { kind: 'idle' }
   | { kind: 'pick' }

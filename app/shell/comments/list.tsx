@@ -8,7 +8,7 @@ import { t, tn } from '../i18n'
 import { useAgentName, useCtx } from './ctx'
 import { isRoot, progress, threadOf, useStore, type Said } from './store'
 import type { CState, Item, Note } from './types'
-import { inScope, noteSays, shotsOf } from './types'
+import { editable, inScope, noteSays, shotsOf } from './types'
 import { PLACEHOLDER, useTagField } from './tag-field'
 import { variantRef } from '../variants'
 import { LinksTray } from './links'
@@ -60,6 +60,11 @@ const Remove = ({ item, className = '' }: { item: Item; className?: string }) =>
   const sent = !!item.sent
   return <button data-shoot="remove" onClick={e => { e.stopPropagation(); act.remove(item.id) }} aria-label={t('Delete this comment')} title={sent ? t('Delete this comment ({agent} is told to leave it)', { agent }) : t('Delete this comment')} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:text-rose-600 active:bg-zinc-900/5 dark:active:bg-white/10 ${className}`}><Icon name="trash" className="size-4" /></button>
 }
+/**
+ * Changes a sent comment, while it waits for the agent to take it. It keeps its place when it can't
+ * be used, fading out there, so the status and the trash beside it never move as a comment is taken.
+ */
+const Edit = ({ on, onClick, className = '' }: { on: boolean; onClick: () => void; className?: string }) => <button data-shoot={on ? 'edit-sent' : undefined} inert={!on} aria-hidden={!on} onClick={e => { e.stopPropagation(); onClick() }} aria-label={t('Edit this comment')} title={t('Edit this comment')} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 transition-[opacity,transform,color] duration-200 ease-out hover:text-zinc-700 active:bg-zinc-900/5 motion-reduce:transition-none dark:hover:text-zinc-200 dark:active:bg-white/10 ${on ? 'scale-100 opacity-100' : 'pointer-events-none scale-75 opacity-0'} ${className}`}><Icon name="share-pencil" className="size-4" /></button>
 const Where = ({ item, here }: { item: Item; here: boolean }) => { const { store } = useCtx(); return !item.variant || (here && !store.get().place?.compare) ? null : <span className="shrink-0 rounded bg-zinc-900/[.05] px-1 font-mono text-[10px] text-zinc-500 dark:bg-white/10">{variantRef(null, item.variant)}</span> }
 /** What a row is about: the element a comment is on, or a decision with its icon (it is on no element). */
 const About = ({ item }: { item: Item }) => item.action
@@ -97,12 +102,12 @@ function Draft({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: b
  * The rest of a thread, under the comment and Claude's reply to it: each answer the user wrote back
  * (on the end side, as theirs) and Claude's reply to that, then Reply, which answers the last reply.
  */
-function Thread({ r }: { r: Row }) {
+function Thread({ r, onEdit }: { r: Row; onEdit?: (id: string) => void }) {
   return (
     <>
       {r.turns.slice(1).map(t => (
         <span key={t.item.id} data-shoot="comment-turn" data-turn={t.item.sent ? `${t.item.sent.batch}/${t.item.sent.i}` : undefined} className="mt-2 block space-y-1.5">
-          <span className="flex justify-end"><Body c={t.item} className="block max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-se-sm bg-proto-primary-soft px-2 py-1 text-[11px] leading-4 text-zinc-800 ring-1 ring-proto-primary-ring/40 dark:text-zinc-100" /></span>
+          <span className="flex items-center justify-end">{onEdit && <Edit on={editable(t.item, t.state)} onClick={() => onEdit(t.item.id)} />}<Body c={t.item} className="block max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-se-sm bg-proto-primary-soft px-2 py-1 text-[11px] leading-4 text-zinc-800 ring-1 ring-proto-primary-ring/40 dark:text-zinc-100" /></span>
           {!!shotsOf(t.item).length && <PictureStrip>{shotsOf(t.item).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</PictureStrip>}
           {t.reply && <span data-shoot="comment-reply" className="block"><Reply text={t.reply.text} by={t.reply.by} small /></span>}
         </span>
@@ -169,7 +174,7 @@ function AnswerBox({ r, empty, update }: { r: Row; empty: { open: boolean; note:
 }
 
 /** Sent, and not done: what Claude has, and what it said so far ("building now…"), and the thread under it. */
-function WithAgent({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: boolean; onOpen: () => void }) {
+function WithAgent({ r, active, roomy, onOpen, onEdit }: { r: Row; active: boolean; roomy: boolean; onOpen: () => void; onEdit: (id: string) => void }) {
   const agent = useAgentName()
   const { item, reply } = r
   // Whether Claude said anything in the thread's last turn: a stopped one says so differently.
@@ -187,9 +192,9 @@ function WithAgent({ r, active, roomy, onOpen }: { r: Row; active: boolean; room
           {reply && <span data-shoot="comment-reply" className="mt-2 block"><Reply text={reply.text} by={reply.by} small /></span>}
         </span>
       </button>
-      <Remove item={item} className="me-1 mt-1.5" />
+      <span className="me-1 mt-1.5 flex shrink-0"><Edit on={editable(item, r.turns[0].state)} onClick={() => onEdit(item.id)} /><Remove item={item} /></span>
       </div>
-      <div className="-mt-1 pb-3 pe-3 ps-8 empty:hidden"><Thread r={r} /></div>
+      <div className="-mt-1 pb-3 pe-3 ps-8 empty:hidden"><Thread r={r} onEdit={onEdit} /></div>
     </div>
   )
 }
@@ -230,6 +235,7 @@ export function CommentList({ roomy, onOpen }: { roomy?: boolean; onOpen?: (id: 
   const held = kept && s.mode.kind !== 'compose' && s.mode.kind !== 'tag' && s.mode.kind !== 'time' ? kept : null
   const on = (id: string) => s.active === id || (s.mode.kind === 'compose' && s.mode.id === id)
   const open = (id: string) => { onOpen?.(id); act.open(id) }
+  const edit = (id: string) => { onOpen?.(id); act.edit(id) }
   const by = (st: CState[]) => rows.filter(r => st.includes(r.state))
   const drafts = by(['draft']), wait = by(['sent', 'seen']), done = by(['done'])
   // The tray of viewers' comments from share links comes first: it waits on the owner.
@@ -256,7 +262,7 @@ export function CommentList({ roomy, onOpen }: { roomy?: boolean; onOpen?: (id: 
       {wait.length > 0 && (
         <section aria-label={t('With {agent}', { agent })}>
           <Head title={t('With {agent}', { agent })} n={wait.length} tone="text-proto-primary-soft-fg"><ClearAll what="sent" ids={wait.map(r => r.item.id)} /></Head>
-          <div className="space-y-2">{wait.map(r => <WithAgent key={r.item.id} r={r} roomy={!!roomy} active={on(r.item.id)} onOpen={() => open(r.item.id)} />)}</div>
+          <div className="space-y-2">{wait.map(r => <WithAgent key={r.item.id} r={r} roomy={!!roomy} active={on(r.item.id)} onOpen={() => open(r.item.id)} onEdit={edit} />)}</div>
         </section>
       )}
       {done.length > 0 && (

@@ -2948,6 +2948,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     go: (proto, variant, state) => go(variant ? { view: 'variant', proto, variant, ...(state ? { state } : {}) } : { view: 'proto', proto }),
     send: sendBatch,
     withdraw: async (batch, n) => { await post('withdraw', { batch, n }) },
+    edit: async (batch, n, change) => {
+      const res = await transport.post('edit', { batch, n, ...change })
+      const got = await res.json().catch(() => ({}))
+      if (!res.ok) throw Object.assign(new Error(got.error || `the server answered ${res.status}`), { taken: res.status === 409 })
+      st.status = got
+      render()
+    },
     agentName: () => agentName(session.agent),
     dark: () => st.dark,
   }, framed ? `${session.id}~view` : session.id)
