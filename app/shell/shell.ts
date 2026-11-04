@@ -825,7 +825,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // The tool strip (tree mode, a wide page): down the stage's start, as in a drawing app, over the
   // gallery too. Its head walks and decides the screen (Tour, Decide), then Move and Comment, the three
   // layouts (or a phone's scale), the design's own tools (Tweaks, Try it, copy options, motion, its
-  // states with Autoplay, Compare and History), and Fit. Over the gallery the screen's tools are there but
+  // states with Autoplay, Compare and History), then Fit and Focus mode. Over the gallery the screen's tools are there but
   // off, so nothing moves between the two. Each opens its menu beside the strip.
   const strip = root.querySelector<HTMLElement>('[data-strip]')!
   const stripOn = () => treeOn && !framed && !st.focus && !phoneMq.matches
@@ -860,8 +860,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const own = !inScreen ? [off('strip-tweaks', 'tweaks', t('Tweaks')), off('strip-try', 'key', t('Try it')), off('strip-copy', 'text', t('Copy options')), off('strip-motion', 'curves', t('Motion')), dockHome() ? '' : off('strip-states', 'grid', t('States, Autoplay, Compare'))]
       : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), motionBtn(), dockHome() ? '' : statesBtn, replayBtn()]
     const fit = inScreen && frameOn() ? tool('center', 'strip-fit', 'center', t('Center the design'), '⌘0') : ''
+    // Focus mode hides the strip with the rest of the chrome; the dock, Esc or F bring it back.
+    const focusBtn = inScreen ? tool('focus', 'strip-focus', 'grow', t('Focus mode'), 'F') : off('strip-focus', 'grow', t('Focus mode'))
     // The layouts and the zoom live in the zoom pill (bottom corner) when it shows.
-    const groups = [[tourBtn, decide], hands, zoomPillOn() ? [] : sizes, own, zoomPillOn() ? [] : [fit]].map(g => g.filter(Boolean).join('')).filter(Boolean)
+    const groups = [[tourBtn, decide], hands, zoomPillOn() ? [] : sizes, own, [zoomPillOn() ? '' : fit, focusBtn]].map(g => g.filter(Boolean).join('')).filter(Boolean)
     // The bar's own buttons drawn upright: their words, carets and counts' text stay out (only the
     // strip's own buttons, never the rows of a menu opening beside it).
     strip.innerHTML = `<div data-strip-tools class="flex flex-col items-center gap-0.5 rounded-2xl bg-white p-1 shadow-[0_8px_24px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.06] dark:bg-zinc-900 dark:ring-white/10

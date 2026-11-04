@@ -89,8 +89,15 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await page.run(`history.pushState(null, '', '/'); dispatchEvent(new PopStateEvent('popstate'))`)
     await until(page, `!document.querySelector('[data-gallery-host]').hidden && !!document.querySelector('[data-strip] [data-shoot="strip-tweaks"][disabled]')`, 'over the gallery the strip should stay with the screen tools off')
     assert(await page.run(`document.querySelector('[data-zoom-pill]').hidden`), 'the gallery should have no zoom pill')
+    assert(await page.run(`!!document.querySelector('[data-strip] [data-shoot="strip-focus"][disabled]')`), 'over the gallery Focus mode should be there, off')
     await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
     await until(page, `!!document.querySelector('[data-shoot="f-to-about"]')`, 'back on home B after the gallery')
+    // The strip's Focus mode button enters it; the strip goes with the chrome and comes back on the way out.
+    await until(page, `!!document.querySelector('[data-strip] [data-shoot="strip-focus"]:not([disabled])')`, 'in a screen the strip should offer Focus mode')
+    await page.run(`document.querySelector('[data-strip] [data-shoot="strip-focus"]').click()`)
+    await until(page, `!!document.querySelector('[data-act="unfocus"]') && document.querySelector('[data-strip]').hidden`, "the strip's button should enter focus mode and hide the strip")
+    await page.run(`document.querySelector('[data-act="unfocus"]').click()`)
+    await until(page, `!document.querySelector('[data-act="unfocus"]') && !document.querySelector('[data-strip]').hidden`, 'leaving focus mode should bring the strip back')
     // A screen fills its stage, on no canvas: the pill's + zooms the layout.
     assert(await page.run(`!!document.querySelector('[data-layers] [data-shoot="f-to-about"]') && document.querySelector('[data-gallery-host]').hidden`), 'a screen should be in the stage, the gallery hidden')
 
