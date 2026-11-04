@@ -2,7 +2,7 @@
 // first, each section a panel on the desk. A card opens its options in a drawer under its row; an option
 // opens it.
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { Design, Proto } from '../shell'
+import type { Proto } from '../shell'
 import { t, tn } from '../i18n'
 import { numberOf } from '../variants'
 import { Ph } from '../tree/row'
@@ -129,13 +129,6 @@ function Section({ id, title, hint, list, cols, pic, open, openId, setOpenId, ba
   )
 }
 
-/** The first screen of a design or a flow, from its tree key (`design:<id>`, `flow:<id>:<name>`). */
-function firstOf(designs: Design[], key: string) {
-  const [kind, id, ...name] = key.split(':'), d = designs.find(x => x.id === id)
-  const flows = kind === 'design' ? d?.flows : kind === 'flow' ? d?.flows.filter(f => f.name === name.join(':')) : undefined
-  return flows?.flatMap(f => f.screens)[0]?.split('/')[0] ?? ''
-}
-
 type Conv = { sid: string; name: string; at: string; n: number; picked: number }
 
 /** The other conversations, one line each: opening one scopes the page (and the tree) to it. */
@@ -162,7 +155,7 @@ function Past({ convs, setScope }: { convs: Conv[]; setScope: (scope: string) =>
 }
 const Empty = ({ text }: { text: string }) => <p className="rounded-3xl bg-[var(--desk-card)] px-6 py-10 text-center text-sm text-zinc-400 ring-1 ring-[var(--desk-line)]">{text}</p>
 
-export function Gallery({ input, pic, open, safe, setScope }: { input: GalleryInput; pic: Pic; open: (route: string) => void; safe: { l: number; t: number; r: number; b: number }; setScope: (scope: string) => void }) {
+export function Gallery({ input, pic, open, card, safe, setScope }: { input: GalleryInput; pic: Pic; open: (route: string) => void; card: (proto: string) => void; safe: { l: number; t: number; r: number; b: number }; setScope: (scope: string) => void }) {
   const scroller = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(() => { const w = document.querySelector('[data-gallery-host]')?.clientWidth ?? 0; return w ? w - safe.l - safe.r : 0 })
   // Measured before the first paint, and only drawn once known: the page never lays out one column first. Hidden
@@ -179,23 +172,17 @@ export function Gallery({ input, pic, open, safe, setScope }: { input: GalleryIn
   // A phone keeps its width for the cards: a thin margin instead of the desk's.
   const pad = width > 0 && width < 560 ? 10 : 24
   const live = useMemo(() => input.protos.filter(p => !p.archived).sort((a, b) => b.created.localeCompare(a.created)), [input.protos])
-  const [openId, setOpenId] = useState('')
+  // The open card is the address's (/slug): choosing one moves there, and Back shuts it.
+  const openId = input.open ?? ''
   const scope = input.scope ?? 'all', sid = scope.startsWith('conv:') ? scope.slice('conv:'.length) : ''
   const convs: Conv[] = useMemo(() => { try { return JSON.parse(input.convs || '[]') as Conv[] } catch { return [] } }, [input.convs])
   // The rows of the first screenful, counted across the sections, are drawn straight away.
-  const same = { cols, pic, open, openId, setOpenId, windowed: live.length > WINDOW_CARDS, firstRows: { left: 8 } }
+  const same = { cols, pic, open, openId, setOpenId: card, windowed: live.length > WINDOW_CARDS, firstRows: { left: 8 } }
   // One section on the page (only waiting, or only picked, and no past conversations under it) needs no panel.
   const past = sid === input.me && convs.some(c => c.sid !== sid)
   const alone = [live.some(p => !p.picked), live.some(p => !!p.picked), past].filter(Boolean).length === 1
   // A new scope starts at the top.
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [scope])
-  // The tree (or an exploration's own page) asked for one: its card opens, and the drawer scrolls it in.
-  // A design or a flow opens its first screen's card.
-  useEffect(() => {
-    const key = (input.frame ?? '').split('#')[0]
-    const slug = key.startsWith('round:') ? key.slice('round:'.length) : firstOf(input.designs, key)
-    if (slug) setOpenId(slug)
-  }, [input.frame]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div ref={scroller} data-gallery className={'absolute inset-0 overflow-y-auto overscroll-contain ' + (input.hidden ? 'hidden' : '')}
       style={{ paddingLeft: safe.l + pad, paddingRight: safe.r + pad, paddingTop: safe.t + 14, paddingBottom: safe.b + 120 }}>

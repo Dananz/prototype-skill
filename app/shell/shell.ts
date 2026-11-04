@@ -751,14 +751,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     convsKey = key; convsJson = JSON.stringify(list)
     return convsJson
   }
-  // What the tree asked the gallery to show (an exploration, a design or a flow; numbered so asking again opens it again).
-  let galleryFrame = '', frames = 0
   // Each prototype's file edits, counted: its stills in the gallery are taken again when its count moves.
   const editsOf = new Map<string, number>()
   const onGallery = () => treeOn && !framed && st.place.view !== 'variant'
   const galleryApi: GalleryApi = {
     get: () => gallerySnap!, subscribe: f => { galleryWatchers.add(f); return () => { galleryWatchers.delete(f) } },
     open: route => { const [proto, variant] = route.split('/'); go({ view: 'variant', proto, variant }) },
+    card: proto => go(proto ? { view: 'proto', proto } : { view: 'session' }),
     mount: (el, c) => mount(el, c),
     setScope,
   }
@@ -790,7 +789,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <span data-zoom-pct class="grid h-8 min-w-12 place-items-center px-2 tabular-nums text-zinc-500 dark:text-zinc-400">${pct}</span></div>`
   }
   // An exploration's own page (/slug) in tree mode is the gallery, that exploration's card open.
-  let framedProto = '', widenedAt = ''
+  let widenedAt = ''
+  /** A design's or a flow's page, from its tree key: that of its first screen that exists, else the gallery. */
+  function openFirstScreen(key: string) {
+    const [kind, id, ...name] = key.split(':'), d = designs.find(x => x.id === id)
+    const flows = kind === 'design' ? d?.flows : d?.flows.filter(f => f.name === name.join(':'))
+    const proto = flows?.flatMap(f => f.screens).map(r => r.split('/')[0]).find(byId)
+    go(proto ? { view: 'proto', proto } : { view: 'session' })
+  }
   function paintGallery() {
     const show = onGallery()
     const proto = show && st.place.view === 'proto' ? st.place.proto : ''
@@ -799,7 +805,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // Only on arriving there: a scope chosen while on it stays.
     const target = show && st.place.view !== 'session' ? byId(st.place.proto) : undefined, arrived = target ? placeRoute() : ''
     if (arrived !== widenedAt) { widenedAt = arrived; if (target && !inScope(target)) { scope = target.session && scopeNow() !== 'all' ? `conv:${target.session}` : 'all'; remember(scopeKey, scope); paintTree() } }
-    if (proto !== framedProto) { framedProto = proto; if (proto) galleryFrame = `round:${proto}#${++frames}` }
     galleryHost.hidden = !show
     const full = show && deskMq.matches && !st.focus
     galleryHost.toggleAttribute('data-full', full)
@@ -811,7 +816,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     layers.style.opacity = show ? '0' : ''
     layers.style.pointerEvents = show ? 'none' : ''
     if (!show && !galleryMounted) return
-    const next: GalleryInput = { protos: scopedProtos(), scope: scopeNow(), me: session.conversation ?? '', convs: convsOf(), designs, hidden: !show, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), frame: galleryFrame, safe }
+    const next: GalleryInput = { protos: scopedProtos(), scope: scopeNow(), me: session.conversation ?? '', convs: convsOf(), hidden: !show, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), open: proto, safe }
     if (gallerySnap && (Object.keys(next) as (keyof GalleryInput)[]).every(k => next[k] === gallerySnap![k])) return
     gallerySnap = next
     if (!galleryMounted && show) { galleryMounted = true; void import('./gallery/index').then(m => m.mountGallery(galleryHost, galleryApi)) }
@@ -889,7 +894,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       get: () => treeSnap!, subscribe: f => { treeWatchers.add(f); return () => { treeWatchers.delete(f) } },
       go: route => { const [proto, variant] = route.split('/'); go(variant ? { view: 'variant', proto, variant } : { view: 'proto', proto }) },
       goWork: () => act('work', 'go', ''), hide: () => act('side', '0', ''), name: session.name,
-      frame: key => { galleryFrame = `${key}#${++frames}`; if (st.place.view !== 'session') go({ view: 'session' }); else paintGallery() },
+      frame: openFirstScreen,
       setScope,
     })
   }
@@ -1092,8 +1097,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         remount = () => { stop(host); return start(host, v, s) }
       }
     } else {
-      el.innerHTML = `<div class="h-full overflow-auto">${p.view === 'proto' ? protoLobby(byId(p.proto)!) : sessionLobby()}</div>`
-      if (p.view === 'proto') {
+      // Under the gallery no lobby is seen, so none is built: its live designs would run for nothing.
+      el.innerHTML = `<div class="h-full overflow-auto">${onGallery() ? '' : p.view === 'proto' ? protoLobby(byId(p.proto)!) : sessionLobby()}</div>`
+      if (p.view === 'proto' && !onGallery()) {
         const proto = byId(p.proto)!
         windowHost = el.querySelector<HTMLElement>('[data-virtual-preview]')
         if (windowHost) {
@@ -1640,11 +1646,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const flowArrow = (d: -1 | 1) => { const r = w?.flow?.routes[w.at + d]; return `<button ${r ? `data-act="${goTo(r)}"` : 'disabled'} data-crumb-step="${d}" aria-label="${d < 0 ? t('Previous screen in the flow') : t('Next screen in the flow')}" title="${d < 0 ? t('Previous screen in the flow') : t('Next screen in the flow')}" class="grid size-7 shrink-0 place-items-center rounded-md text-zinc-400 hover:bg-zinc-900/5 hover:text-zinc-900 disabled:opacity-25 dark:hover:bg-white/10 dark:hover:text-white">${ic(d < 0 ? (rtl ? 'right' : 'left') : (rtl ? 'left' : 'right'), 'size-3.5')}</button>` }
       const toGallery = (label: string, cls: string) => `<button data-act="lobby:session" data-crumb-gallery class="min-w-0 truncate rounded-md px-1.5 py-1 hover:bg-zinc-900/5 dark:hover:bg-white/10 ${cls}"><span dir="auto">${esc(label)}</span></button>`
       const option = (q: Proto) => `<b class="shrink-0">${variantRef(q, vid)}</b>${q.picked === vid ? ic('check', `size-3.5 shrink-0 ${PICK}`) : ''}`
-      const crumb = !p || view !== 'variant' ? `${toGallery(session.name, 'font-semibold')}${sep}<span class="shrink-0 text-zinc-500">${t('Gallery')}</span>`
+      const toProto = (q: Proto) => `<button data-act="lobby:proto:${esc(q.id)}" data-crumb-proto class="min-w-0 truncate rounded-md px-1 py-1 font-medium hover:bg-zinc-900/5 dark:hover:bg-white/10"><span dir="auto">${esc(q.title)}</span></button>`
+      const crumb = !p || view !== 'variant' ? `${toGallery(session.name, 'font-semibold')}${sep}${p ? `<span dir="auto" data-crumb-here class="min-w-0 truncate font-medium">${esc(p.title)}</span>` : `<span class="shrink-0 text-zinc-500">${t('Gallery')}</span>`}`
         : w?.design && w.flow && w.screen ? `${toGallery(w.design.title, 'font-semibold')}${sep}<span dir="auto" class="min-w-0 shrink truncate text-zinc-500">${esc(w.flow.name)}</span>${sep}
             ${flowArrow(-1)}<button data-act="${goTo(w.flow.routes[w.at])}" data-crumb-screen class="min-w-0 truncate rounded-md px-1 py-1 font-medium hover:bg-zinc-900/5 dark:hover:bg-white/10"><span dir="auto">${esc(w.screen.title)}</span></button><span class="shrink-0 text-[11px] tabular-nums text-zinc-400">${w.at + 1}/${w.flow.routes.length}</span>${flowArrow(1)}
-            ${w.exploration ? `${sep}<span dir="auto" class="min-w-0 truncate font-medium">${esc(w.exploration.title)}</span>${option(w.exploration)}` : option(p)}`
-        : `${toGallery(t('Explorations on no screen'), 'text-zinc-500')}${sep}<span dir="auto" class="min-w-0 truncate font-medium">${esc(p.title)}</span>${option(p)}`
+            ${w.exploration ? `${sep}${toProto(w.exploration)}${option(w.exploration)}` : option(p)}`
+        : `${toGallery(t('Explorations on no screen'), 'text-zinc-500')}${sep}${toProto(p)}${option(p)}`
       const jumpBtn = `<button data-act="jump" data-shoot="jump" aria-label="${t('Jump to')} (⌘K)" title="${t('Jump to')} · ⌘K" class="${IB} shrink-0">${ic('search')}<kbd dir="ltr" class="hidden font-sans text-[11px] text-zinc-400 lg:inline">⌘K</kbd></button>`
       keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
         <nav data-crumb aria-label="${t('Where you are')}" class="flex min-w-0 items-center gap-0.5 text-sm">${crumb}</nav>
@@ -1707,7 +1714,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // Focus mode restyles the zone to cover the page; the mounted design stays put. On a phone
     // the variant pill takes a strip at the bottom of the stage, so it never covers the design;
     // joined with the comment bar, the design runs under it (JOINED_ZONE).
-    zone.className = st.focus ? 'fixed inset-0 z-[100] bg-white text-[13px] dark:bg-zinc-950' : `relative min-h-0 flex-1 ${!pillOn() ? '' : commentHost() ? JOINED_ZONE : 'max-sm:[--pill-h:calc(4.25rem+env(safe-area-inset-bottom))]'}`
+    zone.className = st.focus ? 'fixed inset-0 z-[100] bg-white text-[13px] dark:bg-zinc-950' : `relative min-h-0 flex-1 ${!pillOn() ? '' : commentHost() || cardOn() ? JOINED_ZONE : 'max-sm:[--pill-h:calc(4.25rem+env(safe-area-inset-bottom))]'}`
     document.documentElement.style.overflow = st.focus ? 'hidden' : ''
 
     const edgeBtn = (side: 'prev' | 'next') => {
@@ -1802,7 +1809,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const vid = st.place.view === 'variant' ? st.place.variant : ''
     const at = vs.findIndex(v => v.id === vid)
     const tryN = pillOn() && phoneMq.matches ? tryCount(hintList()) : 0
-    const joined = !!commentHost()
+    const joined = !!commentHost() || cardOn()
     // The variant's states, said under its name: which one shows (or the tool that is on), and the way to the others.
     const pv = st.place.view === 'variant' ? st.place : null
     const sts = p && pv ? statesOf(p, pv.variant) : []
@@ -1909,7 +1916,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     goWork: () => { st.tree = false; act('work', 'go', '') },
     hide: () => { st.tree = false; render() },
     // A design or a flow opens its first screen's card in the gallery, as on a wide page.
-    frame: key => { st.tree = false; galleryFrame = `${key}#${++frames}`; if (st.place.view !== 'session') go({ view: 'session' }); else { paintGallery(); render() } },
+    frame: key => { st.tree = false; openFirstScreen(key) },
     setScope,
   }
   // Rows a finger can hit (40 px, 14 px type), each row's ⋯ always there (no hover to find it), and no
@@ -2679,13 +2686,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant' && tour) { e.preventDefault(); act('tour', e.key === FWD ? 'next' : 'prev', '') }
     else if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant') { e.preventDefault(); step(e.key === FWD ? 1 : -1) }
     else if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
-    else if (e.key === 'C' && commentHost() && st.place.view === 'variant') { e.preventDefault(); commentWhole() }
+    else if (e.key === 'C' && (commentHost() && st.place.view === 'variant' || cardOn())) { e.preventDefault(); commentWhole() }
     // Focus mode and the design's actions are the page outside's, when this page is in its view (viewKey).
     else if (e.key === 'r' && canReplay() && !framed) act('replay', '', '')
     else if (e.key === 'f' && st.place.view === 'variant' && !framed) act(st.focus ? 'unfocus' : 'focus', '', '')
     else if (e.key === 'w' && workOf()) act('work', 'go', '')
     // M: from a screen out to the gallery, and from the gallery back into the last screen.
-    else if (e.key === 'm' && treeOn) st.place.view === 'variant' ? go({ view: 'session' }) : lastFocus && galleryApi.open(lastFocus)
+    else if (e.key === 'm' && treeOn) st.place.view === 'variant' ? go({ view: 'proto', proto: st.place.proto }) : lastFocus && galleryApi.open(lastFocus)
     else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches && !framed) act('open', 'decide', '')
     else if (e.key === 's' && st.place.view === 'variant' && !framed) act('fav', st.place.proto, st.place.variant)
   })
@@ -2798,12 +2805,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // The page inside a device view has none of its own: the page outside comments on it.
   const compareHost = () => st.place.view === 'variant' && st.place.tool === 'compare' ? layer?.el.querySelector<HTMLElement>('[data-comment-compare]') ?? null : null
   const commentHost = () => !framed && !st.focus && q.get('hints') !== '0' ? compareHost() ?? hintHost() : null
+  /** A prototype's own page: no design on it to point at, but it takes comments as a whole. */
+  const cardOn = () => !framed && !st.focus && q.get('hints') !== '0' && st.place.view === 'proto' && !!cur()
   // The comments island floats over the stage and opens into the list; a phone has it as the top
   // row of the pill's bar, and opens the list in it.
   const islandHost = zone.querySelector<HTMLElement>('[data-island-host]')!
   // Docked (Settings, the classic layout), a wide screen has the comments as the side panel's tab
   // instead, and a Comment button in the bar.
-  const railOn = () => !!commentHost() && !phoneMq.matches && !!islandPrefs.get().docked
+  const railOn = () => (!!commentHost() || cardOn()) && !phoneMq.matches && !!islandPrefs.get().docked
   /** Opens the side panel on its Comments tab, where a new comment lands. */
   function openRail() {
     selectPanelTab('comments')
@@ -3053,10 +3062,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const host = commentHost(), pl = st.place, p = cur()
     comments.copy.setStage(copyHost(), copy.routeOf(copyHost()))
     comments.act.setScope(pl.view === 'session' ? null : pl.proto)
+    comments.act.setCard(cardOn() && p ? { proto: p.id, title: p.title } : null)
     comments.setPlace(host && pl.view === 'variant' && p ? { proto: pl.proto, variant: pl.variant, ...(pl.state ? { state: pl.state } : {}), phone: phoneMq.matches, title: p.title, ...(viewOn() ? { view: viewSize() } : {}), ...(compareHost() ? { compare: true as const } : {}) } : null)
     if (st.status?.inbox !== seenInbox) { seenInbox = st.status?.inbox; comments.setInbox(seenInbox); intake.set(seenInbox?.intake, protos.length > 0) }
     zone.toggleAttribute('data-picking', !!host && comments.counts().picking)
-    islandHost.hidden = !host || (phoneMq.matches && !pillOn())
+    islandHost.hidden = (!host && !cardOn()) || (phoneMq.matches && !pillOn())
     if (!host || comments.counts().picking) fold(false)
     if (zoom && zoom.mount !== zoomMount()) unzoom()
   }
@@ -3232,7 +3242,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onAppearance: setAppearance,
       onLive: on => { comments.act.setLive(on); paintSettings() },
       onSidebar: on => { st.side = on; remember('proto-side', on ? '1' : '0'); render() },
-      onTree: on => { treeOn = on; remember('proto-tree', on ? '1' : '0'); render() },
+      onTree: on => { treeOn = on; remember('proto-tree', on ? '1' : '0'); if (st.place.view !== 'variant') show(false); render() },
       onConv: on => { convOn = on; remember('proto-conv', on ? '1' : '0'); scoped = null; paintTree(); paintGallery(); render() },
       onReview: on => { remember('proto-hints', on ? '1' : '0'); hintsOpen = wideMq.matches && on; if (!on) setTry(null); render() },
       onLayout: on => { act('stack', on ? '1' : '0', ''); paintSettings() },

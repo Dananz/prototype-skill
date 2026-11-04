@@ -39,7 +39,7 @@ export type TreeInput = {
 export type TreeApi = { get(): TreeInput; subscribe(fn: () => void): () => void; go(route: string): void; goWork(): void; hide(): void; name: string
   /** Scopes the page: this conversation, another ('conv:<id>'), the whole project ('all') or favorites ('favs'). */
   setScope?(scope: string): void
-  /** Opens a design's, a flow's or an exploration's card in the gallery (its tree key), leaving the screen. */
+  /** Goes to the page of a design's or a flow's first screen (its tree key), that card open in the gallery. */
   frame(key: string): void }
 
 const FILTERS: [Filter, () => string][] = [['all', () => t('All')], ['open', () => t('Open')], ['mine', () => t('This conversation')], ['favs', () => t('Favorites')]]
@@ -126,7 +126,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
         {kids()}
       </div>
     )
-    // A design or a flow: its caret folds it here, its name opens its first screen's card in the gallery.
+    // A design or a flow: its caret folds it here, its name goes to its first screen's page (/slug).
     if (n.kind === 'flow') return <div key={n.key}><Row id={n.key} depth={depth} medium open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count} label={<span dir="auto">{n.label}</span>} />{kids()}</div>
     if (n.kind === 'section') return (
       <div key={n.key}>
@@ -156,8 +156,8 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
     const block = () => (
       <>
         <Row id={n.key} depth={depth} on={lit} open={shut} onCaret={() => flip(n)} mv={n.route}
-          /* An exploration's name opens its card in the gallery, with its options; a screen's opens it. */
-          onClick={() => { if (!shut) flip(n); if (n.kind === 'exploration') api.frame(`round:${n.route!.split('/')[0]}`); else api.go(n.route!) }}
+          /* An exploration's name goes to its own page (/slug), its card open in the gallery; a screen's opens it. */
+          onClick={() => { if (!shut) flip(n); api.go(n.kind === 'exploration' ? n.route!.split('/')[0] : n.route!) }}
           icon={n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" /> : <Ph name="shuffle" className={'size-3.5 ' + (n.state === 'waits' ? 'text-zinc-300' : 'text-violet-500')} />}
           label={<span className={n.state === 'waits' ? 'text-zinc-400' : ''}><span dir="auto">{n.label}</span>{parent && <span className="text-[11px] text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
           end={<span className="flex shrink-0 items-center gap-1.5">

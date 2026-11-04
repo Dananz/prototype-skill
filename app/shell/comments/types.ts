@@ -66,7 +66,8 @@ export type Item = Draft & {
   proto: string
   variant: string
   state?: string
-  /** The pin's number, counted within its variant (0 for an action, which has no pin). */
+  /** The pin's number, counted within its variant (0 for an action, which has no pin). A comment on the
+   *  whole prototype has an empty `variant`, no target, and goes out on the route `<slug>`. */
   n: number
   /** What it is on; an action has none. */
   target?: Target
@@ -150,6 +151,8 @@ export type Place = { proto: string; variant: string; state?: string; phone: boo
 
 export type State = {
   items: Item[]
+  /** The exploration whose own page is open (no variant on screen, so no place): it takes comments as a whole. */
+  card: { proto: string; title: string } | null
   held: Held | null
   /** Reply composers belong to the root thread, across row status and disclosure changes. */
   replies: Record<string, { open: boolean; note: Note; busy: boolean; error: string }>
@@ -188,4 +191,4 @@ export type State = {
 /** Whether a comment (or the unfinished one, which may have no prototype) belongs to what the page is on. */
 export const inScope = (scope: string | null, proto?: string) => scope === null || !proto || proto === scope
 
-export const routeOf = (p: { proto: string; variant: string; state?: string }) => `${p.proto}/${p.variant}${p.state ? `/${p.state}` : ''}`
+export const routeOf = (p: { proto: string; variant: string; state?: string }) => p.variant ? `${p.proto}/${p.variant}${p.state ? `/${p.state}` : ''}` : p.proto

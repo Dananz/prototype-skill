@@ -216,6 +216,7 @@ export const aboutOf = (i: Item) => i.action === 'more-variants'
   : i.action === 'build-design' ? t('Build the design')
   : i.time ? (i.time.to === undefined ? t('At {time}', { time: spanOf(i.time) }) : t('Over {time}', { time: spanOf(i.time) }))
   : i.target?.whole ? t('Whole variant')
+  : !i.variant ? t('Whole prototype')
   : t('Comment {n}', { n: i.n })
 
 /** The words of a comment as plain text, tags written as @1, @2, …: their order in the accompanying targets. */
