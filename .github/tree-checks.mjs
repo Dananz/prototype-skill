@@ -167,6 +167,99 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-setting=tree] input').click()`)
     await until(page, `document.querySelector('[data-tree-side]').hidden && localStorage.getItem('proto-tree') === '0'`, 'the Settings switch should turn the tree off')
   } finally { page.close() }
+  // Several rows at once: Cmd or Ctrl adds one, Shift a run, plain click leaves them for the row; the
+  // bar, the menu and the keys act on them all, and Esc lets go.
+  page = await openPage(`${local}tcta-copy/A?tree=1&conv=1`)
+  try {
+    const hit = (id, opts = '{}') => page.run(`document.querySelector('[data-tree-row="${id}"] button:not([aria-expanded]):not([data-act])').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...${opts} }))`)
+    const chosen = `[...document.querySelectorAll('[data-tree-chosen="true"]')].map(r => r.dataset.treeRow).join()`
+    const copied = `window.__copied`
+    await until(page, `!!document.querySelector('[data-tree-row="opt:tcta-copy/B"]')`, 'the open exploration should show its options')
+    await page.run(`navigator.clipboard.writeText = async text => { window.__copied = text }`)
+    // It fades in with no flash: a one-pixel line that only gets stronger, on the same element, and the
+    // row already chosen keeps its look when another joins, but for the edge they now share.
+    await hit('opt:tcta-copy/A', '{ metaKey: true }')
+    const fade = JSON.parse(await page.run(`(async () => {
+      const a = document.querySelector('[data-tree-row="opt:tcta-copy/A"]'), b = document.querySelector('[data-tree-row="opt:tcta-copy/B"]')
+      await new Promise(r => setTimeout(r, 300))
+      b.querySelector('button:not([aria-expanded]):not([data-act])').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
+      const out = { a: [], b: [], same: true }
+      const look = el => { const c = getComputedStyle(el), e = getComputedStyle(el, '::before'); return { bg: c.backgroundColor, top: e.borderTopColor, bottom: e.borderBottomColor, width: e.borderBottomWidth } }
+      for (const end = performance.now() + 300; performance.now() < end; await new Promise(requestAnimationFrame)) {
+        out.a.push(look(a)); out.b.push(look(b))
+        out.same &&= a.isConnected && b.isConnected
+      }
+      out.join = [a.dataset.treeJoin, b.dataset.treeJoin]
+      // A loaded machine can still be fading when the frames above run out.
+      await Promise.all([a, b].flatMap(el => el.getAnimations({ subtree: true })).map(x => x.finished.catch(() => {})))
+      const rest = el => getComputedStyle(el, '::before')
+      out.shared = [rest(a).borderBottomColor, rest(b).borderTopColor]
+      out.radius = [getComputedStyle(a).borderBottomLeftRadius, getComputedStyle(b).borderTopLeftRadius, getComputedStyle(a).borderTopLeftRadius, getComputedStyle(b).borderBottomLeftRadius]
+      return JSON.stringify(out)
+    })()`))
+    const alpha = c => { const m = c.match(/\/\s*([\d.]+)\)|,\s*([\d.]+)\)/); return m ? Number(m[1] ?? m[2]) : 1 }
+    assert(fade.same, 'choosing a row should keep the rows on the page, not draw them again')
+    assert(fade.a.every(l => l.bg === fade.a[0].bg && l.top === fade.a[0].top), 'a chosen row should keep its look when another is chosen')
+    assert(fade.b.every(l => l.width === '1px'), `the outline should stay one pixel as it fades in: ${fade.b[0].width}`)
+    const edge = fade.b.map(l => alpha(l.bottom))
+    assert(edge.length > 3 && edge[0] < edge.at(-1) && edge.every((v, i) => !i || v >= edge[i - 1] - 0.001), `the outline should only get stronger: ${edge.join()}`)
+    // Two rows that touch are one shape: no edge and no rounding between them, its ends still rounded.
+    // Their corners are read once the fade has finished.
+    assert(fade.join[0] === 'bottom' && fade.join[1] === 'top', `touching rows should join: ${fade.join}`)
+    assert(fade.shared.every(c => alpha(c) === 0), `the edge between touching rows should fade out: ${fade.shared}`)
+    assert(fade.radius[0] === '0px' && fade.radius[1] === '0px' && fade.radius[2] !== '0px' && fade.radius[3] !== '0px', `only the corners between them should square off: ${fade.radius}`)
+    await until(page, `${chosen} === 'opt:tcta-copy/A,opt:tcta-copy/B' && /2 selected/.test(document.querySelector('[data-tree-chosen-bar]')?.textContent ?? '')`, 'Cmd + click should choose both rows and say so in the bar')
+    assert(await page.run(`location.pathname === '/tcta-copy/A'`), 'choosing a row should not leave the page')
+    await page.run(`document.querySelector('[data-tree-chosen-act="links"]').click()`)
+    assert(await page.run(`/^\\S+\\/tcta-copy\\/A\\n\\S+\\/tcta-copy\\/B$/.test(${copied})`), `Copy links should give both links, one a line: ${await page.run(copied)}`)
+    await page.run(`document.querySelector('[data-tree-chosen-act="ids"]').click()`)
+    assert(await page.run(`${copied} === 'tcta-copy/1\\ntcta-copy/2'`), `Copy IDs should give both ids, one a line: ${await page.run(copied)}`)
+    await page.run(`window.__copied = ''; dispatchEvent(new KeyboardEvent('keydown', { key: 'c', metaKey: true, bubbles: true, cancelable: true }))`)
+    assert(await page.run(`/\\/tcta-copy\\/B$/.test(${copied})`), 'Cmd + C should copy the links of the rows chosen')
+    // The star goes on them all, then off them all.
+    await page.run(`document.querySelector('[data-tree-chosen-act="fav"]').click()`)
+    await until(page, `document.querySelectorAll('[data-tree-chosen="true"] svg').length && document.querySelector('[data-tree-chosen-act="fav"]').getAttribute('aria-label') === 'Unfavorite'`, 'Favorite should star every row chosen')
+    for (const end = Date.now() + 6000; Date.now() < end && !/"A"[\s\S]*"B"/.test(readFileSync(metaFile('tcta-copy'), 'utf8').match(/"favorites"[^\]]*\]/)?.[0] ?? ''); await wait(50));
+    assert(/"A"[\s\S]*"B"/.test(readFileSync(metaFile('tcta-copy'), 'utf8').match(/"favorites"[^\]]*\]/)?.[0] ?? ''), 'both stars should be written to meta.ts')
+    await page.run(`document.querySelector('[data-tree-chosen-act="fav"]').click()`)
+    await until(page, `document.querySelector('[data-tree-chosen-act="fav"]').getAttribute('aria-label') === 'Favorite'`, 'Unfavorite should take every star off')
+    // A right-click on a chosen row is about them all; on any other row, about that row.
+    await page.run(`(() => { const r = document.querySelector('[data-tree-row="opt:tcta-copy/B"]').getBoundingClientRect(); document.querySelector('[data-tree-row="opt:tcta-copy/B"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left + 20, clientY: r.top + 8 })) })()`)
+    await until(page, `/2 selected/.test(document.querySelector('[data-context-menu]')?.textContent ?? '') && !!document.querySelector('[data-shoot="ctx-ids"]')`, 'the menu on a chosen row should act on them all')
+    await page.run(`document.querySelector('[data-shoot="ctx-ids"]').click()`)
+    await until(page, `${copied} === 'tcta-copy/1\\ntcta-copy/2' && !document.querySelector('[data-context-menu]')`, 'the menu should copy the ids and close')
+    // Esc lets go, and the page stays.
+    await page.run(`dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+    await until(page, `${chosen} === '' && !document.querySelector('[data-tree-chosen-bar]')`, 'Esc should let go of the rows')
+    assert(await page.run(`location.pathname === '/tcta-copy/A'`), 'Esc on a selection should not leave the variant')
+    // Shift takes the run from the row on screen; a plain click lets go and goes to its row.
+    await hit('opt:tcta-copy/B', '{ shiftKey: true }')
+    await until(page, `${chosen} === 'opt:tcta-copy/A,opt:tcta-copy/B'`, 'Shift + click should choose the run from the row on screen')
+    await hit('opt:tcta-copy/B')
+    await until(page, `location.pathname === '/tcta-copy/B' && ${chosen} === ''`, 'a plain click should let go and open its row')
+    // The row on screen comes along when a Cmd + click starts the selection.
+    await hit('opt:tcta-copy/A', '{ metaKey: true }')
+    await until(page, `${chosen} === 'opt:tcta-copy/A,opt:tcta-copy/B' && /2 selected/.test(document.querySelector('[data-tree-chosen-bar]')?.textContent ?? '')`, 'Cmd + click from another row should choose the row on screen too')
+    await hit('opt:tcta-copy/B', '{ metaKey: true }')
+    await until(page, `${chosen} === 'opt:tcta-copy/A'`, 'Cmd + click on the row on screen should take it back out')
+    await page.run(`dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+    await until(page, `${chosen} === ''`, 'Esc should let go again')
+    // Cmd + click on a decided row's name chooses its winner; on a design, nothing, and no move.
+    await hit('exp:thero-cta', '{ metaKey: true }')
+    await until(page, `${chosen} === 'opt:thero-cta/A,opt:tcta-copy/B'`, 'Cmd + click on a decided row should choose its winner, and the row on screen')
+    await hit('design:acme', '{ metaKey: true }')
+    assert(await page.run(`location.pathname === '/tcta-copy/B' && ${chosen} === 'opt:thero-cta/A,opt:tcta-copy/B'`), 'Cmd + click on a design should do nothing')
+    // Another scope hides rows: none of them stays chosen.
+    await page.run(`document.querySelector('[data-tree-filter="favs"]').click()`)
+    await until(page, `!document.querySelector('[data-tree-chosen-bar]')`, 'changing the scope should let go of the rows')
+    await page.run(`document.querySelector('[data-tree-filter="conv"]').click()`)
+    // The row's own menu starts a selection too.
+    await until(page, `!!document.querySelector('[data-tree-row="opt:tcta-copy/A"] [data-act^="vm:"]')`, 'back on this conversation the row should be there')
+    await page.run(`document.querySelector('[data-tree-row="opt:tcta-copy/A"] [data-act^="vm:"]').click()`)
+    await until(page, `!!document.querySelector('[data-shoot="ctx-select"]')`, 'the row menu should offer Select')
+    await page.run(`document.querySelector('[data-shoot="ctx-select"]').click()`)
+    await until(page, `${chosen} === 'opt:tcta-copy/A,opt:tcta-copy/B'`, 'Select should choose the row, and the row on screen')
+  } finally { page.close() }
   // On a phone with the tree on: a two-line bar (the session's mark, the title, Pick), the tree in a
   // sheet at half the screen (its handle takes it to full), a row's ⋯ opening that variant's decide
   // tiles, and the pill's name opening the tree instead of the variant sheet.
@@ -187,6 +280,23 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await until(page, `!!document.querySelector('[data-shoot=decide-sheet] [data-tile=pick]') && !document.querySelector('[data-shoot=decide-sheet] [data-tile=open]')`, 'Pick in the bar should open the tiles for the variant on screen, without Open')
     await page.run(`document.querySelector('[data-shoot=decide-sheet] [data-tile=pick]').click()`)
     await until(page, `/Picked/.test(document.querySelector('[data-shoot=bar-decide]').textContent) && !!document.querySelector('[data-shoot=decide-sheet]')`, 'a pick from the tiles should show in the bar, the tiles staying open')
+  } finally { page.close() }
+  // On a phone: a row's ⋯ starts choosing, then each tap on a row adds it instead of going there.
+  page = await openPage(`${local}tcta-copy/A?tree=1&conv=1`, { width: 402, height: 874, phone: true })
+  try {
+    const sheet = `document.querySelector('[data-shoot=tree-sheet]')`
+    await until(page, `!!document.querySelector('[data-shoot=bar-title]')`, 'the phone bar should have its title')
+    await page.run(`document.querySelector('[data-shoot=bar-title]').click()`)
+    await until(page, `!!${sheet}?.querySelector('[data-tree-row="opt:tcta-copy/B"] [data-act^="vm:"]')`, 'the sheet should show the options')
+    await page.run(`${sheet}.querySelector('[data-tree-row="opt:tcta-copy/B"] [data-act^="vm:"]').click()`)
+    await until(page, `!!document.querySelector('[data-shoot=decide-sheet] [data-tile=select]')`, 'a row\'s ⋯ should offer Select')
+    await page.run(`document.querySelector('[data-shoot=decide-sheet] [data-tile=select]').click()`)
+    await until(page, `!document.querySelector('[data-shoot=decide-sheet]') && /1 selected/.test(${sheet}?.querySelector('[data-tree-chosen-bar]')?.textContent ?? '')`, 'Select should go back to the tree with the row chosen')
+    await page.run(`${sheet}.querySelector('[data-tree-row="opt:tcta-copy/A"] button:not([aria-expanded]):not([data-act])').click()`)
+    await until(page, `/2 selected/.test(${sheet}?.querySelector('[data-tree-chosen-bar]')?.textContent ?? '')`, 'a tap should add its row while choosing')
+    assert(await page.run(`!!${sheet}`), 'a tap while choosing should leave the tree open')
+    // The sheet starts at half the screen, so the bar has to be on it.
+    assert(await page.run(`document.querySelector('[data-tree-chosen-bar]').getBoundingClientRect().bottom <= innerHeight`), 'the bar should be on screen with the sheet at half')
   } finally { page.close() }
   for (const slug of ['thome', 'tabout', 'thero-cta', 'tcta-copy', 'tlogo', 'tpricing']) proto(['archive', slug])
   rmSync(join(app, 'src', 'designs'), { recursive: true, force: true })

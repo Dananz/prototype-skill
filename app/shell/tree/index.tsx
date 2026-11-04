@@ -3,7 +3,7 @@
 // Conversation first on, the page's scope cuts it (this conversation, the whole project, starred);
 // off, four filters do (everything, still open, from this conversation, starred). The shell hands it what it needs through
 // an api and tells it when that changed; picking inline and the island's modes come later.
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Design, Proto } from '../shell'
 import { rtl, t, tn } from '../i18n'
@@ -11,6 +11,7 @@ import { numberOf } from '../variants'
 import { treeOf, type Filter, type TreeNode } from './model'
 import { Caret, Collapse, Inside, Mark, Ph, Row } from './row'
 import { memory } from './memory'
+import { selection } from './selection'
 import { Near } from '../near'
 
 export type TreeInput = {
@@ -45,7 +46,13 @@ export type TreeApi = { get(): TreeInput; subscribe(fn: () => void): () => void;
   /** Scopes the page: this conversation, another ('conv:<id>'), the whole project ('all') or favorites ('favs'). */
   setScope?(scope: string): void
   /** Goes to the page of a design's or a flow's first screen (its tree key), that card open in the gallery. */
-  frame(key: string): void }
+  frame(key: string): void
+  /** Copies the chosen variants, one a line: their links, or their ids (slug/number). */
+  copyChosen(what: 'links' | 'ids', routes: string[]): void
+  /** Stars them all, or takes the star off when they all have it. */
+  favChosen(routes: string[]): void
+  /** Whether a variant is starred. */
+  isFav(route: string): boolean }
 
 const FILTERS: [Filter, () => string][] = [['all', () => t('All')], ['open', () => t('Open')], ['mine', () => t('This conversation')], ['favs', () => t('Favorites')]]
 const SECTION: Record<string, () => string> = { 'section:loose': () => t('Explorations on no screen') }
@@ -58,6 +65,37 @@ const LIT = 'bg-sky-50 text-sky-900 dark:bg-sky-950/60 dark:text-sky-100'
 const opensByDefault = (n: TreeNode) => ['design', 'flow', 'section'].includes(n.kind) || (n.kind === 'exploration' && ['open', 'stale', 'building'].includes(n.state ?? ''))
 /** Where the open screen is; a pin, since a dot on these rows means new. */
 const Here = () => <span title={t('The open screen is here')} aria-label={t('The open screen is here')} data-tree-here className="shrink-0"><Ph name="mapPin" className="size-3.5 text-sky-500" /></span>
+
+/** Marks the chosen rows that touch one above or below them at the same indent, so they draw as one shape. */
+function joinChosen(root: Element) {
+  for (const r of root.querySelectorAll('[data-tree-join]')) r.removeAttribute('data-tree-join')
+  const rows = [...root.querySelectorAll<HTMLElement>('[data-tree-chosen]')].map(el => ({ el, box: el.getBoundingClientRect(), join: [] as string[] }))
+  rows.forEach((b, i) => {
+    const a = rows[i - 1]
+    if (a && Math.abs(a.box.bottom - b.box.top) < 1.5 && Math.abs(a.box.left - b.box.left) < 1.5 && Math.abs(a.box.right - b.box.right) < 1.5) { a.join.push('bottom'); b.join.push('top') }
+  })
+  for (const r of rows) if (r.join.length) r.el.dataset.treeJoin = r.join.join(' ')
+}
+
+/** What to do with the rows chosen, while there are any. At the sidebar's foot; on top in the phone's sheet, whose foot starts below the screen. */
+function ChosenBar({ api, routes, top }: { api: TreeApi; routes: string[]; top?: boolean }) {
+  const [copied, setCopied] = useState<'links' | 'ids' | null>(null)
+  const timer = useRef(0)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  const copy = (what: 'links' | 'ids') => { api.copyChosen(what, routes); setCopied(what); clearTimeout(timer.current); timer.current = window.setTimeout(() => setCopied(null), 1600) }
+  const starred = routes.every(api.isFav)
+  const btn = 'grid size-8 shrink-0 place-items-center rounded-md text-zinc-500 hover:bg-zinc-900/[.06] hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white [@media(pointer:coarse)]:size-10'
+  const tool = (act: string, label: string, icon: React.ReactNode, run: () => void) => <button type="button" data-tree-chosen-act={act} aria-label={label} title={label} onClick={run} className={btn}>{icon}</button>
+  return (
+    <section data-tree-chosen-bar aria-label={t('Selected rows')} className={'flex shrink-0 items-center gap-0.5 border-black/[.06] py-1 pe-1.5 ps-3 text-[12px] dark:border-white/10 ' + (top ? 'border-b' : 'border-t')}>
+      <span role="status" className="min-w-0 flex-1 truncate font-medium">{copied ? t('Copied') : tn(routes.length, '1 selected', '{n} selected')}</span>
+      {tool('links', t('Copy links'), <Ph name={copied === 'links' ? 'check' : 'linkSimple'} className="size-4" />, () => copy('links'))}
+      {tool('ids', t('Copy IDs'), <Ph name={copied === 'ids' ? 'check' : 'hash'} className="size-4" />, () => copy('ids'))}
+      {tool('fav', starred ? t('Unfavorite') : t('Favorite'), <Ph name={starred ? 'starFill' : 'star'} className={'size-4 ' + (starred ? 'text-amber-400' : '')} />, () => api.favChosen(routes))}
+      {tool('clear', t('Clear selection'), <Ph name="x" className="size-4" />, selection.clear)}
+    </section>
+  )
+}
 
 /** The foot's shelf: what is finished or was left alone, with the archive inside it. It stays shut
  *  (kept in this browser) except for the one thing it can't hide: what is on screen. */
@@ -128,6 +166,20 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
   const [shutFavs, setShutFavs] = useState<Set<string>>(() => new Set())
   const list = useRef<HTMLDivElement>(null)
   useSyncExternalStore(memory.subscribe, memory.version)
+  const chosen = useSyncExternalStore(selection.subscribe, selection.get)
+  // Again once a fold has finished moving the rows.
+  const rootEl = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const root = rootEl.current
+    if (!root) return
+    joinChosen(root)
+    if (!chosen.length) return
+    const later = setTimeout(() => joinChosen(root), 240)
+    return () => clearTimeout(later)
+  })
+  // Another filter hides rows: nothing it hides should stay chosen. A variant gone is let go of.
+  useEffect(() => { selection.clear() }, [filter, sid])
+  useEffect(() => { selection.keep(r => { const [slug, letter] = r.split('/'); return !!input.protos.find(p => p.id === slug)?.variants.some(v => v.id === letter) }) }, [input.protos])
   const touched = (p: Proto) => Math.max(Date.parse(p.created) || 0, memory.visitedAt(p.id), ...p.variants.flatMap(v => [input.edits?.[`${p.id}/${v.id}`] ?? 0, ...(p.versions?.[v.id] ?? []).map(x => Date.parse(x.at) || 0)]))
   const { nodes: tree, waiting, settled } = treeOf(input.protos, input.designs, { filter, me: input.conv ? sid : input.me, building: input.building, settle: {
     now: Date.now(), touched, aside: memory.asideOf, seen: (route, p) => memory.isSeen(route, p.created),
@@ -258,7 +310,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
         return (
           <>
             <div data-tree-decided className={'mx-1.5 rounded-lg ' + (onIt ? LIT : HOVER)}>
-              <Row flat id={n.key} depth={0} on={lit} open={shut} onCaret={() => flip(n)} onClick={page} strong={!parent && !!below.length} medium={!parent && !below.length} icon={icon}
+              <Row flat id={n.key} depth={0} on={lit} open={shut} onCaret={() => flip(n)} onClick={page} stands={winner.route} strong={!parent && !!below.length} medium={!parent && !below.length} icon={icon}
                 label={<span className={parent ? 'font-medium dark:text-zinc-200' : ''}>{title}{parent && <span className="text-[11px] font-normal text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
                 end={<span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-zinc-400">{pulse}{comment}{hidden && <Here />}
                   {!shut && !!below.length && <span title={tn(below.length, '{n} exploration built on this', '{n} explorations built on this')} className="flex items-center gap-0.5"><Ph name="gitBranch" className="size-3.5" />{below.length}</span>}
@@ -320,7 +372,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div ref={rootEl} data-tree-root className="flex h-full min-h-0 flex-col">
       <div className="flex h-12 shrink-0 items-center gap-2.5 px-3">
         <button type="button" data-act="settings:session" data-tree-session aria-haspopup="dialog" title={t('Session settings')} className="-ms-1 flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1 py-1 text-start hover:bg-zinc-900/5 dark:hover:bg-white/10">
           <span className="relative grid size-7 shrink-0 place-items-center rounded-lg bg-zinc-900 text-[13px] font-bold text-white dark:bg-white dark:text-zinc-900">{(api.name[0] || 'P').toUpperCase()}
@@ -360,10 +412,12 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
           )
         })}
       </div>}
+      {!desk && chosen.length > 0 && <ChosenBar top api={api} routes={chosen} />}
       <div ref={list} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3 pt-1 text-[13px]">
         {nodes.length ? nodes.map(n => draw(n))
           : <p className="px-4 py-6 text-center text-[12px] text-zinc-400">{filter === 'open' ? t('Nothing waits for you') : filter === 'mine' ? t('Nothing from this conversation yet') : filter === 'favs' ? t('No favorites yet') : t('No prototypes yet')}</p>}
       </div>
+      {desk && chosen.length > 0 && <ChosenBar api={api} routes={chosen} />}
       {(settled.length > 0 || archive) && <Shelf nodes={settled} archive={archive} slug={slug} draw={shelved} go={api.go} />}
       {desk && input.dock && <Dock dock={input.dock} />}
       <div className="flex h-10 shrink-0 items-center gap-2 border-t border-black/[.06] px-3 text-[12px] text-zinc-500 dark:border-white/10">

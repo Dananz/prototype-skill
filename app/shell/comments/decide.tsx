@@ -31,7 +31,7 @@ const NOTE: Record<Ask, { title: (v: string) => string; hint: string; done: (v: 
 /** The phone's decide sheet with the project tree on: its tiles (Pick, the star, More like this, Build it,
  *  a comment, share) and the quiet line under them (copy link, compare, Pick with a note), and Open when
  *  it is about a variant other than the one on screen (a tree row's ⋯). */
-export type Tiles = { fav: boolean; comments: number; onFav: () => void; onComment: () => void; onShare: () => void; onLink: () => void; onCompare?: () => void; onOpen?: () => void }
+export type Tiles = { fav: boolean; comments: number; onFav: () => void; onComment: () => void; onShare: () => void; onLink: () => void; onCompare?: () => void; onOpen?: () => void; onSelect?: () => void }
 
 export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, commentLabel, tiles }: { subject: Subject; sheet?: boolean; onDone?: () => void; onComment?: () => void; rows?: MenuRow[]; lead?: MenuRow[]; commentLabel?: string; tiles?: Tiles }) {
   const labelComment = commentLabel ?? t('Comment on this')
@@ -211,6 +211,7 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
           {tiles.onCompare && <button data-tile="compare" onClick={() => { tiles.onCompare!(); onDone?.() }} className={quiet}><Icon name="diff" className="size-4" /><span className="truncate">{t('Compare')}</span></button>}
           {!picked && <button data-tile="note" data-pick-note onClick={() => { field.clear(); setError(''); setAsk('pick') }} disabled={busy || field.adding} className={quiet}><Icon name="check" className="size-4" /><span className="truncate">{t('Pick with a note…')}</span></button>}
         </div>
+        {tiles.onSelect && <button data-tile="select" onClick={() => { tiles.onSelect!(); onDone?.() }} className={`${quiet} w-full`}><Icon name="check-simple" className="size-4" /><span className="truncate">{t('Select')}</span></button>}
         {extras}
         {oops}
         <p className="mt-2 flex items-center px-1">{status}</p>

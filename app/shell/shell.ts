@@ -37,6 +37,7 @@ import { createIntake } from './intake/index'
 import type { Intake } from './intake/types'
 import type { Appearance } from './settings'
 import { mountTree, TreeView, type TreeApi, type TreeInput } from './tree/index'
+import { selection } from './tree/selection'
 import { memory as treeMemory } from './tree/memory'
 import { createElement } from 'react'
 import type { GalleryApi, GalleryInput } from './gallery/index'
@@ -896,6 +897,21 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     })
   }
   let treeMounted = false
+  const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
+  // What the tree's chosen rows can do, from its bar, its menu or the keyboard.
+  const chosenApi = {
+    copyChosen(what: 'links' | 'ids', routes: string[]) {
+      copyText(routes.map(r => {
+        const [proto, variant] = r.split('/')
+        return what === 'links' ? linkOf(pathOf({ view: 'variant', proto, variant })) : `${proto}/${variantLabel(byId(proto) ?? null, variant)}`
+      }).join('\n'))
+    },
+    isFav(route: string) { const [proto, variant] = route.split('/'), q = byId(proto); return !!q && favOf(q, variant) },
+    async favChosen(routes: string[]) {
+      const on = !routes.every(chosenApi.isFav)
+      for (const r of routes) if (chosenApi.isFav(r) !== on) { const [proto, variant] = r.split('/'); await toggleFav(proto, variant) }
+    },
+  }
   function mountTreeOnce() {
     if (treeMounted || !treeOn) return
     treeMounted = true
@@ -905,7 +921,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       go: route => { const [proto, variant] = route.split('/'); go(variant ? { view: 'variant', proto, variant } : { view: 'proto', proto }) },
       goWork: () => act('work', 'go', ''), hide: () => act('side', '0', ''), name: session.name,
       frame: openFirstScreen,
-      setScope,
+      setScope, ...chosenApi,
     })
   }
   const grip = root.querySelector<HTMLElement>('[data-grip]')!
@@ -1934,7 +1950,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     hide: () => { st.tree = false; render() },
     // A design or a flow opens its first screen's card in the gallery, as on a wide page.
     frame: key => { st.tree = false; openFirstScreen(key) },
-    setScope,
+    setScope, ...chosenApi,
   }
   // Rows a finger can hit (40 px, 14 px type), each row's ⋯ always there (no hover to find it), and no
   // Hide sidebar: the sheet closes by a swipe, its backdrop or a row. The tree's buttons that work the
@@ -1970,6 +1986,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         onComment: () => { away(); commentWhole(q.id, v.id); render() },
         onShare: () => { away(); act('share', q.id, v.id) },
         onLink: () => copyText(linkOf(pathOf({ view: 'variant', proto: q.id, variant: v.id }))),
+        // Only from a tree row's ⋯: the tree stays open, and each tap on a row adds it.
+        onSelect: st.tree ? () => { if (!selection.has(route)) selection.toggle(route) } : undefined,
         onCompare: toolOk(q, v.id, 'compare') ? () => { away(); act('tool', q.id, v.id, 'compare') } : undefined,
         // From a tree row's ⋯, about a variant not on screen: open it first.
         onOpen: here ? undefined : () => { away(); go(keepIn(q, v.id)) },
@@ -1978,7 +1996,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   function paintWays() {
     const on = treeOn && !framed && matchMedia('(max-width: 639px)').matches
-    paintTreeSheet({ open: on && st.tree, label: t('Project tree'), halves: true, shoot: 'tree-sheet', body: treeSheetBody(), onClose: () => { st.tree = false; render() } })
+    paintTreeSheet({ open: on && st.tree, label: t('Project tree'), halves: true, shoot: 'tree-sheet', body: treeSheetBody(), onClose: () => { st.tree = false; selection.clear(); render() } })
     if (st.decide) decideShown = st.decide
     paintDecideSheet({ open: on && !!st.decide, label: t('Pick'), shoot: 'decide-sheet', body: decideShown ? decideSheetBody(decideShown) : null, onClose: () => { st.decide = ''; render() } })
   }
@@ -2676,6 +2694,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k' && treeOn && !framed && !e.defaultPrevented && !t.closest?.('[data-mount] input, [data-mount] textarea, [data-mount] [contenteditable]')) { e.preventDefault(); return openJump() }
     // Cmd or Ctrl Enter sends what's ready to Claude, from anywhere but a field of the design's own.
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
+    // ⌘C copies the rows chosen in the tree, unless there is text to copy or a field to copy from.
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'c' && selection.get().length && !getSelection()?.toString() && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); chosenApi.copyChosen('links', selection.get()); return }
     if (e.key === 'Escape') {
       if (tweaksOpen) { e.preventDefault(); tweaksOpen = false; render(); return }
       if (tryEsc()) return
@@ -2688,6 +2708,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (st.open === 'vmenu' && st.under) { const m = st.vmenu; st.open = st.under; st.under = null; render(); if (m) bar.querySelector<HTMLElement>(`[data-pop] [data-act="vm:${m.proto}:${m.variant}"]`)?.focus(); return }
       // A menu closed from inside gives the focus back to its button.
       if (st.open) { const was = st.open, inside = !!t.closest?.('[data-pop]'); st.open = null; render(); if (inside) bar.querySelector<HTMLElement>(`[data-act="open:${was}"]`)?.focus(); return }
+      if (selection.get().length) return selection.clear()
       if (st.drawer) { st.drawer = false; return render() }
       if (viewOn()) return patchView({ size: null, zoom: 0 })
       if (st.focus) return act('unfocus', '', '')
@@ -3353,6 +3374,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     | { kind: 'session' }
     | { kind: 'comment'; id: string }
     | { kind: 'art'; el: HTMLElement }
+    | { kind: 'chosen' }
   /** An SVG part (an icon, a chart) stands for the HTML element around it. */
   const htmlOf = (el: Element): HTMLElement => { let e: Element | null = el; while (e && e.namespaceURI !== 'http://www.w3.org/1999/xhtml') e = e.parentElement; return (e ?? el) as HTMLElement }
   function ctxOf(t: Element): CtxOn | null {
@@ -3363,7 +3385,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // The design on the stage, where there is no frame (a phone's screen, or the page too narrow for one).
     if (st.place.view === 'variant' && commentHost() && t.closest('[data-mount]') && !t.closest('[data-card]')) return { kind: 'art', el: htmlOf(t) }
     const row = t.closest<HTMLElement>('[data-mv]')
-    if (row) { const [proto, variant] = row.dataset.mv!.split(':'); return { kind: 'variant', proto, variant } }
+    if (row) { const [proto, variant] = row.dataset.mv!.split(':'); return selection.get().length > 1 && selection.has(`${proto}/${variant}`) ? { kind: 'chosen' } : { kind: 'variant', proto, variant } }
     const note = t.closest<HTMLElement>('[data-comment]')
     if (note) return { kind: 'comment', id: note.dataset.comment! }
     const el = t.closest<HTMLElement>('[data-act]')
@@ -3419,6 +3441,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const aside = treeMemory.settled.has(shelfRoot.id)
         rows.push({ id: 'aside', label: aside ? t('Bring back') : t('Set aside'), icon: aside ? 'eye' : 'eyeoff', run: () => treeMemory.setAside(shelfRoot.id, aside ? 'active' : 'settled') })
       }
+      if (treeOn) rows.push({ id: 'select', label: t('Select'), icon: 'check-simple', hint: `${MOD} click`, run: () => { if (!selection.has(`${q.id}/${v.id}`)) selection.toggle(`${q.id}/${v.id}`, st.place.view === 'variant' ? `${st.place.proto}/${st.place.variant}` : '') } })
       rows.push({ id: 'share-link', label: t('Share link…'), icon: 'link-simple', run: () => act('share-link', q.id, v.id) })
       rows.push({ id: 'share', label: t('Share screenshots'), icon: 'share', run: () => act('share', q.id, v.id) })
       rows.push({ id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(linkOf(pathOf({ view: 'variant', proto: q.id, variant: v.id }))) })
@@ -3466,6 +3489,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         return { title: on.variant, sub: s.name, rows: [
           { id: 'open', label: t('Open this state'), icon: 'right', run: () => go(place) },
           { id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(linkOf(pathOf(place))) },
+        ] }
+      }
+      case 'chosen': {
+        const routes = selection.get()
+        if (!routes.length) return null
+        const starred = routes.every(chosenApi.isFav)
+        return { title: tn(routes.length, '1 selected', '{n} selected'), rows: [
+          { id: 'links', label: t('Copy links'), icon: 'link-simple', kbd: `${MOD} C`, run: () => chosenApi.copyChosen('links', routes) },
+          { id: 'ids', label: t('Copy IDs'), icon: 'hash-id', run: () => chosenApi.copyChosen('ids', routes) },
+          { id: 'fav', label: starred ? t('Unfavorite') : t('Favorite'), icon: starred ? 'star-fill' : 'star', run: () => { void chosenApi.favChosen(routes) } },
+          { id: 'clear', label: t('Clear selection'), icon: 'x-simple', run: selection.clear },
         ] }
       }
       case 'session':

@@ -220,3 +220,14 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
   /* The stage's layers end a gap before the side panel. */
   [data-desk] [data-zone] > :is([data-layers], [data-view], [data-spot], [data-comments], [data-island-host]) { inset-inline-end: calc(var(--hw, 0px) + var(--desk-gap)) !important; }
 }
+/* A row chosen in the tree fades from whatever it looked like (hovered, or the one on screen) to its
+   tint and hairline, and back. Rows that touch read as one shape: the edge between them fades out
+   and the corners there square off (data-tree-join, set by the tree). */
+[data-tree-row] { position: relative; transition: background-color .18s ease-out, border-radius .18s ease-out; }
+[data-tree-row]::before { content: ''; position: absolute; inset: 0; border: 1px solid transparent; border-radius: inherit; pointer-events: none; transition: border-color .18s ease-out, border-radius .18s ease-out; }
+[data-tree-chosen]::before { border-color: color-mix(in oklab, var(--color-sky-500) 40%, transparent); }
+[data-tree-join~="top"] { border-top-left-radius: 0; border-top-right-radius: 0; }
+[data-tree-join~="top"]::before { border-top-color: transparent; }
+[data-tree-join~="bottom"] { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+[data-tree-join~="bottom"]::before { border-bottom-color: transparent; }
+@media (prefers-reduced-motion: reduce) { [data-tree-row], [data-tree-row]::before { transition: none; } }
