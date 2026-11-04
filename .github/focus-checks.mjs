@@ -32,6 +32,7 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     assert(/Focus Acme/.test(crumb) && /Main/.test(crumb) && /Focus home/.test(crumb) && /1\/2/.test(crumb), `the crumb should say design, flow, screen and 1/2: ${crumb}`)
     assert(await page.run(`!document.querySelector('[data-bar] [data-shoot="switcher"]:not(.hidden)')?.offsetParent`), 'the switcher should give way to the crumb')
     assert(await page.run(`!document.querySelector('[data-strip]').hidden && !!document.querySelector('[data-strip] [data-shoot="strip-comment"]') && !!document.querySelector('[data-strip] [data-shoot="strip-decide"]')`), 'the strip should hold Comment and Decide')
+    assert(await page.run(`/^(Decide|Picked)$/.test(document.querySelector('[data-strip] [data-shoot="strip-decide"]').innerText.trim())`), 'the strip should say Decide or Picked in words, not only as an icon')
     assert(await page.run(`!!document.querySelector('[data-strip] [data-shoot="strip-tour"]')`), 'a flow of two screens can be walked from the strip')
     await page.run(`document.querySelector('[data-strip] [data-shoot="strip-decide"]').click()`)
     await until(page, `!!document.querySelector('[data-pop][class*="fixed"]')`, 'Decide from the strip should open its menu')
