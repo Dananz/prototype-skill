@@ -13,6 +13,7 @@ import { metaOf, slotPointers } from '../server.mjs'
 import { trimMeta, trimSession } from './scope.mjs'
 import { stampsPlugin } from './stamps.mjs'
 import { imagesPlugin } from './images.mjs'
+import { buildSource, sourceTag } from './source.mjs'
 
 const VARIANT_EXTS = ['tsx', 'jsx', 'vue', 'svelte']
 const ASSET_EXTS = /\.(png|jpe?g|webp|avif)$/i
@@ -308,5 +309,19 @@ export function sharePlugins({ scope, info, session, sharp, appDir, outDir, repo
 
   const tags = { name: 'proto-share-tags', transformIndexHtml: html => shareTags(html, info, session.lang) }
 
-  return [swap, tailwindSources, fileNames, icon, noscript, tags, options, stampsPlugin({ protosDir }), imagesPlugin({ sharp, root })]
+  // The source a link can be forked from (source.mjs), last, once the pictures are made: each is named
+  // by the hash of what the page holds. --no-fork leaves it out.
+  const source = {
+    name: 'proto-share-source',
+    transformIndexHtml: {
+      order: 'post',
+      handler: html => {
+        if (info.fork === false) return html
+        const block = buildSource({ root, session, scope, info, metaOf, designs, entries, assets: keptAssets, made: imagesPlugin.made })
+        return html.replace('</body>', () => `${sourceTag(block)}\n  </body>`)
+      },
+    },
+  }
+
+  return [swap, tailwindSources, fileNames, icon, noscript, tags, source, options, stampsPlugin({ protosDir }), imagesPlugin({ sharp, root })]
 }

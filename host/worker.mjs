@@ -8,6 +8,7 @@ import { approveSignin, authCallback, authStart, claimUrl, signinReady, startIn,
 import { ownerComments, viewerApi } from './lib/comments.mjs'
 import { claim, dropKey, metered, putClaimed, queueKey, reserveStore, room, today, usage } from './lib/budget.mjs'
 import { cron } from './lib/cron.mjs'
+import { dismissOffer, offerShare, offersOf } from './lib/offers.mjs'
 import { flagged } from './lib/scan.mjs'
 import { admin, banned, createRefused, liveCap, pending, quotaOf, reserveUpload, signinBegin, signinPoll, signout } from './lib/users.mjs'
 
@@ -178,6 +179,16 @@ async function api(req, env, url, path) {
     if (!isId(parts[2])) return fail(404, 'No such share.')
     return putCard(req, env, owner, parts[2])
   }
+  if (parts[1] === 'shares' && parts[3] === 'offer' && parts.length === 4) {
+    if (req.method !== 'POST') return fail(405, 'Method not allowed.')
+    if (!isId(parts[2])) return fail(404, 'No such share.', { code: 'no_share' })
+    return offerShare(req, env, owner, parts[2])
+  }
+  if (parts[1] === 'shares' && parts[3] === 'offers' && parts.length === 5) {
+    if (req.method !== 'DELETE') return fail(405, 'Method not allowed.')
+    if (!isId(parts[2]) || !isId(parts[4])) return fail(404, 'No such share.', { code: 'no_share' })
+    return dismissOffer(env, owner, parts[2], parts[4])
+  }
   if (parts[1] !== 'shares' || parts.length > 3) return fail(404, 'No such route.')
   const id = parts[2]
   if (id === undefined && req.method === 'POST') {
@@ -226,14 +237,16 @@ async function createShare(env) {
   return fail(503, 'Could not make an id. Try again.')
 }
 
-// Three queries whatever the number of shares (a Free invocation has 50 subrequests): the shares,
-// their views, and their latest faces.
+// Four queries whatever the number of shares (a Free invocation has 50 subrequests): the shares,
+// their views, their latest faces and the offers on them.
 async function listShares(env, owner) {
   const { results } = await env.DB.prepare(
     'SELECT id, title, version, bytes, updated_at, expires_at, message, disabled_at FROM shares WHERE owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC, id',
   ).bind(owner.id).all()
   const views = new Map(), faces = new Map()
+  let offers = new Map()
   if (results.length) {
+    offers = await offersOf(env, owner)
     const counted = await env.DB.prepare(
       'SELECT v.share_id AS id, SUM(v.n) AS n FROM views v JOIN shares s ON s.id = v.share_id WHERE s.owner_id = ? AND s.deleted_at IS NULL GROUP BY v.share_id',
     ).bind(owner.id).all()
@@ -251,7 +264,7 @@ async function listShares(env, owner) {
   }
   return json(results.map(s => ({
     id: s.id, title: s.title, version: s.version, bytes: s.bytes, updatedAt: s.updated_at, expiresAt: s.expires_at ?? null,
-    message: s.message ?? null, disabled: !!s.disabled_at, views: views.get(s.id) ?? 0, viewers: faces.get(s.id) ?? [],
+    message: s.message ?? null, disabled: !!s.disabled_at, views: views.get(s.id) ?? 0, viewers: faces.get(s.id) ?? [], offers: offers.get(s.id) ?? [],
   })))
 }
 

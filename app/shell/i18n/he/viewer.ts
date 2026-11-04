@@ -90,6 +90,8 @@ export default {
   'Reply to {owner}': 'השב ל-{owner}',
   'Reply to {owner}…': 'השב ל-{owner}…',
   'Report this link': 'דווח על הקישור',
+  'Fork this prototype': 'עשה פורק לאב הטיפוס',
+  'Keep working on your own copy, on your machine. Paste this into Claude Code in your project. You can offer your version back later.': 'המשך לעבוד על עותק משלך, במחשב שלך. הדבק את זה ב-Claude Code בפרויקט שלך. אחר כך תוכל להציע את הגרסה שלך בחזרה.',
   'What is wrong with this link?': 'מה הבעיה בקישור הזה?',
   'For example: phishing, malware, someone else’s private work': 'לדוגמה: פישינג, נוזקה, עבודה פרטית של מישהו אחר',
   'Send report': 'שלח דיווח',

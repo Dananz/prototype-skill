@@ -98,7 +98,7 @@ with `--restart`; else `proto share stop && proto share setup --local` applies t
 proto share signin [--no-open] [--again]  sign in with GitHub: prints and opens a link (10 minutes,
                                           works once), waits up to five minutes, keeps this Mac's token
 proto share signout                       revoke this Mac's token on the host and forget it
-proto share <slug>[/<n>…] | --all [--title "…"] [--message "…"] [--yes] [--host local|online]
+proto share <slug>[/<n>…] | --all [--title "…"] [--message "…"] [--no-fork] [--yes] [--host local|online]
                                           build, review, publish, print the link; --message: what
                                           viewers read first (at most 280 characters)
 proto share ls [--all]                    this session's links (--all: every share on the host),
@@ -118,6 +118,13 @@ proto share enable <id>                   turn it back on, at the same link
 proto share rm <id>                       take a link down; it then says "This link was removed"
 proto share file <slug>[/<n>…] [--out <file.html>]   the same build as one HTML file, comments off
 proto share stop                          stop the local host; the next share starts it again
+proto fork <link|file.html> [--as <slug>] [--yes] [--install]
+                                          someone's shared prototype, into this project (see Forking)
+proto fork ls                             what was forked here, what changed, whether the original moved on, and offers on your links
+proto fork offer <slug>[/<n>…] [--message "…"] [--yes]
+                                          publish a fork as your own link and tell the original link's owner
+proto fork dismiss <offer id> [--on <your link id>]
+                                          wave away an offer on your link
 proto share admin users [--pending] | approve <login> | ban <login> | rm <id> | reports
                                           the host's admin only: who signed up, let one in, ban one
                                           (their tokens revoked, their links taken down), take any
@@ -155,6 +162,29 @@ written on this Mac. `--host` picks a host for one command; `update` and `rm` go
 Before it builds, `proto share` brings the session's copy of the app up to date with the skill (a
 session not re-upped would publish an old viewer). It never stops the dev server; when the server's
 own files changed it says `proto up` restarts it on the new code.
+
+## Forking
+
+A share's page carries its source, as an inert JSON script (`app/share/source.mjs`): the files its
+variants reach, the metas as a share cuts them, the theme, the package versions. Pictures aren't repeated:
+the block names each by the hash of the data URL the page already holds. So there is nothing more to upload
+or store, a removed or expired link refuses a fork by itself, and the review reads the source because it
+reads the page: a secret in a comment now blocks a share. `--no-fork` leaves the source out (on `update`,
+`--fork` puts it back). The viewer's Fork button shows only where a page carries source.
+
+`proto fork <link>` takes links on a host this Mac knows and saved pages, nothing else. It prints what
+would land and stops (exit 2); `--yes` lands it. Paths outside `protos/` and `designs/`, anything but source
+files, and packages that aren't a plain name and version are refused. A fork's packages aren't installed
+unless `--install` says so. A slug or design already here gets `-2`, a picture with other bytes
+`<name>--<key>`, and the code that names them follows. Imports from the sharer's project break and it says
+which; a slot's pick doesn't travel. It stays in `.proto/forks.json` with a hash per file, which is how
+`proto fork ls` and an offer know what changed.
+
+`proto fork offer` publishes the fork as the forker's own link, so it counts against their limits, and adds a
+row to the host's `offers`. Only the original link's owner reads it: `proto share ls`, `proto fork ls` and the
+Share popover (Offered back to you). Sharing a fork plainly tells nobody. Bring in, or `proto fork <its id>`,
+lands it nested under the original. The same fork offered again updates the same link, and an offer waved
+away comes back only with a new offer. A link holds 50 offers.
 
 ## Viewer comments
 

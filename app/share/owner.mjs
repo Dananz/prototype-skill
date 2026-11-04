@@ -205,6 +205,15 @@ export function client(host, token, { fetch = globalThis.fetch, timeout = 60_000
         throw e
       }
     },
+    /** Tells the owner of the link `to` that this share is a version of it. A host from before offers has no such route. */
+    offer: async (id, body) => {
+      try { return await call('POST', `/api/shares/${id}/offer`, { body: JSON.stringify(body), headers: json }) } catch (e) {
+        if (e?.status === 404 && !e.code) throw Object.assign(new ShareError(`The share host "${host.name}" needs an update before it can take offers${host.builtin ? '' : `: ${setupHint(host)}`}`), { status: 404, code: 'update' })
+        throw e
+      }
+    },
+    /** The owner of a link waves an offer away. */
+    dismissOffer: async (id, from) => { await call('DELETE', `/api/shares/${id}/offers/${from}`) },
     /** The owner's GitHub identity on this host: { login, name, avatar, signin }, nulls before they sign in. */
     owner: () => call('GET', '/api/owner'),
     /** { url }: the 10-minute sign-in link that ties the owner to a GitHub account (refused with signin_off). */

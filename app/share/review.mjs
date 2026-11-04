@@ -45,7 +45,7 @@ const maskedAround = (html, m) => {
   return `${before}${m[0].slice(0, 4)}…${after}`.replace(/\s+/g, ' ')
 }
 
-export function review({ html, gzBytes, projectPath, home, projectImports, currents }) {
+export function review({ html, gzBytes, projectPath, home, projectImports, currents, forkable = false }) {
   const block = []
   const warn = []
 
@@ -75,6 +75,8 @@ export function review({ html, gzBytes, projectPath, home, projectImports, curre
     warn.push({ code: 'project-code', message: `The share includes code copied from your project (${names.join(', ')}). Anyone with the link can read it.` })
   }
   if (currents.length) warn.push({ code: 'real-screens', message: `The share includes real screens of your product (${currents.join(', ')}). Anyone with the link will see them.` })
+  // Only worth a word where the code is the owner's own: a plain prototype's source is the prototype.
+  if (forkable && (projectImports.length || currents.length)) warn.push({ code: 'forkable', message: 'Its source goes with the page, so anyone with the link can fork it and read the code. --no-fork leaves the source out.' })
 
   const origins = new Set()
   const privates = new Map()

@@ -582,6 +582,71 @@ async function viewerChecks({ proto, app, openPage, fail, buildShare }) {
 // command runs with HOME in a folder of this run and the file token store, so the run never writes
 // to the login Keychain, ~/.config/prototype or ~/.prototypes/host; the pinned tools come from the
 // usual ~/.prototypes/share-tools through PROTO_SHARE_TOOLS rather than a second install.
+// A fork, on a real build and a real host: the page carries its source, the viewer says so, `proto fork`
+// stops at the first run and lands on --yes, and the fork offered back comes home nested under the original.
+async function forkChecks({ link, app, project, env, skill, openPage, assert, share, linkIn }) {
+  const fork = (...args) => {
+    console.log(`\n$ proto fork ${args.join(' ')}`)
+    const r = spawnSync(process.execPath, [join(skill, 'scripts', 'proto.mjs'), 'fork', ...args, '--project', project, '--session', 'smoke'], { env, encoding: 'utf8', timeout: 600_000 })
+    process.stdout.write(r.stdout || '')
+    process.stderr.write(r.stderr || '')
+    return { status: r.status, out: (r.stdout || '') + (r.stderr || '') }
+  }
+  const page = await openPage(link)
+  try {
+    await until(() => page.run("!!document.querySelector('[data-fork]')"))
+    await page.run("document.querySelector('[data-fork]').click()")
+    await until(() => page.run("!!document.querySelector('[data-fork-command]')"))
+    const command = await page.run("document.querySelector('[data-fork-command]').textContent")
+    assert(command.startsWith('/prototype fork http') && !command.includes('#'), `fork: the viewer offers ${JSON.stringify(command)}`)
+  } finally { page.close() }
+
+  const asked = fork(link)
+  assert(asked.status === 2 && /someone else's code/.test(asked.out) && /Run again with --yes/.test(asked.out), `fork: the first run exited ${asked.status}`)
+  assert(!existsSync(join(app, 'src/protos/share-link-2')), 'fork: the first run landed something')
+  const landed = fork(link, '--yes')
+  assert(landed.status === 0, `fork: --yes exited ${landed.status}`)
+  const meta = readMeta(app, 'share-link-2')
+  assert(meta.forkedFrom?.share && meta.forkedFrom.proto === 'share-link', `fork: forkedFrom is ${JSON.stringify(meta.forkedFrom)}`)
+  assert(Object.keys(meta.variants).join() === 'B,C', `fork: it lists ${Object.keys(meta.variants)}`)
+  assert(readFileSync(join(app, 'src/protos/share-link-2/B.tsx'), 'utf8').includes('MARK-B'), 'fork: the variant\'s code did not land')
+  assert(!Object.keys(meta).includes('picks') && meta.ask === '', 'fork: the owner\'s ask came along')
+  // A picture beside the code comes out of the page as the WebP it is there, and the import follows.
+  assert(existsSync(join(app, 'src/protos/share-link-2/hero.webp')) && readFileSync(join(app, 'src/protos/share-link-2/B.tsx'), 'utf8').includes('./hero.webp'), 'fork: the picture beside the code did not land')
+  // And one only a stylesheet names, which no import reaches.
+  assert(readdirSync(join(app, 'src/protos/share-link-2')).some(f => /^tile\.(?:png|webp)$/.test(f)), 'fork: the picture a stylesheet names did not land')
+  assert(/no changes yet/.test(fork('ls').out), 'fork ls: a new fork has changes')
+
+  // Changed, offered, and brought back under the original.
+  const file = join(app, 'src/protos/share-link-2/B.tsx')
+  writeFileSync(file, readFileSync(file, 'utf8').replace('MARK-B', 'MARK-FORKED'))
+  assert(/share-link-2\/B/.test(fork('ls').out), 'fork ls: the change is not named')
+  const offered = fork('offer', 'share-link-2', '--yes')
+  assert(offered.status === 0 && /^offered /m.test(offered.out), `fork offer exited ${offered.status}`)
+  const offerLink = linkIn(offered.out)
+  const listed = share(['ls'])
+  assert(/offer from/.test(listed.out) && /changed #2/.test(listed.out), 'share ls: the offer is not listed with what changed, in the owner\'s numbers')
+  const home = fork(offerLink, '--yes')
+  assert(home.status === 0 && /brought back/.test(home.out), `fork: an offer on my own link exited ${home.status}`)
+  const back = readdirSync(join(app, 'src/protos')).find(s => /^share-link-2?-from-|^share-link-3$/.test(s))
+  assert(back, 'fork: the offer did not land')
+  assert(readFileSync(join(app, 'src/protos', back, 'B.tsx'), 'utf8').includes('MARK-FORKED'), 'fork: the offer brought the wrong code')
+  assert(readMeta(app, back).from?.startsWith('share-link'), `fork: it came back with from ${readMeta(app, back).from}`)
+  // What this left behind must not change what the checks after it count.
+  for (const s of ['share-link-2', back]) rmSync(join(app, 'src/protos', s), { recursive: true, force: true })
+  rmSync(join(app, '.proto/forks.json'), { force: true })
+  const entriesFile = join(app, '.proto/shares.json')
+  writeFileSync(entriesFile, JSON.stringify(JSON.parse(readFileSync(entriesFile, 'utf8')).filter(e => !offerLink.includes(e.id))))
+
+  // Left out on request: no source in the page, so no button and nothing to fork.
+  const out = join(dirname(app), 'no-fork.html')
+  const plain = share(['file', 'share-link/2', '--no-fork', '--out', out])
+  assert(plain.status === 0 && !readFileSync(out, 'utf8').includes('id="proto-source"'), '--no-fork: the source went out anyway')
+  const none = fork(out, '--yes')
+  assert(none.status !== 0 && /carries no source/.test(none.out), `fork: a page without source exited ${none.status}`)
+  rmSync(out, { force: true })
+}
+
 async function hostChecks({ app, openPage, fail }) {
   const project = dirname(dirname(app))
   const home = mkdtempSync(join(tmpdir(), 'proto-share-home-'))
@@ -638,6 +703,7 @@ async function hostChecks({ app, openPage, fail }) {
 
   const one = share(['share-link/2', 'share-link/3', '--yes'])
   const link = linkIn(one.out)
+  await forkChecks({ link, app, project, env, skill, openPage, assert, share, linkIn })
   assert(one.status === 0 && link, `publish: exited ${one.status} without a link`)
   const page = await answer(link)
   assert(page.status === 200 && page.text.includes('MARK-B') && page.text.includes('MARK-C'), `publish: ${link} answered ${page.status} without MARK-B and MARK-C`)

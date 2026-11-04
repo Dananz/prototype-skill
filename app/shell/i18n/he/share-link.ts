@@ -136,4 +136,12 @@ export default {
   'Replying to': 'בתשובה ל',
   'your reply: {text}': 'התשובה שלך: {text}',
   'A reply on the link': 'תשובה בקישור',
+  'Offered back to you': 'הוצע לך בחזרה',
+  '{who} offered a version of {title}': 'גרסה של {title} מאת {who}',
+  'Someone': 'מישהו',
+  'Changed {what}': 'שינויים: {what}',
+  'Open their link': 'פתח את הקישור שלהם',
+  'Bring in': 'הכנס לכאן',
+  'Open it': 'פתח',
+  'It needs {what}: ask Claude to add them.': 'צריך את {what}: בקש מ-Claude להוסיף אותם.',
 }
