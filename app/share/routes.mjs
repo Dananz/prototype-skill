@@ -46,6 +46,26 @@ export function syncFirst(root, session, skill = process.env.PROTO_SKILL, { time
   })
 }
 
+// What a page's Bring in runs: the skill's own proto fork, since the session's server can't reach the
+// skill's code itself. The person's press is its --yes. Resolves with what its --json said.
+export function forkHere(input, session, skill = process.env.PROTO_SKILL, { timeout = 120_000 } = {}) {
+  if (!skill) return Promise.reject(failure(409, 'This session\'s server is older than the skill: run proto up, then try again.', { code: 'update' }))
+  const args = [join(skill, 'scripts', 'proto.mjs'), 'fork', input, '--yes', '--json', '--project', session.project, '--session', String(session.id)]
+  return new Promise((done, no) => {
+    let out = '', err = ''
+    const child = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PROTO_NO_GC: '1' } })
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeout)
+    child.stdout.on('data', d => { out += d })
+    child.stderr.on('data', d => { err += d })
+    child.on('error', e => { clearTimeout(timer); no(failure(500, e.message)) })
+    child.on('close', code => {
+      clearTimeout(timer)
+      if (code !== 0) return no(failure(502, err.trim().split('\n').at(-1) || out.trim().split('\n').at(-1) || `exit ${code}`))
+      try { done(JSON.parse(out.trim().split('\n').at(-1))) } catch { no(failure(502, 'The fork ran but said nothing of what landed.')) }
+    })
+  })
+}
+
 /**
  * root: the session folder. session(): session.json as it is now. receive(data, root): the server's
  * inbox writer. emit(tray): sends `proto:shares` to every open page.
@@ -191,7 +211,8 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
           for (const s of shares) {
             if (s.host !== name) continue
             const r = byId.get(s.id)
-            Object.assign(s, { live: !!r, views: r?.views ?? null, viewers: facesOf(r?.viewers), ...(r && 'message' in r ? { message: r.message ?? null } : {}), ...(r && 'disabled' in r ? { disabled: r.disabled === true } : {}) })
+            const h = hostNamed(name)
+            Object.assign(s, { live: !!r, views: r?.views ?? null, viewers: facesOf(r?.viewers), offers: (Array.isArray(r?.offers) ? r.offers : []).map(o => ({ ...o, link: h ? linkOf(h, o.id) : null })), ...(r && 'message' in r ? { message: r.message ?? null } : {}), ...(r && 'disabled' in r ? { disabled: r.disabled === true } : {}) })
           }
         } catch (e) { if (e?.status === 401) forget(name); hostError = String(e?.message || e) }
       }
@@ -281,6 +302,19 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
       // The tray's comments on the old version now say it has changed since.
       if (r.ok) tell()
       return r
+    },
+    /** Bring in: someone's offered version lands nested under the original. Its host is the one its origin is on. */
+    async offerTake(data) {
+      if (typeof data.on !== 'string' || typeof data.id !== 'string') throw failure(400, 'send { on, id }: your link and the offer on it')
+      const host = await hostOf(entryOf(data.on).host)
+      return forkHere(linkOf(host, data.id), session())
+    },
+    async offerDismiss(data) {
+      if (typeof data.on !== 'string' || typeof data.id !== 'string') throw failure(400, 'send { on, id }')
+      const e = entryOf(data.on)
+      const { host, token } = await reach(e.host)
+      await client(host, token).dismissOffer(e.id, data.id)
+      return { ok: true }
     },
     async disable(data) {
       if (typeof data.id !== 'string' || typeof data.disabled !== 'boolean') throw failure(400, 'send { id, disabled }')

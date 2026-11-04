@@ -763,12 +763,26 @@ test('schema.sql runs on a local database from before 0004 (owners without gh_id
   assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
 })
 
+test('migration 0009 on top of 0001-0008: offers appear, and running it again is harmless; schema.sql and upgrade() agree', async () => {
+  const list = migrations()
+  assert.equal(list[8]?.[0], '0009_offers.sql')
+  const sql = new DatabaseSync(':memory:'), local = new DatabaseSync(':memory:')
+  for (const [f, text] of list) if (f < '0009') { sql.exec(text); local.exec(text) }
+  sql.exec(list[8][1])
+  sql.exec(list[8][1])
+  assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
+  await upgrade(d1Of(local))
+  assert.deepEqual(shapeOf(local), shapeOf(await fromSchema()))
+})
+
 test('migration 0008 on top of 0001-0007: shares gain disabled_at, old links stay on; schema.sql and upgrade() agree', async () => {
   const list = migrations()
   assert.equal(list[7]?.[0], '0008_disabled.sql')
   const sql = new DatabaseSync(':memory:'), local = new DatabaseSync(':memory:')
   for (const [f, text] of list) if (f < '0008') { sql.exec(text); local.exec(text) }
   sql.exec(list[7][1])
+  // The migrations after it change none of what this one checks.
+  for (const [, text] of list.slice(8)) sql.exec(text)
   assert.deepEqual(shapeOf(sql), shapeOf(await fromSchema()))
   assert.throws(() => sql.exec(list[7][1]), /duplicate column/i)
   await upgrade(d1Of(local))

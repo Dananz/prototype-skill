@@ -93,3 +93,11 @@ CREATE TABLE IF NOT EXISTS reports  (id TEXT PRIMARY KEY, share_id TEXT NOT NULL
                        gh_id INTEGER,                  -- the viewer, when signed in on the link
                        created_at INTEGER NOT NULL,
                        source TEXT);                   -- 'viewer' or 'auto' (the upload's scan); none from before 0007 is a viewer's
+CREATE TABLE IF NOT EXISTS offers   (origin_id TEXT NOT NULL,        -- the link it is a version of
+                       share_id TEXT NOT NULL,         -- the forker's own link
+                       owner_id TEXT NOT NULL,         -- who offered it: the owner of share_id
+                       base_version INTEGER,           -- the origin's version it was forked from
+                       changed TEXT,                   -- JSON: what differs from that version, ["A", "D (new)"]
+                       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+                       dismissed_at INTEGER,           -- waved away by the origin's owner; offered again, it comes back
+                       PRIMARY KEY (origin_id, share_id));

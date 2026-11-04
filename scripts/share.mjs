@@ -42,7 +42,7 @@ export async function reachHost(die, flags = {}, { fetch = globalThis.fetch } = 
 
 // The host and this Mac's token for it. With no token: the host on this Mac is set up; any online
 // one asks for the GitHub sign-in that makes one.
-async function liveHost(die, flags = {}, options) {
+export async function liveHost(die, flags = {}, options) {
   const named = typeof flags.host === 'string' ? flags.host : null
   const known = named ? hostNamed(named) : defaultHost()
   if (known && !getToken(known.name)) die(known.stage === 'local' ? `No owner token for the host "${known.name}" on this machine: run ${setupHint(known)}` : SIGN_IN_FIRST)
@@ -58,7 +58,7 @@ async function liveHost(die, flags = {}, options) {
 const hostOfShare = (sessionDir, id, flags) => typeof flags.host === 'string' ? flags : { ...flags, host: readShares(sessionDir).find(e => e.id === id)?.host }
 
 // The link lines: on prtype.dev the short link to send and the page it opens; else the one link.
-function links(host, id) {
+export function links(host, id) {
   const link = linkOf(host, id), short = shortLinkOf(host, id)
   console.log(`link ${short}`)
   if (short !== link) console.log(`opens ${link}`)
@@ -71,7 +71,7 @@ function links(host, id) {
 // else a running server holds in memory waits for `proto up`.
 // From the page (--sync-only, under its running Vite) nothing is installed: moved packages exit 3,
 // and the page's review asks for `proto up`, which installs them with the server stopped.
-function freshApp(sessionDir, die, { install = true } = {}) {
+export function freshApp(sessionDir, die, { install = true } = {}) {
   let r
   try { r = syncApp(sessionDir) } catch (e) { die(e.message) }
   if (r.deps && !install) { console.log('The session\'s packages changed with the skill: proto up installs them.'); process.exit(3) }
@@ -81,7 +81,7 @@ function freshApp(sessionDir, die, { install = true } = {}) {
 }
 
 /** Prints the review. Blocks end the command; warnings need --yes. */
-function report(result) {
+export function report(result) {
   const { review } = result
   console.log(`size: ${review.sizeMiB.toFixed(1)} MiB gzipped`)
   if (review.block.length) {
@@ -97,7 +97,7 @@ function report(result) {
 }
 
 // --message "…" sets the words viewers read first; on update, --message= (empty) clears them.
-const messageFlag = (flags, clear) => typeof flags.message === 'string' ? (flags.message || (clear ? null : undefined)) : flags.message === true && clear ? null : undefined
+export const messageFlag = (flags, clear) => typeof flags.message === 'string' ? (flags.message || (clear ? null : undefined)) : flags.message === true && clear ? null : undefined
 
 async function publish(args, flags, { sessionDir, session, die }) {
   const { host, token } = await liveHost(die, flags)
@@ -105,7 +105,7 @@ async function publish(args, flags, { sessionDir, session, die }) {
   const protos = protosOf(sessionDir)
   const scope = parseScope(args, flags.all === true, protos)
   const title = typeof flags.title === 'string' ? flags.title : titleOf(scope, protos, session)
-  const result = await publishShare({ sessionDir, session, host, token, scope, title, message: messageFlag(flags, false), yes: flags.yes === true })
+  const result = await publishShare({ sessionDir, session, host, token, scope, title, message: messageFlag(flags, false), yes: flags.yes === true, fork: flags['no-fork'] !== true })
   report(result)
   console.log(`published ${describe(scope)} as "${title}", v${result.entry.version}${result.entry.message ? `; message for viewers: "${result.entry.message}"` : ''}`)
   links(host, result.entry.id)
@@ -210,7 +210,7 @@ async function update(id, flags, { sessionDir, session, die }) {
   if (!id) die('proto share update <id> [--note "…"]: which share? proto share ls lists them')
   const { host, token } = await liveHost(die, hostOfShare(sessionDir, id, flags))
   freshApp(sessionDir, die)
-  const result = await updateShare({ sessionDir, session, host, token, id, note: typeof flags.note === 'string' ? flags.note : undefined, message: messageFlag(flags, true), yes: flags.yes === true })
+  const result = await updateShare({ sessionDir, session, host, token, id, note: typeof flags.note === 'string' ? flags.note : undefined, message: messageFlag(flags, true), yes: flags.yes === true, ...(flags['no-fork'] === true ? { fork: false } : flags.fork === true ? { fork: true } : {}) })
   report(result)
   console.log(`updated ${id} to v${result.entry.version}: the same link, its comments kept${result.entry.note ? `; what's new: "${result.entry.note}"` : ''}`)
   if (flags.message !== undefined) console.log(result.entry.message ? `message for viewers: "${result.entry.message}"` : 'message for viewers: none')
@@ -225,6 +225,9 @@ async function usageLine(api) {
   const at = new Date(u.resetsAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
   console.log(`today: ${n(u.kv_write)}/${n(u.caps.kv_write)} uploads, ${n(u.kv_delete)}/${n(u.caps.kv_delete)} deletes, ${n(u.d1_write)}/${n(u.caps.d1_write)} writes, ${mb(u.kv_bytes)}/${mb(u.caps.kv_bytes)} stored (resets ${at})`)
 }
+
+// An offer is someone's words and someone's code: printed as a report, and brought in only on the user's word.
+export const offerLine = (host, o) => `    offer from @${o.login ?? '?'}: "${o.title}" v${o.version}${o.base ? `, from your v${o.base}` : ''}${o.changed?.length ? `, changed ${o.changed.join(', ')}` : ''}  ${shortLinkOf(host, o.id)}  (proto fork ${o.id} brings it in)`
 
 async function ls(flags, { sessionDir, die }) {
   const { host, token } = await liveHost(die, flags)
@@ -252,6 +255,7 @@ async function ls(flags, { sessionDir, die }) {
     const now = (Array.isArray(r.viewers) ? r.viewers : []).filter(v => Date.now() - v.at < NOW_MS)
     const views = Number(r.views) || 0
     console.log(`    ${now.length ? `in it now: ${now.map(v => `${v.login}${v.route ? ` (${v.route})` : ''}`).join(', ')}` : 'nobody in it now'}; ${views} view${views === 1 ? '' : 's'}`)
+    for (const o of Array.isArray(r.offers) ? r.offers : []) console.log(offerLine(host, o))
     const changed = changedVariants(sessionDir, e)
     if (changed.length) console.log(`    changed since v${e.version}: ${changed.map(c => c.key.endsWith('/*') ? `${c.name} (${c.key.slice(0, -2)})` : `${c.key} ${c.name}`).join(', ')}`)
   }
@@ -325,7 +329,7 @@ async function file(args, flags, { sessionDir, session, die }) {
   const scope = parseScope(args, flags.all === true, protos)
   const title = typeof flags.title === 'string' ? flags.title : titleOf(scope, protos, session)
   // The owner's name from the host when one is set up; with none the viewer leaves the "by" out.
-  const built = await buildShare({ sessionDir, scope, info: { title, owner: defaultHost()?.owner || '', version: 1, comments: false } })
+  const built = await buildShare({ sessionDir, scope, info: { title, owner: defaultHost()?.owner || '', version: 1, comments: false, fork: flags['no-fork'] !== true } })
   report({ review: reviewOf(built) })
   const out = typeof flags.out === 'string' ? resolve(flags.out) : join(sessionDir, '.proto', 'shares', `${scope.protos[0].id}.html`)
   mkdirSync(dirname(out), { recursive: true })

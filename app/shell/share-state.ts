@@ -10,6 +10,8 @@
 import { post } from './transport'
 
 /** A viewer the host saw in a link: `now` while they were in it in the last two minutes. */
+/** A version of this link that someone made from it and offered back: their own link. */
+export type LinkOffer = { id: string; title: string; version: number; message: string | null; base: number | null; changed: string[]; at: number; login: string | null; name: string | null; avatar: string | null; link: string | null }
 export type LinkViewer = { login: string; name: string | null; avatar: string | null; route: string | null; at: number; now?: boolean }
 export type ShareRow = {
   id: string; title: string; scope: { protos: { id: string; variants: string[] }[]; start: string }; version: number; publishedAt: string
@@ -17,6 +19,8 @@ export type ShareRow = {
   views?: number | null; viewers?: LinkViewer[]; changedVariants?: { key: string; name: string }[]
   /** Its owner turned it off: viewers are refused until it is turned back on. */
   disabled?: boolean
+  /** Versions of it offered back to its owner. */
+  offers?: LinkOffer[]
 }
 export type Listed = { host: { name: string; stage: string; owner: string } | null; hostError: string | null; shares: ShareRow[]; setup?: string }
 /**
@@ -111,10 +115,10 @@ export const isNow = (v: LinkViewer) => v.now ?? Date.now() - v.at < 120_000
 /** Who is in a link now. */
 export const nowIn = (s: ShareRow) => (s.viewers ?? []).filter(isNow)
 
-/** What the bar's Share button shows: a link behind its edits, and how many people are in the links now. */
+/** What the bar's Share button shows: a link behind its edits or with an offer waiting, and how many people are in the links now. */
 export function badge() {
   // A link that is off asks for nothing: it isn't behind, and nobody is in it.
   const shares = (state.listed?.shares ?? []).filter(s => !s.disabled)
   const people = new Set(shares.flatMap(s => nowIn(s).map(v => v.login)))
-  return { behind: shares.some(s => s.changed), now: people.size }
+  return { behind: shares.some(s => s.changed || s.offers?.length), now: people.size }
 }

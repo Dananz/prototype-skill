@@ -85,7 +85,7 @@ export async function buildShare({ sessionDir, scope, info }) {
     // Vite works with real paths, so a project reached through a link leaks in that form; the
     // review is given whichever form the page holds.
     const either = path => { let real = path; try { real = realpathSync(path) } catch { /* gone */ } return html.includes(path) || !html.includes(real) ? path : real }
-    const checked = review({ html, gzBytes: gz.length, projectPath: either(session.project), home: either(homedir()), projectImports, currents })
+    const checked = review({ html, gzBytes: gz.length, projectPath: either(session.project), home: either(homedir()), projectImports, currents, forkable: info.fork !== false })
     return { gz, html, rawBytes: Buffer.byteLength(html), gzBytes: gz.length, review: checked, warnings, files, started, ended: Date.now() }
   } finally {
     if (tmp) rmSync(tmp, { recursive: true, force: true })

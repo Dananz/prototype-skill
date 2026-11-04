@@ -85,11 +85,13 @@ const shareRows = () => [
   { id: 'p2v7wd', title: 'Portion drawer', scope: { protos: [{ id: 'portion', variants: ['A', 'B'] }], start: 'portion/A' }, version: 3, publishedAt: iso(50 * 3600e3), host: 'Smoke',
     link: 'https://prtype.dev/p2v7wd', changed: true, comments: { total: 0, new: 0 }, live: true, views: 2, viewers: [], changedVariants: [{ key: 'portion/B', name: 'Stacked' }] },
 ]
-const stub = { disabled: {}, removed: [], owner: OWNER_OUT, hereVersion: 2, publish: [], update: [], signin: 0, publishRefuse: false, publishDelay: 0 }
+const stub = { offers: {}, offerTakes: [], offerDismissed: [], disabled: {}, removed: [], owner: OWNER_OUT, hereVersion: 2, publish: [], update: [], signin: 0, publishRefuse: false, publishDelay: 0 }
 const answer = (name, body) => {
   if (name === 'owner') return [200, stub.owner]
   if (name === 'signin') { stub.signin++; return [200, { url: `${local}__claim-test?claim=abc` }] }
-  if (name === 'list') return [200, { host: { name: 'Smoke', stage: 'online', owner: stub.owner.login || '' }, hostError: null, shares: shareRows().filter(s => !stub.removed.includes(s.id)).map(s => ({ ...s, disabled: !!stub.disabled[s.id] })), setup: 'proto share setup' }]
+  if (name === 'offerTake') { stub.offerTakes.push(body); return [200, { slug: 'share-link-from-maya', slugs: ['share-link-from-maya'], home: true, missing: ['motion'] }] }
+  if (name === 'offerDismiss') { stub.offerDismissed.push(body); stub.offers = {}; return [200, { ok: true }] }
+  if (name === 'list') return [200, { host: { name: 'Smoke', stage: 'online', owner: stub.owner.login || '' }, hostError: null, shares: shareRows().filter(s => !stub.removed.includes(s.id)).map(s => ({ ...s, offers: stub.offers[s.id] ?? [], disabled: !!stub.disabled[s.id] })), setup: 'proto share setup' }]
   if (name === 'publish') {
     stub.publish.push(body)
     if (stub.publishRefuse) return [409, { code: 'sign_in', error: 'Sign in with GitHub first.' }]
@@ -318,6 +320,33 @@ async function main() {
   }
   stub.disabled.k3x9p2 = false
 
+  // 7c. A version offered back: the amber dot, who and what changed, its link, Bring in and Dismiss.
+  const offerRow = { id: 'x7c4hq2m9p', title: 'Share link', version: 2, message: null, base: 2, changed: ['#2', '#4 (new)'], at: now - 3600e3, login: 'maya', name: 'Maya', avatar: null, link: 'https://x7c4hq2m9p.prtype.dev/' }
+  stub.offers = { k3x9p2: [offerRow] }
+  for (const [query, name, opts] of [['', 'popover-offer', {}], ['&lang=he', 'popover-offer-he', {}], ['', 'popover-offer-light', { dark: false }]]) {
+    ;({ page, context } = await newPage(`share-link/A?theme=${opts.dark === false ? 'light' : 'dark'}${query}`, opts))
+    await page.locator('[data-share-btn]').click()
+    await page.locator(`[data-pop-offer="${offerRow.id}"]`).waitFor()
+    await shot(page, name)
+    if (!query && opts.dark !== false) {
+      ok((await page.locator(`[data-pop-offer="${offerRow.id}"]`).innerText()).includes('Maya offered a version of'), 'an offer says who and of which link')
+      ok((await page.locator(`[data-pop-offer="${offerRow.id}"]`).innerText()).includes('#4 (new)'), 'an offer says what changed')
+      ok(await page.locator('[data-pop-offer-open]').getAttribute('href') === offerRow.link, 'an offer links to their page')
+      await page.locator('[data-pop-offer-take]').click()
+      await page.locator('[data-pop-offer-go]').waitFor()
+      ok(stub.offerTakes[0]?.id === offerRow.id && stub.offerTakes[0]?.on === 'k3x9p2', `Bring in asks for that offer on that link (${JSON.stringify(stub.offerTakes[0])})`)
+      ok((await page.locator(`[data-pop-offer="${offerRow.id}"]`).innerText()).includes('It needs motion'), 'a landed offer says which packages it still needs')
+      await shot(page, 'popover-offer-landed')
+    }
+    await context.close()
+  }
+  ;({ page, context } = await newPage('share-link/A?theme=dark'))
+  await page.locator('[data-share-btn]').click()
+  await page.locator('[data-pop-offer-dismiss]').click()
+  await page.locator('[data-pop-offers]').waitFor({ state: 'detached' })
+  ok(stub.offerDismissed[0]?.id === offerRow.id, 'Dismiss waves the offer away')
+  await context.close()
+
   // 8. A phone: no Share in the bar; the pill's menu opens the sheet's drawer.
   ;({ page, context } = await newPage('share-link/A?theme=dark', { width: 390, height: 844, phone: true }))
   ok(!(await page.locator('[data-share-btn]').isVisible()), 'phone: no Share button in the bar')
@@ -368,6 +397,36 @@ async function main() {
   for (const end = Date.now() + 5000; !here.length && Date.now() < end;) await sleep(100)
   ok(here[0]?.route === 'share-link/A', `viewer: a signed-in viewer pings api/here with the route (${JSON.stringify(here[0])})`)
   await shot(vpage, 'viewer-message')
+  // A page that carries its source offers Fork, with what to paste; one without doesn't.
+  await vpage.locator('[data-fork]').click()
+  await vpage.locator('[data-fork-command]').waitFor()
+  ok((await vpage.locator('[data-fork-command]').innerText()) === `/prototype fork ${viewer}`, 'viewer: Fork shows the command for this link, with no query')
+  await shot(vpage, 'viewer-fork')
+  await vpage.keyboard.press('Escape')
+  const phoneView = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: 'light' })
+  const phonePage = await phoneView.newPage()
+  await phonePage.goto(`${viewer}?theme=light`)
+  await phonePage.waitForFunction(() => document.documentElement.dataset.ready === '1', null, { timeout: 60_000 })
+  await phonePage.locator('[data-fork]').click()
+  await phonePage.locator('[data-fork-command]').waitFor()
+  await shot(phonePage, 'viewer-fork-phone')
+  await phoneView.close()
+
+  // The same page, forked for real: it lands, and the forked prototype draws in the app.
+  const saved = join(scratch, 'shared.html')
+  writeFileSync(saved, built.html)
+  ok(/Run again with --yes/.test(proto(['fork', saved], false)), 'proto fork stops at the first run')
+  proto(['fork', saved, '--yes', '--as', 'forked-link'])
+  const forked = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark' })
+  const forkedPage = await forked.newPage()
+  forkedPage.on('pageerror', e => errors.push(`fork: ${e.message}`))
+  await forkedPage.goto(`${local}forked-link/B?theme=dark`)
+  await forkedPage.waitForFunction(() => document.documentElement.dataset.ready === '1', null, { timeout: 60_000 })
+  await forkedPage.waitForFunction(() => document.body.innerText.includes('B'), null, { timeout: 30_000 })
+  ok((await forkedPage.locator('[data-tree], aside').first().innerText()).includes('(@Dananz)') || (await forkedPage.innerText('body')).includes('(@Dananz)'), 'beside one of the same name, the fork says whose it is')
+  ok(await forkedPage.evaluate(() => getComputedStyle(document.querySelector('[data-mount] main') || document.body).backgroundColor) !== '', 'the forked prototype draws in the app')
+  await shot(forkedPage, 'forked-in-app')
+  await forked.close()
   await vpage.locator('[data-owner-message-fold]').click()
   await vpage.reload()
   await vpage.waitForFunction(() => document.documentElement.dataset.ready === '1', null, { timeout: 60_000 })

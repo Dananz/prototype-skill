@@ -17,7 +17,7 @@ import {
   Again, CopyButton, Gate, ICON_BTN, LinkActions, MESSAGE_MAX, Made, MessageField, NoHost, PRIMARY_BTN, Preview, Quick, ReviewBox, SECTION, SMALL, Spinner, TEXT_BTN,
   keyOf, useLinkActions, type P, type Step,
 } from './share-link-sheet'
-import { isNow, loadList, loadOwner, mustSignIn, mustWait, notLetIn, nowIn, route, shareState, signedOut, type LinkViewer, type Owner, type ShareRow } from './share-state'
+import { isNow, loadList, loadOwner, mustSignIn, mustWait, notLetIn, nowIn, route, shareState, signedOut, type LinkOffer, type LinkViewer, type Owner, type ShareRow } from './share-state'
 
 type Pick3 = 'variant' | 'proto' | 'all'
 export type PopProps = {
@@ -227,6 +227,52 @@ function OtherRow({ s }: { s: ShareRow }) {
   )
 }
 
+/**
+ * Someone's version of a link, offered back: who, what they changed, its link, Bring in (it lands nested
+ * under the original, beside it in the page) and Dismiss. It is someone else's code, so it comes in only
+ * from here or on the user's word.
+ */
+function OfferRow({ s, o, go }: { s: ShareRow; o: LinkOffer; go: (slug: string) => void }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [landed, setLanded] = useState<{ slug: string; missing: string[] } | null>(null)
+  const who = o.name || o.login || t('Someone')
+  const take = async () => {
+    setBusy(true); setErr('')
+    const r = await route('offerTake', { on: s.id, id: o.id })
+    setBusy(false)
+    if (r.status === 200 && typeof r.body.slug === 'string') setLanded({ slug: r.body.slug, missing: Array.isArray(r.body.missing) ? r.body.missing : [] })
+    else setErr(r.body.error || t('The session server answered {status}.', { status: r.status }))
+  }
+  const dismiss = async () => {
+    setBusy(true)
+    const r = await route('offerDismiss', { on: s.id, id: o.id })
+    setBusy(false)
+    if (r.status === 200) void loadList()
+    else setErr(r.body.error || t('The session server answered {status}.', { status: r.status }))
+  }
+  return (
+    <li data-pop-offer={o.id} className="rounded-xl px-2 py-1.5 hover:bg-zinc-900/[.03] dark:hover:bg-white/[.04]">
+      <div className="flex items-start gap-2.5">
+        <Face who={{ login: o.login ?? '?', avatar: o.avatar }} size={22} />
+        <span className="min-w-0 flex-1">
+          <span dir="auto" className="block text-[13px] font-medium leading-snug">{t('{who} offered a version of {title}', { who, title: s.title })}</span>
+          <span dir="auto" className={`block truncate ${SMALL}`}>{o.changed.length ? t('Changed {what}', { what: o.changed.join(', ') }) : o.message || ago(o.at)}</span>
+        </span>
+      </div>
+      <div className="mt-1 flex items-center justify-end gap-1">
+        {busy && <Spinner />}
+        {!landed && <button type="button" data-pop-offer-dismiss disabled={busy} onClick={() => void dismiss()} className={ICON_BTN} aria-label={t('Dismiss')} title={t('Dismiss')}><Icon name="x-simple" className="size-3.5" /></button>}
+        {o.link && <a href={o.link} target="_blank" rel="noreferrer" data-pop-offer-open className={ICON_BTN} aria-label={t('Open their link')} title={t('Open their link')}><Icon name="open-out" className="size-3.5" /></a>}
+        {!landed && <button type="button" data-pop-offer-take disabled={busy} onClick={() => void take()} className={`${TEXT_BTN} !h-7 !px-2.5`}>{t('Bring in')}</button>}
+        {landed && <button type="button" data-pop-offer-go onClick={() => go(landed.slug)} className={`${TEXT_BTN} !h-7 !px-2.5`}>{t('Open it')}</button>}
+      </div>
+      {landed && landed.missing.length > 0 && <p className={`mt-1 ${SMALL}`}>{t('It needs {what}: ask Claude to add them.', { what: landed.missing.join(', ') })}</p>}
+      {err && <p role="alert" className="mt-1 text-xs text-rose-600 dark:text-rose-400">{err}</p>}
+    </li>
+  )
+}
+
 function Home({ p, owner, onNew }: { p: PopProps; owner: Owner | undefined; onNew: () => void }) {
   const { listed } = useSyncExternalStore(shareState.subscribe, shareState.get)
   const shares = [...(listed?.shares ?? [])].sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
@@ -256,6 +302,12 @@ function Home({ p, owner, onNew }: { p: PopProps; owner: Owner | undefined; onNe
               <button type="button" onClick={onNew} className={`${TEXT_BTN} !h-8`}>{t('Make one')}</button>
             </div>
           )}
+        {shares.some(s => s.offers?.length) && (
+          <section data-pop-offers>
+            <h3 className={`${SECTION} px-2 pt-1`}>{t('Offered back to you')}</h3>
+            <ul>{shares.flatMap(s => (s.offers ?? []).map(o => <OfferRow key={o.id} s={s} o={o} go={slug => { p.onClose(); location.assign(p.pathOf(slug, '')) }} />))}</ul>
+          </section>
+        )}
         {others.length > 0 && (
           <section>
             <h3 className={`${SECTION} px-2 pt-1`}>{here ? t('Your other links') : t('Your links')}</h3>

@@ -89,6 +89,10 @@
 //   proto share rm <id>      take a link down (it then says it was removed)
 //   proto share file <slug>[/<n>…] [--out <file.html>]   the same build as one HTML file, comments off
 //   proto share stop         stop the local host (the next share starts it again)
+//   proto fork <link|file.html> [--as <slug>] [--yes] [--install]   someone's shared prototype, into this project
+//   proto fork ls            what was forked here, whether the original moved on, and offers on your links
+//   proto fork offer <slug>[/<n>…] [--message "…"] [--yes]   publish a fork and tell the original link's owner
+//   proto fork dismiss <offer link id> [--on <your link id>]   wave away an offer on your link
 //   proto archive <slug> [--off]    proto keep [--off]      proto url    proto stack
 //   proto stop    proto rm    proto ls    proto gc
 //
@@ -147,7 +151,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'again', 'no-serve', 'join'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'again', 'no-serve', 'join', 'install', 'no-fork', 'fork'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -2806,6 +2810,7 @@ const commands = {
     const free = ['setup', 'stop', 'signin', 'signout', 'admin'].includes(args[0])
     return m.main(args, flags, { sessionDir: free ? null : sessionDir(), session: free ? null : need(sessionDir()), die })
   }),
+  fork: () => import('./fork.mjs').then(m => m.main(args, flags, { sessionDir: sessionDir(), session: need(sessionDir()), sid: sessionId(), die, install: () => install(sessionDir()) })),
 }
 // The page shows variants by number (app/numbers.mjs), so the user names them that way: a route
 // given with a number (hero/29, hero/29/open) means that letter (hero/AC). Only where the slug is a

@@ -172,9 +172,9 @@ async function built({ sessionDir, scope, info, yes, notes = [] }) {
  * Resolves with { ok: true, entry, link, review }, or { ok: false, blocked | needsYes, review }
  * with nothing sent. Nothing is written on this Mac until the host has the page.
  */
-export async function publishShare({ sessionDir, session, host, token, scope, title, message, yes, notes, fetch }) {
+export async function publishShare({ sessionDir, session, host, token, scope, title, message, yes, notes, fork = true, fetch }) {
   const words = messageOf(message) ?? null
-  const { b, review, stop, src } = await built({ sessionDir, scope, info: { title, owner: host.owner || '', version: 1, card: cardOf(host) }, yes, notes })
+  const { b, review, stop, src } = await built({ sessionDir, scope, info: { title, owner: host.owner || '', version: 1, card: cardOf(host), fork }, yes, notes })
   if (stop) return stop
   let id, version, api
   try {
@@ -184,7 +184,7 @@ export async function publishShare({ sessionDir, session, host, token, scope, ti
   } catch (e) { src.drop(); throw e }
   src.keep(id, version)
   const cardHash = await sendCard(api, host, id, title, session.lang)
-  const entry = { id, host: host.name, title, scope, version, publishedAt: new Date().toISOString(), sourceHash: src.hash, ...(words ? { message: words } : {}), ...(cardHash ? { cardHash } : {}) }
+  const entry = { id, host: host.name, title, scope, version, publishedAt: new Date().toISOString(), sourceHash: src.hash, ...(words ? { message: words } : {}), ...(cardHash ? { cardHash } : {}), ...(fork ? {} : { noFork: true }) }
   writeShares(sessionDir, [...readShares(sessionDir).filter(e => e.id !== id), entry])
   return { ok: true, entry, link: linkOf(host, id), review }
 }
@@ -195,13 +195,15 @@ export async function publishShare({ sessionDir, session, host, token, scope, ti
  * here and sent along for the viewer's "What's new". message: text sets the viewers' message, null
  * clears it, undefined keeps the one the link has.
  */
-export async function updateShare({ sessionDir, session, host, token, id, note, message, yes, notes, fetch }) {
+export async function updateShare({ sessionDir, session, host, token, id, note, message, yes, notes, fork, fetch }) {
   const entry = readShares(sessionDir).find(e => e.id === id)
   if (!entry) throw new ShareError(`No share ${id} in this session: proto share ls lists them`)
   if (entry.host !== host.name) throw new ShareError(`${id} is on the host "${entry.host}", not "${host.name}"`)
   const text = typeof note === 'string' ? note.trim().slice(0, 300) : ''
   const words = messageOf(message)
-  const { b, review, stop, src } = await built({ sessionDir, scope: entry.scope, info: { title: entry.title, owner: host.owner || '', version: (entry.version || 1) + 1, card: cardOf(host) }, yes, notes })
+  // A link left out of forking stays out until the update says otherwise.
+  const forkable = fork ?? !entry.noFork
+  const { b, review, stop, src } = await built({ sessionDir, scope: entry.scope, info: { title: entry.title, owner: host.owner || '', version: (entry.version || 1) + 1, card: cardOf(host), fork: forkable }, yes, notes })
   if (stop) return stop
   let version
   const api = client(host, token, fetch ? { fetch } : {})
@@ -212,6 +214,8 @@ export async function updateShare({ sessionDir, session, host, token, id, note, 
   const cardHash = await sendCard(api, host, id, entry.title, session.lang, entry.cardHash)
   const next = { ...entry, version, publishedAt: new Date().toISOString(), sourceHash: src.hash, ...(text ? { note: text } : {}), ...(words ? { message: words } : {}), ...(cardHash ? { cardHash } : {}) }
   if (!text) delete next.note
+  if (forkable) delete next.noFork
+  else next.noFork = true
   if (words === null) delete next.message
   writeShares(sessionDir, readShares(sessionDir).map(e => e.id === id ? next : e))
   return { ok: true, entry: next, link: linkOf(host, id), review }

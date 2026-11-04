@@ -29,10 +29,14 @@ export function imagesPlugin({ sharp, root }) {
       const { width, height, orientation } = await image.metadata()
       const upright = (orientation ?? 1) >= 5 ? height : width
       const webp = await image.resize({ width: Math.min(upright ?? MAX_WIDTH, MAX_WIDTH) }).webp({ quality: 82 }).toBuffer()
-      return `export default "data:image/webp;base64,${webp.toString('base64')}"`
+      const url = `data:image/webp;base64,${webp.toString('base64')}`
+      imagesPlugin.made.set(file, url)
+      return `export default "${url}"`
     },
   }
 }
 
 /** What the last builds could not do, for the pre-publish review to show. */
 imagesPlugin.warnings = []
+/** What the last builds turned each picture into: the source block names a picture by this data URL's hash. */
+imagesPlugin.made = new Map()
