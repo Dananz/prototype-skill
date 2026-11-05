@@ -28,7 +28,16 @@ export type Use = { component: string; at: string; key?: string; props?: string 
  * the `data-opened-by` of each such part around it, outermost first, each the selector of the
  * control that opens that part. */
 /** label stays in saved data for compatibility; the UI uses numbered references, not element names. */
-export type VariantRef = { proto: string; variant: string; label: string; name: string }
+export type VariantRef = {
+  proto: string; variant: string; label: string; name: string
+  /** The prototype it is in. */
+  title?: string
+  /** Made from this one, beside it, or made from it, where the comment is being written. */
+  near?: boolean
+  picked?: boolean
+  /** Its name alone could be several variants (Current): its chip names the prototype too. */
+  ambiguous?: boolean
+}
 export type CommentRef = { id: string; proto: string; variant: string; n: number; quote: string }
 export type Source = { proto: string; variant: string; state?: string }
 export type Target = { source?: Source; commentRef?: CommentRef; variantRef?: VariantRef; label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; stage?: { w: number; h: number }; point?: { x: number; y: number }; region?: Box; view?: ViewSize; uses?: Use[]; within?: string; route?: string[]; whole?: true }

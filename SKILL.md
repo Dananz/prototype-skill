@@ -76,9 +76,11 @@ star, and two fingers zoom the design only (Fit resets it).
 Compare uses the same island, numbered pins, screenshots, drafts, sending and agent
 replies as a single variant. Click Select (or press C), then choose something in either pane.
 While writing on one variant, click an element or existing comment in the other pane to reference
-it. The variants do not need matching elements. Type `@` in the composer to find a variant by
-letter or name, then select it with a click or the arrow keys and Enter/Tab. “Pick an element
-instead” keeps precise visual tagging available. References retain the source variant and route
+it. The variants do not need matching elements. Type `@` in any comment box for the shelf: every
+variant in the project as a live picture, Nearby first (what this one was made from, what sits beside
+it, what was made from it), with Picks and All beside it and the words after `@` searching every name.
+A tap tags it where the caret is and stays open for another (a second tap takes it back); the arrow
+keys and Enter/Tab tag one and close. Tag an element keeps precise visual tagging available. References retain the source variant and route
 in the agent inbox. Keep this flow in the shell; generated designs do not need their own comment
 store, sidebar or agent-reply simulation.
 

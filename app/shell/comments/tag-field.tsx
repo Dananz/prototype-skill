@@ -4,14 +4,14 @@ import { MAX_SHOTS, type Shot } from './types'
 // a menu of the prototype's variants and, last, Tag an element, which picks one on the design and
 // brings it back where the @ was. The box's owner holds its state (useTagField), so the box itself
 // can come and go (the island's side panel folds while an element is picked) and keep what was in it.
-import { useEffect, useId, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { uiBox } from '../portals'
 import { t } from '../i18n'
 import { useCtx } from './ctx'
 import { useStore } from './store'
 import { chipNode, readEditor } from './composer'
-import { Icon } from './ui'
+import { MentionShelf, useMentionShelf } from './mention-shelf'
 import type { Note, Seg, Target } from './types'
 
 type Opts = {
@@ -93,8 +93,6 @@ export function useTagField(opts: Opts) {
     return () => clearTimeout(id)
   }, [!!mention])
   const menuAt = mention ?? menuGone
-  const menuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { menuRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }) }, [mention?.index, !!mention])
 
   // The box goes when what it is in folds: what was in it moves into the next one, so its words, its
   // chips and where the caret was are all kept. The first one is filled with what it starts with.
@@ -171,11 +169,11 @@ export function useTagField(opts: Opts) {
 
   // The @ menu's rows: the variants it can mention, narrowed by what follows the @, then Tag an element.
   const elements = !optsRef.current.noElements && !!s.place
-  const choices = menuAt ? (host.variantMentions?.() ?? []).filter(c => !menuAt.query || `${c.variantRef?.label} ${c.variantRef?.variant} ${c.variantRef?.name}`.toLocaleLowerCase().includes(menuAt.query.toLocaleLowerCase())) : []
-  const options: (Target | null)[] = mention ? [...choices, ...(elements ? [null] : [])] : []
-  const choose = (c: Target | null) => {
+  const choices = useMemo(() => menuAt ? host.variantMentions?.() ?? [] : [], [!!menuAt]) // eslint-disable-line react-hooks/exhaustive-deps
+  const choose = (c: Target | null, close = true) => {
     if (!mention) return
-    setMention(null)
+    // A tap on the shelf stays open for another; its @ is gone, so what is typed next closes it.
+    setMention(close ? null : { query: '', index: 0 })
     if (c) { insert(c, true); return }
     // The @ goes now; the element picked on the design comes back where it was.
     const r = atCaret(true)
@@ -183,6 +181,22 @@ export function useTagField(opts: Opts) {
     changed()
     act.tagWhole(owner)
   }
+  const shelfOpts = {
+    choices, query: mention ? mention.query : null,
+    tagged: () => {
+      const keys = new Set<string>()
+      input.current?.querySelectorAll<HTMLElement>('[data-tag]').forEach(n => { const r = tagsRef.current[Number(n.dataset.tag)]?.variantRef; if (r) keys.add(`${r.proto}/${r.variant}`) })
+      return keys
+    },
+    onPick: (c: Target, close: boolean) => choose(c, close),
+    onDrop: (c: Target) => {
+      const r = c.variantRef!
+      input.current?.querySelectorAll<HTMLElement>('[data-tag]').forEach(n => { const v = tagsRef.current[Number(n.dataset.tag)]?.variantRef; if (v?.proto === r.proto && v.variant === r.variant) n.remove() })
+      changed(); setMention(m => m && { ...m })
+    },
+    ...(elements ? { onElement: () => choose(null) } : {}),
+  }
+  const shelf = useMentionShelf(shelfOpts)
   const watchMention = () => {
     const sel = getSelection(), node = sel?.anchorNode
     const before = node?.nodeType === 3 ? node.textContent!.slice(0, sel!.anchorOffset) : '', m = /(?:^|[^\w.+-])@([^\s@]*)$/.exec(before)
@@ -190,10 +204,7 @@ export function useTagField(opts: Opts) {
   }
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.nativeEvent.isComposing) return
-    if (mention && options.length) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); const step = e.key === 'ArrowDown' ? 1 : -1; setMention({ ...mention, index: (mention.index + step + options.length) % options.length }); return }
-      if ((e.key === 'Enter' || e.key === 'Tab') && !e.metaKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); choose(options[Math.min(mention.index, options.length - 1)]); return }
-    }
+    if (mention && shelf.onKey(e)) { e.preventDefault(); e.stopPropagation(); return }
     if (mention && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMention(null); return }
     if (importing.current && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); return }
     optsRef.current.onKey?.(e)
@@ -214,29 +225,12 @@ export function useTagField(opts: Opts) {
     onPaste: (e: ClipboardEvent<HTMLDivElement>) => { e.preventDefault(); const image = imageIn(e.clipboardData); if (image) { void attach([image]); return }; document.execCommand('insertText', false, e.clipboardData.getData('text/plain')) },
   }
 
-  // The menu, over the page (outside whatever clips the box): above the box, or below it when there
+  // The shelf, over the page (outside whatever clips the box): above the box, or below it when there
   // is no room above.
   const box = menuAt ? input.current?.getBoundingClientRect() : null
   const below = !!box && box.top < 240
-  const menu: ReactNode = menuAt && box && (choices.length || elements) ? createPortal(
-    <div ref={menuRef} role="listbox" aria-label={t('Mention a variant')} data-comment-ui=""
-      style={{ position: 'fixed', zIndex: 250, left: Math.max(8, Math.min(box.left, innerWidth - Math.min(300, innerWidth - 16) - 8)), width: Math.min(300, innerWidth - 16), ...(below ? { top: box.bottom + 8 } : { bottom: innerHeight - box.top + 8 }) }}
-      className={`${below ? 'origin-top-left' : 'origin-bottom-left'} overflow-hidden rounded-xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-lg dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100 ${mention ? 'pointer-events-auto animate-[proto-isl-menu-in_.18s_cubic-bezier(.2,.9,.25,1)_both]' : 'pointer-events-none animate-[proto-isl-menu-out_.14s_ease-in_forwards]'}`}>
-      <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-zinc-400">{t('Mention a variant')}</div>
-      <div className="max-h-48 overflow-y-auto">
-        {choices.map((c, i) => (
-          <button key={`${c.variantRef?.proto}/${c.variantRef?.variant}/${c.variantRef?.label}`} type="button" role="option" aria-selected={i === menuAt.index} onMouseDown={e => e.preventDefault()} onClick={() => choose(c)}
-            className={`flex min-h-9 w-full items-center gap-2 px-3 py-2 text-start text-xs ${i === menuAt.index ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}>
-            <span className="font-semibold">@{c.variantRef?.label}</span><span className="min-w-0 flex-1 truncate">{c.variantRef?.name}</span>
-          </button>
-        ))}
-        {!choices.length && <p className="px-3 py-2 text-xs text-zinc-400">{t('No matching variants')}</p>}
-      </div>
-      {elements && <button type="button" role="option" data-tag-pick aria-selected={menuAt.index === choices.length} onMouseDown={e => e.preventDefault()} onClick={() => choose(null)}
-        className={`flex min-h-9 w-full items-center gap-2 border-t border-black/[.06] px-3 py-2 text-start text-xs dark:border-white/10 ${menuAt.index === choices.length ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}>
-        <Icon name="target" className="size-3.5" />{t('Tag an element')}
-      </button>}
-    </div>, uiBox()) : null
+  const menu: ReactNode = menuAt && box ? createPortal(
+    <MentionShelf shelf={shelf} open={!!mention} opts={shelfOpts} count={choices.length} place={{ center: box.left + box.width / 2, above: !below, edge: below ? box.bottom + 8 : innerHeight - box.top + 8 }} />, uiBox()) : null
 
   const pictures = (shots.length > 0 || adding || imageError) ? <span className="flex flex-wrap items-center gap-1 px-2 py-1">
       {shots.map((shot, i) => <span key={i} className="relative inline-block"><img src={shot.src} alt="Attached image" className="h-12 w-16 rounded object-cover" /><button type="button" aria-label="Remove image" className="absolute end-0 top-0 rounded bg-zinc-900 px-1 text-white" onClick={() => { shotsRef.current = shotsRef.current.filter((_, k) => k !== i); setShots(shotsRef.current); optsRef.current.onChange?.(read()) }}>×</button></span>)}

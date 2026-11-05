@@ -1141,12 +1141,12 @@ try {
     await new Promise(r => setTimeout(r, 300))
     const composer = document.querySelector('[data-motion-bar] [data-composer]')
     const menu = document.querySelector('[data-tag-menu]'), options = menu?.querySelectorAll('[role=option]')
-    if (!options?.length || !options[0].textContent.includes('@1')) return '@ should offer variant mentions'
-    const r = menu.getBoundingClientRect(), pick = [...menu.querySelectorAll('button')].find(b => b.textContent.includes('Pick an element instead')), p = pick?.getBoundingClientRect()
+    if (!options?.length || !/#[0-9]/.test(options[0].textContent)) return '@ should offer variant mentions, offered: ' + (options?.[0]?.textContent ?? 'nothing')
+    const r = menu.getBoundingClientRect(), pick = menu.querySelector('[data-tag-pick]'), p = pick?.getBoundingClientRect()
     if (r.top < 0 || r.bottom > innerHeight || !p || !document.elementFromPoint(p.left+10,p.top+p.height/2)?.closest('[data-tag-menu]')) return 'the dock clipped its variant menu'
     pick.click()
     await new Promise(r => setTimeout(r, 300))
-    const said = !document.querySelector('[data-tag-menu]') && composer?.matches('.opacity-40, .opacity-60') ? 'ok' : 'Pick an element instead should start visual tagging'
+    const said = !document.querySelector('[data-tag-menu]') && composer?.matches('.opacity-40, .opacity-60') ? 'ok' : 'Tag an element should start visual tagging'
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     ed.textContent = ''
     ed.dispatchEvent(new Event('input', { bubbles: true }))

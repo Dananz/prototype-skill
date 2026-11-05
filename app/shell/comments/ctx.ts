@@ -25,6 +25,8 @@ export type Host = {
   show?: () => void
   /** Whole variants available to the native composer’s @ menu. */
   variantMentions?: () => Target[]
+  /** Draws a variant live in `el` at that size, as a picture; returns how to let it go. */
+  mountThumb?: (el: HTMLElement, proto: string, variant: string, w: number, h: number) => () => void
   /** An opted-in compare surface can turn a guarded cross-pane press into a reference. */
   onGuardPick?: (el: HTMLElement) => boolean
   onReferenceComment?: (item: Item) => boolean
