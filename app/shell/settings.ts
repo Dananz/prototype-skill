@@ -116,7 +116,7 @@ function Settings(p: Props) {
   const shortcuts = [
     [t('Previous / next variant'), '← / →'], [t('Comment on an element'), 'C'], [t('Comment on the whole variant'), 'Shift C'],
     [t('Send draft comments'), `${mod} Enter`], [t('Toggle sidebar'), `${mod} \\`], [t('Toggle focus mode'), 'F'], [t('Replay the variant'), 'R'],
-    [t('Fit and center canvas'), `${mod} 0`],
+    [t('Fit and center canvas'), `${mod} 0`], [t('Previous / next device'), '[ / ]'],
     [t('Go to the working variant'), 'W'], [t('Design actions (desktop)'), 'P'], [t('Favorite or unfavorite the variant'), 'S'], [t('Close a tool or go back'), 'Esc'],
     ...p.tree ? [[t('Gallery'), 'M'], [t('Jump to a screen'), `${mod} K`]] : [],
   ]

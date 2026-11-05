@@ -83,7 +83,7 @@ export default function A() {
 
     // A selected device layout stays selected while its view returns to Fit.
     await page.run(`document.querySelector('[data-act="open:device"]').click(); document.querySelector('[data-size-tabs] [data-act="size:phone"]').click()`)
-    await until(`/^390 × 844/.test(document.querySelector('[data-view-line]')?.textContent ?? '')`, 'phone layout did not appear')
+    await until(`/402 × 874/.test(document.querySelector('[data-view-line]')?.textContent ?? '')`, 'phone layout did not appear')
     await until(`!!document.querySelector('[data-view] iframe')?.contentDocument?.querySelector('[data-reset-input]')`, 'the design never mounted in the phone layout')
     await wait(300)
     const phoneHome = await page.run(geo)
@@ -94,7 +94,7 @@ export default function A() {
       await page.key('0', ['Control'])
       await wait(200)
       assert(same(phoneHome, await page.run(geo)), `reset did not fit and center the selected phone layout from ${surface}`)
-      assert(await page.run(`/^390 × 844/.test(document.querySelector('[data-view-line]')?.textContent ?? '')`), 'reset changed the selected layout')
+      assert(await page.run(`/402 × 874/.test(document.querySelector('[data-view-line]')?.textContent ?? '')`), 'reset changed the selected layout')
     }
     await page.run(`document.querySelector('[data-bar] [data-act="open:more"]').click(); document.querySelector('[data-pop] [data-act=settings]').click()`)
     await until(`!!document.querySelector('[data-settings-dialog]')`, 'Settings did not open')

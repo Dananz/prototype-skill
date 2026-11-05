@@ -101,7 +101,7 @@ export default function A() {
     // 5. A phone in the view: dragged from beside it, it follows too; a trackpad zoom in and back to
     //    Fit keeps it where it was; nothing glides.
     await page.run(`${OPEN_DEV}; document.querySelector('[data-size-tabs] [data-act="size:phone"]').click()`)
-    await until(`/^390 × 844/.test(document.querySelector('[data-view-line]')?.textContent ?? '')`, 'no phone in the view')
+    await until(`/402 × 874/.test(document.querySelector('[data-view-line]')?.textContent ?? '')`, 'no phone in the view')
     await until(ready, 'the design never showed on the phone')
     await wait(400)
     g0 = await page.run(geo)
