@@ -20,7 +20,8 @@ import { fitOf, outOf, pinchOn, room, useBox, useGestures, usePinch, usePlace } 
 import { trackPointer } from '../motion'
 import { hoverMove } from '../comments/hover'
 import { seeThrough } from '../comments/dom'
-import { dims, FILL_MIN_W, ORDER, SIZES, type Size } from './sizes'
+import { Placard } from './placard'
+import { dims, FILL_MIN_W, ORDER, SIZES, wornDevice, type Size } from './sizes'
 import { t, tn } from '../i18n'
 
 // The desk's margin around the stage's own artboard, and whether the page is on the desk (shell.css: a wide window).
@@ -42,19 +43,28 @@ export type ViewProps = {
   onKey: (e: KeyboardEvent) => void
   /** The view fills the window, under the page's chrome: the room left clear of it, from each edge. */
   safe?: Insets
+  /** Choose the device its layout stands for. */
+  pick: (id: string) => void
 }
 type Insets = { l: number; t: number; r: number; b: number }
 const NO_INSETS: Insets = { l: 0, t: 0, r: 0, b: 0 }
 /** The caption line over the device (its size and zoom, comments on other sizes). */
 const LINE_H = 40
+/** The black glass around a phone's or a tablet's screen, in the device's px. */
+const BEZEL = 10
 
 // The one frame on screen, for the comment layer to look into.
 let live: Frame | null = null
 
 /** The page in a frame, `w` × `h` CSS px, drawn at `scale` in a box of the scaled size. Made once
  *  and kept while the size, the scale or the place change, so the page in it keeps its state. */
-function LiveFrame({ path, dark, w, h, scale, route, bind, ring, children }: {
-  path: string; dark: boolean; w: number; h: number; scale: number; route: (path: string) => void; bind: (d: Document) => () => void; ring: string; children?: ReactElement | false
+function LiveFrame({ path, dark, w, h, scale, route, bind, ring, screenR, moving, children }: {
+  path: string; dark: boolean; w: number; h: number; scale: number; route: (path: string) => void; bind: (d: Document) => () => void; ring: string
+  /** A device's screen corner, in its px: it gets a bezel round it. */
+  screenR?: number
+  /** Changing device: the outline moves to the new one. */
+  moving?: boolean
+  children?: ReactElement | false
 }) {
   const box = useRef<HTMLDivElement>(null)
   const ctl = useRef<Frame | null>(null)
@@ -83,7 +93,9 @@ function LiveFrame({ path, dark, w, h, scale, route, bind, ring, children }: {
     el.style.height = `${h}px`
     el.style.transform = `scale(${scale})`
   }, [w, h, scale])
-  return <div ref={box} data-view-device className={`relative shrink-0 overflow-hidden ${ring}`} style={{ width: Math.round(w * scale), height: Math.round(h * scale) }}>{children}</div>
+  const bz = screenR === undefined ? 0 : BEZEL * scale
+  return <div ref={box} data-view-device className={`relative shrink-0 overflow-hidden ${moving ? 'transition-[width,height,border-radius] duration-300 ease-[cubic-bezier(.2,.9,.25,1)] motion-reduce:transition-none' : ''} ${ring}`}
+    style={{ boxSizing: 'content-box', width: Math.round(w * scale), height: Math.round(h * scale), ...(screenR === undefined ? {} : { border: `${bz}px solid #09090b`, borderRadius: (screenR + BEZEL) * scale }) }}>{children}</div>
 }
 
 /** The nearest part of the framed page that scrolls, from `el` up. */
@@ -182,7 +194,7 @@ function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>;
 
 const coarse = matchMedia('(pointer: coarse)')
 
-function ViewStage({ view, path, dark, set, route, onKey, safe }: ViewProps & { view: View }) {
+function ViewStage({ view, path, dark, set, route, onKey, safe, pick }: ViewProps & { view: View }) {
   const { act } = useCtx()
   const { s, rows } = useRows()
   const [area, box] = useBox<HTMLDivElement>()
@@ -197,11 +209,16 @@ function ViewStage({ view, path, dark, set, route, onKey, safe }: ViewProps & { 
   const pad = desk && !view.size ? DESK_PAD : !view.size || box.w < 640 ? 0 : 16
   // Full window (safe): the device fits and centres in the room clear of the chrome, under its caption.
   const ins = safe ? { ...safe, t: safe.t + LINE_H } : NO_INSETS
-  const fit = fitOf({ w: Math.max(0, box.w - ins.l - ins.r), h: Math.max(0, box.h - ins.t - ins.b) }, d, pad)
+  const device = view.size ? wornDevice(view.size) : undefined
+  const glass = !!device && device.size !== 'desktop'
+  const outer = glass ? { w: d.w + 2 * BEZEL, h: d.h + 2 * BEZEL } : d
+  const roomLeft = { w: Math.max(0, box.w - ins.l - ins.r), h: Math.max(0, box.h - ins.t - ins.b) }
+  // A chosen device is seen whole, its height too; the stage's own artboard fits by width.
+  const fit = view.size ? Math.min(fitOf(roomLeft, outer, pad), roomLeft.h ? Math.max(.1, (roomLeft.h - pad * 2) / outer.h) : 1) : fitOf(roomLeft, outer, pad)
   const scale = view.zoom ? view.zoom / 100 : fit
   const zoomed = scale > fit + 0.001
   const setZoom = (z: number) => set({ zoom: z })
-  const { wrap, anchor } = usePlace(area, box, d, scale, zoomed, pad, `${view.size}-${view.land}`, view.home ?? 0, ins)
+  const { wrap, anchor } = usePlace(area, box, outer, scale, zoomed, pad, `${device?.id ?? view.size}-${view.land}`, view.home ?? 0, ins)
   const pinch = usePinch(area, scale, fit, setZoom, anchor)
   const gestures = useGestures(area, scale, fit, setZoom, anchor)
   const keys = useRef(onKey)
@@ -222,10 +239,20 @@ function ViewStage({ view, path, dark, set, route, onKey, safe }: ViewProps & { 
     doc.addEventListener('contextmenu', cm)
     return () => { a(); b(); doc.removeEventListener('contextmenu', cm); doc.removeEventListener('keydown', k); doc.removeEventListener('selectionchange', sc); doc.removeEventListener('pointermove', m, true); doc.removeEventListener('click', c, true) }
   }
+  // The outline eases from one device to the next, never under a zoom's or a pinch's own motion.
+  const [moving, setMoving] = useState(false)
+  const deviceKey = `${device?.id}-${view.land}`, deviceWas = useRef(deviceKey)
+  useEffect(() => {
+    if (deviceWas.current === deviceKey) return
+    deviceWas.current = deviceKey
+    setMoving(true)
+    const on = setTimeout(() => setMoving(false), 320)
+    return () => clearTimeout(on)
+  }, [deviceKey])
   const [, redraw] = useState(0)
   useEffect(() => { const f = () => redraw(n => n + 1); coarse.addEventListener('change', f); return () => coarse.removeEventListener('change', f) }, [])
   const picking = s.mode.kind === 'pick' || s.mode.kind === 'tag'
-  const name = view.size ? SIZES[view.size].name : ''
+  const name = device?.name ?? (view.size ? SIZES[view.size].name : '')
   // Comments written on the other sizes, open ones, as a chip each that switches to that size.
   const others = ORDER.filter(x => x !== view.size).map(x => ({ x, k: rows.filter(r => r.here && r.state !== 'done' && r.item.target?.view?.size === x).length })).filter(o => o.k)
   const pct = Math.round(scale * 100)
@@ -238,31 +265,31 @@ function ViewStage({ view, path, dark, set, route, onKey, safe }: ViewProps & { 
       {!view.size ? null : picking
         ? <div data-view-banner style={over} className="flex h-10 shrink-0 items-center gap-2 bg-proto-primary pe-1.5 ps-3 text-xs font-medium text-proto-primary-fg [@media(hover:hover)]:pe-28">
             <Icon name="comment" className="size-4" />
-            <span className="min-w-0 flex-1 truncate">{coarse.matches ? t('Tap what to change on {device}', { device: name.toLowerCase() }) : t('Click what to change on {device}', { device: name.toLowerCase() })}</span>
+            <span className="min-w-0 flex-1 truncate">{coarse.matches ? t('Tap what to change on {device}', { device: device ? name : name.toLowerCase() }) : t('Click what to change on {device}', { device: device ? name : name.toLowerCase() })}</span>
             <span className="hidden shrink-0 tabular-nums opacity-70 sm:inline">{d.w} × {d.h}</span>
             <button type="button" onClick={() => act.stop()} className="h-7 shrink-0 rounded-full bg-white/20 px-2.5 font-semibold hover:bg-white/30">{t('Done')}</button>
           </div>
-        : <div data-view-line style={over} className="flex h-10 shrink-0 items-center gap-1 pe-1 ps-3 [&>*]:pointer-events-auto text-[11px] text-zinc-500 dark:text-zinc-400 [@media(hover:hover)]:pe-28">
-            <span className="shrink-0 tabular-nums"><span dir="ltr" className="font-medium text-zinc-800 dark:text-zinc-200">{d.w} × {d.h}</span> · {pct}%</span>
-            <span className="ms-auto" />
-            {others.map(({ x, k }) => (
-              <button key={x} type="button" data-view-other={x} onClick={() => set({ size: x, zoom: 0 })} title={tn(k, '{n} comment on the {name} layout', '{n} comments on the {name} layout', { name: SIZES[x].name.toLowerCase() })}
-                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[11px] font-medium text-proto-primary-soft-fg hover:bg-proto-primary-soft">
-                <Icon name={x} className="size-3.5" />{k}
-              </button>
-            ))}
-            {view.size === 'tablet' && (
-              <button type="button" data-view-turn onClick={() => set({ land: !view.land, zoom: 0 })} aria-label={view.land ? t('Turn upright') : t('Turn on its side')} title={view.land ? t('Upright') : t('On its side')}
-                className="grid size-8 shrink-0 place-items-center rounded-full text-zinc-600 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10"><Icon name="rotate" className="size-[17px]" /></button>
-            )}
+        : <div data-view-line style={over} className="grid h-10 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1 pe-1 ps-3 [&>*]:pointer-events-auto text-[11px] text-zinc-500 dark:text-zinc-400 [@media(hover:hover)]:pe-28">
+            <span />
+            <Placard label={name} size={d} est={device?.est} now={device?.id ?? null} pick={id => { if (id) pick(id) }} sheet={box.w < 640}
+              turn={glass ? () => set({ land: !view.land, zoom: 0 }) : undefined} land={view.land} />
+            <span className="flex min-w-0 items-center justify-end gap-1">
+              <span className="shrink-0 tabular-nums">{pct}%</span>
+              {others.map(({ x, k }) => (
+                <button key={x} type="button" data-view-other={x} onClick={() => set({ size: x, zoom: 0 })} title={tn(k, '{n} comment on the {name} layout', '{n} comments on the {name} layout', { name: SIZES[x].name.toLowerCase() })}
+                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[11px] font-medium text-proto-primary-soft-fg hover:bg-proto-primary-soft">
+                  <Icon name={x} className="size-3.5" />{k}
+                </button>
+              ))}
+            </span>
           </div>}
       {/* No scrollbars, as on a canvas: one coming and going changes the area's width, and with it Fit, which
           brings it back (the zoom flickered between two values). It moves by drag, wheel and fingers. Left to right
           in every language: a canvas has no reading direction, and its place is laid out as a positive scrollLeft. */}
       <div ref={area} dir="ltr" data-view-area className={`${safe ? 'absolute inset-0' : 'min-h-0 flex-1'} overflow-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`} style={{ touchAction: 'pan-x pan-y' }}>
         <div ref={wrap} className="flex h-max min-h-full w-max min-w-full items-start justify-start">
-          <LiveFrame path={path} dark={dark} w={d.w} h={d.h} scale={scale} route={route} bind={bind}
-            ring={!view.size ? `bg-white dark:bg-zinc-950 ${desk ? 'rounded-[10px] ring-1 ring-black/[.08] shadow-[0_18px_44px_-18px_rgb(0_0_0/.35)] dark:ring-white/[.12]' : ''}` : `bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${pad ? 'rounded-[10px]' : ''}`}>
+          <LiveFrame path={path} dark={dark} w={d.w} h={d.h} scale={scale} route={route} bind={bind} screenR={glass ? device!.r : undefined} moving={moving}
+            ring={!view.size ? `bg-white dark:bg-zinc-950 ${desk ? 'rounded-[10px] ring-1 ring-black/[.08] shadow-[0_18px_44px_-18px_rgb(0_0_0/.35)] dark:ring-white/[.12]' : ''}` : `bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${glass ? 'shadow-[0_18px_44px_-18px_rgb(0_0_0/.45)]' : pad ? 'rounded-[10px]' : ''}`}>
             {picking && <Pick area={area} scale={scale} zoomed={zoomed} />}
           </LiveFrame>
         </div>

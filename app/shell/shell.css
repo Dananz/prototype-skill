@@ -74,6 +74,11 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
   contain: layout paint;
   border-radius: 45px;
 }
+/* A chosen device's own corners and camera (view/sizes.ts). */
+.proto-phone[data-screen-r] { border-radius: calc(var(--screen-r) + 10px); }
+.proto-phone[data-screen-r] > [data-phone-screen] { border-radius: var(--screen-r); }
+.proto-phone[data-cutout="hole"]::after { top: 12px; width: 13px; height: 13px; background: #000; box-shadow: none; }
+.proto-phone[data-cutout="none"]::after { display: none; }
 .proto-phone::before,
 .proto-phone::after {
   content: "";

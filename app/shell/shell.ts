@@ -50,7 +50,9 @@ import type { LinkTray } from './comments/types'
 import * as transport from './transport'
 import { framed, frameClicks, frameMenus, offerTheme, openFrame, frameUrl, type Frame } from './view/frame'
 import { MAX as ZOOM_MAX, MIN as ZOOM_MIN } from './view/gestures'
-import { dims, FILL_MIN_W, nativeOf, ORDER, SIZES, sizeIcon, type Size, type ViewSize } from './view/sizes'
+import { createRoot, type Root } from 'react-dom/client'
+import { Placard } from './view/placard'
+import { deviceAt, deviceById, DEVICES, dims, FILL_MIN_W, nativeOf, ORDER, SIZES, sizeIcon, wearDevice, wornDevice, type Size, type ViewSize } from './view/sizes'
 
 export type Variant = { id: string; name: string; file: string; load: () => Promise<unknown>; theme?: string }
 /** A variant as it was before a change the user asked for (app/history.mjs): n counts from 1, oldest
@@ -275,6 +277,29 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // The device view (view/): the page at another size in the stage. size null: none, the page as
     // this screen is; zoom 0: Fit, else a percentage.
     view: { size: null as Size | null, land: false, zoom: 0, home: 0 },
+  }
+  // The device each layout stands for, and a phone prototype's, kept in this browser.
+  for (const id of ['iphone-18-pro', 'ipad-pro-11', 'laptop', ...(() => { try { return JSON.parse(localStorage.getItem('proto-devices') || '[]') as string[] } catch { return [] } })()]) { const d = deviceById(id); if (d) wearDevice(d) }
+  let phoneChoice: string | null = (() => { try { return localStorage.getItem('proto-phone-device') || null } catch { return null } })()
+  /** A layout now stands for this device, and shows it. */
+  function pickDevice(id: string) {
+    const d = deviceById(id)
+    if (!d) return
+    wearDevice(d)
+    remember('proto-devices', JSON.stringify(ORDER.map(s => wornDevice(s)?.id).filter(Boolean)))
+    st.view = { ...st.view, size: d.size, land: false, zoom: 0 }
+    render(); fit()
+  }
+  /** [ and ]: the device before or after this one. */
+  function stepDevice(by: number) {
+    const proto = cur()
+    if (proto?.kind === 'phone' && st.place.view === 'variant') {
+      const list = DEVICES.filter(d => d.size === 'phone'), at = list.findIndex(d => d.id === phoneDevice(proto)?.id)
+      return pickPhoneDevice(list[(Math.max(at, 0) + by + list.length) % list.length].id)
+    }
+    if (!viewOn()) return
+    const at = DEVICES.findIndex(d => d.id === wornDevice(st.view.size!)?.id)
+    pickDevice(DEVICES[(at + by + DEVICES.length) % DEVICES.length].id)
   }
 
   // ---------- data helpers ----------
@@ -785,7 +810,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (key === zoomKey && el.firstElementChild) { el.querySelector('[data-zoom-pct]')!.textContent = pct; return }
     zoomKey = key
     const btn = 'grid size-8 shrink-0 place-items-center rounded-full text-zinc-600 hover:bg-zinc-900/5 aria-pressed:bg-zinc-900/[.07] aria-pressed:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:aria-pressed:bg-white/10 dark:aria-pressed:text-white'
-    const sizes = inScreen && viewOk() ? ORDER.map(z => { const land = z === 'tablet' && st.view.land, d = dims(z, land); return `<button type="button" data-act="size:${z}" data-shoot="pill-size-${z}" aria-pressed="${shownSize() === z}" aria-label="${SIZES[z].name}" title="${SIZES[z].name} · ${d.w} × ${d.h}" class="${btn}">${ic(sizeIcon(z, land))}</button>` }).join('') + '<span class="mx-1 h-5 w-px shrink-0 bg-black/[.08] dark:bg-white/10"></span>' : ''
+    const sizes = inScreen && viewOk() ? ORDER.map(z => { const land = z !== 'desktop' && st.view.land, d = dims(z, land); return `<button type="button" data-act="size:${z}" data-shoot="pill-size-${z}" aria-pressed="${shownSize() === z}" aria-label="${SIZES[z].name}" title="${SIZES[z].name} · ${d.w} × ${d.h}" class="${btn}">${ic(sizeIcon(z, land))}</button>` }).join('') + '<span class="mx-1 h-5 w-px shrink-0 bg-black/[.08] dark:bg-white/10"></span>' : ''
     // The comments island's height, corners and shadow, and it widens with the island's easing (its
     // buttons pop in after one another: shell.css).
     el.innerHTML = `<div class="group flex items-center rounded-full bg-white p-1.5 text-[12px] text-zinc-900 shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] ring-1 ring-black/[.08] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10">
@@ -862,7 +887,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // The zoom: the layout button's menu (its sizes and zoom), drawn as its percentage; Fit is its own button.
     const zoomBtn = () => deviceBtn().replace(centerBtn, '').replace('data-act="open:device"', 'data-act="open:device" data-strip-zoom').replace('<span data-scale-label', '<span data-keep data-scale-label')
     const sizes = !inScreen ? ORDER.map(z => off(`strip-size-${z}`, sizeIcon(z), SIZES[z].name))
-      : viewOk() ? [...ORDER.map(z => tool(`size:${z}`, `strip-size-${z}`, sizeIcon(z, z === 'tablet' && st.view.land), `${SIZES[z].name} · ${dims(z, z === 'tablet' && st.view.land).w} × ${dims(z).h}`, '', shownSize() === z)), frameOn() ? zoomBtn() : '']
+      : viewOk() ? [...ORDER.map(z => tool(`size:${z}`, `strip-size-${z}`, sizeIcon(z, z === 'tablet' && st.view.land), `${SIZES[z].name} · ${dims(z, st.view.land).w} × ${dims(z, st.view.land).h}`, '', shownSize() === z)), frameOn() ? zoomBtn() : '']
       : [zoomBtn()]
     const sts = inScreen && p ? statesOf(p, pl.variant).length + TOOL_LIST.filter(x => toolOk(p, pl.variant, x)).length : 0
     const statesBtn = sts ? `<div class="relative">${tool('open:states-pop', 'strip-states', 'grid', t('States, Autoplay, Compare'), '', st.open === 'states-pop')}${pop(st.open === 'states-pop', `<div data-strip-states class="w-72 p-1.5">${variantHere(false)}</div>`, 'start-0 top-0', 'states-pop')}</div>` : ''
@@ -1014,14 +1039,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     setScale(0)
     return true
   }
-  const phoneSize = (proto: Proto) => `width:${proto.screen[0] + 20}px;height:${proto.screen[1] + 20}px`
+  // A phone prototype's screen: the device chosen on its placard, else the size it was designed at.
+  const phoneDevice = (proto: Proto) => deviceById(phoneChoice) ?? deviceAt(proto.screen[0], proto.screen[1])
+  const phoneScreen = (proto: Proto) => { const d = deviceById(phoneChoice); return d ? [d.w, d.h] : proto.screen }
+  const phoneSize = (proto: Proto) => { const [w, h] = phoneScreen(proto), d = phoneDevice(proto); return `style="width:${w + 20}px;height:${h + 20}px${d ? `;--screen-r:${d.r}px` : ''}"${d ? ` data-screen-r data-cutout="${d.cutout}"` : ''}` }
   // A phone's card holds the phone itself, so the phone scale can size it (see fit).
   const thumb = (proto: Proto, aspect: string) => proto.kind === 'phone'
-    ? `<div data-thumb data-pthumb class="relative flex w-full items-center justify-center overflow-hidden bg-zinc-100 dark:bg-zinc-900 ${aspect}"><div inert class="pointer-events-none ${PHONE} [contain:layout_paint]" style="${phoneSize(proto)}"><div data-phone-screen class="h-full overflow-hidden"><div data-mount dir="ltr" class="h-full overflow-hidden"></div></div></div></div>`
+    ? `<div data-thumb data-pthumb class="relative flex w-full items-center justify-center overflow-hidden bg-zinc-100 dark:bg-zinc-900 ${aspect}"><div inert class="pointer-events-none ${PHONE} [contain:layout_paint]" ${phoneSize(proto)}><div data-phone-screen class="h-full overflow-hidden"><div data-mount dir="ltr" class="h-full overflow-hidden"></div></div></div></div>`
     : `<div data-thumb class="relative w-full overflow-hidden bg-white dark:bg-zinc-950 ${aspect}"><div inert class="pointer-events-none overflow-hidden [contain:layout_paint]" style="width:1200px;height:750px"><div data-mount dir="ltr" class="h-full"></div></div></div>`
 
   const frameOf = (proto: Proto) => proto.kind === 'phone' && !q.has('shot')
-    ? `<div data-phones class="flex min-h-full items-center justify-center p-6"><div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(proto)}"><div data-phone-screen class="h-full overflow-hidden"><div data-mount dir="ltr" class="h-full overflow-y-auto"></div></div></div></div>`
+    ? `<div data-phones class="flex min-h-full items-center justify-center p-6"><div class="relative"><div data-phone-placard class="absolute bottom-full start-1/2 mb-2 flex h-8 -translate-x-1/2 justify-center max-sm:hidden rtl:translate-x-1/2"></div><div data-phone class="${PHONE} [contain:layout_paint]" ${phoneSize(proto)}><div data-phone-screen class="h-full overflow-hidden"><div data-mount dir="ltr" class="h-full overflow-y-auto"></div></div></div></div></div>`
     : '<div data-mount dir="ltr" class="h-full"></div>'
 
   const previewWindows = new Map<string, VirtualList<Variant>>()
@@ -1367,8 +1395,37 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
     if (layer) fitBox(layer.el)
   }
+  // A phone prototype's placard: its own small root, one per frame on the page.
+  const placardRoots = new WeakMap<HTMLElement, Root>()
+  function paintPhonePlacard(el: HTMLElement) {
+    const proto = cur()
+    if (!proto || proto.kind !== 'phone') return
+    const root = placardRoots.get(el) ?? createRoot(el)
+    placardRoots.set(el, root)
+    const d = phoneDevice(proto), [w, h] = phoneScreen(proto)
+    root.render(createElement(Placard, {
+      label: d?.name ?? t('As designed'), size: { w, h }, est: d?.est, now: deviceById(phoneChoice)?.id ?? null, sheet: false, only: 'phone',
+      pick: pickPhoneDevice,
+      designed: { w: proto.screen[0], h: proto.screen[1] },
+    }))
+  }
+  /** The phone prototype on screen takes the device in place, so the design keeps its state. */
+  function pickPhoneDevice(id: string | null) {
+    phoneChoice = id
+    remember('proto-phone-device', id ?? '')
+    const proto = cur()
+    if (!proto) return
+    const [w, h] = phoneScreen(proto), d = phoneDevice(proto)
+    for (const phone of root.querySelectorAll<HTMLElement>('[data-phone]')) {
+      phone.style.width = `${w + 20}px`; phone.style.height = `${h + 20}px`
+      phone.toggleAttribute('data-screen-r', !!d)
+      if (d) { phone.style.setProperty('--screen-r', `${d.r}px`); phone.setAttribute('data-cutout', d.cutout) }
+      else { phone.style.removeProperty('--screen-r'); phone.removeAttribute('data-cutout') }
+    }
+    fit()
+  }
   function phoneZoom(w: number, h: number, room: HTMLElement) {
-    const auto = [100, 75, 50].find(s => h * s / 100 <= room.clientHeight - 48 && w * s / 100 <= room.clientWidth - 24) ?? 40
+    const auto = [100, 75, 50].find(s => h * s / 100 <= room.clientHeight - 88 && w * s / 100 <= room.clientWidth - 24) ?? 40
     return (st.scale || auto) / 100
   }
   function fitBox(box: HTMLElement) {
@@ -1378,6 +1435,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const w = parseFloat(phone.style.width), h = parseFloat(phone.style.height)
       phone.style.zoom = String(phoneZoom(w, h, room))
     }
+    box.querySelectorAll<HTMLElement>('[data-phone-placard]').forEach(paintPhonePlacard)
   }
   // The stage changes size with the window, and when the motion dock under it grows or shrinks.
   const resized = new ResizeObserver(fit)
@@ -1507,7 +1565,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function stackCard(p: Proto, v: Variant) {
     const head = (v: Variant) => `<div class="mb-3 flex h-8 min-w-0 items-center gap-2 ${p.kind === 'phone' ? 'justify-center' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" title="${esc(t('Open {v}', { v: variantRef(p, v.id) }))}" class="flex min-w-0 cursor-pointer items-center gap-2 rounded-md hover:underline hover:decoration-zinc-400 hover:underline-offset-4"><span class="font-semibold">${variantRef(p!, v.id)}</span><span dir="auto" class="truncate text-zinc-500">${esc(v.name)}</span></button>${starMark(p, v.id)}${v.id === pickOf(p) ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}${t('Picked')}</span>` : ''}${editing(p.id, v.id) ? pulse('size-1.5') : ''}${builtFrom(p, v.id).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}${bd(k.title)}</button>`).join('')}</div>`
     if (cardView()) return `<section data-stack-item class="min-w-0 px-4">${head(v)}${thumb(p, 'aspect-[16/10]')}</section>`
-    return p.kind === 'phone' ? `<section data-stack-item class="min-w-0">${head(v)}<div data-phone class="${PHONE} [contain:layout_paint]" style="${phoneSize(p)}"><div data-phone-screen class="h-full overflow-hidden"><div data-mount dir="ltr" class="h-full overflow-y-auto"></div></div></div></section>` : `<section data-stack-item><div class="px-4 sm:px-6">${head(v)}</div><div class="grid min-h-[var(--stage-h)] border-y border-black/[.07] bg-white [contain:layout_paint] dark:border-white/10 dark:bg-zinc-950"><div data-mount dir="ltr" class="min-w-0"></div></div></section>`
+    return p.kind === 'phone' ? `<section data-stack-item class="min-w-0">${head(v)}<div data-phone class="${PHONE} [contain:layout_paint]" ${phoneSize(p)}><div data-phone-screen class="h-full overflow-hidden"><div data-mount dir="ltr" class="h-full overflow-y-auto"></div></div></div></section>` : `<section data-stack-item><div class="px-4 sm:px-6">${head(v)}</div><div class="grid min-h-[var(--stage-h)] border-y border-black/[.07] bg-white [contain:layout_paint] dark:border-white/10 dark:bg-zinc-950"><div data-mount dir="ltr" class="min-w-0"></div></div></section>`
   }
   function stack(p: Proto) {
     const large = p.variants.length > VIRTUAL_THRESHOLD
@@ -1578,7 +1636,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const icon = viewOn() ? sizeIcon(st.view.size!, st.view.land) : frameOn() ? sizeIcon(shownSize() ?? 'desktop') : viewOk() ? sizeIcon(shownSize() ?? nativeOf(innerWidth)) : 'phone'
       const label = fits ? scaleLabel() : '100%'
       const sizes = viewOk() ? `<div role="radiogroup" aria-label="${t('Layout')}" data-size-tabs class="p-1.5"><div class="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-zinc-400">${t('Layout')}</div>${ORDER.map(s => {
-        const sel = shownSize() === s, land = s === 'tablet' && st.view.land, d = dims(s, land)
+        const sel = shownSize() === s, land = s !== 'desktop' && st.view.land, d = dims(s, land)
         return `<button type="button" role="radio" aria-checked="${sel}" data-act="size:${s}" data-shoot="size-${s}" aria-label="${SIZES[s].name}" title="${sel && viewOn() ? t('Leave the {name} view · Esc', { name: SIZES[s].name.toLowerCase() }) : `${SIZES[s].name} · ${d.w} × ${d.h}`}" class="flex h-10 w-full items-center gap-3 rounded-lg px-2.5 text-start hover:bg-zinc-900/[.04] dark:hover:bg-white/5 ${sel ? 'font-medium text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'}">${ic(sizeIcon(s, land), 'size-4 text-zinc-500 dark:text-zinc-400')}<span class="flex-1">${SIZES[s].name}</span><span class="text-xs tabular-nums text-zinc-400">${d.w} × ${d.h}</span>${sel ? ic('check', 'size-4') : '<span class="size-4"></span>'}</button>`
       }).join('')}</div>` : ''
       const zoom = fits ? `${sizes ? SEP : ''}<div class="px-3.5 pt-2.5 text-[11px] font-medium text-zinc-400">${frameOn() ? t('Zoom') : t('Phone scale')}</div>${scaleMenu}`
@@ -2044,7 +2102,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       st.place.view === 'variant' ? menuTool({ act: 'focus', shoot: 'focus', icon: 'grow', label: t('Focus mode') }) : '',
     ].join('')
     const layout = viewOk() ? menuSegs(t('Layout'), ORDER.map(s => `<button data-act="size:${s}:card" data-shoot="size-${s}" aria-label="${SIZES[s].name}" aria-pressed="${shownSize() === s}" class="grid place-items-center ${DARK_SEG(shownSize() === s)}">${ic(sizeIcon(s, s === 'tablet' && st.view.land), 'size-[18px]')}</button>`).join(''),
-      viewOn() && st.view.size === 'tablet' ? `<button data-act="turn" data-shoot="turn" aria-label="${st.view.land ? t('Turn upright') : t('Turn on its side')}" class="grid size-10 shrink-0 place-items-center rounded-full text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white">${ic('rotate', 'size-5')}</button>` : '') : ''
+      viewOn() && st.view.size !== 'desktop' ? `<button data-act="turn" data-shoot="turn" aria-label="${st.view.land ? t('Turn upright') : t('Turn on its side')}" class="grid size-10 shrink-0 place-items-center rounded-full text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white">${ic('rotate', 'size-5')}</button>` : '') : ''
     const scale = p.kind === 'phone' || frameOn() ? menuSegs(frameOn() ? t('Zoom') : t('Scale'), SCALES.map(s => `<button data-act="scale:${s}" data-scale-seg="${s}" data-dark aria-pressed="${scaleNow() === s}" class="${DARK_SEG(scaleNow() === s)}">${s ? s + '%' : t('Fit')}</button>`).join('')) : ''
     return `<div data-scale-backdrop class="fixed inset-0 z-20"></div>
       <div data-card data-menu-card role="dialog" aria-label="${cardKind === 'layout' ? t('Layout') : t('Menu')}" class="${CARD_CLS}" style="transform-origin:0 0">${rows ? `<div class="space-y-px">${rows}</div>` : ''}${rows && (tools || layout || scale) ? MENU_LINE : ''}${tools ? `<div class="flex gap-1">${tools}</div>` : ''}${layout}${scale}</div>`
@@ -2780,6 +2838,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else if (e.key === 'm' && treeOn) st.place.view === 'variant' ? go({ view: 'proto', proto: st.place.proto }) : lastFocus && galleryApi.open(lastFocus)
     else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches && !framed) act('open', 'decide', '')
     else if (e.key === 's' && st.place.view === 'variant' && !framed) act('fav', st.place.proto, st.place.variant)
+    else if ((e.key === '[' || e.key === ']') && !framed) stepDevice(e.key === ']' ? 1 : -1)
   })
 
   // ---------- resizing the sidebar ----------
@@ -3050,7 +3109,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     setView: v => {
       if (!v) { if (viewOn()) patchView({ size: null, zoom: 0 }); return }
       if (!viewOk()) return
-      const land = v.size === 'tablet' && v.w > v.h
+      const land = v.size !== 'desktop' && v.w > v.h
+      // The comment's own device, when its size is one, so its pin lands where it was written.
+      const d = deviceAt(Math.min(v.w, v.h), Math.max(v.w, v.h)) ?? deviceAt(v.w, v.h)
+      if (d && d.size === v.size && wornDevice(v.size) !== d) { wearDevice(d); st.view = { ...st.view, size: null } }
       if (!viewOn() || st.view.size !== v.size || st.view.land !== land) patchView({ size: v.size, land, zoom: 0 })
     },
     go: (proto, variant, state) => go(variant ? { view: 'variant', proto, variant, ...(state ? { state } : {}) } : { view: 'proto', proto }),
@@ -3123,7 +3185,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function pickSize(s: Size) {
     // The layout shown, chosen again, leaves the view: the way out when no layout is this window's own.
     if (s === native() || (viewOn() && s === st.view.size)) { if (viewOn()) patchView({ size: null, zoom: 0 }); return }
-    patchView({ size: s, zoom: 0 })
+    patchView({ size: s, land: false, zoom: 0 })
   }
   /** Changes the view; what the chrome shows (its size, turned or not) redraws it, a zoom only the view. */
   function patchView(p: Partial<typeof st.view>) {
@@ -3144,6 +3206,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       path: pathOf(st.place),
       dark: st.dark,
       set: patchView,
+      pick: pickDevice,
       // The page in the view moved (its own chrome): this page follows, unless it is there already.
       // At once: a move out here before the next turn would find the place unchanged and leave the view behind.
       route: path => { if (path && path !== location.pathname) visit(path, true) },
@@ -3162,6 +3225,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else if (e.key === 'f' && st.place.view === 'variant') act(st.focus ? 'unfocus' : 'focus', '', '')
     else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches) act('open', 'decide', '')
     else if (e.key === 's' && st.place.view === 'variant') act('fav', st.place.proto, st.place.variant)
+    else if (e.key === '[' || e.key === ']') stepDevice(e.key === ']' ? 1 : -1)
     else if (e.key === 'Escape' && comments.counts().picking) { e.preventDefault(); comments.escape() }
     // Esc leaves the view from inside it too, as it does out here, unless the design used it first.
     else if (e.key === 'Escape' && !e.defaultPrevented && viewOn()) patchView({ size: null, zoom: 0 })

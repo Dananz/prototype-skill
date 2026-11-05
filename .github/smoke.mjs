@@ -1784,7 +1784,7 @@ try {
     if (!await until(() => inFrame(), 15000)) return 'no page in a view'
     const url = new URL(frame().src)
     if (!url.searchParams.has('dv') || url.pathname !== '/tryit/A') return 'the view should show this place, framed: ' + frame().src
-    if (!/^390 × 844 · 100%/.test(document.querySelector('[data-view-line]').textContent)) return 'the view line says ' + document.querySelector('[data-view-line]').textContent
+    if (!/402 × 874/.test(document.querySelector('[data-view-line]').textContent)) return 'the view line says ' + document.querySelector('[data-view-line]').textContent
     const d = inFrame(), w = d.defaultView
     if (d.querySelector('[data-size-tabs], [data-act="comment:toggle"], [data-act="comment:tap"]')) return 'the page in the view has sizes or a Comment of its own'
     // What the page in the view writes and posts from here on.
@@ -1802,7 +1802,7 @@ try {
     if (w.__writes.length) return 'the page in the view wrote ' + w.__writes.join(', ')
     document.querySelector('[data-act="comment:toggle"]').click()
     if (!await until(() => document.querySelector('[data-view-banner]') && document.querySelector('[data-view-pick]'))) return 'Comment should turn the view line into its commenting line, over the frame'
-    if (!/what to change on phone/.test(document.querySelector('[data-view-banner]').textContent)) return 'the commenting line says ' + document.querySelector('[data-view-banner]').textContent
+    if (!/what to change on iPhone 18 Pro/.test(document.querySelector('[data-view-banner]').textContent)) return 'the commenting line says ' + document.querySelector('[data-view-banner]').textContent
     return 'ok'
   })()`, 60_000)
   if (r !== 'ok') fail(`a device view on a desktop: ${r}`)
@@ -1817,7 +1817,7 @@ try {
     ${until}
     const chip = await until(() => document.querySelector('[data-composer] [data-view-chip]'))
     if (!chip) return 'a press on the design in the view opened no composer with its size'
-    if (chip.textContent !== 'Phone · 390 × 844') return 'the composer\\'s chip says ' + chip.textContent
+    if (chip.textContent !== 'Phone · 402 × 874') return 'the composer\\'s chip says ' + chip.textContent
     const ed = document.querySelector('[data-composer] [role=textbox]')
     ed.textContent = 'Smaller heading on a phone'
     ed.dispatchEvent(new Event('input', { bubbles: true }))
@@ -1830,7 +1830,7 @@ try {
   if (wrote !== 'ok') fail(`a comment in a device view: ${wrote}`)
   let heard = ''
   for (let i = 0; i < 40 && !/Smaller heading on a phone/.test(heard); i++) { await new Promise(r => setTimeout(r, 250)); heard = proto(['inbox'], { stdout: true }) }
-  if (!/Smaller heading on a phone\n(?: {3}.*\n)* {3}view: phone 390x844 \(shoot it: proto shoot tryit\/A --size 390x844\)$/m.test(heard)) fail(`proto inbox should print the comment's layout as view: phone 390x844: ${heard}`)
+  if (!/Smaller heading on a phone\n(?: {3}.*\n)* {3}view: phone 402x874 \(shoot it: proto shoot tryit\/A --size 402x874\)$/m.test(heard)) fail(`proto inbox should print the comment's layout as view: phone 402x874: ${heard}`)
   // Its pin is on the phone only: the tablet has a chip that goes back to it, and Esc leaves the view.
   const pins = await viewDesk.run(`(async () => {
     ${until}
@@ -1843,7 +1843,7 @@ try {
     const chip = await until(() => document.querySelector('[data-view-other=phone]'))
     if (!chip || pins()) return 'on another size the pin should go and a chip lead back to the phone (' + pins() + ' pins)'
     chip.click()
-    if (!await until(() => /^390 × 844/.test(document.querySelector('[data-view-line]')?.textContent) && pins() === 1)) return 'the chip should go back to the phone, with its pin'
+    if (!await until(() => /402 × 874/.test(document.querySelector('[data-view-line]')?.textContent) && pins() === 1)) return 'the chip should go back to the phone, with its pin'
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     if (!await until(() => !document.querySelector('[data-view-line], [data-view-banner]'))) return 'Esc should leave the phone for the stage\\'s own artboard'
     return pins() ? 'out of the view the pin should go' : 'ok'
@@ -1871,15 +1871,15 @@ try {
     card.querySelector('[data-act="size:desktop:card"]').click()
     if (!await until(() => !document.querySelector('[data-menu-card]'), 3000)) return 'choosing a size should fold the menu back'
     if (!await until(() => inFrame(), 15000)) return 'no desktop in a view'
-    if (!/^1440 × 900 · \\d+%/.test(document.querySelector('[data-view-line]').textContent)) return 'the view line says ' + document.querySelector('[data-view-line]').textContent
+    if (!/1440 × 900/.test(document.querySelector('[data-view-line]').textContent)) return 'the view line says ' + document.querySelector('[data-view-line]').textContent
     ${viaMenu('size:tablet:card')}
-    if (!await until(() => /^834 × 1194/.test(document.querySelector('[data-view-line]')?.textContent ?? ''), 8000)) return 'no tablet in a view'
+    if (!await until(() => /834 × 1194/.test(document.querySelector('[data-view-line]')?.textContent ?? ''), 8000)) return 'no tablet in a view'
     m().click()
     if (!await until(() => document.querySelector('[data-menu-card] [data-act=turn]'))) return 'with a tablet on, the Layout row should turn it'
     document.querySelector('[data-scale-backdrop]').click()
     if (!await until(() => !document.querySelector('[data-menu-card]'), 3000)) return 'the backdrop should fold the menu back'
     ${viaMenu('size:desktop:card')}
-    if (!await until(() => /^1440 × 900/.test(document.querySelector('[data-view-line]')?.textContent ?? '') && inFrame(), 15000)) return 'no desktop in a view again'
+    if (!await until(() => /1440 × 900/.test(document.querySelector('[data-view-line]')?.textContent ?? '') && inFrame(), 15000)) return 'no desktop in a view again'
     return 'ok'
   })()`, 60_000)
   if (r !== 'ok') fail(`a device view on a phone: ${r}`)
@@ -1919,11 +1919,37 @@ try {
     ${until}
     ${frameOf}
     if (!await until(() => inFrame()?.defaultView.location.pathname === location.pathname, 15000)) return 'the view never caught up: ' + location.pathname + ' in the page, ' + frame()?.contentWindow.location.pathname + ' in the view'
-    return /^390 × 844/.test(document.querySelector('[data-view-line]')?.textContent ?? '') && document.querySelectorAll('[data-view] iframe').length === 1 ? 'ok' : 'the view should be one phone: ' + document.querySelector('[data-view-line]')?.textContent
+    return /402 × 874/.test(document.querySelector('[data-view-line]')?.textContent ?? '') && document.querySelectorAll('[data-view] iframe').length === 1 ? 'ok' : 'the view should be one phone: ' + document.querySelector('[data-view-line]')?.textContent
   })()`, 20_000)
   if (end !== 'ok') fail(`switching fast with a view open: ${end}`)
 } finally { viewFast.close() }
 proto(['shoot', 'tryit/A', '--size', '834x1194'])
+// A layout stands for a real device: its placard names it, and the list and [ ] change it, turned or not.
+const viewDevice = await openPage(`${local}tryit/A?theme=light`)
+try {
+  const said = await viewDevice.run(`(async () => {
+    ${until}; ${frameOf}
+    const line = () => document.querySelector('[data-device-placard]')?.textContent ?? ''
+    const key = k => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }))
+    const open = await until(() => document.querySelector('[data-bar] [data-act="open:device"]'), 15000)
+    if (!open) return 'no layout menu'
+    open.click()
+    document.querySelector('[data-size-tabs] [data-act="size:phone"]').click()
+    if (!await until(() => /iPhone 18 Pro402 × 874/.test(line()) && frame()?.offsetWidth === 402, 8000)) return 'the phone should open as an iPhone 18 Pro: ' + line()
+    document.querySelector('[data-device-button]').click()
+    const row = await until(() => document.querySelector('[data-device-row="iphone-18-pro-max"]'))
+    if (!row) return 'the placard opens no list'
+    if (document.querySelector('[data-device-row*="fold"]')) return 'the list should have no foldables'
+    row.click()
+    if (!await until(() => /iPhone 18 Pro Max440 × 956/.test(line()) && frame()?.offsetWidth === 440, 5000)) return 'choosing the Pro Max: ' + line()
+    key(']')
+    if (!await until(() => /iPhone 18 Pro402 × 874/.test(line()), 5000)) return '] should step to the next device: ' + line()
+    document.querySelector('[data-view-turn]').click()
+    if (!await until(() => /874 × 402/.test(line()) && frame()?.offsetWidth === 874, 5000)) return 'turning the phone: ' + line()
+    return 'ok'
+  })()`, 40_000)
+  if (said !== 'ok') fail(`the device placard: ${said}`)
+} finally { viewDevice.close() }
 if (!pngs(shots).includes('tryit-A-834x1194.png')) fail('proto shoot --size 834x1194 should write tryit-A-834x1194.png')
 proto(['shoot', 'tryit/A', '--size', '834'], { ok: false })
 proto(['shoot', 'tryit', '--sheet', '--size', '834x1194'], { ok: false })

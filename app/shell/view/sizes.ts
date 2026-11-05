@@ -1,5 +1,5 @@
 // The device view's sizes: a phone, a tablet (turned on its side or upright) and a desktop, in CSS
-// pixels, and the layout this screen already is, which is where the view is off.
+// pixels, the real devices behind them, and the layout this screen already is, which is where the view is off.
 
 import { t } from '../i18n'
 
@@ -13,8 +13,39 @@ export const SIZES: Record<Size, { name: string; w: number; h: number }> = {
 /** A comment written in a view is on that layout: its size and the page's px. */
 export type ViewSize = { size: Size; w: number; h: number }
 
-/** The size in CSS px, the tablet turned on its side when land. */
-export const dims = (s: Size, land = false) => { const d = SIZES[s]; return s === 'tablet' && land ? { w: d.h, h: d.w } : { w: d.w, h: d.h } }
+export type Cutout = 'island' | 'hole' | 'none'
+export type Device = {
+  id: string; name: string; group: string; size: Size; w: number; h: number
+  /** The screen's corner radius and what is cut out of it. */
+  r: number; cutout: Cutout
+  /** Worked out from the panel's specs, not measured in a browser: shown with a ≈. */
+  est?: boolean
+}
+export const DEVICES: Device[] = [
+  { id: 'iphone-18-pro-max', name: 'iPhone 18 Pro Max', group: 'iPhone', size: 'phone', w: 440, h: 956, r: 55, cutout: 'island' },
+  { id: 'iphone-18-pro', name: 'iPhone 18 Pro', group: 'iPhone', size: 'phone', w: 402, h: 874, r: 55, cutout: 'island' },
+  { id: 'iphone-air', name: 'iPhone Air', group: 'iPhone', size: 'phone', w: 420, h: 912, r: 55, cutout: 'island' },
+  { id: 'iphone-17e', name: 'iPhone 17e', group: 'iPhone', size: 'phone', w: 390, h: 844, r: 47, cutout: 'island' },
+  { id: 'galaxy-s26-ultra', name: 'Galaxy S26 Ultra', group: 'Android', size: 'phone', w: 384, h: 832, r: 22, cutout: 'hole', est: true },
+  { id: 'pixel-11-pro', name: 'Pixel 11 Pro', group: 'Android', size: 'phone', w: 427, h: 952, r: 44, cutout: 'hole', est: true },
+  { id: 'ipad-mini', name: 'iPad mini', group: 'Tablet', size: 'tablet', w: 744, h: 1133, r: 22, cutout: 'none' },
+  { id: 'ipad-pro-11', name: 'iPad Pro 11"', group: 'Tablet', size: 'tablet', w: 834, h: 1194, r: 22, cutout: 'none' },
+  { id: 'laptop', name: 'Laptop', group: 'Desktop', size: 'desktop', w: 1440, h: 900, r: 0, cutout: 'none' },
+]
+export const DEVICE_GROUPS = ['iPhone', 'Android', 'Tablet', 'Desktop']
+export const deviceById = (id: string | null | undefined) => DEVICES.find(d => d.id === id)
+/** The same device worn by a screen of this size, if one is exactly that. */
+export const deviceAt = (w: number, h: number) => DEVICES.find(d => d.w === w && d.h === h)
+
+// The device each layout stands for. Nothing chosen (the shared viewer): the generic size, as SIZES says.
+const worn: Partial<Record<Size, Device>> = {}
+export const wornDevice = (s: Size) => worn[s]
+export const wearDevice = (d: Device) => { worn[d.size] = d }
+
+/** The layout's size in CSS px, of the device it stands for, turned on its side when land. */
+export const dims = (s: Size, land = false) => { const d = worn[s] ?? SIZES[s]; return s !== 'desktop' && land ? { w: d.h, h: d.w } : { w: d.w, h: d.h } }
+/** A size as the page writes it, with a ≈ when it is an estimate. */
+export const sizeText = (d: { w: number; h: number }, est?: boolean) => `${est ? '≈ ' : ''}${d.w} × ${d.h}`
 /** The layout a window this wide is: the page's own breakpoints (its phone below 640, its docked panel from 1024). */
 export const nativeOf = (w: number): Size => (w < 640 ? 'phone' : w < 1024 ? 'tablet' : 'desktop')
 /** The narrowest the stage's own artboard is laid out in a desktop window (view/index.tsx): side panels that leave

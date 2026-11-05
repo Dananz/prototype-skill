@@ -51,7 +51,12 @@ Preferences save automatically;
 use the page's layout, zoom and motion controls for the design currently on screen.
 
 The bar's layout button, before Comment, opens the three sizes, phone, tablet and desktop, with
-their dimensions, and the zoom under them (on a phone, the Layout row of the pill's menu). On a wide screen the page is a dotted desk (the sidebar, the bar and the side panel float on it as cards) and a web variant sits on it as an artboard as big as the stage, less a margin of the desk, laid out for
+their dimensions, and the zoom under them (on a phone, the Layout row of the pill's menu). A chosen
+layout stands for a real device, named on a placard over it, with its size: click the name for the
+others (iPhone 18 Pro Max, iPhone 18 Pro, Galaxy S26 Ultra, Pixel 11 Pro, iPads; `[` and `]` step
+through them; a size marked ≈ is an estimate), and the button beside it turns it. A `--kind phone`
+prototype has the same placard, over its frame: its screen becomes the phone chosen, and As designed
+puts it back. On a wide screen the page is a dotted desk (the sidebar, the bar and the side panel float on it as cards) and a web variant sits on it as an artboard as big as the stage, less a margin of the desk, laid out for
 the stage's width (its breakpoints see the stage, not the window; in a desktop window it is never
 laid out narrower than 1024, so side panels scale the desktop layout down rather than turning it into
 the tablet one); the stage's own layout is selected. Choosing another shows the page at that size, zoomed to fit (a 1440 × 900 desktop on a
