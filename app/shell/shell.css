@@ -122,6 +122,27 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
 @keyframes proto-isl-menu-in { from { opacity: 0; transform: translateY(6px) scale(.97) } to { opacity: 1; transform: none } }
 @keyframes proto-isl-menu-out { to { opacity: 0; transform: translateY(4px) scale(.98) } }
 
+/* What @ opens (comments/mention-shelf.tsx). It rises from the box on the menus' curve, its cards come
+   into focus one after another, it changes size the way the island does (comments/island.tsx), and a
+   new tab crossfades. */
+.proto-shelf-in { animation: proto-shelf-in .24s cubic-bezier(.2,.9,.25,1) both }
+.proto-shelf-out { animation: proto-shelf-out .14s ease-in forwards }
+.proto-shelf-sized { transition: width .5s cubic-bezier(.2,.9,.25,1.1), height .5s cubic-bezier(.2,.9,.25,1), left .5s cubic-bezier(.2,.9,.25,1.1) }
+.proto-shelf-in .proto-shelf-card { animation: proto-shelf-card .3s cubic-bezier(.16,1,.3,1) both }
+.proto-shelf-in .proto-shelf-rail-in .proto-shelf-card { animation: none }
+.proto-shelf-rail-in { animation: proto-shelf-rail-in .24s ease-out both }
+.proto-shelf-rail-out { animation: proto-shelf-rail-out .2s ease-out forwards }
+@keyframes proto-shelf-in { from { opacity: 0; transform: translateY(10px) scale(.97) } to { opacity: 1; transform: none } }
+@keyframes proto-shelf-out { to { opacity: 0; transform: translateY(6px) scale(.98) } }
+@keyframes proto-shelf-card { from { opacity: 0; transform: translateY(4px) scale(.985); filter: blur(6px) } to { opacity: 1; transform: none; filter: blur(0) } }
+@keyframes proto-shelf-rail-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes proto-shelf-rail-out { to { opacity: 0 } }
+@media (prefers-reduced-motion: reduce) {
+  .proto-shelf-in, .proto-shelf-out, .proto-shelf-in .proto-shelf-card, .proto-shelf-rail-in { animation: none }
+  .proto-shelf-sized { transition: none }
+  .proto-shelf-rail-out { display: none }
+}
+
 /* The comment layer's primary (comments/ui.tsx). A placeholder until the page has an accent of
    its own: one hue, used by role, never by raw value, and named apart from the project's own
    tokens, which this stylesheet shares. White on --proto-primary passes AA (6.3:1); the soft

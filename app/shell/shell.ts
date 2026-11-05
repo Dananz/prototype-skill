@@ -2998,14 +2998,46 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       comments.store.set({ pendingTag: { ...item.target, source: { proto: item.proto, variant: item.variant, ...(item.state ? { state: item.state } : {}) }, commentRef: { id: item.id, proto: item.proto, variant: item.variant, n: item.n, quote: commentText(item) } } })
       return true
     },
+    // Every variant in the project: what is near the one on screen first (what it was made from, the
+    // others beside that, its own siblings, what was made from it), then the newest prototypes.
     variantMentions: () => {
-      const p = cur()
-      return !p || p.variants.length < 2 ? [] : p.variants.map(v => ({
-        label: 'Variant', selector: ':scope > *', tag: 'variant', text: `Variant ${variantLabel(p, v.id)} · ${v.name}`,
-        rect: { x: 0, y: 0, w: 0, h: 0 },
-        source: { proto: p.id, variant: v.id },
-        variantRef: { proto: p.id, variant: v.id, label: variantLabel(p, v.id), name: v.name },
-      }))
+      // In Compare the place is one pane, and the comment may be on the other: both can be tagged.
+      const p = cur(), here = st.place.view === 'variant' && st.place.tool !== 'compare' ? st.place.variant : ''
+      const live = all.filter(x => !x.archived), names = new Map<string, number>()
+      for (const x of live) for (const v of x.variants) names.set(v.name, (names.get(v.name) ?? 0) + 1)
+      const parent = p?.from ? live.find(x => x.id === p.from!.proto) : undefined
+      const nearRank = (x: Proto, id: string) => !p ? 9
+        : parent && x.id === parent.id ? (id === p.from!.variant ? 0 : 1)
+        : x.id === p.id ? 2
+        : x.from?.proto === p.id && (!here || !x.from.variant || x.from.variant === here) ? 3
+        : 9
+      return live.flatMap(x => x.variants.map(v => ({ x, v, rank: nearRank(x, v.id) })))
+        .filter(({ x, v }) => !(p && x.id === p.id && v.id === here))
+        .sort((a, b) => a.rank - b.rank || (b.x.created || '').localeCompare(a.x.created || ''))
+        .map(({ x, v, rank }) => ({
+          label: 'Variant', selector: ':scope > *', tag: 'variant', text: `Variant ${variantLabel(x, v.id)} · ${v.name} · ${x.title}`,
+          rect: { x: 0, y: 0, w: 0, h: 0 },
+          source: { proto: x.id, variant: v.id },
+          variantRef: { proto: x.id, variant: v.id, label: variantLabel(x, v.id), name: v.name, title: x.title, near: rank < 9, picked: x.picked === v.id, ambiguous: (names.get(v.name) ?? 0) > 1 },
+        }))
+    },
+    // A variant as a picture, the way a gallery card draws it: laid out at its own size and zoomed
+    // down (never scaled: Safari on a phone paints a scaled layer at full size).
+    mountThumb: (el, proto, variant, w, h) => {
+      const x = all.find(p => p.id === proto), v = x?.variants.find(y => y.id === variant)
+      if (!x || !v) return () => {}
+      const width = x.kind === 'phone' ? x.screen[0] : 1200, zoom = w / width
+      const frame = document.createElement('div')
+      frame.inert = true
+      frame.className = 'pointer-events-none overflow-hidden bg-white dark:bg-zinc-950 [contain:layout_paint]'
+      frame.style.cssText = `width:${width}px;height:${Math.ceil(h / zoom)}px;zoom:${zoom}`
+      const host = document.createElement('div')
+      host.dir = 'ltr'; host.className = 'h-full'; host.dataset.mount = ''
+      frame.append(host); el.append(frame)
+      let gone = false, off = () => {}
+      load(v).then(c => { if (!gone) off = mount(host, c) }, () => { frame.remove() })
+      // Let go after this render: a card leaving the rail is React's own commit, and a root can't unmount inside one.
+      return () => { gone = true; frame.remove(); setTimeout(off) }
     },
     show: () => {
       if (railOn()) openRail()

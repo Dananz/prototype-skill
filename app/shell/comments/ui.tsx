@@ -159,6 +159,8 @@ export const elementName = (t: Pick<Target, 'text' | 'component' | 'tag'>) => {
   return t.component || (words ? `${words.slice(0, 24).trimEnd()}…` : t.tag)
 }
 
+/** A tag in a sentence stays short: its name and number, and its prototype only when the name alone could be several. */
+export const variantChip = (r: { label: string; name: string; title?: string; ambiguous?: boolean }) => `@${r.name} #${r.label}${r.ambiguous && r.title ? ` · ${r.title}` : ''}`
 export function Chip({ t: target, n }: { t?: Target; n: number }) {
   const { act } = useCtx()
   const ref = target?.variantRef
@@ -171,10 +173,10 @@ export function Chip({ t: target, n }: { t?: Target; n: number }) {
   }
   // Its own dir keeps the chip's words out of the comment's direction: a Hebrew comment that opens
   // with "Comment 2" still reads right to left.
-  return <span dir="auto" title={comment?.quote ?? (ref ? `${ref.label} · ${ref.name}` : srcOf(target)?.full)} role={linked ? 'link' : undefined} tabIndex={linked ? 0 : undefined}
+  return <span dir="auto" title={comment?.quote ?? (ref ? `${ref.title ? `${ref.title} › ` : ''}#${ref.label} ${ref.name}` : srcOf(target)?.full)} role={linked ? 'link' : undefined} tabIndex={linked ? 0 : undefined}
     onClick={linked ? e => { e.stopPropagation(); open() } : undefined}
     onKeyDown={linked ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); open() } } : undefined}
-    className={`mx-px inline-block max-w-[16rem] truncate rounded bg-proto-primary-soft px-1 align-bottom font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? t('Comment {n}', { n: comment.n }) : ref ? `@${ref.label} ${ref.name}` : target ? `@${target.source ? `${variantLabel(null, target.source.variant)}·` : ''}${elementName(target)}` : `@${n}`}</span>
+    className={`mx-px inline-block max-w-[16rem] truncate rounded bg-proto-primary-soft px-1 align-bottom font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? t('Comment {n}', { n: comment.n }) : ref ? variantChip(ref) : target ? `@${target.source ? `${variantLabel(null, target.source.variant)}·` : ''}${elementName(target)}` : `@${n}`}</span>
 }
 
 export function Body({ c, className = '' }: { c: { body: Seg[]; tags: Target[] }; className?: string }): ReactNode {

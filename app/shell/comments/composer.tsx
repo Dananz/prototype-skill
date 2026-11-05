@@ -4,7 +4,7 @@ import { imageIn, carriesImage, imageUrl } from './images'
 // element (all of it, on a moment) and opens the editor, and a region dragged out on the design brings its own picture; an image pasted (Ctrl+V) or dropped on the
 // composer is added beside the screenshots (several per comment); ⌘↩ adds it. Whatever is written is held by
 // the store as it is typed, so putting the composer away any way but Cancel or Add loses nothing.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Drawer } from '@base-ui/react/drawer'
 import { uiBox } from '../portals'
@@ -16,7 +16,8 @@ import { progress, useStore } from './store'
 import { capture, ShotEditor } from './shot'
 import type { Box, Draft, Seg, Shot, Target, Time } from './types'
 import { MAX_SHOTS, shotsOf } from './types'
-import { IB, Icon, MOD, PinDot, PRIMARY, SrcTag, srcOf, ImageChip, PictureStrip, ViewChip, elementName } from './ui'
+import { MentionShelf, useMentionShelf } from './mention-shelf'
+import { IB, Icon, MOD, PinDot, PRIMARY, SrcTag, srcOf, ImageChip, PictureStrip, ViewChip, elementName, variantChip } from './ui'
 import { t } from '../i18n'
 import { variantLabel } from '../variants'
 
@@ -41,9 +42,9 @@ export const chipNode = (target: Target | undefined, i: number) => {
   if (src) s.title = src.full
   // A variant shows by its number and its name; long names are cut short (the title has it all).
   s.className = 'mx-px inline-block max-w-[16rem] truncate rounded bg-proto-primary-soft px-1 align-bottom font-medium text-proto-primary-soft-fg'
-  s.textContent = target?.commentRef ? t('Comment {n}', { n: target.commentRef.n }) : target?.variantRef ? `@${target.variantRef.label} ${target.variantRef.name}` : target ? `@${target.source ? `${variantLabel(null, target.source.variant)}·` : ''}${elementName(target)}` : `@${i + 1}`
+  s.textContent = target?.commentRef ? t('Comment {n}', { n: target.commentRef.n }) : target?.variantRef ? variantChip(target.variantRef) : target ? `@${target.source ? `${variantLabel(null, target.source.variant)}·` : ''}${elementName(target)}` : `@${i + 1}`
   if (target?.commentRef) s.title = target.commentRef.quote
-  if (target?.variantRef) s.title = `${target.variantRef.label} · ${target.variantRef.name}`
+  if (target?.variantRef) s.title = `${target.variantRef.title ? `${target.variantRef.title} › ` : ''}#${target.variantRef.label} ${target.variantRef.name}`
   return s
 }
 export const endRange = (el: HTMLElement) => { const x = document.createRange(); x.selectNodeContents(el); x.collapse(false); return x }
@@ -97,14 +98,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     return () => clearTimeout(id)
   }, [!!mention])
   const menuAt = mention ?? menuGone
-  const choices = host.variantMentions?.() ?? []
-  const query = menuAt?.query.toLocaleLowerCase() ?? ''
-  const exact = query ? choices.filter(t => t.variantRef?.label.toLocaleLowerCase() === query || t.variantRef?.variant.toLocaleLowerCase() === query) : []
-  const variants = exact.length ? exact : choices.filter(t => !query || `${t.variantRef?.label} ${t.variantRef?.variant} ${t.variantRef?.name}`.toLocaleLowerCase().includes(query))
-  // The highlighted row: a variant, or (one past them) Pick an element instead. It is kept in view.
-  const sel = Math.min(menuAt?.index ?? 0, variants.length)
-  const menuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { menuRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }) }, [sel, !!mention])
+  const choices = useMemo(() => menuAt ? host.variantMentions?.() ?? [] : [], [!!menuAt]) // eslint-disable-line react-hooks/exhaustive-deps
   // A sent comment, changed while the agent hasn't taken it. If it takes it meanwhile the change can't
   // reach it there, so the words can go as a new comment instead.
   const s = useStore(store), sentItem = id ? s.items.find(i => i.id === id && i.sent) : undefined
@@ -157,8 +151,9 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   }, [edOn])
 
   const saveRange = () => { const s = getSelection(); if (s?.rangeCount && ed.current?.contains(s.anchorNode)) range.current = s.getRangeAt(0).cloneRange() }
-  const insert = (p: Target) => {
-    setMention(null)
+  const insert = (p: Target, close = true) => {
+    // A tap on the shelf stays open for another; its @ is gone, so what is typed next closes it.
+    setMention(close ? null : { query: '', index: 0 })
     const el = ed.current!
     const i = tagsRef.current.length
     setTags(t => [...t, p])
@@ -248,14 +243,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const keys = (e: React.KeyboardEvent) => {
     if (mention && !e.nativeEvent.isComposing) {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMention(null); return }
-      // The rows are the variants and, last, Pick an element instead: the arrows go round all of them.
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const step = e.key === 'ArrowDown' ? 1 : -1; setMention(m => m && ({ ...m, index: (Math.min(m.index, variants.length) + step + variants.length + 1) % (variants.length + 1) })); return }
-      if ((e.key === 'Enter' || e.key === 'Tab') && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
-        e.preventDefault()
-        if (sel < variants.length) insert(variants[sel])
-        else { setMention(null); act.tagPick() }
-        return
-      }
+      if (shelf.onKey(e)) { e.preventDefault(); return }
     }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); if (!sentItem) void act.send() }
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); act.close() }
@@ -264,17 +252,27 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   // The @ menu floats over the page, off the composer's edge (above it, or below it when there is
   // more room there), lined up with the editor; it rises in and sinks away. The phone's sheet keeps
   // it inline.
+  const taggedNow = () => {
+    const keys = new Set<string>()
+    ed.current?.querySelectorAll<HTMLElement>('[data-tag]').forEach(n => { const r = tagsRef.current[Number(n.dataset.tag)]?.variantRef; if (r) keys.add(`${r.proto}/${r.variant}`) })
+    return keys
+  }
+  const shelfOpts = {
+    choices, query: mention ? mention.query : null, tagged: taggedNow,
+    onPick: (c: Target, close: boolean) => insert(c, close),
+    onDrop: (c: Target) => {
+      const r = c.variantRef!
+      ed.current?.querySelectorAll<HTMLElement>('[data-tag]').forEach(n => { const v = tagsRef.current[Number(n.dataset.tag)]?.variantRef; if (v?.proto === r.proto && v.variant === r.variant) n.remove() })
+      setEmpty(!ed.current?.innerText.trim()); emit(); setMention(m => m && { ...m })
+    },
+    onElement: () => { setMention(null); act.tagPick() },
+  }
+  const shelf = useMentionShelf(shelfOpts)
   const edRect = menuAt && !sheet ? ed.current?.getBoundingClientRect() : null
   const outer = edRect ? (box.current?.getBoundingClientRect() ?? edRect) : null
   const edBox = edRect && outer ? { left: edRect.left, top: outer.top, bottom: outer.bottom } : null
   const above = !!edBox && edBox.top - 16 >= innerHeight - edBox.bottom - 16
-  const menu = menuAt && (<div ref={menuRef} data-tag-menu role="listbox" aria-label={t('Variants')}
-            style={edBox ? { position: 'fixed', zIndex: 250, left: Math.max(8, Math.min(edBox.left, innerWidth - Math.min(312, innerWidth - 16) - 8)), width: Math.min(312, innerWidth - 16), ...(above ? { bottom: innerHeight - edBox.top + 8, maxHeight: Math.max(80, edBox.top - 24) } : { top: edBox.bottom + 8, maxHeight: Math.max(80, innerHeight - edBox.bottom - 24) }), overflowY: 'auto' } : undefined}
-            className={`overflow-hidden text-zinc-900 dark:text-zinc-100 rounded-xl border border-black/10 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-950 ${edBox ? (above ? 'origin-bottom-left' : 'origin-top-left') : 'my-2'} ${mention ? 'pointer-events-auto animate-[proto-isl-menu-in_.18s_cubic-bezier(.2,.9,.25,1)_both]' : 'pointer-events-none animate-[proto-isl-menu-out_.14s_ease-in_forwards]'}`}>
-            <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-zinc-400">{t('Mention a variant')}</div>
-            <div className="max-h-36 overflow-y-auto">{variants.map((t, i) => <button key={`${t.variantRef?.proto}/${t.variantRef?.variant}/${t.variantRef?.label}`} type="button" role="option" aria-selected={i === sel} onMouseDown={e => e.preventDefault()} onClick={() => insert(t)} className={`flex min-h-9 w-full items-center gap-2 px-3 py-2 text-start text-xs ${i === sel ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}><span className="font-semibold">@{t.variantRef?.label}</span><span className="min-w-0 flex-1 truncate">{t.variantRef?.name}</span></button>)}{!variants.length && <p className="px-3 py-2 text-xs text-zinc-400">{t('No matching variants')}</p>}</div>
-            <button type="button" role="option" data-tag-pick aria-selected={sel === variants.length} onMouseDown={e => e.preventDefault()} onClick={() => { setMention(null); act.tagPick() }} className={`flex min-h-9 w-full items-center gap-2 border-t border-black/[.06] px-3 py-2 text-start text-xs dark:border-white/10 ${sel === variants.length ? 'bg-proto-primary-soft text-proto-primary-soft-fg' : 'text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/5'}`}><Icon name="target" className="size-3.5"/>{t('Pick an element instead')}</button>
-          </div>)
+  const menu = menuAt && <MentionShelf shelf={shelf} open={!!mention} opts={shelfOpts} count={choices.length} place={edBox ? { center: edBox.left + (edRect!.width / 2), above, edge: above ? innerHeight - edBox.top + 8 : edBox.bottom + 8 } : undefined} />
   const body = (
       <div ref={box} data-composer onKeyDown={keys}
         onDragOver={e => { if (!carriesImage(e.dataTransfer)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDropping(true) }}
@@ -299,7 +297,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
               if (match && (host.variantMentions?.().length ?? 0) > 0) setMention({ query: match[1], index: 0 })
               else { setMention(null); if (/(^|[^\w.+-])@$/.test(text)) act.tagPick() }
             }}
-            onKeyUp={saveRange} onMouseUp={saveRange} onBlur={saveRange}
+            onKeyUp={saveRange} onMouseUp={saveRange} onBlur={() => { saveRange(); setMention(null) }}
             onPaste={e => { const f = imageIn(e.clipboardData); if (!f) return; e.preventDefault(); void attach(f) }}
             className="max-h-40 min-h-[52px] overflow-y-auto whitespace-pre-wrap break-words py-1 leading-5 outline-none [@media(pointer:coarse)]:min-h-[60px] [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6" />
           {menu && edBox ? createPortal(menu, uiBox()) : menu}

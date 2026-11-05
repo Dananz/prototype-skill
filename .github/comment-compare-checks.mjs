@@ -35,13 +35,15 @@ export async function commentCompareChecks({ proto, app, openPage, fail }) {
       if(!await until(editor))return 'native picker did not open the composer'
       if(c.store.get().mode.target.source?.variant!=='B')return 'B pick lost its source route'
       type('Bring the unmatched element here: @foc')
-      if(!await until(()=>document.querySelectorAll('[data-tag-menu] [role=option]:not([data-tag-pick])').length===1))return '@ filter did not find Focus'
-      return document.querySelector('[data-tag-menu] [role=option]').textContent.includes('@1')?'ok':'filter offered wrong variant'
+      // The shelf searches the whole project, so other matches may follow: the nearest one comes first.
+      const first=()=>document.querySelector('[data-tag-menu] [role=option]')
+      if(!await until(()=>first()?.textContent.includes('Focus')))return '@ filter did not find Focus, offered: '+[...document.querySelectorAll('[data-tag-menu] [role=option]')].map(o=>o.textContent).join(' | ')
+      return first().textContent.includes('#1')&&first().dataset.shelfCard.startsWith('comparefx')?'ok':'filter put the wrong variant first: '+first().dataset.shelfCard
     })()`)
     if (begin !== 'ok') fail(`compare comments: ${begin}`)
     await page.key('Enter')
     const mention = await page.run(`(async()=>{${helpers}
-      if(!await until(()=>c.store.get().held?.tags[0]?.variantRef?.variant==='A'))return 'Enter did not insert @1'
+      if(!await until(()=>c.store.get().held?.tags[0]?.variantRef?.proto==='comparefx'&&c.store.get().held.tags[0].variantRef.variant==='A'))return 'Enter did not insert Focus #1'
       const e=document.querySelector('[data-comment-compare] [data-route="comparefx/A"] [data-shoot=unique-A]'),r=e.getBoundingClientRect()
       return {x:r.left+30,y:r.top+30}
     })()`)
@@ -49,7 +51,7 @@ export async function commentCompareChecks({ proto, app, openPage, fail }) {
     await page.press(mention.x, mention.y)
     const saved = await page.run(`(async()=>{${helpers}
       if(!await until(()=>c.store.get().held?.tags.some(t=>t.shoot==='unique-A'&&t.source?.variant==='A')))return 'cross-pane press did not tag the unmatched A element'
-      if(!editor().textContent.includes('@1'))return 'reference insertion lost the @ mention'
+      if(!editor().textContent.includes('@Focus #1'))return 'reference insertion lost the @ mention'
       if(!await until(()=>button('Add')&&!button('Add').disabled))return 'Add did not become enabled'
       button('Add').click()
       if(!await until(()=>c.store.get().items.length===1))return 'Add did not save'
@@ -92,7 +94,8 @@ export async function commentCompareChecks({ proto, app, openPage, fail }) {
       location.hash='#/comparefx/A'
       if(!await until(()=>!document.querySelector('[data-comment-compare]')&&document.querySelector('[data-view] iframe')))return 'single variant did not return'
       if(c.store.get().place?.compare)return 'leaving Compare kept compare enabled'
-      if(c.store.get().items.find(i=>i.variant==='B').tags[0].variantRef.variant!=='A')return 'navigation lost mention metadata'
+      const kept=c.store.get().items.find(i=>i.variant==='B').tags[0].variantRef
+      if(kept.variant!=='A'||kept.title!=='Compare comments')return 'navigation lost mention metadata'
       c.act.revealTarget({label:'Element',selector:'[data-shoot=detail]',shoot:'detail',tag:'button',text:'Hidden details A',rect:{x:0,y:0,w:1,h:1},source:{proto:'comparefx',variant:'A',state:'details'},route:['[data-shoot=detail-opener]']})
       if(!await until(()=>location.pathname === '/comparefx/A/details'&&document.querySelector('[data-view] iframe')?.contentDocument.querySelector('[data-shoot=detail]')))return 'reference dropped its state or did not reveal the hidden destination'
       location.hash='#/comparefx/A/~compare/details'
