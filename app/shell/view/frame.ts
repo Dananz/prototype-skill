@@ -56,7 +56,10 @@ export function openFrame(host: HTMLElement, url: string, on: { route: (path: st
   host.append(el)
   let d: Document | null = null, unbind = () => {}, closed = false
   const page = () => { try { const n = el.contentDocument; return n && n.URL !== 'about:blank' ? n : null } catch { return null } }
-  const route = () => { try { on.route(el.contentWindow!.location.pathname) } catch { /* gone */ } }
+  // Where this page was just told to go. It isn't news to the page outside, which may have moved on
+  // since (a key held down): saying so would take it back a step.
+  let told = ''
+  const route = () => { try { const now = el.contentWindow!.location.pathname; if (now !== told) on.route(now) } catch { /* gone */ } }
   // A load event comes late under a dev server (after every module), so the document is looked for
   // a few times a second: a new one appears as soon as the frame starts loading the page.
   const watch = () => {
@@ -82,7 +85,8 @@ export function openFrame(host: HTMLElement, url: string, on: { route: (path: st
         const w = el.contentWindow!
         if (w.location.pathname === path) return
         w.history.pushState(null, '', path + w.location.search)
-        w.dispatchEvent(new PopStateEvent('popstate'))
+        told = path
+        try { w.dispatchEvent(new PopStateEvent('popstate')) } finally { told = '' }
       } catch { /* gone */ }
     },
     path() { try { return el.contentWindow!.location.pathname } catch { return '' } },

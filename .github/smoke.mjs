@@ -39,6 +39,7 @@ import { commentReplyThreadChecks } from './comment-reply-thread-checks.mjs'
 import { contextMenuChecks } from './context-menu-checks.mjs'
 import { splitChecks } from './split-checks.mjs'
 import { keyboardColumnsChecks } from './keyboard-columns-checks.mjs'
+import { stateKeysChecks } from './state-keys-checks.mjs'
 import { slotChecks } from './slot-checks.mjs'
 import { settingsChecks } from './settings-checks.mjs'
 import { shareChecks } from './share-checks.mjs'
@@ -259,6 +260,13 @@ if (process.argv.includes('--context-menu-only')) {
   console.log('OK: focused context menu checks')
   process.exit(0)
 }
+if (process.argv.includes('--state-keys-only')) {
+  await stateKeysChecks({ proto, app, local, openPage, fail, keepShots: process.env.PROTO_STATE_KEYS_SHOTS || '' })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused state keys checks')
+  process.exit(0)
+}
 if (process.argv.includes('--focus-only')) {
   await focusChecks({ proto, app, local, openPage, fail })
   proto(['rm', '--all'])
@@ -475,6 +483,7 @@ await pickNoteChecks({ proto, app, local, openPage, fail, keepShots })
 await contextMenuChecks({ proto, app, local, openPage, fail })
 await splitChecks({ proto, app, local, openPage, fail, keepShots })
 await keyboardColumnsChecks({ proto, app, local, openPage, fail, keepShots })
+await stateKeysChecks({ proto, app, local, openPage, fail })
 await slotChecks({ proto, app, local, openPage, fail })
 await decisionChecks({ proto, app, local, openPage, fail, keepShots })
 await middleDragChecks({ proto, app, local, openPage, fail })

@@ -139,6 +139,9 @@ function Shelf({ nodes, archive, slug, draw, go }: { nodes: TreeNode[]; archive:
 function Dock({ dock }: { dock: NonNullable<TreeInput['dock']> }) {
   const [shut, setShut] = useState(() => { try { return localStorage.getItem('proto-tree-dock') === '0' } catch { return false } })
   const flip = () => { const next = !shut; setShut(next); try { localStorage.setItem('proto-tree-dock', next ? '0' : '1') } catch { /* private window */ } }
+  // The state showing stays in sight, however it was reached (up and down from anywhere walk the list).
+  const list = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => { list.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'nearest' }) }, [dock.html, shut])
   return (
     <section data-tree-dock data-shut={shut || undefined} aria-label={dock.title} className="flex max-h-[45%] shrink-0 flex-col border-t border-black/[.06] text-[13px] dark:border-white/10">
       <button type="button" data-tree-dock-head aria-expanded={!shut} onClick={flip} className="flex h-9 w-full shrink-0 items-center gap-1.5 px-3 text-start text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
@@ -148,7 +151,7 @@ function Dock({ dock }: { dock: NonNullable<TreeInput['dock']> }) {
           ? <span className="flex min-w-0 items-center gap-1.5"><span dir="auto" className="truncate font-medium text-zinc-900 dark:text-white">{dock.state}</span><span className="shrink-0 tabular-nums text-zinc-400">{dock.at + 1}/{dock.total}</span></span>
           : <span className="shrink-0 tabular-nums">{tn(dock.count, '{n} state', '{n} states')}</span>)}
       </button>
-      {!shut && <div data-tree-dock-list className="min-h-0 overflow-y-auto overscroll-contain px-1.5 pb-2" dangerouslySetInnerHTML={{ __html: dock.html }} />}
+      {!shut && <div ref={list} data-tree-dock-list className="min-h-0 overflow-y-auto overscroll-contain px-1.5 pb-2" dangerouslySetInnerHTML={{ __html: dock.html }} />}
     </section>
   )
 }
