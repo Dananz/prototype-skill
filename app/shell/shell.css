@@ -263,5 +263,39 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
 [data-tree-row]:hover > .proto-tree-more,
 [data-tree-row]:focus-within > .proto-tree-more,
 [data-tree-row] > .proto-tree-more[aria-expanded="true"] { width: 1.5rem; margin-inline-start: 0; opacity: 1; pointer-events: auto; }
+/* A row with a state mark at its end keeps the actions' width, so the mark stays where the pointer
+   finds it (its tooltip explains it) instead of sliding away as the row is hovered. */
+[data-tree-row]:has([data-mark]) > .proto-tree-more { width: 1.5rem; margin-inline-start: 0; }
 @media (pointer: coarse) { [data-tree-row] > .proto-tree-more { width: 2.25rem; height: 2.25rem; margin-inline-start: 0; opacity: 1; pointer-events: auto; } }
 @media (prefers-reduced-motion: reduce) { [data-tree-row] > .proto-tree-more { transition: none; } }
+
+/* The shell's tooltip (tip.ts): dark in both themes, a key chip after a label, a bold title over a
+   sentence for an explainer. It fades in and grows out of its element in 150ms and leaves in 100ms;
+   the next one along a toolbar swaps without motion (data-instant). Less motion keeps the fade. */
+[data-proto-tip] {
+  position: fixed; z-index: 400; pointer-events: none;
+  display: flex; align-items: center; gap: 8px; max-width: 260px;
+  padding: 6px 8px; border-radius: 7px;
+  background: var(--color-zinc-900, #18181b); color: var(--color-zinc-50, #fafafa);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.22), 0 0 0 1px rgb(255 255 255 / 0.08);
+  font-size: 12px; line-height: 16px; font-weight: 500;
+  opacity: 0; transform: var(--tip-from) scale(0.96);
+  transition: opacity 100ms ease-in, transform 100ms ease-in;
+  --tip-from: translateY(4px); transform-origin: bottom center;
+}
+.dark [data-proto-tip] { background: var(--color-zinc-800, #27272a); box-shadow: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.1); }
+[data-proto-tip][data-side="bottom"] { --tip-from: translateY(-4px); transform-origin: top center; }
+[data-proto-tip][data-side="left"] { --tip-from: translateX(4px); transform-origin: center right; }
+[data-proto-tip][data-side="right"] { --tip-from: translateX(-4px); transform-origin: center left; }
+[data-proto-tip][data-open] { opacity: 1; transform: none; transition: opacity 150ms cubic-bezier(.2, .9, .25, 1), transform 150ms cubic-bezier(.2, .9, .25, 1); }
+[data-proto-tip][data-instant] { transition: none; }
+[data-proto-tip] > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+[data-proto-tip] kbd {
+  display: inline-grid; place-items: center; flex-shrink: 0; min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: 4px; background: rgb(255 255 255 / 0.1); color: rgb(255 255 255 / 0.7);
+  font: 500 11px/1 var(--font-mono, ui-monospace, monospace);
+}
+[data-proto-tip][data-explainer] { flex-direction: column; align-items: flex-start; gap: 2px; max-width: 240px; padding: 8px 10px; }
+[data-proto-tip][data-explainer] > b { font-weight: 600; }
+[data-proto-tip][data-explainer] > span { font-weight: 400; color: var(--color-zinc-400, #a1a1aa); }
+@media (prefers-reduced-motion: reduce) { [data-proto-tip], [data-proto-tip][data-open] { transform: none; } }

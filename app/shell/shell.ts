@@ -31,6 +31,7 @@ import { motion } from './motion/registry'
 import type { Action } from './comments/types'
 import { tabIcon } from './favicon'
 import { setShellRoot } from './portals'
+import { installTips } from './tip'
 import { installHotspots } from './hotspots'
 import { dropGhosts, leaveFade } from './leave-fade'
 import { createView } from './view/index'
@@ -217,6 +218,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   copy.configure(framed && !new URLSearchParams(location.search).has('shot') ? `${session.id}~view` : session.id)
   const remember = (key: string, value: string) => { if (!framed) localStorage.setItem(key, value) }
   setShellRoot(root)
+  installTips()
   const q = new URLSearchParams(location.search)
   const stored = localStorage.getItem('proto-theme')
   let appearance: Appearance = stored === 'light' || stored === 'dark' ? stored : 'system'
@@ -609,7 +611,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         <div data-spot class="pointer-events-none absolute inset-0 z-[15] overflow-hidden" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-comments class="pointer-events-none absolute inset-0 z-[16] has-[[data-composer]]:z-[25]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px);bottom:calc(var(--stage-b,var(--pill-h,0px)) + var(--dock-h,0px) + var(--copy-h,0px))"></div>
         <div data-island-host class="pointer-events-none absolute inset-0 z-[17]" style="inset-inline-start:var(--strip-w,0px);inset-inline-end:var(--hw,0px)"></div>
-        <div data-strip hidden class="absolute start-3 top-3 z-[20]"></div>
+        <div data-strip data-tip-side hidden class="absolute start-3 top-3 z-[20]"></div>
         <div data-zoom-pill hidden class="absolute bottom-4 z-[21]" style="inset-inline-end:calc(var(--hw,0px) + 1rem)"></div>
         <div data-motion-dock class="absolute start-0 z-[18]" style="inset-inline-end:var(--hw,0px);bottom:var(--pill-h,0px)"></div>
         <div data-copy-bar class="absolute start-0 z-[14]" style="inset-inline-end:var(--hw,0px);bottom:calc(var(--pill-h,0px) + var(--dock-h,0px))"></div>
