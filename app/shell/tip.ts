@@ -14,6 +14,9 @@
 //   `data-tip-side` (the tool strip) it opens beside it, on the side with the more room, so it
 //   covers no other tool and stays clear of the window's edge.
 // - Designs on the stage (`data-mount`) keep their own titles, and a frame's title stays its name.
+// - While a text field in the comment island has focus, the island's buttons show no tips: the user
+//   is writing, and a tip over the field would cover what they type. The title stays borrowed, so
+//   the browser shows none either.
 import { uiBox } from './portals'
 
 const DELAY = 200, WARM = 500, LONG_PRESS = 450, PAD = 8, GAP = 8
@@ -144,12 +147,19 @@ function follow() {
   watch = requestAnimationFrame(follow)
 }
 
-function hide() {
+const FIELD = 'input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=range]), textarea, [contenteditable]:not([contenteditable=false])'
+/** Whether el is in the comment island while one of its text fields has focus. */
+function writing(el: HTMLElement) {
+  const island = el.closest('[data-island]'), a = document.activeElement
+  return !!island && a instanceof HTMLElement && island.contains(a) && a.matches(FIELD)
+}
+
+function hide(keep: HTMLElement | null = null) {
   clearTimeout(timer); timer = 0
   cancelAnimationFrame(watch)
   const t = tip
   if (current) { current.removeAttribute('aria-describedby'); current = null; lastHide = performance.now() }
-  settle()
+  settle(keep)
   if (!t || !t.hasAttribute('data-open')) return
   t.removeAttribute('data-open')
   t.removeAttribute('data-instant')
@@ -161,12 +171,13 @@ function want(el: HTMLElement | null) {
   clearTimeout(timer); timer = 0
   settle(el)
   if (!el) { hide(); return }
+  if (writing(el)) { hide(el); return }
   const warm = !!current || performance.now() - lastHide < WARM
   if (warm) { show(el, true); return }
   timer = window.setTimeout(() => {
     timer = 0
     const now = el.isConnected ? el : at.x >= 0 ? triggerOf(document.elementFromPoint(at.x, at.y)) : null
-    if (now) show(now, false)
+    if (now && !writing(now)) show(now, false)
   }, DELAY)
 }
 
@@ -200,6 +211,7 @@ export function installTips() {
   }, true)
   doc.addEventListener('pointerup', () => { pressed = false }, true)
   doc.addEventListener('focusin', e => {
+    if (current && writing(current)) hide(current)
     const el = e.target instanceof HTMLElement && e.target.matches(':focus-visible') ? triggerOf(e.target) : null
     if (el) want(el)
   })
