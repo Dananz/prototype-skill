@@ -220,7 +220,8 @@ export async function commentReplyThreadChecks({ proto, app, openPage, fail, loc
         const keptLock = sending.disabled && sending.textContent.includes('Sending')
         // A keyboard send after reopening must not enqueue the same reply again.
         row.querySelector('[contenteditable=true]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))
-        row.querySelector('[data-shoot=remove]').click()
+        row.querySelector('[data-shoot=comment-more]').click()
+        ;(await until(() => document.querySelector('[data-comment-ui] [data-shoot=remove]'))).click()
         if (!await until(() => saved().length === 0)) return 'deleting did not remove thread'
         window.releaseReply()
         if (!await until(() => saved().length || window.replyWithdrawn)) return 'send completion neither saved nor withdrew the reply'
