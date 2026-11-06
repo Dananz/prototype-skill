@@ -33,7 +33,10 @@ export default function Variant() {
 
 A color is a six-digit hex string. It may provide `presets: [{ name: 'Forest',
 value: '#047857' }]`; otherwise the shell offers five starting colors and a custom picker.
-A select has string `options`; short sets are segmented, longer sets use a dropdown. A
+A select has string `options`; short sets are segmented, longer sets use a list with previous
+and next around it, a counter and a track of dots, and the arrow keys step it while Tweaks is
+open (the select used last, else the first long one). The Tweaks button shows a dot whenever
+the design has tweaks, and the number changed once any are. A
 toggle has a boolean value and renders as an on/off switch. Any control may include a short
 `note`.
 

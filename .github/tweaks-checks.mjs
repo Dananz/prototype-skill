@@ -2,7 +2,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-export async function tweaksChecks({ proto, app, local, openPage, fail }) {
+export async function tweaksChecks({ proto, app, local, openPage, fail, shots = process.env.PROTO_TWEAKS_SHOTS || '' }) {
   proto(['add', 'tweaks-check', '--title', 'Tweaks checks', '--variants', 'A:Editor,B:Other variant,C:No controls'])
   for (const id of ['A', 'B']) writeFileSync(join(app, 'src/protos/tweaks-check', `${id}.tsx`), `
 import { useState } from 'react'
@@ -13,14 +13,16 @@ export default function Variant() {
   const [state, setState] = useState('Full')
   const [long, setLong] = useState(false)
   const [region, setRegion] = useState('North')
+  const [city, setCity] = useState('City 1')
   useHints([{kind:'try',text:'Check the project controls'}])
   useTweaks([
     {id:'accent',label:'Accent color ${id}',kind:'color',value:accent,defaultValue:'${id === 'A' ? '#4f46e5' : '#047857'}',set:setAccent},
     {id:'state',label:'Content state ${id}',kind:'select',value:state,defaultValue:'Full',options:['Full','Empty','Loading','Error'],set:setState},
     {id:'long',label:'Long text ${id}',kind:'toggle',value:long,defaultValue:false,set:setLong},
     {id:'region',label:'Region ${id}',kind:'select',value:region,defaultValue:'North',options:['North','South','East','West','International workspace with a long label'],set:setRegion},
+    {id:'city',label:'City ${id}',kind:'select',value:city,defaultValue:'City 1',options:Array.from({length:40},(_,n)=>'City '+(n+1)),set:setCity},
   ])
-  return <main className="h-full p-8" data-tweak-demo="${id}" data-state={state} data-accent={accent} data-long={long} data-region={region} style={{color:accent}}><h1>{state === 'Empty' ? 'No projects yet' : state === 'Loading' ? 'Loading projects' : state === 'Error' ? 'Projects could not load' : long ? 'A very long project title that wraps across several lines' : 'Your projects'}</h1></main>
+  return <main className="h-full p-8" data-tweak-demo="${id}" data-state={state} data-accent={accent} data-long={long} data-region={region} data-city={city} style={{color:accent}}><h1>{state === 'Empty' ? 'No projects yet' : state === 'Loading' ? 'Loading projects' : state === 'Error' ? 'Projects could not load' : long ? 'A very long project title that wraps across several lines' : 'Your projects'}</h1></main>
 }`)
   writeFileSync(join(app, 'src/protos/tweaks-check', 'C.tsx'), `export default function Plain(){return <main className="h-full p-8" data-no-tweaks>No quick controls</main>}`)
   const assert = (ok, why) => { if (!ok) fail(`tweaks: ${why}`) }
@@ -34,6 +36,8 @@ export default function Variant() {
   const page = await openPage(`${local}tweaks-check/A`)
   try {
     await until(page, `!!document.querySelector('[data-bar] [data-act="open:tweaks"]')`, 'desktop bar has no Tweaks button for declared controls')
+    assert(await page.run(`!!document.querySelector('[data-bar] [data-act="open:tweaks"] [data-tweaks-dot]')`), 'the Tweaks button does not say the design has tweaks')
+    if (shots) { await page.appearance('dark'); await wait(300); await page.screenshot(join(shots, 'button-rest-dark.png'), { x: 1080, y: 0, width: 360, height: 70 }); await page.appearance('light') }
     assert(await page.run(`!document.querySelector('[data-hint="tab:tweaks"]')`), 'Tweaks is still a side panel tab on desktop')
     await click(page, '[data-bar] [data-act="open:tweaks"]')
     await until(page, `(()=>{const p=document.querySelector('[data-tweaks-pop]');if(!p||p.hidden||!p.querySelector('[data-tweak=state]'))return false;const r=p.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0})()`, 'desktop Tweaks popover did not open under its button')
@@ -50,8 +54,37 @@ export default function Variant() {
     await click(page, '[data-tweak-body] [data-tweak-reset=state]')
     await until(page, `${design('state')} === 'Full'`, 'per-control reset failed')
     assert(await page.run(`${design('accent')} === '#be123c' && ${design('long')} === 'true'`), 'single reset changed unrelated controls')
-    await page.run(`(()=>{const i=document.querySelector('[data-tweak-body] select[data-tweak-input=region]');i.value='International workspace with a long label';i.dispatchEvent(new Event('change',{bubbles:true}))})()`)
-    await until(page, `${design('region')} === 'International workspace with a long label'`, 'long-option select did not update')
+    // A long select steps with previous and next (wrapping), counts where it is, and opens its list.
+    await click(page, '[data-tweak-body] [data-tweak=region] [data-tweak-step=prev]')
+    await until(page, `${design('region')} === 'International workspace with a long label'`, 'previous did not wrap to the last option')
+    await until(page, `document.querySelector('[data-tweak-body] [data-tweak-count=region]')?.textContent === '5/5'`, 'the counter did not follow the step')
+    await click(page, '[data-tweak-body] [data-tweak=region] [data-tweak-step=next]')
+    await until(page, `${design('region')} === 'North'`, 'next did not wrap to the first option')
+    if (await page.run(`document.querySelector('[data-tweaks-pop]').hidden`)) await click(page, '[data-bar] [data-act="open:tweaks"]')
+    await until(page, `!document.querySelector('[data-tweaks-pop]').hidden`, 'Tweaks did not open for the arrow keys')
+    await page.run(`dispatchEvent(new KeyboardEvent('keydown',{key:document.dir==='rtl'?'ArrowLeft':'ArrowRight',bubbles:true,cancelable:true}))`)
+    await until(page, `${design('region')} === 'South' && location.pathname === '/tweaks-check/A'`, 'the arrow key did not step the select while Tweaks was open')
+    await page.run(`(()=>{const b=document.querySelector('[data-tweak-body] [data-tweak-input=region]');const r=b.getBoundingClientRect(),o={bubbles:true,cancelable:true,composed:true,button:0,buttons:1,clientX:r.x+r.width/2,clientY:r.y+r.height/2,pointerType:'mouse',isPrimary:true};b.dispatchEvent(new PointerEvent('pointerdown',o));b.dispatchEvent(new MouseEvent('mousedown',o));b.dispatchEvent(new PointerEvent('pointerup',{...o,buttons:0}));b.dispatchEvent(new MouseEvent('mouseup',{...o,buttons:0}));b.dispatchEvent(new MouseEvent('click',{...o,buttons:0}))})()`)
+    await until(page, `!!document.querySelector('[data-tweak-list=region] [data-tweak-option="International workspace with a long label"]')`, 'the list did not open')
+    await click(page, '[data-tweak-list=region] [data-tweak-option="International workspace with a long label"]')
+    await until(page, `${design('region')} === 'International workspace with a long label'`, 'choosing in the list did not update')
+    // A long list scrolls inside its popup and stays on the screen.
+    await page.run(`(()=>{const b=document.querySelector('[data-tweak-body] [data-tweak-input=city]');const r=b.getBoundingClientRect(),o={bubbles:true,cancelable:true,composed:true,button:0,buttons:1,clientX:r.x+r.width/2,clientY:r.y+r.height/2,pointerType:'mouse',isPrimary:true};b.dispatchEvent(new PointerEvent('pointerdown',o));b.dispatchEvent(new MouseEvent('mousedown',o));b.dispatchEvent(new PointerEvent('pointerup',{...o,buttons:0}));b.dispatchEvent(new MouseEvent('mouseup',{...o,buttons:0}));b.dispatchEvent(new MouseEvent('click',{...o,buttons:0}))})()`)
+    await until(page, `!!document.querySelector('[data-tweak-list=city] [data-tweak-option="City 40"]')`, 'the long list did not open')
+    await wait(300)
+    const scroll = await page.run(`(()=>{const p=document.querySelector('[data-tweak-list=city]'),l=p.querySelector('[data-tweak-scroll]'),r=p.getBoundingClientRect();const before=l.scrollTop;l.scrollTop=9999;return JSON.stringify({overflow:l.scrollHeight>l.clientHeight+20,moved:l.scrollTop>before,inside:r.top>=0&&r.bottom<=innerHeight,h:Math.round(r.height)})})()`)
+    if (shots) await page.screenshot(join(shots, 'tweaks-long-list.png'))
+    assert(/"overflow":true,"moved":true,"inside":true/.test(scroll), `a long list does not scroll inside the screen: ${scroll}`)
+    await page.run(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`)
+    await until(page, `!document.querySelector('[data-tweak-list=city]:not([data-closed])') && !document.querySelector('[data-tweaks-pop]').hidden`, 'Escape did not close only the long list')
+    if (shots) {
+      await page.appearance('dark'); await wait(300)
+      await page.run(`(()=>{const b=document.querySelector('[data-tweak-body] [data-tweak-input=region]');const r=b.getBoundingClientRect(),o={bubbles:true,cancelable:true,composed:true,button:0,buttons:1,clientX:r.x+r.width/2,clientY:r.y+r.height/2,pointerType:'mouse',isPrimary:true};b.dispatchEvent(new PointerEvent('pointerdown',o));b.dispatchEvent(new MouseEvent('mousedown',o));b.dispatchEvent(new PointerEvent('pointerup',{...o,buttons:0}));b.dispatchEvent(new MouseEvent('mouseup',{...o,buttons:0}));b.dispatchEvent(new MouseEvent('click',{...o,buttons:0}))})()`)
+      await wait(400); await page.screenshot(join(shots, 'tweaks-list-dark.png'))
+      await page.run(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`); await wait(300)
+      await page.screenshot(join(shots, 'tweaks-open-dark.png'))
+      await page.appearance('light'); await wait(300); await page.screenshot(join(shots, 'tweaks-open-light.png'))
+    }
     await click(page, '[data-tweak-body] [data-tweak-reset=all]')
     await until(page, `${design('accent')} === '#4f46e5' && ${design('long')} === 'false' && ${design('region')} === 'North'`, 'reset all did not restore declared defaults')
     await click(page, '[data-tweak-body] [data-tweak=state] [data-tweak-option=Empty]')
@@ -73,6 +106,20 @@ export default function Variant() {
     await until(phone, '!!document.querySelector("[data-tweaks-drawer]") && document.querySelector("[data-tweaks-drawer]").getBoundingClientRect().bottom <= document.querySelector("[data-pill-bar]").getBoundingClientRect().top', 'mobile drawer does not end above the dock')
     await click(phone, '[data-tweaks-drawer] [data-tweak=state] [data-tweak-option=Empty]')
     await until(phone, `${design('state')} === 'Empty'`, 'phone control did not update the design')
+    // A long list opens over the drawer by touch, scrolls, and a tap on an option keeps the drawer.
+    const tap = async sel => {
+      const [x, y] = JSON.parse(await phone.run(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return JSON.stringify([r.x+r.width/2,r.y+r.height/2])})()`))
+      await phone.touch('touchStart', [[x, y]]); await wait(60); await phone.touch('touchEnd', [])
+    }
+    await tap('[data-tweaks-drawer] [data-tweak-input=city]')
+    await until(phone, `!!document.querySelector('[data-tweak-list=city]:not([data-closed]) [data-tweak-option="City 40"]')`, 'the long list did not open by touch on a phone')
+    await wait(300)
+    const fit = await phone.run(`(()=>{const p=document.querySelector('[data-tweak-list=city]'),r=p.getBoundingClientRect(),l=p.querySelector('[data-tweak-scroll]');return JSON.stringify({inside:r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth,overflow:l.scrollHeight>l.clientHeight})})()`)
+    if (shots) await phone.screenshot(join(shots, 'tweaks-phone-list.png'))
+    assert(fit === '{"inside":true,"overflow":true}', `the phone list does not fit and scroll: ${fit}`)
+    await tap('[data-tweak-list=city] [data-tweak-option="City 7"]')
+    await until(phone, `${design('city')} === 'City 7' && !!document.querySelector('[data-tweaks-drawer]')`, 'choosing in the phone list did not update or closed the drawer')
+    if (shots) { await wait(400); await phone.screenshot(join(shots, 'tweaks-phone-drawer.png')) }
     await click(phone, '[data-tweaks-close]')
     await until(phone, '!document.querySelector("[data-tweaks-drawer]") && document.activeElement === document.querySelector("[data-pill-bar] [data-act=tweaks]")', 'View preview did not close or restore focus')
     await click(phone, '[data-pill-bar] [data-act=tweaks]')
