@@ -88,8 +88,8 @@ export async function editSentChecks({ proto, app, openPage, fail, shots }) {
       await openList()
       return ''
     }
-    // Where the status ends and the trash starts: the pencil coming and going must not move them.
-    const edges = r => [r.querySelector('span.shrink-0.text-proto-primary-soft-fg').getBoundingClientRect().right, r.querySelector('[data-shoot=remove]').getBoundingClientRect().left].map(Math.round)
+    // Where the status starts and the trash starts: the pencil coming and going must not move them.
+    const edges = r => [r.querySelector('span.shrink-0.text-proto-primary-soft-fg').getBoundingClientRect().left, r.querySelector('[data-shoot=remove]').getBoundingClientRect().left].map(Math.round)
     const row = words => [...document.querySelectorAll('[data-comment]')].find(r => r.textContent.includes(words))
   `
   const run = async (step, body) => {
