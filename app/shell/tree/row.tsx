@@ -74,7 +74,7 @@ export function Caret({ open, onFlip, label }: { open: boolean; onFlip(): void; 
   }
   return (
     <button type="button" aria-label={label ?? (open ? t('Collapse') : t('Expand'))} aria-expanded={open} onClick={onFlip} onKeyDown={keys}
-      className="grid size-7 shrink-0 place-items-center rounded-md text-zinc-400 hover:bg-zinc-900/[.06] hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-white/10 dark:hover:text-zinc-200 [@media(pointer:coarse)]:size-9">
+      className="grid h-7 w-5 shrink-0 place-items-center rounded-md text-zinc-400 hover:bg-zinc-900/[.06] hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-white/10 dark:hover:text-zinc-200 [@media(pointer:coarse)]:h-9 [@media(pointer:coarse)]:w-7">
       <span className={'grid place-items-center transition-transform duration-200 ease-out motion-reduce:transition-none ' + (open ? '' : 'ltr:-rotate-90 rtl:rotate-90')}><Ph name="caretDown" className="size-2.5" /></span>
     </button>
   )
@@ -97,14 +97,16 @@ export function Collapse({ open, children }: { open: boolean; children: ReactNod
   if (!held && !open) return null
   return (
     <div inert={!open} className={'grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ' + (full ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')}>
-      <div className="min-h-0 overflow-hidden">{children}</div>
+      {/* clip, not hidden: hidden makes a scroll box, and the rows that stick would stick to it. */}
+      <div className="min-h-0 min-w-0 overflow-clip">{children}</div>
     </div>
   )
 }
 
-/** What hangs under a row: a thin line from its caret, so a level reads at a glance. */
+/** What hangs under a row: one short step and a thin line, so a level reads at a glance and a deep
+ *  chain keeps its names. The numbers of its options line up under the row's icon (Row's spacer). */
 export function Inside({ children }: { children: ReactNode }) {
-  return <div className="ms-[21px] border-s border-black/[.06] dark:border-white/[.08] [@media(pointer:coarse)]:ms-[25px]">{children}</div>
+  return <div className="ms-2 border-s border-black/[.06] dark:border-white/[.08]">{children}</div>
 }
 
 /** The rows that can be chosen, top to bottom. An open exploration's own row leaves that to its options. */
@@ -112,9 +114,9 @@ const rowsIn = (el: Element) => [...(el.closest('[data-tree-root]')?.querySelect
   .filter(r => !r.querySelector(':scope > button[aria-expanded="true"]')).map(r => r.dataset.mv!.replace(':', '/'))
 
 /** The option on screen. An exploration's own row can be lit on its page, with no variant open. */
-const hereIn = (el: Element) => el.closest('[data-tree-root]')?.querySelector<HTMLElement>('[data-tree-row^="opt:"][data-on="true"]')?.dataset.mv?.replace(':', '/') ?? ''
+const hereIn = (el: Element) => el.closest('[data-tree-root]')?.querySelector<HTMLElement>('[data-tree-row^="opt:"][data-on="true"], [data-tree-on-pick]')?.dataset.mv?.replace(':', '/') ?? ''
 
-export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onClick, strong, medium, mv, flat, slim, stands }: {
+export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onClick, strong, medium, mv, flat, slim, stands, onPick }: {
   id: string; depth: number; label: ReactNode; icon?: ReactNode; end?: ReactNode; count?: number; on?: boolean
   /** Part of a block that wears the colour and the hover itself. */
   flat?: boolean
@@ -124,10 +126,12 @@ export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onC
   mv?: string
   /** The variant this row chooses when it has no options of its own: a decided row's winner. */
   stands?: string
+  /** A decided row whose pick (its mv) is on screen. */
+  onPick?: boolean
   /** undefined: no caret (a leaf). */
   open?: boolean; onCaret?: () => void; onClick: () => void; strong?: boolean; medium?: boolean
 }) {
-  const chosen = useSyncExternalStore(selection.subscribe, () => !!mv && !open && selection.has(mv))
+  const chosen = useSyncExternalStore(selection.subscribe, () => !!mv && (!open || stands === mv) && selection.has(mv))
   const route = mv ?? stands
   // Cmd or Ctrl adds a row, Shift a run of them; once choosing, a finger has only the tap to add with.
   const click = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -141,12 +145,12 @@ export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onC
     onClick()
   }
   return (
-    <div data-tree-row={id} data-on={on ? 'true' : undefined} data-mv={mv ? mv.replace('/', ':') : undefined} data-tree-chosen={chosen ? 'true' : undefined}
+    <div data-tree-row={id} data-on={on ? 'true' : undefined} data-mv={mv ? mv.replace('/', ':') : undefined} data-tree-chosen={chosen ? 'true' : undefined} data-tree-on-pick={onPick ? 'true' : undefined}
       className={'group flex items-center gap-1.5 rounded-lg pe-1.5 ' + (slim ? 'h-6! [@media(pointer:coarse)]:h-8! ' : 'h-8 [@media(pointer:coarse)]:h-10 ') + (flat ? '' : 'mx-1.5 ') + (chosen ? 'bg-sky-500/15 ' + (on ? 'text-sky-900 dark:text-sky-100' : '') : flat ? '' : on ? 'bg-sky-50 text-sky-900 dark:bg-sky-950/60 dark:text-sky-100' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]')}
       style={{ paddingInlineStart: 2 + depth * 8 }}>
       {open != null && onCaret
         ? <Caret open={open} onFlip={onCaret} />
-        : <span className="w-7 shrink-0 [@media(pointer:coarse)]:w-9" />}
+        : <span className="w-2.5 shrink-0 [@media(pointer:coarse)]:w-[18px]" />}
       <button type="button" onClick={click} onMouseDown={e => { if (e.shiftKey) e.preventDefault() }} aria-pressed={mv ? chosen : undefined} className={'flex h-full min-w-0 flex-1 items-center gap-1.5 text-start ' + (strong ? 'font-semibold' : medium ? 'font-medium' : '')}>
         {icon}<span className="truncate">{label}</span>{count != null && <span className="text-xs font-normal text-zinc-400 tabular-nums">{count}</span>}
       </button>

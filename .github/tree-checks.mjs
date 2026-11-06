@@ -60,7 +60,7 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`!!document.querySelector('[data-tree-row="screen:thome"]')`), 'thome should be a screen row')
     assert(await page.run(`/not picked/.test(document.querySelector('[data-tree-row="screen:tabout"]')?.textContent ?? '')`), 'tabout should say it is not picked')
     await until(page, `!!document.querySelector('[data-tree-row="exp:tcta-copy"] [data-mark="stale"]')`, 'the place on screen opens its ancestors, and tcta-copy is stale')
-    assert(await page.run(`/became Acme/.test(document.querySelector('[data-tree-row="opt:thome/C"]')?.textContent ?? '')`), 'thome #3 should say it became Acme')
+    assert(await page.run(`/became Acme/.test(document.querySelector('[data-tree-row="screen:thome"]')?.textContent ?? '')`), 'thome, decided on #3, should say it became Acme')
     // The page opens on this conversation: tlogo, made in another, is left out until the whole project.
     // The full smoke shares the app with other checks' prototypes, so the count is only checked to be there.
     assert(await page.run(`document.querySelector('[data-tree-filter="conv"]')?.getAttribute('aria-checked') === 'true'`), 'the scope should start on this conversation')
@@ -140,8 +140,8 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await until(page, `Object.keys(localStorage).flatMap(k => { try { return JSON.parse(localStorage.getItem(k))?.items ?? [] } catch { return [] } }).some(i => i.proto === 'tlogo' && !i.variant && i.sent)`, 'the comment should be sent')
     const whole = proto(['inbox'], { stdout: true }) ?? ''
     assert(/on: the whole prototype/.test(whole) && /\btlogo\b/.test(whole), `proto inbox should say it is on the whole prototype: ${whole}`)
-    await page.run(`document.querySelector('[data-tree-row="opt:tlogo/B"] button:not([data-act])').click()`)
-    await until(page, `location.pathname === '/tlogo/B'`, 'the winner\'s line should open the pick')
+    await page.run(`document.querySelector('[data-tree-row="exp:tlogo"] [data-tree-picked]').click()`)
+    await until(page, `location.pathname === '/tlogo/B'`, 'the pick\'s number should open the pick')
     // A decided row folds to its winner: its passed options are behind its caret, and the shelf holds the archive.
     await until(page, `!document.querySelector('[data-tree-row="opt:tlogo/A"]') && !!document.querySelector('[data-tree-row="exp:tlogo"] button[aria-expanded="false"]')`, 'a decided exploration on its winner should be folded to it')
     await page.run(`document.querySelector('[data-tree-row="exp:tlogo"] button[aria-expanded]').click()`)
@@ -149,7 +149,7 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-tree-row="exp:tlogo"] button[aria-expanded]').click()`)
     await until(page, `!document.querySelector('[data-tree-row="opt:tlogo/A"]')`, 'the caret should fold them away again, and take them off the page')
     // By hand: the row's menu sets the chain aside, the shelf opens to show it, and the menu brings it back.
-    await page.run(`document.querySelector('[data-tree-row="opt:tlogo/B"] [data-act^="vm:"]').click()`)
+    await page.run(`document.querySelector('[data-tree-row="exp:tlogo"] [data-act="vm:tlogo:B"]').click()`)
     await until(page, `[...document.querySelectorAll('[role=menuitem]')].some(b => /Set aside/.test(b.textContent))`, 'the row menu should offer Set aside')
     await page.run(`[...document.querySelectorAll('[role=menuitem]')].find(b => /Set aside/.test(b.textContent)).click()`)
     await until(page, `!!document.querySelector('[data-tree-shelf] [data-tree-row="exp:tlogo"]') && !document.querySelector('[data-tree-decided] [data-tree-row="exp:tlogo"]')`, 'Set aside should move it to the shelf, shown there while it is on screen')
@@ -246,9 +246,9 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await until(page, `${chosen} === ''`, 'Esc should let go again')
     // Cmd + click on a decided row's name chooses its winner; on a design, nothing, and no move.
     await hit('exp:thero-cta', '{ metaKey: true }')
-    await until(page, `${chosen} === 'opt:thero-cta/A,opt:tcta-copy/B'`, 'Cmd + click on a decided row should choose its winner, and the row on screen')
+    await until(page, `${chosen} === 'exp:thero-cta,opt:tcta-copy/B'`, 'Cmd + click on a decided row should choose its winner, and the row on screen')
     await hit('design:acme', '{ metaKey: true }')
-    assert(await page.run(`location.pathname === '/tcta-copy/B' && ${chosen} === 'opt:thero-cta/A,opt:tcta-copy/B'`), 'Cmd + click on a design should do nothing')
+    assert(await page.run(`location.pathname === '/tcta-copy/B' && ${chosen} === 'exp:thero-cta,opt:tcta-copy/B'`), 'Cmd + click on a design should do nothing')
     // Another scope hides rows: none of them stays chosen.
     await page.run(`document.querySelector('[data-tree-filter="favs"]').click()`)
     await until(page, `!document.querySelector('[data-tree-chosen-bar]')`, 'changing the scope should let go of the rows')

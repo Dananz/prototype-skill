@@ -259,6 +259,9 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
 @media (prefers-reduced-motion: reduce) { [data-tree-row], [data-tree-row]::before { transition: none; } }
 
 /* Collapsed row actions reclaim their width and the row gap. Focus reveals them before activation. */
+/* One tree row's height: the rows on the path to the screen stick this far apart (tree/index.tsx). */
+[data-tree-root] { --tree-row: 2rem; }
+@media (pointer: coarse) { [data-tree-root] { --tree-row: 2.5rem; } }
 [data-tree-row] > .proto-tree-more { width: 0; margin-inline-start: -.375rem; opacity: 0; overflow: hidden; pointer-events: none; transition: width .18s ease-out, margin-inline-start .18s ease-out, opacity .18s ease-out; }
 [data-tree-row]:hover > .proto-tree-more,
 [data-tree-row]:focus-within > .proto-tree-more,
