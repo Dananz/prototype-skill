@@ -3,6 +3,7 @@
 import { createElement as h, useId, useRef, type ChangeEvent, type KeyboardEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Drawer } from '@base-ui/react/drawer'
+import { Select } from '@base-ui/react/select'
 import { isChanged, type Tweak } from './tweaks'
 import { ic, IB } from './ui'
 import { uiBox } from './portals'
@@ -12,6 +13,8 @@ export type TweakControlsProps = {
   fields: Tweak[]
   onChange: (id: string, value: string | boolean) => void
   onReset: (id?: string) => void
+  /** The select the arrow keys step: the one used last. */
+  onActive?: (id: string) => void
 }
 
 export type TweaksDrawerProps = TweakControlsProps & {
@@ -39,7 +42,43 @@ function foreground(color: string) {
   return rgb && rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722 > .179 ? '#000000' : '#ffffff'
 }
 
-function Field({ field, onChange, onReset }: { field: Tweak } & Pick<TweakControlsProps, 'onChange' | 'onReset'>) {
+// A select too long for a segmented row: previous and next around a list of its own, a track
+// of dots for where it is, and the arrow keys step it while the panel is open (shell.ts).
+export const stepped = (field: Tweak): field is Extract<Tweak, { kind: 'select' }> =>
+  field.kind === 'select' && !(field.options.length <= 4 && field.options.join('').length <= 56)
+
+/** The option `by` steps from the current one, wrapping at the ends. */
+export const stepOption = (field: Extract<Tweak, { kind: 'select' }>, by: number) => {
+  const n = field.options.length, i = Math.max(0, field.options.indexOf(field.value))
+  return field.options[(i + by + n) % n]
+}
+
+const stepBtn = 'grid w-9 shrink-0 place-items-center text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 active:bg-zinc-200 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-700/60 dark:hover:text-white dark:active:bg-zinc-700'
+
+function Stepper({ field, labelId, onChange }: { field: Extract<Tweak, { kind: 'select' }>; labelId: string; onChange: TweakControlsProps['onChange'] }) {
+  const i = field.options.indexOf(field.value), one = field.options.length < 2
+  const go = (by: number) => onChange(field.id, stepOption(field, by))
+  return h('div', null,
+    h(Select.Root, { value: field.value, onValueChange: (v: unknown) => { if (typeof v === 'string') onChange(field.id, v) } },
+      h('div', { className: 'flex h-10 items-stretch rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800' },
+        h('button', { type: 'button', 'data-tweak-step': 'prev', disabled: one, 'aria-label': t('Previous {name}', { name: field.label }), title: t('Previous {name}', { name: field.label }), onClick: () => go(-1), className: `${stepBtn} rounded-s-lg` }, icon('left')),
+        h(Select.Trigger, { 'data-tweak-input': field.id, 'aria-labelledby': labelId, className: 'flex min-w-0 flex-1 items-center justify-center gap-1.5 px-1 text-xs hover:bg-zinc-50 data-popup-open:bg-zinc-100 dark:hover:bg-zinc-700/40 dark:data-popup-open:bg-zinc-700/60' },
+          h(Select.Value, { dir: 'auto', className: 'truncate' }),
+          h(Select.Icon, { className: 'flex shrink-0 text-zinc-400' }, icon('chev', 'size-3'))),
+        h('button', { type: 'button', 'data-tweak-step': 'next', disabled: one, 'aria-label': t('Next {name}', { name: field.label }), title: t('Next {name}', { name: field.label }), onClick: () => go(1), className: `${stepBtn} rounded-e-lg` }, icon('right'))),
+      h(Select.Portal, { container: uiBox() },
+        h(Select.Positioner, { alignItemWithTrigger: false, sideOffset: 4, className: 'z-[210] outline-none' },
+          h(Select.Popup, { 'data-tweak-list': field.id, className: 'min-w-[var(--anchor-width)] origin-[var(--transform-origin)] rounded-xl border border-black/10 bg-white p-1 text-[13px] text-zinc-900 shadow-xl shadow-black/15 outline-none transition-[scale,opacity] duration-100 ease-out data-starting-style:scale-[.98] data-starting-style:opacity-0 data-ending-style:scale-[.98] data-ending-style:opacity-0 motion-reduce:transition-none dark:border-white/10 dark:bg-zinc-800 dark:text-zinc-100 dark:shadow-black/50' },
+            h(Select.List, { 'data-tweak-scroll': '', className: 'max-h-[min(18rem,calc(var(--available-height)-.5rem))] overflow-y-auto overscroll-contain [scrollbar-width:thin]' },
+              ...field.options.map((option, n) => h(Select.Item, { key: option, value: option, 'data-tweak-option': option, className: 'flex min-h-9 cursor-default items-center gap-2 rounded-lg px-2.5 text-xs outline-none select-none data-highlighted:bg-zinc-100 dark:data-highlighted:bg-white/5' },
+                h('span', { 'aria-hidden': true, className: 'w-4 shrink-0 text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500' }, n + 1),
+                h(Select.ItemText, { dir: 'auto', className: 'min-w-0 flex-1 break-words' }, option),
+                h(Select.ItemIndicator, { className: 'flex shrink-0 text-sky-500 dark:text-sky-400' }, icon('check', 'size-3.5'))))))))),
+    field.options.length <= 12 && !one ? h('div', { 'aria-hidden': true, className: 'mt-2 flex justify-center gap-1' },
+      ...field.options.map((option, n) => h('button', { key: option, type: 'button', tabIndex: -1, title: option, onClick: () => onChange(field.id, option), className: `h-1 rounded-full transition-[width,background-color] duration-150 motion-reduce:transition-none ${n === i ? 'w-4 bg-sky-500 dark:bg-sky-400' : 'w-1.5 bg-zinc-200 hover:bg-zinc-400 dark:bg-zinc-700 dark:hover:bg-zinc-500'}` }))) : null)
+}
+
+function Field({ field, onChange, onReset, onActive }: { field: Tweak } & Pick<TweakControlsProps, 'onChange' | 'onReset' | 'onActive'>) {
   const labelId = useId(), noteId = useId()
   const changed = isChanged(field)
   const control = field.kind === 'color' ? (() => {
@@ -68,11 +107,7 @@ function Field({ field, onChange, onReset }: { field: Tweak } & Pick<TweakContro
           onClick: () => onChange(field.id, option),
           className: `min-h-9 min-w-0 flex-1 break-words rounded-md px-1 py-1.5 text-[11px] leading-4 [overflow-wrap:anywhere] ${field.value === option ? 'bg-white font-medium text-zinc-900 shadow-sm dark:bg-zinc-600 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'}`,
         }, option)))
-      : h('select', {
-        'data-tweak-input': field.id, 'aria-labelledby': labelId, 'aria-describedby': field.note ? noteId : undefined,
-        value: field.value, onChange: (e: ChangeEvent<HTMLSelectElement>) => onChange(field.id, e.target.value),
-        className: 'min-h-9 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-800',
-      }, ...field.options.map(option => h('option', { key: option, value: option }, option)))
+      : h(Stepper, { field, labelId, onChange })
   ) : h('span', { className: 'relative flex shrink-0' },
     h('input', {
       type: 'checkbox', role: 'switch', 'data-tweak-input': field.id, 'aria-labelledby': labelId,
@@ -82,11 +117,12 @@ function Field({ field, onChange, onReset }: { field: Tweak } & Pick<TweakContro
     }),
     h('span', { 'aria-hidden': true, className: 'pointer-events-none absolute start-1 top-1 size-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4 rtl:peer-checked:-translate-x-4 motion-reduce:transition-none' }))
 
-  return h('section', { 'data-tweak': field.id, className: 'min-w-0' },
+  return h('section', { 'data-tweak': field.id, className: 'min-w-0', onFocusCapture: field.kind === 'select' ? () => onActive?.(field.id) : undefined, onPointerDownCapture: field.kind === 'select' ? () => onActive?.(field.id) : undefined, onClickCapture: field.kind === 'select' ? () => onActive?.(field.id) : undefined },
     h('div', { className: 'mb-2 flex min-h-7 items-center justify-between gap-2' },
       h('h3', { id: labelId, dir: 'auto', className: 'min-w-0 break-words text-xs font-medium' }, field.label,
         changed ? h('span', { 'aria-label': t('Changed'), title: t('Changed'), className: 'ms-1.5 inline-block size-1.5 rounded-full bg-sky-500' }) : null),
       h('div', { className: 'flex shrink-0 items-center gap-2' },
+        stepped(field) ? h('span', { dir: 'ltr', 'data-tweak-count': field.id, className: 'text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500' }, `${field.options.indexOf(field.value) + 1}/${field.options.length}`) : null,
         field.kind === 'toggle' ? control : null,
         changed ? h('button', { type: 'button', 'data-tweak-reset': field.id, 'aria-label': t('Reset {name}', { name: field.label }), title: t('Reset {name}', { name: field.label }), onClick: () => onReset(field.id), className: 'grid size-7 place-items-center rounded hover:bg-zinc-100 dark:hover:bg-zinc-800' }, icon('replay', 'size-3')) : null)),
     field.kind !== 'toggle' ? control : null,
@@ -96,7 +132,7 @@ function Field({ field, onChange, onReset }: { field: Tweak } & Pick<TweakContro
 function Controls(p: TweakControlsProps) {
   const changed = p.fields.filter(isChanged).length
   return h('div', { 'data-tweaks-controls': '', className: 'space-y-5' },
-    ...p.fields.map(field => h(Field, { key: field.id, field, onChange: p.onChange, onReset: p.onReset })),
+    ...p.fields.map(field => h(Field, { key: field.id, field, onChange: p.onChange, onReset: p.onReset, onActive: p.onActive })),
     h('button', { type: 'button', 'data-tweak-reset': 'all', onClick: () => p.onReset(), disabled: !changed, className: `${button} w-full border border-zinc-200 dark:border-zinc-700` }, icon('replay', 'size-3.5'), t('Reset all tweaks')))
 }
 

@@ -225,6 +225,12 @@ let { pid } = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8'))
 // its own connection: the spawnSync calls block this script for many seconds, long enough for
 // the server to close an idle kept-alive socket without fetch noticing.
 // A focused run uses the same real browser/server harness as the full suite.
+if (process.argv.includes('--tweaks-only')) {
+  await tweaksRegistryChecks({ local, openPage, fail })
+  await tweaksChecks({ proto, app, local, openPage, fail })
+  console.log('OK: focused Tweaks checks')
+  process.exit(0)
+}
 if (process.argv.includes('--go-only')) {
   await goChecks({ proto, app, local, openPage, fail })
   proto(['rm', '--all'])

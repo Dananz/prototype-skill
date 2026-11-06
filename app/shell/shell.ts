@@ -18,7 +18,7 @@ import { BUILDING_CLASS, ERROR_CLASS, ownerOfPath, refOfPath } from './building'
 import { dock, edge, smooth, runDock, restoreEdgeLabels, installPointerTracking, fadeOut } from './motion'
 import { hints, fillField, type Hint } from './hints'
 import { tweaks, isChanged } from './tweaks'
-import { createTweakControls, createTweaksDrawer } from './tweaks-ui'
+import { createTweakControls, createTweaksDrawer, stepOption, stepped } from './tweaks-ui'
 import { copy } from './copy'
 import { createSheet, createMenuSheet, createStatesSheet, createTrySheet, createPanelSheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
@@ -76,6 +76,8 @@ export type Ref = { proto: string; variant: string }
 // arrow keys and slides that go along the line are mirrored by X.
 const X = rtl ? -1 : 1
 const FWD = rtl ? 'ArrowLeft' : 'ArrowRight', BACK = rtl ? 'ArrowRight' : 'ArrowLeft'
+// The Tweaks button says the design has tweaks before any changed: a dot where the count goes.
+const tweaksDot = '<span data-tweaks-dot aria-hidden="true" class="pointer-events-none absolute end-1.5 top-1.5 size-1.5 rounded-full bg-sky-500 dark:bg-sky-400"></span>'
 export type Session = { agent?: Agent; id: string; conversation?: string; name: string; lang?: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
 type Mount = (el: HTMLElement, component: any) => () => void
 // A variant can be shown in one of its states, or through a tool: all its states at once
@@ -1945,7 +1947,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           : `<button data-pill-menu data-shoot="menu" aria-label="${t('Menu')}" aria-haspopup="dialog" aria-expanded="false" class="${btn} transition-colors ${cardBtnCls()}">${ic('menu', 'size-5')}</button>`
         // Its end: Tweaks when the variant has any, else the layouts when it has those, else the star.
         const fav = !!v && favOf(p!, v.id)
-        const end = tweakList().length ? `<button data-act="tweaks" data-shoot="tweaks" aria-label="${t('Tweaks')}" aria-haspopup="dialog" aria-expanded="${tweaksOpen}" class="${btn} relative ${tweaksOpen ? '!bg-sky-700 !text-white' : ''}">${ic('tweaks', 'size-5')}${tweakList().some(isChanged) ? `<span class="absolute end-0 top-0 grid min-w-3.5 rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : ''}</button>`
+        const end = tweakList().length ? `<button data-act="tweaks" data-shoot="tweaks" aria-label="${t('Tweaks')}" aria-haspopup="dialog" aria-expanded="${tweaksOpen}" class="${btn} relative ${tweaksOpen ? '!bg-sky-700 !text-white' : ''}">${ic('tweaks', 'size-5')}${tweakList().some(isChanged) ? `<span class="absolute end-0 top-0 grid min-w-3.5 rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : tweaksDot}</button>`
           : viewOk() ? `<button data-pill-layout data-shoot="pill-layout" aria-label="${t('Layout')}" aria-haspopup="dialog" aria-expanded="false" class="${btn} transition-colors">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth), st.view.land), 'size-5')}</button>`
           : v ? `<button data-act="fav:${esc(p!.id)}:${esc(v.id)}" data-shoot="pill-fav" aria-pressed="${fav}" aria-label="${fav ? t('Unfavorite') : t('Favorite')}" class="${btn} ${fav ? '!text-amber-400' : ''}">${ic(fav ? 'star-fill' : 'star', 'size-5')}</button>` : ''
         const sOn = stateOn === null ? undefined : sts.find(x => x.id === stateOn)
@@ -2813,6 +2815,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented && comments.counts().drafts && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); void comments.act.send(); return }
     // ⌘C copies the rows chosen in the tree, unless there is text to copy or a field to copy from.
     if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'c' && selection.get().length && !getSelection()?.toString() && !t.closest?.('input, textarea, select, [contenteditable]')) { e.preventDefault(); chosenApi.copyChosen('links', selection.get()); return }
+    if (e.key === 'Escape' && t.closest?.('[data-tweak-list]')) return
     if (e.key === 'Escape') {
       if (tweaksOpen) { e.preventDefault(); tweaksOpen = false; render(); return }
       if (tryEsc()) return
@@ -2831,6 +2834,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (st.focus) return act('unfocus', '', '')
       if (st.place.view === 'variant' && st.place.tool) return go(untool(st.place))
     }
+    if ((e.key === FWD || e.key === BACK) && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.defaultPrevented && (st.open === 'tweaks' || tweaksOpen)
+      && !t.closest?.('input, textarea, select, [contenteditable], [role=listbox], [data-tweak-list]') && stepTweak(e.key === FWD ? 1 : -1)) { e.preventDefault(); return }
     if (e.metaKey || e.ctrlKey || e.altKey || st.sheet || st.states || trySheet === 'open' || t.closest?.(INTERACTIVE) || t.closest?.('[data-vlist]')) return
     // Esc on a variant goes up to its prototype's variants, unless the design used it first (a
     // design closing its own menu calls preventDefault). Its handlers may run after this one,
@@ -2953,8 +2958,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const countHost = () => { const t = toolHost(); return t && (hints.of(t).length || copy.of(t).length || motion.of(t) || tweaks.of(t).length) ? t : hintHost() ?? t }
   const hintList = () => framed || q.get('hints') === '0' ? [] : hints.of(countHost())
   const tweakList = () => framed || q.get('hints') === '0' || !hintHost() ? [] : tweaks.of(toolHost())
-  let tweaksOpen = false, tweaksUp = false
-  const tweaksBtn = () => !tweakList().length || st.focus ? '' : `<button data-act="open:tweaks" data-shoot="tweaks" aria-label="${t('Tweaks')}" aria-haspopup="dialog" aria-expanded="${st.open === 'tweaks'}" class="${IB} relative hidden sm:inline-flex ${st.open === 'tweaks' ? ON : ''}">${ic('tweaks')}<span class="hidden xl:inline">${t('Tweaks')}</span>${tweakList().some(isChanged) ? `<span class="absolute -end-0.5 -top-0.5 grid min-w-3.5 place-items-center rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : ''}</button>`
+  let tweaksOpen = false, tweaksUp = false, tweakActive = ''
+  // While the tweaks are open, the arrows step a select's options instead of the variants: the
+  // one used last, else the first with previous and next, else the first.
+  const stepTweak = (by: number) => {
+    const host = toolHost(), fields = tweakList().filter(f => f.kind === 'select' && f.options.length > 1)
+    const field = fields.find(f => f.id === tweakActive) ?? fields.find(stepped) ?? fields[0]
+    return !!host && field?.kind === 'select' && tweaks.change(host, field.id, stepOption(field, by))
+  }
+  const tweaksBtn = () => !tweakList().length || st.focus ? '' : `<button data-act="open:tweaks" data-shoot="tweaks" aria-label="${t('Tweaks')}" aria-haspopup="dialog" aria-expanded="${st.open === 'tweaks'}" class="${IB} relative hidden sm:inline-flex ${st.open === 'tweaks' ? ON : ''}">${ic('tweaks')}<span class="hidden xl:inline">${t('Tweaks')}</span>${tweakList().some(isChanged) ? `<span class="absolute -end-0.5 -top-0.5 grid min-w-3.5 place-items-center rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : tweaksDot}</button>`
   const valueOf = (h: Extract<Hint, { kind: 'value' }>) => { try { return String(typeof h.value === 'function' ? h.value() : h.value) } catch { return '' } }
   const flash = () => { clearTimeout(hintTimer); hintTimer = window.setTimeout(() => { hintSaid = ''; hintCopied = -1; paintHints() }, 1400) }
 
@@ -3767,7 +3779,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       <div data-caveats></div>
     </div>
     <div data-pop data-pop-for="tweaks" data-tweaks-pop role="dialog" aria-label="${t('Tweaks')}" hidden class="fixed z-40 flex max-h-[min(70vh,36rem)] w-80 flex-col overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">
-      <div class="px-4 pb-1 pt-3 text-[11px] font-medium text-zinc-400">${t('Tweaks')}</div>
+      <div class="flex items-center justify-between gap-2 px-4 pb-1 pt-3 text-[11px] font-medium text-zinc-400"><span>${t('Tweaks')}</span><span data-tweak-keys hidden class="flex items-center gap-1.5 font-normal text-zinc-400 dark:text-zinc-500">${t('Step')}<kbd dir="ltr" class="rounded border border-zinc-200 px-1 font-sans text-[10px] dark:border-zinc-700">← →</kbd></span></div>
       <div data-tweak-body class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-2"></div>
     </div>
     <div data-try-sheet></div><div data-tweaks-sheet></div>`
@@ -3860,8 +3872,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       fields,
       onChange: (id: string, value: string | boolean) => { if (host && host === toolHost()) tweaks.change(host, id, value) },
       onReset: (id?: string) => { if (host && host === toolHost()) tweaks.reset(host, id) },
+      onActive: (id: string) => { tweakActive = id },
     }
     drawTweaks(props)
+    tweaksPop.querySelector('[data-tweak-keys]')?.toggleAttribute('hidden', !fields.some(f => f.kind === 'select' && f.options.length > 1))
     const btn = chromeEl('[data-act="open:tweaks"]')
     const popOn = st.open === 'tweaks' && !phoneMq.matches && fields.length > 0 && !!btn
     tweaksPop.hidden = !popOn
