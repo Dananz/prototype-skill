@@ -127,7 +127,7 @@ const PHONE = 'proto-phone shrink-0 border-[10px] bg-white text-zinc-900 dark:bg
 // anything between, which lands on one of them within two points.
 const SCALES = [0, 50, 75, 100]
 const SCALE_MIN = 25
-const SCALE_MAX = 100
+const SCALE_MAX = 200
 const segCls = (on: boolean) => `h-9 flex-1 rounded-md text-xs font-medium tabular-nums ${on ? TAB_ON : TAB_OFF}`
 // A range input drawn the same in every browser (iOS Safari restyles its own): the track fills
 // to --p, the thumb is a white disc.
@@ -1054,7 +1054,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     : `<div data-thumb class="relative w-full overflow-hidden bg-white dark:bg-zinc-950 ${aspect}"><div inert class="pointer-events-none overflow-hidden [contain:layout_paint]" style="width:1200px;height:750px"><div data-mount dir="ltr" class="h-full"></div></div></div>`
 
   const frameOf = (proto: Proto) => proto.kind === 'phone' && !q.has('shot')
-    ? `<div data-phones class="flex min-h-full items-center justify-center p-6"><div class="relative"><div data-phone-placard class="absolute bottom-full start-1/2 mb-2 flex h-8 -translate-x-1/2 justify-center max-sm:hidden rtl:translate-x-1/2"></div><div data-phone class="${PHONE} [contain:layout_paint]" ${phoneSize(proto)}><div data-phone-screen class="h-full overflow-hidden"><div data-mount dir="ltr" class="h-full overflow-y-auto"></div></div></div></div></div>`
+    ? `<div data-phones class="flex min-h-full p-6 sm:pt-12"><div class="relative m-auto"><div data-phone-placard class="absolute bottom-full start-1/2 mb-2 flex h-8 -translate-x-1/2 justify-center max-sm:hidden rtl:translate-x-1/2"></div><div data-phone class="${PHONE} [contain:layout_paint]" ${phoneSize(proto)}><div data-phone-screen class="h-full overflow-hidden"><div data-mount dir="ltr" class="h-full overflow-y-auto"></div></div></div></div></div>`
     : '<div data-mount dir="ltr" class="h-full"></div>'
 
   const previewWindows = new Map<string, VirtualList<Variant>>()
@@ -3052,6 +3052,63 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     we.preventDefault()
     zoomTo((zoom?.z ?? 1) * Math.exp(-we.deltaY / 200), we.clientX, we.clientY)
   }, { capture: true, passive: false })
+  // On a wide screen a trackpad's pinch (Ctrl+wheel in Chrome and Firefox, gesture events in Safari)
+  // and ⌘/Ctrl+wheel scale a phone prototype's phones around the point under the pointer, never the
+  // page. The scale shows at once; the rest of the shell catches up once the pinch rests. A device
+  // view zooms its own way (view/gestures.ts); anywhere else the page keeps from zooming too.
+  const phoneScaleOn = () => !phoneMq.matches && cur()?.kind === 'phone' && !frameOn() && st.place.view !== 'session'
+  let scaleSettle = 0, gScale = 1, gFrom = 0
+  const scaleShown = (t: EventTarget | null) => {
+    if (st.scale) return st.scale
+    const phone = (t as Element | null)?.closest?.('[data-phone]') ?? layers.querySelector('[data-phone]')
+    return phone ? Math.round(Number(getComputedStyle(phone).zoom || 1) * 100) : 50
+  }
+  function scaleAt(to: number, x: number, y: number, t: EventTarget | null) {
+    const v = Math.round(Math.min(SCALE_MAX, Math.max(SCALE_MIN, to))), was = scaleShown(t)
+    if (v === was && st.scale) return
+    // The scroller under the pointer keeps that point still while the phones grow or shrink.
+    let sc = (t as Element | null)?.closest?.<HTMLElement>('[data-phones]')?.parentElement ?? null
+    while (sc && sc !== layers && !/auto|scroll/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
+    if (!sc || sc === layers) sc = null
+    const r = sc?.getBoundingClientRect(), k = v / was
+    const rtl = !!sc && getComputedStyle(sc).direction === 'rtl'
+    const left = sc ? sc.scrollLeft + (rtl ? sc.scrollWidth - sc.clientWidth : 0) : 0
+    st.scale = v; scaleChosen = true
+    fit()
+    if (sc && r) {
+      const px = x - r.left, py = y - r.top
+      sc.scrollLeft = (left + px) * k - px - (rtl ? sc.scrollWidth - sc.clientWidth : 0)
+      sc.scrollTop = (sc.scrollTop + py) * k - py
+    }
+    const pct = root.querySelector('[data-zoom-pct]')
+    if (pct) pct.textContent = scaleLabel()
+    clearTimeout(scaleSettle)
+    scaleSettle = window.setTimeout(render, 200)
+  }
+  listen(layers, 'wheel', e => {
+    const we = e as WheelEvent
+    if (!(we.ctrlKey || we.metaKey) || we.defaultPrevented || !phoneScaleOn()) return
+    we.preventDefault()
+    scaleAt(scaleShown(we.target) * Math.exp(-Math.max(-25, Math.min(25, we.deltaY)) * 0.01), we.clientX, we.clientY, we.target)
+  }, { capture: true, passive: false })
+  listen(layers, 'gesturestart', e => {
+    if (e.defaultPrevented || !phoneScaleOn()) return
+    e.preventDefault()
+    gScale = 1; gFrom = scaleShown(e.target)
+  }, { capture: true, passive: false })
+  listen(layers, 'gesturechange', e => {
+    const g = e as Event & { scale: number; clientX: number; clientY: number }
+    if (!gFrom || !phoneScaleOn()) return
+    e.preventDefault()
+    if (g.scale === gScale) return
+    gScale = g.scale
+    scaleAt(gFrom * g.scale, g.clientX, g.clientY, e.target)
+  }, { capture: true, passive: false })
+  listen(layers, 'gestureend', () => { gFrom = 0 }, { capture: true })
+  // A pinch over the sidebar, the header or a stage that has no zoom of its own does nothing, as in
+  // a design tool: the shell's chrome stays at its size.
+  addEventListener('wheel', e => { if (e.ctrlKey && !e.defaultPrevented) e.preventDefault() }, { passive: false })
+  addEventListener('gesturestart', e => { if (!e.defaultPrevented) e.preventDefault() }, { passive: false })
   const comments = createComments({
     layer: zone.querySelector<HTMLElement>('[data-comments]')!,
     visible: place => {
