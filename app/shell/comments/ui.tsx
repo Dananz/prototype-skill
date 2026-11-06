@@ -237,12 +237,12 @@ export function AgentMark({ by = 'claude', className = 'size-3.5' }: { by?: Agen
     : <svg className={`${className} shrink-0`} viewBox="0 0 256 257" fill="#D97757" aria-hidden="true"><path d={CLAUDE} /></svg>
 }
 
-/** What the agent said back, as a chat message from it: its mark, then the words in a bubble. */
+/** What the agent said back, as a chat message from it on the end side: its mark there, the words in a bubble beside it, the tail toward the mark. */
 export function Reply({ text, by = 'claude', small }: { text: string; by?: Agent; small?: boolean }) {
   return (
-    <span className={`flex items-start ${small ? 'gap-1.5' : 'gap-2'}`}>
+    <span className={`flex flex-row-reverse items-start ${small ? 'gap-1.5' : 'gap-2'}`}>
       <span className={`mt-px grid shrink-0 place-items-center rounded-full ${by !== 'claude' ? 'bg-zinc-900/[.07] text-zinc-900 dark:bg-white/10 dark:text-white' : 'bg-[#d97757]/15'} ${small ? 'size-4' : 'size-6'}`} title={AGENT[by]}><AgentMark by={by} className={small ? 'size-2.5' : 'size-3.5'} /></span>
-      <span dir="auto" data-own-side className={`min-w-0 rounded-2xl rounded-ss-sm bg-zinc-900/[.05] text-zinc-800 dark:bg-white/[.08] dark:text-zinc-100 ${small ? 'px-2 py-1 text-[11px] leading-4' : 'px-3 py-1.5 text-[12.5px] leading-[18px]'}`}>{text}</span>
+      <span dir="auto" data-own-side className={`min-w-0 rounded-2xl rounded-se-sm bg-zinc-900/[.05] text-zinc-800 dark:bg-white/[.08] dark:text-zinc-100 ${small ? 'px-2 py-1 text-[11px] leading-4' : 'px-3 py-1.5 text-[12.5px] leading-[18px]'}`}>{text}</span>
     </span>
   )
 }

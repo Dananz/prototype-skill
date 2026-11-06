@@ -142,8 +142,8 @@ function Card({ c, parent, picked, onPick, busy, run }: { c: LinkComment; parent
       )}
       <p dir="auto" data-own-side data-link-body className="mt-1.5 whitespace-pre-wrap break-words text-[12.5px] leading-[18px] text-zinc-800 dark:text-zinc-100">{c.body}</p>
       {c.owner_reply && (
-        <div className="mt-2 flex justify-end">
-          <p className="max-w-[85%] rounded-2xl rounded-se-sm bg-proto-primary-soft px-2.5 py-1.5 text-[11.5px] leading-4 text-zinc-800 ring-1 ring-proto-primary-ring/40 dark:text-zinc-100">
+        <div className="mt-2 flex justify-start">
+          <p className="max-w-[85%] rounded-2xl rounded-ss-sm bg-proto-primary-soft px-2.5 py-1.5 text-[11.5px] leading-4 text-zinc-800 ring-1 ring-proto-primary-ring/40 dark:text-zinc-100">
             <span className="mb-0.5 block text-[10px] font-medium text-proto-primary-soft-fg">{t('Your reply, seen on the link')}</span>
             <span dir="auto" data-own-side className="block whitespace-pre-wrap break-words">{c.owner_reply}</span>
           </p>
