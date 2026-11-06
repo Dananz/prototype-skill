@@ -152,7 +152,7 @@ export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onC
       </button>
       {end}
       {mv && <button type="button" data-act={`vm:${mv.replace('/', ':')}`} aria-label={t('Options')} title={t('Options')}
-        className="grid size-6 shrink-0 place-items-center rounded-md text-zinc-400 opacity-0 hover:bg-zinc-900/[.06] hover:text-zinc-700 focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100 dark:hover:bg-white/10 dark:hover:text-zinc-200 [@media(pointer:coarse)]:opacity-100">
+        className="proto-tree-more grid h-6 shrink-0 place-items-center rounded-md text-zinc-400 hover:bg-zinc-900/[.06] hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200">
         <Ph name="dots" className="size-3.5" /></button>}
     </div>
   )

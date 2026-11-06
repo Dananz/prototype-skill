@@ -257,3 +257,11 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
 [data-tree-join~="bottom"] { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 [data-tree-join~="bottom"]::before { border-bottom-color: transparent; }
 @media (prefers-reduced-motion: reduce) { [data-tree-row], [data-tree-row]::before { transition: none; } }
+
+/* Collapsed row actions reclaim their width and the row gap. Focus reveals them before activation. */
+[data-tree-row] > .proto-tree-more { width: 0; margin-inline-start: -.375rem; opacity: 0; overflow: hidden; pointer-events: none; transition: width .18s ease-out, margin-inline-start .18s ease-out, opacity .18s ease-out; }
+[data-tree-row]:hover > .proto-tree-more,
+[data-tree-row]:focus-within > .proto-tree-more,
+[data-tree-row] > .proto-tree-more[aria-expanded="true"] { width: 1.5rem; margin-inline-start: 0; opacity: 1; pointer-events: auto; }
+@media (pointer: coarse) { [data-tree-row] > .proto-tree-more { width: 2.25rem; height: 2.25rem; margin-inline-start: 0; opacity: 1; pointer-events: auto; } }
+@media (prefers-reduced-motion: reduce) { [data-tree-row] > .proto-tree-more { transition: none; } }
