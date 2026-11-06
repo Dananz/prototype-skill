@@ -63,8 +63,9 @@ const Remove = ({ item, className = '' }: { item: Item; className?: string }) =>
 /**
  * Changes a sent comment, while it waits for the agent to take it. It keeps its place when it can't
  * be used, fading out there, so the status and the trash beside it never move as a comment is taken.
+ * With fold, its place closes as it fades: where nothing lines up on it, an empty slot is only a gap.
  */
-const Edit = ({ on, onClick, className = '' }: { on: boolean; onClick: () => void; className?: string }) => <button data-shoot={on ? 'edit-sent' : undefined} inert={!on} aria-hidden={!on} onClick={e => { e.stopPropagation(); onClick() }} aria-label={t('Edit this comment')} title={t('Edit this comment')} className={`grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 transition-[opacity,transform,color] duration-200 ease-out hover:text-zinc-700 active:bg-zinc-900/5 motion-reduce:transition-none dark:hover:text-zinc-200 dark:active:bg-white/10 ${on ? 'scale-100 opacity-100' : 'pointer-events-none scale-75 opacity-0'} ${className}`}><Icon name="share-pencil" className="size-4" /></button>
+const Edit = ({ on, fold = false, onClick, className = '' }: { on: boolean; fold?: boolean; onClick: () => void; className?: string }) => <button data-shoot={on ? 'edit-sent' : undefined} inert={!on} aria-hidden={!on} onClick={e => { e.stopPropagation(); onClick() }} aria-label={t('Edit this comment')} title={t('Edit this comment')} className={`grid h-8 shrink-0 place-items-center overflow-hidden rounded-full text-zinc-400 transition-[width,opacity,transform,color] duration-200 ease-out hover:text-zinc-700 active:bg-zinc-900/5 motion-reduce:transition-none dark:hover:text-zinc-200 dark:active:bg-white/10 ${on ? 'w-8 scale-100 opacity-100' : `${fold ? 'w-0' : 'w-8'} pointer-events-none scale-75 opacity-0`} ${className}`}><Icon name="share-pencil" className="size-4" /></button>
 const Where = ({ item, here }: { item: Item; here: boolean }) => { const { store } = useCtx(); return !item.variant || (here && !store.get().place?.compare) ? null : <span className="shrink-0 rounded bg-zinc-900/[.05] px-1 font-mono text-[10px] text-zinc-500 dark:bg-white/10">{variantRef(null, item.variant)}</span> }
 /** What a row is about: the element a comment is on, or a decision with its icon (it is on no element). */
 const About = ({ item }: { item: Item }) => item.action
@@ -185,14 +186,14 @@ function WithAgent({ r, active, roomy, onOpen, onEdit }: { r: Row; active: boole
       <button onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 p-3 pe-0 text-start">
         <span className="mt-1">{r.stopped ? <span data-shoot="comment-stopped" className="mt-0.5 block size-2 rounded-full border border-amber-500" /> : <Working />}</span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} />{r.stopped ? <span className="shrink-0 text-amber-600 dark:text-amber-300">{said ? t('Stopped') : t('Not picked up')}</span> : <span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? t('{agent} is on it', { agent }) : t('Sent')}</span>}</span>
+          <span className="flex items-center gap-2 text-xs"><span className="min-w-0 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} /><span aria-hidden className="shrink-0 text-zinc-400 dark:text-zinc-500">·</span>{r.stopped ? <span className="shrink-0 text-amber-600 dark:text-amber-300">{said ? t('Stopped') : t('Not picked up')}</span> : <span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? t('{agent} is on it', { agent }) : t('Sent')}</span>}</span>
           <Body c={item} className={`mt-0.5 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
           <ViewChip v={item.target?.view} className="mt-1.5" />
           {shotsOf(item).some(p => p.pasted) && <PictureStrip className="mt-2">{shotsOf(item).filter(p => p.pasted).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</PictureStrip>}
           {reply && <span data-shoot="comment-reply" className="mt-2 block"><Reply text={reply.text} by={reply.by} small /></span>}
         </span>
       </button>
-      <span className="me-1 mt-1.5 flex shrink-0"><Edit on={editable(item, r.turns[0].state)} onClick={() => onEdit(item.id)} /><Remove item={item} /></span>
+      <span className="me-1 mt-1.5 flex shrink-0"><Edit on={editable(item, r.turns[0].state)} fold onClick={() => onEdit(item.id)} /><Remove item={item} /></span>
       </div>
       <div className="-mt-1 pb-3 pe-3 ps-8 empty:hidden"><Thread r={r} onEdit={onEdit} /></div>
     </div>
