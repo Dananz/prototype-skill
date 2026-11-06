@@ -101,14 +101,14 @@ function Draft({ r, active, roomy, onOpen }: { r: Row; active: boolean; roomy: b
 
 /**
  * The rest of a thread, under the comment and Claude's reply to it: each answer the user wrote back
- * (on the end side, as theirs) and Claude's reply to that, then Reply, which answers the last reply.
+ * (on the start side, as theirs; the agent's replies sit on the end side) and Claude's reply to that, then Reply, which answers the last reply.
  */
 function Thread({ r, onEdit }: { r: Row; onEdit?: (id: string) => void }) {
   return (
     <>
       {r.turns.slice(1).map(t => (
         <span key={t.item.id} data-shoot="comment-turn" data-turn={t.item.sent ? `${t.item.sent.batch}/${t.item.sent.i}` : undefined} className="mt-2 block space-y-1.5">
-          <span className="flex items-center justify-end">{onEdit && <Edit on={editable(t.item, t.state)} onClick={() => onEdit(t.item.id)} />}<Body c={t.item} className="block max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-se-sm bg-proto-primary-soft px-2 py-1 text-[11px] leading-4 text-zinc-800 ring-1 ring-proto-primary-ring/40 dark:text-zinc-100" /></span>
+          <span className="flex items-center justify-start"><Body c={t.item} className="block max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-ss-sm bg-proto-primary-soft px-2 py-1 text-[11px] leading-4 text-zinc-800 ring-1 ring-proto-primary-ring/40 dark:text-zinc-100" />{onEdit && <Edit on={editable(t.item, t.state)} onClick={() => onEdit(t.item.id)} />}</span>
           {!!shotsOf(t.item).length && <PictureStrip>{shotsOf(t.item).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</PictureStrip>}
           {t.reply && <span data-shoot="comment-reply" className="block"><Reply text={t.reply.text} by={t.reply.by} small /></span>}
         </span>
