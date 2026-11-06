@@ -3501,7 +3501,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     paintVmenu()
     addEventListener('pointerup', () => setTimeout(render), { once: true })
   }, true)
-  const paintVmenu = () => drawVmenu({
+  const paintVmenu = () => {
+    // Keep React tree triggers visible while their menu owns focus.
+    for (const button of document.querySelectorAll<HTMLElement>('.proto-tree-more')) {
+      button.setAttribute('aria-expanded', String(st.open === 'vmenu' && button.dataset.act === `vm:${st.vmenu?.proto}:${st.vmenu?.variant}`))
+    }
+    drawVmenu({
     popFor: 'vmenu',
     open: st.open === 'vmenu', subject: vmenuSubject(), anchor: () => null,
     at: st.vmenu ? { x: st.vmenu.x, y: st.vmenu.y } : undefined,
@@ -3511,7 +3516,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     hint: !!st.vmenu?.hint,
     commentLabel: st.vmenu?.art ? t('Comment on the whole variant') : undefined,
     ...vmenuRows(),
-  })
+    })
+  }
   /**
    * Comment on the variant as a whole: opens where the box is (the docked panel's Comments tab, the
    * phone's list) and puts the cursor in it. From another variant's row it goes there first.

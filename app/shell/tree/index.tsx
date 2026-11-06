@@ -264,7 +264,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
         end={<>{optionEnd(n)}
           {tone === 'picked' && n.picked && !n.became && <span className="shrink-0 text-[11px] text-emerald-600 dark:text-emerald-400">{t('Picked')}</span>}
           {fresh && <span data-tree-new className="flex shrink-0 items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400"><span className="size-1.5 rounded-full bg-amber-500" />{t('New')}</span>}
-          {seen && <span title={t('Seen')} data-tree-seen><Ph name="eye" className="size-3.5 text-zinc-300 dark:text-zinc-600" /></span>}</>} />
+        </>} />
     )
   }
   const draw = (n: TreeNode, inside = false): React.ReactNode => {
