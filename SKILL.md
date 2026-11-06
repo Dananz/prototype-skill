@@ -28,7 +28,11 @@ strip naming the variant your requests change). You only write variant files.
 To act on several variants, Cmd/Ctrl-click tree rows, and the one on screen comes along (Shift-click
 takes a run, Esc lets go; on a
 phone a row's ⋯ has Select, then each tap adds a row). A bar and the right-click menu then copy
-their links (or Cmd/Ctrl+C) or IDs (`slug/number`, one a line) and star them all.
+their links (or Cmd/Ctrl+C) or IDs (`slug/number`, one a line) and star them all. On a wide screen,
+two or more variants of the open prototype go side by side on the stage (a grid from five), and a
+pill over the comments island says which of them a whole-variant comment goes to: one chip per
+variant to leave it out (past six a +N, from ten one summary, each opening a checklist). Send adds
+one ordinary comment to each variant still on, in one batch.
 
 A variant's context menu (right-click its row or open its ⋯) offers Share screenshots for
 that variant or all variants. Share is also in the pill menu on a phone. Edit each caption,

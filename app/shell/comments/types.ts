@@ -163,6 +163,8 @@ export type Note = { body: Seg[]; tags: Target[]; shots?: Shot[] }
 export const noteSays = (n: Note) => n.body.some(s => typeof s !== 'string' || s.trim()) || !!n.shots?.length
 
 export type Place = { proto: string; variant: string; state?: string; phone: boolean; title: string; compare?: true; view?: ViewSize }
+/** A variant chosen in the tree, shown beside the others on the stage: a whole-variant comment goes to each one still on. */
+export type Chosen = { route: string; proto: string; variant: string; state?: string; label: string; name: string }
 
 export type State = {
   items: Item[]
@@ -198,6 +200,10 @@ export type State = {
   tagOwner: string | null
   /** The element picked for it, waiting for the box to take it as a chip. */
   wholePicked: Target | null
+  /** The variants chosen in the tree, side by side on the stage (two or more), else null. */
+  chosen: Chosen[] | null
+  /** Those of them left out of the next whole-variant comment, by route. */
+  chosenOff: string[]
   /** Send as I add: each comment goes to Claude the moment it is added, so work starts while the next is written. */
   live: boolean
   error: string

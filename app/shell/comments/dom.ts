@@ -23,7 +23,7 @@ const textOf = (el: HTMLElement) => squash(el.innerText ?? '')
 /** The mount's origin: the variant's own root, which scrolls with the content. */
 const originOf = (mount: HTMLElement) => (mount.firstElementChild as HTMLElement | null) ?? mount
 /** A phone's frame is zoomed to fit the stage; rects read in screen px, the design lives in CSS px. */
-export const zoomOf = (mount: HTMLElement) => parseFloat(mount.closest<HTMLElement>('[data-phone]')?.style.zoom || '') || 1
+export const zoomOf = (mount: HTMLElement) => (parseFloat(mount.closest<HTMLElement>('[data-phone]')?.style.zoom || '') || 1) * (parseFloat(mount.closest<HTMLElement>('[data-chosen-zoom]')?.style.zoom || '') || 1)
 
 /** The frame a device view (view/) draws the page in, when el is in it. Nothing here is an
  *  instanceof check: an element in the frame belongs to another window, whose classes are its own. */

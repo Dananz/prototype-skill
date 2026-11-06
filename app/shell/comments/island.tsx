@@ -10,7 +10,7 @@
 // same bar at its foot.
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
-import { rtl, t, tn } from '../i18n'
+import { lang, rtl, t, tn } from '../i18n'
 import { useAgentName, useCtx } from './ctx'
 import { islandPrefs, useIslandPrefs, type IslandPrefs } from './island-prefs'
 import { useEdgeDrag, type Side } from './island-drag'
@@ -19,7 +19,7 @@ import { linksNew } from './links'
 import { Icon, Listening, MOD, plain } from './ui'
 import { useKeyboard } from './keyboard'
 import { usePhoneDrawer } from './phone-drawer'
-import type { CState } from './types'
+import type { Chosen, CState } from './types'
 import { useTagField } from './tag-field'
 
 type Kind = 'working' | 'done' | 'reply'
@@ -101,7 +101,35 @@ export function Island({ dock }: { dock: HTMLElement }) {
   const docked = !!prefs.docked && !phone
   // On an exploration's own page there is no design to point at: the box is on all of it.
   const onCard = !s.place && !!s.card
-  const wholeLabel = onCard ? t('Comment on the entire prototype') : t('Comment on the entire variant')
+  // Variants side by side on the stage: the box says which of them a comment goes to.
+  const chosen = !onCard && s.chosen && s.chosen.length > 1 ? s.chosen : null
+  const chosenOn = chosen ? chosen.filter(c => !s.chosenOff.includes(c.route)) : null
+  const refsOf = (l: Chosen[]) => new Intl.ListFormat(lang, { type: 'conjunction' }).format(l.map(c => `#${c.label}`))
+  const wholeLabel = onCard ? t('Comment on the entire prototype')
+    : chosen && chosenOn ? (!chosenOn.length ? t('Turn one on to comment') : chosenOn.length === chosen.length ? t('Comment on all {n}', { n: chosen.length }) : chosenOn.length === 1 ? t('Comment on {v} only', { v: `#${chosenOn[0].label}` }) : chosen.length > 3 ? t('Comment on {k} of {n}', { k: chosenOn.length, n: chosen.length }) : t('Comment on {list}', { list: refsOf(chosenOn) }))
+    : t('Comment on the entire variant')
+  const fanLabel = chosenOn && chosenOn.length > 1 ? t('Send to {n}', { n: chosenOn.length }) : ''
+  // Past six the chips end in +N, and from ten the pill is one summary: both open the whole list.
+  const [checklist, setChecklist] = useState(false)
+  // The pill glides to its chips' width as they come and go; the chips of a pill that just appeared
+  // pop in one after another, and a chip added later pops in on its own.
+  const [rowW, setRowW] = useState(0), born = useRef(0), rowRo = useRef<ResizeObserver | null>(null)
+  const chipRow = useCallback((el: HTMLDivElement | null) => {
+    rowRo.current?.disconnect(); rowRo.current = null
+    if (!el) { setRowW(0); return }
+    born.current = performance.now(); setRowW(el.offsetWidth)
+    const ro = new ResizeObserver(() => setRowW(el.offsetWidth)); ro.observe(el); rowRo.current = ro
+  }, [])
+  const popIn = (i: number) => ({ animationDelay: `${performance.now() - born.current < 300 ? 60 + i * 35 : 0}ms` })
+  const POP = 'animate-[proto-isl-pop_.45s_cubic-bezier(.3,1.6,.5,1)_both] motion-reduce:animate-none'
+  useEffect(() => { if (!chosen) setChecklist(false) }, [!!chosen])
+  useEffect(() => {
+    if (!checklist) return
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); setChecklist(false) } }
+    const down = (e: PointerEvent) => { if (!(e.target as Element | null)?.closest?.('[data-chosen-pill]')) setChecklist(false) }
+    addEventListener('keydown', key, true); addEventListener('pointerdown', down, true)
+    return () => { removeEventListener('keydown', key, true); removeEventListener('pointerdown', down, true) }
+  }, [checklist])
   const { news, unread, read } = useNews(rows, agent, prefs.news, !!s.inbox)
   const { shown, leaving } = useShown(news)
   const [focus, setFocus] = useState(false)
@@ -199,7 +227,7 @@ export function Island({ dock }: { dock: HTMLElement }) {
     const ro = new ResizeObserver(f)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [phone, docked, !!s.place, onCard])
+  }, [phone, docked, !!s.place, onCard, wholeLabel])
   // One button beside the box goes through every state, its width gliding between them: hidden, the
   // add arrow while there is text, the Send n pill while drafts wait, hidden again. Leaving, it keeps
   // what it showed until it has shrunk away; the pill's width is measured off a hidden copy.
@@ -208,15 +236,19 @@ export function Island({ dock }: { dock: HTMLElement }) {
   if (act1) lastAct.current = act1
   const shownAct = act1 ?? lastAct.current
   const sendLabel = s.sending ? t('Sending…') : tn(drafts, 'Send {n}', 'Send {n}')
+  // Several variants on: the add arrow is a pill that says how many, and adds and sends at once.
+  const fan = act1 === 'add' && !!fanLabel
+  const pillText = shownAct === 'add' && fanLabel ? fanLabel : sendLabel
   // Measured again each time the copy mounts, too: the bar (and the copy with it) is not there while
   // the side panel is folded to its tab, so the panel opened later kept a width of 0 and had no Send.
   const pillEl = useRef<HTMLSpanElement | null>(null)
   const [pillW, setPillW] = useState(0)
   const pillRef = useCallback((el: HTMLSpanElement | null) => { pillEl.current = el; if (el) setPillW(el.offsetWidth) }, [])
-  useLayoutEffect(() => { if (pillEl.current) setPillW(pillEl.current.offsetWidth) }, [sendLabel, phone, docked, !!s.place, onCard])
+  useLayoutEffect(() => { if (pillEl.current) setPillW(pillEl.current.offsetWidth) }, [pillText, phone, docked, !!s.place, onCard])
   if (!docked && ((!s.place && !onCard) || (copying && !phone))) return null
 
   const add = () => { const n = field.read(); if ((onCard ? act.commentProto : act.commentWhole)(n.body, n.tags, n.shots)) field.clear() }
+  const addSend = () => { add(); if (!s.live) void act.send() }
   const typing = focus || !empty
   const working = rows.some(r => r.state === 'seen' && !r.stopped)
   const live = news && !open ? news : null
@@ -290,7 +322,7 @@ export function Island({ dock }: { dock: HTMLElement }) {
     </div>
   )
 
-  const placeholder = picking ? (s.wholeTag ? t('Click what to tag') : phone ? t('Tap an element') : t('Click what to comment on')) : (typing || phone || onCard) && !sendShown && fits ? wholeLabel : t('Comment…')
+  const placeholder = picking ? (s.wholeTag ? t('Click what to tag') : phone ? t('Tap an element') : t('Click what to comment on')) : (typing || phone || onCard || !!chosen) && !sendShown && fits ? wholeLabel : t('Comment…')
   const bar = (
     <div className={`relative flex shrink-0 items-end ${phone ? 'gap-2 p-2' : 'gap-1.5 p-1.5'}`}>
       {!onCard && <button type="button" data-act="comment:toggle" data-shoot="comment" aria-pressed={picking} aria-label={t('Select an element to comment on')}
@@ -306,18 +338,18 @@ export function Island({ dock }: { dock: HTMLElement }) {
         {empty && <span aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 truncate text-start text-zinc-400 ${phone ? 'px-4 py-2 text-base leading-6' : 'px-3 py-1.5 text-[13px] leading-5 [@media(pointer:coarse)]:text-base'}`}>{placeholder}</span>}
       </div>
       <div inert={!act1} className="relative shrink-0"
-        style={{ width: act1 === 'send' ? pillW : act1 ? (phone ? 40 : 32) : 0, marginInlineStart: act1 ? 0 : phone ? -8 : -6, transition: `width .42s ${SOFT}, margin .42s ${SOFT}` }}>
-        <span ref={pillRef} aria-hidden className={`invisible absolute flex items-center gap-1.5 whitespace-nowrap px-3 font-semibold ${phone ? 'text-sm' : 'text-xs'}`}><Icon name="send" className="size-3.5" />{sendLabel}</span>
-        <button type="button" data-shoot={shownAct === 'send' ? 'send' : 'whole-add'} onClick={shownAct === 'send' ? act.send : add} disabled={shownAct === 'send' && s.sending}
-          aria-label={shownAct === 'send' ? undefined : t('Add the comment')}
-          title={shownAct === 'send' ? `${tn(drafts, 'Send {n} to {agent}', 'Send {n} to {agent}', { agent })} · ${MOD} Enter` : s.live ? `${t('Add the comment')} · ${MOD} Enter` : t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })}
+        style={{ width: act1 === 'send' || fan ? pillW : act1 ? (phone ? 40 : 32) : 0, marginInlineStart: act1 ? 0 : phone ? -8 : -6, transition: `width .42s ${SOFT}, margin .42s ${SOFT}` }}>
+        <span ref={pillRef} aria-hidden className={`invisible absolute flex items-center gap-1.5 whitespace-nowrap px-3 font-semibold ${phone ? 'text-sm' : 'text-xs'}`}><Icon name="send" className="size-3.5" />{pillText}</span>
+        <button type="button" data-shoot={shownAct === 'send' ? 'send' : 'whole-add'} onClick={shownAct === 'send' ? act.send : fan ? addSend : add} disabled={shownAct === 'send' && s.sending}
+          aria-label={shownAct === 'send' || fan ? undefined : t('Add the comment')}
+          title={fan ? `${tn(chosenOn!.length, 'Send one comment to each of the {n} to {agent}', 'Send one comment to each of the {n} to {agent}', { agent })} · ${MOD} Enter` : shownAct === 'send' ? `${tn(drafts, 'Send {n} to {agent}', 'Send {n} to {agent}', { agent })} · ${MOD} Enter` : s.live ? `${t('Add the comment')} · ${MOD} Enter` : t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })}
           className={`flex w-full items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full bg-proto-primary font-semibold text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-60 ${phone ? 'h-10 text-sm' : 'h-8 text-xs'}`}
           style={act1
             // In, it pops a little past its size as its room opens; out, it shrinks and fades a beat ahead of the room closing.
             ? { transform: 'none', opacity: 1, transition: `transform .5s cubic-bezier(.3,1.5,.5,1) 60ms, opacity .2s ease-out 60ms, background-color .15s` }
             : { transform: 'scale(.3)', opacity: 0, transition: `transform .24s cubic-bezier(.4,0,1,1), opacity .18s ease-in, background-color .15s` }}>
-          <Icon name="send" className={`shrink-0 ${shownAct === 'send' ? 'size-3.5' : phone ? 'size-5' : 'size-4'}`} />
-          {shownAct === 'send' && <span key="label" className="animate-[proto-isl-rise_.35s_cubic-bezier(.2,.9,.25,1)_both]">{sendLabel}</span>}
+          <Icon name="send" className={`shrink-0 ${shownAct === 'send' || fan ? 'size-3.5' : phone ? 'size-5' : 'size-4'}`} />
+          {(shownAct === 'send' || fan) && <span key={fan ? 'fan' : 'label'} className="animate-[proto-isl-rise_.35s_cubic-bezier(.2,.9,.25,1)_both]">{pillText}</span>}
         </button>
       </div>
       {/* Upright, the panel has its own fold button and the count is its header's. */}
@@ -445,11 +477,64 @@ export function Island({ dock }: { dock: HTMLElement }) {
       </div>
     )
   }
+  // Who a whole-variant comment goes to, while variants are side by side: a pill of its own just off
+  // the island's edge, a chip per variant that leaves it out or puts it back.
+  const chips = chosen && !open && !phone ? (
+    <div data-chosen-pill role="group" aria-label={t('Who gets this comment')}
+      className={`absolute left-1/2 z-10 -translate-x-1/2 cursor-default ${top ? 'top-full mt-1.5' : 'bottom-full mb-1.5'}`}>
+      <div className={`overflow-hidden rounded-full bg-white text-zinc-900 shadow-[0_10px_28px_-12px_rgb(0_0_0/.35)] ring-1 ring-black/[.08] transition-[width] duration-[420ms] ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10 ${top ? 'animate-[proto-isl-menu-in_.32s_cubic-bezier(.2,.9,.25,1)_both]' : 'animate-[proto-isl-rise_.4s_cubic-bezier(.2,.9,.25,1)_both]'} motion-reduce:animate-none`} style={rowW ? { width: rowW } : undefined}>
+      <div ref={chipRow} className="flex w-max items-center gap-1 whitespace-nowrap p-1 ps-3">
+      <span className="me-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{t('On')}</span>
+      {chosen.length >= 10 && <button type="button" data-shoot="chosen-summary" aria-expanded={checklist} onClick={() => setChecklist(!checklist)} style={popIn(0)}
+        className={`${POP} flex h-6 items-center gap-1 rounded-full pe-2 ps-2.5 text-[11px] font-semibold tabular-nums transition-colors ${chosenOn!.length ? 'bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover' : 'text-zinc-500 ring-1 ring-inset ring-zinc-900/15 dark:text-zinc-400 dark:ring-white/15'}`}>
+        {t('{k} of {n}', { k: chosenOn!.length, n: chosen.length })}<Icon name="caret-up" className={`size-3 transition-transform ${checklist !== top ? 'rotate-180' : ''}`} /></button>}
+      {chosen.length < 10 && chosen.slice(0, 6).map((c, i) => {
+        const off = s.chosenOff.includes(c.route)
+        return (
+          <button key={c.route} type="button" data-shoot={`chosen-chip-${c.label}`} aria-pressed={!off} onClick={() => act.flipChosen(c.route)} style={popIn(i)}
+            title={`#${c.label} ${c.name}`} data-tip-body={off ? t('Left out. Click to comment on it too.') : t('Click to leave it out of this comment.')}
+            className={`${POP} flex h-6 items-center gap-1 rounded-full ps-1 pe-2 text-[11px] font-semibold tabular-nums transition-colors ${off ? 'text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-200' : 'bg-proto-primary text-proto-primary-fg hover:bg-proto-primary-hover'}`}>
+            <span className={`grid size-4 place-items-center rounded-full ${off ? 'ring-1 ring-inset ring-current opacity-70' : 'bg-white/25'}`}>{!off && <Icon name="check" className="size-2.5" />}</span>
+            {c.label}
+          </button>
+        )
+      })}
+      {chosen.length < 10 && chosen.length > 6 && <button key={`more-${chosen.length}`} type="button" data-shoot="chosen-more" aria-expanded={checklist} onClick={() => setChecklist(!checklist)} style={popIn(6)}
+        title={t('All {n} chosen', { n: chosen.length })}
+        className={`${POP} flex h-6 items-center rounded-full px-2 text-[11px] font-semibold tabular-nums text-zinc-600 ring-1 ring-inset ring-zinc-900/15 transition-colors hover:bg-zinc-900/5 dark:text-zinc-300 dark:ring-white/15 dark:hover:bg-white/10 ${checklist ? 'bg-zinc-900/5 dark:bg-white/10' : ''}`}>+{chosen.length - 6}</button>}
+      </div>
+      </div>
+      {checklist && (
+        <div data-chosen-list role="group" aria-label={t('This comment goes to')}
+          className={`absolute inset-x-0 mx-auto w-64 rounded-2xl bg-white p-1 text-zinc-900 shadow-[0_18px_44px_-14px_rgb(0_0_0/.45)] ring-1 ring-black/[.08] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10 ${top ? 'top-full mt-2' : 'bottom-full mb-2'}`}>
+          <div className="flex items-center gap-2 px-2.5 pb-1 pt-1.5 text-[11px]">
+            <span className="min-w-0 flex-1 truncate font-medium text-zinc-500 dark:text-zinc-400">{t('This comment goes to')}</span>
+            <button type="button" data-shoot="chosen-all" onClick={() => act.setChosenOff([])} className="rounded px-1 font-semibold text-proto-primary hover:underline dark:text-indigo-300">{t('All')}</button>
+            <button type="button" data-shoot="chosen-none" onClick={() => act.setChosenOff(chosen.map(c => c.route))} className="rounded px-1 font-semibold text-proto-primary hover:underline dark:text-indigo-300">{t('None')}</button>
+          </div>
+          <div className="max-h-[296px] overflow-y-auto overscroll-contain">
+            {chosen.map(c => {
+              const off = s.chosenOff.includes(c.route)
+              return (
+                <button key={c.route} type="button" role="checkbox" aria-checked={!off} data-shoot={`chosen-row-${c.label}`} onClick={() => act.flipChosen(c.route)}
+                  className="flex h-9 w-full items-center gap-2 rounded-xl px-2 text-start text-[13px] hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">
+                  <span className={`grid size-4 shrink-0 place-items-center rounded-[5px] ${off ? 'ring-[1.5px] ring-inset ring-zinc-300 dark:ring-zinc-600' : 'bg-proto-primary text-proto-primary-fg'}`}>{!off && <Icon name="check" className="size-2.5" />}</span>
+                  <span className="shrink-0 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">#{c.label}</span>
+                  <span dir="auto" className={`min-w-0 flex-1 truncate ${off ? 'text-zinc-400 dark:text-zinc-500' : ''}`}>{c.name}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  ) : null
   return (
     <div ref={card} data-island data-comment-ui="" data-open={open || undefined} data-edge-side="flat" onDoubleClick={home}
-      className={`${surface} flex max-w-[calc(100%-32px)] cursor-grab flex-col overflow-hidden rounded-[22px] ${resizing ? '' : 'transition-[width,box-shadow] duration-500 ease-[cubic-bezier(.2,.9,.25,1.1)]'} ${top ? 'flex-col-reverse' : ''}`}
+      className={`${surface} flex max-w-[calc(100%-32px)] cursor-grab flex-col ${chips ? '' : 'overflow-hidden'} rounded-[22px] ${resizing ? '' : 'transition-[width,box-shadow] duration-500 ease-[cubic-bezier(.2,.9,.25,1.1)]'} ${top ? 'flex-col-reverse' : ''}`}
       style={{ width, visibility: 'hidden', ...ring }}>
       {open && <>{edgeHandle('listH', top ? 'bottom' : 'top')}{edgeHandle('listW', 'start')}{edgeHandle('listW', 'end')}</>}
+      {chips}
       {list}
       {newsRow}
       {bar}

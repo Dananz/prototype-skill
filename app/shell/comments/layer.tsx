@@ -116,8 +116,9 @@ export function Layer() {
   const listed = here.map(r => ({ id: r.item.id, t: s.place?.compare ? { ...r.item.target!, source: { proto: r.item.proto, variant: r.item.variant, ...(r.item.state ? { state: r.item.state } : {}) } } : r.item.target! }))
   if (editing && !editing.id) listed.push({ id: '__new', t: editing.target })
   // The whole-variant box has the focus: the variant is outlined edge to edge, with no composer.
-  const wholeT = s.wholeFocus && s.place ? act.wholeTarget() : null
-  if (wholeT) listed.push({ id: '__whole', t: wholeT })
+  // Variants side by side: each one the comment goes to is outlined.
+  const wholes = !s.wholeFocus || !s.place ? [] : act.chosenWholes()?.map(w => w.target) ?? (() => { const w = act.wholeTarget(); return w ? [w] : [] })()
+  wholes.forEach((t, k) => listed.push({ id: `__whole${k}`, t }))
   const boxes = useBoxes(listed)
   if (!s.place) return null
   const phone = s.place.phone
@@ -136,11 +137,11 @@ export function Layer() {
         {h => onNew && !onSpot && m.kind === 'compose' && !m.target.region && <Climb box={h.box} up={canClimb(host.mount(), m.target)} down={!!m.trail?.length} />}
       </Glide>
       {onNew && onSpot && <div className="pointer-events-none absolute z-10 size-8 rounded-full ring-2 ring-proto-primary-ring" style={{ left: onNew.x - 16, top: onNew.y - 16 }} />}
-      {wholeT && boxes['__whole'] && (
-        <div data-whole-outline className="pointer-events-none absolute z-10 border-2 border-proto-primary-ring bg-proto-primary/[.05]" style={{ left: boxes['__whole'].x, top: boxes['__whole'].y, width: boxes['__whole'].w, height: boxes['__whole'].h }}>
+      {wholes.map((_, k) => { const b = boxes[`__whole${k}`]; return b && (
+        <div key={k} data-whole-outline className="pointer-events-none absolute z-10 border-2 border-proto-primary-ring bg-proto-primary/[.05]" style={{ left: b.x, top: b.y, width: b.w, height: b.h }}>
           <span className="absolute start-14 top-0 inline-flex h-6 items-center gap-1.5 rounded-b-md bg-proto-primary px-2 text-[11px] font-semibold text-proto-primary-fg"><Icon name="frame" className="size-3" />{t('Whole variant')}</span>
         </div>
-      )}
+      ) })}
       <Pins items={here.map(r => ({ item: r.item, done: r.state === 'done' }))} boxes={boxes} active={s.active} onOpen={act.open} compare={s.place.compare} />
       {editing && (
         <Composer key={editing.id ?? '__new'} target={editing.target} n={editedItem?.n ?? nextN} place={boxes[editing.id ?? '__new'] ?? (editedItem?.re && boxes[editedItem.re.id]) ?? null}
