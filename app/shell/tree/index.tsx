@@ -325,7 +325,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
             </div>
             <Collapse open={!!shut}><Inside>
               {below.map(c => draw(c, inside || windowed))}
-              {below.length > 0 && passed.length > 0 ? <PassedRows n={n} hold={passed.some(c => c.route === input.place)}>{passed.map(c => option(c, 'passed'))}</PassedRows> : passed.map(c => option(c, 'passed'))}
+              {below.length > 0 && passed.length > 0 ? <PassedRows n={n} more={passed.length} hold={passed.some(c => c.route === input.place)}>{options.map(c => option(c, c.picked ? 'picked' : 'passed'))}</PassedRows> : passed.length > 0 && options.map(c => option(c, c.picked ? 'picked' : 'passed'))}
             </Inside></Collapse>
           </>
         )
@@ -431,13 +431,13 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
 }
 
 /** The options passed on, behind one row, under what was built on a decided exploration. */
-function PassedRows({ n, hold, children }: { n: TreeNode; hold: boolean; children: React.ReactNode[] }) {
+function PassedRows({ n, more: count, hold, children }: { n: TreeNode; more: number; hold: boolean; children: React.ReactNode[] }) {
   const [more, setMore] = useState(false), open = more || hold
   return (
     <>
       <button type="button" data-tree-more={n.key} aria-expanded={open} onClick={() => setMore(!more)} className="mx-1.5 flex h-8 w-[calc(100%-12px)] items-center gap-1.5 rounded-lg px-2 text-start text-[12px] text-zinc-400 hover:bg-zinc-900/[.04] dark:text-zinc-500 dark:hover:bg-white/[.06] [@media(pointer:coarse)]:h-10">
         <span className={'grid place-items-center transition-transform duration-200 ease-out motion-reduce:transition-none ' + (open ? '' : 'ltr:-rotate-90 rtl:rotate-90')}><Ph name="caretDown" className="size-2.5" /></span>
-        <Ph name="rows" className="size-3.5" />{open ? t('Hide') : tn(children.length, '{n} more option', '{n} more options')}
+        <Ph name="rows" className="size-3.5" />{open ? t('Hide') : tn(count, '{n} more option', '{n} more options')}
       </button>
       <Collapse open={open}>{children}</Collapse>
     </>
