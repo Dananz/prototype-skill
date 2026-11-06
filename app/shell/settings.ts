@@ -20,6 +20,8 @@ type Props = {
   /** Conversation first, offered while the tree is on. */
   conv: boolean
   review: boolean
+  /** A press on a design that does nothing lights what can be pressed (hotspots.ts). */
+  hotspots: boolean
   stack: boolean
   /** Opens on this category (the sidebar's session name asks for session, the bar's menu for shortcuts). */
   category?: Category
@@ -35,6 +37,7 @@ type Props = {
   onTree: (value: boolean) => void
   onConv: (value: boolean) => void
   onReview: (value: boolean) => void
+  onHotspots: (value: boolean) => void
   onLayout: (stack: boolean) => void
   onResetWidths: () => void
   returnFocus: () => HTMLElement | null
@@ -146,6 +149,7 @@ function Settings(p: Props) {
       toggle('tree', t('Project tree'), t('The sidebar shows designs, screens and explorations as one tree.'), p.tree, p.onTree),
       ...p.tree ? [toggle('conv', t('Conversation first'), t('The page opens on this conversation, with a gallery and past conversations.'), p.conv, p.onConv)] : [],
       toggle('review', t('Show review panel'), t('Keep Try it open on wide screens when available.'), p.review, p.onReview),
+      toggle('hotspots', t('Show where to click'), t('A click that does nothing briefly outlines what can be clicked on screen.'), p.hotspots, p.onHotspots),
       h('div', { className: 'flex flex-wrap items-center justify-between gap-3 border-t border-black/[.06] pt-4 dark:border-white/10' }, h('p', { className: muted }, t('Restore sidebar and column widths.')), h('button', { type: 'button', 'data-setting-reset': '', onClick: p.onResetWidths, className: button }, t('Reset widths'))))
     : category === 'session' ? h('div', { className: 'space-y-5' },
       h('div', null, h('p', { dir: 'auto', className: 'text-[13px] font-medium' }, p.session.name),

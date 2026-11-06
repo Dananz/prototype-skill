@@ -31,6 +31,7 @@ import { motion } from './motion/registry'
 import type { Action } from './comments/types'
 import { tabIcon } from './favicon'
 import { setShellRoot } from './portals'
+import { installHotspots } from './hotspots'
 import { dropGhosts, leaveFade } from './leave-fade'
 import { createView } from './view/index'
 import { createIntake } from './intake/index'
@@ -3146,6 +3147,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     return (e.type === 'keydown' || e.type === 'keyup') && k.key === 'c' && !k.metaKey && !k.ctrlKey && !k.altKey && !st.sheet && !st.states && !!commentHost() && !t?.closest(INTERACTIVE)
   })
 
+  // Where to click (hotspots.ts): a press on the design that does nothing lights what can be pressed.
+  const hotspotsOn = () => { try { return localStorage.getItem('proto-hotspots') !== '0' } catch { return true } }
+  const hotspots = installHotspots(document, { on: hotspotsOn, paused: () => comments.busy() || comments.counts().picking })
+  addEventListener('storage', e => { if (e.key === 'proto-hotspots') hotspots.sync() })
+
   // ---------- the device view: this page at another layout's size, in the stage (view/) ----------
   // Three sizes in the bar on a wide screen, the Layout row of the pill's menu on a phone; the
   // layout this window already is (its own breakpoints) is the one selected at rest, and choosing it
@@ -3417,7 +3423,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function paintSettings() {
     drawSettings({
       open: settingsOpen, category: settingsCategory, appearance, live: comments.store.get().live, sidebar: st.side, tree: treeOn, conv: convOn,
-      review: localStorage.getItem('proto-hints') !== '0', stack: st.stack,
+      review: localStorage.getItem('proto-hints') !== '0', hotspots: hotspotsOn(), stack: st.stack,
       session: { host: agentName(session.agent), id: session.conversation || session.id, name: session.name, url: session.url || location.origin + '/', keep: !!st.status?.keep,
         server: st.stopped ? 'stopped' : st.live ? 'live' : 'reconnecting',
         listening: !!st.status?.inbox?.listening,
@@ -3434,6 +3440,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       onTree: on => { treeOn = on; remember('proto-tree', on ? '1' : '0'); if (st.place.view !== 'variant') show(false); render() },
       onConv: on => { convOn = on; remember('proto-conv', on ? '1' : '0'); scoped = null; paintTree(); paintGallery(); render() },
       onReview: on => { remember('proto-hints', on ? '1' : '0'); hintsOpen = wideMq.matches && on; if (!on) setTry(null); render() },
+      onHotspots: on => { remember('proto-hotspots', on ? '1' : '0'); hotspots.sync(); paintSettings() },
       onLayout: on => { act('stack', on ? '1' : '0', ''); paintSettings() },
       onResetWidths: () => { setSideW(SIDE_W); setSplit(SPLIT_W); render() },
       returnFocus: () => [...(settingsOrigin === 'dock' ? overlay : root).querySelectorAll<HTMLElement>(settingsReturn)].find(el => el.getClientRects().length > 0) ?? bar.querySelector<HTMLElement>('[data-act="open:more"]'),
