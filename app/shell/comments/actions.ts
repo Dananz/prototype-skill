@@ -7,7 +7,7 @@ import { climb, describe, designStorage, find, inFrame, region, reveal, openerOf
 import { ACTION, plain } from './ui'
 import type { Ctx, Host } from './ctx'
 import { progress, threadOf, type Store } from './store'
-import type { Action, Draft, Item, Note, Place, Seg, Target, Time, Source, Shot } from './types'
+import type { Action, Chosen, Draft, Item, Note, Place, Seg, Target, Time, Source, Shot } from './types'
 import { noteSays, shotsOf } from './types'
 import { inScope, routeOf } from './types'
 import type { State } from './types'
@@ -147,6 +147,18 @@ export function createActions(store: Store, host: Host) {
       const p = get().place, t = act.wholeTarget()
       const body = trimmed(segs)
       if (!p || !t || (!body.some(s => typeof s !== 'string' || s.trim()) && !shots.length)) return false
+      // Variants side by side: one comment for each of them still on, each on its own variant.
+      const on = act.chosenWholes()
+      if (on) {
+        const made = on.map(({ c, target }) => {
+          const n = Math.max(0, ...get().items.filter(i => i.proto === c.proto && i.variant === c.variant).map(i => i.n)) + 1
+          return { id: uid(), proto: c.proto, variant: c.variant, ...(c.state ? { state: c.state } : {}), n, body, tags, shots, target, at: Date.now() } as Item
+        })
+        if (!made.length) return false
+        set(s => ({ items: [...s.items, ...made] }))
+        if (get().live) void act.send()
+        return true
+      }
       const n = Math.max(0, ...get().items.filter(i => i.proto === p.proto && i.variant === p.variant).map(i => i.n)) + 1
       const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, body, tags, shots, target: t, at: Date.now() }
       set(s => ({ items: [...s.items, item] }))
@@ -270,6 +282,31 @@ export function createActions(store: Store, host: Host) {
       set(s => ({ items: s.items.map(x => x.id === id ? { ...x, ...d } : x), ...((s.mode.kind === 'compose' || s.mode.kind === 'tag' || s.mode.kind === 'time') && s.mode.id === id ? { mode: { kind: 'idle' as const }, active: null } : {}) }))
     },
     setLive(on: boolean) { set({ live: on }) },
+    /** The variants side by side on the stage (null: one variant, or none). Those left out stay out while they are still chosen. */
+    setChosen(list: Chosen[] | null) {
+      const was = get().chosen
+      const key = (l: Chosen[] | null) => l ? l.map(c => `${c.route}:${c.state ?? ''}:${c.label}:${c.name}`).join() : ''
+      if (key(was) === key(list)) return
+      set(s => ({ chosen: list, chosenOff: list ? s.chosenOff.filter(r => list.some(c => c.route === r)) : [] }))
+    },
+    /** All of them on (an empty list) or all out. */
+    setChosenOff(routes: string[]) { set({ chosenOff: routes }) },
+    /** Puts a chosen variant in or out of the next whole-variant comment. */
+    flipChosen(route: string) { set(s => ({ chosenOff: s.chosenOff.includes(route) ? s.chosenOff.filter(r => r !== route) : [...s.chosenOff, route] })) },
+    /** Each chosen variant still on, as the whole of it on the stage; null when none are side by side. */
+    chosenWholes(): { c: Chosen; target: Target }[] | null {
+      const on = act.chosenOn(), p = get().place
+      if (!on || !p) return null
+      const scope = host.mount(), v = host.view?.()
+      return on.flatMap(c => {
+        const mount = targetMount(scope, { source: { proto: c.proto, variant: c.variant, ...(c.state ? { state: c.state } : {}) } })
+        if (!mount) return []
+        const w = wholeTarget(mount, p.title)
+        return [{ c, target: v?.size ? { ...w, view: { size: v.size, w: v.w!, h: v.h! } } : w }]
+      })
+    },
+    /** The chosen variants a whole-variant comment goes to now, or null when none are side by side. */
+    chosenOn(): Chosen[] | null { const s = get(); return s.chosen && s.chosen.length > 1 ? s.chosen.filter(c => !s.chosenOff.includes(c.route)) : null },
     cancel() { opening++; set({ held: null, mode: { kind: 'idle' }, active: null, pendingTag: null }) },
     remove(id: string) { act.removeAll([id]) },
     /**
