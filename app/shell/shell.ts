@@ -1016,7 +1016,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // The 10px bezel sits outside the screen, so the frame is the screen plus 20 each way.
   // The scale control works on the device view while one is on, else on a phone prototype's phones.
-  const scaleNow = () => (frameOn() ? st.view.zoom : st.scale)
+  // A phone's grid opens at half size (st.scale's default), but one variant alone fits its stage,
+  // until the user picks a scale themselves.
+  let scaleChosen = false
+  const fitsAlone = () => !scaleChosen && st.place.view === 'variant' && matchMedia('(max-width: 639px)').matches
+  const scaleNow = () => (frameOn() ? st.view.zoom : fitsAlone() ? 0 : st.scale)
   const scaleRange = () => (frameOn() ? [ZOOM_MIN, ZOOM_MAX] : [SCALE_MIN, SCALE_MAX])
   const rangeAt = (v: number) => { const [lo, hi] = scaleRange(); return ((v - lo) / (hi - lo)) * 100 }
   const scaleLabel = () => (scaleNow() ? `${Math.round(scaleNow())}%` : t('Fit'))
@@ -1031,7 +1035,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function setScale(v: number) {
     // Fit chosen here also puts a device that was dragged away back in the middle.
     if (frameOn()) return patchView(v ? { zoom: v } : { zoom: 0, home: st.view.home + 1 })
-    st.scale = v; render(); fit()
+    st.scale = v; scaleChosen = true; render(); fit()
   }
   function resetViewKey(e: KeyboardEvent) {
     if (e.key !== '0' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.defaultPrevented || !frameOn()) return false
@@ -1425,7 +1429,14 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
     fit()
   }
+  // On a phone the stage runs under the comment bar and pill at its foot, which a fit must clear.
+  function barOver(room: HTMLElement) {
+    const bar = pill.querySelector('[data-pill-bar]')?.parentElement
+    return bar && fitsAlone() ? Math.max(0, room.getBoundingClientRect().bottom - bar.getBoundingClientRect().top) : 0
+  }
   function phoneZoom(w: number, h: number, room: HTMLElement) {
+    // One variant alone on a phone fits exactly, inside the p-6 of data-phones and clear of the bar.
+    if (fitsAlone()) return Math.floor(Math.max(0.4, Math.min(1, (room.clientHeight - barOver(room) - 48) / h, (room.clientWidth - 48) / w)) * 100) / 100
     const auto = [100, 75, 50].find(s => h * s / 100 <= room.clientHeight - 88 && w * s / 100 <= room.clientWidth - 24) ?? 40
     return (st.scale || auto) / 100
   }
@@ -1435,6 +1446,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const room = phone.closest<HTMLElement>('[data-fit]') ?? box
       const w = parseFloat(phone.style.width), h = parseFloat(phone.style.height)
       phone.style.zoom = String(phoneZoom(w, h, room))
+      const phones = phone.closest<HTMLElement>('[data-phones]')
+      if (phones) phones.style.paddingBottom = fitsAlone() ? `${barOver(room) + 8}px` : ''
     }
     box.querySelectorAll<HTMLElement>('[data-phone-placard]').forEach(paintPhonePlacard)
   }
@@ -1442,6 +1455,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const resized = new ResizeObserver(fit)
   resized.observe(zone)
   resized.observe(layers)
+  // The comment bar at the pill grows once it has drawn, and a fit on a phone must clear it.
+  resized.observe(pill)
 
   // ---------- navigation ----------
   function go(p: Place) {
@@ -2739,7 +2754,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       input.style.setProperty('--p', `${rangeAt(at)}%`)
       input.classList.remove('opacity-40')
       if (frameOn()) { st.view = { ...st.view, zoom: at }; paintView(); return syncScale(input) }
-      st.scale = at
+      st.scale = at; scaleChosen = true
       syncScale(input)
       return fit()
     }
