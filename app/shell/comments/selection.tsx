@@ -25,7 +25,7 @@ function Tip({ label, children }: { label: string; children: ReactNode }) {
   return (
     <span className="group/tip relative inline-flex">
       {children}
-      <span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-zinc-950 px-2 py-1 text-[11px] font-medium text-zinc-100 opacity-0 shadow-md ring-1 ring-white/10 transition-opacity group-hover/tip:opacity-100 group-hover/tip:delay-300 group-focus-within/tip:opacity-100 [@media(pointer:coarse)]:hidden">{label}</span>
+      <span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-zinc-950 px-2 py-1 text-[11px] font-medium text-zinc-100 opacity-0 shadow-md ring-1 ring-white/10 transition-opacity group-hover/tip:opacity-100 group-hover/tip:delay-200 group-focus-within/tip:opacity-100 [@media(pointer:coarse)]:hidden">{label}</span>
     </span>
   )
 }

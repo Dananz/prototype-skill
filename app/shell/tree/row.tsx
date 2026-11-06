@@ -49,11 +49,11 @@ export function Ph({ name, className = 'size-4' }: { name: PhName; className?: s
   return <span aria-hidden="true" className={`inline-grid shrink-0 place-items-center [&>svg]:size-full ${className}`} dangerouslySetInnerHTML={{ __html: ICONS[name].replace(/<svg /, '<svg fill="currentColor" ') }} />
 }
 
-const MARK: Record<Exclude<ExpState, 'done'>, [label: () => string, icon: PhName, cls: string]> = {
-  open: [() => t('Waiting for your pick'), 'circleFill', 'size-2 text-amber-500'],
-  waits: [() => t('Waiting for the pick above it'), 'hourglass', 'size-3.5 text-zinc-400'],
-  stale: [() => t('Built on an option you no longer picked'), 'warning', 'size-3.5 text-rose-500'],
-  building: [() => t('The agent is building it'), 'sparkle', 'size-3.5 animate-pulse text-sky-500'],
+const MARK: Record<Exclude<ExpState, 'done'>, [label: () => string, body: () => string, icon: PhName, cls: string]> = {
+  open: [() => t('Waiting for your pick'), () => t('Open it and pick the option you want to keep.'), 'circleFill', 'size-2 text-amber-500'],
+  waits: [() => t('Waiting for the pick above it'), () => t('This round is built once you pick an option in the round it comes from.'), 'hourglass', 'size-3.5 text-zinc-400'],
+  stale: [() => t('Built on an option you no longer picked'), () => t('You picked something else above it since, so this round may be out of date.'), 'warning', 'size-3.5 text-rose-500'],
+  building: [() => t('The agent is building it'), () => t('Its options show up here as soon as they are ready.'), 'sparkle', 'size-3.5 animate-pulse text-sky-500'],
 }
 export function Mark({ state, picked }: { state: ExpState; picked?: number }) {
   if (state === 'done') return (
@@ -61,8 +61,8 @@ export function Mark({ state, picked }: { state: ExpState; picked?: number }) {
       <Ph name="checkFill" className="size-3.5" />{picked}
     </span>
   )
-  const [say, icon, cls] = MARK[state], label = say()
-  return <span data-mark={state} title={label} aria-label={label} className="grid size-4 shrink-0 place-items-center"><Ph name={icon} className={cls} /></span>
+  const [say, explain, icon, cls] = MARK[state], label = say()
+  return <span data-mark={state} title={label} data-tip-body={explain()} aria-label={label} className="grid size-4 shrink-0 place-items-center"><Ph name={icon} className={cls} /></span>
 }
 
 /** The one fold control of the tree: it turns instead of swapping, and the arrow keys work it. */

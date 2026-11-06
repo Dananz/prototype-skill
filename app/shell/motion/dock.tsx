@@ -156,8 +156,8 @@ function Tip({ label, kbd, side = 'top', children }: { label: ReactNode; kbd?: s
       <Tooltip.Trigger render={children} />
       <Tooltip.Portal container={uiBox()}>
         <Tooltip.Positioner side={side} sideOffset={8} collisionPadding={8} className="z-[60]">
-          <Tooltip.Popup className="flex max-w-[260px] origin-[var(--transform-origin)] items-center gap-1.5 rounded-md bg-zinc-900 px-2 py-1 text-[11px] font-medium text-white shadow-lg transition-[opacity,scale] duration-150 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0 dark:bg-zinc-700">
-            <span className="min-w-0 truncate">{label}</span>{kbd && <span className="shrink-0 text-white/55">{kbd}</span>}
+          <Tooltip.Popup className="flex max-w-[260px] origin-[var(--transform-origin)] items-center gap-2 rounded-[7px] bg-zinc-900 px-2 py-1.5 text-xs font-medium text-zinc-50 shadow-[0_8px_24px_rgb(0_0_0/0.22),0_0_0_1px_rgb(255_255_255/0.08)] transition-[opacity,scale] duration-150 ease-[cubic-bezier(.2,.9,.25,1)] data-ending-style:opacity-0 data-ending-style:duration-100 data-ending-style:ease-in data-instant:transition-none data-starting-style:scale-[.96] data-starting-style:opacity-0 motion-reduce:data-starting-style:scale-100 dark:bg-zinc-800">
+            <span className="min-w-0 truncate">{label}</span>{kbd && <kbd dir="ltr" className="grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded bg-white/10 px-1 font-mono text-[11px] font-medium text-white/70">{kbd}</kbd>}
           </Tooltip.Popup>
         </Tooltip.Positioner>
       </Tooltip.Portal>
@@ -621,7 +621,7 @@ export function Dock({ player }: { player: Player }) {
   const detail = ctl.composing ? <DockComposer ctl={ctl} /> : <Thread ctl={ctl} compact={busy} />
   const curvesOn = ctl.curves && ctl.p.status === 'ready'
   return (
-    <Tooltip.Provider delay={500}>
+    <Tooltip.Provider delay={200} timeout={500}>
       <div data-motion-bar className="relative border-t border-black/[.07] bg-white pb-[env(safe-area-inset-bottom,0px)] text-[13px] text-zinc-900 [--surface:#fff] dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100 dark:[--surface:var(--color-zinc-950)]">
         <div ref={ref} className="mx-auto w-full max-w-[880px] px-3 sm:px-5">
           {narrow ? (

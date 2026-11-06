@@ -398,7 +398,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
               {n.standIn && <span title={t('#1 stands in until one is picked')} className="rounded bg-zinc-900/[.05] px-1 text-[10px] text-zinc-500 dark:bg-white/10">{t('not picked')}</span>}
               {comment}
               {!shut && !lit && holdsPlace(n) && <Here />}
-              {n.state === 'open' && n.kind === 'exploration' && !comments && <span data-mark="open" title={t('Waiting for your pick')} className="shrink-0 text-[11px] text-amber-600 dark:text-amber-400">{fresh ? tn(fresh, '{n} new', '{n} new') : t('Waiting for you')}</span>}
+              {n.state === 'open' && n.kind === 'exploration' && !comments && <span data-mark="open" title={t('Waiting for your pick')} data-tip-body={t('Open it and pick the option you want to keep.')} className="shrink-0 text-[11px] text-amber-600 dark:text-amber-400">{fresh ? tn(fresh, '{n} new', '{n} new') : t('Waiting for you')}</span>}
               {n.state && n.state !== 'open' && <Mark state={n.state} picked={picked ? numberOf(picked.split('/')[1]) : undefined} />}
             </span>} />
           <Collapse open={!!shut}><Inside>
