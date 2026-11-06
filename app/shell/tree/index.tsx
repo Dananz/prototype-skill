@@ -322,20 +322,26 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
         </>} />
     )
   }
-  const draw = (n: TreeNode, inside = false): React.ReactNode => {
+  /** depth: how many rows above this one stick while what is on screen is inside it. up: the row it hangs under. */
+  const draw = (n: TreeNode, inside = false, depth = 0, up?: TreeNode): React.ReactNode => {
     const here = !!n.route && n.kind !== 'option' && n.route.split('/')[0] === slug
     const lit = n.kind === 'option' ? n.route === input.place : here && !n.children.some(c => c.kind === 'option' && c.route === input.place)
     const shut = n.children.length ? isOpen(n) : undefined
-    const kids = (nest = inside) => <Collapse open={!!shut}><Inside>{n.children.map(c => draw(c, nest))}</Inside></Collapse>
+    const kids = (nest = inside) => <Collapse open={!!shut}><Inside>{n.children.map(c => draw(c, nest, depth + 1, n))}</Inside></Collapse>
+    // The path to what is on screen stays in view: each open row on it sticks under the one above
+    // (0.25rem up, over the list's top padding, so nothing shows through above the first).
+    const stuck = (row: React.ReactNode, wrap?: Record<string, string>) => shut && holdsPlace(n)
+      ? <div {...wrap} data-tree-stuck className="sticky z-[1] bg-[var(--desk-card)]" style={{ top: `calc(${depth} * var(--tree-row) - 0.25rem)` }}>{row}</div>
+      : wrap ? <div {...wrap}>{row}</div> : row
     if (n.kind === 'design') return (
       <div key={n.key}>
-        <Row id={n.key} depth={0} strong open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count}
-          icon={<span className="size-2.5 shrink-0 rounded-full bg-indigo-500" />} label={<span dir="auto">{n.label}</span>} end={nodes[0] === n ? <FoldAll /> : null} />
+        {stuck(<Row id={n.key} depth={0} strong open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count}
+          icon={<span className="size-2.5 shrink-0 rounded-full bg-indigo-500" />} label={<span dir="auto">{n.label}</span>} end={nodes[0] === n ? <FoldAll /> : null} />)}
         {kids()}
       </div>
     )
     // A design or a flow: its caret folds it here, its name goes to its first screen's page (/slug).
-    if (n.kind === 'flow') return <div key={n.key}><Row id={n.key} depth={0} medium open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count} label={<span dir="auto">{n.label}</span>} />{kids()}</div>
+    if (n.kind === 'flow') return <div key={n.key}>{stuck(<Row id={n.key} depth={0} medium open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count} label={<span dir="auto">{n.label}</span>} />)}{kids()}</div>
     if (n.kind === 'section') return (
       <div key={n.key}>
         <div className="mx-1.5 mt-1 flex items-center gap-1.5 pe-1.5" style={{ paddingInlineStart: 2 }}>
@@ -345,13 +351,15 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
           </button>
           {nodes[0] === n && <FoldAll />}
         </div>
-        <Collapse open={!!shut}>{n.children.map(c => draw(c, inside))}</Collapse>
+        <Collapse open={!!shut}>{n.children.map(c => draw(c, inside, depth, up))}</Collapse>
       </div>
     )
     if (n.kind === 'option') return option(n, n.picked ? 'picked' : 'candidate')
     const picked = pickedOf(n)
     const comments = input.counts[n.route!.split('/')[0]] ?? 0
-    const parent = n.kind === 'exploration' && n.on ? n : null
+    // "on #4" only when it isn't the pick of the row it hangs under, which already says #4.
+    const upPick = up && pickedOf(up)
+    const parent = n.kind === 'exploration' && n.on && !(upPick && numberOf(upPick.split('/')[1]) === n.on) ? n : null
     const options = n.children.filter(c => c.kind === 'option'), below = n.children.filter(c => c.kind !== 'option')
     const winner = options.find(c => c.picked), passed = options.filter(c => !c.picked)
     const title = <span dir="auto">{n.label}</span>
@@ -361,25 +369,27 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
     const icon = n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" /> : <Ph name="shuffle" className={'size-3.5 ' + (n.state === 'waits' ? 'text-zinc-300' : n.state === 'open' ? 'text-amber-500' : 'text-violet-500')} />
     const page = () => api.go(n.kind === 'exploration' ? n.route!.split('/')[0] : n.route!)
     const block = () => {
-      // Decided: one block, its name above its winner. Folded it says what it holds; open, what was
-      // built on it comes first and the options passed on stay behind one more row.
+      // Decided: one row, its name with its pick's number at the end (the pick's own link). Its ⋯ and
+      // Cmd + click act on the pick; open, what was built on it comes first and the options passed on
+      // stay behind one more row.
       if (winner && filter !== 'favs') {
         const onIt = winner.route === input.place || lit, hidden = !shut && !onIt && holdsPlace(n)
+        const num = numberOf(winner.route!.split('/')[1])
         return (
           <>
-            <div data-tree-decided className={'mx-1.5 rounded-lg ' + (onIt ? LIT : HOVER)}>
-              <Row flat id={n.key} depth={0} on={lit} open={shut} onCaret={() => flip(n)} onClick={page} stands={winner.route} strong={!parent && !!below.length} medium={!parent && !below.length} icon={icon}
-                label={<span className={parent ? 'font-medium dark:text-zinc-200' : ''}>{title}{parent && <span className="text-[11px] font-normal text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
+            {stuck(
+              <Row id={n.key} depth={0} on={onIt} onPick={winner.route === input.place} open={shut} onCaret={() => flip(n)} onClick={page} mv={winner.route} stands={winner.route} strong={!n.on && !!below.length} medium={!n.on && !below.length} icon={icon}
+                label={<span className={n.on ? 'font-medium dark:text-zinc-200' : ''}>{title}{parent && <span className="text-[11px] font-normal text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
                 end={<span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-zinc-400">{pulse}{comment}{hidden && <Here />}
                   {!shut && !!below.length && <span title={tn(below.length, '{n} exploration built on this', '{n} explorations built on this')} className="flex items-center gap-0.5"><Ph name="gitBranch" className="size-3.5" />{below.length}</span>}
-                  {!shut && !!passed.length && <span title={tn(passed.length, '{n} more option', '{n} more options')} className="flex items-center gap-0.5"><Ph name="rows" className="size-3.5" />{passed.length}</span>}</span>} />
-              <Row flat slim id={winner.key} depth={0} on={winner.route === input.place} onClick={() => api.go(winner.route!)} mv={winner.route}
-                icon={<Mark state="done" picked={numberOf(winner.route!.split('/')[1])} />}
-                label={<span className="flex min-w-0 items-center gap-1 text-[12px] text-zinc-500 dark:text-zinc-400"><span dir="auto" className="truncate">{winner.label}</span>{favOf(winner.route!) && <Ph name="starFill" className="size-3 shrink-0 text-amber-400" />}</span>}
-                end={optionEnd(winner)} />
-            </div>
+                  {!shut && !!passed.length && <span title={tn(passed.length, '{n} more option', '{n} more options')} className="flex items-center gap-0.5"><Ph name="rows" className="size-3.5" />{passed.length}</span>}
+                  {winner.became && <span className="min-w-0 truncate text-indigo-500" dir="auto">{t('became {name}', { name: winner.became })}</span>}
+                  <button type="button" data-tree-picked onClick={() => { selection.clear(); api.go(winner.route!) }} title={`${t('Picked #{n}', { n: num })}: ${winner.label}`} aria-label={`${t('Picked #{n}', { n: num })}: ${winner.label}`}
+                    className="-me-1 flex h-6 items-center gap-0.5 rounded-md px-1 font-medium text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400">
+                    {favOf(winner.route!) && <Ph name="starFill" className="size-3 text-amber-400" />}<Ph name="checkFill" className="size-3.5" />{num}</button></span>} />,
+              { 'data-tree-decided': '' })}
             <Collapse open={!!shut}><Inside>
-              {below.map(c => draw(c, inside || windowed))}
+              {below.map(c => draw(c, inside || windowed, depth + 1, n))}
               {below.length > 0 && passed.length > 0 ? <PassedRows n={n} more={passed.length} hold={passed.some(c => c.route === input.place)}>{options.map(c => option(c, c.picked ? 'picked' : 'passed'))}</PassedRows> : passed.length > 0 && options.map(c => option(c, c.picked ? 'picked' : 'passed'))}
             </Inside></Collapse>
           </>
@@ -388,7 +398,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
       const fresh = passed.filter(c => isNew(c.route!)).length
       return (
         <>
-          <Row id={n.key} depth={0} on={lit} open={shut} onCaret={() => flip(n)} mv={n.route}
+          {stuck(<Row id={n.key} depth={0} on={lit} open={shut} onCaret={() => flip(n)} mv={n.route}
             /* An exploration's name goes to its own page (/slug), its card open in the gallery; a screen's opens it. */
             onClick={() => { if (!shut) flip(n); page() }}
             icon={icon}
@@ -400,11 +410,11 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
               {!shut && !lit && holdsPlace(n) && <Here />}
               {n.state === 'open' && n.kind === 'exploration' && !comments && <span data-mark="open" title={t('Waiting for your pick')} data-tip-body={t('Open it and pick the option you want to keep.')} className="shrink-0 text-[11px] text-amber-600 dark:text-amber-400">{fresh ? tn(fresh, '{n} new', '{n} new') : t('Waiting for you')}</span>}
               {n.state && n.state !== 'open' && <Mark state={n.state} picked={picked ? numberOf(picked.split('/')[1]) : undefined} />}
-            </span>} />
+            </span>} />)}
           <Collapse open={!!shut}><Inside>
             {n.state === 'stale' && <StaleNote n={n} protos={input.protos} />}
             {options.map(c => option(c, c.picked ? 'picked' : 'candidate'))}
-            {below.map(c => draw(c, inside || windowed))}
+            {below.map(c => draw(c, inside || windowed, depth + 1, n))}
           </Inside></Collapse>
         </>
       )
@@ -471,7 +481,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
         })}
       </div>}
       {!desk && chosen.length > 0 && <ChosenBar top api={api} routes={chosen} />}
-      <div ref={list} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3 pt-1 text-[13px]">
+      <div ref={list} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain pb-3 pt-1 text-[13px]">
         {nodes.length ? nodes.map(n => draw(n))
           : <p className="px-4 py-6 text-center text-[12px] text-zinc-400">{filter === 'open' ? t('Nothing waits for you') : filter === 'mine' ? t('Nothing from this conversation yet') : filter === 'favs' ? t('No favorites yet') : t('No prototypes yet')}</p>}
       </div>
