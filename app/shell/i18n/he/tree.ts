@@ -3,6 +3,7 @@
 // screen "מסך"; variant numbers and placeholders stay as they are.
 export default {
   'Project tree': 'עץ הפרויקט',
+  'Resize states': 'שנה את גובה המצבים',
   'Selected rows': 'שורות שנבחרו',
   '1 selected': 'נבחר אחד',
   '{n} selected': '{n} נבחרו',
