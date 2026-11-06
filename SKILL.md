@@ -41,7 +41,7 @@ preferences: System, Light or Dark appearance, instant comment sending (off by d
 drafts can be sent together), where the comments island rests and which news grows it (or,
 under Legacy, a docked comments panel: the list as a side panel tab with a Comment button in the
 bar, as before the island, on wide screens), Grid or
-List overviews, and whether the sidebar and review panel stay open on wide screens. It also resets sidebar/column widths and lists keyboard shortcuts.
+List overviews, whether the sidebar and review panel stay open on wide screens, and Show where to click (on by default: a click on a design that does nothing briefly outlines, in purple, what can be clicked on screen right now). It also resets sidebar/column widths and lists keyboard shortcuts.
 Its Session category is the session's one home: its folder and start time, the public URL to
 copy, whether it is live and when it was last edited, when it stops when idle and when it is
 deleted, keeping it forever, stopping its server, and a listener restart message to paste in
