@@ -260,6 +260,17 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-shoot="ctx-select"]').click()`)
     await until(page, `${chosen} === 'opt:tcta-copy/A,opt:tcta-copy/B'`, 'Select should choose the row, and the row on screen')
   } finally { page.close() }
+  // A tablet's width (640-1023px) keeps the tree docked: the classic columns, in their drawer or the
+  // sidebar, are for when Settings turns the tree off, never a fallback below the desk's width.
+  page = await openPage(`${local}thome/B?tree=1`, { width: 820, height: 900 })
+  try {
+    await until(page, `!!document.querySelector('[data-tree-row="screen:thome"]') && document.querySelector('[data-tree-side]').getBoundingClientRect().width > 0`, 'at a tablet width the tree should be docked')
+    await page.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: '\\\\', metaKey: true, bubbles: true }))`)
+    await until(page, `document.querySelector('[data-tree-side]').getBoundingClientRect().width === 0`, '⌘\\\\ should hide the tree at a tablet width')
+    await page.run(`document.querySelector('[data-bar] [data-act="side:1"]').click()`)
+    await until(page, `document.querySelector('[data-tree-side]').getBoundingClientRect().width > 0`, 'Show sidebar should bring the tree back')
+    assert(await page.run(`!document.querySelector('[data-drawer] *') && !document.querySelector('[data-side] *')`), 'with the tree on, the classic columns should never be drawn at a tablet width')
+  } finally { page.close() }
   // On a phone with the tree on: a two-line bar (the session's mark, the title, Pick), the tree in a
   // sheet at half the screen (its handle takes it to full), a row's ⋯ opening that variant's decide
   // tiles, and the pill's name opening the tree instead of the variant sheet.
