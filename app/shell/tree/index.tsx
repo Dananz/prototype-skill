@@ -135,15 +135,70 @@ function Shelf({ nodes, archive, slug, draw, go }: { nodes: TreeNode[]; archive:
 }
 
 /** The sidebar's foot: the open variant's states, in one place however far the tree scrolls. It folds to
- *  one line naming the state showing, and stays folded (kept in this browser). */
+ *  one line naming the state showing, and its top edge drags it taller or shorter; dragged down past its
+ *  head it folds. Both stay as left (kept in this browser). */
+const DOCK_HEAD = 36, DOCK_MIN = 96
+const keep = (k: string, v: string) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k) } catch { /* private window */ } }
 function Dock({ dock }: { dock: NonNullable<TreeInput['dock']> }) {
   const [shut, setShut] = useState(() => { try { return localStorage.getItem('proto-tree-dock') === '0' } catch { return false } })
-  const flip = () => { const next = !shut; setShut(next); try { localStorage.setItem('proto-tree-dock', next ? '0' : '1') } catch { /* private window */ } }
+  const fold = (next: boolean) => { setShut(next); keep('proto-tree-dock', next ? '0' : '1') }
+  const flip = () => fold(!shut)
+  // The height dragged to, or none: as tall as its states, up to 45% of the sidebar.
+  const [h, setH] = useState<number | null>(() => { try { const v = Number(localStorage.getItem('proto-tree-dock-h')); return v > 0 ? v : null } catch { return null } })
+  const [dragging, setDragging] = useState(false)
+  const box = useRef<HTMLElement>(null)
+  const most = () => Math.max(DOCK_MIN, (box.current?.parentElement?.clientHeight ?? 800) * 0.75)
+  const size = (v: number | null) => {
+    const n = v == null ? null : Math.round(Math.min(most(), Math.max(DOCK_MIN, v)))
+    setH(n); keep('proto-tree-dock-h', n == null ? '' : String(n))
+    return n
+  }
+  const grab = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !box.current) return
+    e.preventDefault()
+    const grip = e.currentTarget, bottom = box.current.getBoundingClientRect().bottom
+    grip.setPointerCapture(e.pointerId)
+    setDragging(true)
+    document.documentElement.style.cursor = 'row-resize'
+    let folded = shut, last = h
+    const move = (m: PointerEvent) => {
+      const want = bottom - m.clientY, f = want < DOCK_HEAD + 24
+      if (f !== folded) { folded = f; setShut(f) }
+      if (!f) { last = Math.round(Math.min(most(), Math.max(DOCK_MIN, want))); setH(last) }
+    }
+    const end = () => {
+      grip.removeEventListener('pointermove', move)
+      setDragging(false)
+      document.documentElement.style.cursor = ''
+      fold(folded)
+      if (last != null) size(last)
+    }
+    grip.addEventListener('pointermove', move)
+    grip.addEventListener('lostpointercapture', end, { once: true })
+  }
+  const nudge = (e: React.KeyboardEvent) => {
+    const d = e.key === 'ArrowUp' ? 16 : e.key === 'ArrowDown' ? -16 : 0
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); return }
+    if (!d) return
+    e.preventDefault()
+    if (shut) { if (d > 0) fold(false); return }
+    const now = h ?? box.current?.offsetHeight ?? DOCK_MIN
+    if (d < 0 && now <= DOCK_MIN) fold(true)
+    else size(now + d)
+  }
   // The state showing stays in sight, however it was reached (up and down from anywhere walk the list).
   const list = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => { list.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'nearest' }) }, [dock.html, shut])
+  const sized = h != null && !shut
   return (
-    <section data-tree-dock data-shut={shut || undefined} aria-label={dock.title} className="flex max-h-[45%] shrink-0 flex-col border-t border-black/[.06] text-[13px] dark:border-white/10">
+    <section ref={box} data-tree-dock data-shut={shut || undefined} aria-label={dock.title} style={sized ? { height: h, maxHeight: '75%' } : undefined}
+      className={'relative flex shrink-0 flex-col border-t border-black/[.06] text-[13px] dark:border-white/10 ' + (sized ? '' : 'max-h-[45%]')}>
+      <div data-tree-dock-grip role="separator" aria-orientation="horizontal" aria-label={t('Resize states')} tabIndex={0}
+        aria-valuemin={DOCK_MIN} aria-valuenow={shut ? 0 : h ?? undefined} title={t('Drag to resize · double-click to reset')}
+        onPointerDown={grab} onDoubleClick={() => { size(null); fold(false) }} onKeyDown={nudge}
+        className="group/g absolute inset-x-0 top-0 z-10 h-2 -translate-y-1/2 cursor-row-resize touch-none focus-visible:outline-none">
+        <span className={'absolute inset-x-0 top-1/2 h-px -translate-y-1/2 transition-colors group-hover/g:h-0.5 group-hover/g:bg-sky-500/50 group-focus-visible/g:h-0.5 group-focus-visible/g:bg-sky-500 ' + (dragging ? 'h-0.5 bg-sky-500' : '')} />
+      </div>
       <button type="button" data-tree-dock-head aria-expanded={!shut} onClick={flip} className="flex h-9 w-full shrink-0 items-center gap-1.5 px-3 text-start text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
         <Ph name={shut ? 'caretRight' : 'caretDown'} className={'size-2.5 ' + (shut && rtl ? '-scale-x-100' : '')} />
         <span dir="auto" className="min-w-0 flex-1 truncate">{dock.title}</span>
@@ -151,7 +206,7 @@ function Dock({ dock }: { dock: NonNullable<TreeInput['dock']> }) {
           ? <span className="flex min-w-0 items-center gap-1.5"><span dir="auto" className="truncate font-medium text-zinc-900 dark:text-white">{dock.state}</span><span className="shrink-0 tabular-nums text-zinc-400">{dock.at + 1}/{dock.total}</span></span>
           : <span className="shrink-0 tabular-nums">{tn(dock.count, '{n} state', '{n} states')}</span>)}
       </button>
-      {!shut && <div ref={list} data-tree-dock-list className="min-h-0 overflow-y-auto overscroll-contain px-1.5 pb-2" dangerouslySetInnerHTML={{ __html: dock.html }} />}
+      {!shut && <div ref={list} data-tree-dock-list className={'min-h-0 overflow-y-auto overscroll-contain px-1.5 pb-2 ' + (sized ? 'flex-1' : '')} dangerouslySetInnerHTML={{ __html: dock.html }} />}
     </section>
   )
 }
