@@ -95,7 +95,7 @@ const html = (s: string) => h('span', { className: 'contents', dangerouslySetInn
 
 // The variant's states on a phone, opened from the state line in the pill: what the desktop
 // sidebar lists under the variants (each state with its note), and Autoplay, All states and
-// Compare at its foot. The same drawer as the variant sheet.
+// History at its foot. The same drawer as the variant sheet.
 function StatesSheet(p: StatesSheetProps) {
   const row = (r: StateSheetRow): ReactNode => h('button', {
     key: r.id || 'rest', type: 'button', 'aria-current': r.on, 'data-shoot': `sheet-state-${r.id || 'rest'}`, onClick: () => p.onState(r.id),

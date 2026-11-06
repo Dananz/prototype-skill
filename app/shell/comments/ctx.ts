@@ -11,9 +11,9 @@ export type Host = {
   /** The stage-sized layer the pins, outlines and composer are drawn on. */
   layer: HTMLElement
   /** The mounted design of the variant on screen (in a device view's frame while one is on); null
-   *  where comments are off (a lobby, all states or autoplay). Compare provides a scope containing both mounts. */
+   *  where comments are off (a lobby, all states or autoplay). Side by side provides a scope containing every pane's mount. */
   mount: () => HTMLElement | null
-  /** Whether another variant is visible beside the current one in Compare. */
+  /** Whether another variant is visible beside the current one, side by side. */
   visible?: (place: { proto: string; variant: string; state?: string }) => boolean
   /** The device view while one is on (view/): its layout (none for the stage's own artboard), and what is under a point of the page in
    *  its frame (the element, and the point in the frame's own px). */
@@ -27,7 +27,7 @@ export type Host = {
   variantMentions?: () => Target[]
   /** Draws a variant live in `el` at that size, as a picture; returns how to let it go. */
   mountThumb?: (el: HTMLElement, proto: string, variant: string, w: number, h: number) => () => void
-  /** An opted-in compare surface can turn a guarded cross-pane press into a reference. */
+  /** An opted-in side-by-side surface can turn a guarded cross-pane press into a reference. */
   onGuardPick?: (el: HTMLElement) => boolean
   onReferenceComment?: (item: Item) => boolean
   /** Posts a batch; resolves the batch's id, and how each decision in it went. */

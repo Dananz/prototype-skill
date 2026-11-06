@@ -443,7 +443,7 @@ if (process.argv.includes('--compare-comments-only')) {
   await commentCompareChecks({ proto, app, openPage, fail })
   proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
-  console.log('OK: focused Compare comments checks')
+  console.log('OK: focused side-by-side comments checks')
   process.exit(0)
 }
 

@@ -106,7 +106,7 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / .04);
 }
 
-/* Compare: what a variant marks as new (data-diff) is outlined on its side. */
+/* Side by side: what a variant marks as new (data-diff) is outlined in every pane but the first. */
 [data-compare] [data-diff] { outline: 2px dashed #f59e0b; outline-offset: 3px; border-radius: 6px; }
 
 /* The Try it spotlight (spotlight.ts): the arrow draws itself, labels rise in, rings fade in. */

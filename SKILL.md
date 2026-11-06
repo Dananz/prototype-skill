@@ -20,7 +20,7 @@ variants (on a phone, one solid bar at the foot: the comments island over a pill
 with a menu for the page's tools, and the columns as a sheet you drill into; with the project tree
 on, a two-line bar instead: the session's mark opens the menu, the title opens the tree in a sheet at
 half the screen (its handle takes it to full) with the state line under it, and Pick opens the
-variant's tiles: Pick, Favorite, More like this, Build it, Comment, Share, then Copy link, Compare and
+variant's tiles: Pick, Favorite, More like this, Build it, Comment, Share, then Copy link and
 Pick with a note; a tree row's ⋯ opens the same tiles for that variant), a comments island
 floating over the stage, edge arrows, a focus mode with a dock, light and dark, phone frames, "editing" dots, a
 strip naming the variant your requests change). You only write variant files.
@@ -82,10 +82,10 @@ the comment bar while the design scrolls down; its count opens the list in the b
 opens as a drawer (a swipe down puts it away), the pill's end is Tweaks, else the layouts, else the
 star, and two fingers zoom the design only (Fit resets it).
 
-Compare uses the same island, numbered pins, screenshots, drafts, sending and agent
-replies as a single variant. Click Select (or press C), then choose something in either pane.
-While writing on one variant, click an element or existing comment in the other pane to reference
-it. The variants do not need matching elements. Type `@` in any comment box for the shelf: every
+Variants side by side (chosen in the tree, above) use the same island, numbered pins, screenshots,
+drafts, sending and agent replies as a single variant. Click Select (or press C), then choose
+something in any pane. While writing on one variant, click an element or existing comment in
+another pane to reference it. The variants do not need matching elements. Type `@` in any comment box for the shelf: every
 variant in the project as a live picture, Nearby first (what this one was made from, what sits beside
 it, what was made from it), with Picks and All beside it and the words after `@` searching every name.
 A tap tags it where the caret is and stays open for another (a second tap takes it back); the arrow
@@ -582,7 +582,7 @@ have to find (a menu, a drawer, a step, an empty state, anything one variant add
 `meta.ts` next to `variants`. The sidebar then lists the open variant's states under its
 columns (with the project tree on, at the sidebar's foot, and each variant's row counts them; with
 the sidebar hidden, behind the tool strip's grid button), each with its line, beside Autoplay, All
-states and Compare. On a phone, the pill says
+states and History. On a phone, the pill says
 which state is showing under the variant's name, and a tap on it opens the same list as a sheet:
 
 ```
@@ -604,7 +604,7 @@ which state is showing under the variant's name, and a tap on it opens the same 
   to the same selectors; a state only some variants have lists them in `only`.
 - A state's `about`: the first variant's note says what the state is; the others say only what
   changed, or what it is when only they have it (both shown in amber). No note means unchanged.
-- Put `data-diff` on what a variant adds; Compare outlines it.
+- Put `data-diff` on what a variant adds; side by side outlines it in every pane but the first.
 - Mark what opens what: the root of every part that opens (a menu, a popup, a sheet, a dialog, a
   tab's panel) gets `data-opened-by="<selector of the control that opens it>"`, inside the variant
   (`<div data-shoot="phase-menu" data-opened-by="[data-shoot=phase-button]">`). A comment on
