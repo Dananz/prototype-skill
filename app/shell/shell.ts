@@ -22,7 +22,7 @@ import { createTweakControls, createTweaksDrawer, stepOption, stepped } from './
 import { copy } from './copy'
 import { createSheet, createMenuSheet, createStatesSheet, createTrySheet, createPanelSheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
-import { describe as describeComment, targetMount, wholeTarget as wholeComment } from './comments/dom'
+import { describe as describeComment } from './comments/dom'
 import { plain as commentText } from './comments/ui'
 import { createComments, type MenuRow, type Subject } from './comments/index'
 import { islandPrefs } from './comments/island-prefs'
@@ -82,10 +82,9 @@ const tweaksDot = '<span data-tweaks-dot aria-hidden="true" class="pointer-event
 export type Session = { agent?: Agent; id: string; conversation?: string; name: string; lang?: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
 type Mount = (el: HTMLElement, component: any) => () => void
 // A variant can be shown in one of its states, or through a tool: all its states at once
-// (all), playing through them (play), next to another variant (compare), or next to one of its
-// own earlier versions (history).
-type Tool = 'play' | 'all' | 'compare' | 'history'
-const TOOL_LIST: Tool[] = ['play', 'all', 'compare', 'history']
+// (all), playing through them (play), or next to one of its own earlier versions (history).
+type Tool = 'play' | 'all' | 'history'
+const TOOL_LIST: Tool[] = ['play', 'all', 'history']
 type Place = { view: 'session' } | { view: 'proto'; proto: string } | { view: 'variant'; proto: string; variant: string; state?: string; tool?: Tool }
 type Layer = { el: HTMLElement; refs: unknown[]; ready: Promise<unknown>; dispose: () => void; player?: { toggle: () => void; jump: (i: number) => void }; remount?: () => Promise<unknown>; refresh?: () => void }
 // Comments sent from the page to the agent running the session (`proto inbox`), and what came back.
@@ -147,7 +146,6 @@ const INTERACTIVE = 'input, textarea, select, [contenteditable=""], [contentedit
 const TOOLS: Record<Tool, { name: string; icon: string; hint: string }> = {
   play: { name: t('Autoplay'), icon: 'play', hint: t('Clicks through every state for you') },
   all: { name: t('All states'), icon: 'grid', hint: t('Every state on one page') },
-  compare: { name: t('Compare'), icon: 'diff', hint: t('Side by side, in the same state') },
   history: { name: t('History'), icon: 'clock', hint: t('An earlier version beside this one') },
 }
 
@@ -266,7 +264,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     lastEdit: 0,
     editing: null as null | { proto: string; variant: string },
     status: null as Status | null,
-    vs: new Map<string, string>(),
     // The earlier version History shows, per variant ("pricing/C"); none chosen: the newest.
     ver: new Map<string, number>(),
     playing: '' as string,
@@ -344,7 +341,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const stateOf = (p: Proto, v: string, id?: string) => (id ? statesOf(p, v).find(s => s.id === id) : undefined)
   const refOf = (p: Proto) => p.variants[0]?.id ?? ''
   const changed = (p: Proto, v: string, s: State) => v !== refOf(p) && !!s.about?.[v]
-  const toolOk = (p: Proto, v: string, t?: Tool) => !t || (t === 'compare' ? p.variants.length > 1 : t === 'history' ? versionsOf(p, v).length > 0 : statesOf(p, v).length > 0)
+  const toolOk = (p: Proto, v: string, t?: Tool) => !t || (t === 'history' ? versionsOf(p, v).length > 0 : statesOf(p, v).length > 0)
   const versionsOf = (p: Proto, v: string) => p.versions?.[v] ?? []
   /** The version History shows for a variant: the one chosen, else the newest. */
   const versionOf = (p: Proto, v: string) => { const all = versionsOf(p, v), n = st.ver.get(`${p.id}/${v}`); return all.find(x => x.n === n) ?? all.at(-1) }
@@ -378,7 +375,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (p.view === 'variant') {
       const q = byId(proto)!
       if (state && stateOf(q, variant, state)) p.state = state
-      if (tool && TOOLS[tool] && toolOk(q, variant, tool)) p.tool = tool
+      if (tool && Object.hasOwn(TOOLS, tool) && toolOk(q, variant, tool)) p.tool = tool
     }
     return p
   }
@@ -859,7 +856,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // The tool strip (tree mode, a wide page): down the stage's start, as in a drawing app, over the
   // gallery too. Its head walks and decides the screen (Tour, Decide), then Move and Comment, the three
   // layouts (or a phone's scale), the design's own tools (Tweaks, Try it, copy options, motion, its
-  // states with Autoplay, Compare and History), then Fit and Focus mode. Over the gallery the screen's tools are there but
+  // states with Autoplay and History), then Fit and Focus mode. Over the gallery the screen's tools are there but
   // off, so nothing moves between the two. Each opens its menu beside the strip.
   const strip = root.querySelector<HTMLElement>('[data-strip]')!
   const stripOn = () => treeOn && !framed && !st.focus && !phoneMq.matches
@@ -895,8 +892,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       : viewOk() ? [...ORDER.map(z => tool(`size:${z}`, `strip-size-${z}`, sizeIcon(z, z === 'tablet' && st.view.land), `${SIZES[z].name} · ${dims(z, st.view.land).w} × ${dims(z, st.view.land).h}`, '', shownSize() === z)), frameOn() ? zoomBtn() : '']
       : [zoomBtn()]
     const sts = inScreen && p ? statesOf(p, pl.variant).length + TOOL_LIST.filter(x => toolOk(p, pl.variant, x)).length : 0
-    const statesBtn = sts ? `<div class="relative">${tool('open:states-pop', 'strip-states', 'grid', t('States, Autoplay, Compare'), '', st.open === 'states-pop')}${pop(st.open === 'states-pop', `<div data-strip-states class="w-72 p-1.5">${variantHere(false)}</div>`, 'start-0 top-0', 'states-pop')}</div>` : ''
-    const own = !inScreen ? [off('strip-tweaks', 'tweaks', t('Tweaks')), off('strip-try', 'key', t('Try it')), off('strip-copy', 'text', t('Copy options')), off('strip-motion', 'curves', t('Motion')), dockHome() ? '' : off('strip-states', 'grid', t('States, Autoplay, Compare'))]
+    const statesBtn = sts ? `<div class="relative">${tool('open:states-pop', 'strip-states', 'grid', t('States and Autoplay'), '', st.open === 'states-pop')}${pop(st.open === 'states-pop', `<div data-strip-states class="w-72 p-1.5">${variantHere(false)}</div>`, 'start-0 top-0', 'states-pop')}</div>` : ''
+    const own = !inScreen ? [off('strip-tweaks', 'tweaks', t('Tweaks')), off('strip-try', 'key', t('Try it')), off('strip-copy', 'text', t('Copy options')), off('strip-motion', 'curves', t('Motion')), dockHome() ? '' : off('strip-states', 'grid', t('States and Autoplay'))]
       : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), motionBtn(), dockHome() ? '' : statesBtn, replayBtn()]
     const fit = inScreen && frameOn() ? tool('center', 'strip-fit', 'center', t('Center the design'), '⌘0') : ''
     // Focus mode hides the strip with the rest of the chrome; the dock, Esc or F bring it back.
@@ -988,19 +985,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const proto = byId(p.proto)!
     if (p.view === 'proto') return [st.stack, nestKey(), proto.title, proto.kind, ...lobbyOrder(proto).flatMap(v => [v.id, v.name, v.file])]
     const v = proto.variants.find(v => v.id === p.variant)!
-    return [proto.kind, v.file, p.state, p.tool, p.tool === 'compare' ? otherOf(proto, v.id) : '', p.tool === 'history' ? versionOf(proto, v.id)?.file ?? '' : '', p.tool === 'history' ? versionsOf(proto, v.id).length : 0, JSON.stringify(proto.states), ...(p.tool === 'compare' ? proto.variants.map(x => x.file) : []), chosenHere()?.map(x => x.file).join() ?? '']
+    return [proto.kind, v.file, p.state, p.tool, p.tool === 'history' ? versionOf(proto, v.id)?.file ?? '' : '', p.tool === 'history' ? versionsOf(proto, v.id).length : 0, JSON.stringify(proto.states), chosenHere()?.map(x => x.file).join() ?? '']
   }
   /** A variant's file (/src/protos/today/C.tsx) as its route, today/C. */
   const routeOfFile = (file: string) => { const [, , , slug = '', name = ''] = file.split('/'); return `${slug}/${name.replace(/\.\w+$/, '')}` }
-  // What a variant is compared with: the one chosen, else the reference (else the next one).
-  // What a tool's button adds after its name: the variant compared with, or how many versions there are.
-  const toolDetail = (p: Proto, v: string, tl: Tool) => tl === 'compare' ? variantRef(p, otherOf(p, v)) : tl === 'history' ? `(${versionsOf(p, v).length})` : undefined
-  const otherOf = (p: Proto, v: string) => {
-    const want = st.vs.get(p.id)
-    if (want && want !== v && p.variants.some(x => x.id === want)) return want
-    const ref = refOf(p)
-    return ref !== v ? ref : p.variants.find(x => x.id !== v)?.id ?? v
-  }
+  // What a tool's button adds after its name: how many versions there are.
+  const toolDetail = (p: Proto, v: string, tl: Tool) => tl === 'history' ? `(${versionsOf(p, v).length})` : undefined
 
   // ---------- loading designs ----------
   // A variant's module loads the first time it is shown and is kept by file, so a session
@@ -1160,11 +1150,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       } else if (p.tool === 'all') {
         el.innerHTML = `<div class="h-full overflow-auto">${allStates(proto, v)}</div>`
         mountAll([{ v }, ...statesOf(proto, v.id).map(s => ({ v, s }))], true)
-      } else if (p.tool === 'compare') {
-        const o = proto.variants.find(x => x.id === otherOf(proto, v.id))!
-        const pair = [o, v].sort((a, b) => proto.variants.indexOf(a) - proto.variants.indexOf(b))
-        el.innerHTML = compareView(proto, v, o, s, pair)
-        mountAll(pair.map(x => ({ v: x, s: stateOf(proto, x.id, p.state) })), false)
       } else if (p.tool === 'history') {
         const old = versionOf(proto, v.id)!
         el.innerHTML = historyView(proto, v, old, s)
@@ -1293,37 +1278,17 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // The variants chosen in the tree, side by side: up to four in a row, more as tiles in a grid that
   // scrolls. Each keeps a header with its number, name and a way out of the selection, and comments
-  // work in it as they do in Compare.
+  // work in it as on one variant: Select picks in any pane, and a whole-variant comment goes to each one on.
   function chosenView(proto: Proto, v: Variant, list: Variant[]) {
     const grid = list.length > 4, here = list.some(x => x.id === v.id) ? v.id : list[0].id
     const head = (x: Variant) => { const out = t('Take {v} out of the selection', { v: variantRef(proto, x.id) }); return `<div class="flex h-9 shrink-0 items-center gap-2 border-b border-black/[.07] pe-1 ps-3 text-xs dark:border-white/10"><b class="shrink-0">${variantRef(proto, x.id)}</b><span dir="auto" class="min-w-0 truncate text-zinc-500">${esc(x.name)}</span><button data-act="unchoose:${esc(proto.id)}:${x.id}" aria-label="${esc(out)}" title="${esc(out)}" class="ms-auto grid size-8 shrink-0 place-items-center rounded-md text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white">${ic('x', 'size-3.5')}</button></div>` }
     const pane = (x: Variant) => `<div data-chosen-pane="${esc(proto.id)}/${x.id}" class="flex min-h-0 min-w-0 flex-1 flex-col transition-opacity duration-200">${head(x)}
-        <div data-fit data-chipbox class="relative min-h-0 flex-1 [contain:layout_paint]"><div class="absolute inset-0 overflow-auto">${frameOf(proto)}</div></div></div>`
+        <div data-fit data-chipbox ${x.id !== list[0].id ? 'data-compare' : ''} class="relative min-h-0 flex-1 [contain:layout_paint]"><div class="absolute inset-0 overflow-auto">${frameOf(proto)}</div></div></div>`
     const tile = (x: Variant) => `<div data-chosen-pane="${esc(proto.id)}/${x.id}" class="flex min-w-0 flex-col overflow-hidden rounded-xl bg-white ring-1 ring-black/[.07] transition-opacity duration-200 dark:bg-zinc-950 dark:ring-white/10">${head(x)}
-        <div data-chipbox class="relative aspect-[16/10] overflow-hidden [contain:layout_paint]"><div data-chosen-zoom style="width:1200px;height:750px">${frameOf(proto)}</div></div></div>`
+        <div data-chipbox ${x.id !== list[0].id ? 'data-compare' : ''} class="relative aspect-[16/10] overflow-hidden [contain:layout_paint]"><div data-chosen-zoom style="width:1200px;height:750px">${frameOf(proto)}</div></div></div>`
     return `<div data-comment-compare data-comment-chosen data-comment-current="${esc(proto.id)}/${here}" class="h-full">${grid
       ? `<div class="h-full overflow-auto p-3 pb-28"><div class="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">${list.map(tile).join('')}</div></div>`
       : `<div class="flex h-full min-h-0 flex-col divide-y divide-black/[.07] md:flex-row md:divide-x md:divide-y-0 dark:divide-white/10">${list.map(pane).join('')}</div>`}</div>`
-  }
-
-  function compareView(proto: Proto, v: Variant, o: Variant, s: State | undefined, pair: Variant[]) {
-    const ref = refOf(proto)
-    // The note shown is the one that says what changed: the non-reference side's.
-    const side = v.id !== ref ? v : o
-    const line = s ? (s.about?.[side.id] && side.id !== ref ? s.about[side.id] : '') : proto.about[side.id] ?? ''
-    const others = proto.variants.filter(x => x.id !== v.id)
-    const diffs = statesOf(proto, v.id).filter(x => changed(proto, v.id, x) || changed(proto, o.id, x))
-    const pane = (x: Variant) => `<div class="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div class="flex h-9 shrink-0 items-center gap-2 border-b border-black/[.07] px-3 text-xs dark:border-white/10"><b>${variantRef(proto, x.id)}</b><span dir="auto" class="truncate text-zinc-500">${esc(x.name)}</span><span class="ms-auto flex shrink-0 items-center gap-1">${x.id === v.id ? '' : `<button data-act="pvs:${esc(proto.id)}:${x.id}:${esc(s?.id ?? '')}" class="shrink-0 rounded-md px-1.5 py-1 text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white">${t('Open {v}', { v: variantRef(proto, x.id) })}</button>`}<button data-act="compare-comment:${x.id}" aria-label="${esc(t('Comment on variant {v}', { v: variantRef(proto, x.id) }))}" title="${esc(t('Comment on this variant'))}" class="grid size-8 shrink-0 place-items-center rounded-md text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">${ic('comment', 'size-3.5')}</button></span></div>
-        <div data-fit data-chipbox ${x.id !== ref ? 'data-compare' : ''} class="relative min-h-0 flex-1 [contain:layout_paint]"><div class="absolute inset-0 overflow-auto">${frameOf(proto)}</div></div></div>`
-    return `<div data-comment-compare data-comment-current="${esc(proto.id)}/${v.id}" class="flex h-full flex-col">
-      <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-amber-500/30 bg-amber-50 px-3 py-2 text-xs dark:bg-amber-500/10">
-        <span class="flex items-center gap-1.5 font-semibold text-amber-900 dark:text-amber-200">${t('{v} against', { v: variantRef(proto, v.id) })}${others.length > 1 ? `<span class="flex gap-0.5 rounded-md bg-amber-500/10 p-0.5">${others.map(x => `<button data-act="vs:${x.id}" aria-pressed="${x.id === o.id}" class="h-6 min-w-6 rounded px-1.5 ${x.id === o.id ? 'bg-white text-amber-900 shadow-sm dark:bg-amber-200 dark:text-amber-950' : 'text-amber-800 hover:bg-amber-500/15 dark:text-amber-200'}">${variantLabel(proto, x.id)}</button>`).join('')}</span>` : ` ${variantRef(proto, o.id)}`}</span>
-        <span class="min-w-0 flex-1 text-amber-900/80 dark:text-amber-200/80"><b class="font-medium">${s?.name ? bd(s.name) : t('At rest')}</b>${line ? ` · ${bd(line)}` : ''}</span>
-        ${diffs.length ? `<button data-act="nextdiff" class="flex h-8 items-center gap-1 rounded-lg bg-amber-500/15 px-2.5 font-medium text-amber-900 hover:bg-amber-500/25 dark:text-amber-200">${t('Next difference')}${ic('right', 'size-3.5')}</button>` : ''}
-        ${closeTool(proto, v, 'compare', t('Stop comparing'))}
-      </div>
-      <div class="flex min-h-0 flex-1 flex-col divide-y divide-black/[.07] md:flex-row md:divide-x md:divide-y-0 dark:divide-white/10">${pair.map(pane).join('')}</div></div>`
   }
 
   // An earlier version of the variant (left) beside it now (right), in the same state. The bar picks
@@ -1733,7 +1698,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // Where in the variant: its state, and the tool it is shown through.
     const pv = st.place.view === 'variant' ? st.place : null
     const stateName = p && pv ? stateOf(p, pv.variant, pv.tool === 'play' ? st.playing : pv.state)?.name ?? '' : ''
-    const toolName = pv?.tool ? pv.tool === 'compare' ? t('vs {variant}', { variant: otherOf(p!, pv.variant) }) : pv.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, pv.variant)?.n ?? '' }) : TOOLS[pv.tool].name : ''
+    const toolName = pv?.tool ? pv.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, pv.variant)?.n ?? '' }) : TOOLS[pv.tool].name : ''
     const where = pv ? [toolName, stateName].filter(Boolean).join(' · ') : ''
     // A state name alone takes its own direction; after the tool's name it is isolated in the line.
     const whereHtml = toolName ? `${esc(toolName)}${stateName ? ` · ${bd(stateName)}` : ''}` : esc(stateName)
@@ -1752,7 +1717,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const dv = view === 'variant' && p && v ? v : null
     const dvPicked = !!dv && pickOf(p!) === dv.id
     const dvStates = dv ? statesOf(p!, dv.id) : []
-    const dvState = dv && pv ? pv.tool === 'all' ? t('All states') : pv.tool === 'compare' ? t('Compare with {variant}', { variant: variantRef(p!, otherOf(p!, dv.id)) }) : pv.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, dv.id)?.n ?? '' }) : dvStates.find(x => x.id === pv.state)?.name ?? t('At rest') : ''
+    const dvState = dv && pv ? pv.tool === 'all' ? t('All states') : pv.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, dv.id)?.n ?? '' }) : dvStates.find(x => x.id === pv.state)?.name ?? t('At rest') : ''
     const dvN = dv && pv && !pv.tool && dvStates.length ? `${Math.max(0, dvStates.findIndex(x => x.id === pv.state)) + (pv.state ? 2 : 1)}/${dvStates.length + 1}` : ''
     const treeBar = `<div data-phone-bar class="flex min-w-0 flex-1 items-center gap-1 sm:hidden">
         <button data-act="phone-menu" data-shoot="bar-session" aria-label="${t('Menu')}" aria-haspopup="dialog" class="relative grid size-9 shrink-0 place-items-center rounded-lg active:bg-zinc-900/5 dark:active:bg-white/10"><span class="grid size-7 place-items-center rounded-lg bg-zinc-900 text-[13px] font-bold text-white dark:bg-white dark:text-zinc-900">${initial}</span><span class="absolute end-0.5 top-0.5 flex rounded-full ring-2 ring-white dark:ring-zinc-950">${pulse('size-2.5', st.live && !st.stopped)}</span></button>
@@ -1989,7 +1954,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           : viewOk() ? `<button data-pill-layout data-shoot="pill-layout" aria-label="${t('Layout')}" aria-haspopup="dialog" aria-expanded="false" class="${btn} transition-colors">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth), st.view.land), 'size-5')}</button>`
           : v ? `<button data-act="fav:${esc(p!.id)}:${esc(v.id)}" data-shoot="pill-fav" aria-pressed="${fav}" aria-label="${fav ? t('Unfavorite') : t('Favorite')}" class="${btn} ${fav ? '!text-amber-400' : ''}">${ic(fav ? 'star-fill' : 'star', 'size-5')}</button>` : ''
         const sOn = stateOn === null ? undefined : sts.find(x => x.id === stateOn)
-        const stateText = pv?.tool === 'all' ? t('All states') : pv?.tool === 'compare' ? t('Compare with {variant}', { variant: variantRef(p!, otherOf(p!, pv.variant)) }) : pv?.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, pv.variant)?.n ?? '' }) : sOn?.name ?? t('At rest')
+        const stateText = pv?.tool === 'all' ? t('All states') : pv?.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, pv.variant)?.n ?? '' }) : sOn?.name ?? t('At rest')
         const stateN = pv?.tool || !sts.length ? '' : `${sts.indexOf(sOn!) + 2}/${sts.length + 1}`
         const stateLine = !(treeOn && !framed) && v && (sts.length || versionsOf(p!, v.id).length) ? `<button data-act="states" data-pill-state data-shoot="pill-state" aria-haspopup="dialog" aria-expanded="${st.states}" aria-label="${t('States: {state}. Show all states', { state: esc(stateText) })}" class="mx-auto flex h-[18px] min-w-0 max-w-full items-center gap-1 rounded-full px-2 text-[11px] leading-none text-sky-700 dark:text-sky-300 ${k.press}">${pv?.tool === 'play' ? ic('play', 'size-2.5 shrink-0') : ''}<span data-pill-state-name dir="auto" class="min-w-0 truncate">${esc(stateText)}</span>${stateN ? `<span class="shrink-0 tabular-nums ${k.n}">${stateN}</span>` : ''}${ic('caret-up', `size-2.5 shrink-0 ${k.n}`)}</button>` : ''
         const pillRow = (flush: boolean) => `<div data-ruler hidden class="pointer-events-none absolute left-1/2 h-9 w-56 -translate-x-1/2 overflow-hidden rounded-full bg-white/95 shadow-lg ring-1 ring-black/[.08] dark:bg-zinc-800/95 dark:ring-white/10 ${flush ? 'bottom-[calc(100%+var(--isl-h,0px)+.75rem)]' : 'bottom-full mb-2'} [mask-image:linear-gradient(90deg,transparent,#000_25%,#000_75%,transparent)]"></div>
@@ -2102,7 +2067,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         onLink: () => copyText(linkOf(pathOf({ view: 'variant', proto: q.id, variant: v.id }))),
         // Only from a tree row's ⋯: the tree stays open, and each tap on a row adds it.
         onSelect: st.tree ? () => { if (!selection.has(route)) selection.toggle(route) } : undefined,
-        onCompare: toolOk(q, v.id, 'compare') ? () => { away(); act('tool', q.id, v.id, 'compare') } : undefined,
         // From a tree row's ⋯, about a variant not on screen: open it first.
         onOpen: here ? undefined : () => { away(); go(keepIn(q, v.id)) },
       },
@@ -2402,7 +2366,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // clicked). Under them, the states and tools of the variant shown. On top, the variant your
   // requests change, said in words.
   /** The variant shown: its states (each opens it in that state) and its tools (Autoplay, All states,
-   *  Compare, History). In the sidebar under the columns, and in the tool strip's States panel. */
+   *  History). In the sidebar under the columns, and in the tool strip's States panel. */
   function variantHere(boxed = true, head = true): string {
     const p = cur(), pv = st.place.view === 'variant' ? st.place : null
     const v = p && pv ? p.variants.find(x => x.id === pv.variant) : undefined
@@ -2502,8 +2466,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
 
   // ---------- actions ----------
-  /** The same variant without its tool (compare keeps its state; the others go back to rest). */
-  const untool = (pl: Place): Place => pl.view === 'variant' ? { view: 'variant', proto: pl.proto, variant: pl.variant, ...(pl.tool === 'compare' && pl.state ? { state: pl.state } : {}) } : pl
+  /** The same variant without its tool, back at rest. */
+  const untool = (pl: Place): Place => pl.view === 'variant' ? { view: 'variant', proto: pl.proto, variant: pl.variant } : pl
   function act(name: string, arg: string, arg2: string, arg3 = '') {
     const p = cur()
     const here = st.place.view === 'variant' ? st.place : null
@@ -2538,16 +2502,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         return render()
       }
       case 'unchoose': selection.toggle(`${arg}/${arg2}`); return
-      case 'compare-comment': {
-        const scope = compareHost(), p = cur(), v = p?.variants.find(v => v.id === arg)
-        const state = p && st.place.view === 'variant' ? stateOf(p, arg, st.place.state) : undefined
-        const mount = scope && p ? targetMount(scope, { source: { proto: p.id, variant: arg, ...(state ? { state: state.id } : {}) } }) : null
-        if (!mount || !v) return
-        const t = wholeComment(mount, v.name), m = comments.store.get().mode
-        if (m.kind === 'compose' && t.source?.variant !== (m.target.source?.variant ?? comments.store.get().place?.variant)) comments.store.set({ pendingTag: { ...t, variantRef: { proto: p!.id, variant: v.id, label: variantLabel(p!, v.id), name: v.name } } })
-        else comments.act.begin(t)
-        return
-      }
       case 'comment': if (arg === 'tap') { comments.copy.off(); return comments.tap() } return toggleComment()
       // The phone's Try it key: the sheet up, or down. Brought back from away, the spot goes out.
       case 'try': { const to = trySheet === 'open' ? 'closed' : 'open'; trySheet = to; setTry(null); return setTrySheet(to) }
@@ -2559,29 +2513,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'phone-decide': if (here) { st.decide = `${here.proto}/${here.variant}`; render() } return
       // While a tool opened from the menu (copy options, Try it) holds the pill's ≡ as its way out, the mark does nothing.
       case 'phone-menu': if (menuBtn()?.dataset.pillMenu === 'mode') return; if (card && card.phase !== 'exit') closeCard(); else { if (card) closeCard(true); openCard('menu') } return
-      // A state leaf: that variant in that state. Comparing keeps comparing.
-      case 'pvs': {
-        const keep = here?.tool === 'compare' && here.proto === arg && here.variant === arg2
-        return go({ view: 'variant', proto: arg, variant: arg2, ...(arg3 ? { state: arg3 } : {}), ...(keep ? { tool: 'compare' as Tool } : {}) })
-      }
+      // A state leaf: that variant in that state.
+      case 'pvs': return go({ view: 'variant', proto: arg, variant: arg2, ...(arg3 ? { state: arg3 } : {}) })
       // A tool from a variant's ⋯ menu; choosing the one that is on turns it off.
       case 'tool': {
         st.open = null
         const t = arg3 as Tool
         if (here && here.proto === arg && here.variant === arg2 && here.tool === t) return go(untool(here))
-        const state = t === 'compare' && here?.proto === arg && here.variant === arg2 ? here.state : undefined
-        return go({ view: 'variant', proto: arg, variant: arg2, tool: t, ...(state ? { state } : {}) })
+        return go({ view: 'variant', proto: arg, variant: arg2, tool: t })
       }
-      case 'vs': if (p) { st.vs.set(p.id, arg); show(false); render() } return
       case 'ver': if (p && here) { st.ver.set(`${p.id}/${here.variant}`, Number(arg)); show(false); render() } return
-      case 'nextdiff': {
-        if (!p || !here) return
-        const v = here.variant, o = otherOf(p, v)
-        const list = statesOf(p, v).filter(x => changed(p, v, x) || changed(p, o, x))
-        if (!list.length) return
-        const i = list.findIndex(x => x.id === here.state)
-        return go({ ...here, state: list[(i + 1) % list.length].id })
-      }
       case 'play': return arg === 'jump' ? layer?.player?.jump(Number(arg2)) : layer?.player?.toggle()
       case 'lobby': return arg === 'session' ? go({ view: 'session' }) : go({ view: 'proto', proto: arg2 || p!.id })
       case 'proto': return openProto(arg)
@@ -2824,7 +2765,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // A press right after the last one counts from where that one went, not from where the page still is.
     if (!atUrl(st.place)) follow()
     const row = t.closest?.<HTMLElement>(STATE_ROW), p = cur(), pv = st.place.view === 'variant' ? st.place : null
-    if (!p || !pv || tour || (pv.tool && pv.tool !== 'compare') || comments.counts().picking) return
+    if (!p || !pv || tour || pv.tool || comments.counts().picking) return
     if (end && !row) return
     // Outside a state's row, an open menu, the sidebar's tree and a control with arrows of its own keep them.
     if (!row && (st.open || t.closest?.('[data-side], [data-tree-side], [data-drawer]') || t.closest?.(OWN_ARROWS))) return
@@ -3011,11 +2952,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- comments ----------
   // Commenting lives in the stage's own layer (comments/), over a variant on the page and nowhere
-  // else: not a lobby, all states or autoplay, not focus mode, not a shot. Compare shares this layer across both panes.
+  // else: not a lobby, all states or autoplay, not focus mode, not a shot. Side by side shares this layer across its panes.
   const phoneMq = matchMedia('(max-width: 639px)')
   const HANDLE = 'flex h-9 items-center gap-1.5 rounded-s-lg bg-white/95 ps-2.5 pe-3 text-xs font-medium text-zinc-900 shadow-lg shadow-black/10 ring-1 ring-black/10 backdrop-blur hover:bg-white dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-white/15 dark:hover:bg-zinc-900'
   // The page inside a device view has none of its own: the page outside comments on it.
-  const compareHost = () => st.place.view === 'variant' && (st.place.tool === 'compare' || !!chosenHere()) ? layer?.el.querySelector<HTMLElement>('[data-comment-compare]') ?? null : null
+  const compareHost = () => st.place.view === 'variant' && !!chosenHere() ? layer?.el.querySelector<HTMLElement>('[data-comment-compare]') ?? null : null
   const commentHost = () => !framed && !st.focus && q.get('hints') !== '0' ? compareHost() ?? hintHost() : null
   /** A prototype's own page: no design on it to point at, but it takes comments as a whole. */
   const cardOn = () => !framed && !st.focus && q.get('hints') !== '0' && st.place.view === 'proto' && !!cur()
@@ -3185,8 +3126,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // Every variant in the project: what is near the one on screen first (what it was made from, the
     // others beside that, its own siblings, what was made from it), then the newest prototypes.
     variantMentions: () => {
-      // In Compare the place is one pane, and the comment may be on the other: both can be tagged.
-      const p = cur(), here = st.place.view === 'variant' && st.place.tool !== 'compare' ? st.place.variant : ''
+      // Side by side the place is one pane, and the comment may be on another: every one can be tagged.
+      const p = cur(), here = st.place.view === 'variant' && !chosenHere() ? st.place.variant : ''
       const live = all.filter(x => !x.archived), names = new Map<string, number>()
       for (const x of live) for (const v of x.variants) names.set(v.name, (names.get(v.name) ?? 0) + 1)
       const parent = p?.from ? live.find(x => x.id === p.from!.proto) : undefined

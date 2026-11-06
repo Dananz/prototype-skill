@@ -115,7 +115,7 @@ export default {
   // The tool strip (shell.ts paintStrip).
   'in a screen': 'בתוך מסך',
   'Move': 'הזזה',
-  'States, Autoplay, Compare': 'מצבים, הפעלה אוטומטית, השוואה',
+  'States and Autoplay': 'מצבים והפעלה אוטומטית',
   // Settings' shortcuts with the tree on.
   'Jump to a screen': 'קפיצה למסך',
   // A round's row (tree/index.tsx).

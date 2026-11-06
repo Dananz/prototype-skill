@@ -22,6 +22,10 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
   variant('fhome', 'A', '<h1>Home A</h1><input data-shoot="f-field" />')
   variant('fabout', 'A', '<h1 data-shoot="f-about">About</h1>')
   for (const s of ['fhome', 'fabout']) proto(['done', s])
+  // One state, so home has a states panel (with All states and Autoplay).
+  const homeMeta = join(app, 'src', 'protos', 'fhome', 'meta.ts'), hm = JSON.parse(readFileSync(homeMeta, 'utf8').replace(/^[\s\S]*?export default /, ''))
+  hm.states = [{ id: 'title', name: 'Title', click: ['h1'] }]
+  writeFileSync(homeMeta, 'export default ' + JSON.stringify(hm))
 
   const page = await openPage(`${local}fhome/B?tree=1`)
   const click = sel => page.run(`(() => { const doc = document.querySelector('[data-view]:not([hidden]) iframe')?.contentDocument ?? document; const el = doc.querySelector('${sel}'); el?.click(); return !!el })()`)
@@ -61,10 +65,10 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-tour] [data-act="tour:end"]').click()`)
     await until(page, `document.querySelector('[data-tour]').hidden`, 'End should close the tour')
 
-    // The strip as designed: Move and Comment, the three layouts, the states panel (with Compare, since
-    // home has two options), and nothing it had before is lost: the tree's rows keep the variant's menu.
+    // The strip as designed: Move and Comment, the three layouts, the states panel (with All states, since
+    // home has a state), and nothing it had before is lost: the tree's rows keep the variant's menu.
     await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
-    await until(page, `!!document.querySelector('[data-tree-dock] [data-act="tool:fhome:B:compare"]') && !document.querySelector('[data-strip] [data-shoot="strip-states"]')`, 'with the sidebar open, home B\'s states panel should be at the sidebar\'s foot, not in the strip')
+    await until(page, `!!document.querySelector('[data-tree-dock] [data-act="tool:fhome:B:all"]') && !document.querySelector('[data-strip] [data-shoot="strip-states"]')`, 'with the sidebar open, home B\'s states panel should be at the sidebar\'s foot, not in the strip')
     // The layouts moved to the zoom pill (bottom corner), which shows the zoom and on hover the rest.
     for (const sh of ['pill-size-desktop', 'pill-size-tablet', 'pill-size-phone']) assert(await page.run(`!!document.querySelector('[data-zoom-pill] [data-shoot="${sh}"]')`), `the zoom pill should hold ${sh}`)
     assert(await page.run(`!document.querySelector('[data-strip] [data-shoot^="strip-size-"]')`), 'the strip should no longer hold the layouts')
@@ -83,11 +87,11 @@ export async function focusChecks({ proto, app, local, openPage, fail }) {
     await page.run(`document.querySelector('[data-tree-side] button[aria-label="Hide sidebar"]').click()`)
     await until(page, `!!document.querySelector('[data-strip] [data-shoot="strip-states"]')`, 'with the sidebar hidden, the strip should hold the states panel')
     await page.run(`document.querySelector('[data-strip] [data-shoot="strip-states"]').click()`)
-    await until(page, `!!document.querySelector('[data-strip-states] [data-act="tool:fhome:B:compare"]')`, 'the states panel should offer Compare')
+    await until(page, `!!document.querySelector('[data-strip-states] [data-act="tool:fhome:B:all"]')`, 'the states panel should offer All states')
     const states = await page.run(`(() => { const p = document.querySelector('[data-strip-states]').getBoundingClientRect(), s = document.querySelector('[data-strip-tools]').getBoundingClientRect(); return p.left >= s.right - 1 || p.right <= s.left + 1 })()`)
     assert(states, 'the states panel should open beside the strip')
-    await page.run(`document.querySelector('[data-strip-states] [data-act="tool:fhome:B:compare"]').click()`)
-    await until(page, `/compare/.test(location.pathname + location.search) || !!document.querySelector('[data-act="tool:fhome:B:compare"][aria-pressed="true"]')`, 'Compare from the strip should start comparing')
+    await page.run(`document.querySelector('[data-strip-states] [data-act="tool:fhome:B:all"]').click()`)
+    await until(page, `/~all/.test(location.pathname + location.search) || !!document.querySelector('[data-act="tool:fhome:B:all"][aria-pressed="true"]')`, 'All states from the strip should show every state')
     await page.run(`document.querySelector('[data-act="side:1"]').click()`)
     await until(page, `!!document.querySelector('[data-tree-dock]') && !document.querySelector('[data-strip] [data-shoot="strip-states"]')`, 'with the sidebar back, the states should return to its foot')
     await page.run(`history.pushState(null, '', '/fhome/B'); dispatchEvent(new PopStateEvent('popstate'))`)
