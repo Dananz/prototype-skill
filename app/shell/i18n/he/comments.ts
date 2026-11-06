@@ -71,6 +71,7 @@ export default {
   'Add a screenshot of this part of the design, then draw on it (or paste an image: {mod} V, or drop one here; each adds a picture)': 'הוסף צילום מסך של חלק זה בעיצוב ולאחר מכן צייר עליו (או הדבק תמונה: {mod} V, או גרור לכאן; כל פעולה מוסיפה תמונה)',
   'Attach a screenshot': 'צרף צילום מסך',
   'Delete': 'מחק',
+  'Comment options': 'אפשרויות הערה',
   'Delete comment': 'מחק הערה',
   'Add, to send with the rest · {mod} Enter adds and sends to {agent}': 'הוסף, לשליחה עם השאר · {mod} Enter מוסיף ושולח אל {agent}',
   'Save': 'שמור',

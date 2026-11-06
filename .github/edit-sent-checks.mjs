@@ -1,5 +1,5 @@
 // A sent comment can be changed until the agent takes it. The list offers the pencil on a comment
-// marked Sent, Save reaches the batch the agent will read, and the pencil goes once it is taken. One
+// marked Sent (Edit in the comment's menu), Save reaches the batch the agent will read, and Edit leaves the menu once it is taken. One
 // taken while the composer is open keeps the words, and offers to send them as a new comment.
 // shots: a folder for each state.
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
@@ -76,7 +76,16 @@ export async function editSentChecks({ proto, app, openPage, fail, shots }) {
       await until(on)
       await new Promise(r => setTimeout(r, 700))
     }
-    const pencil = words => { const b = row(words)?.querySelector('[data-shoot=edit-sent]'); return shown(b) && b }
+    // A comment's Edit and Delete are in its menu, behind the ellipsis at its corner.
+    const popup = () => [...document.querySelectorAll('[data-comment-ui][role=menu]')].find(shown)
+    const menu = async words => {
+      const more = row(words)?.querySelector('[data-shoot=comment-more]')
+      if (!shown(more)) return null
+      if (!popup()) more.click()
+      return await until(popup)
+    }
+    const closeMenu = async () => { if (popup()) document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await until(() => !popup()) }
+    const pencil = async words => { const m = await menu(words); return m?.querySelector('[data-shoot=edit-sent]') || null }
     const sendOne = async words => {
       if (!await until(() => q('[data-island] [data-shoot=whole-input]'))) return 'the island has no comment box'
       say(words)
@@ -88,8 +97,6 @@ export async function editSentChecks({ proto, app, openPage, fail, shots }) {
       await openList()
       return ''
     }
-    // Where the status starts and the trash starts: the pencil coming and going must not move them.
-    const edges = r => [r.querySelector('span.shrink-0.text-proto-primary-soft-fg').getBoundingClientRect().left, r.querySelector('[data-shoot=remove]').getBoundingClientRect().left].map(Math.round)
     const row = words => [...document.querySelectorAll('[data-comment]')].find(r => r.textContent.includes(words))
   `
   const run = async (step, body) => {
@@ -102,12 +109,13 @@ export async function editSentChecks({ proto, app, openPage, fail, shots }) {
       for (const k of Object.keys(localStorage)) if (/^proto-comments-/.test(k)) localStorage.removeItem(k)
       const why = await sendOne('First words')
       if (why) return why
-      if (!await until(() => pencil('First words'))) return 'a comment marked Sent has no pencil in view: ' + (row('First words')?.textContent ?? 'no row')
+      if (!await pencil('First words')) return 'a comment marked Sent has no Edit in its menu: ' + (row('First words')?.textContent ?? 'no row')
       return ''
     `)
     if (shots) await page.screenshot(join(shots, `${name}-sent-row.png`))
     await run('opening', `
-      pencil('First words').click()
+      const edit = await pencil('First words')
+      edit.click()
       if (!await until(() => q('[data-composer] [role=textbox]'))) return 'the pencil opened no composer'
       if (!q('[data-composer] [role=textbox]').textContent.includes('First words')) return 'the composer did not hold the words'
       return ''
@@ -119,27 +127,29 @@ export async function editSentChecks({ proto, app, openPage, fail, shots }) {
       if (!await until(() => !q('[data-composer]'))) return 'Save did not close the composer: ' + (q('[data-composer] [role=alert]')?.textContent ?? '')
       await openList()
       if (!await until(() => row('Second words'))) return 'the list did not show the new words'
-      window.__before = edges(row('Second words'))
       return ''
     `)
     if (waiting().join() !== 'Second words') fail(`edit sent: the batch holds ${JSON.stringify(waiting())}, not the new words`)
     const got = proto(['inbox'])
     if (!/Second words/.test(got) || /First words/.test(got)) fail(`edit sent: proto inbox printed ${got}`)
     await run('after it is taken', `
-      if (!await until(() => row('Second words') && !row('Second words').querySelector('[data-shoot=edit-sent]'))) return 'a taken comment still offers the pencil'
-      await new Promise(r => setTimeout(r, 300))
-      const after = edges(row('Second words'))
-      if (after.join() !== window.__before.join()) return 'the row moved when the pencil left: ' + window.__before + ' then ' + after
+      if (!await until(() => row('Second words')?.textContent.includes('is on it'))) return 'the comment never showed it was taken'
+      const m = await menu('Second words')
+      if (!m) return 'a taken comment has no menu'
+      if (m.querySelector('[data-shoot=edit-sent]')) return 'a taken comment still offers Edit'
+      if (!m.querySelector('[data-shoot=remove]')) return 'a taken comment offers no Delete'
       return ''
     `)
     if (shots) await page.screenshot(join(shots, `${name}-taken-row.png`))
+    await run('closing the menu', `await closeMenu(); return popup() ? 'Escape did not close the menu' : ''`)
 
     await run('sending again', `
       const why = await sendOne('Raced words')
       if (why) return why
       await openList()
-      if (!await until(() => pencil('Raced words'))) return 'no pencil in view on the second comment'
-      pencil('Raced words').click()
+      const edit = await pencil('Raced words')
+      if (!edit) return "no Edit in the second comment's menu"
+      edit.click()
       if (!await until(() => q('[data-composer] [role=textbox]'))) return 'the pencil opened no composer'
       type('Words kept')
       return ''
@@ -192,7 +202,8 @@ export async function editSentChecks({ proto, app, openPage, fail, shots }) {
         const why = await sendOne('Pin words')
         if (why) return why
         await openList()
-        if (!await until(() => pencil('Pin words'))) return 'no pencil on the pin comment'
+        if (!await pencil('Pin words')) return "no Edit in the pin comment's menu"
+        await closeMenu()
         row('Pin words').querySelector('button').click()
         const edit = await until(() => q('[data-comment-ui] [data-shoot=edit-sent]:not([data-comment] *)') || [...document.querySelectorAll('[data-shoot=edit-sent]')].find(b => !b.closest('[data-comment]')))
         if (!edit) return 'the card on the pin offers no Edit'
