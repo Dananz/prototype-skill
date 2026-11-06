@@ -116,7 +116,10 @@ test('a profile a running Chrome has open is never touched, however old it looks
     assert.ok(before.includes(lock), `a running Chrome has no ${lock} in its profile, so the sweep can't tell it is in use`)
     utimesSync(profile, old, old)
     sweepProfiles({ root, budget: 10_000 })
-    assert.deepEqual(present(), before, 'the live profile lost files')
+    // Chrome can finish creating DevToolsActivePort after announcing its endpoint.
+    // New files are harmless; every file present before the sweep must survive.
+    const after = present()
+    for (const mark of before) assert.ok(after.includes(mark), `the live profile lost ${mark}`)
     assert.deepEqual(readdirSync(root), ['proto-shoot-live'], 'the live profile was renamed or moved')
     assert.equal(chrome.exitCode, null, 'Chrome stopped')
   } finally {
