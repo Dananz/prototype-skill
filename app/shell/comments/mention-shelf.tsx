@@ -68,8 +68,8 @@ export function useMentionShelf({ choices, query, onPick, onDrop, tagged, onElem
     return list.slice(0, 60)
   }, [choices, query, tab])
   const [at, setAt] = useState(0)
-  // Lit starts on the first card not tagged yet, so Enter always adds one.
-  useEffect(() => { const i = cards.findIndex(c => !has.has(keyOf(c))); setAt(Math.max(0, i)) }, [cards, has.size]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Lit starts on the first card not tagged yet, so Enter always adds one. A tap leaves it where the pointer is.
+  useEffect(() => { const i = cards.findIndex(c => !has.has(keyOf(c))); setAt(Math.max(0, i)) }, [cards]) // eslint-disable-line react-hooks/exhaustive-deps
   const lit = Math.min(at, Math.max(0, cards.length - 1))
   const byKey = useRef(false), rail = useRef<HTMLDivElement | null>(null)
   useEffect(() => { if (byKey.current) rail.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); byKey.current = false }, [lit])
@@ -77,7 +77,8 @@ export function useMentionShelf({ choices, query, onPick, onDrop, tagged, onElem
   /** The arrows walk the rail (mirrored right to left), Enter or Tab tags. True when it took the key. */
   const onKey = (e: KeyboardEvent<HTMLElement>) => {
     if (query === null || e.nativeEvent.isComposing) return false
-    const back = getComputedStyle(e.currentTarget).direction === 'rtl' ? 'ArrowRight' : 'ArrowLeft'
+    // The rail's direction, not the box's: a box of English words in a Hebrew shell still lays the cards out right to left.
+    const back = getComputedStyle(rail.current ?? e.currentTarget).direction === 'rtl' ? 'ArrowRight' : 'ArrowLeft'
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       if (!cards.length) return false
       const step = e.key === back || e.key === 'ArrowUp' ? -1 : 1
@@ -102,7 +103,7 @@ const phoneNow = () => typeof matchMedia === 'function' && matchMedia('(max-widt
 export function MentionShelf({ shelf, open, opts, place, count }: { shelf: Shelf; open: boolean; opts: Opts; place?: { center: number; above: boolean; edge: number }; count: number }) {
   const { cards, lit, setAt, tab, setTab, searching, rail, has } = shelf
   const phone = phoneNow()
-  const W = phone ? 112 : 152, H = phone ? 112 : 95, GAP = phone ? 8 : 10
+  const W = phone ? 112 : 152, H = phone ? 112 : 95, GAP = phone ? 8 : 10, PAD = 6 // the lit card's colour reaches PAD past its picture
   const q = opts.query ?? ''
   // The panel takes its size from what it holds, measured, so a change of size can be a transition.
   const [inner, setInner] = useState<HTMLDivElement | null>(null), [size, setSize] = useState<{ w: number; h: number } | null>(null), [settled, setSettled] = useState(false)
@@ -138,8 +139,23 @@ export function MentionShelf({ shelf, open, opts, place, count }: { shelf: Shelf
     ? { position: 'fixed', zIndex: 250, left: phone ? 8 : Math.max(8, Math.min(place.center - width / 2, innerWidth - width - 8)), ...(place.above ? { bottom: place.edge } : { top: place.edge }), ...(phone ? { width: room } : size ? { width: size.w } : {}), ...(size ? { height: size.h } : {}) }
     : size ? { height: size.h } : {}
   const keep = (e: { preventDefault: () => void }) => e.preventDefault() // the box keeps the caret
-  const Back = <button type="button" aria-label={t('Earlier')} onMouseDown={keep} onClick={() => scroll(-((W + GAP) * 3))} className="grid size-8 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/5"><Icon name="left" className="size-4 rtl:-scale-x-100" /></button>
-  const On = <button type="button" aria-label={t('Later')} onMouseDown={keep} onClick={() => scroll((W + GAP) * 3)} className="grid size-8 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/5"><Icon name="right" className="size-4 rtl:-scale-x-100" /></button>
+  // One colour behind the lit card that glides to the next one, on the menus' curve, rather than each card
+  // switching on its own. A new rail (a tab, a search) fades it in where it belongs.
+  const glow = useRef<HTMLSpanElement>(null), glowOn = useRef<HTMLSpanElement | null>(null)
+  useLayoutEffect(() => {
+    const g = glow.current, card = rail.current?.querySelector<HTMLElement>('[data-shelf-card][aria-selected="true"]')
+    if (!g) return
+    if (!card) { g.style.opacity = '0'; return }
+    const fresh = glowOn.current !== g, still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    glowOn.current = g
+    g.style.transition = fresh || still ? 'none' : 'transform .26s cubic-bezier(.2,.9,.25,1), width .26s cubic-bezier(.2,.9,.25,1), height .26s cubic-bezier(.2,.9,.25,1)'
+    g.style.width = `${card.offsetWidth}px`; g.style.height = `${card.offsetHeight}px`
+    g.style.transform = `translate(${card.offsetLeft}px, ${card.offsetTop}px)`
+    if (fresh && !still) { g.style.opacity = '0'; requestAnimationFrame(() => { g.style.transition = 'opacity .24s ease-out'; g.style.opacity = '1' }) }
+    else g.style.opacity = '1'
+  })
+  const Back = <button type="button" aria-label={t('Earlier')} onMouseDown={keep} onClick={() => scroll(-((W + PAD * 2 + 2) * 3))} className="grid size-8 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/5"><Icon name="left" className="size-4 rtl:-scale-x-100" /></button>
+  const On = <button type="button" aria-label={t('Later')} onMouseDown={keep} onClick={() => scroll((W + PAD * 2 + 2) * 3)} className="grid size-8 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/5"><Icon name="right" className="size-4 rtl:-scale-x-100" /></button>
   const body: ReactNode = <>
     <div className="absolute inset-x-0 top-0 z-10 flex items-center gap-1 px-3 pt-3 pb-2" style={{ height: HEAD }}>
       {searching
@@ -152,19 +168,20 @@ export function MentionShelf({ shelf, open, opts, place, count }: { shelf: Shelf
       <div ref={ghostHost} className={`pointer-events-none absolute top-0 z-[1] ${full ? 'inset-x-0' : 'start-1/2 -translate-x-1/2 rtl:translate-x-1/2'}`} />
       {!count
         ? <p className="px-4 py-7 text-center text-[13px] text-zinc-500 dark:text-zinc-400">{t('Nothing else in this project yet.')}</p>
-        : <div key={searching ? 'search' : tab} ref={rail} data-shelf-rail className={`${swapped ? 'proto-shelf-rail-in' : ''} flex snap-x scroll-px-3 overflow-x-auto overscroll-contain px-3 [scrollbar-width:none]`} style={{ gap: GAP }}>
+        : <div key={searching ? 'search' : tab} ref={rail} data-shelf-rail className={`${swapped ? 'proto-shelf-rail-in' : ''} flex snap-x scroll-px-3 overflow-x-auto overscroll-contain px-1.5 [scrollbar-width:none] relative`} style={{ gap: 2 }}>
+          <span ref={glow} aria-hidden className="pointer-events-none absolute top-0 left-0 rounded-2xl bg-proto-primary opacity-0" />
           {cards.map((c, i) => {
             const r = c.variantRef!, on = has.has(keyOf(c))
             return <button key={keyOf(c)} type="button" role="option" aria-selected={i === lit} data-shelf-card={keyOf(c)} onMouseDown={keep} onMouseEnter={() => setAt(i)} onClick={() => on ? opts.onDrop(c) : opts.onPick(c, false)}
-              className="proto-shelf-card shrink-0 snap-start text-start" style={{ width: W, animationDelay: `${70 + Math.min(i, 5) * 30}ms` }}>
-              <span className={`relative block overflow-hidden rounded-[10px] border bg-zinc-100 dark:bg-zinc-900 ${on || i === lit ? 'border-proto-primary-ring ring-1 ring-proto-primary-ring' : 'border-black/10 dark:border-white/10'}`} style={{ height: H }}>
+              className={`proto-shelf-card relative shrink-0 snap-start rounded-2xl text-start transition-colors duration-200 motion-reduce:transition-none ${i === lit ? 'text-proto-primary-fg' : ''}`} style={{ width: W + PAD * 2, padding: PAD, animationDelay: `${70 + Math.min(i, 5) * 30}ms` }}>
+              <span className={`relative block overflow-hidden rounded-[10px] border bg-zinc-100 transition-[border-color] duration-200 motion-reduce:transition-none dark:bg-zinc-900 ${i === lit ? 'border-white/25' : 'border-black/10 dark:border-white/10'}`} style={{ height: H }}>
                 <span dir="auto" className="absolute inset-0 grid place-items-center px-2 text-center text-[11px] leading-[14px] text-zinc-400 dark:text-zinc-600">{r.title}</span>
                 <Picture target={c} w={W - 2} h={H - 2} />
                 <span className="absolute start-1.5 top-1.5 grid h-6 min-w-6 place-items-center rounded-md bg-white/75 px-1.5 text-[14px] leading-none font-bold text-black tabular-nums shadow-[0_0_0_1px_rgb(0_0_0/.5),0_2px_6px_rgb(0_0_0/.5)] backdrop-blur-sm"><bdi dir="ltr">#{r.label}</bdi></span>
                 {on && <span className="absolute end-1.5 top-1.5 grid size-6 place-items-center rounded-full bg-proto-primary text-proto-primary-fg"><Icon name="check" className="size-3.5" /></span>}
               </span>
-              <span dir="auto" className="mt-1.5 block truncate text-start text-[12.5px] font-medium">{r.name}</span>
-              <span dir="auto" className="block truncate text-start text-[11px] text-zinc-500">{r.title}</span>
+              <span dir="auto" className={`mt-1.5 block truncate text-start text-[12.5px] font-medium`}>{r.name}</span>
+              <span dir="auto" className={`block truncate text-start text-[11px] transition-colors duration-200 motion-reduce:transition-none ${i === lit ? 'text-white/75' : 'text-zinc-500'}`}>{r.title}</span>
             </button>
           })}
           {!cards.length && !searching && <p className="py-7 text-[13px] text-zinc-500 dark:text-zinc-400">{t('Nothing here. Try All.')}</p>}
