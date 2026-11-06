@@ -2160,7 +2160,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const el = cardHost.querySelector<HTMLElement>('[data-card]')!
     // Over the pill, from its start, where the button is (from its end, for the layout button's).
     const z = zone.getBoundingClientRect(), b = bar.getBoundingClientRect()
-    if (cardKind === 'layout') el.style.right = `${z.right - b.right}px`
+    const atEnd = (cardKind === 'layout') !== rtl
+    if (atEnd) el.style.right = `${z.right - b.right}px`
     else el.style.left = `${b.left - z.left}px`
     el.style.bottom = `${z.bottom - b.top + 8}px`
     card = { el, phase: 'open', anims: [] }
