@@ -1028,6 +1028,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // A phone's grid opens at half size (st.scale's default), but one variant alone fits its stage,
   // until the user picks a scale themselves.
   let scaleChosen = false
+  // A pinch on a phone grows the whole device, frame and all, by this much over its fit.
+  let frameZoom = 1
   const fitsAlone = () => !scaleChosen && st.place.view === 'variant' && matchMedia('(max-width: 639px)').matches
   const scaleNow = () => (frameOn() ? st.view.zoom : fitsAlone() ? 0 : st.scale)
   const scaleRange = () => (frameOn() ? [ZOOM_MIN, ZOOM_MAX] : [SCALE_MIN, SCALE_MAX])
@@ -1447,9 +1449,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   function phoneZoom(w: number, h: number, room: HTMLElement) {
     // One variant alone on a phone fits exactly, inside the p-6 of data-phones and clear of the bar.
-    if (fitsAlone()) return Math.floor(Math.max(0.4, Math.min(1, (room.clientHeight - barOver(room) - 48) / h, (room.clientWidth - 48) / w)) * 100) / 100
+    if (fitsAlone()) return Math.floor(Math.max(0.4, Math.min(1, (room.clientHeight - barOver(room) - 48) / h, (room.clientWidth - 48) / w)) * 100) / 100 * frameZoom
     const auto = [100, 75, 50].find(s => h * s / 100 <= room.clientHeight - 88 && w * s / 100 <= room.clientWidth - 24) ?? 40
-    return (st.scale || auto) / 100
+    return (st.scale || auto) / 100 * frameZoom
   }
   function fitBox(box: HTMLElement) {
     box.style.setProperty('--stage-h', `${box.clientHeight}px`)
@@ -2999,9 +3001,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   listen(islandHost, 'pointerdown', () => fold(false))
   // On a phone the design zooms by itself, never the page: two fingers (or a wheel with Ctrl or ⌘)
   // scale it in its scroller around the point between them, laid out as it was at Fit, and Fit
-  // puts it back. A device view (a layout chosen) zooms its own way (view/gestures.ts).
+  // puts it back. A phone prototype grows its whole device, frame and all, in the stage's scroller.
+  // A device view (a layout chosen) zooms its own way (view/gestures.ts).
   const PHONE_ZOOM_MAX = 4
-  let zoom: { mount: HTMLElement; z: number } | null = null
+  let zoom: { mount: HTMLElement; z: number; phone: HTMLElement | null } | null = null
   const zoomFit = document.createElement('button')
   zoomFit.type = 'button'
   zoomFit.hidden = true
@@ -3011,21 +3014,31 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   zone.append(zoomFit)
   const zoomMount = () => phoneMq.matches && !viewOn() && !st.focus && st.place.view === 'variant' ? layer?.el.querySelector<HTMLElement>('[data-mount]') ?? null : null
   function unzoom() {
-    if (zoom) for (const k of ['zoom', 'width', 'height'] as const) zoom.mount.style[k] = ''
+    if (zoom?.phone) { frameZoom = 1; if (layer) fitBox(layer.el) }
+    else if (zoom) for (const k of ['zoom', 'width', 'height'] as const) zoom.mount.style[k] = ''
     zoom = null
     zoomFit.hidden = true
   }
   function zoomTo(to: number, x: number, y: number) {
-    const mount = zoom?.mount ?? zoomMount(), sc = mount?.parentElement
+    const mount = zoom?.mount ?? zoomMount()
+    const phone = zoom ? zoom.phone : mount?.closest<HTMLElement>('[data-phone]') ?? null
+    const sc = phone ? phone.closest('[data-phones]')?.parentElement : mount?.parentElement
     if (!mount || !sc) return
     const was = zoom?.z ?? 1, z = Math.min(PHONE_ZOOM_MAX, Math.max(1, to))
     if (z === was) return
     // Laid out at the size it had at Fit, so zooming scales it and never reflows it.
-    if (!zoom) { mount.style.width = `${sc.clientWidth}px`; mount.style.height = `${sc.clientHeight}px`; zoom = { mount, z: 1 } }
+    if (!zoom) {
+      if (!phone) { mount.style.width = `${sc.clientWidth}px`; mount.style.height = `${sc.clientHeight}px` }
+      zoom = { mount, z: 1, phone }
+    }
     const r = sc.getBoundingClientRect(), px = x - r.left, py = y - r.top, k = z / was
+    // An RTL scroller counts scrollLeft from its right edge; the math runs from the left.
+    const rtl = getComputedStyle(sc).direction === 'rtl', over = () => (rtl ? sc.scrollWidth - sc.clientWidth : 0)
+    const left = sc.scrollLeft + over()
     zoomedAt = performance.now()
-    mount.style.zoom = String(z)
-    sc.scrollLeft = (sc.scrollLeft + px) * k - px
+    if (phone) { phone.style.zoom = String(Number(phone.style.zoom || 1) / was * z); frameZoom = z }
+    else mount.style.zoom = String(z)
+    sc.scrollLeft = (left + px) * k - px - over()
     sc.scrollTop = (sc.scrollTop + py) * k - py
     zoom.z = z
     if (z <= 1.01) unzoom()
