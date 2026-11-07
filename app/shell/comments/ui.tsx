@@ -3,12 +3,11 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { AGENT, type Agent } from '../agent'
 import { useAgentName, useCtx } from './ctx'
-import { Tooltip } from '@base-ui/react/tooltip'
-import { uiBox } from '../portals'
 import { SIZE_PATHS, sizeIcon, sizeName, type ViewSize } from '../view/sizes'
 import { ago, ALONG, ic } from '../ui'
 import { t, tn } from '../i18n'
-import type { Action, CState, Item, Seg, Target } from './types'
+import { isImg, type Action, type CState, type Item, type Seg, type Shot, type Target } from './types'
+import { InlineImage } from './inline-image'
 import { variantLabel, variantRef } from '../variants'
 
 const PATHS: Record<string, string> = {
@@ -69,26 +68,6 @@ export function PictureStrip({ children, className = '' }: { children: ReactNode
   return <span ref={box} data-shoot="comment-pictures" dir="ltr" role="region" aria-label={t('Comment pictures')} className={`block min-w-0 max-w-full overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-proto-primary-ring ${className}`}>
     <span ref={row} className="flex w-max min-w-full items-center gap-2 px-2 py-2 [&>*]:shrink-0">{children}</span>
   </span>
-}
-
-/** A pasted image as a chip, with a preview portaled outside the strip's clipping and mask. */
-export function ImageChip({ src, onOpen, onRemove, size = 'md' }: { src: string; onOpen?: () => void; onRemove?: () => void; size?: 'sm' | 'md' }) {
-  const h = size === 'sm' ? 'h-6' : 'h-7'
-  return (
-    <Tooltip.Root>
-      <Tooltip.Trigger delay={0} render={<span />} data-shoot="image-chip" className={`relative inline-flex ${h} shrink-0 items-center gap-1.5 rounded-lg bg-proto-primary-soft ps-1 ${onRemove ? 'pe-0.5' : 'pe-2'} text-[11px] font-medium text-proto-primary-soft-fg`}>
-        {onOpen
-          ? <button onClick={onOpen} title={t('Draw on the image')} className="inline-flex items-center gap-1.5"><img src={src} alt="" className="size-5 rounded object-cover ring-1 ring-black/10 dark:ring-white/20" />{t('Image')}</button>
-          : <span className="inline-flex items-center gap-1.5"><img src={src} alt="" className="size-5 rounded object-cover ring-1 ring-black/10 dark:ring-white/20" />{t('Image')}</span>}
-        {onRemove && <button onClick={onRemove} aria-label={t('Remove the image')} title={t('Remove the image')} className="grid size-6 place-items-center rounded-md hover:bg-zinc-900/5 dark:hover:bg-white/10"><Icon name="x" className="size-3" /></button>}
-      </Tooltip.Trigger>
-      <Tooltip.Portal container={uiBox()}>
-        <Tooltip.Positioner side="top" align="start" sideOffset={8} collisionPadding={8} className="pointer-events-none z-[250]">
-          <Tooltip.Popup className="w-56 overflow-hidden rounded-lg bg-white shadow-xl ring-1 ring-black/10 transition-opacity duration-200 ease-[ease-out] data-ending-style:opacity-0 dark:bg-zinc-900 dark:ring-white/15"><img src={src} alt={t('Image preview')} className="block max-h-64 w-full object-contain" /></Tooltip.Popup>
-        </Tooltip.Positioner>
-      </Tooltip.Portal>
-    </Tooltip.Root>
-  )
 }
 
 /** The modifier keys' names where this runs: ⌘ and ⌥ on a Mac, Ctrl and Alt elsewhere. */
@@ -185,8 +164,9 @@ export function Chip({ t: target, n }: { t?: Target; n: number }) {
     className={`mx-px inline-block max-w-[16rem] truncate rounded bg-proto-primary-soft px-1 align-bottom font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? t('Comment {n}', { n: comment.n }) : whole ? protoChip(whole) : ref ? variantChip(ref) : target ? `@${target.source ? `${variantLabel(null, target.source.variant)}·` : ''}${elementName(target)}` : `@${n}`}</span>
 }
 
-export function Body({ c, className = '' }: { c: { body: Seg[]; tags: Target[] }; className?: string }): ReactNode {
-  return <span dir="auto" data-own-side className={className}>{c.body.map((s, i) => typeof s === 'string' ? <span key={i}>{s}</span> : <Chip key={i} t={c.tags[s.tag]} n={s.tag + 1} />)}</span>
+export function Body({ c, className = '' }: { c: { body: Seg[]; tags: Target[]; shots?: Shot[] }; className?: string }): ReactNode {
+  let n = 0
+  return <span dir="auto" data-own-side className={className}>{c.body.map((s, i) => typeof s === 'string' ? <span key={i}>{s}</span> : isImg(s) ? (c.shots?.[s.img] ? <InlineImage key={i} shot={c.shots[s.img]} n={++n} /> : null) : <Chip key={i} t={c.tags[s.tag]} n={s.tag + 1} />)}</span>
 }
 
 /** A decision on a variant: what it says (to the agent, and as its line in the list) and its icon. */
@@ -228,7 +208,8 @@ export const aboutOf = (i: Item) => i.action === 'more-variants'
   : t('Comment {n}', { n: i.n })
 
 /** The words of a comment as plain text, tags written as @1, @2, …: their order in the accompanying targets. */
-export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : (c.tags[s.tag]?.commentRef ? `Comment ${c.tags[s.tag].commentRef!.n}` : c.tags[s.tag]?.protoRef ? protoChip(c.tags[s.tag].protoRef!) : `@${c.tags[s.tag]?.variantRef?.label ?? (c.tags[s.tag]?.source ? `${variantLabel(null, c.tags[s.tag].source!.variant)}·${s.tag + 1}` : s.tag + 1)}`)).join('').replace(/ /g, ' ').trim()
+/** The words as the agent reads them: a tag as @ and its label, an image as `[image 2]`, the picture of that number. */
+export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : isImg(s) ? `[image ${s.img + 1}]` : (c.tags[s.tag]?.commentRef ? `Comment ${c.tags[s.tag].commentRef!.n}` : c.tags[s.tag]?.protoRef ? protoChip(c.tags[s.tag].protoRef!) : `@${c.tags[s.tag]?.variantRef?.label ?? (c.tags[s.tag]?.source ? `${variantLabel(null, c.tags[s.tag].source!.variant)}·${s.tag + 1}` : s.tag + 1)}`)).join('').replace(/ /g, ' ').trim()
 
 export type { Item }
 
