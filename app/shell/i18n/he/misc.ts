@@ -83,7 +83,6 @@ export default {
   'Next {name}': '{name} הבא',
   'Step': 'לדלג',
   'Change this preview': 'שנה תצוגה מקדימה זו',
-  'View preview': 'הצג תצוגה מקדימה',
   'Close tweaks': 'סגור כוונונים',
   '{n} change': '{n} שינוי',
   '{n} changes': '{n} שינויים',
