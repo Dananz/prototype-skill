@@ -62,6 +62,7 @@ import { shareDesignChecks } from './share-design-checks.mjs'
 import { focusChecks } from './focus-checks.mjs'
 import { commentDrawerChecks } from './comment-drawer-checks.mjs'
 import { islandTreeChecks } from './island-tree-checks.mjs'
+import { tagDragChecks } from './tag-drag-checks.mjs'
 import { headerChecks } from './header-checks.mjs'
 import { phoneFrameChecks } from './phone-frame-checks.mjs'
 import { phoneOneDesignChecks } from './phone-one-design-checks.mjs'
@@ -244,6 +245,13 @@ if (process.argv.includes('--comment-drawer-only')) {
   proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused comment drawer checks')
+  process.exit(0)
+}
+if (process.argv.includes('--tag-drag-only')) {
+  await tagDragChecks({ proto, app, local, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused tag drag checks')
   process.exit(0)
 }
 if (process.argv.includes('--island-tree-only')) {

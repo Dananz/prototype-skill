@@ -23,6 +23,7 @@ import { copy } from './copy'
 import { createSheet, createMenuSheet, createStatesSheet, createTrySheet, createPanelSheet } from './sheet'
 import { createSpotlight, showable, showIcon, whereIs } from './spotlight'
 import { describe as describeComment } from './comments/dom'
+import type { Target } from './comments/types'
 import { plain as commentText } from './comments/ui'
 import { createComments, type MenuRow, type Subject } from './comments/index'
 import { islandPrefs } from './comments/island-prefs'
@@ -100,7 +101,7 @@ export type Inbox = {
 }
 /** An element a comment is on or tags. Rect is in CSS px from the variant root's top left; src and
  *  component say where it is written (`today/parts.tsx:30`, `PriceCard`). */
-export type Pinned = { source?: { proto: string; variant: string; state?: string }; commentRef?: { id: string; proto: string; variant: string; n: number; quote: string }; variantRef?: { proto: string; variant: string; label: string; name: string }; selector?: string; shoot?: string; src?: string; component?: string; tag?: string; text?: string; rect?: { x: number; y: number; w: number; h: number } }
+export type Pinned = { source?: { proto: string; variant: string; state?: string }; commentRef?: { id: string; proto: string; variant: string; n: number; quote: string }; variantRef?: { proto: string; variant: string; label: string; name: string }; protoRef?: { proto: string; title: string; count: number }; selector?: string; shoot?: string; src?: string; component?: string; tag?: string; text?: string; rect?: { x: number; y: number; w: number; h: number } }
 /** One send: route is <slug>/<letter>[/<state>]; images are data URLs (png, jpeg, webp). A decision
  *  on a variant (pick, unpick, more, build) is a comment with an action and no target. */
 export type CommentBatch = {
@@ -3151,6 +3152,24 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
           source: { proto: x.id, variant: v.id },
           variantRef: { proto: x.id, variant: v.id, label: variantLabel(x, v.id), name: v.name, title: x.title, near: rank < 9, picked: x.picked === v.id, ambiguous: (names.get(v.name) ?? 0) > 1 },
         }))
+    },
+    // Rows dragged in from the project tree, as tags: `slug/A` a variant, `slug` all of a prototype.
+    tagsFor: routes => {
+      const names = new Map<string, number>()
+      for (const x of all) if (!x.archived) for (const v of x.variants) names.set(v.name, (names.get(v.name) ?? 0) + 1)
+      return routes.flatMap((route): Target[] => {
+        const [slug, letter] = route.split('/'), x = all.find(p => p.id === slug)
+        if (!x) return []
+        if (!letter) return [{ label: 'Prototype', selector: ':scope > *', tag: 'prototype', text: `Prototype · ${x.title}`, rect: { x: 0, y: 0, w: 0, h: 0 }, protoRef: { proto: x.id, title: x.title, count: x.variants.length } }]
+        const v = x.variants.find(y => y.id === letter)
+        if (!v) return []
+        return [{
+          label: 'Variant', selector: ':scope > *', tag: 'variant', text: `Variant ${variantLabel(x, v.id)} · ${v.name} · ${x.title}`,
+          rect: { x: 0, y: 0, w: 0, h: 0 },
+          source: { proto: x.id, variant: v.id },
+          variantRef: { proto: x.id, variant: v.id, label: variantLabel(x, v.id), name: v.name, title: x.title, picked: x.picked === v.id, ambiguous: (names.get(v.name) ?? 0) > 1 },
+        }]
+      })
     },
     // A variant as a picture, the way a gallery card draws it: laid out at its own size and zoomed
     // down (never scaled: Safari on a phone paints a scaled layer at full size).

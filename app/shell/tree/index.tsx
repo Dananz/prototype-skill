@@ -7,12 +7,19 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { createRoot } from 'react-dom/client'
 import type { Design, Proto } from '../shell'
 import { rtl, t, tn } from '../i18n'
-import { numberOf } from '../variants'
+import { numberOf, variantLabel } from '../variants'
 import { treeOf, type Filter, type TreeNode } from './model'
 import { Caret, Collapse, Inside, Mark, Ph, Row } from './row'
 import { memory } from './memory'
 import { selection } from './selection'
 import { Near } from '../near'
+import { armTagDrag, setTagLabels } from '../tag-drag'
+
+/** What a row tags when dragged onto a comment box: an option its variant, a screen pinned to one
+ *  option that option, a prototype all of it, a design or a flow every screen in it. */
+const dragOf = (n: TreeNode): string[] => n.kind === 'option' || (n.kind === 'screen' && n.key.includes('/')) ? [n.route!]
+  : n.kind === 'screen' || n.kind === 'exploration' ? [n.route!.split('/')[0]]
+  : [...new Set(n.children.flatMap(dragOf))]
 
 export type TreeInput = {
   protos: Proto[]; designs: Design[]
@@ -125,7 +132,7 @@ function Shelf({ nodes, archive, slug, draw, go }: { nodes: TreeNode[]; archive:
                 <button type="button" data-tree-archive onClick={() => setArch(!arch)} className="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-start text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"><Ph name="archive" className="size-3.5" />{t('Archive')}</button>
                 <span className="text-[11px] tabular-nums text-zinc-400 dark:text-zinc-600">{archive.children.length}</span>
               </div>
-              <Collapse open={arch}><Inside>{archive.children.map(n => <Row key={n.key} id={n.key} depth={0} on={!!n.route && n.route.split('/')[0] === slug} onClick={() => go(n.route!)} mv={n.route} label={<span dir="auto" className="text-zinc-400 dark:text-zinc-600">{n.label}</span>} />)}</Inside></Collapse>
+              <Collapse open={arch}><Inside>{archive.children.map(n => <Row key={n.key} id={n.key} depth={0} on={!!n.route && n.route.split('/')[0] === slug} onClick={() => go(n.route!)} mv={n.route} drag={dragOf(n)} label={<span dir="auto" className="text-zinc-400 dark:text-zinc-600">{n.label}</span>} />)}</Inside></Collapse>
             </>
           )}
         </Inside></div>
@@ -223,6 +230,11 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
   const [open, setOpen] = useState<Set<string>>(() => new Set())
   const [shutFavs, setShutFavs] = useState<Set<string>>(() => new Set())
   const list = useRef<HTMLDivElement>(null)
+  // What a row dragged onto a comment box becomes there, written as the box writes it (tag-drag.ts).
+  useEffect(() => setTagLabels(route => {
+    const [slug, letter] = route.split('/'), p = input.protos.find(x => x.id === slug), v = letter && p?.variants.find(x => x.id === letter)
+    return !p ? null : !letter ? `@${p.title}` : v ? `@${v.name} #${variantLabel(p, v.id)}` : null
+  }), [input.protos])
   useSyncExternalStore(memory.subscribe, memory.version)
   const chosen = useSyncExternalStore(selection.subscribe, selection.get)
   // Again once a fold has finished moving the rows.
@@ -313,7 +325,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
     const seen = tone === 'candidate' && !isNew(n.route!), fresh = tone === 'candidate' && !seen
     const faint = !on && (tone === 'passed' || seen)
     return (
-      <Row key={n.key} id={n.key} depth={0} on={on} onClick={() => api.go(n.route!)} mv={n.route}
+      <Row key={n.key} id={n.key} depth={0} on={on} onClick={() => api.go(n.route!)} mv={n.route} drag={dragOf(n)}
         icon={<span className={'grid size-4 shrink-0 place-items-center rounded text-[10px] font-semibold tabular-nums ' + (n.picked ? 'bg-emerald-500 text-white' : 'bg-zinc-900/[.06] text-zinc-500 dark:bg-white/10 dark:text-zinc-400 ') + (faint ? 'opacity-60' : '')}>{num}</span>}
         label={<span className="flex min-w-0 items-center gap-1"><span dir="auto" className={'truncate ' + (faint ? 'text-zinc-500' : fresh ? 'font-medium' : '')}>{n.label}</span>{favOf(n.route!) && <Ph name="starFill" className="size-3 shrink-0 text-amber-400" />}</span>}
         end={<>{optionEnd(n)}
@@ -335,13 +347,13 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
       : wrap ? <div {...wrap}>{row}</div> : row
     if (n.kind === 'design') return (
       <div key={n.key}>
-        {stuck(<Row id={n.key} depth={0} strong open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count}
+        {stuck(<Row id={n.key} depth={0} strong open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count} drag={dragOf(n)}
           icon={<span className="size-2.5 shrink-0 rounded-full bg-indigo-500" />} label={<span dir="auto">{n.label}</span>} end={nodes[0] === n ? <FoldAll /> : null} />)}
         {kids()}
       </div>
     )
     // A design or a flow: its caret folds it here, its name goes to its first screen's page (/slug).
-    if (n.kind === 'flow') return <div key={n.key}>{stuck(<Row id={n.key} depth={0} medium open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count} label={<span dir="auto">{n.label}</span>} />)}{kids()}</div>
+    if (n.kind === 'flow') return <div key={n.key}>{stuck(<Row id={n.key} depth={0} medium open={shut} onCaret={() => flip(n)} onClick={() => api.frame(n.key)} count={n.count} drag={dragOf(n)} label={<span dir="auto">{n.label}</span>} />)}{kids()}</div>
     if (n.kind === 'section') return (
       <div key={n.key}>
         <div className="mx-1.5 mt-1 flex items-center gap-1.5 pe-1.5" style={{ paddingInlineStart: 2 }}>
@@ -378,7 +390,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
         return (
           <>
             {stuck(
-              <Row id={n.key} depth={0} on={onIt} onPick={winner.route === input.place} open={shut} onCaret={() => flip(n)} onClick={page} mv={winner.route} stands={winner.route} strong={!n.on && !!below.length} medium={!n.on && !below.length} icon={icon}
+              <Row id={n.key} depth={0} on={onIt} onPick={winner.route === input.place} open={shut} onCaret={() => flip(n)} onClick={page} mv={winner.route} stands={winner.route} drag={dragOf(n)} strong={!n.on && !!below.length} medium={!n.on && !below.length} icon={icon}
                 label={<span className={n.on ? 'font-medium dark:text-zinc-200' : ''}>{title}{parent && <span className="text-[11px] font-normal text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
                 end={<span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-zinc-400">{pulse}{comment}{hidden && <Here />}
                   {!shut && !!below.length && <span title={tn(below.length, '{n} exploration built on this', '{n} explorations built on this')} className="flex items-center gap-0.5"><Ph name="gitBranch" className="size-3.5" />{below.length}</span>}
@@ -390,7 +402,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
               { 'data-tree-decided': '' })}
             <Collapse open={!!shut}><Inside>
               {below.map(c => draw(c, inside || windowed, depth + 1, n))}
-              {below.length > 0 && passed.length > 0 ? <PassedRows n={n} more={passed.length} hold={passed.some(c => c.route === input.place)}>{options.map(c => option(c, c.picked ? 'picked' : 'passed'))}</PassedRows> : passed.length > 0 && options.map(c => option(c, c.picked ? 'picked' : 'passed'))}
+              {below.length > 0 && passed.length > 0 ? <PassedRows n={n} drag={passed.map(c => c.route!)} more={passed.length} hold={passed.some(c => c.route === input.place)}>{options.map(c => option(c, c.picked ? 'picked' : 'passed'))}</PassedRows> : passed.length > 0 && options.map(c => option(c, c.picked ? 'picked' : 'passed'))}
             </Inside></Collapse>
           </>
         )
@@ -398,7 +410,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
       const fresh = passed.filter(c => isNew(c.route!)).length
       return (
         <>
-          {stuck(<Row id={n.key} depth={0} on={lit} open={shut} onCaret={() => flip(n)} mv={n.route}
+          {stuck(<Row id={n.key} depth={0} on={lit} open={shut} onCaret={() => flip(n)} mv={n.route} drag={dragOf(n)}
             /* An exploration's name goes to its own page (/slug), its card open in the gallery; a screen's opens it. */
             onClick={() => { if (!shut) flip(n); page() }}
             icon={icon}
@@ -430,7 +442,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
     const shut = !!isOpen(n)
     return (
       <div key={n.key}>
-        <Row id={n.key} depth={0} on={here} open={below.length ? shut : undefined} onCaret={() => flip(n)} onClick={() => api.go(n.route!)} mv={n.route}
+        <Row id={n.key} depth={0} on={here} open={below.length ? shut : undefined} onCaret={() => flip(n)} onClick={() => api.go(n.route!)} mv={n.route} drag={dragOf(n)}
           label={<span dir="auto" className="text-[12px]">{n.label}</span>}
           end={winner ? <span className="opacity-60"><Mark state="done" picked={numberOf(winner.route!.split('/')[1])} /></span>
             : <span className="flex shrink-0 items-center gap-1 text-[11px] text-zinc-400 dark:text-zinc-600"><Ph name="eyeSlash" className="size-3.5" />{t('Not picked')}</span>} />
@@ -496,11 +508,11 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
 }
 
 /** The options passed on, behind one row, under what was built on a decided exploration. */
-function PassedRows({ n, more: count, hold, children }: { n: TreeNode; more: number; hold: boolean; children: React.ReactNode[] }) {
+function PassedRows({ n, more: count, hold, drag, children }: { n: TreeNode; more: number; hold: boolean; drag: string[]; children: React.ReactNode[] }) {
   const [more, setMore] = useState(false), open = more || hold
   return (
     <>
-      <button type="button" data-tree-more={n.key} aria-expanded={open} onClick={() => setMore(!more)} className="mx-1.5 flex h-8 w-[calc(100%-12px)] items-center gap-1.5 rounded-lg px-2 text-start text-[12px] text-zinc-400 hover:bg-zinc-900/[.04] dark:text-zinc-500 dark:hover:bg-white/[.06] [@media(pointer:coarse)]:h-10">
+      <button type="button" data-tree-more={n.key} aria-expanded={open} onClick={() => setMore(!more)} data-drag={JSON.stringify(drag)} onPointerDown={e => armTagDrag(e, () => drag)} className="mx-1.5 flex h-8 w-[calc(100%-12px)] items-center gap-1.5 rounded-lg px-2 text-start text-[12px] text-zinc-400 hover:bg-zinc-900/[.04] dark:text-zinc-500 dark:hover:bg-white/[.06] [@media(pointer:coarse)]:h-10">
         <span className={'grid place-items-center transition-transform duration-200 ease-out motion-reduce:transition-none ' + (open ? '' : 'ltr:-rotate-90 rtl:rotate-90')}><Ph name="caretDown" className="size-2.5" /></span>
         <Ph name="rows" className="size-3.5" />{open ? t('Hide') : tn(count, '{n} more option', '{n} more options')}
       </button>

@@ -38,9 +38,11 @@ export type VariantRef = {
   /** Its name alone could be several variants (Current): its chip names the prototype too. */
   ambiguous?: boolean
 }
+/** A whole prototype, tagged (dragged in from the project tree): every one of its `count` variants. */
+export type ProtoRef = { proto: string; title: string; count: number }
 export type CommentRef = { id: string; proto: string; variant: string; n: number; quote: string }
 export type Source = { proto: string; variant: string; state?: string }
-export type Target = { source?: Source; commentRef?: CommentRef; variantRef?: VariantRef; label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; stage?: { w: number; h: number }; point?: { x: number; y: number }; region?: Box; view?: ViewSize; uses?: Use[]; within?: string; route?: string[]; whole?: true }
+export type Target = { source?: Source; commentRef?: CommentRef; variantRef?: VariantRef; protoRef?: ProtoRef; label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; stage?: { w: number; h: number }; point?: { x: number; y: number }; region?: Box; view?: ViewSize; uses?: Use[]; within?: string; route?: string[]; whole?: true }
 
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
 export type Seg = string | { tag: number }
