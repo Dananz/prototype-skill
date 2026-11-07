@@ -856,7 +856,7 @@ shows there as "You picked X".
 ## Comments from the page
 
 The user can leave comments on the design in the page (the Comment button, or C): click an
-element (or drag out a region with the mouse, or, on a phone, hold a finger on a spot), write, tag other elements with `@`, attach a
+element (or drag out a region with the mouse, or, on a phone, hold a finger on a spot), write, tag other elements with `@` (or drag out a region to tag it, with its picture), attach a
 screenshot and mark it up (or paste an image with Ctrl/⌘ V, or drop one on the comment), then send
 every draft at once. Commenting never reaches the design, so a menu or popover open in it stays
 open and what is in it can be commented on. Hover-only parts work the same way, with no key: while
@@ -915,7 +915,8 @@ it is on (tag, text, `data-shoot` or selector, its box in CSS px from the varian
 and where it is written: its file from the app's folder, line and component, as
 `src/protos/today/parts.tsx:30 (PriceCard)`; open it there) and any elements it tags (numbered `with @1`, `with @2`, matching the comment), and the absolute path of each image attached to it:
 `(marked up)` is a screenshot of the design, `(the region, as dragged out)` the picture of a
-dragged-out region, `(pasted by the user)` an image they pasted or dropped (a reference, another
+dragged-out region, `(the region tagged @2, as dragged out)` the picture of a region dragged out
+to tag it (its `with @2` line prints `region` and its box, then `in` the element around it), `(pasted by the user)` an image they pasted or dropped (a reference, another
 app, anything). A comment
 pinned to a spot with a long press (on a phone, where no element fit) prints `at:` the spot, in
 the same px, and `in:` the element under it: the change is about that spot, not the whole

@@ -44,8 +44,8 @@ export type Target = { source?: Source; commentRef?: CommentRef; variantRef?: Va
 
 /** A comment's words: text, and tags (an index into the comment's `tags`) between. */
 export type Seg = string | { tag: number }
-/** A comment's picture: one of the design (the camera, marked up or not), or an image the user pasted or dropped (`pasted`). `region`: the crop of a dragged-out region, as it was taken. */
-export type Shot = { src: string; pasted?: boolean; region?: boolean }
+/** A comment's picture: one of the design (the camera, marked up or not), or an image the user pasted or dropped (`pasted`). `region`: the crop of a dragged-out region, as it was taken. `tag`: the crop of a region dragged out to tag it, the index of that tag. */
+export type Shot = { src: string; pasted?: boolean; region?: boolean; tag?: number }
 /**
  * `shots` are its pictures, at most MAX_SHOTS. `shot` and `pasted` are the one picture a draft saved
  * before a comment could have several; `shotsOf` reads either.

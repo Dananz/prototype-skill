@@ -153,10 +153,12 @@ export function SrcTag({ t, className = 'max-w-[50%] shrink-0' }: { t?: Pick<Tar
  * else its component (a card or a row of them reads as all their words run together), else the
  * start of its words, else what it is.
  */
-export const elementName = (t: Pick<Target, 'text' | 'component' | 'tag'>) => {
-  const words = t.text.replace(/\s+/g, ' ').trim()
+export const elementName = (x: Pick<Target, 'text' | 'component' | 'tag' | 'region'>) => {
+  // A region dragged out is about what is in its box, not the words of the element around it.
+  if (x.region) return t('Region')
+  const words = x.text.replace(/\s+/g, ' ').trim()
   if (words && words.length <= 28) return words
-  return t.component || (words ? `${words.slice(0, 24).trimEnd()}…` : t.tag)
+  return x.component || (words ? `${words.slice(0, 24).trimEnd()}…` : x.tag)
 }
 
 /** A tag in a sentence stays short: its name and number, and its prototype only when the name alone could be several. */

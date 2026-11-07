@@ -50,6 +50,7 @@ import { tweaksChecks } from './tweaks-checks.mjs'
 import { tweaksRegistryChecks } from './tweaks-registry-checks.mjs'
 import { middleDragChecks } from './middle-drag-checks.mjs'
 import { commentRegionOffChecks } from './comment-region-off-checks.mjs'
+import { commentRegionTagChecks } from './comment-region-tag-checks.mjs'
 import { zoomResetChecks } from './zoom-reset-checks.mjs'
 import { virtualVariantsChecks } from './virtual-variants-checks.mjs'
 import { virtualWindowChecks } from './virtual-window-checks.mjs'
@@ -310,6 +311,13 @@ if (process.argv.includes('--region-off-only')) {
   console.log('OK: focused off-design region checks')
   process.exit(0)
 }
+if (process.argv.includes('--region-tag-only')) {
+  await commentRegionTagChecks({ proto, app, openPage, fail, keepShots: process.env.PROTO_REGION_SHOTS || '' })
+  proto(['rm'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused region tag checks')
+  process.exit(0)
+}
 if (process.argv.includes('--middle-drag-only')) {
   await middleDragChecks({ proto, app, local, openPage, fail, keepShots: process.env.PROTO_DRAG_SHOTS || '', before: !!process.env.PROTO_DRAG_BEFORE })
   proto(['rm'])
@@ -502,6 +510,7 @@ await slotChecks({ proto, app, local, openPage, fail })
 await decisionChecks({ proto, app, local, openPage, fail, keepShots })
 await middleDragChecks({ proto, app, local, openPage, fail })
 await commentRegionOffChecks({ proto, app, local, openPage, fail })
+await commentRegionTagChecks({ proto, app, openPage, fail })
 await zoomResetChecks({ proto, app, local, openPage, fail })
 await variantLabelsChecks({ proto, app, local, openPage, fail })
 await favoritesChecks({ proto, app, local, openPage, fail })
