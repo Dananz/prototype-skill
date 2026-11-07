@@ -17,6 +17,8 @@ export type GalleryInput = {
   scope?: string; me?: string
   /** The project's conversations, newest first with this one first, as JSON: [{ sid, name, at, n, picked }]. */
   convs?: string
+  /** Who recommends: its name on the recommended option (meta.ts recommend). */
+  agent?: string
 }
 export type GalleryApi = {
   get(): GalleryInput; subscribe(fn: () => void): () => void
@@ -27,6 +29,8 @@ export type GalleryApi = {
   mount(el: HTMLElement, component: unknown): () => void
   /** Scopes the page (the tree too): 'conv:<id>', 'all' or 'favs'. */
   setScope(scope: string): void
+  /** Picks a variant (slug/letter) from the page, as Decide does; throws with the server's reason. */
+  pick(route: string): Promise<void>
 }
 
 function GalleryRoot({ api }: { api: GalleryApi }) {
@@ -37,7 +41,7 @@ function GalleryRoot({ api }: { api: GalleryApi }) {
     const [w, h] = p.kind === 'phone' ? p.screen : [1200, 750]
     return <Still v={p.variants.find(v => v.id === letter)} route={`${p.id}/${letter}`} w={w} h={h} size={0.4} want={want && !input.hidden} stamp={`${stampOf.get(p.id) ?? 0}:`} mount={api.mount} />
   }
-  return <Gallery input={input} pic={pic} open={api.open} card={api.card} safe={safe} setScope={api.setScope} />
+  return <Gallery input={input} pic={pic} open={api.open} pick={api.pick} card={api.card} safe={safe} setScope={api.setScope} />
 }
 
 export function mountGallery(host: HTMLElement, api: GalleryApi) {

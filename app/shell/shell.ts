@@ -69,7 +69,10 @@ export type State = { id: string; name: string; click: string[]; about?: Record<
 export type Design = { id: string; title: string; created: string; session?: string; owner?: string; from?: { proto: string; variant: string }; flows: { name: string; screens: string[] }[] }
 /** session: the conversation that made it; owner: the one working on it now; next: its pick is
  *  built into its parent (proto add --next). */
-export type Proto = { id: string; title: string; session?: string; owner?: string; next?: boolean; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; slot?: string; also: { proto: string; variant: string }[]; picked?: string; favorites: string[]; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[]; versions?: Record<string, Version[]> }
+export type Proto = { id: string; title: string; session?: string; owner?: string; next?: boolean; ask: string; kind: 'web' | 'phone'; created: string; archived: boolean; from?: { proto: string; variant: string }; slot?: string; also: { proto: string; variant: string }[]; picked?: string; favorites: string[]; count?: number; screen: [number, number]; about: Record<string, string>; states: State[]; variants: Variant[]; versions?: Record<string, Version[]>; recommend?: Recommend }
+/** The agent's recommendation (meta.ts `recommend`, written by `proto recommend`): the variant it would
+ *  pick, why, what to take from the others, and a one-line take per variant. It marks nothing as picked. */
+export type Recommend = { pick: string; why: string; borrow?: string; takes: Record<string, string> }
 /** A variant of one prototype ("pricing" and "C"). */
 export type Ref = { proto: string; variant: string }
 /** work: the variant being changed now; before: the ones worked on before it (newest first);
@@ -482,7 +485,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (!res.ok) throw new Error()
     } catch { set(was) }
   }
-  const lobbyOrder = (p: Proto) => { const k = pickOf(p); return k ? [...p.variants.filter(v => v.id === k), ...p.variants.filter(v => v.id !== k)] : p.variants }
+  // The agent's recommendation (proto recommend) stands out only while nothing is picked; its takes stay.
+  const recOf = (p: Proto) => p.recommend && !pickOf(p) ? p.recommend.pick : ''
+  const REC = 'text-indigo-600 dark:text-indigo-300'
+  const lobbyOrder = (p: Proto) => { const k = pickOf(p) || recOf(p); return k ? [...p.variants.filter(v => v.id === k), ...p.variants.filter(v => v.id !== k)] : p.variants }
   const PICK = 'text-emerald-700 dark:text-emerald-400'
   const pickChip = (p: Proto, cls = '') => pickOf(p) ? `<span title="${esc(t('Picked {label}', { label: variantRef(p, pickOf(p)) }))} · ${esc(p.variants.find(v => v.id === pickOf(p))!.name)}" class="inline-flex h-5 shrink-0 items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 text-[11px] font-semibold ${PICK} ${cls}">${ic('check', 'size-3')}${esc(variantRef(p, pickOf(p)))}</span>` : ''
   // Where the sidebar docks: the project tree from a tablet up (below, it is the phone's sheet); the
@@ -671,7 +677,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     return {
       protos: all, designs, place: placeRoute(), me: session.conversation ?? null, conv: convOn, scope: scopeNow(), scopeName: scopeName(),
       building: new Set(Object.keys(session.building ?? {}).filter(k => buildingUntil(k) > Date.now())), counts: by,
-      workSlug: w?.p.id ?? '', edits: st.status?.edits,
+      workSlug: w?.p.id ?? '', edits: st.status?.edits, agent: agentName(session.agent),
       work: w ? t('Working on {name}', { name: `${w.p.title} ${variantLabel(w.p, w.v.id)}` }) : '',
       dock: dockInput(),
       up: st.live && !st.stopped,
@@ -682,7 +688,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function paintTree() {
     if (!treeOn) return
     const next = treeInput(), was = treeSnap
-    const key = (x: TreeInput | null) => x && JSON.stringify({ ...x, protos: x.protos.map(p => [p.id, p.title, p.picked, p.archived, p.from, p.session, p.favorites, p.variants.map(v => v.id + v.name), p.states.map(s => [s.id, s.only])]), building: [...x.building] })
+    const key = (x: TreeInput | null) => x && JSON.stringify({ ...x, protos: x.protos.map(p => [p.id, p.title, p.picked, p.archived, p.from, p.session, p.favorites, p.recommend?.pick, p.variants.map(v => v.id + v.name), p.states.map(s => [s.id, s.only])]), building: [...x.building] })
     if (key(next) === key(was)) return
     treeSnap = next
     treeWatchers.forEach(f => f())
@@ -797,6 +803,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     card: proto => go(proto ? { view: 'proto', proto } : { view: 'session' }),
     mount: (el, c) => mount(el, c),
     setScope,
+    pick: route => { const [proto, variant] = route.split('/'); return comments.act.decide({ proto, variant }, 'pick') },
   }
   // On a wide desk the gallery fills the window, under the bar, the strip, the sidebar and the island; it
   // is told the clear part of it (the stage), which it keeps its cards to.
@@ -853,7 +860,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     layers.style.opacity = show ? '0' : ''
     layers.style.pointerEvents = show ? 'none' : ''
     if (!show && !galleryMounted) return
-    const next: GalleryInput = { protos: scopedProtos(), scope: scopeNow(), me: session.conversation ?? '', convs: convsOf(), hidden: !show, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), open: proto, safe }
+    const next: GalleryInput = { protos: scopedProtos(), scope: scopeNow(), me: session.conversation ?? '', convs: convsOf(), agent: agentName(session.agent), hidden: !show, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), open: proto, safe }
     if (gallerySnap && (Object.keys(next) as (keyof GalleryInput)[]).every(k => next[k] === gallerySnap![k])) return
     gallerySnap = next
     if (!galleryMounted && show) { galleryMounted = true; void import('./gallery/index').then(m => m.mountGallery(galleryHost, galleryApi)) }
@@ -1575,15 +1582,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const tab = (on: boolean, act: string, icon: string, label: string) => `<button data-act="${act}" aria-pressed="${on}" title="${label}" class="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs ${on ? TAB_ON : TAB_OFF}">${ic(icon, 'size-3.5')}<span class="hidden sm:inline">${label}</span></button>`
     const favToggle = (p: Proto) => p.favorites.length ? `<button data-act="favs:${favOnly ? 0 : 1}" data-fav-toggle aria-pressed="${favOnly}" title="${esc(favOnly ? t('Show every variant') : t('Show only favorites'))}" class="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs ${favOnly ? `bg-amber-500/15 font-medium text-amber-800 dark:text-amber-200` : 'bg-zinc-900/[.04] text-zinc-600 hover:text-zinc-900 dark:bg-white/[.06] dark:text-zinc-300 dark:hover:text-white'}">${ic(favOnly ? 'star-fill' : 'star', `size-3.5 ${favOnly ? STAR : ''}`)}${t('Favorites only')}<span class="tabular-nums opacity-70">${p.favorites.length}</span></button>` : ''
     const layoutToggle = `<div class="flex gap-0.5 rounded-lg bg-zinc-900/[.04] p-0.5 dark:bg-white/[.06]">${tab(!st.stack, 'stack:0', 'grid', t('Grid'))}${tab(st.stack, 'stack:1', 'rows', t('Full size'))}</div>`
-    return `<div class="flex flex-wrap items-end justify-between gap-2 px-4 pt-5 sm:px-6"><div class="min-w-0">${sources(p).length ? `<div class="mb-2 flex flex-wrap gap-1.5">${fromChips(p)}</div>` : ''}<h2 class="flex items-center gap-2 text-xl font-semibold tracking-tight">${bd(p.title)}${pickOf(p) ? `<span class="inline-flex h-6 items-center gap-1 rounded-full bg-emerald-500/10 px-2 text-xs font-semibold tracking-normal ${PICK}">${ic('check', 'size-3.5')}${t('Picked {label}', { label: esc(variantRef(p, pickOf(p))) })}</span>` : ''}</h2><p class="text-xs text-zinc-500">${p.ask ? `<bdi>“${esc(p.ask)}”</bdi> · ` : ''}${(n => n > p.variants.length ? t('{n} of {total} variants', { n: p.variants.length, total: n }) : tn(p.variants.length, '{n} variant', '{n} variants'))(all.find(x => x.id === p.id)?.variants.length ?? 0)} · ${clock(p.created)}</p>${wholeKids(p).length ? `<div class="mt-2 flex flex-wrap gap-1.5">${wholeKids(p).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}<span dir="auto" class="truncate">${esc(k.title)}</span></button>`).join('')}</div>` : ''}</div>${p.variants.length ? `<div class="flex flex-wrap items-center gap-2">${favToggle(p)}${layoutToggle}</div>` : `<p class="text-xs text-zinc-400">${t('No variants yet')}</p>`}</div>
+    return `<div class="flex flex-wrap items-end justify-between gap-2 px-4 pt-5 sm:px-6"><div class="min-w-0">${sources(p).length ? `<div class="mb-2 flex flex-wrap gap-1.5">${fromChips(p)}</div>` : ''}<h2 class="flex items-center gap-2 text-xl font-semibold tracking-tight">${bd(p.title)}${pickOf(p) ? `<span class="inline-flex h-6 items-center gap-1 rounded-full bg-emerald-500/10 px-2 text-xs font-semibold tracking-normal ${PICK}">${ic('check', 'size-3.5')}${t('Picked {label}', { label: esc(variantRef(p, pickOf(p))) })}</span>` : recOf(p) ? `<span data-rec-pill class="inline-flex h-6 items-center gap-1 rounded-full bg-indigo-500/10 px-2 text-xs font-semibold tracking-normal ${REC}">${ic('sparkle', 'size-3.5')}${esc(t('{agent} suggests {v}', { agent: agentName(session.agent), v: variantRef(p, recOf(p)) }))}</span>` : ''}</h2><p class="text-xs text-zinc-500">${p.ask ? `<bdi>“${esc(p.ask)}”</bdi> · ` : ''}${(n => n > p.variants.length ? t('{n} of {total} variants', { n: p.variants.length, total: n }) : tn(p.variants.length, '{n} variant', '{n} variants'))(all.find(x => x.id === p.id)?.variants.length ?? 0)} · ${clock(p.created)}</p>${recOf(p) && p.recommend!.why ? `<p data-rec-why dir="auto" class="mt-3 max-w-[68ch] text-sm leading-relaxed text-zinc-600 dark:text-zinc-300"><span class="font-semibold ${REC}">${esc(t('Why {v}:', { v: variantRef(p, recOf(p)) }))}</span> ${esc(p.recommend!.why)}${p.recommend!.borrow ? ` <span class="text-zinc-500 dark:text-zinc-400">${esc(p.recommend!.borrow)}</span>` : ''}</p>` : ''}${wholeKids(p).length ? `<div class="mt-2 flex flex-wrap gap-1.5">${wholeKids(p).map(k => `<button data-act="lobby:proto:${esc(k.id)}" class="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${NEST}">${ic('branch', 'size-3.5')}<span dir="auto" class="truncate">${esc(k.title)}</span></button>`).join('')}</div>` : ''}</div>${p.variants.length ? `<div class="flex flex-wrap items-center gap-2">${favToggle(p)}${layoutToggle}</div>` : `<p class="text-xs text-zinc-400">${t('No variants yet')}</p>`}</div>
       ${st.stack ? stack(p) : protoGrid(p)}`
   }
 
   function gridCard(p: Proto, v: Variant) {
-    const k = pickOf(p)
-    return `<div class="min-w-0 ${k && v.id !== k ? 'opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" class="group block w-full min-w-0 text-start">
-        <div class="overflow-hidden rounded-lg transition ${v.id === k ? 'ring-2 ring-emerald-500' : 'ring-1 ring-black/10 group-hover:ring-2 group-hover:ring-zinc-900 dark:ring-white/10 dark:group-hover:ring-white'}">${thumb(p, 'aspect-[16/10]')}</div>
-        <div class="mt-2 flex items-center gap-2"><span class="font-semibold">${variantRef(p, v.id)}</span><span class="truncate text-zinc-500">${esc(v.name)}</span>${starMark(p, v.id)}${v.id === k ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}${t('Picked')}</span>` : ''}${editing(p.id, v.id) ? `<span class="ms-auto inline-flex items-center gap-1.5 text-xs text-emerald-600">${pulse('size-1.5')}${building(p.id, v.id) ? t('building') : t('editing')}</span>` : ''}</div></button>${kidChips(p, v.id)}</div>`
+    const k = pickOf(p), rec = recOf(p) === v.id, take = p.recommend?.takes[v.id]
+    // The recommended card: first, in a soft indigo panel, its take in indigo and Pick across its width.
+    return `<div ${rec ? 'data-rec-card' : ''} class="min-w-0 ${k && v.id !== k ? 'opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100' : ''} ${rec ? '-m-2.5 rounded-[18px] bg-indigo-500/[.07] p-2.5 shadow-[0_8px_30px_-8px_rgb(99_102_241/.35)] ring-1 ring-indigo-500/25 dark:bg-indigo-400/[.09] dark:ring-indigo-400/30' : ''}"><button data-act="pv:${esc(p.id)}:${v.id}" class="group block w-full min-w-0 text-start">
+        <div class="overflow-hidden rounded-lg transition ${v.id === k ? 'ring-2 ring-emerald-500' : rec ? 'ring-2 ring-indigo-500 dark:ring-indigo-400' : 'ring-1 ring-black/10 group-hover:ring-2 group-hover:ring-zinc-900 dark:ring-white/10 dark:group-hover:ring-white'}">${thumb(p, 'aspect-[16/10]')}</div>
+        <div class="mt-2 flex items-center gap-2"><span class="font-semibold">${variantRef(p, v.id)}</span><span class="truncate text-zinc-500">${esc(v.name)}</span>${starMark(p, v.id)}${v.id === k ? `<span class="inline-flex shrink-0 items-center gap-1 text-xs font-medium ${PICK}">${ic('check', 'size-3.5')}${t('Picked')}</span>` : ''}${editing(p.id, v.id) ? `<span class="ms-auto inline-flex items-center gap-1.5 text-xs text-emerald-600">${pulse('size-1.5')}${building(p.id, v.id) ? t('building') : t('editing')}</span>` : rec ? `<span class="ms-auto inline-flex shrink-0 items-center gap-1 text-xs font-medium ${REC}">${ic('sparkle', 'size-3.5')}${esc(t('{agent}’s pick', { agent: agentName(session.agent) }))}</span>` : ''}</div>${take ? `<p data-rec-take dir="auto" class="mt-0.5 text-[13px] leading-snug ${rec ? REC : 'text-zinc-500 dark:text-zinc-400'}">${esc(take)}</p>` : ''}</button>${rec ? `<button data-act="rec-pick:${esc(p.id)}:${v.id}" data-rec-pick class="mt-2 flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-600 text-[13px] font-medium text-white hover:bg-indigo-500">${ic('picked', 'size-4')}${esc(t('Pick {v}', { v: variantRef(p, v.id) }))}</button>` : ''}${kidChips(p, v.id)}</div>`
   }
   function protoGrid(p: Proto) {
     return `<div ${p.variants.length > VIRTUAL_THRESHOLD ? 'data-virtual-preview' : ''} class="${GRID} p-4 sm:p-6">${p.variants.length > VIRTUAL_THRESHOLD ? '' : lobbyOrder(p).map(v => gridCard(p, v)).join('')}</div>`
@@ -2589,6 +2597,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'menu': st.menu = arg as typeof st.menu; recenter = true; return render()
       case 'favs': return setFavOnly(arg === '1')
       case 'fav': return void toggleFav(arg, arg2)
+      // Pick on the agent's recommended card: a pick from the page, as Decide sends it.
+      case 'rec-pick': return void comments.act.decide({ proto: arg, variant: arg2 }, 'pick').catch(e => console.warn('[proto] pick:', e))
       case 'stack': {
         const on = arg === '1'
         if (st.stack === on) return
@@ -4278,8 +4288,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     setDesigns(next: Design[]) { designs = next; render() },
     setProtos(next: Proto[]) {
       const before = new Map(protos.map(p => [p.id, new Set(p.variants.map(v => v.id))]))
-      // Stars changed elsewhere (`proto fav`, another tab): an overview's cards are its layer, so it is drawn again below.
-      const starsOf = (list: Proto[]) => list.map(p => `${p.id}:${p.favorites.join()}`).join('|')
+      // Stars or the agent's recommendation changed elsewhere (`proto fav`, `proto recommend`, another tab): an
+      // overview's cards are its layer, so it is drawn again below.
+      const starsOf = (list: Proto[]) => list.map(p => `${p.id}:${p.favorites.join()}:${JSON.stringify(p.recommend ?? '')}`).join('|')
       const restar = starsOf(all) !== starsOf(next)
       all = next
       protos = shown(next)

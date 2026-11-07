@@ -58,6 +58,7 @@ import { virtualWindowChecks } from './virtual-window-checks.mjs'
 import { virtualReactChecks } from './virtual-react-checks.mjs'
 import { variantLabelsChecks } from './variant-labels-checks.mjs'
 import { favoritesChecks } from './favorites-checks.mjs'
+import { recommendChecks } from './recommend-checks.mjs'
 import { treeChecks } from './tree-checks.mjs'
 import { goChecks } from './go-checks.mjs'
 import { shareDesignChecks } from './share-design-checks.mjs'
@@ -313,6 +314,13 @@ if (process.argv.includes('--tree-only')) {
   console.log('OK: focused project tree checks')
   process.exit(0)
 }
+if (process.argv.includes('--recommend-only')) {
+  await recommendChecks({ proto, app, local, openPage, fail })
+  proto(['rm', '--all'])
+  try { rmSync(scratch, { recursive: true, force: true }) } catch { /* temp dir */ }
+  console.log('OK: focused recommendation checks')
+  process.exit(0)
+}
 if (process.argv.includes('--labels-favorites-only')) {
   await variantLabelsChecks({ proto, app, local, openPage, fail })
   await favoritesChecks({ proto, app, local, openPage, fail })
@@ -539,6 +547,7 @@ await commentRegionTagChecks({ proto, app, openPage, fail })
 await zoomResetChecks({ proto, app, local, openPage, fail })
 await variantLabelsChecks({ proto, app, local, openPage, fail })
 await favoritesChecks({ proto, app, local, openPage, fail })
+await recommendChecks({ proto, app, local, openPage, fail })
 await treeChecks({ proto, app, local, openPage, fail })
 await goChecks({ proto, app, local, openPage, fail })
 await focusChecks({ proto, app, local, openPage, fail })

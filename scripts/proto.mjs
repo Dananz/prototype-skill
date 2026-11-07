@@ -40,6 +40,8 @@
 //   proto snap <slug>[/<letter>]… [--width 672]   static HTML snapshots for a shared document
 //   proto pick <slug> <number> [--off]   the user chose this variant: marked in the page
 //   proto fav [<slug>] | <slug>/<number>[ …] [--off]   the user's favorites (the page's stars): list them, or star some
+//   proto recommend <slug> <number> --why "…" [--borrow "…"] [<number> "<take>" …] [--off]   your recommendation,
+//             shown in the page (the tree's sparkle, first on the overview with its reason and a Pick button)
 //   proto work <slug>/<letter> [--ask "…"] [--off]   the variant being worked on: pinned in the page
 //   proto ask "…" [--to <slug>/<letter>]   a change the user asked for, kept with that variant
 //   proto ask --each "…" "…" …   several at once (a batch of comments); each ask keeps the variant as it was first
@@ -919,6 +921,36 @@ function fav() {
     writeWhole(f, withMeta(text, m), scratchOf(dir))
     console.log(line(slug, m))
   }
+}
+
+// ---------- the agent's recommendation ----------
+// Which variant the agent would pick and why (SKILL.md step 6), kept in meta.ts as `recommend`,
+// so the page says it too: the tree marks it, and the prototype's overview puts it first with its
+// reason, a Pick button and every variant's one-line take. It marks nothing as picked.
+//   proto recommend <slug> <number> --why "…" [--borrow "…"] [<number> "<take>" …]
+//   proto recommend <slug> [--off]   print it, or take it away
+function recommend() {
+  const dir = sessionDir()
+  need(dir)
+  const slug = String(args[0] || '').split('/')[0]
+  const f = join(dir, 'src', 'protos', slug, 'meta.ts')
+  if (!slug || !existsSync(f)) die('give a prototype: proto recommend <slug> <number> --why "…"')
+  const text = readFileSync(f, 'utf8'), m = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
+  const say = r => r ? `${slug}: recommends ${shown(r.pick)} · ${m.variants?.[r.pick] ?? r.pick}${r.why ? `\n  why: ${r.why}` : ''}${r.borrow ? `\n  from the others: ${r.borrow}` : ''}${Object.entries(r.takes || {}).map(([id, l]) => `\n  ${shown(id)}: ${l}`).join('')}` : `${slug}: no recommendation`
+  const rest = String(args[0]).includes('/') ? [String(args[0]).split('/')[1], ...args.slice(1)] : args.slice(1)
+  if (flags.off) { delete m.recommend; writeWhole(f, withMeta(text, stampOwner(m)), scratchOf(dir)); return console.log(say(null)) }
+  if (!rest.length) return console.log(say(m.recommend))
+  // The number the user sees (3, #3) or the letter (C).
+  const letter = n => { const x = String(n).replace(/^#/, ''), id = /^\d+$/.test(x) ? letterOf(x) : x; if (!id || !m.variants?.[id]) die(`which variant of ${slug}? "${n}" is not one (${choices(m)})`); return id }
+  const pick = letter(rest[0])
+  if (typeof flags.why !== 'string' || !flags.why.trim()) die('--why "…": two to four sentences on why it wins for this product and its users')
+  if ((rest.length - 1) % 2) die('takes come in pairs: <number> "<its direction and main weakness>"')
+  const takes = {}
+  for (let i = 1; i < rest.length; i += 2) takes[letter(rest[i])] = String(rest[i + 1]).trim()
+  m.recommend = { pick, why: flags.why.trim(), ...(typeof flags.borrow === 'string' && flags.borrow.trim() ? { borrow: flags.borrow.trim() } : {}), ...(Object.keys(takes).length ? { takes } : {}) }
+  writeWhole(f, withMeta(text, stampOwner(m)), scratchOf(dir))
+  console.log(say(m.recommend))
+  if (m.picked && m.picked !== pick) console.log(`note: the user already picked ${shown(m.picked)}; the page shows yours beside it`)
 }
 
 // ---------- the working variant ----------
@@ -2810,7 +2842,7 @@ function fonts() {
 }
 
 const commands = {
-  up, add, design, plan, done, pick, fav, work, ask, history, brief: briefCmd, archive, shoot, compare, perf, handoff, snap, intake, inbox, reply, gc: () => gc(false), ls,
+  up, add, design, plan, done, pick, fav, recommend, work, ask, history, brief: briefCmd, archive, shoot, compare, perf, handoff, snap, intake, inbox, reply, gc: () => gc(false), ls,
   stop: async () => { await stop(); console.log('stopped (files kept; proto up restarts it on the same link)') },
   // --project is the project's folder on every command, so the whole app is --all.
   rm: () => flags.all ? removeApp(sessionDir()) : rmMine(),
