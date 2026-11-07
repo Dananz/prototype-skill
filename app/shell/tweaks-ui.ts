@@ -252,7 +252,7 @@ function TweaksDrawer(p: TweaksDrawerProps) {
             h('div', { className: 'flex min-w-0 flex-1 items-baseline gap-2' },
               h(Drawer.Title, { className: 'shrink-0 text-[13px] font-semibold' }, t('Tweaks')),
               h(Drawer.Description, { className: 'min-w-0 truncate text-[11px] text-zinc-400 dark:text-zinc-500' }, changed ? tn(changed, '{n} change', '{n} changes') : t('Change this preview'))),
-            h(Drawer.Close, { 'data-tweaks-close': '', 'aria-label': t('Close tweaks'), title: t('Close tweaks'), className: 'grid size-8 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 active:bg-zinc-900/10 dark:text-zinc-400 dark:hover:bg-white/10 dark:active:bg-white/15' }, icon('chev'))),
+            h(Drawer.Close, { 'data-tweaks-close': '', 'aria-label': t('Close tweaks'), className: 'grid size-8 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 active:bg-zinc-900/10 dark:text-zinc-400 dark:hover:bg-white/10 dark:active:bg-white/15' }, icon('chev'))),
           h('div', { className: 'relative flex min-h-0 flex-1 flex-col' },
             h(Drawer.Content, { className: 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-2' }, h(Controls, p)),
             h('span', { 'aria-hidden': true, className: 'pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-white to-transparent dark:from-zinc-950' }))))))
