@@ -1311,6 +1311,8 @@ async function shootPin(dir, s, out) {
       // The stage the design was in when the comment was made, and the design's saved settings
       // (its localStorage) when the batch was sent: batches from before these were recorded have neither.
       ...(c.target.stage ? { stage: c.target.stage } : {}),
+      // The tweaks the user had changed, set again before the shot.
+      ...(c.tweaks?.length ? { tweaks: c.tweaks } : {}),
       ...(b.storage ? { storage: b.storage } : {}),
     }
   })
@@ -2004,6 +2006,10 @@ function actionText(dir, c) {
   return (ACTIONS[c.action] || '') + suffix
 }
 
+// One tweak a comment was written with: its label, the value then and its default.
+const tweakValue = v => typeof v === 'boolean' ? (v ? 'on' : 'off') : JSON.stringify(v)
+const tweakShown = t => `${t.label} = ${tweakValue(t.value)} (default ${tweakValue(t.was)})`
+
 function printBatch(dir, b) {
   const vp = b.viewport ? ` · page ${b.viewport.w}x${b.viewport.h}${b.viewport.phone ? ' (phone)' : ''}` : ''
   // A comment the user deleted in the page after sending it is withdrawn: left out, only counted.
@@ -2036,6 +2042,8 @@ function printBatch(dir, b) {
     if (c.target) console.log(`   ${c.point || c.region ? 'in' : 'on'}: ${where(c.target)}`)
     if (c.target?.src) printSource(dir, c.target.src)
     if (c.target?.uses) printUses(dir, c.target, c.route)
+    // The design as the user had it in Tweaks: values the source does not draw (proto shoot --pin sets them).
+    if (c.tweaks?.length) console.log(`   tweaks: ${c.tweaks.map(tweakShown).join(', ')} (changed in the page's Tweaks when written; the source draws the defaults)`)
     // Written in the page's device view: about that layout, which a shot at that size shows.
     if (c.view) console.log(`   view: ${c.view.size} ${c.view.w}x${c.view.h} (shoot it: proto shoot ${c.route} --size ${c.view.w}x${c.view.h})`)
     for (const [i, t] of (c.tags || []).entries()) console.log(t.commentRef

@@ -309,6 +309,16 @@ const storageOf = st => {
   }
   return Object.keys(out).length ? out : null
 }
+// The tweaks (the design's Tweaks controls) changed from their defaults on the comment's variant
+// when it was written: id, label, the value then and the default, each a short string or a boolean.
+// Anything else in the list is left out on its own.
+const tweaksOf = list => {
+  if (!Array.isArray(list)) return []
+  const v = x => typeof x === 'boolean' || (typeof x === 'string' && x.length <= 200)
+  const s = x => typeof x === 'string' && x.length > 0 && x.length <= 120
+  return list.filter(t => t && s(t.id) && s(t.label) && v(t.value) && v(t.was)).slice(0, 40)
+    .map(t => ({ id: t.id, label: t.label.replace(/[\x00-\x1f\x7f]/g, ' '), value: t.value, was: t.was }))
+}
 // A comment on the design's motion (the page's motion dock) is on a moment of its take, `at`, or a
 // range of it, `at` to `to`, in ms, and says how long the take is: whole numbers of ms inside it.
 // Null when the comment has none; false when what it has isn't that.
@@ -421,6 +431,8 @@ export function receive(data, root = dir, { check = false } = {}) {
       ...(c.re ? { re: { batch: c.re.batch, n: c.re.n } } : {}),
       ...(c.from ? { from: fromOf(c.from), ...(typeof c.note === 'string' && c.note ? { note: clip(c.note, 400) } : {}) } : {}),
       target: element(c.target),
+      // From the owner's page only: a viewer on a link has no Tweaks of the owner's.
+      ...(!c.from && !c.action && tweaksOf(c.tweaks).length ? { tweaks: tweaksOf(c.tweaks) } : {}),
       tags: (Array.isArray(c.tags) ? c.tags : []).map(element).filter(Boolean).slice(0, 20),
       images,
     }

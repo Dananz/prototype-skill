@@ -17,6 +17,7 @@ import { designKit } from './design-kit.mjs'
 import { speedChecks } from './speed-checks.mjs'
 import { commentParentChecks } from './comment-parent-checks.mjs'
 import { commentWholeChecks } from './comment-whole-checks.mjs'
+import { commentTweaksChecks } from './comment-tweaks-checks.mjs'
 import { commentGoneChecks } from './comment-gone-checks.mjs'
 import { commentScrollChecks } from './comment-scroll-checks.mjs'
 import { islandSendChecks } from './island-send-checks.mjs'
@@ -390,6 +391,13 @@ if (process.argv.includes('--island-send-only')) {
   console.log('OK: focused island send checks')
   process.exit(0)
 }
+if (process.argv.includes('--comment-tweaks-only')) {
+  await commentTweaksChecks({ proto, app, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused comment tweaks checks')
+  process.exit(0)
+}
 if (process.argv.includes('--comment-whole-only')) {
   await commentWholeChecks({ proto, app, openPage, fail })
   proto(['rm', '--all'])
@@ -501,6 +509,7 @@ await commentCompareChecks({ proto, app, openPage, fail })
 await commentPicturesChecks({ proto, app, openPage, fail })
 await commentRtlChevronChecks({ proto, app, openPage, fail })
 await shootPinChecks({ proto, app, local, fail })
+await commentTweaksChecks({ proto, app, openPage, fail })
 await commentUntilChecks({ proto, app, fail })
 await commentReplyThreadChecks({ proto, app, local, openPage, fail })
 await listenerChecks({ proto, app, fail })
