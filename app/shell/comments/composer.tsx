@@ -1,6 +1,6 @@
 import { imageIn, carriesImage, imageUrl } from './images'
 // Writing a comment on one element, or on a moment or a range of the design's motion (in the motion
-// dock). `@` offers whole-variant mentions; Tag another element keeps the existing visual picker; the camera captures the design around the
+// dock). `@` offers whole-variant mentions; Tag another element keeps the existing visual picker (a region dragged out there is tagged with its picture); the camera captures the design around the
 // element (all of it, on a moment) and opens the editor, and a region dragged out on the design brings its own picture; an image pasted (Ctrl+V) or dropped on the
 // composer is added beside the screenshots (several per comment); ⌘↩ adds it. Whatever is written is held by
 // the store as it is typed, so putting the composer away any way but Cancel or Add loses nothing.
@@ -176,7 +176,15 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   useEffect(() => {
     if (!pending || tagging) return
     act.tagTaken()
+    const at = tagsRef.current.length
     insert(pending)
+    // A region dragged out to tag it comes with its picture, as a region the comment is on does.
+    if (!pending.region || shotsRef.current.length >= MAX_SHOTS) return
+    setCapturing(t('Capturing…'))
+    capture(host.mount(), pending, host.dark())
+      .then(url => { if (url) setShots(s => s.length < MAX_SHOTS ? [...s, { src: url, tag: at }] : s) })
+      .catch(() => { /* a design in a device view's frame may not draw from here */ })
+      .finally(() => setCapturing(null))
   }, [pending, tagging]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
@@ -325,7 +333,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
         {late && <p data-shoot="composer-late" role="alert" className="mx-3 mt-1.5 text-[11px] leading-4 text-amber-700 dark:text-amber-300">{t('{agent} has started on this, so it can\'t change now. Your words can go as a new comment.', { agent })}</p>}
         {error && <p role="alert" className="mx-3 mt-1.5 text-[11px] leading-4 text-rose-600 dark:text-rose-400">{error}</p>}
         <div className="flex items-center gap-1 px-2 pb-2 pt-1">
-          <button onClick={() => { setMention(null); saveRange(); act.tagPick() }} title={t('Tag another element on the design')} aria-label={t('Tag another element')} className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="target" /></button>
+          <button onClick={() => { setMention(null); saveRange(); act.tagPick() }} title={t('Tag another element on the design, or drag out a region to tag it with its picture')} aria-label={t('Tag another element')} className={`${IB} h-8 min-w-8 px-1.5`}><Icon name="target" /></button>
           <button onClick={shoot} disabled={full} title={full ? t('{n} pictures is the most one comment takes; remove one to add another', { n: MAX_SHOTS }) : t('Add a screenshot of this part of the design, then draw on it (or paste an image: {mod} V, or drop one here; each adds a picture)', { mod: MOD })} aria-label={t('Attach a screenshot')} className={`${IB} h-8 min-w-8 px-1.5 disabled:opacity-40`}><Icon name="camera" /></button>
           {editing && <button onClick={() => id && act.remove(id)} title={t('Delete')} aria-label={t('Delete comment')} className={`${IB} h-8 min-w-8 px-1.5 hover:text-rose-600`}><Icon name="trash" /></button>}
           <span className="ms-auto" />
@@ -340,7 +348,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
       {sheet ? <Sheet onClose={() => act.close()} tagging={!!tagging}>{body}</Sheet> : body}
       {marking && <ShotEditor src={marking.src} onCancel={() => { setMarking(null); refocus() }} onDone={url => {
         const at = marking.at
-        setShots(s => at < 0 ? (s.length < MAX_SHOTS ? [...s, { src: url }] : s) : s.map((p, j) => j === at ? { src: url, ...(p.pasted ? { pasted: true } : {}) } : p))
+        setShots(s => at < 0 ? (s.length < MAX_SHOTS ? [...s, { src: url }] : s) : s.map((p, j) => j === at ? { src: url, ...(p.pasted ? { pasted: true } : {}), ...(p.tag !== undefined ? { tag: p.tag } : {}) } : p))
         setMarking(null); refocus()
       }} />}
     </>
