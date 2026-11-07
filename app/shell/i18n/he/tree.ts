@@ -126,4 +126,8 @@ export default {
   'Full screen': 'מסך מלא',
   '1 comment': 'הערה אחת',
   'Not picked yet': 'עוד לא נבחר',
+  '{agent} suggests {v}': '{agent} ממליץ על {v}',
+  'Why {v}:': 'למה {v}:',
+  '{agent}’s pick': 'הבחירה של {agent}',
+  'The agent': 'הסוכן',
 }

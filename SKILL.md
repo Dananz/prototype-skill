@@ -771,8 +771,18 @@ includes:
 4. The pick and why it wins for this product and its users, in two to four sentences, and
    what you would take from the runners-up.
 
-That is your recommendation; it marks nothing in the page. The page marks a pick only when the
-user makes one (next section).
+That is your recommendation. Before the reply, put it in the page too, in the same words:
+
+```
+proto recommend <slug> <number> --why "<point 4: why it wins>" --borrow "<what to take from the others>" \
+  1 "<point 3, variant 1>" 2 "<point 3, variant 2>" …
+```
+
+The tree marks it with a sparkle, and the prototype's overview puts it first, with its reason above
+the grid, every variant's line under its card and a Pick button on it. It marks nothing as picked:
+the page marks a pick only when the user makes one (next section), and a pick from that button
+arrives like any pick from the page. Run it again after later rounds change your mind;
+`proto recommend <slug> --off` takes it away, and `proto recommend <slug>` prints it.
 
 ## When the user chooses
 
