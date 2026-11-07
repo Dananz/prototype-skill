@@ -17,6 +17,8 @@ export const HOLD_MS = 500
 /** How far a held mouse moves before it is dragging out a region, and the least a region is on each side. */
 const DRAG_PX = 6
 export const MIN_REGION = 8
+/** What on the stage keeps its own press while commenting: a region never starts on it. */
+const STAGE_CONTROLS = 'button, a[href], input, textarea, select, summary, [contenteditable], [role="button"], [role="menu"], [role="menuitem"], [role="listbox"], [role="option"], [role="slider"], [role="tab"], [role="dialog"], [data-inspect-ui], [data-proto-comment-control]'
 
 /**
  * One box that follows whatever it is told to point at: it glides between targets with a long
@@ -193,7 +195,7 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
     const settle = () => { clearTimeout(timer); pending = undefined }
     // A mouse held down on the design: where, and on what. Once it has moved DRAG_PX it is
     // dragging out a region, and the outline stops following it.
-    let held: { x: number; y: number; el: HTMLElement; dragging: boolean } | null = null
+    let held: { x: number; y: number; el: HTMLElement | null; dragging: boolean } | null = null
     const move = (e: PointerEvent) => {
       if (!on || e.pointerType !== 'mouse' || held?.dragging) return
       if ((e.target as Element).closest?.('[data-inspect-ui]')) return settle()
@@ -272,11 +274,47 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       else if (el) act.current(raised.current && cur.current?.contains(el) ? cur.current : el)
     }
     const dragStart = (e: PointerEvent) => {
+      held = null
       if (!on || e.pointerType !== 'mouse' || e.button !== 0 || passing.on) return
       const el = part(targetOf(e))
       // Space held over a device view drags the view (gestures.ts turns its frame's pointer off meanwhile).
       if (el && frameOf(el)?.style.pointerEvents === 'none') return
-      held = el ? { x: e.clientX, y: e.clientY, el, dragging: false } : null
+      if (el) { held = { x: e.clientX, y: e.clientY, el, dragging: false }; return }
+      // Off the design (the space around a device, its bezel, the stage): a region can start here
+      // too, and is on what of the design it ends up covering. Controls on the stage keep their press.
+      const t = e.target as Element | null
+      if (!t?.closest?.('[data-layers], [data-view]') || t.closest(STAGE_CONTROLS)) return
+      if (document.querySelector<HTMLElement>('[data-view] iframe')?.style.pointerEvents === 'none') return
+      const L = host.layer.getBoundingClientRect()
+      if (e.clientX < L.left || e.clientX > L.right || e.clientY < L.top || e.clientY > L.bottom) return
+      e.preventDefault()
+      // The device view's own drag on that space (gestures.ts) would move the device instead.
+      if (t.closest('[data-view]')) e.stopPropagation()
+      held = { x: e.clientX, y: e.clientY, el: null, dragging: false }
+    }
+    // A region dragged from off the design: the box cut to what shows of the design (the variant it
+    // covers most, in Compare), on the element at its middle. Null when it covers none of it.
+    const offRegion = (ax: number, ay: number, bx: number, by: number): Target | null => {
+      const m = host.mount()
+      if (!m) return null
+      const L = host.layer.getBoundingClientRect()
+      const mounts = m.hasAttribute('data-comment-compare') ? [...m.querySelectorAll<HTMLElement>('[data-mount]')] : [m]
+      let best: { mount: HTMLElement; l: number; t: number; r: number; b: number } | null = null, most = 0
+      for (const mm of mounts) {
+        const s = seen(mm, mm, host.layer)
+        if (!s) continue
+        const l = Math.max(Math.min(ax, bx), L.left + s.x), t = Math.max(Math.min(ay, by), L.top + s.y)
+        const r = Math.min(Math.max(ax, bx), L.left + s.x + s.w), b = Math.min(Math.max(ay, by), L.top + s.y + s.h)
+        if (r - l < MIN_REGION || b - t < MIN_REGION || (r - l) * (b - t) <= most) continue
+        most = (r - l) * (b - t)
+        best = { mount: mm, l, t, r, b }
+      }
+      if (!best) return null
+      const { l, t, r, b } = best, cx = (l + r) / 2, cy = (t + b) / 2
+      const v = host.view?.()
+      const hit = v ? v.at(cx, cy)?.el ?? null : seeThrough(document, cx, cy, document.elementFromPoint(cx, cy))
+      const el = (hit && best.mount.contains(hit) ? part(hit) : null) ?? (best.mount.firstElementChild as HTMLElement | null) ?? best.mount
+      return region(m, el, ...inFrame(el, l, t), ...inFrame(el, r, b))
     }
     const dragMove = (e: PointerEvent) => {
       if (!held) return
@@ -297,10 +335,13 @@ export function usePick(on: boolean, guard: boolean, handlers: { onPick: (t: Tar
       const mount = host.mount()
       // A sliver is a slip of the hand: the click it ends in picks the element as always.
       if (!mount || e.type !== 'pointerup' || Math.abs(e.clientX - h.x) < MIN_REGION || Math.abs(e.clientY - h.y) < MIN_REGION) return
+      // Begun off the design and covering none of it: nothing to comment on, so nothing happens.
+      const picked = h.el ? region(mount, h.el, ...inFrame(h.el, h.x, h.y), ...inFrame(h.el, e.clientX, e.clientY)) : offRegion(h.x, h.y, e.clientX, e.clientY)
+      if (!picked) return
       // The click this press ends in is not a pick of its own.
       pinnedAt.current = performance.now()
       // In a device view the region is measured in the frame's px, as its design is laid out.
-      cb.current.onPick(onView(region(mount, h.el, ...inFrame(h.el, h.x, h.y), ...inFrame(h.el, e.clientX, e.clientY))))
+      cb.current.onPick(onView(picked))
     }
     const dragDrop = () => { held = null; setDrag(null) }
     const key = (e: KeyboardEvent) => {
