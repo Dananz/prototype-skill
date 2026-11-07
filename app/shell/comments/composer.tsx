@@ -17,7 +17,8 @@ import { capture, ShotEditor } from './shot'
 import type { Box, Draft, Seg, Shot, Target, Time } from './types'
 import { MAX_SHOTS, shotsOf } from './types'
 import { MentionShelf, useMentionShelf } from './mention-shelf'
-import { IB, Icon, MOD, PinDot, PRIMARY, SrcTag, srcOf, ImageChip, PictureStrip, ViewChip, elementName, variantChip } from './ui'
+import { routeOfTag, TAG_EVENT, type TagDrop } from '../tag-drag'
+import { IB, Icon, MOD, PinDot, PRIMARY, SrcTag, srcOf, ImageChip, PictureStrip, ViewChip, elementName, variantChip, protoChip, protoTitle } from './ui'
 import { t } from '../i18n'
 import { variantLabel } from '../variants'
 
@@ -42,8 +43,9 @@ export const chipNode = (target: Target | undefined, i: number) => {
   if (src) s.title = src.full
   // A variant shows by its number and its name; long names are cut short (the title has it all).
   s.className = 'mx-px inline-block max-w-[16rem] truncate rounded bg-proto-primary-soft px-1 align-bottom font-medium text-proto-primary-soft-fg'
-  s.textContent = target?.commentRef ? t('Comment {n}', { n: target.commentRef.n }) : target?.variantRef ? variantChip(target.variantRef) : target ? `@${target.source ? `${variantLabel(null, target.source.variant)}·` : ''}${elementName(target)}` : `@${i + 1}`
+  s.textContent = target?.commentRef ? t('Comment {n}', { n: target.commentRef.n }) : target?.protoRef ? protoChip(target.protoRef) : target?.variantRef ? variantChip(target.variantRef) : target ? `@${target.source ? `${variantLabel(null, target.source.variant)}·` : ''}${elementName(target)}` : `@${i + 1}`
   if (target?.commentRef) s.title = target.commentRef.quote
+  if (target?.protoRef) s.title = protoTitle(target.protoRef)
   if (target?.variantRef) s.title = `${target.variantRef.title ? `${target.variantRef.title} › ` : ''}#${target.variantRef.label} ${target.variantRef.name}`
   return s
 }
@@ -151,17 +153,18 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   }, [edOn])
 
   const saveRange = () => { const s = getSelection(); if (s?.rangeCount && ed.current?.contains(s.anchorNode)) range.current = s.getRangeAt(0).cloneRange() }
-  const insert = (p: Target, close = true) => {
+  const insert = (p: Target, close = true, strip = true) => {
     // A tap on the shelf stays open for another; its @ is gone, so what is typed next closes it.
     setMention(close ? null : { query: '', index: 0 })
     const el = ed.current!
     const i = tagsRef.current.length
-    setTags(t => [...t, p])
+    tagsRef.current = [...tagsRef.current, p]
+    setTags(tagsRef.current)
     el.focus()
     const r = range.current && el.contains(range.current.startContainer) ? range.current : endRange(el)
     // The @ and what was typed after it go; the chip takes their place.
     const tn = r.startContainer
-    if (tn.nodeType === 3) {
+    if (strip && tn.nodeType === 3) {
       const txt = tn.textContent!, at = txt.lastIndexOf('@', r.startOffset - 1)
       if (at >= 0 && /^[^\s@]*$/.test(txt.slice(at + 1, r.startOffset))) { r.setStart(tn, at); r.deleteContents() }
     }
@@ -171,7 +174,21 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     const s = getSelection(); s?.removeAllRanges(); s?.addRange(after)
     setEmpty(false)
     saveRange()
+    return chip
   }
+  // Rows dragged in from the project tree (tag-drag.ts): a chip each where the caret was, skipping
+  // what is tagged already, each handed back so the dragged chip can glide onto it.
+  const dropRef = useRef<(d: TagDrop) => void>(() => {})
+  dropRef.current = d => {
+    const have = new Set(tagsRef.current.map(routeOfTag).filter(Boolean))
+    for (const x of host.tagsFor?.(d.routes) ?? []) if (!have.has(routeOfTag(x))) { const chip = insert(x, true, false); d.landed.push({ route: routeOfTag(x), el: chip }) }
+    emit()
+  }
+  useEffect(() => {
+    const take = (e: Event) => { if (e.target === ed.current) dropRef.current((e as CustomEvent<TagDrop>).detail) }
+    document.addEventListener(TAG_EVENT, take)
+    return () => document.removeEventListener(TAG_EVENT, take)
+  }, [])
   // Something picked on the design to tag comes back here.
   useEffect(() => {
     if (!pending || tagging) return
@@ -285,7 +302,10 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
       <div ref={box} data-composer onKeyDown={keys}
         onDragOver={e => { if (!carriesImage(e.dataTransfer)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDropping(true) }}
         onDragLeave={e => { if (!box.current?.contains(e.relatedTarget as Node)) setDropping(false) }}
-        onDrop={e => { setDropping(false); const f = imageIn(e.dataTransfer); if (!f) return; e.preventDefault(); void attach(f) }}
+        onDrop={e => {
+          setDropping(false)
+          const f = imageIn(e.dataTransfer); if (!f) return; e.preventDefault(); void attach(f)
+        }}
         className={`z-30 flex flex-col text-[13px] text-zinc-900 dark:text-zinc-100 ${docked || sheet ? 'relative' : 'absolute rounded-2xl border border-black/10 bg-white shadow-2xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900'} ${!tagging ? 'pointer-events-auto' : sheet ? 'pointer-events-auto opacity-60' : 'pointer-events-none opacity-40'} ${dropping ? 'ring-2 ring-proto-primary-ring' : ''}`} style={sheet ? undefined : style}>
         <div className={`flex items-center gap-1 px-3 ${sheet ? 'pt-1.5' : 'pt-2.5'}`}>
           <PinDot n={n} size="sm" whole={target?.whole} />
@@ -296,7 +316,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           {pop && <button onClick={() => act.cancel()} data-shoot="composer-close" aria-label={t('Cancel')} title={`${t('Cancel')} · Esc`} className={`${IB} -me-1.5 h-7 min-w-7 shrink-0 px-1`}><Icon name="x" className="size-3.5" /></button>}
         </div>
         <div className="relative px-3 pt-1.5">
-          <div ref={el => { ed.current = el; if (el) setEdOn(true) }} contentEditable suppressContentEditableWarning role="textbox" aria-label={t('Comment')} aria-multiline="true" dir="auto"
+          <div ref={el => { ed.current = el; if (el) setEdOn(true) }} contentEditable suppressContentEditableWarning data-tag-target="" role="textbox" aria-label={t('Comment')} aria-multiline="true" dir="auto"
             onInput={() => {
               saveRange(); setEmpty(!ed.current!.innerText.trim()); emit()
               const s = getSelection(), node = s?.anchorNode

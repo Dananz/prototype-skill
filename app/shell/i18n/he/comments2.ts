@@ -165,4 +165,6 @@ export default {
   'All {n} chosen': 'כל ה-{n} שנבחרו',
   'This comment goes to': 'ההערה הולכת אל',
   'None': 'אף אחת',
+  '{title}, its one variant': '{title}, הווריאנט היחיד שלו',
+  '{title}, all {n} variants': '{title}, כל {n} הווריאנטים',
 } satisfies Record<string, string>

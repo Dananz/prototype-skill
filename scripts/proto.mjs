@@ -2040,6 +2040,8 @@ function printBatch(dir, b) {
     if (c.view) console.log(`   view: ${c.view.size} ${c.view.w}x${c.view.h} (shoot it: proto shoot ${c.route} --size ${c.view.w}x${c.view.h})`)
     for (const [i, t] of (c.tags || []).entries()) console.log(t.commentRef
       ? `   with comment ${t.commentRef.n}: ${t.commentRef.proto}/${t.commentRef.variant} (${t.commentRef.id}) “${t.commentRef.quote}”`
+      : t.protoRef
+      ? `   with @${t.protoRef.title}: the whole prototype ${t.protoRef.proto} (all ${t.protoRef.count} of its variants)`
       : t.variantRef
       ? `   with @${t.variantRef.label}: variant ${routeShown(`${t.variantRef.proto}/${t.variantRef.variant}`)} ·${t.variantRef.name} (${where(t)})`
       : `   with @${i + 1}: ${t.source ? `${t.source.proto}/${t.source.variant}${t.source.state ? `/${t.source.state}` : ''} · ` : ''}${t.region ? `region ${t.region.x},${t.region.y} ${t.region.w}x${t.region.h} (dragged out with the mouse; its picture is attached) in ` : ''}${where(t)}`)

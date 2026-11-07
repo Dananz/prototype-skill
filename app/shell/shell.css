@@ -191,6 +191,20 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
   }
 }
 
+/* A comment box with rows of the project tree dragged over it (tag-drag.ts): it lights to take them. */
+[data-tag-drop] {
+  background-color: var(--proto-primary-soft) !important;
+  box-shadow: 0 0 0 2px var(--proto-primary-ring) !important;
+}
+
+/* A tree row while it is being dragged (tag-drag.ts): a dashed slot where it was. */
+[data-tag-dragging] {
+  opacity: 0.35;
+  outline: 1.5px dashed color-mix(in oklab, currentColor 35%, transparent);
+  outline-offset: -1.5px;
+}
+html[data-tag-drag], html[data-tag-drag] * { user-select: none !important; -webkit-user-select: none !important; }
+
 /* Copy mode (comments/copy.tsx): each line with options gets a dotted underline. A line in light
    words (on a dark button) gets a light one, from a rule the picker writes for it. */
 [data-copy-on] [data-copy] {

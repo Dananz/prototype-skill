@@ -219,6 +219,8 @@ export function createActions(store: Store, host: Host) {
     },
     /** Follow a reference, including its state and closed menu/tab, after navigation is ready. */
     revealTarget(target: Target) {
+      // A whole prototype opens on its own page, where all its variants are.
+      if (target.protoRef) { ++opening; host.go(target.protoRef.proto, ''); return }
       const source: Source | undefined = target.source ?? target.variantRef
       if (!source) return
       const request = ++opening

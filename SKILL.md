@@ -89,7 +89,10 @@ another pane to reference it. The variants do not need matching elements. Type `
 variant in the project as a live picture, Nearby first (what this one was made from, what sits beside
 it, what was made from it), with Picks and All beside it and the words after `@` searching every name.
 A tap tags it where the caret is and stays open for another (a second tap takes it back); the arrow
-keys and Enter/Tab tag one and close. Tag an element keeps precise visual tagging available. References retain the source variant and route
+keys and Enter/Tab tag one and close. Tag an element keeps precise visual tagging available. Rows of the
+project tree can also be dragged onto any comment box: an option tags its variant, a prototype's row the
+whole prototype (`with @Title: the whole prototype <slug>` in the inbox), a design or flow every screen in
+it, and a row in the tree's selection (Cmd/Shift-click) everything chosen. References retain the source variant and route
 in the agent inbox. Keep this flow in the shell; generated designs do not need their own comment
 store, sidebar or agent-reply simulation.
 

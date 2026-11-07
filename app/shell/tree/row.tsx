@@ -41,6 +41,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { t } from '../i18n'
 import type { ExpState } from './model'
 import { selection } from './selection'
+import { armTagDrag } from '../tag-drag'
 
 const ICONS = { browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle, x, dots, starFill, plus, minus, foldIn, spreadOut, chatCircle, eye, eyeSlash, mapPin, gitBranch, rows, tray, foldAll, openAll, linkSimple, hash, star, check }
 export type PhName = keyof typeof ICONS
@@ -116,7 +117,7 @@ const rowsIn = (el: Element) => [...(el.closest('[data-tree-root]')?.querySelect
 /** The option on screen. An exploration's own row can be lit on its page, with no variant open. */
 const hereIn = (el: Element) => el.closest('[data-tree-root]')?.querySelector<HTMLElement>('[data-tree-row^="opt:"][data-on="true"], [data-tree-on-pick]')?.dataset.mv?.replace(':', '/') ?? ''
 
-export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onClick, strong, medium, mv, flat, slim, stands, onPick }: {
+export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onClick, strong, medium, mv, flat, slim, stands, onPick, drag }: {
   id: string; depth: number; label: ReactNode; icon?: ReactNode; end?: ReactNode; count?: number; on?: boolean
   /** Part of a block that wears the colour and the hover itself. */
   flat?: boolean
@@ -128,6 +129,9 @@ export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onC
   stands?: string
   /** A decided row whose pick (its mv) is on screen. */
   onPick?: boolean
+  /** What dragging it onto a comment box tags (tag-drag.ts): routes, `slug/A` or `slug`. Chosen, it
+   *  drags everything chosen. */
+  drag?: string[]
   /** undefined: no caret (a leaf). */
   open?: boolean; onCaret?: () => void; onClick: () => void; strong?: boolean; medium?: boolean
 }) {
@@ -144,15 +148,29 @@ export function Row({ id, depth, label, icon, end, count, on, open, onCaret, onC
     selection.clear()
     onClick()
   }
+  // A chosen row drags the whole selection, each chosen row as what it stands for (a prototype's
+  // row the whole prototype); a chosen variant whose row is folded away, as that variant.
+  const dragStart = (e: React.PointerEvent<HTMLDivElement>) => { const el = e.currentTarget; armTagDrag(e, () => {
+    const all = selection.get(), own = drag ?? []
+    let routes = own
+    if (chosen && all.length > 1) {
+      const rows = [...el.closest('[data-tree-root]')?.querySelectorAll<HTMLElement>('[data-tree-chosen="true"][data-drag]') ?? []]
+      const by = new Map<string, string[]>()
+      for (const r of rows) { const k = r.dataset.mv!.replace(':', '/'); if (!by.has(k)) by.set(k, JSON.parse(r.dataset.drag!)) }
+      if (route) by.set(route, own)
+      routes = [...new Set(all.flatMap(r => by.get(r) ?? [r]))]
+    }
+    return routes
+  }) }
   return (
-    <div data-tree-row={id} data-on={on ? 'true' : undefined} data-mv={mv ? mv.replace('/', ':') : undefined} data-tree-chosen={chosen ? 'true' : undefined} data-tree-on-pick={onPick ? 'true' : undefined}
+    <div data-tree-row={id} data-drag={drag?.length ? JSON.stringify(drag) : undefined} onPointerDown={drag?.length ? dragStart : undefined} data-on={on ? 'true' : undefined} data-mv={mv ? mv.replace('/', ':') : undefined} data-tree-chosen={chosen ? 'true' : undefined} data-tree-on-pick={onPick ? 'true' : undefined}
       className={'group flex items-center gap-1.5 rounded-lg pe-1.5 ' + (slim ? 'h-6! [@media(pointer:coarse)]:h-8! ' : 'h-8 [@media(pointer:coarse)]:h-10 ') + (flat ? '' : 'mx-1.5 ') + (chosen ? 'bg-sky-500/15 ' + (on ? 'text-sky-900 dark:text-sky-100' : '') : flat ? '' : on ? 'bg-sky-50 text-sky-900 dark:bg-sky-950/60 dark:text-sky-100' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]')}
       style={{ paddingInlineStart: 2 + depth * 8 }}>
       {open != null && onCaret
         ? <Caret open={open} onFlip={onCaret} />
         : <span className="w-2.5 shrink-0 [@media(pointer:coarse)]:w-[18px]" />}
       <button type="button" onClick={click} onMouseDown={e => { if (e.shiftKey) e.preventDefault() }} aria-pressed={mv ? chosen : undefined} className={'flex h-full min-w-0 flex-1 items-center gap-1.5 text-start ' + (strong ? 'font-semibold' : medium ? 'font-medium' : '')}>
-        {icon}<span className="truncate">{label}</span>{count != null && <span className="text-xs font-normal text-zinc-400 tabular-nums">{count}</span>}
+        {icon}<span data-row-label className="truncate">{label}</span>{count != null && <span className="text-xs font-normal text-zinc-400 tabular-nums">{count}</span>}
       </button>
       {end}
       {mv && <button type="button" data-act={`vm:${mv.replace('/', ':')}`} aria-label={t('Options')} title={t('Options')}

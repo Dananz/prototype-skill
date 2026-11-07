@@ -12,6 +12,7 @@ import { useCtx } from './ctx'
 import { useStore } from './store'
 import { chipNode, readEditor } from './composer'
 import { MentionShelf, useMentionShelf } from './mention-shelf'
+import { routeOfTag, TAG_EVENT, type TagDrop } from '../tag-drag'
 import type { Note, Seg, Target } from './types'
 
 type Opts = {
@@ -136,7 +137,7 @@ export function useTagField(opts: Opts) {
     return r
   }
   const place = (r: Range) => { const sel = getSelection(); sel?.removeAllRanges(); sel?.addRange(r) }
-  const insert = (p: Target, strip: boolean) => {
+  const insert = (p: Target, strip: boolean): HTMLElement | undefined => {
     const el = input.current
     if (!el) return
     const i = tagsRef.current.length
@@ -149,6 +150,7 @@ export function useTagField(opts: Opts) {
     place(after)
     saveCaret()
     changed()
+    return chip
   }
   // The pick this box asked for is over: the element comes back as a chip where the @ was (on the
   // variant on screen, it says so when the note is about another), or, cancelled, the caret goes back.
@@ -197,6 +199,29 @@ export function useTagField(opts: Opts) {
     ...(elements ? { onElement: () => choose(null) } : {}),
   }
   const shelf = useMentionShelf(shelfOpts)
+  // Rows dragged in from the project tree: a chip each where the caret was (at the end when it never
+  // was in the box), after a space, skipping what is tagged already.
+  // Each chip it puts in is handed back, so the dragged chip can glide onto it (tag-drag.ts).
+  const takeDrop = (d: TagDrop) => {
+    const el = input.current
+    if (!el?.isContentEditable) return
+    const have = new Set<string>()
+    el.querySelectorAll<HTMLElement>('[data-tag]').forEach(n => { const k = routeOfTag(tagsRef.current[Number(n.dataset.tag)] ?? {}); if (k) have.add(k) })
+    const fresh = (host.tagsFor?.(d.routes) ?? []).filter(x => !have.has(routeOfTag(x)))
+    if (!fresh.length) return
+    const r = atCaret(false), n = r.startContainer
+    const before = n.nodeType === 3 ? n.textContent!.slice(0, r.startOffset) : [...n.childNodes].slice(0, r.startOffset).map(c => c.textContent).join('')
+    if (before && !/\s$/.test(before)) { const space = document.createTextNode(' '); r.insertNode(space); caret.current = { node: space, offset: 1 } }
+    else caret.current = { node: r.startContainer, offset: r.startOffset }
+    for (const x of fresh) { const chip = insert(x, false); if (chip) d.landed.push({ route: routeOfTag(x), el: chip }) }
+  }
+  const dropRef = useRef(takeDrop)
+  dropRef.current = takeDrop
+  useEffect(() => {
+    const take = (e: Event) => { if (e.target === input.current) dropRef.current((e as CustomEvent<TagDrop>).detail) }
+    document.addEventListener(TAG_EVENT, take)
+    return () => document.removeEventListener(TAG_EVENT, take)
+  }, [])
   const watchMention = () => {
     const sel = getSelection(), node = sel?.anchorNode
     const before = node?.nodeType === 3 ? node.textContent!.slice(0, sel!.anchorOffset) : '', m = /(?:^|[^\w.+-])@([^\s@]*)$/.exec(before)
@@ -219,6 +244,8 @@ export function useTagField(opts: Opts) {
     onInput: () => { saveCaret(); changed(); watchMention() },
     onKeyDown, onKeyUp: saveCaret, onMouseUp: saveCaret,
     onBlur: () => { saveCaret(); setMention(null) },
+    // Rows of the project tree can be dragged onto it (tag-drag.ts).
+    'data-tag-target': '',
     // Plain text keeps its words; image files become attachments.
     onDrop: (e: DragEvent<HTMLDivElement>) => { if (carriesImage(e.dataTransfer)) { e.preventDefault(); e.stopPropagation(); void attach([...e.dataTransfer.files]) } },
     onDragOver: (e: DragEvent<HTMLDivElement>) => { if (carriesImage(e.dataTransfer)) e.preventDefault() },

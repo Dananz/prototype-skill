@@ -163,11 +163,15 @@ export const elementName = (x: Pick<Target, 'text' | 'component' | 'tag' | 'regi
 
 /** A tag in a sentence stays short: its name and number, and its prototype only when the name alone could be several. */
 export const variantChip = (r: { label: string; name: string; title?: string; ambiguous?: boolean }) => `@${r.name} #${r.label}${r.ambiguous && r.title ? ` · ${r.title}` : ''}`
+/** A whole prototype as a tag: its title alone (a variant's chip has its number). */
+export const protoChip = (r: { title: string }) => `@${r.title}`
+export const protoTitle = (r: { title: string; count: number }) => tn(r.count, '{title}, its one variant', '{title}, all {n} variants', { title: r.title })
 export function Chip({ t: target, n }: { t?: Target; n: number }) {
   const { act } = useCtx()
   const ref = target?.variantRef
   const comment = target?.commentRef
-  const linked = !!ref || !!comment || !!target?.source
+  const whole = target?.protoRef
+  const linked = !!ref || !!comment || !!whole || !!target?.source
   const open = () => {
     act.openSheet(false)
     if (comment) { act.open(comment.id, false); return }
@@ -175,10 +179,10 @@ export function Chip({ t: target, n }: { t?: Target; n: number }) {
   }
   // Its own dir keeps the chip's words out of the comment's direction: a Hebrew comment that opens
   // with "Comment 2" still reads right to left.
-  return <span dir="auto" title={comment?.quote ?? (ref ? `${ref.title ? `${ref.title} › ` : ''}#${ref.label} ${ref.name}` : srcOf(target)?.full)} role={linked ? 'link' : undefined} tabIndex={linked ? 0 : undefined}
+  return <span dir="auto" title={comment?.quote ?? (whole ? protoTitle(whole) : ref ? `${ref.title ? `${ref.title} › ` : ''}#${ref.label} ${ref.name}` : srcOf(target)?.full)} role={linked ? 'link' : undefined} tabIndex={linked ? 0 : undefined}
     onClick={linked ? e => { e.stopPropagation(); open() } : undefined}
     onKeyDown={linked ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); open() } } : undefined}
-    className={`mx-px inline-block max-w-[16rem] truncate rounded bg-proto-primary-soft px-1 align-bottom font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? t('Comment {n}', { n: comment.n }) : ref ? variantChip(ref) : target ? `@${target.source ? `${variantLabel(null, target.source.variant)}·` : ''}${elementName(target)}` : `@${n}`}</span>
+    className={`mx-px inline-block max-w-[16rem] truncate rounded bg-proto-primary-soft px-1 align-bottom font-medium text-proto-primary-soft-fg ${linked ? 'cursor-pointer hover:underline' : ''}`}>{comment ? t('Comment {n}', { n: comment.n }) : whole ? protoChip(whole) : ref ? variantChip(ref) : target ? `@${target.source ? `${variantLabel(null, target.source.variant)}·` : ''}${elementName(target)}` : `@${n}`}</span>
 }
 
 export function Body({ c, className = '' }: { c: { body: Seg[]; tags: Target[] }; className?: string }): ReactNode {
@@ -224,7 +228,7 @@ export const aboutOf = (i: Item) => i.action === 'more-variants'
   : t('Comment {n}', { n: i.n })
 
 /** The words of a comment as plain text, tags written as @1, @2, …: their order in the accompanying targets. */
-export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : (c.tags[s.tag]?.commentRef ? `Comment ${c.tags[s.tag].commentRef!.n}` : `@${c.tags[s.tag]?.variantRef?.label ?? (c.tags[s.tag]?.source ? `${variantLabel(null, c.tags[s.tag].source!.variant)}·${s.tag + 1}` : s.tag + 1)}`)).join('').replace(/ /g, ' ').trim()
+export const plain = (c: { body: Seg[]; tags: Target[] }) => c.body.map(s => typeof s === 'string' ? s : (c.tags[s.tag]?.commentRef ? `Comment ${c.tags[s.tag].commentRef!.n}` : c.tags[s.tag]?.protoRef ? protoChip(c.tags[s.tag].protoRef!) : `@${c.tags[s.tag]?.variantRef?.label ?? (c.tags[s.tag]?.source ? `${variantLabel(null, c.tags[s.tag].source!.variant)}·${s.tag + 1}` : s.tag + 1)}`)).join('').replace(/ /g, ' ').trim()
 
 export type { Item }
 
