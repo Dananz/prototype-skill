@@ -230,6 +230,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const systemTheme = matchMedia('(prefers-color-scheme: dark)')
   let settingsOpen = false, shareOpen = false, linkOpen = false
   let settingsOrigin: 'bar' | 'dock' = 'bar'
+  // Focus mode keeps the comments island out of the way until the dock's Comments asks for it.
+  let focusComments = false
+  // and its Try it opens the side panel's Try it list as a card over the dock.
+  let focusTry = false
   let settingsCategory: 'session' | 'shortcuts' | undefined
   // Where the focus goes back to: the control that opened Settings (or, for a menu row, the menu's button).
   let settingsReturn = '[data-act=settings]'
@@ -921,7 +925,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       [&_[data-pop]]:!top-0 [&_[data-pop]]:!end-auto [&_[data-pop]]:!start-[calc(100%+.75rem)]">${groups.join('<span class="my-1 h-px w-5 shrink-0 bg-zinc-900/10 dark:bg-white/10"></span>')}</div>`
   }
   /** A button of the chrome, in the bar or the strip: what a menu opens from. */
-  const chromeEl = (sel: string) => [bar.querySelector<HTMLElement>(sel), strip.querySelector<HTMLElement>(sel)].find(b => !!b?.offsetParent) ?? null
+  const chromeEl = (sel: string) => [bar.querySelector<HTMLElement>(sel), strip.querySelector<HTMLElement>(sel), overlay.querySelector<HTMLElement>(sel)].find(b => !!b?.offsetParent) ?? null
   // Jump (⌘K): one field over the whole project (jump.tsx), drawn once per opening.
   const drawJump = createJump()
   let jumpOpen = false
@@ -1853,20 +1857,49 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
     const dockBtn = 'grid size-9 shrink-0 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white'
     const dockSep = '<span class="mx-1 h-5 w-px shrink-0 bg-white/15"></span>'
+    // Focus mode keeps the page's review work: commenting, deciding and the design's own tools ride
+    // in the dock, in groups, and each opens its menu above it (the dock clips, so menus live beside it).
+    const dockOn = (on: boolean) => on ? ' !bg-white !text-zinc-900' : ''
+    const dockTool = (act: string, shoot: string, icon: string, label: string, key = '', on = false, extra = '') => `<button data-act="${act}" data-shoot="${shoot}" aria-pressed="${on}" aria-label="${label}" title="${key ? `${label} · ${key}` : label}" class="${dockBtn} relative${dockOn(on)}">${ic(icon)}${extra}</button>`
+    const dockBadge = (n: number) => n ? `<span class="absolute -end-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold leading-4 text-white ring-2 ring-zinc-900">${n}</span>` : ''
+    const dockGroups = () => {
+      if (!st.focus || !p) return ''
+      const cc = comments.counts(), d = decideOf(), here = cc.by.get(`${p.id}/${vid}`) ?? 0
+      const review = commentHost() ? [
+        dockTool('focus-comments', 'dock-comments', 'chat-circle', t('Comments'), '', focusComments, dockBadge(here + cc.drafts)),
+        dockTool('comment:toggle', 'dock-select', cc.picking ? 'select-on' : 'select', t('Comment'), 'C', cc.picking),
+      ] : []
+      const decide = [
+        d ? `<button data-act="open:decide" data-decide-btn data-shoot="dock-decide" aria-haspopup="menu" aria-expanded="${st.open === 'decide'}" aria-label="${d.picked ? t('Picked') : t('Decide')}" title="${d.picked ? t('Picked') : t('Decide')} · P" class="${dockBtn} relative${dockOn(st.open === 'decide')} ${d.picked && st.open !== 'decide' ? '!text-emerald-300' : ''}">${ic(d.picked ? 'picked' : 'pick')}</button>` : '',
+        dockTool(`fav:${p.id}:${vid}`, 'dock-fav', favOf(p, vid) ? 'star-fill' : 'star', t('Favorite'), 'S', false).replace('relative"', `relative ${favOf(p, vid) ? '!text-amber-300' : ''}"`),
+      ]
+      const changed = tweakList().filter(isChanged).length
+      const own = [
+        tweakList().length ? dockTool('open:tweaks', 'dock-tweaks', 'tweaks', t('Tweaks'), '', st.open === 'tweaks', dockBadge(changed)) : '',
+        hintList().length ? dockTool('focus-try', 'dock-try', 'key', t('Try it'), '', focusTry) : '',
+        (c => c.lines ? `<button data-act="copymode" aria-pressed="${c.on}" aria-label="${t('Copy options')}" title="${copySay(c)}" class="${dockBtn} relative ${c.on ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic('text')}${copyCount(c, 'ring-zinc-900')}</button>` : '')(copyCounts()),
+        statesOf(p, vid).length ? dockTool('open:fstates', 'dock-states', 'grid', t('States and Autoplay'), '', st.open === 'fstates') : '',
+        canReplay() ? dockTool('replay', 'dock-replay', 'replay', t('Replay'), 'R') : '',
+      ]
+      return [review, decide, own].map(g => g.filter(Boolean).join('')).filter(Boolean).map(g => g + dockSep).join('')
+    }
+    const dockPop = (on: boolean, id: string, body: string, w = 'w-[min(20rem,calc(100vw-2rem))]') => on ? `<div data-pop data-pop-for="${id}" class="fixed bottom-[76px] left-1/2 z-20 ${w} -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white text-zinc-900 shadow-2xl dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">${body}</div>` : ''
+    const DOCK_MENUS = ['fproto', 'fstates', 'decide', 'tweaks']
     overlay.innerHTML = framed || view !== 'variant' || !p ? '' : `
       ${building(p.id, vid) ? `<div data-building-chip title="${t('{agent} is still building this one', { agent: esc(agentName(session.agent)) })}" class="pointer-events-none absolute start-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}${t('Building')}</div>` : ''}
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
       ${st.focus ? `
+      ${dockPop(st.open === 'fstates', 'fstates', `<div class="p-1.5">${variantHere(false)}</div>`, 'w-[min(18rem,calc(100vw-2rem))]')}
       ${st.open === 'fproto' ? `<div data-pop data-pop-for="fproto" class="fixed bottom-[76px] left-1/2 z-20 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">${protoMenu}</div>` : ''}
       <div class="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex justify-center pb-[env(safe-area-inset-bottom)]" style="bottom:calc(var(--dock-h,0px) + var(--copy-h,0px))">
-        <div data-dock data-locked="${st.open === 'fproto' ? 1 : 0}" class="pointer-events-auto relative overflow-hidden rounded-full shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur" style="width:72px;height:6px;margin-bottom:4px;background-color:rgb(24 24 27/.35)">
+        <div data-dock data-locked="${DOCK_MENUS.includes(st.open ?? '') || focusTry || comments.counts().picking ? 1 : 0}" class="pointer-events-auto relative overflow-hidden rounded-full shadow-xl shadow-black/20 ring-1 ring-white/10 backdrop-blur" style="width:72px;height:6px;margin-bottom:4px;background-color:rgb(24 24 27/.35)">
           <div data-dock-full class="absolute left-1/2 top-1/2 flex w-max items-center gap-0.5 px-1 text-white" style="opacity:0;transform:translate(-50%,-50%)">
             <button data-act="unfocus" class="${dockBtn}" aria-label="${t('Exit focus (Esc)')}" title="${t('Exit focus · Esc')}">${ic('shrink')}</button>${dockSep}
             <button data-act="open:fproto" aria-label="${t('Prototypes')}" class="inline-flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-full px-2 hover:bg-white/10 sm:px-3">${ic('menu', 'size-4 sm:hidden')}<span dir="auto" class="hidden max-w-48 truncate font-medium sm:inline">${esc(p.title)}</span>${ic('chev', 'hidden size-3.5 rotate-180 text-white/50 sm:block')}</button>${dockSep}
             ${many ? `<button data-act="step:-1" class="${dockBtn} w-7" aria-label="${t('Previous')}">${ic('left', 'size-3.5')}</button>` : ''}
             ${shown.map(x => `<button data-act="variant:${x.id}" title="${esc(x.name)}" class="relative grid size-9 shrink-0 place-items-center rounded-full text-xs font-semibold ${vid === x.id ? 'bg-white text-zinc-900' : 'text-white/70 hover:bg-white/10'}">${variantLabel(p, x.id)}${editing(p.id, x.id) ? `<span class="absolute end-1 top-1">${pulse('size-1.5')}</span>` : ''}</button>`).join('')}
             ${many ? `<button data-act="step:1" class="${dockBtn} w-7" aria-label="${t('Next')}">${ic('right', 'size-3.5')}</button><span class="px-1.5 text-xs tabular-nums text-white/60">${at + 1}/${vs.length}</span>` : ''}${dockSep}
-            ${(c => c.lines ? `<button data-act="copymode" aria-pressed="${c.on}" aria-label="${t('Copy options')}" title="${copySay(c)}" class="${dockBtn} relative ${c.on ? '!bg-proto-primary !text-proto-primary-fg' : ''}">${ic('text')}${copyCount(c, 'ring-zinc-900')}</button>` : '')(copyCounts())}
+            ${dockGroups()}
             ${phones ? `<button data-act="scale:${[0, 100, 75, 50][([0, 100, 75, 50].indexOf(st.scale) + 1) % 4]}" class="h-9 shrink-0 rounded-full px-2 text-xs tabular-nums text-white/70 hover:bg-white/10" title="${t('Phone scale')}">${scaleLabel()}</button>` : ''}
             <button data-act="settings" class="${dockBtn}" aria-label="${t('Settings')}" aria-haspopup="dialog">${ic('settings')}</button>
           </div>
@@ -1874,6 +1907,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       </div>` : ''}`
 
     if (st.focus) requestAnimationFrame(runDock)
+    { const cc = comments.counts(), host = zone.querySelector<HTMLElement>('[data-island-host]')!
+      host.style.visibility = st.focus && !focusComments && !cc.picking && !cc.drafts && !comments.busy() ? 'hidden' : ''
+      // Above the open dock (52 high, 12 off the foot), so the two never overlap.
+      host.style.bottom = st.focus ? '72px' : '' }
+    // Over the focused design (fixed, z-[100]) the menus that live outside the stage come up with it.
+    for (const el of root.querySelectorAll<HTMLElement>('[data-decide], [data-share-popover]')) el.style.cssText = st.focus ? 'position:relative;z-index:110' : ''
     restoreEdgeLabels()
     // The dropdown is as wide as its columns, up to the window's edge (the columns scroll).
     for (const el of bar.querySelectorAll<HTMLElement>('[data-fitw]')) el.style.width = `${Math.min(Number(el.dataset.fitw), innerWidth - el.getBoundingClientRect().left - 12)}px`
@@ -2577,7 +2616,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'asks': st.asks = !st.asks; return render()
       case 'variant': return go(keepIn(p!, arg))
       case 'step': return step(Number(arg))
-      case 'open': st.open = st.open === arg ? null : arg; st.failed = null; recenter = true; if (arg === 'session' || arg === 'decide') refreshStatus(); return render()
+      case 'open': if (st.focus) focusTry = false; st.open = st.open === arg ? null : arg; st.failed = null; recenter = true; if (arg === 'session' || arg === 'decide') refreshStatus(); return render()
       case 'archived': st.archived = !st.archived; return render()
       case 'work': {
         const w = workOf()
@@ -2620,7 +2659,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'scalestep': { const [lo, hi] = scaleRange(); return setScale(Math.min(hi, Math.max(lo, Math.round(((scaleNow() || 50) + Number(arg)) / 5) * 5))) }
       case 'theme': return setTheme(arg === 'dark')
       case 'focus': if (st.place.view !== 'variant') return; st.focus = true; st.open = null; dock.hold = performance.now() + 1600; edge.hover = {}; render(); return fit()
-      case 'unfocus': st.focus = false; st.open = null; edge.hover = {}; render(); return fit()
+      case 'focus-comments': focusComments = !focusComments; return render()
+      case 'focus-try': focusTry = !focusTry; st.open = null; return render()
+      case 'unfocus': st.focus = false; focusComments = false; focusTry = false; st.open = null; edge.hover = {}; render(); return fit()
       case 'keep': return post('keep', { keep: !st.status?.keep }, 'session')
       case 'stop': return post('stop', {}, 'session').then(got => { if (got) { st.stopped = true; render() } })
     }
@@ -2832,6 +2873,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (selection.get().length) return selection.clear()
       if (st.drawer) { st.drawer = false; return render() }
       if (viewOn()) return patchView({ size: null, zoom: 0 })
+      if (focusTry) { focusTry = false; return render() }
       if (st.focus) return act('unfocus', '', '')
       if (st.place.view === 'variant' && st.place.tool) return go(untool(st.place))
     }
@@ -2859,7 +2901,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else if (e.key === 'w' && workOf()) act('work', 'go', '')
     // M: from a screen out to the gallery, and from the gallery back into the last screen.
     else if (e.key === 'm' && treeOn) st.place.view === 'variant' ? go({ view: 'proto', proto: st.place.proto }) : lastFocus && galleryApi.open(lastFocus)
-    else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches && !framed) act('open', 'decide', '')
+    else if (e.key === 'p' && decideOf() && !phoneMq.matches && !framed) act('open', 'decide', '')
     else if (e.key === 's' && st.place.view === 'variant' && !framed) act('fav', st.place.proto, st.place.variant)
     else if ((e.key === '[' || e.key === ']') && !framed) stepDevice(e.key === ']' ? 1 : -1)
   })
@@ -2978,7 +3020,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const HANDLE = 'flex h-9 items-center gap-1.5 rounded-s-lg bg-white/95 ps-2.5 pe-3 text-xs font-medium text-zinc-900 shadow-lg shadow-black/10 ring-1 ring-black/10 backdrop-blur hover:bg-white dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-white/15 dark:hover:bg-zinc-900'
   // The page inside a device view has none of its own: the page outside comments on it.
   const compareHost = () => st.place.view === 'variant' && !!chosenHere() ? layer?.el.querySelector<HTMLElement>('[data-comment-compare]') ?? null : null
-  const commentHost = () => !framed && !st.focus && q.get('hints') !== '0' ? compareHost() ?? hintHost() : null
+  const commentHost = () => !framed && q.get('hints') !== '0' ? compareHost() ?? hintHost() : null
   /** A prototype's own page: no design on it to point at, but it takes comments as a whole. */
   const cardOn = () => !framed && !st.focus && q.get('hints') !== '0' && st.place.view === 'proto' && !!cur()
   // The comments island floats over the stage and opens into the list; a phone has it as the top
@@ -3353,7 +3395,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (e.key === 'c' && commentHost()) { e.preventDefault(); toggleComment() }
     else if (e.key === 'C' && commentHost() && st.place.view === 'variant') { e.preventDefault(); commentWhole() }
     else if (e.key === 'f' && st.place.view === 'variant') act(st.focus ? 'unfocus' : 'focus', '', '')
-    else if (e.key === 'p' && decideOf() && !st.focus && !phoneMq.matches) act('open', 'decide', '')
+    else if (e.key === 'p' && decideOf() && !phoneMq.matches) act('open', 'decide', '')
     else if (e.key === 's' && st.place.view === 'variant') act('fav', st.place.proto, st.place.variant)
     else if (e.key === '[' || e.key === ']') stepDevice(e.key === ']' ? 1 : -1)
     else if (e.key === 'Escape' && comments.counts().picking) { e.preventDefault(); comments.escape() }
@@ -3870,17 +3912,19 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function paintPanel() {
     const list = hintList(), fields = tweakList()
     paintTry(list)
-    const tabs: ('comments' | 'try' | 'tweaks')[] = [...(railOn() ? ['comments' as const] : []), ...(list.length && !phoneMq.matches ? ['try' as const] : [])]
+    const tabs: ('comments' | 'try' | 'tweaks')[] = st.focus ? (list.length ? ['try'] : []) : [...(railOn() ? ['comments' as const] : []), ...(list.length && !phoneMq.matches ? ['try' as const] : [])]
     const shownTab = tabs.includes(tab) ? tab : tabs[0]
     const panelWidth = tabs.length > 2 ? 320 : HINTS_W
-    const docked = tabs.length > 0 && hintsOpen && wideMq.matches
-    const edge = tabs.length > 0 && !hintsOpen && wideMq.matches
+    // Focus mode keeps the page to the design: the panel and its tab stay away (the dock has Try it).
+    const docked = tabs.length > 0 && hintsOpen && wideMq.matches && !st.focus
+    const edge = tabs.length > 0 && !hintsOpen && wideMq.matches && !st.focus
     const w = docked ? panelWidth : edge ? EDGE_W : 0
     zone.style.setProperty('--hw', `${w}px`)
     if (w !== hintsW) { hintsW = w; requestAnimationFrame(fit) }
     if (!tabs.length) { peek = false; panel.className = 'hidden'; handles.innerHTML = ''; tryEl.innerHTML = ''; caveatEl.innerHTML = ''; return }
     const peeking = edge && peek
     if (!edge) peek = false
+    if (st.focus && !focusTry) { panel.className = 'hidden'; handles.innerHTML = ''; tryEl.innerHTML = ''; return }
     const count = tryCount(list)
     const c = comments.counts()
     if (edge && !peeking) {
@@ -3889,7 +3933,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       tryEl.innerHTML = ''
       return
     }
-    if (!hintsOpen && !peeking) {
+    if (!hintsOpen && !peeking && !st.focus) {
       panel.className = 'hidden'
       handles.innerHTML = `<div class="absolute bottom-[calc(var(--pill-h,0px)+var(--dock-h,0px)+var(--copy-h,0px)+1rem)] end-0 z-20 flex flex-col items-end gap-2">
         ${tabs.includes('comments') ? `<button data-hint="open:comments" title="${t('Comments on this design · C')}" class="${HANDLE}">${ic('comment', 'size-3.5 text-proto-primary-ring')}${t('Comments')}${c.total ? `<span class="tabular-nums text-zinc-400">${c.total}</span>` : ''}</button>` : ''}
@@ -3902,6 +3946,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const wide = wideMq.matches
     panel.className = `absolute inset-y-0 end-0 z-20 flex flex-col bg-white text-[13px] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 ${peeking ? 'border-s border-black/10 shadow-2xl shadow-black/20 dark:border-white/10' : wide ? 'border-s border-black/[.07] dark:border-white/10' : 'w-[min(18rem,88%)] shadow-2xl shadow-black/30'}`
     panel.style.width = wide ? `${panelWidth}px` : ''
+    if (st.focus) { panel.className = 'fixed bottom-[76px] left-1/2 z-20 flex max-h-[min(60vh,28rem)] w-80 max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-black/10 bg-white text-[13px] text-zinc-900 shadow-2xl dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100'; panel.style.width = '' }
     // Never on two lines: docked, the panel is 264 px, which the two tabs and Fill in beside them
     // overran. Fill in is at the head of the values it types, To type.
     const tabBtn = (tId: 'comments' | 'try' | 'tweaks') => {
@@ -3933,7 +3978,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (popOn) {
       const r = btn!.getBoundingClientRect()
       // From the strip it opens beside it; from the bar, under its button.
-      if (btn!.closest('[data-strip]')) { tweaksPop.style.top = `${r.top}px`; tweaksPop.style.left = `${rtl ? Math.max(8, r.left - 332) : r.right + 12}px` }
+      // From the focus dock it opens above it, centred as its other menus (the dock may still be growing).
+      tweaksPop.style.bottom = ''
+      if (btn!.closest('[data-dock]')) { tweaksPop.style.top = 'auto'; tweaksPop.style.bottom = '76px'; tweaksPop.style.left = `${Math.max(8, innerWidth / 2 - 160)}px` }
+      else if (btn!.closest('[data-strip]')) { tweaksPop.style.top = `${r.top}px`; tweaksPop.style.left = `${rtl ? Math.max(8, r.left - 332) : r.right + 12}px` }
       else { tweaksPop.style.top = `${r.bottom + 8}px`; tweaksPop.style.left = `${Math.max(8, Math.min(r.right - 320, innerWidth - 328))}px` }
     } else if (st.open === 'tweaks' && !fields.length) st.open = null
     const open = phoneMq.matches && tweaksOpen && fields.length > 0
@@ -4066,6 +4114,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (what === 'tab') selectPanelTab(a as typeof tab)
       else if (what === 'peek') { clearTimeout(peekTimer); peek = !peek }
       else if (what === 'pin') { peek = false; hintsOpen = true; remember('proto-hints', '1') }
+      else if (what === 'close' && st.focus) { focusTry = false; render() }
       else if (what === 'open' || what === 'close') { if (what === 'open' && (a === 'comments' || a === 'try' || a === 'tweaks')) selectPanelTab(a); hintsOpen = what === 'open'; if (!hintsOpen) setTry(null); if (wideMq.matches) remember('proto-hints', hintsOpen ? '1' : '0') }
       else if (what === 'copy' && h?.kind === 'value') { navigator.clipboard?.writeText(valueOf(h)); hintCopied = Number(a); flash() }
       else if (what === 'fill') {

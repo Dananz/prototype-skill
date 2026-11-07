@@ -298,9 +298,12 @@ export function DecidePop({ popFor, open, anchor, subject, onClose, at: pointer,
   if (!open || !subject || (!at && !pointer)) return null
   // From the tool strip down the stage's side it opens beside its button.
   const beside = !!from?.closest('[data-strip]')
+  // From the focus dock along the foot of the screen it opens above it, centred (the dock may still be growing).
+  const above = !!from?.closest('[data-dock]')
   // A row's menu opens where it was asked for (its ⋯, or the pointer), kept inside the window; the bar's under its button.
   const place = pointer
     ? { top: Math.max(8, Math.min(pointer.y, innerHeight - 420)), left: Math.max(8, Math.min(pointer.x, innerWidth - 328)) }
+    : above ? { bottom: 76, left: Math.max(8, innerWidth / 2 - 160) }
     : beside ? (rtl ? { top: Math.min(at!.top, innerHeight - 420), right: innerWidth - at!.left + 12 } : { top: Math.min(at!.top, innerHeight - 420), left: at!.right + 12 })
     : rtl ? { top: at!.bottom + 6, left: Math.max(8, at!.left) } : { top: at!.bottom + 6, right: Math.max(8, innerWidth - at!.right) }
   // The shell closes it on Esc and on a click outside. A click inside goes no further: a choice

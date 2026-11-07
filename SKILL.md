@@ -22,7 +22,8 @@ on, a two-line bar instead: the session's mark opens the menu, the title opens t
 half the screen (its handle takes it to full) with the state line under it, and Pick opens the
 variant's tiles: Pick, Favorite, More like this, Build it, Comment, Share, then Copy link and
 Pick with a note; a tree row's ⋯ opens the same tiles for that variant), a comments island
-floating over the stage, edge arrows, a focus mode with a dock, light and dark, phone frames, "editing" dots, a
+floating over the stage, edge arrows, a focus mode with a dock (the variants, then commenting, Decide and
+Favorite, then the design's own Tweaks, Try it, copy options, states and Replay, each opening above it), light and dark, phone frames, "editing" dots, a
 strip naming the variant your requests change). You only write variant files.
 
 To act on several variants, Cmd/Ctrl-click tree rows, and the one on screen comes along (Shift-click
