@@ -1,6 +1,6 @@
 // The same inspector controls in the desktop panel and the phone's dock drawer.
 // React roots let the shell use them in React and Vue prototype sessions alike.
-import { createElement as h, useId, useRef, type ChangeEvent, type KeyboardEvent } from 'react'
+import { createElement as h, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Drawer } from '@base-ui/react/drawer'
 import { Select } from '@base-ui/react/select'
@@ -19,7 +19,10 @@ export type TweakControlsProps = {
 
 export type TweaksDrawerProps = TweakControlsProps & {
   open: boolean
+  /** Where it ends when the bar is not there to grow out of. */
   bottom: number
+  /** The bar it grows out of: the comments island, whose top it sits on. */
+  anchor: () => HTMLElement | null
   onClose: (reason: string, event: Event | undefined, cancel: () => void) => void
   onGone: () => void
   returnFocus: () => HTMLElement | null
@@ -136,35 +139,123 @@ function Controls(p: TweakControlsProps) {
     h('button', { type: 'button', 'data-tweak-reset': 'all', onClick: () => p.onReset(), disabled: !changed, className: `${button} w-full border border-zinc-200 dark:border-zinc-700` }, icon('replay', 'size-3.5'), t('Reset all tweaks')))
 }
 
+// A phone has the tweaks grow out of the bottom bar, as its comments list does: one surface with the
+// bar, only the height moving, a grip that snaps to half or full and drags it shut. Base UI keeps the
+// dialog's focus, Escape and outside press; its own swipe is off, the grip here does that.
+function useGrowth(p: TweaksDrawerProps, popup: { current: HTMLDivElement | null }) {
+  const [bottom, setBottom] = useState(p.bottom)
+  const [limits, setLimits] = useState({ half: 280, full: 560, natural: 0 })
+  const [snap, setSnap] = useState<'half' | 'full'>('half')
+  const [drag, setDrag] = useState<number | null>(null)
+  const gesture = useRef<{ id: number; y: number; from: number; moved: boolean } | null>(null)
+  const suppressClick = useRef(false)
+  useLayoutEffect(() => { if (p.open) setSnap('half') }, [p.open])
+  useLayoutEffect(() => {
+    if (!p.open) return
+    const bar = p.anchor(), host = bar?.closest<HTMLElement>('[data-island-host]')
+    const measure = () => {
+      const top = bar?.isConnected ? bar.getBoundingClientRect().top : innerHeight - p.bottom
+      const hostTop = host?.getBoundingClientRect().top ?? 0, hostH = host?.clientHeight ?? innerHeight
+      const el = popup.current
+      // Head, controls and the controls' own padding: shorter than half, it stops at its contents.
+      const natural = el ? (el.querySelector<HTMLElement>('[data-tweaks-head]')?.offsetHeight ?? 0) + (el.querySelector<HTMLElement>('[data-tweaks-controls]')?.offsetHeight ?? 0) + 24 : 0
+      // Full stops short of the stage's top; half reaches its middle, as the comments list does.
+      const full = Math.max(0, top - hostTop - 16)
+      const half = Math.min(full, Math.max(160, top - hostTop - hostH / 2))
+      setBottom(Math.max(0, innerHeight - top))
+      setLimits(was => was.full === full && was.half === half && was.natural === natural ? was : { half, full, natural })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    if (bar) ro.observe(bar, { box: 'border-box' })
+    if (host) ro.observe(host)
+    const controls = popup.current?.querySelector<HTMLElement>('[data-tweaks-controls]')
+    if (controls) ro.observe(controls)
+    addEventListener('resize', measure)
+    return () => { ro.disconnect(); removeEventListener('resize', measure) }
+  }, [p.open, p.bottom, p.fields.length])
+  const settled = Math.min(limits.natural || limits[snap], limits[snap])
+  const cancel = () => { gesture.current = null; setDrag(null) }
+  const finish = (e: PointerEvent) => {
+    const g = gesture.current
+    if (!g || e.pointerId !== g.id) return
+    gesture.current = null
+    setDrag(null)
+    if (!g.moved) return
+    const last = Math.max(0, Math.min(limits.full, g.from + g.y - e.clientY))
+    if (last < Math.min(settled, limits.half) / 2) p.onClose('swipe', e.nativeEvent, () => {})
+    else setSnap(last > (limits.half + limits.full) / 2 && limits.natural > limits.half ? 'full' : 'half')
+  }
+  return {
+    bottom,
+    height: Math.min(limits.full, drag ?? settled),
+    dragging: drag !== null,
+    full: snap === 'full',
+    toggle: (e: MouseEvent) => {
+      if (suppressClick.current && e.detail > 0) { suppressClick.current = false; return }
+      setSnap(s => s === 'half' ? 'full' : 'half')
+    },
+    grip: {
+      onPointerDown: (e: PointerEvent<HTMLElement>) => {
+        if (!p.open || !e.isPrimary || e.button !== 0) return
+        const b = (e.target as Element).closest('button')
+        if (b && !b.hasAttribute('data-tweaks-handle')) return
+        suppressClick.current = false
+        gesture.current = { id: e.pointerId, y: e.clientY, from: popup.current?.offsetHeight ?? settled, moved: false }
+      },
+      onPointerMove: (e: PointerEvent<HTMLElement>) => {
+        const g = gesture.current
+        if (!g || e.pointerId !== g.id || (!g.moved && Math.abs(e.clientY - g.y) < 4)) return
+        g.moved = true
+        suppressClick.current = true
+        e.currentTarget.setPointerCapture(e.pointerId)
+        e.preventDefault()
+        setDrag(Math.max(0, Math.min(limits.full, g.from + g.y - e.clientY)))
+      },
+      onPointerUp: finish,
+      onPointerCancel: cancel,
+      onLostPointerCapture: (e: PointerEvent<HTMLElement>) => { if (e.target === e.currentTarget) cancel() },
+      onKeyDown: (e: KeyboardEvent) => {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+        e.preventDefault(); e.stopPropagation()
+        setSnap(e.key === 'ArrowUp' ? 'full' : 'half')
+      },
+    },
+  }
+}
+
 function TweaksDrawer(p: TweaksDrawerProps) {
   const popup = useRef<HTMLDivElement>(null)
   const changed = p.fields.filter(isChanged).length
+  const grow = useGrowth(p, popup)
   return h(Drawer.Root, {
-    open: p.open, modal: false, swipeDirection: 'down',
+    open: p.open, modal: false,
     onOpenChange: (open: boolean, details: { reason: string; event?: Event; cancel: () => void }) => { if (!open) p.onClose(details.reason, details.event, details.cancel) },
     onOpenChangeComplete: (open: boolean) => { if (!open) p.onGone() },
   },
     h(Drawer.Portal, { container: uiBox() },
-      h(Drawer.Viewport, { className: 'pointer-events-none fixed inset-0 z-[200] flex items-end', style: { paddingBottom: `${Math.max(0, p.bottom)}px` } },
+      h(Drawer.Viewport, { className: 'pointer-events-none fixed inset-0 z-[200] flex items-end', style: { paddingBottom: `${grow.bottom}px` } },
         h(Drawer.Popup, {
-          ref: popup, 'data-tweaks-drawer': '', finalFocus: p.returnFocus,
+          ref: popup, 'data-tweaks-drawer': '', 'data-base-ui-swipe-ignore': '', finalFocus: p.returnFocus,
           initialFocus: () => popup.current?.querySelector<HTMLElement>('[data-tweaks-close]') ?? null,
           onKeyDownCapture: (e: KeyboardEvent) => {
             if (e.key !== 'Escape') return
             e.preventDefault(); e.stopPropagation()
             p.onClose('escape-key', e.nativeEvent, () => {})
           },
-          className: 'pointer-events-auto flex max-h-[64vh] w-full flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white text-zinc-900 shadow-xl outline-none touch-auto [transform:translateY(var(--drawer-swipe-movement-y,0px))] transition-transform duration-200 ease-out data-swiping:transition-none data-starting-style:translate-y-full data-ending-style:translate-y-full motion-reduce:transition-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100',
+          style: { height: grow.height },
+          className: `pointer-events-auto flex w-full flex-col overflow-hidden rounded-t-[22px] border-t border-black/10 bg-white text-zinc-900 shadow-[0_-10px_30px_-18px_rgb(0_0_0/.35)] outline-none touch-auto data-starting-style:!h-0 data-ending-style:!h-0 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100 ${grow.dragging ? '' : 'transition-[height] duration-300 ease-out motion-reduce:transition-none'}`,
         },
-          h('div', { 'aria-hidden': true, className: 'flex h-5 shrink-0 touch-none items-center justify-center' }, h('div', { className: 'h-1 w-8 rounded-full bg-zinc-300 dark:bg-zinc-600' })),
-          h('header', { className: 'flex shrink-0 items-center justify-between gap-2 border-b border-zinc-100 px-4 pb-3 pt-1 dark:border-zinc-800' },
-            h('div', { className: 'min-w-0' },
-              h(Drawer.Title, { className: 'flex items-center gap-2 text-sm font-semibold' }, icon('tweaks'), t('Tweaks')),
-              h(Drawer.Description, { className: `mt-1 ${note}` }, changed ? tn(changed, '{n} change', '{n} changes') : t('Change this preview'))),
-            h('div', { className: 'flex shrink-0 items-center gap-1' },
-              h(Drawer.Close, { 'data-tweaks-close': '', className: `${button} text-sky-700 dark:text-sky-300` }, t('View preview')),
-              h(Drawer.Close, { 'aria-label': t('Close tweaks'), className: IB }, icon('x')))),
-          h(Drawer.Content, { className: 'min-h-0 overflow-y-auto overscroll-contain p-4' }, h(Controls, p))))))
+          h('div', { 'data-tweaks-head': '', ...grow.grip, className: 'relative flex shrink-0 touch-none select-none items-center gap-2 px-3.5 pb-1 pt-6' },
+            h('button', { type: 'button', 'data-tweaks-handle': '', 'aria-label': grow.full ? t('Half the screen') : t('Full screen'), onClick: grow.toggle, className: 'absolute inset-x-12 top-0 flex h-6 items-center justify-center rounded-full' },
+              h('span', { 'aria-hidden': true, className: 'h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-600' })),
+            h('div', { className: 'flex min-w-0 flex-1 items-baseline gap-2' },
+              h(Drawer.Title, { className: 'shrink-0 text-[13px] font-semibold' }, t('Tweaks')),
+              h(Drawer.Description, { className: 'min-w-0 truncate text-[11px] text-zinc-400 dark:text-zinc-500' }, changed ? tn(changed, '{n} change', '{n} changes') : t('Change this preview'))),
+            h(Drawer.Close, { 'data-tweaks-close': '', 'aria-label': t('Close tweaks'), title: t('Close tweaks'), className: 'grid size-8 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 active:bg-zinc-900/10 dark:text-zinc-400 dark:hover:bg-white/10 dark:active:bg-white/15' }, icon('chev'))),
+          h('div', { className: 'relative flex min-h-0 flex-1 flex-col' },
+            h(Drawer.Content, { className: 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-2' }, h(Controls, p)),
+            h('span', { 'aria-hidden': true, className: 'pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-white to-transparent dark:from-zinc-950' }))))))
 }
 
 /** Call the returned render function with new props, keeping native inputs mounted. */

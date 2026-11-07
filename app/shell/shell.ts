@@ -3917,13 +3917,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (open) tweaksUp = true
     if (!phoneMq.matches || !fields.length) tweaksOpen = false
     const bottom = pill.firstElementChild?.getBoundingClientRect().height ?? 0
-    drawTweaksDrawer({ ...props, open, bottom,
+    // The bar's top flattens while the tweaks grow out of it, so the two read as one surface.
+    zone.toggleAttribute('data-tweaks-up', tweaksUp)
+    drawTweaksDrawer({ ...props, open, bottom, anchor: () => islandHost.querySelector<HTMLElement>('[data-island]'),
       onClose: (reason, event, cancel) => {
         if (reason === 'outside-press' && (event?.target as Element | null)?.closest?.('[data-act=tweaks]')) return cancel()
         if (reason === 'escape-key') event?.preventDefault()
         tweaksOpen = false; render()
       },
-      onGone: () => { if (!tweaksOpen) { tweaksUp = false; raisePill() } },
+      onGone: () => { if (!tweaksOpen) { tweaksUp = false; zone.removeAttribute('data-tweaks-up'); raisePill() } },
       returnFocus: () => pill.querySelector<HTMLElement>('[data-act=tweaks]'),
     })
     for (const edge of overlay.querySelectorAll<HTMLElement>('[data-edge]')) edge.style.visibility = open ? 'hidden' : ''
