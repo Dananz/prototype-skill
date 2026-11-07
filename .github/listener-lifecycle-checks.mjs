@@ -51,6 +51,12 @@ function fixture(t, { legacy = false } = {}) {
   return { project, app, inbox, put, meta, config, run, status, batch, age, cfg, receipts }
 }
 
+test('reconcile hands the agent the exact one-line webhook prompt', t => {
+  const f = fixture(t)
+  assert.equal(f.status().hostPrompt, `Prototype comments arrived. Handle them with the prototype skill: \`proto inbox --project ${f.project} --session lifecycle\``)
+  assert.ok(!f.status().hostPrompt.includes('{{'), 'no webhook body placeholders')
+})
+
 test('explicit session finish stops delivery and requests disabling only the owned task', t => {
   const f = fixture(t)
   f.run(['inbox', '--close', 'finished'])
