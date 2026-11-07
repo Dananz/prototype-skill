@@ -482,7 +482,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const lobbyOrder = (p: Proto) => { const k = pickOf(p); return k ? [...p.variants.filter(v => v.id === k), ...p.variants.filter(v => v.id !== k)] : p.variants }
   const PICK = 'text-emerald-700 dark:text-emerald-400'
   const pickChip = (p: Proto, cls = '') => pickOf(p) ? `<span title="${esc(t('Picked {label}', { label: variantRef(p, pickOf(p)) }))} · ${esc(p.variants.find(v => v.id === pickOf(p))!.name)}" class="inline-flex h-5 shrink-0 items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 text-[11px] font-semibold ${PICK} ${cls}">${ic('check', 'size-3')}${esc(variantRef(p, pickOf(p)))}</span>` : ''
-  const wide = () => matchMedia('(min-width: 1024px)').matches
+  // Where the sidebar docks: the project tree from a tablet up (below, it is the phone's sheet); the
+  // classic columns, the layout Settings keeps when the tree is off, from a desk up (below, a drawer).
+  const sideAt = () => treeOn && !framed ? 'sm' : 'lg'
+  const wide = () => matchMedia(sideAt() === 'sm' ? '(min-width: 640px)' : '(min-width: 1024px)').matches
 
   // ---------- the path, as columns ----------
   // The switcher's dropdown, the sidebar and the phone's sheet all draw these. The first column
@@ -798,7 +801,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // The zoom pill (tree mode, a wide page): its zoom only, and on hover the layouts, Fit and −/+. It
   // drives the layout's zoom. The gallery has nothing to zoom: no pill over it.
   /** The tree's sidebar is on screen, so the open variant's states sit at its foot instead of in the strip. */
-  const dockHome = () => st.side && deskMq.matches
+  const dockHome = () => st.side && wide()
   const zoomPillOn = () => treeOn && !framed && deskMq.matches && !st.focus && st.place.view === 'variant' && !chosenHere()
   let zoomKey = ''
   function paintZoom() {
@@ -1765,11 +1768,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
             ${w.exploration ? `${sep}${toProto(w.exploration)}${option(w.exploration)}` : option(p)}`
         : `${toGallery(t('Explorations on no screen'), 'text-zinc-500')}${sep}${toProto(p)}${option(p)}`
       const jumpBtn = `<button data-act="jump" data-shoot="jump" aria-label="${t('Jump to')} (⌘K)" title="${t('Jump to')} · ⌘K" class="${IB} shrink-0">${ic('search')}<kbd dir="ltr" class="hidden font-sans text-[11px] text-zinc-400 lg:inline">⌘K</kbd></button>`
-      keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
+      keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? (sideAt() === 'sm' ? 'sm:hidden' : 'lg:hidden') : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
         <nav data-crumb aria-label="${t('Where you are')}" class="flex min-w-0 items-center gap-0.5 text-sm">${crumb}</nav>
         <div class="ms-auto flex shrink-0 items-center gap-1">${stepper}${stepper ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}${jumpBtn}${shareBtn()}${moreBtn()}</div></div>`)
     } else
-    keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? 'lg:hidden' : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
+    keepScroll(bar, `${phoneBar}<div class="hidden min-w-0 flex-1 items-center gap-1 sm:flex"><button data-act="side:1" class="${IB} shrink-0 ${st.side ? (sideAt() === 'sm' ? 'sm:hidden' : 'lg:hidden') : ''}" title="${t('Show sidebar · ⌘\\')}" aria-label="${t('Show sidebar')}">${ic('sidebar')}</button>
       ${switcher}
       <div class="ms-auto flex shrink-0 items-center gap-1">
         ${stepper}${stepper && (view === 'variant' || viewOk() || railOn() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
@@ -1809,19 +1812,20 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         ${chips.length > 1 ? `<div data-mcols class="flex gap-1.5 overflow-x-auto px-3 pb-3 [scrollbar-width:none]">${chips.map(({ x, j }) => `<button data-act="drill:${j}" class="h-8 shrink-0 rounded-full px-3 text-xs ${j === i ? 'bg-sky-500/15 font-semibold text-sky-800 dark:text-sky-200' : 'bg-zinc-900/[.05] text-zinc-600 dark:bg-white/[.07] dark:text-zinc-300'}"><span dir="auto">${esc(colName(x))}</span> <b>${esc(x.sel)}</b></button>`).join('')}</div>` : ''}
         <div data-vlist data-k="${esc(colKey(c))}" class="space-y-px px-2">${colRows(c, true)}</div></div>`
     }
-    const sideClass = st.side && !framed ? 'hidden shrink-0 flex-col border-e border-black/[.07] lg:flex dark:border-white/10' : 'hidden'
+    const sideClass = st.side && !framed ? `hidden shrink-0 flex-col border-e border-black/[.07] ${sideAt() === 'sm' ? 'sm:flex' : 'lg:flex'} dark:border-white/10` : 'hidden'
     side.className = treeOn ? 'hidden' : sideClass
     side.style.width = `${st.sideW}px`
     treeHost.hidden = !treeOn
     treeHost.className = treeOn ? sideClass : 'hidden'
     treeHost.style.width = `${st.sideW}px`
-    grip.classList.toggle('lg:block', st.side)
+    grip.classList.toggle('lg:block', st.side && sideAt() === 'lg')
+    grip.classList.toggle('sm:block', st.side && sideAt() === 'sm')
     grip.setAttribute('aria-valuenow', String(st.sideW))
     keepScroll(side, st.side && !treeOn ? sideNav(false) : '')
     if (treeOn) { mountTreeOnce(); paintTree() }
     if (st.place.view === 'variant') lastFocus = `${st.place.proto}/${st.place.variant}`
     paintGallery()
-    keepScroll(drawer, st.drawer ? `<div class="fixed inset-0 z-50 lg:hidden"><div data-act="drawer:0" class="absolute inset-0 bg-black/30"></div><div class="absolute inset-y-0 start-0 flex w-[19rem] max-w-[85%] flex-col bg-white shadow-2xl dark:bg-zinc-950">${sideNav(true)}</div></div>` : '')
+    keepScroll(drawer, st.drawer && !treeOn ? `<div class="fixed inset-0 z-50 lg:hidden"><div data-act="drawer:0" class="absolute inset-0 bg-black/30"></div><div class="absolute inset-y-0 start-0 flex w-[19rem] max-w-[85%] flex-col bg-white shadow-2xl dark:bg-zinc-950">${sideNav(true)}</div></div>` : '')
 
     // Focus mode restyles the zone to cover the page; the mounted design stays put. On a phone
     // the variant pill takes a strip at the bottom of the stage, so it never covers the design;
@@ -2236,6 +2240,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     else if (t.closest('[data-card] [data-act]')) queueMicrotask(() => closeCard())
   })
   // The phone's sheets and the menu belong to the phone layout; widening past it closes them.
+  // The tree's sidebar docks from 640px, so crossing it moves the states between the strip and its foot.
+  matchMedia('(min-width: 640px)').addEventListener('change', () => { if (treeOn && !framed) render() })
   matchMedia('(min-width: 640px)').addEventListener('change', e => {
     if (!e.matches || !(st.menu || st.sheet || st.states || st.tree || st.decide || card || trySheet !== 'closed')) return
     st.menu = ''; st.sheet = false; st.states = false; st.tree = false; st.decide = ''; trySheet = 'closed'; closeCard(true); render()
@@ -2573,7 +2579,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         return
       }
       // Wide windows dock the sidebar (remembered); narrower ones open it as a drawer.
-      case 'side': recenter = true; if (!wide()) { st.drawer = arg === '1'; return render() } st.side = arg === '1'; remember('proto-side', st.side ? '1' : '0'); return render()
+      case 'side': recenter = true; if (!wide()) { if (treeOn && !framed) st.tree = arg === '1'; else st.drawer = arg === '1'; return render() } st.side = arg === '1'; remember('proto-side', st.side ? '1' : '0'); return render()
       case 'drawer': st.drawer = arg === '1'; return render()
       case 'menu': st.menu = arg as typeof st.menu; recenter = true; return render()
       case 'favs': return setFavOnly(arg === '1')
@@ -2788,7 +2794,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const t = e.target as Element
     if (settingsOpen || shareOpen || linkOpen) return
     if (resetViewKey(e)) return
-    if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); return act('side', (wide() ? st.side : st.drawer) ? '0' : '1', '') }
+    if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); return act('side', (wide() ? st.side : treeOn && !framed ? st.tree : st.drawer) ? '0' : '1', '') }
     // ⌘K is Jump's unless the design took it (its own palette, a field that uses it).
     if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k' && treeOn && !framed && !e.defaultPrevented && !t.closest?.('[data-mount] input, [data-mount] textarea, [data-mount] [contenteditable]')) { e.preventDefault(); return openJump() }
     // Cmd or Ctrl Enter sends what's ready to Claude, from anywhere but a field of the design's own.
