@@ -4000,7 +4000,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const fillTry = () => {
     for (const k of ['list', 'foot'] as const) { const el = tryIn[k]; if (el && written.get(el) !== tryNow[k]) { el.innerHTML = tryNow[k]; written.set(el, tryNow[k]) } }
   }
-  const raisePill = () => { const box = pill.firstElementChild as HTMLElement | null; if (box) box.style.zIndex = tryUp || tweaksUp ? '210' : '' }
+  // The tree's and Pick's sheets open over everything, the bar too, even while the tweaks grow out of it.
+  const sheetUp = () => treeOn && !framed && phoneMq.matches && (st.tree || !!st.decide)
+  const raisePill = () => { const box = pill.firstElementChild as HTMLElement | null; if (box) box.style.zIndex = (tryUp || tweaksUp) && !sheetUp() ? '210' : '' }
   function setTrySheet(to: typeof trySheet) {
     trySheet = to
     if (to === 'open') { tryUp = true; tryPressed = false }
