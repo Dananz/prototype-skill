@@ -157,10 +157,11 @@ in as I build"). Then continue. On later requests in the same session run `proto
 setup lives in that short file so a truncated read of this skill cannot hide it.
 If startup says `not listening`, reconcile the lifecycle and exact host task as that file
 directs. Retain closed state or explicit opt-out; reconnect only on explicit reopening.
-In T3 Code, both Codex and Claude use the same `schedule_task` webhook, bound to this
-conversation. Discover the host tools before deciding wakeups are unavailable; a short
-initial tool list is not proof that T3's scheduler is missing. Use the host's documented
-tool discovery or MCP transport when necessary.
+The `schedule_task` webhook is only for T3 Code with T3 Connect on (it returns a
+`webhookUrl` only then); without it, and outside T3 Code, Claude listens with a background
+`proto inbox --wait`. In T3 Code, discover the host tools before deciding wakeups are
+unavailable; a short initial tool list is not proof that T3's scheduler is missing. Use the
+host's documented tool discovery or MCP transport when necessary.
 
 Run `proto inbox --status` after registration. It checks the listener without taking
 comments. Reuse an existing subscription and preserve its task ID and owning thread across
@@ -170,7 +171,7 @@ the specific blocker and read `proto inbox` at the start and end of active turns
 
 **Codex shell sessions are not a listener connection.** A process/session ID returned by
 `exec_command` or `write_stdin` only means the command is running. It does not establish
-delivery into an idle conversation. Use the T3 webhook when available. Use `--wait` only
+delivery into an idle conversation. Use the T3 webhook when T3 Connect is on. Use `--wait` only
 when the host explicitly supports completion wakeups into this same conversation, then
 rearm it on every completion as described under Comments.
 
@@ -882,8 +883,9 @@ run `proto inbox`** and handle pending requests before finishing.
 persistent event subscription when the harness supports one. Never add a listener agent,
 helper conversation, recurring polling task, or a second subscription for the same app.
 
-Follow **`references/listener.md`** for the persistent T3 webhook (Codex and Claude),
-supported background completion wakeups on other hosts, and recovery when neither exists.
+Follow **`references/listener.md`** for the persistent T3 webhook (T3 Code with T3 Connect),
+background completion wakeups (everywhere else, T3 without Connect included), and recovery
+when neither exists.
 Read it at startup, on comment wakeups, and when finishing feedback. Startup/inbox
 reconciliation can request disabling an inactive or finished listener. Apply and verify
 the exact host action; ordinary replies and temporary server stops preserve active review.

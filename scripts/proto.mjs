@@ -248,6 +248,8 @@ function detectedAgent() {
   if (by && !['claude', 'codex', 'agent'].includes(by)) die('PROTO_AGENT must be claude, codex or agent')
   return by
 }
+// T3 Code sets this in every agent shell it starts; its webhook needs T3 Connect on as well.
+const inT3 = () => !!process.env.T3CODE_THREAD_ID
 function replyAgent() {
   const by = flags.as ?? detectedAgent() ?? 'agent'
   if (!['claude', 'codex', 'agent'].includes(by)) die('reply identity must be claude, codex or agent (--as or PROTO_AGENT)')
@@ -2139,9 +2141,13 @@ function printListener(dir) {
   const waiter = readJson(waiterFile(dir), null)
   if (waiter && alive(waiter.pid)) return console.log(`listening (pid ${waiter.pid}); keep its host background wakeup active`)
   console.log('not listening: page comments cannot wake this conversation yet')
-  console.log('T3 Code (Codex or Claude): reuse list_scheduled_tasks or create schedule_task with schedule: {type: "webhook"}, bindToCurrentThread: true; register its private config with proto inbox --listen <config.json>. Read references/listener.md in the skill directory and connect before ending the turn.')
-  console.log(`Its prompt, exactly this line: ${persistent.hostPrompt}`)
-  if (detectedAgent() === 'codex') console.log('Codex: a running exec_command session does not by itself wake an idle conversation. Use the host webhook or an explicitly supported background completion wakeup.')
+  const agent = detectedAgent()
+  if (inT3()) {
+    console.log('T3 Code: reuse list_scheduled_tasks or create schedule_task with schedule: {type: "webhook"}, bindToCurrentThread: true; register its private config with proto inbox --listen <config.json>. Read references/listener.md in the skill directory and connect before ending the turn.')
+    console.log(`Its prompt, exactly this line: ${persistent.hostPrompt}`)
+    console.log(`No webhookUrl back means T3 Connect is off: delete that new task with delete_scheduled_task, then ${agent === 'codex' ? 'tell the user to turn on T3 Connect for automatic replies (Codex has no background wakeup without it)' : 'listen with proto inbox --wait in a background shell (Claude Code: Bash with run_in_background), rearmed after every completion'}.`)
+  } else if (agent === 'codex') console.log('Codex: a running exec_command session does not by itself wake an idle conversation. Use proto inbox --wait only with an explicitly supported background completion wakeup.')
+  else console.log('Listen with proto inbox --wait in a background shell that wakes this conversation when it ends (Claude Code: Bash with run_in_background), rearmed after every completion. Read references/listener.md in the skill directory and connect before ending the turn.')
   console.log('Only if this host offers no wakeup mechanism, read proto inbox on active turns and tell the user automatic replies are unavailable.')
 }
 

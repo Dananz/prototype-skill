@@ -5,7 +5,19 @@ Keep the original project root, session ID, exact subscription task ID and ownin
 across turns and compaction. `proto` means `node "<absolute-skill-dir>/scripts/proto.mjs"`;
 pass the original `--project` and `--session` on every call below.
 
-A listener is one webhook subscription for this session. Preserve it through ordinary
+## Pick the mechanism
+
+| Where | Listener |
+| --- | --- |
+| T3 Code (`T3CODE_THREAD_ID` is set) with T3 Connect on | the T3 webhook below |
+| T3 Code with T3 Connect off, Claude | background `proto inbox --wait` (Other hosts below) |
+| T3 Code with T3 Connect off, Codex | none: tell the user automatic replies need T3 Connect |
+| Anywhere else | background `proto inbox --wait` where the host wakes the conversation when it ends |
+
+Only `schedule_task` tells whether T3 Connect is on: it returns a `webhookUrl` only then. An
+existing registered webhook proves it was on. Use the webhook only in T3 Code with that URL.
+
+A listener is one subscription for this session: a webhook task or one background wait. Preserve it through ordinary
 replies (including final replies), comment batches, compaction and temporary server stops
 or updates. A pick alone does not finish review. Use the durable inbox as the source of
 truth; webhook payloads are wake signals. Read `proto inbox` at the start and end of active
@@ -20,7 +32,7 @@ touches another conversation's task, and `--close`, `--finish` and the seven-day
 this conversation's prototypes and comments. A conversation from before the project app keeps its
 task: the import moves its listener with it.
 
-## T3 Code, both Codex and Claude
+## T3 Code with T3 Connect, both Codex and Claude
 
 Discover the host's scheduling tools before declaring them unavailable. Use its documented
 discovery or MCP transport if the initial catalog is incomplete. Host actions below are
@@ -62,8 +74,10 @@ instructions for the owning agent using those existing tools, not APIs provided 
    "threadId": "<owning thread ID>" }` to a private temporary JSON file outside the served
    project. Register with `proto inbox --listen "<config.json>"`, then delete that file.
    The registered copy stays private. Never expose webhook URLs or secrets in source,
-   replies, PRs or the page. If no webhook URL is returned, disable the newly created task
-   and report the host's remote-access limitation. Do not claim it connected.
+   replies, PRs or the page. If no webhook URL is returned, T3 Connect is off: delete the
+   task you just created with `delete_scheduled_task` (never one you reused) and switch to
+   Other hosts below. Claude listens with a background `proto inbox --wait`; Codex reports
+   that automatic replies need T3 Connect. Do not claim the webhook connected.
 6. Run `proto inbox --status`. It checks registration without claiming comments. A delivery
    failure retries; status reports the error. A host enable action remains required until
    verified and recorded. Reuse the same subscription after comments and replies. Do not
@@ -106,11 +120,13 @@ After feedback closure and verified host disable, stop the server if it is no lo
 sessions with a listener record (including opt-out) or pending work; explicit `proto rm`
 retires those files after the host task is disabled. Removing them also removes reuse history.
 
-## Other hosts
+## Other hosts, and T3 Code without T3 Connect
 
 Use `proto inbox --wait` only when the host explicitly supports background completion
-wakeups into this same conversation. A running Codex `exec_command`/`write_stdin` session
-alone does not provide this. Keep one supported wait with `--timeout <minutes>` (default
+wakeups into this same conversation. Claude Code does, in T3 Code too: run it with the Bash
+tool's `run_in_background: true` and a timeout of 7200000 ms (the command's own default is
+115 minutes, under it), and its exit re-invokes this conversation. A running Codex
+`exec_command`/`write_stdin` session alone does not provide this. Keep one supported wait with `--timeout <minutes>` (default
 115), preserving its host job ID across compaction. On completion or timeout, rearm it
 before processing comments or ending an ordinary turn. Reuse a live wait.
 

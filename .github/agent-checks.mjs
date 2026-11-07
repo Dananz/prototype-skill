@@ -9,7 +9,7 @@ import { test } from 'node:test'
 import './pick-parents-checks.mjs'
 
 const skill = dirname(dirname(fileURLToPath(import.meta.url)))
-const identityVars = ['PROTO_SESSION_ID', 'CODEX_THREAD_ID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_SESSION_ID', 'PROTO_AGENT', 'PROTO_AGENT_PID', 'CLAUDE_PID']
+const identityVars = ['PROTO_SESSION_ID', 'CODEX_THREAD_ID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_SESSION_ID', 'PROTO_AGENT', 'PROTO_AGENT_PID', 'CLAUDE_PID', 'T3CODE_THREAD_ID']
 function fixture(fn) {
   const project = mkdtempSync(join(tmpdir(), 'proto agent checks '))
   const env = { ...process.env }
@@ -139,11 +139,27 @@ test('Codex listener status requires a real wakeup and leaves pending comments u
   const r = call(['inbox', '--status'], { CODEX_THREAD_ID: 'thread' })
   assert.equal(r.status, 0, r.stderr)
   assert.match(r.stdout, /not listening/)
-  assert.match(r.stdout, /T3 Code.*Codex/)
-  assert.match(r.stdout, /schedule_task/)
+  assert.doesNotMatch(r.stdout, /schedule_task/)
   assert.match(r.stdout, /exec_command.*does not.*wake/)
+  const t3 = call(['inbox', '--status'], { CODEX_THREAD_ID: 'thread', T3CODE_THREAD_ID: 't3' })
+  assert.match(t3.stdout, /schedule_task/)
+  assert.match(t3.stdout, /T3 Connect is off.*delete_scheduled_task.*turn on T3 Connect/)
+  assert.doesNotMatch(t3.stdout, /run_in_background/)
   assert.equal(JSON.parse(readFileSync(incoming, 'utf8')).id, 'pending')
-  assert.doesNotMatch(r.stdout, /Still waiting/)
+  assert.doesNotMatch(r.stdout + t3.stdout, /Still waiting/)
+}))
+
+test('Claude uses the T3 webhook only in T3 Code, and a background wait without T3 Connect or outside T3', () => fixture(({ call, session }) => {
+  session('thread')
+  const t3 = call(['inbox', '--status'], { CLAUDE_CODE_SESSION_ID: 'thread', T3CODE_THREAD_ID: 't3' })
+  assert.equal(t3.status, 0, t3.stderr)
+  assert.match(t3.stdout, /schedule_task/)
+  assert.match(t3.stdout, /T3 Connect is off.*delete_scheduled_task.*inbox --wait.*run_in_background/)
+  const plain = call(['inbox', '--status'], { CLAUDE_CODE_SESSION_ID: 'thread' })
+  assert.equal(plain.status, 0, plain.stderr)
+  assert.match(plain.stdout, /not listening/)
+  assert.doesNotMatch(plain.stdout, /schedule_task|T3/)
+  assert.match(plain.stdout, /inbox --wait.*run_in_background/)
 }))
 
 test('listener status reuses registered subscriptions without exposing credentials or taking batches', () => fixture(({ call, session }) => {
