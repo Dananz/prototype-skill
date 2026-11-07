@@ -15,9 +15,11 @@ import { sameView } from '../view/sizes'
 import { t } from '../i18n'
 import { variantRef } from '../variants'
 
-const noteImages = (note: Note) => note.shots?.length ? { images: note.shots.map(s => ({ dataUrl: s.src, name: 'attached by the user' })) } : {}
+// Each picture's line in the inbox: an image in the words says its number, the one its `[image n]` has, and its file's name.
+const pictureName = (s: Shot, k: number, other: string) => s.inline ? `image ${k + 1}, ${s.from === 'drop' ? 'dropped' : 'pasted'} by the user${s.name ? `: ${s.name}` : ''}` : other
+const noteImages = (note: Note) => note.shots?.length ? { images: note.shots.map((s, k) => ({ dataUrl: s.src, name: pictureName(s, k, 'attached by the user') })) } : {}
 
-const picturesOf = (d: Draft) => shotsOf(d).map(s => ({ dataUrl: s.src, name: s.pasted ? 'pasted by the user' : s.region ? 'the region, as dragged out' : s.tag !== undefined ? `the region tagged @${s.tag + 1}, as dragged out` : 'marked up' }))
+const picturesOf = (d: Draft) => shotsOf(d).map((s, k) => ({ dataUrl: s.src, name: pictureName(s, k, s.pasted ? 'pasted by the user' : s.region ? 'the region, as dragged out' : s.tag !== undefined ? `the region tagged @${s.tag + 1}, as dragged out` : 'marked up') }))
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 const hasWords = (d: Draft) => d.body.some(s => typeof s !== 'string' || s.trim()) || d.tags.length > 0 || shotsOf(d).length > 0

@@ -1,8 +1,9 @@
-import { imageIn, carriesImage, imageUrl } from './images'
+import { imageIn, carriesImage } from './images'
+import { besideWords, fill, imageShot, insertImage, InlineImage, relabel, settle, type RawSeg } from './inline-image'
 // Writing a comment on one element, or on a moment or a range of the design's motion (in the motion
 // dock). `@` offers whole-variant mentions; Tag another element keeps the existing visual picker (a region dragged out there is tagged with its picture); the camera captures the design around the
 // element (all of it, on a moment) and opens the editor, and a region dragged out on the design brings its own picture; an image pasted (Ctrl+V) or dropped on the
-// composer is added beside the screenshots (several per comment); ⌘↩ adds it. Whatever is written is held by
+// composer sits in the words where the caret is, as a chip (inline-image.tsx); ⌘↩ adds it. Whatever is written is held by
 // the store as it is typed, so putting the composer away any way but Cancel or Add loses nothing.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -18,17 +19,18 @@ import type { Box, Draft, Seg, Shot, Target, Time } from './types'
 import { MAX_SHOTS, shotsOf } from './types'
 import { MentionShelf, useMentionShelf } from './mention-shelf'
 import { routeOfTag, TAG_EVENT, type TagDrop } from '../tag-drag'
-import { IB, Icon, MOD, PinDot, PRIMARY, SrcTag, srcOf, ImageChip, PictureStrip, ViewChip, elementName, variantChip, protoChip, protoTitle } from './ui'
+import { IB, Icon, MOD, PinDot, PRIMARY, SrcTag, srcOf, PictureStrip, ViewChip, elementName, variantChip, protoChip, protoTitle } from './ui'
 import { t } from '../i18n'
 import { variantLabel } from '../variants'
 
 const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `${(t.at / 1000).toFixed(2)} s` : `${(t.at / 1000).toFixed(2)}–${(t.to / 1000).toFixed(2)} s`
 
-export function readEditor(el: HTMLElement): Seg[] {
-  const out: Seg[] = []
+export function readEditor(el: HTMLElement): RawSeg[] {
+  const out: RawSeg[] = []
   el.childNodes.forEach(n => {
     if (n.nodeType === 3) { if (n.textContent) out.push(n.textContent.replace(/​/g, '')) }
     else if ((n as HTMLElement).dataset?.tag) out.push({ tag: Number((n as HTMLElement).dataset.tag) })
+    else if ((n as HTMLElement).dataset?.img) out.push({ imgId: (n as HTMLElement).dataset.img! })
     else if ((n as HTMLElement).tagName === 'BR') out.push('\n')
     else out.push((n as HTMLElement).innerText)
   })
@@ -51,8 +53,8 @@ export const chipNode = (target: Target | undefined, i: number) => {
 }
 export const endRange = (el: HTMLElement) => { const x = document.createRange(); x.selectNodeContents(el); x.collapse(false); return x }
 
-// An image from the clipboard or dropped on the composer becomes one of the comment's pictures, the
-// way a screenshot does (each paste, drop or screenshot adds one, up to MAX_SHOTS). It goes
+// An image from the clipboard or dropped on the composer becomes one of the comment's pictures, in
+// the words where the caret is (each paste, drop or screenshot adds one, up to MAX_SHOTS). It goes
 // through a canvas, so whatever it was (a GIF, a BMP from a screenshot tool) it is sent as a PNG
 // the server keeps (it takes png, jpeg and webp only), at most MAX_SIDE px a side; one still too
 // big for localStorage is sent as a JPEG.
@@ -114,14 +116,18 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const [tags, setTags] = useState<Target[]>(initial?.tags ?? [])
   const tagsRef = useRef(tags)
   tagsRef.current = tags
-  // Its pictures: screenshots of the design (marked up or not) and images the user pasted or dropped.
-  const [shots, setShots] = useState<Shot[]>(initial ? shotsOf(initial) : [])
+  // Its pictures beside the words: screenshots of the design (marked up or not), and images pasted
+  // before images went into the words. Images pasted or dropped now are chips in the editor.
+  const [shots, setShots] = useState<Shot[]>(initial ? besideWords(initial.body, shotsOf(initial)) : [])
   const shotsRef = useRef(shots)
   shotsRef.current = shots
-  const full = shots.length >= MAX_SHOTS
+  const [inlineN, setInlineN] = useState(initial ? shotsOf(initial).length - shots.length : 0)
+  const full = shots.length + inlineN >= MAX_SHOTS
+  const count = () => shotsRef.current.length + (ed.current?.querySelectorAll('[data-img]').length ?? 0)
+  const note = () => settle(readEditor(ed.current!), shotsRef.current)
   const box = useRef<HTMLDivElement>(null)
   const [empty, setEmpty] = useState(!initial || !initial.body.some(s => typeof s !== 'string' || s.trim()))
-  const emit = () => { if (!editing && ed.current) act.hold({ body: readEditor(ed.current), tags: tagsRef.current, ...(shotsRef.current.length ? { shots: shotsRef.current } : {}) }, target, time) }
+  const emit = () => { if (!editing && ed.current) { const n = note(); act.hold({ body: n.body, tags: tagsRef.current, ...(n.shots.length ? { shots: n.shots } : {}) }, target, time) } }
   const regionKey = target?.region ? JSON.stringify(target.region) : ''
   // Moving the comment to the parent (or back), or its region, keeps what is held on what it is on now.
   useEffect(emit, [tags, shots, target?.selector, regionKey]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -144,7 +150,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     if (!el || filled.current) return
     filled.current = true
     el.replaceChildren()
-    initial?.body.forEach(s => el.append(typeof s === 'string' ? document.createTextNode(s) : chipNode(initial.tags[s.tag], s.tag)))
+    if (initial) fill(el, initial.body, shotsOf(initial), i => chipNode(initial.tags[i], i))
     el.focus({ preventScroll: true })
     const sel = getSelection(); sel?.selectAllChildren(el); sel?.collapseToEnd()
     // On a phone the composer is a sheet over the bottom: the element moves up into view above it.
@@ -196,16 +202,16 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     const at = tagsRef.current.length
     insert(pending)
     // A region dragged out to tag it comes with its picture, as a region the comment is on does.
-    if (!pending.region || shotsRef.current.length >= MAX_SHOTS) return
+    if (!pending.region || count() >= MAX_SHOTS) return
     setCapturing(t('Capturing…'))
     capture(host.mount(), pending, host.dark())
-      .then(url => { if (url) setShots(s => s.length < MAX_SHOTS ? [...s, { src: url, tag: at }] : s) })
+      .then(url => { if (url) setShots(s => count() < MAX_SHOTS ? [...s, { src: url, tag: at }] : s) })
       .catch(() => { /* a design in a device view's frame may not draw from here */ })
       .finally(() => setCapturing(null))
   }, [pending, tagging]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
-    const body = readEditor(ed.current!)
+    const { body, shots } = note()
     if (!body.some(s => typeof s !== 'string' || s.trim()) && !tags.length && !shots.length) return
     const d = { body, tags, shots, shot: undefined, pasted: undefined }
     if (late) { act.save(d, target, undefined, time); void act.send(); return }
@@ -215,7 +221,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     act.saveSent(sentItem.id, d).catch((e: Error & { taken?: boolean }) => { if (e.taken) setTaken(true); else setError(e.message || t('Could not send')) }).finally(() => setBusy(false))
   }
   const shoot = async () => {
-    if (shotsRef.current.length >= MAX_SHOTS) return
+    if (count() >= MAX_SHOTS) return
     setCapturing(t('Capturing…'))
     // A design in a device view's frame may not draw from this window; then there is no picture.
     try { const url = await capture(host.mount(), target ?? WHOLE, host.dark()); if (url) setMarking({ src: url, at: -1 }) } catch { /* nothing to mark up */ } finally { setCapturing(null) }
@@ -233,15 +239,31 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
     capture(host.mount(), target, host.dark())
       .then(url => {
         if (!url || regionShot.current !== regionKey) return
-        setShots(s => s.some(p => p.region) ? s.map(p => p.region ? { src: url, region: true } : p) : s.length < MAX_SHOTS ? [...s, { src: url, region: true }] : s)
+        setShots(s => s.some(p => p.region) ? s.map(p => p.region ? { src: url, region: true } : p) : count() < MAX_SHOTS ? [...s, { src: url, region: true }] : s)
       })
       .catch(() => { /* a design in a device view's frame may not draw from here */ })
       .finally(() => setCapturing(null))
   }, [regionKey]) // eslint-disable-line react-hooks/exhaustive-deps
-  const attach = async (file: File) => {
-    if (shotsRef.current.length >= MAX_SHOTS) return
+  // An image pasted or dropped goes where the caret was, as a chip.
+  const attach = async (file: File, from: 'paste' | 'drop') => {
+    if (count() >= MAX_SHOTS) return
     setCapturing(t('Adding…'))
-    try { const url = await imageUrl(file); if (url && shotsRef.current.length < MAX_SHOTS) { shotsRef.current = [...shotsRef.current, { src: url, pasted: true }]; setShots(shotsRef.current) } } finally { setCapturing(null); refocus() }
+    try {
+      const shot = await imageShot(file, from), el = ed.current
+      if (!shot || !el || count() >= MAX_SHOTS) return
+      el.focus({ preventScroll: true })
+      insertImage(range.current && el.contains(range.current.startContainer) ? range.current : endRange(el), shot, 1)
+      saveRange(); changed()
+    } finally { setCapturing(null) }
+  }
+  // After each change: images numbered again in order, the count, the empty hint, what is held.
+  const changed = () => {
+    const el = ed.current
+    if (!el) return
+    relabel(el)
+    setInlineN(el.querySelectorAll('[data-img]').length)
+    setEmpty(!el.innerText.trim())
+    emit()
   }
 
   const [height, setHeight] = useState(260)
@@ -304,7 +326,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
         onDragLeave={e => { if (!box.current?.contains(e.relatedTarget as Node)) setDropping(false) }}
         onDrop={e => {
           setDropping(false)
-          const f = imageIn(e.dataTransfer); if (!f) return; e.preventDefault(); void attach(f)
+          const f = imageIn(e.dataTransfer); if (!f) return; e.preventDefault(); void attach(f, 'drop')
         }}
         className={`z-30 flex flex-col text-[13px] text-zinc-900 dark:text-zinc-100 ${docked || sheet ? 'relative' : 'absolute rounded-2xl border border-black/10 bg-white shadow-2xl shadow-black/15 dark:border-white/10 dark:bg-zinc-900'} ${!tagging ? 'pointer-events-auto' : sheet ? 'pointer-events-auto opacity-60' : 'pointer-events-none opacity-40'} ${dropping ? 'ring-2 ring-proto-primary-ring' : ''}`} style={sheet ? undefined : style}>
         <div className={`flex items-center gap-1 px-3 ${sheet ? 'pt-1.5' : 'pt-2.5'}`}>
@@ -318,7 +340,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
         <div className="relative px-3 pt-1.5">
           <div ref={el => { ed.current = el; if (el) setEdOn(true) }} contentEditable suppressContentEditableWarning data-tag-target="" role="textbox" aria-label={t('Comment')} aria-multiline="true" dir="auto"
             onInput={() => {
-              saveRange(); setEmpty(!ed.current!.innerText.trim()); emit()
+              saveRange(); changed()
               const s = getSelection(), node = s?.anchorNode
               const text = node?.nodeType === 3 ? node.textContent!.slice(0, s!.anchorOffset) : ''
               const match = text.match(/(?:^|[^\w.+-])@([^\s@]*)$/u)
@@ -326,11 +348,11 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
               else { setMention(null); if (/(^|[^\w.+-])@$/.test(text)) act.tagPick() }
             }}
             onKeyUp={saveRange} onMouseUp={saveRange} onBlur={() => { saveRange(); setMention(null) }}
-            onPaste={e => { const f = imageIn(e.clipboardData); if (!f) return; e.preventDefault(); void attach(f) }}
+            onPaste={e => { const f = imageIn(e.clipboardData); if (!f) return; e.preventDefault(); void attach(f, 'paste') }}
             className="max-h-40 min-h-[52px] overflow-y-auto whitespace-pre-wrap break-words py-1 leading-5 outline-none [@media(pointer:coarse)]:min-h-[60px] [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6" />
           {menu && edBox ? createPortal(menu, uiBox()) : menu}
           {/* The @ hint starts its own line, so it never breaks in the middle. */}
-          {empty && <span className="pointer-events-none absolute start-3 top-2.5 whitespace-pre-line text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">
+          {empty && !inlineN && <span className="pointer-events-none absolute start-3 top-2.5 whitespace-pre-line text-zinc-400 [@media(pointer:coarse)]:text-base [@media(pointer:coarse)]:leading-6">
             {(time
               ? time.to === undefined
                 ? t('What should change at this moment? @ mentions a variant or element')
@@ -342,7 +364,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
         {(capturing || shots.length > 0) && (
           <PictureStrip className="mx-1">
             {shots.map((p, k) => p.pasted
-              ? <ImageChip key={k} src={p.src} onOpen={() => setMarking({ src: p.src, at: k })} onRemove={() => setShots(s => s.filter((_, j) => j !== k))} />
+              ? <span key={k} className="inline-flex items-center gap-0.5"><InlineImage shot={p} n={k + 1} /><button onClick={() => setShots(s => s.filter((_, j) => j !== k))} aria-label={t('Remove the image')} title={t('Remove the image')} className={`${IB} h-6 min-w-6 px-0`}><Icon name="x" className="size-3" /></button></span>
               : <span key={k} className="relative">
                   <button onClick={() => setMarking({ src: p.src, at: k })} title={t('Edit the screenshot')} className="group relative block h-12 w-20 overflow-hidden rounded-lg ring-1 ring-black/10 dark:ring-white/15"><img src={p.src} alt={t('Screenshot')} className="size-full object-cover" /><span className="absolute inset-0 grid place-items-center bg-black/40 text-[11px] font-medium text-white opacity-0 transition group-hover:opacity-100">{t('Edit')}</span></button>
                   <button onClick={() => setShots(s => s.filter((_, j) => j !== k))} aria-label={t('Remove the screenshot')} title={t('Remove the screenshot')} className="absolute -end-1.5 -top-1.5 grid size-5 place-items-center rounded-full bg-zinc-900 text-[11px] leading-none text-white shadow ring-2 ring-white dark:bg-zinc-100 dark:text-zinc-900 dark:ring-zinc-900">×</button>
@@ -359,7 +381,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           <span className="ms-auto" />
           {docked && <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>}
           {/* Sent as it is added (Settings), it says so: Send, with the plane. */}
-          <button data-shoot="composer-add" onClick={submit} disabled={busy || (empty && !tags.length && !shots.length)} title={late || (live && !editing) ? t('Send to {agent}', { agent }) : sentItem ? t('Save') : t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={late ? 'send' : editing ? 'check' : live ? 'send' : 'plus'} className="size-3.5" />{late ? t('Send as new comment') : editing ? t('Save') : live ? t('Send') : t('Add')}</button>
+          <button data-shoot="composer-add" onClick={submit} disabled={busy || (empty && !tags.length && !shots.length && !inlineN)} title={late || (live && !editing) ? t('Send to {agent}', { agent }) : sentItem ? t('Save') : t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={late ? 'send' : editing ? 'check' : live ? 'send' : 'plus'} className="size-3.5" />{late ? t('Send as new comment') : editing ? t('Save') : live ? t('Send') : t('Add')}</button>
         </div>
       </div>
   )
@@ -368,7 +390,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
       {sheet ? <Sheet onClose={() => act.close()} tagging={!!tagging}>{body}</Sheet> : body}
       {marking && <ShotEditor src={marking.src} onCancel={() => { setMarking(null); refocus() }} onDone={url => {
         const at = marking.at
-        setShots(s => at < 0 ? (s.length < MAX_SHOTS ? [...s, { src: url }] : s) : s.map((p, j) => j === at ? { src: url, ...(p.pasted ? { pasted: true } : {}), ...(p.tag !== undefined ? { tag: p.tag } : {}) } : p))
+        setShots(s => at < 0 ? (count() < MAX_SHOTS ? [...s, { src: url }] : s) : s.map((p, j) => j === at ? { src: url, ...(p.pasted ? { pasted: true } : {}), ...(p.tag !== undefined ? { tag: p.tag } : {}) } : p))
         setMarking(null); refocus()
       }} />}
     </>

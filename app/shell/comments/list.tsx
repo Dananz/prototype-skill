@@ -14,7 +14,8 @@ import { editable, inScope, noteSays, shotsOf } from './types'
 import { PLACEHOLDER, useTagField } from './tag-field'
 import { variantRef } from '../variants'
 import { LinksTray } from './links'
-import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, PRIMARY, Reply, since, spanOf, SrcTag, ViewChip, Working, ImageChip, PictureStrip } from './ui'
+import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, PRIMARY, Reply, since, spanOf, SrcTag, ViewChip, Working, PictureStrip } from './ui'
+import { besideWords, InlineImage } from './inline-image'
 
 export function useRows() {
   const { store, act } = useCtx()
@@ -90,9 +91,9 @@ const About = ({ item }: { item: Item }) => item.action
   ? <span className="inline-flex min-w-0 items-center gap-1.5"><Icon name={ACTION[item.action].icon} className="size-3.5" /><span className="truncate">{aboutOf(item)}</span></span>
   : <span dir="auto">{aboutOf(item)}</span>
 // What a comment carries besides its words: its screenshot, how many it tags, where in the code it is.
-const Extras = ({ item }: { item: Item }) => (item.tags.length > 0 || shotsOf(item).length || item.target?.src) ? (
+const Extras = ({ item }: { item: Item }) => (item.tags.length > 0 || besideWords(item.body, shotsOf(item)).length || item.target?.src) ? (
   <span className="mt-2 block min-w-0 text-[11px] text-zinc-400">
-    {!!shotsOf(item).length && <PictureStrip>{shotsOf(item).map((p, k) => p.pasted ? <ImageChip key={k} src={p.src} size="sm" /> : <img key={k} src={p.src} alt="" className="h-9 w-14 rounded-md object-cover ring-1 ring-black/10" />)}</PictureStrip>}
+    {!!besideWords(item.body, shotsOf(item)).length && <PictureStrip>{besideWords(item.body, shotsOf(item)).map((p, k) => p.pasted ? <InlineImage key={k} shot={p} n={k + 1} /> : <img key={k} src={p.src} alt="" className="h-9 w-14 rounded-md object-cover ring-1 ring-black/10" />)}</PictureStrip>}
     <span className="flex min-w-0 flex-wrap items-center gap-2">
       {item.tags.length > 0 && <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-proto-primary-soft px-1.5 text-proto-primary-soft-fg"><Icon name="at" className="size-3" />{t('{n} tagged', { n: item.tags.length })}</span>}
       <SrcTag t={item.target} className="min-w-0" />
@@ -126,7 +127,7 @@ function Thread({ r, onEdit }: { r: Row; onEdit?: (id: string) => void }) {
       {r.turns.slice(1).map(t => (
         <span key={t.item.id} data-shoot="comment-turn" data-turn={t.item.sent ? `${t.item.sent.batch}/${t.item.sent.i}` : undefined} className="mt-2 block space-y-1.5">
           <span className="flex items-center justify-start"><Body c={t.item} className="block max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-ss-sm bg-proto-primary-soft px-2 py-1 text-[11px] leading-4 text-zinc-800 ring-1 ring-proto-primary-ring/40 dark:text-zinc-100" />{onEdit && <Edit on={editable(t.item, t.state)} onClick={() => onEdit(t.item.id)} />}</span>
-          {!!shotsOf(t.item).length && <PictureStrip>{shotsOf(t.item).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</PictureStrip>}
+          {!!besideWords(t.item.body, shotsOf(t.item)).length && <PictureStrip>{besideWords(t.item.body, shotsOf(t.item)).map((p, k) => <InlineImage key={k} shot={p} n={k + 1} />)}</PictureStrip>}
           {t.reply && <span data-shoot="comment-reply" className="block"><Reply text={t.reply.text} by={t.reply.by} small /></span>}
         </span>
       ))}
@@ -206,7 +207,7 @@ function WithAgent({ r, active, roomy, onOpen, onEdit }: { r: Row; active: boole
           <span className="flex items-center gap-2 pe-7 text-xs"><span className="min-w-0 truncate font-medium text-zinc-500 dark:text-zinc-400"><About item={item} /></span><Where item={item} here={r.here} /><span aria-hidden className="shrink-0 text-zinc-400 dark:text-zinc-500">·</span>{r.stopped ? <span className="shrink-0 text-amber-600 dark:text-amber-300">{said ? t('Stopped') : t('Not picked up')}</span> : <span className="shrink-0 text-proto-primary-soft-fg">{r.state === 'seen' ? t('{agent} is on it', { agent }) : t('Sent')}</span>}</span>
           <Body c={item} className={`mt-0.5 block ${roomy ? 'text-sm leading-5' : 'text-[12.5px] leading-[18px]'}`} />
           <ViewChip v={item.target?.view} className="mt-1.5" />
-          {shotsOf(item).some(p => p.pasted) && <PictureStrip className="mt-2">{shotsOf(item).filter(p => p.pasted).map((p, k) => <ImageChip key={k} src={p.src} size="sm" />)}</PictureStrip>}
+          {besideWords(item.body, shotsOf(item)).some(p => p.pasted) && <PictureStrip className="mt-2">{besideWords(item.body, shotsOf(item)).filter(p => p.pasted).map((p, k) => <InlineImage key={k} shot={p} n={k + 1} />)}</PictureStrip>}
           {reply && <span data-shoot="comment-reply" className="mt-2 block"><Reply text={reply.text} by={reply.by} small /></span>}
         </span>
       </button>

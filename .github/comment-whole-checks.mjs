@@ -90,11 +90,11 @@ export async function commentWholeChecks({ proto, app, openPage, fail }) {
       const blob = await new Promise(r => canvas.toBlob(r, 'image/png'))
       const dt = new DataTransfer(); dt.items.add(new File([blob], 'reference.png', { type: 'image/png' }))
       box().dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
-      if (!await until(() => document.querySelector('img[alt="Attached image"]'))) return 'pasted image has no preview'
+      if (!await until(() => box().querySelector('[data-img]'))) return 'pasted image did not sit in the words'
       if (!await until(() => document.querySelector('[data-shoot=whole-add]'))) return 'an image alone cannot be added'
       document.querySelector('[data-shoot=whole-add]').click()
       if (!await until(() => saved().some(i => i.variant === 'B' && i.shots?.length === 1))) return 'image-only whole comment lost its attachment'
-      if (document.querySelector('img[alt="Attached image"]')) return 'attachment draft did not clear after adding'
+      if (box().querySelector('[data-img]')) return 'attachment draft did not clear after adding'
       return 'ok'
     })()`)
     if (attached !== 'ok') fail(`comment whole image: ${attached}`)

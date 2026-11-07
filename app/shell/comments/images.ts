@@ -6,7 +6,8 @@ export const imageIn = (dt: DataTransfer | null) => {
   return null
 }
 export const carriesImage = (dt: DataTransfer | null) => !!dt && [...dt.items].some(i => i.kind === 'file' && i.type.startsWith('image/'))
-export async function imageUrl(file: File): Promise<string | null> {
+/** The file as a PNG (or JPEG) data URL the server keeps, and its size in px before it was scaled down. */
+export async function imageUrl(file: File): Promise<{ src: string; w: number; h: number } | null> {
   const src = URL.createObjectURL(file)
   try {
     const img = new Image()
@@ -17,6 +18,6 @@ export async function imageUrl(file: File): Promise<string | null> {
     c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k))
     c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
     const png = c.toDataURL('image/png')
-    return png.length < 3_000_000 ? png : c.toDataURL('image/jpeg', 0.9)
+    return { src: png.length < 3_000_000 ? png : c.toDataURL('image/jpeg', 0.9), w: img.naturalWidth, h: img.naturalHeight }
   } catch { return null } finally { URL.revokeObjectURL(src) }
 }

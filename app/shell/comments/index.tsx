@@ -2,6 +2,7 @@
 // shell places (over the stage, in the side panel, the phone's sheet, the bar's decision menu).
 // Everything else the shell needs from it (counts for the bar, the key, Esc) is on what this returns.
 import { createRoot } from 'react-dom/client'
+import { ImagePeek } from './inline-image'
 import type { Inbox } from '../shell'
 import { createActions } from './actions'
 import { CommentsCtx, type Ctx, type Host } from './ctx'
@@ -29,7 +30,7 @@ export function createComments(host: Host, sessionId: string) {
   const copyAct = createCopyActions(copyStore, host, store, () => act.stop())
   const ctx: Ctx = { store, host, act, copyStore, copyAct }
   const wrap = (el: JSX.Element) => <CommentsCtx.Provider value={ctx}>{el}</CommentsCtx.Provider>
-  createRoot(host.layer).render(wrap(<><Layer /><Selection /><CopyMarks /></>))
+  createRoot(host.layer).render(wrap(<><Layer /><Selection /><CopyMarks /><ImagePeek /></>))
   const api = {
     store,
     /** Reuse this instance from a live prototype rather than creating another comment store. */

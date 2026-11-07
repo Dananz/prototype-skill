@@ -1,4 +1,5 @@
-// Whole-variant images on desktop and phone, including file selection, removal, and paste.
+// Whole-variant images on desktop and phone: a pasted image sits in the words as a chip, removal, its
+// peek and the picture full screen, and the comment sent with it.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { commentsKey } from './comments-key.mjs'
@@ -62,18 +63,43 @@ export async function commentImagesChecks({ proto, app, openPage, fail }) {
         const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 180
         const ctx = canvas.getContext('2d'); ctx.fillStyle = '#b5c8dd'; ctx.fillRect(0,0,320,180); ctx.fillStyle = '#26354a'; ctx.font = '24px sans-serif'; ctx.fillText('Reference image', 60, 96)
         const blob = await new Promise(r => canvas.toBlob(r, 'image/png'))
-        const dt = new DataTransfer(); dt.items.add(new File([blob], 'reference.png', { type: 'image/png' }))
+        const dt = new DataTransfer(); dt.items.add(new File([blob], 'Zen Browser 2026-11-07 2.05.53 AM.png', { type: 'image/png' }))
+        const chip = () => box().querySelector('[data-img]')
+        box().focus()
+        document.execCommand('insertText', false, 'Make the title like this ')
         box().dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
-        if (!await until(() => document.querySelector('img[alt="Attached image"]'))) return 'paste did not attach image'
-        document.querySelector('button[aria-label="Remove image"]').click()
-        if (!await until(() => !document.querySelector('img[alt="Attached image"]'))) return 'remove did not clear image'
+        if (!await until(() => chip())) return 'paste did not put the image in the words'
+        if (chip().textContent !== 'Zen Browser') return 'the chip should have the short name: ' + chip().textContent
+        chip().querySelector('[data-img-remove]').click()
+        if (!await until(() => !chip())) return 'remove did not take the image out'
         box().dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
-        if (!await until(() => document.querySelector('img[alt="Attached image"]'))) return 'paste did not attach image again'
+        if (!await until(() => chip())) return 'paste did not attach image again'
+        document.execCommand('insertText', false, ', only lighter')
+        if (!box().textContent.replace(/\\s+/g, ' ').startsWith('Make the title like this Zen Browser ')) return 'the image should sit where the caret was: ' + box().textContent
         return 'ok'
       })()`)
       if (attached !== 'ok') fail(`${layout} image comments: ${attached}`)
       await page.run('new Promise(r => setTimeout(r, 500))')
       if (evidence) await page.screenshot(join(evidence, `after-${layout}-attached.png`))
+      if (evidence && !phone) {
+        await page.run(`(async () => {
+          document.querySelector('[data-shoot=whole-input] [data-img]').dispatchEvent(new PointerEvent('pointerover', { pointerType: 'mouse', bubbles: true }))
+          for (const end = Date.now() + 3000; Date.now() < end && !document.querySelector('[data-shoot=image-peek]'); await new Promise(r => setTimeout(r, 50)));
+          await new Promise(r => setTimeout(r, 300))
+        })()`)
+        await page.screenshot(join(evidence, 'after-desktop-peek.png'))
+        await page.run(`document.querySelector('[data-shoot=whole-input] [data-img]').dispatchEvent(new PointerEvent('pointerout', { pointerType: 'mouse', bubbles: true }))`)
+      }
+      if (evidence) {
+        await page.run(`(async () => {
+          document.querySelector('[data-shoot=whole-input] [data-img]').click()
+          for (const end = Date.now() + 3000; Date.now() < end && !document.querySelector('[data-shoot=image-full]'); await new Promise(r => setTimeout(r, 50)));
+          await new Promise(r => setTimeout(r, 400))
+        })()`)
+        await page.screenshot(join(evidence, `after-${layout}-full.png`))
+        await page.run(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`)
+        await page.run('new Promise(r => setTimeout(r, 300))')
+      }
       await page.run(`document.querySelector('[data-shoot=whole-input]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }))`)
       const sent = await page.run(`(async () => {
         for (const end = Date.now() + 8000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) {

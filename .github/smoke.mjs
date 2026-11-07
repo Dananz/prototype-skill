@@ -235,6 +235,14 @@ if (process.argv.includes('--tweaks-only')) {
   console.log('OK: focused Tweaks checks')
   process.exit(0)
 }
+if (process.argv.includes('--comment-images-only')) {
+  await commentImagesChecks({ proto, app, openPage, fail })
+  await commentPicturesChecks({ proto, app, local, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused comment image checks')
+  process.exit(0)
+}
 if (process.argv.includes('--go-only')) {
   await goChecks({ proto, app, local, openPage, fail })
   proto(['rm', '--all'])

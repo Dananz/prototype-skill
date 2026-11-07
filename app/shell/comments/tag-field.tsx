@@ -1,4 +1,5 @@
-import { imageIn, carriesImage, imageUrl } from './images'
+import { imageIn, carriesImage } from './images'
+import { besideWords, fill, imageShot, insertImage, relabel, settle, type RawSeg } from './inline-image'
 import { MAX_SHOTS, type Shot } from './types'
 // A comment box that can tag: what is typed, with a chip in it wherever a tag was written. `@` opens
 // a menu of the prototype's variants and, last, Tag an element, which picks one on the design and
@@ -33,12 +34,16 @@ type Opts = {
   autoFocus?: boolean
 }
 
-/** The words as written, the tags that are still in them numbered in order, trimmed at both ends. */
-function noteOf(el: HTMLElement, tags: Target[]): Note {
+/**
+ * The words as written, the tags that are still in them numbered in order, the images still in them
+ * after the box's other pictures (`keep`), trimmed at both ends.
+ */
+function noteOf(el: HTMLElement, tags: Target[], keep: Shot[]): Note {
   const used: number[] = []
-  const body = readEditor(el).map(s => typeof s === 'string' ? s : { tag: used.includes(s.tag) ? used.indexOf(s.tag) : used.push(s.tag) - 1 })
+  const raw = readEditor(el).map((s): RawSeg => typeof s === 'string' || !('tag' in s) ? s : { tag: used.includes(s.tag) ? used.indexOf(s.tag) : used.push(s.tag) - 1 })
+  const { body, shots } = settle(raw, keep)
   const trimmed = body.map((s, i) => typeof s === 'string' && i === 0 ? s.trimStart() : s).map((s, i, all) => typeof s === 'string' && i === all.length - 1 ? s.trimEnd() : s).filter((s): s is Seg => s !== '')
-  return { body: trimmed, tags: used.map(k => tags[k]) }
+  return { body: trimmed, tags: used.map(k => tags[k]), shots }
 }
 
 export function useTagField(opts: Opts) {
@@ -49,28 +54,34 @@ export function useTagField(opts: Opts) {
   const optsRef = useRef(opts)
   optsRef.current = opts
   const input = useRef<HTMLDivElement | null>(null)
-  const [shots, setShots] = useState<Shot[]>(opts.initial?.shots ?? [])
+  // Pictures beside the words: images pasted before images went into them. New ones are chips in the words.
+  const [shots, setShots] = useState<Shot[]>(opts.initial ? besideWords(opts.initial.body, opts.initial.shots ?? []) : [])
   const shotsRef = useRef(shots)
   shotsRef.current = shots
   const [adding, setAdding] = useState(false)
   const importing = useRef(false)
   const [imageError, setImageError] = useState('')
   const generation = useRef(0)
-  const read = (): Note => ({ ...(input.current ? noteOf(input.current, tagsRef.current) : { body: [], tags: [] }), shots: shotsRef.current })
-  const attach = async (files: File[]) => {
+  const read = (): Note => input.current ? noteOf(input.current, tagsRef.current, shotsRef.current) : { body: [], tags: [], shots: shotsRef.current }
+  const count = () => shotsRef.current.length + (input.current?.querySelectorAll('[data-img]').length ?? 0)
+  // Each image goes where the caret was, as a chip, in the order they came.
+  const attach = async (files: File[], from: 'paste' | 'drop') => {
     if (importing.current) return
     importing.current = true
     const gen = generation.current
     setAdding(true); setImageError('')
     try {
       for (const file of files.filter(f => f.type.startsWith('image/'))) {
-        if (shotsRef.current.length >= MAX_SHOTS) { setImageError(`Up to ${MAX_SHOTS} images per comment`); break }
-        const src = await imageUrl(file)
+        if (count() >= MAX_SHOTS) { setImageError(t('Up to {n} images per comment', { n: MAX_SHOTS })); break }
+        const shot = await imageShot(file, from)
         if (gen !== generation.current) return
-        if (!src) { setImageError('Could not read image'); continue }
-        shotsRef.current = [...shotsRef.current, { src, pasted: true }]
-        setShots(shotsRef.current)
-        optsRef.current.onChange?.(read())
+        const el = input.current
+        if (!shot) { setImageError(t('Could not read the image')); continue }
+        if (!el) continue
+        el.focus({ preventScroll: true })
+        insertImage(atCaret(false), shot, 1)
+        saveCaret()
+        changed()
       }
     } finally { importing.current = false; setAdding(false) }
   }
@@ -103,7 +114,8 @@ export function useTagField(opts: Opts) {
     if (!el || lastBox.current === el) return
     if (lastBox.current) el.append(...lastBox.current.childNodes)
     else {
-      optsRef.current.initial?.body.forEach(seg => el.append(typeof seg === 'string' ? document.createTextNode(seg) : chipNode(tagsRef.current[seg.tag], seg.tag)))
+      const initial = optsRef.current.initial
+      if (initial) fill(el, initial.body, initial.shots ?? [], i => chipNode(tagsRef.current[i], i))
       if (optsRef.current.autoFocus) window.setTimeout(() => { el.focus({ preventScroll: true }); const sel = getSelection(); sel?.selectAllChildren(el); sel?.collapseToEnd() }, 0)
     }
     lastBox.current = el
@@ -114,7 +126,8 @@ export function useTagField(opts: Opts) {
     // Emptied, it is emptied for good (no stray line break left by the browser), so its placeholder
     // shows; lines started with Enter are kept.
     if (!el.textContent && el.childNodes.length === 1 && el.firstChild!.nodeName === 'BR') el.replaceChildren()
-    setEmpty(!el.innerText.trim())
+    relabel(el)
+    setEmpty(!el.innerText.trim() && !el.querySelector('[data-img]'))
     optsRef.current.onChange?.(read())
   }
   const caret = useRef<{ node: Node; offset: number } | null>(null)
@@ -247,9 +260,9 @@ export function useTagField(opts: Opts) {
     // Rows of the project tree can be dragged onto it (tag-drag.ts).
     'data-tag-target': '',
     // Plain text keeps its words; image files become attachments.
-    onDrop: (e: DragEvent<HTMLDivElement>) => { if (carriesImage(e.dataTransfer)) { e.preventDefault(); e.stopPropagation(); void attach([...e.dataTransfer.files]) } },
+    onDrop: (e: DragEvent<HTMLDivElement>) => { if (carriesImage(e.dataTransfer)) { e.preventDefault(); e.stopPropagation(); void attach([...e.dataTransfer.files], 'drop') } },
     onDragOver: (e: DragEvent<HTMLDivElement>) => { if (carriesImage(e.dataTransfer)) e.preventDefault() },
-    onPaste: (e: ClipboardEvent<HTMLDivElement>) => { e.preventDefault(); const image = imageIn(e.clipboardData); if (image) { void attach([image]); return }; document.execCommand('insertText', false, e.clipboardData.getData('text/plain')) },
+    onPaste: (e: ClipboardEvent<HTMLDivElement>) => { e.preventDefault(); const image = imageIn(e.clipboardData); if (image) { void attach([image], 'paste'); return }; document.execCommand('insertText', false, e.clipboardData.getData('text/plain')) },
   }
 
   // The shelf, over the page (outside whatever clips the box): above the box, or below it when there
@@ -262,7 +275,7 @@ export function useTagField(opts: Opts) {
   const pictures = (shots.length > 0 || adding || imageError) ? <span className="flex flex-wrap items-center gap-1 px-2 py-1">
       {shots.map((shot, i) => <span key={i} className="relative inline-block"><img src={shot.src} alt="Attached image" className="h-12 w-16 rounded object-cover" /><button type="button" aria-label="Remove image" className="absolute end-0 top-0 rounded bg-zinc-900 px-1 text-white" onClick={() => { shotsRef.current = shotsRef.current.filter((_, k) => k !== i); setShots(shotsRef.current); optsRef.current.onChange?.(read()) }}>×</button></span>)}
 
-      {adding && <span role="status" className="text-xs">Adding…</span>}{imageError && <span role="alert" className="text-xs text-rose-500">{imageError}</span>}
+      {adding && <span role="status" className="text-xs">{t('Adding…')}</span>}{imageError && <span role="alert" className="text-xs text-rose-500">{imageError}</span>}
   </span> : null
   return {
     props, menu, adding, empty: adding || (empty && !shots.length), picking,

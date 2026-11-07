@@ -44,10 +44,17 @@ export type CommentRef = { id: string; proto: string; variant: string; n: number
 export type Source = { proto: string; variant: string; state?: string }
 export type Target = { source?: Source; commentRef?: CommentRef; variantRef?: VariantRef; protoRef?: ProtoRef; label: string; selector: string; shoot?: string; src?: string; component?: string; tag: string; text: string; rect: Box; stage?: { w: number; h: number }; point?: { x: number; y: number }; region?: Box; view?: ViewSize; uses?: Use[]; within?: string; route?: string[]; whole?: true }
 
-/** A comment's words: text, and tags (an index into the comment's `tags`) between. */
-export type Seg = string | { tag: number }
-/** A comment's picture: one of the design (the camera, marked up or not), or an image the user pasted or dropped (`pasted`). `region`: the crop of a dragged-out region, as it was taken. `tag`: the crop of a region dragged out to tag it, the index of that tag. */
-export type Shot = { src: string; pasted?: boolean; region?: boolean; tag?: number }
+/** A comment's words: text, tags (an index into the comment's `tags`) and images (an index into its `shots`) between. */
+export type Seg = string | { tag: number } | { img: number }
+export const isTag = (s: Seg): s is { tag: number } => typeof s !== 'string' && 'tag' in s
+export const isImg = (s: Seg): s is { img: number } => typeof s !== 'string' && 'img' in s
+/**
+ * A comment's picture: one of the design (the camera, marked up or not), or an image the user pasted or dropped (`pasted`). `region`: the crop of a dragged-out region, as it was taken. `tag`: the crop of a region dragged out to tag it, the index of that tag.
+ * `inline`: a pasted or dropped image that sits in the words where it was put (a `{ img }` segment), with
+ * its file's own facts: `name`, `bytes`, its size in px before it was scaled down (`w`, `h`), `type`
+ * (PNG, JPEG) and `from` (pasted or dropped). `id` is its chip's, kept while it is written.
+ */
+export type Shot = { src: string; pasted?: boolean; region?: boolean; inline?: boolean; id?: string; name?: string; bytes?: number; w?: number; h?: number; type?: string; from?: 'paste' | 'drop'; tag?: number }
 /**
  * `shots` are its pictures, at most MAX_SHOTS. `shot` and `pasted` are the one picture a draft saved
  * before a comment could have several; `shotsOf` reads either.
