@@ -48,14 +48,16 @@ instructions for the owning agent using those existing tools, not APIs provided 
    if its reason is unknown or it was opted out, require an explicit user request before
    enabling it. Enable and verify an authorized task before registration. Only when neither
    local identity nor a matching host task exists, create one with `schedule: {type: "webhook"}` and `bindToCurrentThread: true`.
-   Keep its prompt to this line, with project and session filled in:
+   Its prompt is the `hostPrompt` from step 1's JSON, copied exactly. Never write your own:
 
    ```text
    Prototype comments arrived. Handle them with the prototype skill: `proto inbox --project <project> --session <session>`
    ```
 
-   Naming the skill loads the same instructions for Claude and Codex. Leave out body
-   placeholders: retries can wake the thread with nothing new to claim.
+   Naming the skill loads the same instructions for Claude and Codex. No body placeholders
+   (`{{body.batchId}}`) and no extra instructions: retries can wake the thread with nothing
+   new to claim, and the skill already says how to handle a batch. A reused task whose prompt
+   differs from `hostPrompt` gets it replaced (update the same task, keep its ID).
 5. Save `{ "url": "<returned webhookUrl>", "id": "<scheduledTaskId>",
    "threadId": "<owning thread ID>" }` to a private temporary JSON file outside the served
    project. Register with `proto inbox --listen "<config.json>"`, then delete that file.

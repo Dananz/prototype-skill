@@ -2124,8 +2124,12 @@ function intake() {
   console.log(cur.status === 'open' ? `open: ${cur.questions.length} questions waiting for the user's answers` : `answered ${cur.answeredAt} (batch ${cur.batch}): run proto inbox to read it`)
 }
 
+// The webhook task's prompt, word for word. Agents copy it rather than write their own: a
+// hand-written one grew long and carried request placeholders the inbox makes pointless.
+const hostPrompt = () => `Prototype comments arrived. Handle them with the prototype skill: \`proto inbox --project ${projectRoot()} --session ${sessionId()}\``
+
 function printListener(dir) {
-  const persistent = listenerStatus(dir, sessionId())
+  const persistent = { ...listenerStatus(dir, sessionId()), hostPrompt: hostPrompt() }
   if (flags.json) return console.log(JSON.stringify(persistent))
   if (persistent.hostAction) console.log(`host action required: ${JSON.stringify(persistent.hostAction)}; verify ownership in references/listener.md, perform it with the host tool, then confirm with proto inbox --host-${persistent.hostAction.action === 'enable' ? 'enabled' : 'disabled'} ${persistent.id}`)
   if (persistent.lifecycle === 'opted-out') return console.log('not listening: explicit user opt-out retained; only user-authorized proto inbox --reopen --again restores it')
@@ -2136,6 +2140,7 @@ function printListener(dir) {
   if (waiter && alive(waiter.pid)) return console.log(`listening (pid ${waiter.pid}); keep its host background wakeup active`)
   console.log('not listening: page comments cannot wake this conversation yet')
   console.log('T3 Code (Codex or Claude): reuse list_scheduled_tasks or create schedule_task with schedule: {type: "webhook"}, bindToCurrentThread: true; register its private config with proto inbox --listen <config.json>. Read references/listener.md in the skill directory and connect before ending the turn.')
+  console.log(`Its prompt, exactly this line: ${persistent.hostPrompt}`)
   if (detectedAgent() === 'codex') console.log('Codex: a running exec_command session does not by itself wake an idle conversation. Use the host webhook or an explicitly supported background completion wakeup.')
   console.log('Only if this host offers no wakeup mechanism, read proto inbox on active turns and tell the user automatic replies are unavailable.')
 }
