@@ -70,6 +70,10 @@ export type Held = Draft & { target?: Target; time?: Time; proto?: string }
  * it. It goes to Claude as a comment with this and no element; its body is the optional note. A
  * copy choice (copy.tsx) is one too, on the element of the line it changes.
  */
+/** A tweak (the design's Tweaks controls) the user had changed from its default when the comment
+ *  was written: its id and label, the value it had then, and its default (what the source draws). */
+export type TweakNote = { id: string; label: string; value: string | boolean; was: string | boolean }
+
 export type Action = 'pick' | 'unpick' | 'more' | 'more-variants' | 'build' | 'copy' | 'try-it' | 'copy-options' | 'share-fix' | 'build-screen' | 'map-note' | 'add-link' | 'build-design'
 
 export type Item = Draft & {
@@ -87,6 +91,8 @@ export type Item = Draft & {
   count?: number
   /** The moment or range of the motion it is on, when it was written in the motion dock. */
   time?: Time
+  /** The tweaks changed from their defaults on its variant when it was written: what the user saw. */
+  tweaks?: TweakNote[]
   at: number
   /** Once sent: the batch, and its place in it (1-based, as `proto reply` counts). */
   sent?: { batch: string; i: number }

@@ -26,6 +26,8 @@ export function createActions(store: Store, host: Host) {
   const get = store.get, set = store.set
   const here = (i: Pick<Item, 'proto' | 'variant' | 'state'>) => { if (host.visible?.(i)) return true; const p = get().place; return !!p && i.proto === p.proto && i.variant === p.variant && (i.state ?? '') === (p.state ?? '') }
   let opening = 0
+  // The tweaks the user had changed on the variant as they wrote: the comment is about what they saw.
+  const tweaksOf = (p: { proto: string; variant: string; state?: string }) => { const list = p.variant ? host.tweaks?.(p) ?? [] : []; return { tweaks: list.length ? list : undefined } }
   // A comment's words trimmed at both ends; the tags stay where they were written among them.
   const trimmed = (segs: Seg[]) => segs.map((s, i) => typeof s === 'string' && i === 0 ? s.trimStart() : s).map((s, i, all) => typeof s === 'string' && i === all.length - 1 ? s.trimEnd() : s).filter(s => s !== '')
   // Sent from the prototype the page was on when it began: a continuation after navigating on must not
@@ -52,6 +54,7 @@ export function createActions(store: Store, host: Host) {
         ...(i.time ? { at: i.time.at, ...(i.time.to !== undefined ? { to: i.time.to } : {}), take: i.time.take } : {}),
         ...(i.tags.length ? { tags: i.tags } : {}),
         ...(shotsOf(i).length ? { images: picturesOf(i) } : {}),
+        ...(i.tweaks?.length ? { tweaks: i.tweaks } : {}),
       })),
     }
     set({ sending: true, error: '' })
@@ -152,7 +155,7 @@ export function createActions(store: Store, host: Host) {
       if (on) {
         const made = on.map(({ c, target }) => {
           const n = Math.max(0, ...get().items.filter(i => i.proto === c.proto && i.variant === c.variant).map(i => i.n)) + 1
-          return { id: uid(), proto: c.proto, variant: c.variant, ...(c.state ? { state: c.state } : {}), n, body, tags, shots, target, at: Date.now() } as Item
+          return { id: uid(), proto: c.proto, variant: c.variant, ...(c.state ? { state: c.state } : {}), n, body, tags, shots, target, ...tweaksOf(c), at: Date.now() } as Item
         })
         if (!made.length) return false
         set(s => ({ items: [...s.items, ...made] }))
@@ -160,7 +163,7 @@ export function createActions(store: Store, host: Host) {
         return true
       }
       const n = Math.max(0, ...get().items.filter(i => i.proto === p.proto && i.variant === p.variant).map(i => i.n)) + 1
-      const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, body, tags, shots, target: t, at: Date.now() }
+      const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, body, tags, shots, target: t, ...tweaksOf(p), at: Date.now() }
       set(s => ({ items: [...s.items, item] }))
       if (get().live) void act.send()
       return true
@@ -261,10 +264,10 @@ export function createActions(store: Store, host: Host) {
       const base = get().place
       if (!base) return
       const p = target?.source ?? base
-      if (id) set(s => ({ items: s.items.map(i => i.id === id ? { ...i, ...d } : i), held: null, mode: { kind: 'idle' }, active: null }))
+      if (id) set(s => ({ items: s.items.map(i => i.id === id ? { ...i, ...d, ...(i.sent ? {} : tweaksOf(i)) } : i), held: null, mode: { kind: 'idle' }, active: null }))
       else {
         const n = Math.max(0, ...get().items.filter(i => i.proto === p.proto && i.variant === p.variant).map(i => i.n)) + 1
-        const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, ...d, ...(time ? { time } : { target }), at: Date.now() }
+        const item: Item = { id: uid(), proto: p.proto, variant: p.variant, ...(p.state ? { state: p.state } : {}), n, ...d, ...(time ? { time } : { target }), ...tweaksOf(p), at: Date.now() }
         set(s => ({ items: [...s.items, item], held: null, mode: { kind: 'idle' }, active: null }))
         // Send as I add: it goes now, and Claude starts on it while the next one is written.
         if (get().live) void act.send()

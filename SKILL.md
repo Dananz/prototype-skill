@@ -925,6 +925,10 @@ pinned to a spot with a long press (on a phone, where no element fit) prints `at
 the same px, and `in:` the element under it: the change is about that spot, not the whole
 element. One dragged out as a region with the mouse prints `region:` its box, in the same px,
 and `in:` the smallest element around it: the change is about what is in that box.
+A comment written while the user had changed the variant's Tweaks prints `tweaks:` each one,
+`Density = "Compact" (default "Comfortable")`: the comment is about the design with those values,
+which the source does not draw by default. Read the comment against them (and `proto shoot --pin`
+sets them before its shot). Make one of them the default only when the comment asks for that.
 The user can delete a comment after sending it: one deleted before you took its batch
 never reaches you, and one deleted after is withdrawn: `proto inbox` leaves it out (the batch
 line counts it, `(1 withdrawn in the page)`) and `proto reply` to it says so. Leave a withdrawn
@@ -987,7 +991,8 @@ into the edits. Measured on 12 small comments: one pass took 48 s; a worker per 
    the pictures' height) and the vs-ref sheet for the comparison. A detail can look right at the default shoot
    size and wrong on the user's page. The command prints the element's box, how it found it (a
    selector that no longer matches is said so) and what it could not replay. It restores the
-   design's saved settings and the user's stage size when the batch has them; a `stand-in:` line
+   design's saved settings, the tweaks the user had changed and the user's stage size when the
+   batch has them; a `stand-in:` line
    (an indexed control the user had, like `band-dot-2`, replaced by the nearest one here), a
    `NOTE:` (the element is gone; what it was in is shot) or a `WARNING:` (another shape than the
    comment's box) means the shot is not what the user saw: read it with that in mind. `--state <id>` shoots

@@ -140,6 +140,9 @@ const PIN_PAGE = `window.__pin = (() => {
     // The design is drawn: its mount has something in it.
     ready: () => !!mount()?.firstElementChild,
     missed: () => [...document.querySelectorAll('[data-missed]')].map(e => e.textContent).join('; '),
+    // Sets a tweak on the design (the page's Tweaks registry, shell/tweaks.ts); false while the
+    // design has not registered it yet, or the value is not one it takes.
+    tweak: (id, value) => { const m = mount(); return !!m && !!window.__proto?.tweaks?.change(m, id, value) },
     // The stage the design is mounted in, in page px (what a comment records as its stage).
     stage: () => { const r = mount()?.getBoundingClientRect(); return r ? { w: Math.round(r.width), h: Math.round(r.height) } : null },
     // A step of the way: 'open' when its part shows already, 'missing' when its control isn't on the page, else the control's centre.
@@ -540,10 +543,23 @@ try {
         if (!await until(`(window.__pin ?? (${PIN_PAGE})).ready()`, 15000)) missed.push('the design never drew')
         await settle(sessionId)
         await page(`document.querySelector('[data-overlay]')?.style.setProperty('display', 'none')`)
+        const notes = []
+        // The tweaks the user had changed when they wrote it: the design is shot as they saw it. A
+        // design registers its tweaks as it mounts, so each waits a moment until it takes.
+        if (p.tweaks?.length) {
+          const set = [], unset = []
+          for (const tw of p.tweaks) {
+            let ok = false
+            for (const end = performance.now() + 3000; !(ok = !!await pin(`__pin.tweak(${JSON.stringify(tw.id)}, ${JSON.stringify(tw.value)})`)) && performance.now() < end;) await sleep(50)
+            ;(ok ? set : unset).push(tw.label)
+          }
+          if (set.length) await settle(sessionId)
+          if (set.length) notes.push(`its tweaks: ${set.join(', ')} set as the user had ${set.length === 1 ? 'it' : 'them'}`)
+          if (unset.length) missed.push(`its tweaks: ${unset.join(', ')} could not be set (the variant no longer has ${unset.length === 1 ? 'that tweak or value' : 'those tweaks or values'}), so the shot has the default${unset.length === 1 ? '' : 's'}`)
+        }
         // The stage the user's design was in: the page's sidebar and bars can take another share of
         // the window here than there, and a design that fits its stage is then drawn at another
         // scale. The window is sized so the stage is theirs.
-        const notes = []
         if (p.stage && !p.framed && !mobile) {
           const now = await pin('__pin.stage()')
           if (now && (Math.abs(now.w - p.stage.w) > 1 || Math.abs(now.h - p.stage.h) > 1)) {

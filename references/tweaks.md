@@ -69,6 +69,7 @@ useTweaks(() => [
 ```
 
 Unregistering happens automatically when the variant unmounts. Tweaks does not save design
-edits to source files or persist arbitrary values across reloads. For a lasting change,
-tell the agent which values to apply to the variant. Live selections are not automatically
-included in a comment or source-edit request.
+edits to source files or persist arbitrary values across reloads. A comment written on the
+variant carries the tweaks changed from their defaults at that moment: `proto inbox` prints them
+as its `tweaks:` line and `proto shoot --pin` sets them before the shot. They describe what the
+user saw; a value becomes the variant's default only when a comment asks for that.

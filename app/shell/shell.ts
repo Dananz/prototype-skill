@@ -111,7 +111,9 @@ export type CommentBatch = {
     /** Written in a device view (view/): about that layout. */
     view?: ViewSize
     /** A follow-up: the sent comment (its batch, and its number in it) whose reply this answers. */
-    re?: { batch: string; n: number } }[]
+    re?: { batch: string; n: number }
+    /** The tweaks changed from their defaults on its variant when it was written. */
+    tweaks?: { id: string; label: string; value: string | boolean; was: string | boolean }[] }[]
   viewport?: { w: number; h: number; phone?: boolean }
   /** The design's own localStorage when it was sent (comments/dom.ts designStorage), for `proto shoot --pin`. */
   storage?: Record<string, string>
@@ -3113,6 +3115,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     visible: place => {
       const scope = compareHost(), p = st.place
       return !!scope && p.view === 'variant' && place.proto === p.proto && !![...scope.querySelectorAll<HTMLElement>('[data-mount]')].find(m => m.dataset.route === `${place.proto}/${place.variant}` && (m.dataset.commentState ?? '') === (place.state ?? ''))
+    },
+    // The tweaks changed on that variant's mount: one pane of side by side, else the one on screen.
+    tweaks: place => {
+      const p = st.place
+      if (p.view !== 'variant' || place.proto !== p.proto) return []
+      const scope = compareHost()
+      const m = scope ? [...scope.querySelectorAll<HTMLElement>('[data-mount]')].find(x => x.dataset.route === `${place.proto}/${place.variant}` && (x.dataset.commentState ?? '') === (place.state ?? '')) ?? null
+        : place.variant === p.variant && (place.state ?? '') === (p.state ?? '') ? toolHost() : null
+      return tweaks.of(m).filter(isChanged).map(x => ({ id: x.id, label: x.label, value: x.value, was: x.defaultValue }))
     },
     onGuardPick: el => {
       const scope = compareHost(), mode = comments.store.get().mode
