@@ -277,12 +277,15 @@ html[data-tag-drag], html[data-tag-drag] * { user-select: none !important; -webk
 [data-tree-root] { --tree-row: 2rem; }
 @media (pointer: coarse) { [data-tree-root] { --tree-row: 2.5rem; } }
 [data-tree-row] > .proto-tree-more { width: 0; margin-inline-start: -.375rem; opacity: 0; overflow: hidden; pointer-events: none; transition: width .18s ease-out, margin-inline-start .18s ease-out, opacity .18s ease-out; }
-[data-tree-row]:hover > .proto-tree-more,
-[data-tree-row]:focus-within > .proto-tree-more,
-[data-tree-row] > .proto-tree-more[aria-expanded="true"] { width: 1.5rem; margin-inline-start: 0; opacity: 1; pointer-events: auto; }
-/* A row with a state mark at its end keeps the actions' width, so the mark stays where the pointer
-   finds it (its tooltip explains it) instead of sliding away as the row is hovered. */
-[data-tree-row]:has([data-mark]) > .proto-tree-more { width: 1.5rem; margin-inline-start: 0; }
+/* Not on touch, where every row keeps its wider ⋯ and a tap's sticky hover must not shrink it. */
+@media not (pointer: coarse) {
+  [data-tree-row]:hover > .proto-tree-more,
+  [data-tree-row]:focus-within > .proto-tree-more,
+  [data-tree-row] > .proto-tree-more[aria-expanded="true"] { width: 1.5rem; margin-inline-start: 0; opacity: 1; pointer-events: auto; }
+  /* A row with a state mark at its end keeps the actions' width, so the mark stays where the pointer
+     finds it (its tooltip explains it) instead of sliding away as the row is hovered. */
+  [data-tree-row]:has([data-mark]) > .proto-tree-more { width: 1.5rem; margin-inline-start: 0; }
+}
 @media (pointer: coarse) { [data-tree-row] > .proto-tree-more { width: 2.25rem; height: 2.25rem; margin-inline-start: 0; opacity: 1; pointer-events: auto; } }
 @media (prefers-reduced-motion: reduce) { [data-tree-row] > .proto-tree-more { transition: none; } }
 
