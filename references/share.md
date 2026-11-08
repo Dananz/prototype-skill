@@ -188,6 +188,14 @@ Share popover (Offered back to you). Sharing a fork plainly tells nobody. Bring 
 lands it nested under the original. The same fork offered again updates the same link, and an offer waved
 away comes back only with a new offer. A link holds 50 offers.
 
+## The owner's links from other projects
+
+The Share popover lists this project's links, then "In your other projects": every other live link of
+the owner on the default host (its `GET /api/shares`), each with the project it was published from,
+views, comments, Copy, Open, Disable and Remove. They have no Update: their source is in that project.
+The session server sends `elsewhere: true` with a disable or remove for one of them; this project's
+`shares.json` is left as it is.
+
 ## Viewer comments
 
 Viewers sign in with GitHub to comment on a link. Their comments wait on the host until the owner
