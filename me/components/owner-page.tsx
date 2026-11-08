@@ -30,13 +30,30 @@ const FIELD = 'block w-full resize-none rounded-xl border border-line bg-white p
 const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`
 const soonOf = (l: Link) => !l.off && l.daysLeft !== null && l.daysLeft <= 7
 
-/** Puts the chosen link in the address without a trip to the server (Next.js syncs useSearchParams). */
-function setLinkParam(id: string | null) {
+// The chosen link is in the address (?link=<id>), written with the History API so Next.js keeps
+// useSearchParams in step without asking the server again. Opening a link from the list is a step
+// (pushed), so a phone's back gesture or the browser's Back returns to the list, still on /me; moving
+// from one open link to another replaces it, so Back doesn't walk through every link clicked. The
+// pushed entry is marked, so the page's own back button knows it can go back to the list.
+const FROM_LIST = 'meFromList'
+const urlWith = (id: string | null) => {
   const q = new URLSearchParams(window.location.search)
   if (id) q.set('link', id)
   else q.delete('link')
   const s = q.toString()
-  window.history.replaceState(null, '', s ? `?${s}` : window.location.pathname)
+  return s ? `?${s}` : window.location.pathname
+}
+const fromListHere = () => !!(window.history.state as Record<string, unknown> | null)?.[FROM_LIST]
+function openLink(id: string, fromList: boolean) {
+  if (fromList) window.history.pushState({ [FROM_LIST]: true }, '', urlWith(id))
+  // Only our own mark carries over: an object with Next.js's own keys would read as Next.js's own call,
+  // and useSearchParams would not follow it.
+  else window.history.replaceState(fromListHere() ? { [FROM_LIST]: true } : null, '', urlWith(id))
+}
+/** Back to the list: the step back when the list is the entry before, else the list in its place. */
+function toList() {
+  if (fromListHere()) window.history.back()
+  else window.history.replaceState(null, '', urlWith(null))
 }
 
 /* ------------------------------------------------------------------ the list */
@@ -303,18 +320,18 @@ export function OwnerPage({ me }: { me: Me }) {
   const pick = (id: string) => {
     setChosen(id)
     setEntered(id)
-    setLinkParam(id)
+    openLink(id, !open)
     if (!desktop) window.scrollTo(0, 0)
   }
   const back = () => {
     const id = current?.id
-    setLinkParam(null)
+    toList()
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-row="${id}"]`)?.focus())
   }
   const removeOf = (id: string) => () => {
     const i = links.findIndex(l => l.id === id), rest = links.filter(l => l.id !== id)
     setChosen(rest[Math.min(i, rest.length - 1)]?.id ?? null)
-    setLinkParam(null)
+    toList()
     remove.mutate({ id })
   }
 
