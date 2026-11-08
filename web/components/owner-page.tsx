@@ -14,6 +14,7 @@ import {
 import { AnimatedIcon } from './animated-icon'
 import { Avatar, nameOf } from './avatar'
 import { EditOnMac } from './edit-on-mac'
+import { FirstLink } from './first-link'
 import { Header } from './header'
 import { Logo } from './logo'
 import { RemoveLink } from './remove-link'
@@ -335,6 +336,10 @@ export function OwnerPage({ me }: { me: Me }) {
     remove.mutate({ id })
   }
 
+  // No links yet (or the last one removed): how the first one gets here, in place of both panes. The
+  // first link to arrive (a refetch or a reload) brings the panes back.
+  if (!links.length) return <div className="flex min-h-dvh flex-col"><Header me={me} /><FirstLink base={me.base} /></div>
+
   const fresh = links.reduce((n, l) => n + newOf(l, marks), 0)
   const soon = links.filter(l => soonOf(l) && (l.daysLeft ?? 0) > 0).length
   return (
@@ -351,12 +356,9 @@ export function OwnerPage({ me }: { me: Me }) {
           <ul className="space-y-1 px-2 pb-6">
             {links.map(l => <ListRow key={l.id} l={l} fresh={newOf(l, marks)} active={l.id === current?.id} pick={() => pick(l.id)} />)}
           </ul>
-          {!links.length && <p className="px-5 pb-8 text-[14px] text-ink2 md:hidden">No live links. Share a prototype from the Share button on its page, and it shows up here.</p>}
         </aside>
         <main className={`min-w-0 flex-1 ${open ? '' : 'max-md:hidden'}`}>
-          {current
-            ? <Room key={current.id} l={current} me={me} fresh={newOf(current, marks)} marks={marks} enter={entered === current.id} back={back} remove={removeOf(current.id)} />
-            : <div className="grid h-full place-items-center p-10 text-center text-[14px] text-ink2">No live links. Share a prototype from the Share button on its page, and it shows up here.</div>}
+          {current && <Room key={current.id} l={current} me={me} fresh={newOf(current, marks)} marks={marks} enter={entered === current.id} back={back} remove={removeOf(current.id)} />}
         </main>
       </div>
     </div>

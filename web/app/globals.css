@@ -44,6 +44,21 @@
 @utility tint-6 { background: #65a30d; }
 @utility tint-7 { background: #c2410c; }
 
+/* /me with no links (components/first-link.tsx): the steps fade in one after another, the line under
+   each number draws down after it, the drawn prompt's caret blinks. Classes, never inline styles (CSP). */
+@keyframes fl-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes fl-rail { from { transform: scaleY(0) } to { transform: scaleY(1) } }
+@keyframes fl-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+.fl-step { animation: fl-in 260ms ease-out both; }
+.fl-rail { transform-origin: top; animation: fl-rail 300ms cubic-bezier(.32,.72,0,1) both; }
+.fl-caret { animation: fl-blink 1.1s steps(1) infinite; }
+.fl-step:nth-child(1) { animation-delay: 60ms; }
+.fl-step:nth-child(2) { animation-delay: 170ms; }
+.fl-step:nth-child(3) { animation-delay: 280ms; }
+.fl-step:nth-child(1) > .fl-rail { animation-delay: 120ms; }
+.fl-step:nth-child(2) > .fl-rail { animation-delay: 230ms; }
+@media (prefers-reduced-motion: reduce) { .fl-step, .fl-rail, .fl-caret { animation: none; } }
+
 /* ---------- The landing (/), ported from the Astro site's global.css ----------
    Everything that moves is a class here, never an inline style: the CSP (middleware.ts) refuses a
    style attribute in the server's HTML, and React does not put it back when it hydrates. */

@@ -2,6 +2,7 @@
 // the host on the server too, into TanStack Query's cache, so the first paint is the whole page and
 // there is no loading state to show.
 import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query'
+import { FirstLink } from '@/components/first-link'
 import { Header } from '@/components/header'
 import { OwnerPage } from '@/components/owner-page'
 import { Quiet, SignedOut } from '@/components/states'
@@ -21,10 +22,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     return <SignedOut failed={params.failed !== undefined} />
   }
   const { me } = who
+  // An account that never shared sees what an owner with no links sees: how the first one gets here.
+  if (me.state === 'none') return <div className="flex min-h-dvh flex-col"><Header me={me} /><FirstLink base={me.base} /></div>
   if (me.state !== 'owner') {
     const [head, text] = me.state === 'banned' ? [`@${me.login} can’t share here`, 'This account was blocked on this host.']
-      : me.state === 'pending' ? [`No links for @${me.login} yet`, 'Sharing opens once the maintainer approves your account.']
-        : [`No links for @${me.login} yet`, 'Share a prototype from the Share button on its page, and it shows up here.']
+      : [`No links for @${me.login} yet`, 'Sharing opens once the maintainer approves your account.']
     return <div className="flex min-h-dvh flex-col"><Header me={me} /><Quiet head={head} text={text} /></div>
   }
   const client = new QueryClient()

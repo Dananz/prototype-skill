@@ -8,7 +8,7 @@ import { Tabs } from '@base-ui/react/tabs'
 import { ArrowUpRightIcon, CaretRightIcon, CheckIcon, CopyIcon, GithubLogoIcon } from '@phosphor-icons/react'
 import { AnimatedIcon } from '@/components/animated-icon'
 import { useMounted } from '@/lib/media'
-import { SITE } from '@/lib/site'
+import { INSTALL, SITE } from '@/lib/site'
 import { LogoMark } from './mark'
 import { useInView } from './in-view'
 
@@ -16,12 +16,12 @@ type AgentId = 'claude' | 'codex'
 
 const AGENTS: { id: AgentId; label: string; steps: { label: string; cmds: string[] }[] }[] = [
   { id: 'claude', label: 'Claude Code', steps: [
-    { label: 'Add the plugin', cmds: ['/plugin marketplace add Dananz/prototype-skill', '/plugin install prototype@prototype-skill'] },
-    { label: 'Then ask for a screen', cmds: ['/prototype the checkout page'] },
+    { label: 'Add the plugin', cmds: INSTALL.claude },
+    { label: 'Then ask for a screen', cmds: [INSTALL.ask.claude] },
   ] },
   { id: 'codex', label: 'Codex', steps: [
-    { label: 'Clone the skill', cmds: ['git clone https://github.com/Dananz/prototype-skill ~/.agents/skills/prototype'] },
-    { label: 'Then ask for a screen', cmds: ['$prototype the checkout page'] },
+    { label: 'Clone the skill', cmds: INSTALL.codex },
+    { label: 'Then ask for a screen', cmds: [INSTALL.ask.codex] },
   ] },
 ]
 
