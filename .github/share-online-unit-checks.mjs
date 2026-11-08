@@ -222,7 +222,9 @@ function rig(cf, { tokens = new Map(), hosts = [] } = {}) {
     wrangler: cf.wrangler, fetch: cf.fetch, log: l => out.push(l), sleep: async () => {},
     getToken: n => tokens.get(n) || null, setToken: (n, t) => tokens.set(n, t),
     saveHost: h => { hosts = [...hosts.filter(x => x.name !== h.name), h] }, readHosts: () => hosts,
-    hostname: 'Test Mac', ghLogin: () => 'Dananz', build: () => true, siteDir,
+    hostname: 'Test Mac', ghLogin: () => 'Dananz', siteDir, webDir: join(home, 'web'),
+    // The Next.js app's deploy: in order with the others, on the account setup picked.
+    deployWeb: (dir, env) => { cf.state.deploys.push('web'); cf.state.webEnv = env; return true },
     prodVars: () => ({ GITHUB_CLIENT_ID: SECRET_ID, GITHUB_CLIENT_SECRET: SECRET }),
     hostVersion: VERSION,
     waits: { up: 50, upEvery: 1, tls: 50, tlsEvery: 1, zone: 0, zoneEvery: 1 },
@@ -384,7 +386,8 @@ test('setup --domain on an active zone: the site reaches the host before the hos
     assert.equal(await cf.state.linksWork(r.tokens.get('online')), false)
     const entry = await setupOnline({ domain: 'prtype.dev' }, r.io)
     // workers.dev first (as it was), then the site with the binding, and only then the host's domain config.
-    assert.deepEqual(cf.state.deploys, ['host:workers', 'host:workers', 'site', 'host:domain'])
+    assert.deepEqual(cf.state.deploys, ['host:workers', 'host:workers', 'web', 'site', 'host:domain'])
+    assert.equal(cf.state.webEnv.CLOUDFLARE_ACCOUNT_ID, 'acc1', 'the Next.js app is deployed on another account')
     assert.ok(await cf.state.linksWork(r.tokens.get('online')), 'after --domain the links on prtype.dev do not work')
     const c = configOf(r.home)
     // One origin per share on the domain (decision 23): path mode off, the wildcard route on the zone.
@@ -392,7 +395,7 @@ test('setup --domain on an active zone: the site reaches the host before the hos
     assert.deepEqual(c.routes, [{ pattern: '*.prtype.dev/*', zone_name: 'prtype.dev' }])
     assert.equal(c.workers_dev, true)
     const site = read(join(r.siteDir, 'wrangler.jsonc'), 'utf8')
-    assert.match(site, /"services": \[\{ "binding": "HOST", "service": "proto-share" \}\]/)
+    assert.match(site, /"services": \[\{ "binding": "HOST", "service": "proto-share" \}, \{ "binding": "WEB", "service": "prtype-web" \}\]/)
     assert.doesNotMatch(site, /Added once the share host is deployed/)
     // Still JSON once its comments are gone, with the domain route the site already had.
     const parsed = JSON.parse(site.replace(/^\s*\/\/.*$/gm, ''))
@@ -432,7 +435,7 @@ test('a plain setup never moves a host on the domain back to workers.dev, even w
       // With --domain it deploys straight behind the domain, and adds that Mac's token.
       const entry = await setupOnline({ 'plan-checked': true, domain: 'prtype.dev' }, other.io)
       // (its checkout's site config has no binding yet, so the site is deployed too)
-      assert.deepEqual(cf.state.deploys, ['host:domain', 'site'])
+      assert.deepEqual(cf.state.deploys, ['host:domain', 'web', 'site'])
       assert.equal(entry.stage, 'domain')
       assert.ok(await cf.state.linksWork(other.tokens.get('online')))
     } finally { other.done() }

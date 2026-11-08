@@ -1,22 +1,15 @@
-// The site on prtype.dev, on the share host's free Cloudflare account. Deploy (README.md) with the
-// share tools' wrangler and its own login:
+// prtype.dev's router (worker.mjs), on the share host's free account. Deploy (README.md) with the
+// share tools' wrangler and its own login, after the share host and the Next.js app (../web): a
+// binding to a Worker that does not exist fails the deploy.
 //   XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home ~/.prototypes/share-tools/node_modules/.bin/wrangler deploy
 {
   "name": "prtype-site",
   "main": "worker.mjs",
   "compatibility_date": "2026-10-01",
-  "assets": {
-    "directory": "./dist",
-    "binding": "ASSETS",
-    "not_found_handling": "none",
-    // Shared links live on the share Worker, /me and /_next on the Next.js app; everything else is a file.
-    "run_worker_first": ["/s/*", "/api", "/api/*", "/auth/*", "/_health", "/me", "/me/*", "/_next/*"]
-  },
   "routes": [{ "pattern": "prtype.dev", "custom_domain": true }],
   "workers_dev": false,
   "observability": { "enabled": false },
   // The share host, reached for the share paths (proto share setup --domain added this).
-  "services": [{ "binding": "HOST", "service": "proto-share" }, { "binding": "ME", "service": "prtype-me" }]
-  // ME: the owner page, /me, the Next.js app in ../me, its own Worker. Deploy it before this one: a
-  // binding to a Worker that does not exist fails the deploy. /me/api stays on HOST (worker.mjs).
+  "services": [{ "binding": "HOST", "service": "proto-share" }, { "binding": "WEB", "service": "prtype-web" }]
+  // WEB: the Next.js app in ../web, its own Worker: the landing, /me and everything that isn't the share host's.
 }

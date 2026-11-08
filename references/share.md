@@ -61,13 +61,15 @@ The first command puts the host on its workers.dev name:
 Viewers can read workers.dev links; comments open with the domain:
 
 `--domain prtype.dev` needs the zone active on the account (it says what to do when it is missing
-or waiting for its nameservers). The site Worker (`site/`, `prtype-site`) owns prtype.dev and hands
-`/s/*`, `/api*`, `/auth/*`, `/_health` and short links to the host over a service binding. Shares
+or waiting for its nameservers). The router Worker (`site/`, `prtype-site`) owns prtype.dev and hands
+`/s/*`, `/api*`, `/auth/*`, `/_health`, `/me/api/*` and short links to the host over a service binding,
+and everything else to the Next.js app (`web/`, `prtype-web`): the landing page, its files, `/me`. Shares
 live on `<id>.prtype.dev`: the host's one route is `*.prtype.dev/*`, beside a proxied `*` DNS record
 (both free; Universal SSL covers one level of wildcard), and `prtype.dev/s/<id>/…` answers 301 there. Setup redeploys the host with `BASE=prtype.dev`, sign-in on and the
 workers.dev name kept as a legacy name (its links move to prtype.dev), adds
-`"services": [{ "binding": "HOST", "service": "proto-share" }]` to `site/wrangler.jsonc` (commit
-that change) and deploys the site (building it first when `site/dist` is missing). Then it checks
+`"services": [{ "binding": "HOST", "service": "proto-share" }, { "binding": "WEB", "service": "prtype-web" }]`
+to `site/wrangler.jsonc` (commit that change) and, unless prtype.dev already reaches the host, deploys
+the Next.js app (`pnpm install` and `pnpm run deploy` in `web/`) and then the router. Then it checks
 `https://prtype.dev/_health` over TLS (for up to 15 minutes), the old name's redirect, sign-in and a
 short link. From then on plain `proto share setup` keeps the domain.
 
@@ -228,20 +230,21 @@ Mac's (`sent` means sent to Claude), so /me never changes it.
   change under `/me/api` must carry the host's own `Origin` (a share on `<id>.prtype.dev` is same-site,
   so the cookie alone would not do). A host in path mode off this Mac keeps /me shut: its shares would
   share /me's origin.
-- **Three Workers:** the page is a Next.js app (`me/`, App Router, its own Worker `prtype-me` through
-  OpenNext). Its Server Components ask the share host who is signed in (`GET /me/api/me`: the login,
+- **Three Workers:** the page is part of prtype.dev's Next.js app (`web/`, App Router, its own Worker
+  `prtype-web` through OpenNext, which also draws the landing page). Its Server Components ask the share host who is signed in (`GET /me/api/me`: the login,
   name, picture, `owner`, `none`, `pending` or `banned`, and the host's name; 401 says whether sign-in
   works there) and read the links (`GET /me/api/shares`, shaped as the page shows them), over a service
   binding (`HOST`) with the browser's cookie. Every change goes from the browser to `/me/api` on the
-  share host, as before. The site (`prtype-site`, `site/worker.mjs`) sends `/me/api` to the host and
-  `/me` and `/_next` to the Next.js app (`ME`); without that binding /me falls back to the host's own
-  page (`host/lib/me.mjs`), as on this Mac's local host.
+  share host, as before. The router (`prtype-site`, `site/worker.mjs`) sends `/me/api` to the host and
+  everything that isn't the host's to the Next.js app (`WEB`). The host's own page (`host/lib/me.mjs`)
+  answers /me on this Mac's local host, which has no Next.js app in front.
 - **Deploy**, in this order (a service binding to a Worker that does not exist fails the deploy), each
   with the share tools' wrangler login:
   1. the share host (`proto share setup`, or its usual deploy), for `/me/api/me`;
-  2. the Next.js app: `cd me && pnpm install && XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home pnpm run deploy`
+  2. the Next.js app: `cd web && pnpm install && XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home pnpm run deploy`
      (`opennextjs-cloudflare build && opennextjs-cloudflare deploy`);
-  3. the site: `cd site && pnpm build && XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home ~/.prototypes/share-tools/node_modules/.bin/wrangler deploy`.
+  3. the router: `cd site && XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home ~/.prototypes/share-tools/node_modules/.bin/wrangler deploy`.
+  `proto share setup --domain prtype.dev` runs 2 and 3 when the router doesn't reach the host yet.
   No database migration is needed.
 
 ## Viewer comments
@@ -300,17 +303,17 @@ draw one per visit) and send it to `PUT /api/shares/<id>/card` once the page is 
 it only when it changed (`cardHash` in `.proto/shares.json`). The host keeps it in KV
 (`shares.card_key`) and serves it at `/s/<id>/card.jpg?v=<version>`. A share with no card of its
 own (no sharp, an upload that failed, a share from before cards) shows the site's card
-(`site/public/og-share.jpg`; the host's `CARD` var, set when setup puts it behind the domain,
+(`web/public/og-share.jpg`, served at `https://prtype.dev/og-share.jpg`; the host's `CARD` var, set when setup puts it behind the domain,
 points at it). The built page (`/s/<id>/`, for links copied from the address bar) carries the
 title and owner line, and the site's card, since the page is built before the link has an id.
-Nothing is for search: every host answer is `noindex`, the site's `robots.txt` keeps crawlers off
+Nothing is for search: every host answer is `noindex`, the site's `robots.txt` (`web/app/robots.txt`) keeps crawlers off
 `/s/`, `/api` and `/auth/`, and the host's own `robots.txt` keeps them off everything. Link
 previewers (Twitterbot, facebookexternalhit, LinkedInBot, Slackbot, Discordbot, TelegramBot,
 WhatsApp) are let in to read the cards.
 
-The card and `robots.txt` are site files: they go live with a site deploy (`site/README.md`), which
-a re-run of setup skips once the site already reaches the host. Deploy the site before a host that
-points at the card.
+The card and `robots.txt` are the Next.js app's files: they go live with its deploy (`site/README.md`),
+which a re-run of setup skips once prtype.dev already reaches the host. Deploy the app before a host
+that points at the card.
 
 ## Limits
 

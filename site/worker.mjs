@@ -1,25 +1,24 @@
-// prtype.dev: the site's files, served by Cloudflare straight from dist/ without running this script,
-// and the share host's paths handed to the share Worker over a service binding (HOST). Only the paths
-// in wrangler.jsonc's run_worker_first, and anything that is not a file, reach this script.
+// prtype.dev's router: a Worker with no files of its own. The share host's paths go to the share
+// Worker (HOST), everything else to the Next.js app in ../web (its own Worker, WEB): the landing, its
+// files (og.png, og-share.jpg, robots.txt, llms.txt, sitemap.xml, favicon.svg), /me and /_next.
+// Both are service bindings (wrangler.jsonc).
 
 // A share's short link: prtype.dev/<id>, ten characters of the host's id alphabet (host/lib/ids.mjs).
 const SHORT = /^\/[0-9a-hjkmnp-tv-z]{10}\/?$/
-const HOSTED = /^\/(s\/|api(\/|$)|auth\/|_health$|me(\/|$))/
-// /me/api: the owner page's API, on the share host (host/lib/me.mjs). The page itself, /me, and the
-// Next.js files under /_next are the Next.js app in me/ (its own Worker, ME); without it, the host's
-// own page answers /me.
-const ME_API = /^\/me\/api(\/|$)/
-const ME = /^\/(me|_next)(\/|$)/
+// /me/api is the owner page's API, on the share host (host/lib/me.mjs); /me itself is the Next.js app.
+const HOSTED = /^\/(s\/|api(\/|$)|auth\/|_health$|me\/api(\/|$))/
+
+const closed = text => new Response(text, { status: 503, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } })
 
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url)
-    if (ME.test(pathname) && !ME_API.test(pathname) && env.ME) return env.ME.fetch(request)
     if (HOSTED.test(pathname) || SHORT.test(pathname)) {
       // Before the share host is deployed there is nothing to hand to.
-      if (!env.HOST) return new Response('Shared links are not open yet.', { status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' } })
+      if (!env.HOST) return closed('Shared links are not open yet.')
       return env.HOST.fetch(request)
     }
-    return env.ASSETS.fetch(request)
+    if (!env.WEB) return closed('prtype.dev is being set up.')
+    return env.WEB.fetch(request)
   },
 }
