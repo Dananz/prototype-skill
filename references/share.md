@@ -206,6 +206,29 @@ version N" and an Edit button in place of Fork. The host's `api/me` says `mine: 
 on the share's origin acts as the owner: its page runs the shared page's scripts (decision 23). Edit
 gives `/prototype edit <link>`, which finds the session with `proto share where` and reopens it.
 
+## prtype.dev/me: every link, in the browser
+
+`https://prtype.dev/me` lists every live link of a GitHub account, from every project and every Mac,
+and manages each one without the Mac: copy or open it, the `/prototype edit <link>` command for the Mac
+it came from, its preview card, views, comments and who is in it now or looked last, the days left, the
+message for viewers (280 characters at most), the latest 10 comments (reply, hide from viewers, open
+at their design), Turn off or on, and Remove (it asks once). On a phone the list comes first and a tap
+opens the link. Opening a link marks its comments read in that browser only: a comment's status is the
+Mac's (`sent` means sent to Claude), so /me never changes it.
+
+- **Sign-in:** "Sign in with GitHub" runs the host's own OAuth flow (`/auth/github?me=1`) and sets a
+  14-day cookie (`__Host-o`; `o` on http://localhost) signed for /me only, so it is never a viewer
+  cookie or a ticket. Sign out is in the avatar's menu. The list covers every owners row with that
+  GitHub id that is active; a banned row shuts the account out, and an account with no links (or still
+  pending) sees a plain "No links yet".
+- **Safety:** the page answers with a strict CSP (a nonce per answer, no eval, no framing), and every
+  change under `/me/api` must carry the host's own `Origin` (a share on `<id>.prtype.dev` is same-site,
+  so the cookie alone would not do). A host in path mode off this Mac keeps /me shut: its shares would
+  share /me's origin.
+- **Deploy:** /me is part of the share host (`host/lib/me.mjs`) and the site hands it `/me` and `/me/*`
+  (`site/worker.mjs`, `run_worker_first`). Both need a deploy before prtype.dev/me answers; no database
+  migration is needed.
+
 ## Viewer comments
 
 Viewers sign in with GitHub to comment on a link. Their comments wait on the host until the owner
