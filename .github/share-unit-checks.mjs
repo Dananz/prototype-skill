@@ -929,7 +929,7 @@ test('sign in with GitHub: apex state, PKCE, the 60 s ticket, then the viewer co
   const a = attrs(s.cookie)
   assert.ok(a.includes('httponly') && a.includes('samesite=lax') && a.includes('path=/') && a.includes('max-age=2592000') && !a.includes('secure'), s.cookie)
   const me = await call(env, shareApi(id, 'me'), { headers: { ...XP, cookie: s.jar } })
-  assert.deepEqual(await me.json(), { login: 'dana-test', name: 'Dana', avatar: 'https://avatars.githubusercontent.com/u/4242' })
+  assert.deepEqual(await me.json(), { login: 'dana-test', name: 'Dana', avatar: 'https://avatars.githubusercontent.com/u/4242', mine: false })
   noCors(me)
   // Sign out clears the cookie.
   const out = await call(env, shareApi(id, 'signout'), { method: 'POST', headers: { ...XP, cookie: s.jar } })

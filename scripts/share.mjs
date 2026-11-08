@@ -2,18 +2,21 @@
 // write the same build as one HTML file. In phase 0 the host is this Mac (`wrangler dev`), so a
 // link opens only here. scripts/share-host.mjs holds the host side; references/share.md the how-to.
 import { spawn } from 'node:child_process'
-import { mkdirSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { basename, dirname, join, resolve } from 'node:path'
 import { receive } from '../app/server.mjs'
 import { buildShare } from '../app/share/build.mjs'
-import { SIGN_IN_FIRST, apiTooOld, flush, pollOnce, readShares, sendComments, signIn, signedInLine, trayView } from '../app/share/owner.mjs'
-import { existsSync, readdirSync } from 'node:fs'
+import { SIGN_IN_FIRST, apiTooOld, flush, pollOnce, readShares, writeShares, sendComments, signIn, signedInLine, trayView } from '../app/share/owner.mjs'
+import { cpSync, existsSync, readdirSync } from 'node:fs'
 import { changedSince, changedVariants, describe, disableShare, protosOf, publishShare, removeShare, reviewOf, titleOf, updateShare } from '../app/share/publish.mjs'
 import { ShareError, parseScope } from '../app/share/scope.mjs'
 import { hostCommentLines, trayRow } from '../app/share/viewer-text.mjs'
 import { client, defaultHost, deleteToken, ensureTools, getToken, hostHash, hostNamed, linkOf, localRunning, readHosts, setupHint, shortLinkOf, startLocal, stopLocal } from './share-host.mjs'
 import { apiOrigin } from '../app/share/owner.mjs'
 import { installApp, syncApp } from './app-sync.mjs'
+import { PROJECT_DIR } from './project.mjs'
+import { linkTarget } from './fork.mjs'
 import { defaultIo, ensureViewerKey, setupGithub, setupOnline } from './share-online.mjs'
 
 const MiB = 2 ** 20
@@ -359,6 +362,67 @@ async function setup(flags, die) {
   console.log('Links open only on this Mac while it runs. proto share stop stops it; the next share starts it again.')
 }
 
+/**
+ * Which session on this Mac made a link: every project the session index names
+ * (~/.prototypes/sessions.json), each of its session folders and its project app. The project app
+ * holds it before a legacy session folder, else the newest. { id, project, dir, entry, app } or null.
+ */
+export function whereShare(id, { index = join(homedir(), '.prototypes', 'sessions.json') } = {}) {
+  let listed = []
+  try { listed = JSON.parse(readFileSync(index, 'utf8')) } catch {}
+  const roots = new Set((Array.isArray(listed) ? listed : []).filter(d => typeof d === 'string').map(d => dirname(d)))
+  let found = null
+  for (const root of roots) {
+    let names = []
+    try { names = readdirSync(root) } catch { continue }
+    for (const name of names) {
+      const dir = join(root, name)
+      const entry = readShares(dir).find(e => e.id === id)
+      if (!entry) continue
+      // The project app's copy is the one proto share update reads; a legacy session folder's only
+      // when nothing newer holds it (proto up brings it into the project app).
+      const app = name === PROJECT_DIR
+      const better = !found || (app && !found.app) || (app === found.app && String(entry.publishedAt ?? '') > String(found.entry.publishedAt ?? ''))
+      if (better) found = { id, project: dirname(root), dir, entry, app }
+    }
+  }
+  return found
+}
+
+// proto share where <link|id>: where on this Mac a link's prototype lives, to change it there.
+function where(input, flags, { die }) {
+  if (!input) die('proto share where <link|id>: which link?')
+  const target = linkTarget(input)
+  if (!target) die(`${input} isn't a link on a share host this Mac knows.`)
+  const found = whereShare(target.id)
+  if (!found) {
+    console.log(`No session on this Mac made ${target.id}. If you shared it from another Mac, run this there. To work on a copy here instead: proto fork ${input}`)
+    process.exitCode = 1
+    return
+  }
+  const { entry, project, dir } = found
+  const app = join(dirname(dir), PROJECT_DIR)
+  // A session folder from before the project app, migrated before shares moved with it: the link
+  // is still its own, so proto share update in the project app can't find it until it is brought in.
+  if (!found.app && existsSync(join(app, 'src'))) {
+    const missing = (entry.scope?.protos ?? []).map(p => p.id).filter(slug => !existsSync(join(app, 'src', 'protos', slug, 'meta.ts')))
+    if (flags.bring === true) {
+      if (missing.length) die(`The project app has no ${missing.join(', ')}, so ${target.id} can't be updated from it.`)
+      const mine = readShares(app)
+      if (!mine.some(e => e.id === entry.id)) writeShares(app, [...mine, { ...entry, session: entry.session ?? basename(dir) }])
+      if (existsSync(join(dir, '.proto', 'shares', entry.id))) cpSync(join(dir, '.proto', 'shares', entry.id), join(app, '.proto', 'shares', entry.id), { recursive: true })
+      console.log(`brought ${target.id} into the project app: proto share update ${target.id} works there now`)
+      found.app = true
+    }
+  }
+  const what = (entry.scope?.protos ?? []).map(p => `${p.id}${p.variants?.length ? `/${p.variants.join(',')}` : ''}`).join(' ')
+  console.log(`${target.id}: "${entry.title}" v${entry.version ?? 1}${what ? `, ${what}` : ''}`)
+  console.log(`project: ${project}`)
+  console.log(`made in: ${dir}`)
+  if (found.app) console.log(`to change it: proto up --project ${project}, change those variants there, then proto share update ${target.id}`)
+  else console.log(`it is only in a session folder from before the project app: proto share where ${target.id} --bring lets proto share update reach it`)
+}
+
 export async function main(args, flags, ctx) {
   const { die } = ctx
   try {
@@ -367,6 +431,7 @@ export async function main(args, flags, ctx) {
     // The page's Share sheet runs this before it builds (app/share/routes.mjs), since the session's
     // server can't reach the skill's code itself.
     if (flags['sync-only'] === true) return freshApp(ctx.sessionDir, die, { install: false })
+    if (sub === 'where') return where(rest[0], flags, ctx)
     if (sub === 'stop') {
       const was = await stopLocal()
       return console.log(was ? 'stopped the local share host (its links answer again after the next proto share)' : 'the local share host was not running')

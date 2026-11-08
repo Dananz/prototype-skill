@@ -75,6 +75,8 @@
 //   proto share signin [--no-open] [--code] [--again]   sign in with GitHub to share (prtype.dev with no setup; a new link needs
 //             it): prints and opens the link, waits up to five minutes, keeps this Mac's token in the Keychain
 //   proto share signout      revoke this Mac's token on the host and forget it here
+//   proto share where <link|id> [--bring]   which project on this Mac made that link, to change it there
+//             (--bring: a link only an old session folder holds, into the project app so update reaches it)
 //   proto share admin users [--pending] | approve <login> | ban <login> | rm <id> | reports   the host's maintainer:
 //             who is waiting, let them in or ban them, take any link down, read "Report this link"
 //   proto share <slug>[/<n>…] | --all [--title "…"] [--message "…"] [--yes] [--host local|online]   build, review,
@@ -2857,10 +2859,10 @@ const commands = {
   stack: () => { const d = detectStack(projectRoot()); console.log(`${d.stack} (${d.why})`) },
   fonts,
   kit: () => !args[0] ? kitStatus() : args[0] === 'save' ? kitSave() : args[0] === 'screen' ? kitScreen() : die(`proto kit ${args[0]}? It is proto kit, proto kit save or proto kit screen`),
-  // setup, stop, signin, signout and admin are about the host and this Mac, not a session: they run
+  // setup, stop, signin, signout, admin and where are about the host and this Mac, not a session: they run
   // from any folder.
   share: () => import('./share.mjs').then(m => {
-    const free = ['setup', 'stop', 'signin', 'signout', 'admin'].includes(args[0])
+    const free = ['setup', 'stop', 'signin', 'signout', 'admin', 'where'].includes(args[0])
     return m.main(args, flags, { sessionDir: free ? null : sessionDir(), session: free ? null : need(sessionDir()), die })
   }),
   fork: () => import('./fork.mjs').then(m => m.main(args, flags, { sessionDir: sessionDir(), session: need(sessionDir()), sid: sessionId(), die, install: () => install(sessionDir()) })),
