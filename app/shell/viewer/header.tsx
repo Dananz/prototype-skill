@@ -46,6 +46,9 @@ export function Header({ protos, cur, choose, wide, facts, appearance, setAppear
 }
 
 const markOf = (protos: Proto[], p: Proto) => ({ letter: (p.title.trim()[0] ?? '?').toUpperCase(), tint: TINTS[Math.max(0, protos.indexOf(p)) % TINTS.length] })
+
+/** prtype.dev/me: every link of the owner's account, on the host's own name (<id>.<base> -> <base>/me; path mode is already on it). */
+const meUrl = () => `${location.protocol}//${location.host.replace(/^[0-9a-hjkmnp-tv-z]{10}\./, '')}/me`
 function Mark({ protos, p, small }: { protos: Proto[]; p: Proto; small?: boolean }) {
   const { letter, tint } = markOf(protos, p)
   return <span aria-hidden="true" className={`grid shrink-0 place-items-center font-semibold ${tint} ${small ? 'size-7 rounded-lg text-[12px]' : 'size-8 rounded-[10px] text-[13px]'}`}>{letter}</span>
@@ -203,7 +206,7 @@ function Yours({ root }: { root: RefObject<HTMLDivElement | null> }) {
   if (!link) return null
   const command = `/prototype edit ${link}`
   // The owner's page for every link sits on the host's own name: <id>.<base> -> <base>/me; path mode is already on it.
-  const me = `${location.protocol}//${location.host.replace(/^[0-9a-hjkmnp-tv-z]{10}\./, '')}/me`
+  const me = meUrl()
   const copy = () => navigator.clipboard.writeText(command).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800) }, () => {})
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -306,6 +309,11 @@ function Who({ account, wide, root }: { account: Account; wide: boolean; root: R
               </span>
             </div>
             <Menu.Separator className="mx-2 my-1 h-px bg-black/[.06] dark:bg-white/10" />
+            {me.mine && (
+              <Menu.Item data-account-me onClick={() => window.open(meUrl(), '_blank', 'noopener,noreferrer')} className={row}>
+                <Icon name="link" className="size-4 text-zinc-500 dark:text-zinc-400" /><span className="flex-1">{t('Your links')}</span><Icon name="open-out" className="size-3.5 text-zinc-400" />
+              </Menu.Item>
+            )}
             <Menu.Item data-signout onClick={signOut} className={row}>
               <Icon name="sign-out" className="size-4 text-zinc-500 rtl:-scale-x-100 dark:text-zinc-400" />{t('Sign out')}
             </Menu.Item>

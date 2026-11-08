@@ -61,6 +61,15 @@ export async function ownerLinkChecks({ proto, app, openPage, fail, keepShots = 
           assert(edit === mine && fork === !mine, `${lang} ${who}: Edit ${edit}, Fork ${fork}`)
           if (!phone) assert(mine ? header.includes(lang === 'he' ? 'הקישור שלך · גרסה 3' : 'Your link · version 3') : !/Your link|הקישור שלך/.test(header), `${lang} ${who}: the header reads ${JSON.stringify(header)}`)
           const tag = `${lang}-${mine ? 'owner' : 'viewer'}${phone ? '-phone' : ''}`
+          if (!phone) {
+            await page.run(`document.querySelector('[data-account]').click()`)
+            await until(() => page.run(`!!document.querySelector('[data-account-menu]')`))
+            const item = await page.run(`!!document.querySelector('[data-account-me]')`)
+            assert(item === mine, `${lang} ${who}: the account menu's Your links is ${item ? 'there' : 'missing'}`)
+            await shot(page, `${tag}-account`)
+            await page.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+            await until(() => page.run(`!document.querySelector('[data-account-menu]')`))
+          }
           await shot(page, tag)
           const button = mine && edit ? 'data-yours' : fork ? 'data-fork' : ''
           if (button) {
