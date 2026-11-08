@@ -4,7 +4,8 @@
 
 // A share's short link: prtype.dev/<id>, ten characters of the host's id alphabet (host/lib/ids.mjs).
 const SHORT = /^\/[0-9a-hjkmnp-tv-z]{10}\/?$/
-const HOSTED = /^\/(s\/|api(\/|$)|auth\/|_health$)/
+// /me: the signed-in owner's links (host/lib/me.mjs).
+const HOSTED = /^\/(s\/|api(\/|$)|auth\/|_health$|me(\/|$))/
 
 export default {
   async fetch(request, env) {

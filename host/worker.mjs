@@ -8,25 +8,22 @@ import { approveSignin, authCallback, authStart, claimUrl, signinReady, startIn,
 import { ownerComments, viewerApi } from './lib/comments.mjs'
 import { claim, dropKey, metered, putClaimed, queueKey, reserveStore, room, today, usage } from './lib/budget.mjs'
 import { cron } from './lib/cron.mjs'
-import { dismissOffer, offerShare, offersOf } from './lib/offers.mjs'
+import { dismissOffer, offerShare } from './lib/offers.mjs'
+import { MAX_MESSAGE, deleteShare, getShare, keyOf, patchShare, sharesOf, textOf } from './lib/shares.mjs'
+import { meFace } from './lib/me.mjs'
 import { flagged } from './lib/scan.mjs'
 import { admin, banned, createRefused, liveCap, pending, quotaOf, reserveUpload, signinBegin, signinPoll, signout } from './lib/users.mjs'
 
 const MAX_BYTES = 20 * 1024 * 1024
 // A preview card is a 1200×630 JPEG of about 50 KB; chat apps skip images much past 300 KB.
 const MAX_CARD = 300 * 1024
-const MAX_MESSAGE = 280
 const MAX_NOTE = 300
 const DAY_MS = 86_400_000
 const SHARE_LIFETIME_MS = 30 * DAY_MS
-// The owner list's faces: the latest 8 viewers of each link, from the last 30 days.
-const FACES = 8
-const FACES_DAYS = 30
 
 // A version's KV key. Each upload writes its own (a random part makes two uploads of one version two
 // keys), and shares.html_key names the live one; a version uploaded before that column has none.
 const newKey = (id, version) => `html:${id}:${version}:${newId()}`
-const keyOf = row => row.html_key || `html:${row.id}:${row.version}`
 // A version just published may not be readable in KV yet at this location: one short wait, then again.
 const KV_RETRY_MS = 300
 
@@ -42,8 +39,6 @@ const pathsOnly = env => env.PATH_MODE === '1' && !namesOf(env.BASE).local
 // The owner API version this host speaks, and the oldest client it takes (/_health's headers).
 const API = 2
 const API_MIN = 2
-
-const getShare = (env, id) => env.DB.prepare('SELECT * FROM shares WHERE id = ?').bind(id).first()
 
 // Every answer is nosniff and noindex, redirects and errors included.
 function hardened(res) {
@@ -64,7 +59,7 @@ function hardened(res) {
 function crashed(req, env) {
   try {
     const r = route(new URL(req.url), namesOf(env.BASE).names)
-    if (r.at === 'api' || (r.at === 'share' && (r.path === '/api' || r.path.startsWith('/api/')))) return fail(500, 'Something went wrong. Try again in a moment.', { code: 'error' })
+    if (r.at === 'api' || (r.at === 'me' && r.path.startsWith('/me/api/')) || (r.at === 'share' && (r.path === '/api' || r.path.startsWith('/api/')))) return fail(500, 'Something went wrong. Try again in a moment.', { code: 'error' })
   } catch {}
   return page('error', {})
 }
@@ -130,6 +125,7 @@ async function serve(req, env) {
     if (method === 'POST') return await approveSignin(req, env, url)
     return r.path === '/auth/github' ? await authStart(env, url) : await authCallback(req, env, url)
   }
+  if (r.at === 'me') return await meFace(req, env, url, r.path, { pathsOnly: pathsOnly(env) })
   if (r.at === 'apex') return await apex(env, url, r.shareId)
   // One origin per share (decision 23): a path-mode link from before moves to the share's own name.
   // Its viewer cookie was scoped to the path, so the viewer signs in there once more.
@@ -149,7 +145,7 @@ function moved(url, env) {
   if (r.at === 'health') return null
   if (r.at === 'api' || r.at === 'auth') return fail(410, `This host moved to https://${env.BASE}.`, { code: 'moved' })
   // A Location can't carry the #/route; the browser keeps it across the redirect.
-  if (r.at === 'share' || r.at === 'apex') return new Response(null, { status: 308, headers: { location: `https://${env.BASE}${url.pathname}${url.search}`, 'cache-control': 'no-store' } })
+  if (r.at === 'share' || r.at === 'apex' || r.at === 'me') return new Response(null, { status: 308, headers: { location: `https://${env.BASE}${url.pathname}${url.search}`, 'cache-control': 'no-store' } })
   return page('notfound', {})
 }
 
@@ -197,13 +193,13 @@ async function api(req, env, url, path) {
   }
   if (id === undefined) {
     if (req.method === 'POST') return createShare(env)
-    if (req.method === 'GET') return listShares(env, owner)
+    if (req.method === 'GET') return json(await sharesOf(env, [owner.id], { owner }))
     return fail(405, 'Method not allowed.')
   }
   if (!isId(id)) return fail(404, 'No such share.')
   if (req.method === 'PUT') return putShare(req, env, owner, id)
-  if (req.method === 'DELETE') return deleteShare(env, owner, id)
-  if (req.method === 'PATCH') return setDisabled(req, env, owner, id)
+  if (req.method === 'DELETE') return deleteShare(env, [owner.id], id)
+  if (req.method === 'PATCH') return patchShare(req, env, [owner.id], id)
   return fail(405, 'Method not allowed.')
 }
 
@@ -235,53 +231,6 @@ async function createShare(env) {
     }
   }
   return fail(503, 'Could not make an id. Try again.')
-}
-
-// Five queries whatever the number of shares (a Free invocation has 50 subrequests): the shares,
-// their views, their comment counts, their latest faces and the offers on them. project: the label
-// the share was published with, so the owner's list can say where a link from elsewhere came from.
-async function listShares(env, owner) {
-  const { results } = await env.DB.prepare(
-    'SELECT id, title, version, bytes, updated_at, expires_at, message, disabled_at, project_label FROM shares WHERE owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC, id',
-  ).bind(owner.id).all()
-  const views = new Map(), faces = new Map(), talk = new Map()
-  let offers = new Map()
-  if (results.length) {
-    offers = await offersOf(env, owner)
-    const counted = await env.DB.prepare(
-      'SELECT v.share_id AS id, SUM(v.n) AS n FROM views v JOIN shares s ON s.id = v.share_id WHERE s.owner_id = ? AND s.deleted_at IS NULL GROUP BY v.share_id',
-    ).bind(owner.id).all()
-    for (const r of counted.results) views.set(r.id, Number(r.n) || 0)
-    // What the owner's tray would count: a viewer's own deleted comment is gone; a hidden one is still theirs.
-    const said = await env.DB.prepare(
-      "SELECT c.share_id AS id, COUNT(*) AS total, SUM(CASE WHEN c.status = 'new' THEN 1 ELSE 0 END) AS fresh FROM comments c JOIN shares s ON s.id = c.share_id WHERE s.owner_id = ? AND s.deleted_at IS NULL AND c.deleted = 0 GROUP BY c.share_id",
-    ).bind(owner.id).all()
-    for (const r of said.results) talk.set(r.id, { total: Number(r.total) || 0, new: Number(r.fresh) || 0 })
-    const seen = await env.DB.prepare(
-      `SELECT * FROM (SELECT p.share_id AS id, p.route AS route, p.at AS at, v.login AS login, v.name AS name, v.avatar AS avatar,
-         ROW_NUMBER() OVER (PARTITION BY p.share_id ORDER BY p.at DESC, p.gh_id) AS k
-       FROM presence p JOIN shares s ON s.id = p.share_id JOIN viewers v ON v.gh_id = p.gh_id
-       WHERE s.owner_id = ? AND s.deleted_at IS NULL AND p.at >= ?) WHERE k <= ? ORDER BY id, k`,
-    ).bind(owner.id, Date.now() - FACES_DAYS * DAY_MS, FACES).all()
-    for (const r of seen.results) {
-      if (!faces.has(r.id)) faces.set(r.id, [])
-      faces.get(r.id).push({ login: r.login, name: r.name, avatar: r.avatar, route: r.route, at: r.at })
-    }
-  }
-  return json(results.map(s => ({
-    id: s.id, title: s.title, version: s.version, bytes: s.bytes, updatedAt: s.updated_at, expiresAt: s.expires_at ?? null,
-    message: s.message ?? null, disabled: !!s.disabled_at, views: views.get(s.id) ?? 0, viewers: faces.get(s.id) ?? [], offers: offers.get(s.id) ?? [],
-    project: s.project_label ?? null, comments: talk.get(s.id) ?? { total: 0, new: 0 },
-  })))
-}
-
-// The message for viewers: trimmed, at most 280 characters; '' and null are none. Undefined: not sent.
-function textOf(v, max) {
-  if (v === undefined) return { absent: true }
-  if (v === null) return { value: null }
-  if (typeof v !== 'string' || v.length > max * 2) return null
-  const t = v.trim()
-  return t.length > max ? null : { value: t || null }
 }
 
 function readMeta(header) {
@@ -398,35 +347,6 @@ async function putCard(req, env, owner, id) {
 // The card's address under the share: the key's random part names the version, so a new card is a
 // new URL and chats that cached the old one fetch it again.
 const cardPath = key => `card.jpg?v=${key.split(':').pop()}`
-
-async function deleteShare(env, owner, id) {
-  const row = await getShare(env, id)
-  if (!row || row.owner_id !== owner.id) return fail(404, 'No such share.')
-  // The key is queued before the tombstone, so whatever fails after it, the cron still deletes the
-  // bytes; the tombstone comes before the KV delete, so the link says removed, never a 500. Once the
-  // tombstone is there, a repeat has nothing left to do.
-  if (row.deleted_at) return json({ id })
-  const key = keyOf(row)
-  await queueKey(env, key)
-  await env.DB.prepare('UPDATE shares SET deleted_at = COALESCE(deleted_at, ?) WHERE id = ?').bind(Date.now(), id).run()
-  // Deleting a share deletes its comments (spec: Data and privacy); the row stays as a tombstone.
-  await env.DB.prepare('DELETE FROM comments WHERE share_id = ?').bind(id).run()
-  await env.DB.prepare('DELETE FROM presence WHERE share_id = ?').bind(id).run()
-  if (await dropKey(env, key)) await env.DB.prepare('DELETE FROM kv_trash WHERE key = ?').bind(key).run()
-  if (row.card_key) await dropKey(env, row.card_key)
-  return json({ id })
-}
-
-// Turns a link off or back on. Nothing else about it changes: the page, its comments and its expiry
-// stay, it still counts as one of the owner's links, and an update of a link that is off stays off.
-async function setDisabled(req, env, owner, id) {
-  const row = await getShare(env, id)
-  if (!row || row.owner_id !== owner.id || row.deleted_at) return fail(404, 'No such share.')
-  const body = await req.json().catch(() => null)
-  if (typeof body?.disabled !== 'boolean') return fail(400, 'Send { disabled: true } or { disabled: false }.')
-  await env.DB.prepare('UPDATE shares SET disabled_at = ? WHERE id = ? AND deleted_at IS NULL').bind(body.disabled ? row.disabled_at ?? Date.now() : null, id).run()
-  return json({ id, disabled: body.disabled })
-}
 
 // Where a share lives, for the visitor of the apex page. On this Mac it stays on the name the
 // visitor came in on (the page answers on both loopback names), and 127.0.0.1 can only take the path

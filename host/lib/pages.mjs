@@ -116,6 +116,7 @@ const PREVIEWERS = ['Twitterbot', 'facebookexternalhit', 'Facebot', 'LinkedInBot
 export const ROBOTS = `${PREVIEWERS.map(a => `User-agent: ${a}`).join('\n')}
 Disallow: /api
 Disallow: /auth/
+Disallow: /me
 
 User-agent: *
 Disallow: /

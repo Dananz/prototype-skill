@@ -13,7 +13,7 @@ import { changedSince, changedVariants, describe, disableShare, protosOf, publis
 import { ShareError, parseScope } from '../app/share/scope.mjs'
 import { hostCommentLines, trayRow } from '../app/share/viewer-text.mjs'
 import { client, defaultHost, deleteToken, ensureTools, getToken, hostHash, hostNamed, linkOf, localRunning, readHosts, setupHint, shortLinkOf, startLocal, stopLocal } from './share-host.mjs'
-import { apiOrigin } from '../app/share/owner.mjs'
+import { apiOrigin, meLinkOf } from '../app/share/owner.mjs'
 import { installApp, syncApp } from './app-sync.mjs'
 import { PROJECT_DIR } from './project.mjs'
 import { linkTarget } from './fork.mjs'
@@ -247,6 +247,7 @@ async function ls(flags, { sessionDir, die }) {
     if (!rows.length) console.log(`no shares on the host "${host.name}"`)
     for (const r of rows) console.log(line(r.id, r.version, r.title))
     if (online) await usageLine(api)
+    if (rows.length && meLinkOf(host)) console.log(`manage them all: ${meLinkOf(host)}`)
     return
   }
   const mine = readShares(sessionDir).filter(e => e.host === host.name)
@@ -268,6 +269,8 @@ async function ls(flags, { sessionDir, die }) {
     if (changed.length) console.log(`    changed since v${e.version}: ${changed.map(c => c.key.endsWith('/*') ? `${c.name} (${c.key.slice(0, -2)})` : `${c.key} ${c.name}`).join(', ')}`)
   }
   if (online) await usageLine(api)
+  // Where every link of this GitHub account is managed, from any browser.
+  if (meLinkOf(host)) console.log(`manage them all: ${meLinkOf(host)}`)
 }
 
 async function setDisabled(verb, id, flags, { sessionDir, die }) {

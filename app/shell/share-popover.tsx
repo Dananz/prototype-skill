@@ -348,6 +348,11 @@ function Home({ p, owner, onNew }: { p: PopProps; owner: Owner | undefined; onNe
             <p className={`px-2 pt-1 ${SMALL}`}>{t('To change one, ask Claude in its project.')}</p>
           </section>
         )}
+        {listed?.me && (shares.length > 0 || elsewhere.length > 0) && (
+          <a data-pop-me href={listed.me} target="_blank" rel="noreferrer" className={`flex items-center gap-1.5 px-2 pt-1 ${SMALL} hover:text-zinc-900 dark:hover:text-zinc-100`}>
+            {t('All your links, from any browser')}<Icon name="open-out" className="size-3.5" />
+          </a>
+        )}
       </div>
     </>
   )

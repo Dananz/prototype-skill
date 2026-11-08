@@ -11,6 +11,8 @@ export function route(url, base) {
   if (names.includes(host)) {
     if (path === '/api' || path.startsWith('/api/')) return { at: 'api', path }
     if (path === '/auth/github' || path === '/auth/github/callback' || path === '/auth/github/approve') return { at: 'auth', path }
+    // prtype.dev/me: the signed-in owner's links, on the host's own name only.
+    if (path === '/me' || path.startsWith('/me/')) return { at: 'me', path }
     const s = /^\/s\/([^/]+)(\/.*)?$/.exec(path)
     if (s && isId(s[1])) return { at: 'share', shareId: s[1], path: s[2] || '' }
     const apex = /^\/([^/]+)\/?$/.exec(path)

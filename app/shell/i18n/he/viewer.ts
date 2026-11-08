@@ -101,4 +101,5 @@ export default {
   'Send report': 'שלח דיווח',
   'Couldn’t send the report. Try again in a while.': 'לא הצלחנו לשלוח את הדיווח. נסה שוב בעוד כמה דקות.',
   'Thanks. The host’s maintainer will look at this link.': 'תודה. מי שמתחזק את המארח יבדוק את הקישור.',
+  'Manage it on {where}': 'נהל אותו ב-{where}',
 } satisfies Record<string, string>
