@@ -16,5 +16,7 @@
   "workers_dev": false,
   "observability": { "enabled": false },
   // The share host, reached for the share paths (proto share setup --domain added this).
-  "services": [{ "binding": "HOST", "service": "proto-share" }]
+  "services": [{ "binding": "HOST", "service": "proto-share" }, { "binding": "ME", "service": "prtype-me" }]
+  // ME: the owner page, /me, the Next.js app in ../me, its own Worker. Deploy it before this one: a
+  // binding to a Worker that does not exist fails the deploy. /me/api stays on HOST (worker.mjs).
 }
