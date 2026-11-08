@@ -1,6 +1,7 @@
 // prtype.dev/me: the signed-in owner's links, from every project and every Mac, and what they can do
 // with each (copy, open, edit on the Mac, the message for viewers, comments, turn off, remove). One
-// server-rendered page with a small inline script, and /me/api, a thin face over the owner API's own
+// server-rendered page with a small inline script (the fallback on hosts with no Next.js face, as on
+// this Mac; prtype.dev serves me/ instead), and /me/api, a thin face over the owner API's own
 // logic, authenticated by a cookie instead of a token. The cookie names a GitHub account; the page
 // covers every owners row with that gh_id that is active, and every change checks the link is one of
 // theirs. Signed in only through GitHub (github.mjs, kind 'me'). English only.
@@ -77,13 +78,22 @@ async function meApi(req, env, url, parts) {
     return json({ ok: true }, 200, { 'set-cookie': signOutCookie(url) })
   }
   const me = await meOf(req, env, url)
-  if (!me) return fail(401, 'Sign in with GitHub first.', { code: 'signin' })
+  // The Next.js face (me/, its own Worker) asks who this is before it picks a page: signin says
+  // whether "Sign in with GitHub" can work on this host at all.
+  if (!me) return fail(401, 'Sign in with GitHub first.', { code: 'signin', signin: signinReady(env) })
+  if (parts.length === 1 && parts[0] === 'me') {
+    if (m !== 'GET' && m !== 'HEAD') return fail(405, 'Method not allowed.')
+    return json({ login: me.login, name: me.name, avatar: me.avatar, state: me.state, base: env.BASE, origin: `${url.protocol}//${env.BASE}` })
+  }
   if (!me.ids.length) return fail(404, 'No such share.')
   if (parts[0] === 'shares' && parts.length === 1) {
     if (m !== 'GET') return fail(405, 'Method not allowed.')
+    const now = Date.now()
     const list = await sharesOf(env, me.ids)
     const notes = await latestComments(env, me.ids, NOTES)
-    return json(list.map(s => ({ ...s, notes: notes.get(s.id) ?? [] })))
+    // Shaped as the page shows them (days left, who is in it, the words for times), so the Next.js
+    // face draws them without a second copy of this logic.
+    return json(list.map(s => shape(s, notes.get(s.id) ?? [], now)))
   }
   if (parts[0] === 'shares' && parts.length >= 2 && parts.length <= 3) {
     const id = parts[1]
@@ -307,12 +317,20 @@ async function mePage(req, env, url) {
 function shape(s, notes, now) {
   const viewers = s.viewers || []
   const nowFace = viewers.find(v => v.at > now - NOW_MS) || null
+  const daysLeft = daysLeftOf(s.expiresAt, now)
   return {
-    ...s, notes, off: s.disabled,
-    daysLeft: daysLeftOf(s.expiresAt, now),
+    ...s, notes: notes.map(n => ({ ...n, ago: agoWords(n.created_at, now) })), off: s.disabled,
+    daysLeft,
     now: nowFace,
     last: viewers[0] || null,
     latest: notes[0]?.created_at ?? 0,
+    // Words, as of this answer: the list's expiry, "updated …", "looked last, …", the exact date.
+    words: {
+      expiry: expiryWords(daysLeft),
+      updated: agoWords(s.updatedAt, now),
+      last: viewers[0] ? agoWords(viewers[0].at, now) : null,
+      exact: s.expiresAt ? new Date(s.expiresAt).toUTCString().slice(0, 16) : '',
+    },
   }
 }
 

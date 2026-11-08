@@ -25,8 +25,11 @@ Canonical links, the sitemap, robots.txt and the share image's absolute URL all 
 
 The site is a Cloudflare Worker (`prtype-site`, `wrangler.jsonc`) on the share host's free account: Cloudflare
 serves `dist/` as static files (free, not counted as Worker requests), and `worker.mjs` runs only for the share
-host's paths (`/s/…`, `/api`, `/auth/…`, `/_health`, and a share's short link `/<id>`), which it hands to the
-share Worker once that is bound as `HOST`. Build, then deploy with the share tools' wrangler and its own login:
+host's paths (`/s/…`, `/api`, `/auth/…`, `/_health`, `/me/api/…`, and a share's short link `/<id>`), which it
+hands to the share Worker once that is bound as `HOST`, and for `/me` and `/_next/…`, which it hands to the
+Next.js app in `../me` (its own Worker, `prtype-me`, bound as `ME`; see `references/share.md`). Deploy the share
+host first, then `../me` (`pnpm run deploy` there), then this site: a binding to a Worker that does not exist
+fails the deploy. Build, then deploy with the share tools' wrangler and its own login:
 
 ```
 pnpm build

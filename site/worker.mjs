@@ -4,12 +4,17 @@
 
 // A share's short link: prtype.dev/<id>, ten characters of the host's id alphabet (host/lib/ids.mjs).
 const SHORT = /^\/[0-9a-hjkmnp-tv-z]{10}\/?$/
-// /me: the signed-in owner's links (host/lib/me.mjs).
 const HOSTED = /^\/(s\/|api(\/|$)|auth\/|_health$|me(\/|$))/
+// /me/api: the owner page's API, on the share host (host/lib/me.mjs). The page itself, /me, and the
+// Next.js files under /_next are the Next.js app in me/ (its own Worker, ME); without it, the host's
+// own page answers /me.
+const ME_API = /^\/me\/api(\/|$)/
+const ME = /^\/(me|_next)(\/|$)/
 
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url)
+    if (ME.test(pathname) && !ME_API.test(pathname) && env.ME) return env.ME.fetch(request)
     if (HOSTED.test(pathname) || SHORT.test(pathname)) {
       // Before the share host is deployed there is nothing to hand to.
       if (!env.HOST) return new Response('Shared links are not open yet.', { status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' } })

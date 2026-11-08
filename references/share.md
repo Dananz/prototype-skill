@@ -228,9 +228,21 @@ Mac's (`sent` means sent to Claude), so /me never changes it.
   change under `/me/api` must carry the host's own `Origin` (a share on `<id>.prtype.dev` is same-site,
   so the cookie alone would not do). A host in path mode off this Mac keeps /me shut: its shares would
   share /me's origin.
-- **Deploy:** /me is part of the share host (`host/lib/me.mjs`) and the site hands it `/me` and `/me/*`
-  (`site/worker.mjs`, `run_worker_first`). Both need a deploy before prtype.dev/me answers; no database
-  migration is needed.
+- **Three Workers:** the page is a Next.js app (`me/`, App Router, its own Worker `prtype-me` through
+  OpenNext). Its Server Components ask the share host who is signed in (`GET /me/api/me`: the login,
+  name, picture, `owner`, `none`, `pending` or `banned`, and the host's name; 401 says whether sign-in
+  works there) and read the links (`GET /me/api/shares`, shaped as the page shows them), over a service
+  binding (`HOST`) with the browser's cookie. Every change goes from the browser to `/me/api` on the
+  share host, as before. The site (`prtype-site`, `site/worker.mjs`) sends `/me/api` to the host and
+  `/me` and `/_next` to the Next.js app (`ME`); without that binding /me falls back to the host's own
+  page (`host/lib/me.mjs`), as on this Mac's local host.
+- **Deploy**, in this order (a service binding to a Worker that does not exist fails the deploy), each
+  with the share tools' wrangler login:
+  1. the share host (`proto share setup`, or its usual deploy), for `/me/api/me`;
+  2. the Next.js app: `cd me && pnpm install && XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home pnpm run deploy`
+     (`opennextjs-cloudflare build && opennextjs-cloudflare deploy`);
+  3. the site: `cd site && pnpm build && XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home ~/.prototypes/share-tools/node_modules/.bin/wrangler deploy`.
+  No database migration is needed.
 
 ## Viewer comments
 
