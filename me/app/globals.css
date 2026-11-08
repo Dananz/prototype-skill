@@ -1,26 +1,45 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* The /me palette (me.mjs's, D's): ink and its greys, the brand purple, its lines and tints. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-google-sans), system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-google-sans), system-ui, sans-serif;
+  --color-ink: #121019;
+  --color-ink2: #4a4760;
+  --color-dim: #5b5870;
+  --color-faint: #9b98b0;
+  --color-brand: #5a53e3;
+  --color-brand-deep: #4a42d4;
+  --color-ring: #6d68f0;
+  --color-line: #e6e4fc;
+  --color-soft: #efedfb;
+  --color-tint: #f3f2fe;
+  --color-side: #f6f5fd;
+  --color-page: #fbfbfe;
+  --color-amber: #b4541a;
+  --color-amber2: #e0832f;
+  --color-green: #0f7a5f;
+  --color-live: #12b886;
+  --color-danger: #b42318;
+  --color-danger-deep: #9a1d14;
+  --color-danger-soft: #fde8e8;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@layer base {
+  html { color-scheme: light; background: var(--color-page); }
+  html:has(.night) { background: #121019; }
+  body { @apply min-h-dvh bg-page font-sans text-[13px] text-ink antialiased; }
+  /* Never a monospace face, code included. */
+  code, kbd, pre, samp { font-family: inherit; }
+  :where(a, button, [role="menuitem"], [tabindex]):focus-visible { outline: 2px solid var(--color-ring); outline-offset: 2px; }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+/* The avatars with no picture: the first letter on one of eight tints (me.mjs's tintOf). */
+@utility tint-0 { background: #0f9d7a; }
+@utility tint-1 { background: #d97706; }
+@utility tint-2 { background: #db2777; }
+@utility tint-3 { background: #2563eb; }
+@utility tint-4 { background: #7c3aed; }
+@utility tint-5 { background: #0891b2; }
+@utility tint-6 { background: #65a30d; }
+@utility tint-7 { background: #c2410c; }
