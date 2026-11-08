@@ -109,6 +109,9 @@ export function linkOf(host, id) {
 }
 
 /** The link to send: on prtype.dev the short https://prtype.dev/<id>, which opens the share; else linkOf. */
+/** prtype.dev/me on an online host, where every link of the owner's GitHub account is managed; none on this Mac's host. */
+export const meLinkOf = host => host && !isLocal(host) ? `https://${host.base}/me` : null
+
 export const shortLinkOf = (host, id) => host?.stage === 'domain' ? `https://${host.base}/${id}` : linkOf(host, id)
 
 /**

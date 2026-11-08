@@ -67,6 +67,7 @@ export async function ownerLinkChecks({ proto, app, openPage, fail, keepShots = 
             await page.run(`document.querySelector('[${button}]').click()`)
             const command = await until(() => page.run(`document.querySelector('[${button}-command]')?.textContent ?? ''`))
             if (mine) assert(command === `/prototype edit ${url}`, `${lang}: Edit offers ${JSON.stringify(command)}`)
+            if (mine) { const me = await page.run(`document.querySelector('[data-yours-me]')?.getAttribute('href') ?? ''`); assert(me === new URL('/me', url).href, `${lang}: Edit's way to /me is ${JSON.stringify(me)}`) }
             await shot(page, `${tag}-open`)
           }
         } finally { page.close() }

@@ -202,6 +202,8 @@ function Yours({ root }: { root: RefObject<HTMLDivElement | null> }) {
   const [link] = useState(() => /^https?:$/.test(location.protocol) ? `${location.origin}${location.pathname}` : '')
   if (!link) return null
   const command = `/prototype edit ${link}`
+  // The owner's page for every link sits on the host's own name: <id>.<base> -> <base>/me; path mode is already on it.
+  const me = `${location.protocol}//${location.host.replace(/^[0-9a-hjkmnp-tv-z]{10}\./, '')}/me`
   const copy = () => navigator.clipboard.writeText(command).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800) }, () => {})
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -219,6 +221,7 @@ function Yours({ root }: { root: RefObject<HTMLDivElement | null> }) {
               <button type="button" data-yours-copy onClick={() => void copy()} className={iconBtn} aria-label={copied ? t('Copied') : t('Copy')} title={copied ? t('Copied') : t('Copy')}><Icon name={copied ? 'check' : 'copy-simple'} /></button>
             </div>
             <p className="mt-3 text-[12px] leading-snug text-zinc-500 dark:text-zinc-400">{t('Ask for your changes there. When you say so, Claude updates this link: same address, comments kept.')}</p>
+            {me && <a data-yours-me href={me} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-zinc-700 hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-white">{t('Manage it on {where}', { where: me.replace(/^https?:\/\//, '') })}<Icon name="open-out" className="size-3.5" /></a>}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

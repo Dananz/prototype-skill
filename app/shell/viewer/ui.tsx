@@ -31,6 +31,7 @@ import close from '@phosphor-icons/core/assets/bold/x-bold.svg?raw'
 import flag from '@phosphor-icons/core/assets/regular/flag.svg?raw'
 import gitFork from '@phosphor-icons/core/assets/regular/git-fork.svg?raw'
 import pencil from '@phosphor-icons/core/assets/regular/pencil-simple.svg?raw'
+import openOut from '@phosphor-icons/core/assets/regular/arrow-square-out.svg?raw'
 import copySimple from '@phosphor-icons/core/assets/regular/copy-simple.svg?raw'
 import type { Variant } from '../shell'
 import { ERROR_CLASS } from '../building'
@@ -44,7 +45,7 @@ export const iconBtn = 'inline-grid size-8 place-items-center rounded-lg text-zi
 /** A popup that opens from its anchor: scales and fades in 150 ms. */
 export const popup = `${card} origin-[var(--transform-origin)] p-1 shadow-2xl outline-none transition-[opacity,scale] duration-150 data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 motion-reduce:transition-none`
 
-const ICONS = { grid, 'caret-down': caretDown, 'caret-left': caretLeft, 'caret-right': caretRight, check, minus, plus, info, reload, eye, x, github, 'sign-out': signOut, center, chat, 'chat-fill': chatFill, 'chat-text': chatText, 'chat-dots': chatDots, send, circle, seen, working, done, trash, reply, close, flag, 'git-fork': gitFork, 'copy-simple': copySimple, pencil }
+const ICONS = { grid, 'caret-down': caretDown, 'caret-left': caretLeft, 'caret-right': caretRight, check, minus, plus, info, reload, eye, x, github, 'sign-out': signOut, center, chat, 'chat-fill': chatFill, 'chat-text': chatText, 'chat-dots': chatDots, send, circle, seen, working, done, trash, reply, close, flag, 'git-fork': gitFork, 'copy-simple': copySimple, pencil, 'open-out': openOut }
 export type IconName = keyof typeof ICONS
 /** One of Phosphor's own files, at the size the class gives. Carets along the line (and the send arrow) mirror in a right-to-left page. */
 export function Icon({ name, className = 'size-4' }: { name: IconName; className?: string }) {

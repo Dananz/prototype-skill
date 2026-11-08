@@ -7,7 +7,7 @@
 // on its own: no poll, no refresh when the page asks for the tray, no host listing. The smoke's own
 // session runs that way, so it can never reach the owner's real host or Keychain; what the person
 // does (publish, send, reply) still goes out.
-import { SIGN_IN_FIRST, client, clientFor, defaultHost, dismiss, flush, forget, getToken, hostHealth, hostNamed, isLocal, linkOf, mergeTray, outboxFile, pollOnce, queue, readShares, sendComments, setupHint, signIn, trayItems, trayView } from './owner.mjs'
+import { SIGN_IN_FIRST, client, clientFor, defaultHost, dismiss, flush, forget, getToken, hostHealth, hostNamed, isLocal, linkOf, meLinkOf, mergeTray, outboxFile, pollOnce, queue, readShares, sendComments, setupHint, signIn, trayItems, trayView } from './owner.mjs'
 import { changedSince, changedVariants, disableShare, messageOf, protosOf, publishShare, removeShare, titleOf, updateShare } from './publish.mjs'
 import { ShareError, parseScope } from './scope.mjs'
 import { spawn } from 'node:child_process'
@@ -238,7 +238,7 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
         } catch (e) { if (e?.status === 401) forget(name); if (asked) hostError = String(e?.message || e) }
       }
       for (const s of shares) { s.live ??= null; s.views ??= null; s.viewers ??= [] }
-      return { host: host ? { name: host.name, stage: host.stage, owner: host.owner || '' } : null, hostError, shares, elsewhere, setup: setupHint(host) }
+      return { host: host ? { name: host.name, stage: host.stage, owner: host.owner || '' } : null, hostError, shares, elsewhere, setup: setupHint(host), me: meLinkOf(host) }
     },
     /**
      * Who the owner is on the default host: { host, signedIn, login, name, avatar, signin }, signin

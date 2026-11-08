@@ -98,7 +98,7 @@ const answer = (name, body) => {
   if (name === 'signin') { stub.signin++; return [200, { url: `${local}__claim-test?claim=abc` }] }
   if (name === 'offerTake') { stub.offerTakes.push(body); return [200, { slug: 'share-link-from-maya', slugs: ['share-link-from-maya'], home: true, missing: ['motion'] }] }
   if (name === 'offerDismiss') { stub.offerDismissed.push(body); stub.offers = {}; return [200, { ok: true }] }
-  if (name === 'list') return [200, { host: { name: 'Smoke', stage: 'online', owner: stub.owner.login || '' }, hostError: null, shares: shareRows().filter(s => !stub.removed.includes(s.id)).map(s => ({ ...s, offers: stub.offers[s.id] ?? [], disabled: !!stub.disabled[s.id] })), elsewhere: elsewhereRows().filter(s => !stub.removed.includes(s.id)).map(s => ({ ...s, disabled: !!stub.disabled[s.id] })), setup: 'proto share setup' }]
+  if (name === 'list') return [200, { host: { name: 'Smoke', stage: 'online', owner: stub.owner.login || '' }, hostError: null, shares: shareRows().filter(s => !stub.removed.includes(s.id)).map(s => ({ ...s, offers: stub.offers[s.id] ?? [], disabled: !!stub.disabled[s.id] })), elsewhere: elsewhereRows().filter(s => !stub.removed.includes(s.id)).map(s => ({ ...s, disabled: !!stub.disabled[s.id] })), setup: 'proto share setup', me: 'https://prtype.dev/me' }]
   if (name === 'publish') {
     stub.publish.push(body)
     if (stub.publishRefuse) return [409, { code: 'sign_in', error: 'Sign in with GitHub first.' }]
@@ -222,6 +222,8 @@ async function main() {
   ok((await away.locator('[data-pop-project]').innerText()) === 'in mobile-app', 'a link from elsewhere says its project')
   ok(await away.locator('[data-pop-row-update], [data-pop-update]').count() === 0, 'a link from elsewhere offers no Update')
   await page.locator('[data-pop-elsewhere-list]').evaluate(el => el.scrollIntoView({ block: 'end' }))
+  ok(await page.locator('[data-pop-me]').getAttribute('href') === 'https://prtype.dev/me', 'home offers every link on prtype.dev/me')
+  await page.locator('[data-pop-me]').scrollIntoViewIfNeeded()
   await shot(page, 'popover-elsewhere')
   await away.locator('[data-pop-more]').click()
   await away.locator('[data-link-disable]').click()

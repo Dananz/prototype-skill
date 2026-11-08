@@ -216,6 +216,9 @@ at their design), Turn off or on, and Remove (it asks once). On a phone the list
 opens the link. Opening a link marks its comments read in that browser only: a comment's status is the
 Mac's (`sent` means sent to Claude), so /me never changes it.
 
+- **Ways in:** the Share popover's "All your links, from any browser" (the session server's `list`
+  answers `me`, an online host only), "Manage it on prtype.dev/me" in the Edit popover on the owner's
+  own link, and `proto share ls` ends with `manage them all: https://prtype.dev/me`.
 - **Sign-in:** "Sign in with GitHub" runs the host's own OAuth flow (`/auth/github?me=1`) and sets a
   14-day cookie (`__Host-o`; `o` on http://localhost) signed for /me only, so it is never a viewer
   cookie or a ticket. Sign out is in the avatar's menu. The list covers every owners row with that

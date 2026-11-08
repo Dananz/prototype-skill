@@ -148,4 +148,5 @@ export default {
   'Bring in': 'הכנס לכאן',
   'Open it': 'פתח',
   'It needs {what}: ask Claude to add them.': 'צריך את {what}: בקש מ-Claude להוסיף אותם.',
+  'All your links, from any browser': 'כל הקישורים שלך, מכל דפדפן',
 }
