@@ -362,7 +362,7 @@ export function useLinkActions(s: ShareRow, onChanged: () => void | Promise<void
   useEffect(() => { if (!ask) return; const id = window.setTimeout(() => setAsk(false), 4000); return () => clearTimeout(id) }, [ask])
   const run = async (name: string, body: Record<string, unknown>) => {
     setBusy(true); setError(''); hold(true)
-    const r = await route(name, { id: s.id, ...body })
+    const r = await route(name, { id: s.id, ...(s.elsewhere ? { elsewhere: true } : {}), ...body })
     if (r.status === 200) await onChanged()
     else setError(r.status === 503 ? t('Can’t reach the share host. Ask Claude to share again (it starts the host), then retry.') : r.body.error || t('The session server answered {status}.', { status: r.status }))
     hold(false); setBusy(false)

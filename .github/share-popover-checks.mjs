@@ -85,13 +85,20 @@ const shareRows = () => [
   { id: 'p2v7wd', title: 'Portion drawer', scope: { protos: [{ id: 'portion', variants: ['A', 'B'] }], start: 'portion/A' }, version: 3, publishedAt: iso(50 * 3600e3), host: 'Smoke',
     link: 'https://prtype.dev/p2v7wd', changed: true, comments: { total: 0, new: 0 }, live: true, views: 2, viewers: [], changedVariants: [{ key: 'portion/B', name: 'Stacked' }] },
 ]
+// The owner's links from other projects, as the host lists them: no source here, so no Update.
+const elsewhereRows = () => [
+  { id: 'w4n8tz', title: 'Onboarding flow', project: 'mobile-app', elsewhere: true, scope: { protos: [], start: '' }, version: 4, publishedAt: iso(4 * 86400e3), host: 'Smoke',
+    link: 'https://prtype.dev/w4n8tz', changed: false, comments: { total: 7, new: 3 }, live: true, views: 41, viewers: [] },
+  { id: 'h6c2mv', title: 'Pricing page', project: 'marketing-site', elsewhere: true, scope: { protos: [], start: '' }, version: 2, publishedAt: iso(9 * 86400e3), host: 'Smoke',
+    link: 'https://prtype.dev/h6c2mv', changed: false, comments: { total: 0, new: 0 }, live: true, views: 3, viewers: [] },
+]
 const stub = { offers: {}, offerTakes: [], offerDismissed: [], disabled: {}, removed: [], owner: OWNER_OUT, hereVersion: 2, publish: [], update: [], signin: 0, publishRefuse: false, publishDelay: 0 }
 const answer = (name, body) => {
   if (name === 'owner') return [200, stub.owner]
   if (name === 'signin') { stub.signin++; return [200, { url: `${local}__claim-test?claim=abc` }] }
   if (name === 'offerTake') { stub.offerTakes.push(body); return [200, { slug: 'share-link-from-maya', slugs: ['share-link-from-maya'], home: true, missing: ['motion'] }] }
   if (name === 'offerDismiss') { stub.offerDismissed.push(body); stub.offers = {}; return [200, { ok: true }] }
-  if (name === 'list') return [200, { host: { name: 'Smoke', stage: 'online', owner: stub.owner.login || '' }, hostError: null, shares: shareRows().filter(s => !stub.removed.includes(s.id)).map(s => ({ ...s, offers: stub.offers[s.id] ?? [], disabled: !!stub.disabled[s.id] })), setup: 'proto share setup' }]
+  if (name === 'list') return [200, { host: { name: 'Smoke', stage: 'online', owner: stub.owner.login || '' }, hostError: null, shares: shareRows().filter(s => !stub.removed.includes(s.id)).map(s => ({ ...s, offers: stub.offers[s.id] ?? [], disabled: !!stub.disabled[s.id] })), elsewhere: elsewhereRows().filter(s => !stub.removed.includes(s.id)).map(s => ({ ...s, disabled: !!stub.disabled[s.id] })), setup: 'proto share setup' }]
   if (name === 'publish') {
     stub.publish.push(body)
     if (stub.publishRefuse) return [409, { code: 'sign_in', error: 'Sign in with GitHub first.' }]
@@ -99,8 +106,8 @@ const answer = (name, body) => {
     return [200, { ok: true, link: 'https://prtype.dev/x7c4hq', share: { id: 'x7c4hq', title: 'Share link', version: 1 } }]
   }
   if (name === 'update') { stub.update.push(body); stub.hereVersion = 3; return [200, { ok: true, link: 'https://prtype.dev/k3x9p2', share: { id: body.id, version: 3 } }] }
-  if (name === 'disable') { stub.disabled[body.id] = body.disabled; return [200, { ok: true, id: body.id, disabled: body.disabled }] }
-  if (name === 'remove') { stub.removed.push(body.id); return [200, { ok: true, id: body.id }] }
+  if (name === 'disable') { stub.disabledBody = body; stub.disabled[body.id] = body.disabled; return [200, { ok: true, id: body.id, disabled: body.disabled }] }
+  if (name === 'remove') { stub.removedBody = body; stub.removed.push(body.id); return [200, { ok: true, id: body.id }] }
   if (name === 'comments') return [200, { comments: [], new: 0 }]
   return [404, { error: `no route ${name}` }]
 }
@@ -206,6 +213,23 @@ async function main() {
   await page.waitForFunction(() => !document.querySelector('[data-pop-row="r8m2kq"]'))
   ok(stub.removed.join() === 'r8m2kq', 'the second press removes the link')
   ok(await isOpen(page) && await page.evaluate(() => !!document.activeElement?.closest('[data-share-pop]')), 'after a remove the popover stays open, with the focus in it')
+
+  // 3c. The owner's links from other projects: where each came from, views and new comments, Copy and
+  // Open, no Update; Disable from here names the link as elsewhere.
+  const away = page.locator('[data-pop-elsewhere="w4n8tz"]')
+  await away.scrollIntoViewIfNeeded()
+  ok(await page.locator('[data-pop-elsewhere]').count() === 2, 'home lists the links from other projects')
+  ok((await away.locator('[data-pop-project]').innerText()) === 'in mobile-app', 'a link from elsewhere says its project')
+  ok(await away.locator('[data-pop-row-update], [data-pop-update]').count() === 0, 'a link from elsewhere offers no Update')
+  await page.locator('[data-pop-elsewhere-list]').evaluate(el => el.scrollIntoView({ block: 'end' }))
+  await shot(page, 'popover-elsewhere')
+  await away.locator('[data-pop-more]').click()
+  await away.locator('[data-link-disable]').click()
+  await away.locator('[data-pop-disabled]').waitFor()
+  ok(stub.disabledBody?.id === 'w4n8tz' && stub.disabledBody?.elsewhere === true, 'Disable on a link from elsewhere says so')
+  await shot(page, 'popover-elsewhere-disabled')
+  await away.locator('[data-pop-enable]').click()
+  await page.waitForFunction(() => !document.querySelector('[data-pop-elsewhere="w4n8tz"] [data-pop-disabled]'))
 
   // 4. New link: a starter, then the owner's own words; the review; Create link; the link with the message quoted.
   await page.locator('[data-pop-new-link]').click()

@@ -146,10 +146,16 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
       .finally(() => { if (!stopped()) signins.delete(host.name) })
     return opened
   }
-  const entryOf = id => {
+  // A link id as the host makes them (host/lib/ids.mjs); this folder ships in every session app, the host does not.
+  const isId = id => typeof id === 'string' && /^[0-9a-hjkmnp-tv-z]{10}$/.test(id)
+  // elsewhere: one of the owner's links from another project, on the default host. Nothing here holds
+  // it; the host checks it is theirs.
+  const entryOf = (id, elsewhere = false) => {
     const e = readShares(root).find(x => x.id === id)
-    if (!e) throw failure(404, `No share ${id} in this session.`, { code: 'no_share' })
-    return e
+    if (e) return e
+    const host = defaultHost()
+    if (elsewhere === true && host && isId(id)) return { id, host: host.name }
+    throw failure(404, `No share ${id} in this session.`, { code: 'no_share' })
   }
   const shareView = (e, tray = trayView(root).comments) => {
     const host = hostNamed(e.host)
@@ -202,22 +208,37 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
       let hostError = null
       // The sheet's Check again after `proto share setup`: the poll may remember there was no token.
       if (!quiet) for (const name of new Set([host?.name, ...entries.map(e => e.host)])) if (name && !clientFor(name) && getToken(name)) forget(name)
-      if (!quiet) for (const name of new Set(entries.map(e => e.host))) {
+      // The default host is asked even when this project has no link there: the owner's links from
+      // other projects (elsewhere) come from its list. Without a token for it, nothing is missing here.
+      const elsewhere = []
+      const ours = new Set(entries.map(e => e.id))
+      if (!quiet) for (const name of new Set([...entries.map(e => e.host), ...(host ? [host.name] : [])])) {
         const api = clientFor(name)
+        const asked = entries.some(e => e.host === name)
         try {
           const rows = api ? await api.list() : null
-          if (!rows) { hostError = `No owner token for the host "${name}" on this Mac.`; continue }
+          if (!rows) { if (asked) hostError = `No owner token for the host "${name}" on this Mac.`; continue }
+          const h = hostNamed(name)
+          if (name === host?.name) for (const r of rows) {
+            if (ours.has(r.id) || typeof r.id !== 'string') continue
+            elsewhere.push({
+              id: r.id, title: String(r.title ?? ''), version: Number(r.version) || 1, project: typeof r.project === 'string' ? r.project : null,
+              host: name, link: h ? linkOf(h, r.id) : null, live: true, disabled: r.disabled === true, views: r.views ?? null, viewers: facesOf(r.viewers),
+              message: r.message ?? null, expiresAt: r.expiresAt ?? null, elsewhere: true, changed: false, scope: { protos: [], start: '' },
+              publishedAt: new Date(Number(r.updatedAt) || Date.now()).toISOString(),
+              comments: { total: Number(r.comments?.total) || 0, new: Number(r.comments?.new) || 0 },
+            })
+          }
           const byId = new Map(rows.map(r => [r.id, r]))
           for (const s of shares) {
             if (s.host !== name) continue
             const r = byId.get(s.id)
-            const h = hostNamed(name)
             Object.assign(s, { live: !!r, views: r?.views ?? null, viewers: facesOf(r?.viewers), offers: (Array.isArray(r?.offers) ? r.offers : []).map(o => ({ ...o, link: h ? linkOf(h, o.id) : null })), ...(r && 'message' in r ? { message: r.message ?? null } : {}), ...(r && 'disabled' in r ? { disabled: r.disabled === true } : {}) })
           }
-        } catch (e) { if (e?.status === 401) forget(name); hostError = String(e?.message || e) }
+        } catch (e) { if (e?.status === 401) forget(name); if (asked) hostError = String(e?.message || e) }
       }
       for (const s of shares) { s.live ??= null; s.views ??= null; s.viewers ??= [] }
-      return { host: host ? { name: host.name, stage: host.stage, owner: host.owner || '' } : null, hostError, shares, setup: setupHint(host) }
+      return { host: host ? { name: host.name, stage: host.stage, owner: host.owner || '' } : null, hostError, shares, elsewhere, setup: setupHint(host) }
     },
     /**
      * Who the owner is on the default host: { host, signedIn, login, name, avatar, signin }, signin
@@ -320,14 +341,14 @@ export function shareServer({ root, session, receive, emit, pollMs = pollEvery(p
     },
     async disable(data) {
       if (typeof data.id !== 'string' || typeof data.disabled !== 'boolean') throw failure(400, 'send { id, disabled }')
-      const e = entryOf(data.id)
+      const e = entryOf(data.id, data.elsewhere)
       const { host, token } = await reach(e.host)
       await disableShare({ sessionDir: root, host, token, id: e.id, disabled: data.disabled })
       return { ok: true, id: e.id, disabled: data.disabled }
     },
     async remove(data) {
       if (typeof data.id !== 'string') throw failure(400, 'send { id }')
-      const e = entryOf(data.id)
+      const e = entryOf(data.id, data.elsewhere)
       const { host, token } = await reach(e.host)
       await removeShare({ sessionDir: root, host, token, id: e.id })
       mergeTray(root, e.host, [], null)

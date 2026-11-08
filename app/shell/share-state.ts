@@ -21,8 +21,11 @@ export type ShareRow = {
   disabled?: boolean
   /** Versions of it offered back to its owner. */
   offers?: LinkOffer[]
+  /** One of the owner's links from another project: nothing here holds its source, so no Update. project: where it was published from. */
+  elsewhere?: boolean
+  project?: string | null
 }
-export type Listed = { host: { name: string; stage: string; owner: string } | null; hostError: string | null; shares: ShareRow[]; setup?: string }
+export type Listed = { host: { name: string; stage: string; owner: string } | null; hostError: string | null; shares: ShareRow[]; elsewhere?: ShareRow[]; setup?: string }
 /**
  * The owner on the host, as the session server's `owner` answers. signin: whether the host can run
  * GitHub sign-in. status: on a host many people share to, whether the maintainer let them in yet.
