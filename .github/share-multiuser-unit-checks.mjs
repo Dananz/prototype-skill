@@ -1038,3 +1038,16 @@ test('the attack, end to end: a link someone else started reaches their machine 
   assert.equal(page.status, 200)
   assert.match(page.text, /Signed in as @dana-test/)
 })
+
+test('api/me says mine only to the link\'s owner, by GitHub account', async () => {
+  const env = await hostEnv()
+  const ann = await addUser(env, 'u1', 'ann', { gh_id: 900 })
+  const id = await publish(env, ann)
+  env.DB.sql.prepare("INSERT INTO viewers (gh_id, login, name, avatar, seen_at) VALUES (900, 'ann', 'Ann', NULL, 1), (77, 'viewer', 'V', NULL, 1)").run()
+  const me = async gh => (await call(env, `https://${id}.prtype.dev/api/me`, { headers: { ...XP, cookie: `__Host-v=${await sign(KEY, 'v', { gh, share: id, exp: Date.now() + 60_000 })}` } })).json()
+  assert.equal((await me(900)).mine, true)
+  assert.equal((await me(77)).mine, false)
+  // An owner from before sign-in has no GitHub account, so no viewer is ever theirs.
+  env.DB.sql.prepare('UPDATE owners SET gh_id = NULL WHERE id = ?').run('u1')
+  assert.equal((await me(900)).mine, false)
+})

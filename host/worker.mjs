@@ -472,7 +472,7 @@ async function share(req, env, url, r) {
   const pathForm = onBase(url, env)
   if (r.path === '/api' || r.path.startsWith('/api/')) {
     const row = await env.DB.prepare(
-      'SELECT s.*, o.name AS owner_name, o.gh_login AS owner_login, o.gh_name AS owner_gh_name, o.gh_avatar AS owner_avatar FROM shares s JOIN owners o ON o.id = s.owner_id WHERE s.id = ?',
+      'SELECT s.*, o.name AS owner_name, o.gh_login AS owner_login, o.gh_name AS owner_gh_name, o.gh_avatar AS owner_avatar, o.gh_id AS owner_gh_id FROM shares s JOIN owners o ON o.id = s.owner_id WHERE s.id = ?',
     ).bind(r.shareId).first()
     return viewerApi(req, env, url, row, r.path, pathForm)
   }

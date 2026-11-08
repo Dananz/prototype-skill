@@ -1098,6 +1098,18 @@ current version to the same link (its comments kept), only when the user asks; `
 says which links (and variants) changed since shared, who is in them now and how many comments are new.
 A share carries its source so its viewers can fork it; `--no-fork` leaves the source out, when the user asks.
 
+## Editing your own link
+
+When the user gives one of their own links and wants to change it, or `/prototype edit <link>` (the
+link page's Edit button gives them that command): run `proto share where <link>` first. It prints
+the project on this Mac that made the link and its variants. Then `proto up --project <that project>`
+(as in step 1) and change those variants there, the way the user asks. Publish to the same link with
+`proto share update <id>` only on their word, as for any update. If it says the link is only in a
+session folder from before the project app, `proto share where <id> --bring` first, then the same.
+If no session on this Mac made it, say so: it was shared from another Mac (run it there), or it isn't
+theirs. Offer `proto fork <link>` as a copy here only if they want one; never fork their own link as
+the way to edit it.
+
 ## Forking a shared prototype
 
 When the user gives a share link and wants to keep working on it, or `/prototype fork <link>`: run

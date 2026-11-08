@@ -168,11 +168,12 @@ async function until(get, ms = 10_000) {
 /**
  * The share as a host serves it, on a throwaway server: the page at / and, as in path mode, at
  * /s/<id>/, its state at api/state, and the viewer's sign-in routes as the host answers them
- * (api/config, api/me, api/signout; a cookie `v=<login>` is a signed-in viewer). Every path asked
+ * (api/config, api/me, api/signout; a cookie `v=<login>` is a signed-in viewer, `v=owner-smoke` the
+ * link's owner). Every path asked
  * for is kept, so a check can tell that nothing reached for the session's server. The page carries
  * the host's Content-Security-Policy and Referrer-Policy.
  */
-async function host(html) {
+export async function host(html) {
   const state = { version: 1, paths: [], comments: true, list: [] }
   const json = (res, body, headers = {}) => { res.writeHead(200, { 'content-type': 'application/json', ...headers }); res.end(JSON.stringify(body)) }
   const server = createServer((req, res) => {
@@ -183,7 +184,7 @@ async function host(html) {
     if (at.startsWith('/api/') && req.headers['x-proto'] !== '1') { res.writeHead(400); return res.end() }
     if (at === '/api/state') return json(res, { version: state.version, updatedAt: Date.now() })
     if (at === '/api/config') return json(res, { comments: state.comments, owner: 'Smoke' })
-    if (at === '/api/me') return json(res, login ? { login, name: 'Octo Smoke', avatar: login === 'noface' ? null : `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#0ea5e9"/></svg>')}` } : null)
+    if (at === '/api/me') return json(res, login ? { login, mine: login === 'owner-smoke', name: 'Octo Smoke', avatar: login === 'noface' ? null : `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#0ea5e9"/></svg>')}` } : null)
     if (at === '/api/comments' && req.method === 'GET') return json(res, { comments: state.list, removed: [], now: Date.now() })
     if (at === '/api/report' && req.method === 'POST') return json(res, { ok: true })
     if (at === '/api/signout' && req.method === 'POST') return json(res, { ok: true }, { 'set-cookie': `v=; Path=${path.replace(/api\/signout$/, '')}; Max-Age=0` })
