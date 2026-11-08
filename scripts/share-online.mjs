@@ -458,8 +458,11 @@ async function domainChecks(io, domain, workersDev, token) {
   if (![301, 308].includes(moved?.status) || moved.headers.get('location') !== `https://${domain}/s/${ID}/`) throw new ShareError(`https://${workersDev}/s/${ID}/ should move to https://${domain}/s/${ID}/ but answered ${moved?.status ?? 'nothing'} ${moved?.headers.get('location') || ''}`)
   io.log(`Check: old links on ${workersDev} move to ${domain}`)
   const signin = await probe(io, `https://${domain}/auth/github?share=${ID}&nonce=${NONCE}`, { redirect: 'manual' })
-  // 404 (no such share) is the host past its sign-in switch; 400 is sign-in still off.
-  if (signin?.status !== 404) throw new ShareError(`Sign-in on ${domain} isn't on (GET /auth/github answered ${signin?.status ?? 'nothing'}): check the secrets with wrangler secret list, then run setup again`)
+  // No such share means the host is past its sign-in switch: a 404, or with its pages on the site
+  // (SITE_PAGES) a 303 to /done/notfound. Sign-in still off answers 400, or a 303 to /done/signin.
+  const to = signin?.status === 303 ? new URL(signin.headers.get('location') || '/', `https://${domain}`).pathname : ''
+  const notFound = signin?.status === 404 || to === '/done/notfound'
+  if (!notFound) throw new ShareError(`Sign-in on ${domain} isn't on (GET /auth/github answered ${signin?.status ?? 'nothing'}): check the secrets with wrangler secret list, then run setup again`)
   io.log(`Check: sign-in with GitHub is on at https://${domain}/auth/github`)
   // The short link as a browser asks for it (a navigation): the site must hand it to the host.
   const short = await probe(io, `https://${domain}/${ID}`, { headers: { 'sec-fetch-mode': 'navigate', accept: 'text/html' } })

@@ -194,7 +194,9 @@ function fakeCloudflare({ zones = [{ id: 'z1', name: 'prtype.dev', status: 'acti
       return json(known ? [] : { code: 'token' }, known ? 200 : 401)
     }
     // Sign-in on: a dummy share is not found (404); off, the "didn't finish" page (400).
-    if (u.pathname === '/auth/github') return vars.SIGNIN === '1' && state.secrets.has('GITHUB_CLIENT_SECRET') ? notFound() : new Response('signin', { status: 400 })
+    // As the host answers: with its pages on the site (SITE_PAGES), a 303 to the page instead of the page.
+    const page = (kind, status) => vars.SITE_PAGES === '1' ? new Response(null, { status: 303, headers: { location: `https://prtype.dev/done/${kind}` } }) : (kind === 'notfound' ? notFound() : new Response(kind, { status }))
+    if (u.pathname === '/auth/github') return vars.SIGNIN === '1' && state.secrets.has('GITHUB_CLIENT_SECRET') ? page('notfound', 404) : page('signin', 400)
     return notFound()
   }
   // What a person would see, once setup is done: the share paths answered by the host, old links moved.
@@ -202,7 +204,7 @@ function fakeCloudflare({ zones = [{ id: 'z1', name: 'prtype.dev', status: 'acti
     const api = await fetch('https://prtype.dev/api/shares', { headers: { authorization: `Bearer ${token}` } })
     const old = await fetch(`https://proto-share.${state.sub}.workers.dev/s/k3x9p2m4q7/`, { redirect: 'manual' })
     const signin = await fetch('https://prtype.dev/auth/github?share=k3x9p2m4q7&nonce=x', { redirect: 'manual' })
-    return api.status === 200 && old.status === 308 && old.headers.get('location') === 'https://prtype.dev/s/k3x9p2m4q7/' && signin.status === 404
+    return api.status === 200 && old.status === 308 && old.headers.get('location') === 'https://prtype.dev/s/k3x9p2m4q7/' && (signin.status === 404 || signin.headers.get('location') === 'https://prtype.dev/done/notfound')
   }
 
   return { sql, state, wrangler, fetch }
