@@ -65,3 +65,12 @@ test('--bring moves a legacy folder\'s link into the project app, once, and refu
   assert.notEqual(r.status, 0)
   assert.match(r.stderr + r.stdout, /has no missing/)
 })
+
+test('a project born with the project app, whose index entry is its _project folder, is found too', () => {
+  const m = mac()
+  put(m.index, [join(m.root, '_project')])
+  put(join(m.root, '_project', '.proto', 'shares.json'), [entry()])
+  const found = whereShare(ID, { index: m.index })
+  assert.equal(found?.project, m.project)
+  assert.equal(found?.app, true)
+})
