@@ -13,8 +13,8 @@ import { Count } from './bar'
 import { useTalk } from './comments'
 
 export type Appearance = 'system' | 'light' | 'dark'
-/** The viewer signed in with GitHub, as the host's api/me answers. */
-export type Me = { login: string; name: string | null; avatar: string | null }
+/** The viewer signed in with GitHub, as the host's api/me answers. mine: they own this link. */
+export type Me = { login: string; name: string | null; avatar: string | null; mine?: boolean }
 /**
  * Who is looking. me: undefined until the host answers. signIn: where Sign in goes, or null when there
  * is no host to sign in to. report: sends "Report this link" to the host (true once it took it), or
@@ -34,11 +34,11 @@ export function Header({ protos, cur, choose, wide, facts, appearance, setAppear
 }) {
   return (
     <header data-viewer-header dir={dir} className={`relative z-30 flex shrink-0 items-center gap-2.5 px-4 ${wide ? 'h-14' : 'h-12'}`}>
-      <Protos protos={protos} cur={cur} choose={choose} compact={!wide} owner={facts.owner} avatar={facts.avatar ?? null} signed={!!account.sharer} updated={facts.updatedAt} root={root} />
+      <Protos protos={protos} cur={cur} choose={choose} compact={!wide} owner={facts.owner} avatar={facts.avatar ?? null} signed={!!account.sharer} updated={facts.updatedAt} root={root} mine={account.me?.mine === true} version={facts.version} />
       <div className="flex-1" />
       {center && <div data-header-center className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">{center}</div>}
       {wide && !center && <p className="hidden text-[12px] text-zinc-500 md:block dark:text-zinc-400">{t('Drag to move · pinch or {key} scroll to zoom', { key: isMac ? '⌘' : 'Ctrl' })}</p>}
-      <Fork root={root} />
+      {account.me?.mine ? <Yours root={root} /> : <Fork root={root} />}
       <About facts={facts} appearance={appearance} setAppearance={setAppearance} root={root} comments={account.comments} report={account.report ?? null} />
       <Who account={account} wide={wide} root={root} />
     </header>
@@ -52,15 +52,16 @@ function Mark({ protos, p, small }: { protos: Proto[]; p: Proto; small?: boolean
 }
 
 /** The prototype shown, and with more than one in the share, the list of them all. */
-function Protos({ protos, cur, choose, compact, owner, avatar, signed, updated, root }: {
+function Protos({ protos, cur, choose, compact, owner, avatar, signed, updated, root, mine, version }: {
   protos: Proto[]; cur: Proto; choose: (id: string) => void; compact: boolean; owner: string; avatar: string | null; signed: boolean; updated: string; root: RefObject<HTMLDivElement | null>
+  mine: boolean; version: number
 }) {
   const talk = useTalk()
   const [open, setOpen] = useState(false)
   useClosable(open, setOpen)
   const many = protos.length > 1
   // A share written to a file before any host is set up has no owner name: then no "by" at all.
-  const line = `${owner ? signed ? t('Shared by {owner} · read-only', { owner }) : t('by {owner} · read-only', { owner }) : t('Read-only')} · ${many ? tn(protos.length, '{n} prototype', '{n} prototypes') : tn(cur.variants.length, '{n} design', '{n} designs')}`
+  const line = `${mine ? t('Your link · version {n}', { n: version }) : owner ? signed ? t('Shared by {owner} · read-only', { owner }) : t('by {owner} · read-only', { owner }) : t('Read-only')} · ${many ? tn(protos.length, '{n} prototype', '{n} prototypes') : tn(cur.variants.length, '{n} design', '{n} designs')}`
   const title = (
     <>
       <Mark protos={protos} p={cur} small={compact} />
@@ -182,6 +183,42 @@ function Fork({ root }: { root: RefObject<HTMLDivElement | null> }) {
               <code data-fork-command dir="ltr" className="min-w-0 flex-1 truncate font-mono text-[12px] text-zinc-800 dark:text-zinc-200">{command}</code>
               <button type="button" data-fork-copy onClick={() => void copy()} className={iconBtn} aria-label={copied ? t('Copied') : t('Copy')} title={copied ? t('Copied') : t('Copy')}><Icon name={copied ? 'check' : 'copy-simple'} /></button>
             </div>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
+
+/**
+ * The owner on their own link: nothing here changes it (the page holds no source to edit, and this
+ * origin runs the shared page's scripts, so it never acts as the owner). Changing it happens where it
+ * was made: the command reopens that session in Claude Code, and an update brings it back here.
+ */
+function Yours({ root }: { root: RefObject<HTMLDivElement | null> }) {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  useClosable(open, setOpen)
+  const [link] = useState(() => /^https?:$/.test(location.protocol) ? `${location.origin}${location.pathname}` : '')
+  if (!link) return null
+  const command = `/prototype edit ${link}`
+  const copy = () => navigator.clipboard.writeText(command).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800) }, () => {})
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger data-yours className={iconBtn} aria-label={t('Edit your prototype')} title={t('Edit your prototype')}><Icon name="pencil" /></Popover.Trigger>
+      <Popover.Portal container={root}>
+        <Popover.Positioner side="bottom" align={rtl ? 'start' : 'end'} sideOffset={4} className="z-50">
+          <Popover.Popup data-yours-popup dir={dir} className={`${card} w-[min(340px,calc(100vw-32px))] origin-[var(--transform-origin)] p-4 shadow-2xl outline-none transition-[opacity,scale] duration-150 data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 motion-reduce:transition-none`}>
+            <div className="flex items-start justify-between">
+              <Popover.Title className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{t('Edit your prototype')}</Popover.Title>
+              <Popover.Close className={iconBtn} aria-label={t('Close')}><Icon name="x" /></Popover.Close>
+            </div>
+            <p className="mt-1 text-[13px] leading-snug text-zinc-600 dark:text-zinc-400">{t('This page is a copy, so it can’t change. Paste this into Claude Code on the Mac you shared from: it reopens the prototype there.')}</p>
+            <div className="mt-3 flex items-center gap-1 rounded-lg bg-zinc-900/[.04] py-1 ps-2.5 pe-1 dark:bg-white/[.06]">
+              <code data-yours-command dir="ltr" className="min-w-0 flex-1 truncate font-mono text-[12px] text-zinc-800 dark:text-zinc-200">{command}</code>
+              <button type="button" data-yours-copy onClick={() => void copy()} className={iconBtn} aria-label={copied ? t('Copied') : t('Copy')} title={copied ? t('Copied') : t('Copy')}><Icon name={copied ? 'check' : 'copy-simple'} /></button>
+            </div>
+            <p className="mt-3 text-[12px] leading-snug text-zinc-500 dark:text-zinc-400">{t('Ask for your changes there. When you say so, Claude updates this link: same address, comments kept.')}</p>
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

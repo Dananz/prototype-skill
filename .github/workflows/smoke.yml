@@ -40,7 +40,7 @@ jobs:
       - name: Share sign-in and many-user checks
         run: node --test .github/share-signin-unit-checks.mjs .github/share-multiuser-unit-checks.mjs
       - name: Fork unit checks
-        run: node --test .github/fork-unit-checks.mjs
+        run: node --test .github/fork-unit-checks.mjs .github/share-where-unit-checks.mjs
       - name: History, combine and brief checks
         run: node --test .github/decision-unit-checks.mjs
       - name: File-based variant picks

@@ -45,6 +45,7 @@ import { slotChecks } from './slot-checks.mjs'
 import { settingsChecks } from './settings-checks.mjs'
 import { shareChecks } from './share-checks.mjs'
 import { shareLinkChecks } from './share-link-checks.mjs'
+import { ownerLinkChecks } from './owner-link-checks.mjs'
 import { shareTrayChecks } from './share-tray-checks.mjs'
 import { shareSheetChecks } from './share-sheet-checks.mjs'
 import { tweaksChecks } from './tweaks-checks.mjs'
@@ -291,6 +292,13 @@ if (process.argv.includes('--state-keys-only')) {
   proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused state keys checks')
+  process.exit(0)
+}
+if (process.argv.includes('--owner-link-only')) {
+  await ownerLinkChecks({ proto, app, openPage, fail, keepShots: process.env.PROTO_OWNER_SHOTS || '', before: !!process.env.PROTO_OWNER_BEFORE })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused owner link checks')
   process.exit(0)
 }
 if (process.argv.includes('--focus-only')) {
