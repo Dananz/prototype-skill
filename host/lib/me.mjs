@@ -282,7 +282,7 @@ async function mePage(req, env, url) {
     const [head, text] = me.state === 'banned' ? [`@${me.login} can't share here`, 'This account was blocked on this host.']
       : me.state === 'pending' ? [`No links for @${me.login} yet`, 'Sharing opens once the maintainer approves your account.']
         : [`No links for @${me.login} yet`, 'Share a prototype from the Share button on its page, and it shows up here.']
-    return shell({ title: 'Your links', body: header(me) + quiet(head, text), script: `(${client.toString()})()` })
+    return shell({ title: 'Your links', body: header(me) + quiet(head, text), script: clientJs() })
   }
   const now = Date.now()
   const [list, notes] = [await sharesOf(env, me.ids), await latestComments(env, me.ids, NOTES)]
@@ -301,7 +301,7 @@ async function mePage(req, env, url) {
 <main class="room-pane">${links.map((l, i) => room(l, ctx, i === 0)).join('')}
 <div class="empty"${links.length ? ' hidden' : ''}>No live links. Share a prototype from the Share button on its page, and it shows up here.</div></main>
 </div><div class="toast" role="status" aria-live="polite" hidden></div>`
-  return shell({ title: 'Your links', body, extraCss, script: `(${client.toString()})()` })
+  return shell({ title: 'Your links', body, extraCss, script: clientJs() })
 }
 
 function shape(s, notes, now) {
@@ -392,6 +392,11 @@ function note(n, l, ctx) {
 // ---------- the page's script: runs in the browser, as its source (no closure over this module) ----------
 
 /* eslint-disable no-undef */
+// The page's script is client()'s own source. The deploy's bundler (esbuild, keep_names) wraps the
+// functions in it in __name(fn, "name"), a helper that exists only in the Worker: the page defines a
+// stand-in first, or the script stops at its first line in the browser.
+const clientJs = () => `(() => { const __name = f => f; (${client.toString()})() })()`
+
 function client() {
   const $ = (s, el = document) => el.querySelector(s)
   const $$ = (s, el = document) => [...el.querySelectorAll(s)]
