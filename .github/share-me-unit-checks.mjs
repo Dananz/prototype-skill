@@ -256,6 +256,20 @@ test('the page has a strict CSP: a nonce for its one script and style, no eval, 
   assert.notEqual(n1, n2)
 })
 
+test('the page script survives the deploy bundler: __name is defined in the page before the script uses it', async () => {
+  // wrangler bundles with esbuild keep_names, which wraps client()'s functions in __name(fn, "name"),
+  // a helper only the Worker has. The page sends client()'s source, so it must define __name itself.
+  const env = await hostEnv()
+  const token = await addOwner(env, 'u1', { gh_id: DANA.id })
+  await publish(env, token)
+  for (const gh of [DANA.id, 4242]) {
+    const html = await (await call(env, '/me', { headers: as(await meCookie(gh)) })).text()
+    const js = /<script nonce="[^"]+">([^]*?)<\/script>/.exec(html)?.[1]
+    assert.ok(js, 'the page has its script')
+    assert.ok(js.indexOf('const __name = f => f') >= 0 && js.indexOf('const __name = f => f') < js.indexOf('function client'), 'the stand-in comes first')
+  }
+})
+
 test('a host serving every share under its own name keeps /me shut; robots skip it', async () => {
   const env = await hostEnv({ PATH_MODE: '1' })
   await addOwner(env, 'u1', { gh_id: DANA.id })
