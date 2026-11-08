@@ -106,7 +106,9 @@ export async function viewerApi(req, env, url, share, path, pathForm) {
   if (path === '/api/me') {
     if (m !== 'GET') return only()
     const me = await who()
-    return json(me ? { login: me.login, name: me.name, avatar: me.avatar } : null)
+    // mine: the viewer is the link's owner (the same GitHub account): the page offers its owner's tools.
+    // Nothing on this origin acts as the owner; managing the link happens on the apex or the Mac.
+    return json(me ? { login: me.login, name: me.name, avatar: me.avatar, mine: share.owner_gh_id != null && Number(share.owner_gh_id) === Number(me.gh_id) } : null)
   }
   if (path === '/api/signout') return m === 'POST' ? json({ ok: true }, 200, { 'set-cookie': signOutCookie(url, share.id, pathForm) }) : only()
   if (path === '/api/comments') {

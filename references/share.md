@@ -120,6 +120,9 @@ proto share enable <id>                   turn it back on, at the same link
 proto share rm <id>                       take a link down; it then says "This link was removed"
 proto share file <slug>[/<n>…] [--out <file.html>]   the same build as one HTML file, comments off
 proto share stop                          stop the local host; the next share starts it again
+proto share where <link|id> [--bring]      which project on this Mac made a link, to change it there
+                                          (--bring: a link only a pre-project-app session folder holds,
+                                          into the project app so update reaches it)
 proto fork <link|file.html> [--as <slug>] [--yes] [--install]
                                           someone's shared prototype, into this project (see Forking)
 proto fork ls                             what was forked here, what changed, whether the original moved on, and offers on your links
@@ -195,6 +198,13 @@ the owner on the default host (its `GET /api/shares`), each with the project it 
 views, comments, Copy, Open, Disable and Remove. They have no Update: their source is in that project.
 The session server sends `elsewhere: true` with a disable or remove for one of them; this project's
 `shares.json` is left as it is.
+
+## The owner on their own link
+
+Signed in on their own link (the same GitHub account that shared it), the owner sees "Your link ·
+version N" and an Edit button in place of Fork. The host's `api/me` says `mine: true` then. Nothing
+on the share's origin acts as the owner: its page runs the shared page's scripts (decision 23). Edit
+gives `/prototype edit <link>`, which finds the session with `proto share where` and reopens it.
 
 ## Viewer comments
 
