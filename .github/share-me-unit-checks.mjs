@@ -1,7 +1,8 @@
 // Unit checks for prtype.dev/me (host/lib/me.mjs): the route, the sign-in through GitHub and its
 // cookie (its own purpose, never a viewer cookie or a ticket), the list of every link of the GitHub
 // account's owners rows, the changes it makes (message, off, remove, hide, reply) only on its own
-// links and only from its own origin, and the page's CSP. The Worker runs in memory
+// links and only from its own origin, and the page's CSP; and, on prtype.dev, the sign-in's last pages
+// handed to the site's (/done/<kind>, SITE_PAGES). The Worker runs in memory
 // (share-memory-env.mjs); GitHub is the fake on 127.0.0.1.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,6 +10,7 @@ import { gzipSync } from 'node:zlib'
 import worker from '../host/worker.mjs'
 import { route } from '../host/lib/routes.mjs'
 import { sign } from '../host/lib/cookies.mjs'
+import { page, siteRedirect } from '../host/lib/pages.mjs'
 import { hex, memoryEnv } from './share-memory-env.mjs'
 import { startFakeGitHub } from './fake-github.mjs'
 
@@ -323,4 +325,85 @@ test('a host serving every share under its own name keeps /me shut; robots skip 
   const moved = await worker.fetch(new Request('http://127.0.0.1:8787/me'), local)
   assert.equal(moved.status, 302)
   assert.equal(moved.headers.get('location'), 'http://localhost:8787/me')
+})
+
+// ---------- the site's pages (web/app/done) ----------
+
+test('on prtype.dev the sign-in\'s last pages are the site\'s: a 303 to /done/<kind>, its cookies kept', async () => {
+  const env = await hostEnv({ SITE_PAGES: '1' })
+  // A claim link that isn't one.
+  let r = await call(env, '/auth/github?claim=junk', { redirect: 'manual' })
+  assert.equal(r.status, 303)
+  assert.equal(r.headers.get('location'), '/done/claimfail')
+  assert.equal(r.headers.get('cache-control'), 'no-store')
+  assert.equal(r.headers.get('x-robots-tag'), 'noindex')
+  // A callback with no state cookie: the sign-in page, and the state cookie's clearing goes along.
+  r = await call(env, '/auth/github/callback?code=x&state=y', { redirect: 'manual' })
+  assert.equal(r.status, 303)
+  assert.equal(r.headers.get('location'), '/done/signin')
+  assert.match(r.headers.getSetCookie().join('\n'), /Max-Age=0/)
+  // The owner's claim, all the way: GitHub (the fake) and back, signed in as the login it shows.
+  const token = await addOwner(env, 'u1', {})
+  const { url } = await (await call(env, '/api/owner/claim', { method: 'POST', headers: { authorization: `Bearer ${token}` } })).json()
+  gh.setUser(DANA)
+  r = await call(env, url, { redirect: 'manual' })
+  const state = r.headers.getSetCookie()[0].split(';')[0]
+  r = await fetch(r.headers.get('location'), { redirect: 'manual' })
+  r = await call(env, r.headers.get('location'), { redirect: 'manual', headers: { cookie: state } })
+  assert.equal(r.status, 303)
+  assert.equal(r.headers.get('location'), '/done/claimed?login=dana-test')
+  assert.match(r.headers.getSetCookie().join('\n'), /Max-Age=0/)
+  // The same link again: it worked once.
+  r = await call(env, url, { redirect: 'manual' })
+  const again = r.headers.getSetCookie()[0].split(';')[0]
+  r = await fetch(r.headers.get('location'), { redirect: 'manual' })
+  r = await call(env, r.headers.get('location'), { redirect: 'manual', headers: { cookie: again } })
+  assert.equal(r.headers.get('location'), '/done/claimfail')
+  // A crash on the apex: the site's error page.
+  const broken = await hostEnv({ SITE_PAGES: '1' })
+  broken.DB.prepare = () => { throw new Error('down') }
+  r = await call(broken, '/k3x9p2m4q7', { redirect: 'manual' })
+  assert.equal(r.status, 303)
+  assert.equal(r.headers.get('location'), '/done/error')
+})
+
+test('the host draws its own pages without SITE_PAGES, on a share\'s own origin, and for a share\'s state', async () => {
+  // A host with no site in front (this Mac's, workers.dev): its own page, its own status.
+  const plain = await hostEnv()
+  let r = await call(plain, '/auth/github?claim=junk', { redirect: 'manual' })
+  assert.equal(r.status, 400)
+  assert.match(await r.text(), /Sign-in didn&#39;t finish/)
+  const env = await hostEnv({ SITE_PAGES: '1' })
+  const token = await addOwner(env, 'u1', { gh_id: DANA.id, login: 'dana-test' })
+  const id = await publish(env, token)
+  // A share's origin never goes to the site, even for a page the site has.
+  r = await call(env, `https://${id}.prtype.dev/nothing`, { redirect: 'manual' })
+  assert.equal(r.status, 404)
+  assert.match(await r.text(), /Link not found/)
+  // A share that was turned off, or removed: the host's page, on the short link too.
+  env.DB.sql.prepare('UPDATE shares SET disabled_at = 1 WHERE id = ?').run(id)
+  r = await call(env, `/${id}`, { redirect: 'manual' })
+  assert.equal(r.status, 403)
+  assert.match(await r.text(), /This link is turned off/)
+  env.DB.sql.prepare('UPDATE shares SET deleted_at = 1 WHERE id = ?').run(id)
+  r = await call(env, `/${id}`, { redirect: 'manual' })
+  assert.equal(r.status, 410)
+  // A short link that was never one: the site's not-found.
+  r = await call(env, '/k3x9p2m4q7', { redirect: 'manual' })
+  assert.equal(r.headers.get('location'), '/done/notfound')
+})
+
+test('siteRedirect puts only a GitHub login and the language in the address', () => {
+  const env = { SITE_PAGES: '1', BASE: 'prtype.dev' }
+  const at = new Request('https://prtype.dev/auth/github/approve', { method: 'POST' })
+  assert.equal(siteRedirect(at, env, page('signedin', { login: 'dana-test' })).headers.get('location'), '/done/signedin?login=dana-test')
+  assert.equal(siteRedirect(at, env, page('waiting', { login: '<b>"x' })).headers.get('location'), '/done/waiting')
+  assert.equal(siteRedirect(at, env, page('blocked', { login: 'dana-test', lang: 'he' })).headers.get('location'), '/done/blocked?login=dana-test&lang=he')
+  assert.equal(siteRedirect(at, env, page('nonsense', {})).headers.get('location'), '/done/error')
+  // Not the host's own name, a share's state, a response that isn't a page: as they were.
+  const other = page('signedin', { login: 'dana-test' })
+  assert.equal(siteRedirect(new Request('https://k3x9p2m4q7.prtype.dev/'), env, other), other)
+  for (const kind of ['removed', 'disabled', 'expired']) assert.equal(siteRedirect(at, env, page(kind, {})).status, kind === 'disabled' ? 403 : 410)
+  const json = new Response('{}')
+  assert.equal(siteRedirect(at, env, json), json)
 })

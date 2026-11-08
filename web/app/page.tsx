@@ -15,7 +15,6 @@ export const metadata: Metadata = {
   title: SITE.title,
   description: SITE.description,
   alternates: { canonical: `${SITE.url}/` },
-  icons: { icon: { url: '/favicon.svg', type: 'image/svg+xml' } },
   openGraph: {
     type: 'website',
     siteName: SITE.name,

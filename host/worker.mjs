@@ -1,7 +1,7 @@
 import { newId, isId } from './lib/ids.mjs'
 import { ownerOf } from './lib/auth.mjs'
 import { namesOf, route } from './lib/routes.mjs'
-import { page, ogPage, ROBOTS, SHARE_CSP } from './lib/pages.mjs'
+import { page, ogPage, ROBOTS, SHARE_CSP, siteRedirect } from './lib/pages.mjs'
 import { json, fail } from './lib/http.mjs'
 import { upgraded } from './lib/upgrade.mjs'
 import { approveSignin, authCallback, authStart, claimUrl, signinReady, startIn, ticketIn } from './lib/github.mjs'
@@ -78,6 +78,8 @@ export default {
       res = crashed(req, env)
     }
     try { await m.flush() } catch (e) { console.error(e) }
+    // On prtype.dev the sign-in's last pages and the apex's not-found and error are the site's.
+    res = siteRedirect(req, env, res)
     if (jobs.length) {
       const done = (async () => {
         for (const job of jobs) {

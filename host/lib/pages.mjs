@@ -55,6 +55,9 @@ const STYLE = `:root{color-scheme:light dark;--bg:#fafaf9;--fg:#1c1917;--dim:#78
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}
 main{padding:24px;max-width:28rem;text-align:center}h1{font-size:1.25rem;margin:0 0 .5rem}p{margin:0;color:var(--dim)}`
 
+// Which page a response is, for siteRedirect: kept beside the response, never sent.
+const DRAWN = new WeakMap()
+
 export function page(kind, { lang = 'en', title, login = '' } = {}) {
   const c = COPY[kind] || COPY.error
   const [head, body] = c[lang === 'he' ? 'he' : 'en'].map(s => s.replace('{login}', () => login))
@@ -63,7 +66,34 @@ export function page(kind, { lang = 'en', title, login = '' } = {}) {
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
 <title>${esc(title || head)}</title><style>${STYLE}</style></head>
 <body><main><h1>${esc(head)}</h1><p>${esc(body)}</p></main></body></html>`
-  return new Response(html, { status: c.status, headers: HEAD })
+  const res = new Response(html, { status: c.status, headers: HEAD })
+  DRAWN.set(res, { kind: COPY[kind] ? kind : 'error', lang: lang === 'he' ? 'he' : 'en', login })
+  return res
+}
+
+// The pages prtype.dev's Next.js app draws itself (web/app/done, web/lib/done.ts): how a sign-in
+// ended, and a link that isn't there or a failure. A share's own state (removed, turned off, expired)
+// stays the host's page, here: its origin, <id>.<base>, never runs the app (decision 23).
+const ON_SITE = new Set(['signin', 'claimed', 'signedin', 'waiting', 'blocked', 'cancelled', 'claimfail', 'notfound', 'error'])
+
+/**
+ * A page this host drew on its own name (BASE, the apex), turned into a 303 to the site's page for
+ * it, /done/<kind>, when the site draws them (SITE_PAGES=1: setup sets it once prtype.dev's router
+ * and Next.js app are in front; a host on this Mac has neither). Only what the page shows goes in the
+ * address: the GitHub login (already checked as one) and the language. The cookies the page set or
+ * cleared go with the redirect. Anything else comes back as it was.
+ */
+export function siteRedirect(req, env, res) {
+  const p = DRAWN.get(res)
+  if (!p || env.SITE_PAGES !== '1' || !ON_SITE.has(p.kind)) return res
+  const url = new URL(req.url)
+  if (url.host.toLowerCase() !== String(env.BASE || '').toLowerCase()) return res
+  const to = new URL(`/done/${p.kind}`, url.origin)
+  if (p.login && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(p.login)) to.searchParams.set('login', p.login)
+  if (p.lang === 'he') to.searchParams.set('lang', 'he')
+  const headers = new Headers({ location: to.pathname + to.search, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' })
+  for (const c of res.headers.getSetCookie()) headers.append('set-cookie', c)
+  return new Response(null, { status: 303, headers })
 }
 
 // The sign-in's last step (github.mjs confirmSignin): which device asked, as whom, and the code that

@@ -251,7 +251,7 @@ test('setup online: the steps in order, the workers.dev name registered, then a 
     assert.equal(c.routes, undefined)
     assert.match(c.d1_databases[0].migrations_dir, /host\/migrations$/)
     assert.equal(c.migrations_dir, undefined)
-    assert.deepEqual(c.vars, { BASE: 'proto-share.dananz-proto.workers.dev', PATH_MODE: '1', SIGNIN: '0', LEGACY: '', CARD: '', HOST_VERSION: VERSION })
+    assert.deepEqual(c.vars, { BASE: 'proto-share.dananz-proto.workers.dev', PATH_MODE: '1', SIGNIN: '0', LEGACY: '', CARD: '', SITE_PAGES: '0', HOST_VERSION: VERSION })
     assert.deepEqual(c.triggers.crons, [CRON])
     assert.deepEqual([...cf.state.secrets.keys()].sort(), ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'VIEWER_KEY'])
     assert.equal(cf.sql.prepare("SELECT v FROM meta WHERE k = 'owner_id'").get().v, cf.sql.prepare('SELECT id FROM owners').get().id)
@@ -391,7 +391,7 @@ test('setup --domain on an active zone: the site reaches the host before the hos
     assert.ok(await cf.state.linksWork(r.tokens.get('online')), 'after --domain the links on prtype.dev do not work')
     const c = configOf(r.home)
     // One origin per share on the domain (decision 23): path mode off, the wildcard route on the zone.
-    assert.deepEqual(c.vars, { BASE: 'prtype.dev', PATH_MODE: '0', SIGNIN: '1', LEGACY: 'proto-share.dananz-proto.workers.dev', CARD: '/og-share.jpg', HOST_VERSION: VERSION })
+    assert.deepEqual(c.vars, { BASE: 'prtype.dev', PATH_MODE: '0', SIGNIN: '1', LEGACY: 'proto-share.dananz-proto.workers.dev', CARD: '/og-share.jpg', SITE_PAGES: '1', HOST_VERSION: VERSION })
     assert.deepEqual(c.routes, [{ pattern: '*.prtype.dev/*', zone_name: 'prtype.dev' }])
     assert.equal(c.workers_dev, true)
     const site = read(join(r.siteDir, 'wrangler.jsonc'), 'utf8')
