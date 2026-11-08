@@ -63,7 +63,7 @@ test('signed out, /me offers the GitHub sign-in; the sign-in sets the cookie and
   const out = await call(env, '/me')
   assert.equal(out.status, 200)
   const html = await out.text()
-  assert.match(html, /Sign in with GitHub to see your links/)
+  assert.match(html, /Every link you shared,<br>in one place[^]*href="\/auth\/github\?me=1"/)
   assert.match(html, /href="\/auth\/github\?me=1"/)
   // The walk: /auth/github?me=1 → GitHub (the fake) → the callback, with the state cookie.
   gh.setUser(DANA)
@@ -103,7 +103,7 @@ test('the /me cookie is never a viewer cookie or a ticket, and those are never i
   assert.match(await asTicket.text(), /Sign-in didn&#39;t finish|Sign-in didn't finish/)
   // A viewer cookie (or a ticket) as the /me cookie: signed out.
   const v = await sign(KEY, 'v', { gh: DANA.id, share: id, exp: Date.now() + 3_600_000 })
-  assert.match(await (await call(env, '/me', { headers: as(`__Host-o=${v}`) })).text(), /Sign in with GitHub to see your links/)
+  assert.match(await (await call(env, '/me', { headers: as(`__Host-o=${v}`) })).text(), /Every link you shared,<br>in one place[^]*href="\/auth\/github\?me=1"/)
   const t = await sign(KEY, 'ticket', { gh: DANA.id, share: id, to: '/', nn: 'x', exp: Date.now() + 60_000 })
   assert.equal((await call(env, '/me/api/shares', { headers: as(`__Host-o=${t}`) })).status, 401)
   // Over https only __Host-o is read: a plain `o` (which a sibling share could set) is ignored.

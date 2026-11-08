@@ -158,6 +158,9 @@ const P = {
   power: 'M120,128V48a8,8,0,0,1,16,0v80a8,8,0,0,1-16,0Zm60.37-78.7a8,8,0,0,0-8.74,13.4C194.74,77.77,208,101.57,208,128a80,80,0,0,1-160,0c0-26.43,13.26-50.23,36.37-65.3a8,8,0,0,0-8.74-13.4C47.9,67.38,32,96.06,32,128a96,96,0,0,0,192,0C224,96.06,208.1,67.38,180.37,49.3Z',
   trash: 'M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z',
   signOut: 'M120,216a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V40a8,8,0,0,1,8-8h64a8,8,0,0,1,0,16H56V208h56A8,8,0,0,1,120,216Zm109.66-93.66-40-40a8,8,0,0,0-11.32,11.32L204.69,120H112a8,8,0,0,0,0,16h92.69l-26.35,26.34a8,8,0,0,0,11.32,11.32l40-40A8,8,0,0,0,229.66,122.34Z',
+  'github-fill': 'M216,104v8a56.06,56.06,0,0,1-48.44,55.47A39.8,39.8,0,0,1,176,192v40a8,8,0,0,1-8,8H104a8,8,0,0,1-8-8V216H72a40,40,0,0,1-40-40A24,24,0,0,0,8,152a8,8,0,0,1,0-16,40,40,0,0,1,40,40,24,24,0,0,0,24,24H96v-8a39.8,39.8,0,0,1,8.44-24.53A56.06,56.06,0,0,1,56,112v-8a58.14,58.14,0,0,1,7.69-28.32A59.78,59.78,0,0,1,69.07,28,8,8,0,0,1,76,24a59.75,59.75,0,0,1,48,24h24a59.75,59.75,0,0,1,48-24,8,8,0,0,1,6.93,4,59.74,59.74,0,0,1,5.37,47.68A58,58,0,0,1,216,104Z',
+  'warning-fill': 'M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm-8,56a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm8,104a12,12,0,1,1,12-12A12,12,0,0,1,128,184Z',
+  lock: 'M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208V208Z',
   github: 'M208.31,75.68A59.78,59.78,0,0,0,202.93,28,8,8,0,0,0,196,24a59.75,59.75,0,0,0-48,24H124A59.75,59.75,0,0,0,76,24a8,8,0,0,0-6.93,4,59.78,59.78,0,0,0-5.38,47.68A58.14,58.14,0,0,0,56,104v8a56.06,56.06,0,0,0,48.44,55.47A39.8,39.8,0,0,0,96,192v8H72a24,24,0,0,1-24-24A40,40,0,0,0,8,136a8,8,0,0,0,0,16,24,24,0,0,1,24,24,40,40,0,0,0,40,40H96v16a8,8,0,0,0,16,0V192a24,24,0,0,1,48,0v40a8,8,0,0,0,16,0V192a39.8,39.8,0,0,0-8.44-24.53A56.06,56.06,0,0,0,216,112v-8A58.14,58.14,0,0,0,208.31,75.68ZM200,112a40,40,0,0,1-40,40H112a40,40,0,0,1-40-40v-8a41.74,41.74,0,0,1,6.9-22.48A8,8,0,0,0,80,73.83a43.81,43.81,0,0,1,.79-33.58,43.88,43.88,0,0,1,32.32,20.06A8,8,0,0,0,119.82,64h32.35a8,8,0,0,0,6.74-3.69,43.87,43.87,0,0,1,32.32-20.06A43.81,43.81,0,0,1,192,73.83a8.09,8.09,0,0,0,1,7.65A41.72,41.72,0,0,1,200,104Z',
 }
 const icon = (name, size = 18, cls = '') => `<svg class="i ${cls}" width="${size}" height="${size}" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="${P[name]}"/></svg>`
@@ -218,17 +221,54 @@ function shell({ title, body, extraCss = '', script = '', bodyClass = '' }, stat
 
 const quiet = (head, text, action = '') => `<main class="quiet"><div class="quiet-box">${logo({ tile: true, cls: 'quiet-logo' })}<h1>${esc(head)}</h1><p>${text ? esc(text) : ''}</p>${action}</div></main>`
 
-const GH_MARK = icon('github', 18)
 
+// Signed out: the link card's own picture (its deep-night glow, the five cubes large in it), the one
+// way in, and what GitHub shares. The prototype's pick, me-login #4 Deep night.
 function signedOut(env, url) {
   if (!signinReady(env)) return shell({ title: 'Your links', body: quiet('Sign-in isn\'t set up on this host', 'Your links are on prtype.dev/me.') })
   const failed = url.searchParams.has('failed')
-  const action = `<a class="btn-primary gh" href="/auth/github?me=1">${GH_MARK}Sign in with GitHub</a>`
-  return shell({
-    title: 'Your links',
-    body: quiet('Sign in with GitHub to see your links', failed ? 'Sign-in didn\'t finish. Try again.' : 'Every link you shared, from every project and Mac, in one place.', action),
-  })
+  const body = `<div class="night-glow" aria-hidden="true"></div>
+<header class="night-top"><a class="night-brand" href="/">${logo({ cls: 'night-brand-logo' })}${esc(env.BASE)}</a></header>
+<main class="night">
+<p class="night-kicker">${esc(env.BASE)}/me</p>
+<h1>Every link you shared,<br>in one place</h1>
+<p class="night-lede">From every project and Mac. See who opened them, read the comments, turn them off, from any browser.</p>
+<div class="night-act">
+${failed ? `<p class="night-failed" role="alert">${icon('warning-fill', 16)}Sign-in didn’t finish. Try again.</p>` : ''}
+<a class="night-gh" href="/auth/github?me=1">${icon('github-fill', 20)}${failed ? 'Try again with GitHub' : 'Sign in with GitHub'}</a>
+<p class="night-privacy">${icon('lock', 13)}GitHub shares only your name, login and picture. Nothing is posted.</p>
+</div>
+<div class="night-mark" aria-hidden="true"><div class="night-halo"></div>${logo({ cls: 'night-cubes' })}</div>
+</main>`
+  return shell({ title: 'Your links', body, bodyClass: 'is-night', extraCss: NIGHT_CSS })
 }
+
+const NIGHT_CSS = `html:has(body.is-night){background:#121019}
+body.is-night{position:relative;isolation:isolate;overflow-x:hidden;color:#fff;background:radial-gradient(120% 80% at 50% 120%,#4a42d4 0%,#1c1830 45%,#121019 75%) #121019}
+.night-glow{position:absolute;inset:auto 0 0 0;height:60%;z-index:-1;background:radial-gradient(50% 60% at 50% 100%,rgba(109,104,240,.35),transparent 70%)}
+.night-top{height:56px;display:flex;align-items:center;padding:0 16px}
+@media(min-width:640px){.night-top{padding:0 24px}}
+.night-brand{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;letter-spacing:-.01em;color:rgba(255,255,255,.85)}
+.night-brand:hover{color:#fff}
+.night-brand-logo{width:28px;height:28px}
+.night{flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;padding:clamp(32px,9vh,96px) 16px 0}
+.night-kicker{font-size:13px;font-weight:500;letter-spacing:.01em;color:#b9b5ff}
+.night h1{margin-top:12px;font-size:32px;line-height:1.1;font-weight:600;letter-spacing:-.03em;text-wrap:balance}
+@media(min-width:640px){.night h1{font-size:44px}}
+.night-lede{margin-top:16px;max-width:40ch;font-size:15px;line-height:1.55;color:rgba(255,255,255,.7);text-wrap:balance}
+.night-act{margin-top:32px;display:flex;flex-direction:column;align-items:center}
+.night-failed{margin-bottom:12px;display:flex;align-items:center;gap:6px;font-size:13.5px;color:#ffb4b4}
+.night-gh{display:inline-flex;align-items:center;justify-content:center;gap:10px;height:48px;padding:0 24px;border-radius:999px;background:#fff;color:#121019;font-size:15px;font-weight:600;box-shadow:0 0 0 1px rgba(255,255,255,.2),0 10px 40px -8px rgba(109,104,240,.75);transition:transform .15s,background-color .15s}
+.night-gh:hover{background:#f3f2fe}
+.night-gh:active{transform:scale(.98)}
+.night-gh:focus-visible{outline:2px solid #b9b5ff;outline-offset:3px}
+.night-privacy{margin-top:16px;max-width:34ch;font-size:12.5px;line-height:1.5;color:rgba(255,255,255,.45);text-wrap:balance}
+@media(min-width:640px){.night-privacy{max-width:none}}
+.night-privacy .i{display:inline;margin-right:4px;vertical-align:middle;transform:translateY(-1px)}
+.night-mark{position:relative;margin-top:auto;width:100%;display:flex;justify-content:center;padding-top:40px}
+.night-halo{position:absolute;bottom:8%;left:50%;height:70%;width:min(520px,90%);transform:translateX(-50%);border-radius:999px;background:rgba(109,104,240,.4);filter:blur(60px)}
+.night-cubes{position:relative;height:clamp(140px,26vh,260px);width:auto;aspect-ratio:1;margin-bottom:clamp(24px,5vh,56px);filter:drop-shadow(0 20px 50px rgba(90,83,227,.55))}
+@media(prefers-reduced-motion:reduce){.night-gh{transition:none}}`
 
 function avatarHtml(who, size, cls = '') {
   const label = esc(nameOf(who))
