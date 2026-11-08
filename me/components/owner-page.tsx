@@ -122,7 +122,7 @@ function Numbers({ l, fresh }: { l: Link; fresh: number }) {
   const d = l.daysLeft
   return (
     <div className="min-w-0 flex-1 space-y-2.5 text-[14px] leading-snug text-ink2">
-      <p><b className="font-semibold text-ink tabular-nums">{l.views}</b> views, <b className="font-semibold text-ink tabular-nums">{l.comments.total}</b> comments{fresh > 0 && <span className="text-brand">, {fresh} new</span>}.</p>
+      <p><b className="font-semibold text-ink tabular-nums">{l.views}</b> {l.views === 1 ? 'view' : 'views'}, <b className="font-semibold text-ink tabular-nums">{l.comments.total}</b> {l.comments.total === 1 ? 'comment' : 'comments'}{fresh > 0 && <span className="text-brand">, {fresh} new</span>}.</p>
       <p className="flex items-center gap-2">
         {l.now ? <><Avatar who={l.now} size={20} />{l.off ? <span>{nameOf(l.now)} looked last, just now.</span> : <span className="text-green">{nameOf(l.now)} is in it now.</span>}</>
           : l.last ? <><Avatar who={l.last} size={20} /><span>{nameOf(l.last)} looked last, {l.words.last}.</span></>

@@ -11,7 +11,7 @@ import { useDesktop } from '@/lib/media'
 
 const TEXT = 'The designs live on the Mac you shared from. Paste this into Claude Code there, then update the link.'
 
-function Command({ command }: { command: string }) {
+function Command({ command, drawer = false }: { command: string; drawer?: boolean }) {
   const { done, copy } = useCopied()
   return (
     <>
@@ -22,8 +22,8 @@ function Command({ command }: { command: string }) {
           <AnimatedIcon state={done ? 'done' : 'idle'} size={16}>{done ? <CheckIcon size={16} /> : <CopyIcon size={16} />}</AnimatedIcon>
         </button>
       </div>
-      {/* Its line is always there, so the words appearing never move the drawer. */}
-      <p className="mt-2 min-h-[18px] text-[12px] text-green" aria-live="polite">{done ? 'Copied. Paste it into Claude Code.' : ''}</p>
+      {/* In the drawer its line is always there, so the words appearing never move the drawer. */}
+      <p className={`mt-2 text-[12px] text-green ${drawer ? 'min-h-[18px]' : 'empty:hidden'}`} aria-live="polite">{done ? 'Copied. Paste it into Claude Code.' : ''}</p>
     </>
   )
 }
@@ -47,7 +47,7 @@ export function EditOnMac({ command, buttonClass }: { command: string; buttonCla
           </Popover.Positioner>
         </Popover.Portal>
       </Popover.Root>
-      {!desktop && <Sheet open={open} onOpenChange={setOpen} title="Edit on your Mac" description={TEXT}><Command command={command} /></Sheet>}
+      {!desktop && <Sheet open={open} onOpenChange={setOpen} title="Edit on your Mac" description={TEXT}><Command command={command} drawer /></Sheet>}
     </>
   )
 }

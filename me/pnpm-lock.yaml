@@ -20,6 +20,9 @@ importers:
       '@tanstack/react-query':
         specifier: 5.107.1
         version: 5.107.1(@types/react@19.3.0)(react@19.3.0)
+      get-nonce:
+        specifier: 1.0.1
+        version: 1.0.1
       motion:
         specifier: 14.10.1
         version: 14.10.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
