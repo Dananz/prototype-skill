@@ -228,9 +228,7 @@ function signedOut(env, url) {
   if (!signinReady(env)) return shell({ title: 'Your links', body: quiet('Sign-in isn\'t set up on this host', 'Your links are on prtype.dev/me.') })
   const failed = url.searchParams.has('failed')
   const body = `<div class="night-glow" aria-hidden="true"></div>
-<header class="night-top"><a class="night-brand" href="/">${logo({ cls: 'night-brand-logo' })}${esc(env.BASE)}</a></header>
 <main class="night">
-<p class="night-kicker">${esc(env.BASE)}/me</p>
 <h1>Every link you shared,<br>in one place</h1>
 <p class="night-lede">From every project and Mac. See who opened them, read the comments, turn them off, from any browser.</p>
 <div class="night-act">
@@ -246,14 +244,8 @@ ${failed ? `<p class="night-failed" role="alert">${icon('warning-fill', 16)}Sign
 const NIGHT_CSS = `html:has(body.is-night){background:#121019}
 body.is-night{position:relative;isolation:isolate;overflow-x:hidden;color:#fff;background:radial-gradient(120% 80% at 50% 120%,#4a42d4 0%,#1c1830 45%,#121019 75%) #121019}
 .night-glow{position:absolute;inset:auto 0 0 0;height:60%;z-index:-1;background:radial-gradient(50% 60% at 50% 100%,rgba(109,104,240,.35),transparent 70%)}
-.night-top{height:56px;display:flex;align-items:center;padding:0 16px}
-@media(min-width:640px){.night-top{padding:0 24px}}
-.night-brand{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;letter-spacing:-.01em;color:rgba(255,255,255,.85)}
-.night-brand:hover{color:#fff}
-.night-brand-logo{width:28px;height:28px}
-.night{flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;padding:clamp(32px,9vh,96px) 16px 0}
-.night-kicker{font-size:13px;font-weight:500;letter-spacing:.01em;color:#b9b5ff}
-.night h1{margin-top:12px;font-size:32px;line-height:1.1;font-weight:600;letter-spacing:-.03em;text-wrap:balance}
+.night{flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;padding:clamp(56px,14vh,140px) 16px 0}
+.night h1{font-size:32px;line-height:1.1;font-weight:600;letter-spacing:-.03em;text-wrap:balance}
 @media(min-width:640px){.night h1{font-size:44px}}
 .night-lede{margin-top:16px;max-width:40ch;font-size:15px;line-height:1.55;color:rgba(255,255,255,.7);text-wrap:balance}
 .night-act{margin-top:32px;display:flex;flex-direction:column;align-items:center}
