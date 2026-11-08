@@ -237,13 +237,14 @@ async function createShare(env) {
   return fail(503, 'Could not make an id. Try again.')
 }
 
-// Four queries whatever the number of shares (a Free invocation has 50 subrequests): the shares,
-// their views, their latest faces and the offers on them.
+// Five queries whatever the number of shares (a Free invocation has 50 subrequests): the shares,
+// their views, their comment counts, their latest faces and the offers on them. project: the label
+// the share was published with, so the owner's list can say where a link from elsewhere came from.
 async function listShares(env, owner) {
   const { results } = await env.DB.prepare(
-    'SELECT id, title, version, bytes, updated_at, expires_at, message, disabled_at FROM shares WHERE owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC, id',
+    'SELECT id, title, version, bytes, updated_at, expires_at, message, disabled_at, project_label FROM shares WHERE owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC, id',
   ).bind(owner.id).all()
-  const views = new Map(), faces = new Map()
+  const views = new Map(), faces = new Map(), talk = new Map()
   let offers = new Map()
   if (results.length) {
     offers = await offersOf(env, owner)
@@ -251,6 +252,11 @@ async function listShares(env, owner) {
       'SELECT v.share_id AS id, SUM(v.n) AS n FROM views v JOIN shares s ON s.id = v.share_id WHERE s.owner_id = ? AND s.deleted_at IS NULL GROUP BY v.share_id',
     ).bind(owner.id).all()
     for (const r of counted.results) views.set(r.id, Number(r.n) || 0)
+    // What the owner's tray would count: a viewer's own deleted comment is gone; a hidden one is still theirs.
+    const said = await env.DB.prepare(
+      "SELECT c.share_id AS id, COUNT(*) AS total, SUM(CASE WHEN c.status = 'new' THEN 1 ELSE 0 END) AS fresh FROM comments c JOIN shares s ON s.id = c.share_id WHERE s.owner_id = ? AND s.deleted_at IS NULL AND c.deleted = 0 GROUP BY c.share_id",
+    ).bind(owner.id).all()
+    for (const r of said.results) talk.set(r.id, { total: Number(r.total) || 0, new: Number(r.fresh) || 0 })
     const seen = await env.DB.prepare(
       `SELECT * FROM (SELECT p.share_id AS id, p.route AS route, p.at AS at, v.login AS login, v.name AS name, v.avatar AS avatar,
          ROW_NUMBER() OVER (PARTITION BY p.share_id ORDER BY p.at DESC, p.gh_id) AS k
@@ -265,6 +271,7 @@ async function listShares(env, owner) {
   return json(results.map(s => ({
     id: s.id, title: s.title, version: s.version, bytes: s.bytes, updatedAt: s.updated_at, expiresAt: s.expires_at ?? null,
     message: s.message ?? null, disabled: !!s.disabled_at, views: views.get(s.id) ?? 0, viewers: faces.get(s.id) ?? [], offers: offers.get(s.id) ?? [],
+    project: s.project_label ?? null, comments: talk.get(s.id) ?? { total: 0, new: 0 },
   })))
 }
 

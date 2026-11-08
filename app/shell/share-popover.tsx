@@ -228,6 +228,32 @@ function OtherRow({ s }: { s: ShareRow }) {
 }
 
 /**
+ * One of the owner's links from another project: where it came from, views and comments, Copy, Open
+ * and the ⋯ (Disable, Remove). No Update: its source is in that project, not this one.
+ */
+function ElsewhereRow({ s }: { s: ShareRow }) {
+  const m = useMore(s)
+  return (
+    <li ref={el => { m.box.current = el }} data-pop-elsewhere={s.id} className="rounded-xl px-2 py-1.5 hover:bg-zinc-900/[.03] dark:hover:bg-white/[.04]">
+      <div className="flex min-h-9 items-center gap-2.5">
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-1.5"><span dir="auto" className={`truncate text-[13px] font-medium ${s.disabled ? 'text-zinc-500 dark:text-zinc-400' : ''}`}>{s.title}</span><span className="shrink-0 text-[11px] text-zinc-500">v{s.version}</span>{s.disabled && <DisabledTag />}</span>
+          <span className={`flex min-w-0 items-center gap-2 ${SMALL}`}>
+            {s.views != null && <span className="inline-flex shrink-0 items-center gap-1"><Icon name="eye" className="size-3" />{s.views}</span>}
+            <span className="inline-flex shrink-0 items-center gap-1"><Icon name="chat-circle" className="size-3" />{s.comments.total}{s.comments.new > 0 && <span className="ms-0.5 rounded-full bg-sky-500/15 px-1 text-[10px] font-semibold text-sky-700 dark:text-sky-300">{tn(s.comments.new, '{n} new', '{n} new')}</span>}</span>
+            {s.project && <span data-pop-project dir="auto" className="min-w-0 truncate">{t('in {project}', { project: s.project })}</span>}
+          </span>
+        </span>
+        {s.disabled && <EnableButton m={m} />}
+        {s.link && <><CopyButton text={s.link} /><a href={s.link} target="_blank" rel="noopener noreferrer" aria-label={t('Open the link')} title={t('Open the link')} className={ICON_BTN}><Icon name="open-out" className="size-4" /></a></>}
+        <MoreButton s={s} m={m} />
+      </div>
+      <MoreStrip s={s} m={m} className="mt-1" />
+    </li>
+  )
+}
+
+/**
  * Someone's version of a link, offered back: who, what they changed, its link, Bring in (it lands nested
  * under the original, beside it in the page) and Dismiss. It is someone else's code, so it comes in only
  * from here or on the user's word.
@@ -278,6 +304,7 @@ function Home({ p, owner, onNew }: { p: PopProps; owner: Owner | undefined; onNe
   const shares = [...(listed?.shares ?? [])].sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
   const here = shares.find(s => s.scope.protos.some(x => x.id === p.proto))
   const others = shares.filter(s => s !== here)
+  const elsewhere = listed?.elsewhere ?? []
   const routeName = (r: string | null) => {
     if (!r) return t('the link')
     const [proto, v] = r.split('/'), x = p.protos.find(q => q.id === proto)
@@ -312,6 +339,13 @@ function Home({ p, owner, onNew }: { p: PopProps; owner: Owner | undefined; onNe
           <section>
             <h3 className={`${SECTION} px-2 pt-1`}>{here ? t('Your other links') : t('Your links')}</h3>
             <ul>{others.map(s => <OtherRow key={s.id} s={s} />)}</ul>
+          </section>
+        )}
+        {elsewhere.length > 0 && (
+          <section data-pop-elsewhere-list>
+            <h3 className={`${SECTION} px-2 pt-1`}>{others.length || here ? t('In your other projects') : t('Your links in other projects')}</h3>
+            <ul>{elsewhere.map(s => <ElsewhereRow key={s.id} s={s} />)}</ul>
+            <p className={`px-2 pt-1 ${SMALL}`}>{t('To change one, ask Claude in its project.')}</p>
           </section>
         )}
       </div>

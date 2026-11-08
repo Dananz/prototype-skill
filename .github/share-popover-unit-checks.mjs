@@ -15,7 +15,7 @@ import { sign } from '../host/lib/cookies.mjs'
 import { cron } from '../host/lib/cron.mjs'
 import { today } from '../host/lib/budget.mjs'
 import { startFakeGitHub, signOwnerIn, walkClaim } from './fake-github.mjs'
-import { client, forget, writeShares } from '../app/share/owner.mjs'
+import { client, forget, readShares, writeShares } from '../app/share/owner.mjs'
 import { changedVariants, hashOf, messageOf } from '../app/share/publish.mjs'
 import { shareServer } from '../app/share/routes.mjs'
 
@@ -362,6 +362,26 @@ test('the session server: owner (cached, refresh asks now), signin, and the list
   assert.deepEqual(s.viewers.map(v => [v.login, v.route, v.now]), [['ana', 'pricing/A', true], ['ben', 'pricing/A', false]])
   assert.deepEqual(s.changedVariants, [])
   assert.equal(s.changed, false)
+  assert.deepEqual(r.body.elsewhere, [], 'every link on the host is this project\'s')
+
+  // A link from another project: listed as elsewhere with where it came from and its comments,
+  // and turned off and removed from here only when the page says so.
+  const other = await api.create()
+  await api.put(other, gzipSync('<!doctype html><p>other'), { title: 'Onboarding', session: 's9', projectLabel: 'mobile-app', scope: { protos: [{ id: 'onb', variants: ['A'] }], start: 'onb/A' }, lang: 'en' })
+  env.DB.sql.prepare("INSERT INTO comments (id, share_id, link_id, viewer, verified, version, route, body, gh_id, variant, created_at, updated_at) VALUES (?, ?, '', 'gh:7', 1, 1, 'onb/A', 'nice', 7, 'onb/A', 1, 1)").run(crypto.randomUUID(), other)
+  r = await server.handle('list', {})
+  assert.deepEqual(r.body.shares.map(x => x.id), [id])
+  const e = r.body.elsewhere
+  assert.deepEqual(e.map(x => [x.id, x.title, x.project, x.elsewhere, x.changed, x.disabled]), [[other, 'Onboarding', 'mobile-app', true, false, false]])
+  assert.deepEqual(e[0].comments, { total: 1, new: 1 })
+  assert.match(e[0].link, new RegExp(other))
+  assert.equal((await server.handle('disable', { id: other, disabled: true })).status, 404, 'not this project\'s, and the page did not say elsewhere')
+  assert.equal((await server.handle('disable', { id: other, disabled: true, elsewhere: true })).status, 200)
+  assert.equal((await server.handle('list', {})).body.elsewhere[0].disabled, true)
+  assert.equal((await server.handle('disable', { id: 'not-an-id', disabled: true, elsewhere: true })).status, 404)
+  assert.equal((await server.handle('remove', { id: other, elsewhere: true })).status, 200)
+  assert.deepEqual((await server.handle('list', {})).body.elsewhere, [])
+  assert.deepEqual(readShares(dir).map(x => x.id), [id], 'this project\'s own list is untouched')
 })
 
 test('a viewer replies on the link: the reply joins the first comment\'s thread, its design and spot', async () => {
