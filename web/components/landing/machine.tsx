@@ -4,6 +4,7 @@
 // the P like magnets, and the picked one rises and drops into the purple top-right slot.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { Toggle } from '@base-ui/react/toggle'
 import { ArrowCounterClockwiseIcon, CaretRightIcon, PauseIcon, PlayIcon } from '@phosphor-icons/react'
 import { AnimatedIcon } from '@/components/animated-icon'
 import { useMounted, useReducedPref } from '@/lib/media'
@@ -325,11 +326,11 @@ export function Machine() {
             <ArrowCounterClockwiseIcon size={15} aria-hidden="true" /> {reduced ? 'Pick again' : 'Replay'}
           </motion.button>
         ) : (
-          <button type="button" disabled={reduced} onClick={() => { const m = sim.current; m.paused = !m.paused; setPaused(m.paused) }}
-            aria-label={paused ? 'Play' : 'Pause'} aria-pressed={paused}
+          <Toggle pressed={paused} disabled={reduced} onPressedChange={on => { sim.current.paused = on; setPaused(on) }}
+            aria-label={paused ? 'Play' : 'Pause'}
             className="grid size-9 shrink-0 place-items-center rounded-lg text-[#5b5870] transition-colors hover:bg-white hover:text-[#121019] focus-visible:ring-2 focus-visible:ring-[#6d68f0] focus-visible:outline-none disabled:opacity-40">
             <AnimatedIcon state={paused ? 'play' : 'pause'} size={16}>{paused ? <PlayIcon size={16} weight="fill" /> : <PauseIcon size={16} weight="fill" />}</AnimatedIcon>
-          </button>
+          </Toggle>
         )}
       </div>
 
