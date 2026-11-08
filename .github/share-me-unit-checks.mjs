@@ -146,6 +146,47 @@ test('the list covers every owners row of the GitHub account, and no one else\'s
   assert.ok(so)
 })
 
+test('/me/api/me says who is signed in and what they see, for the Next.js face', async () => {
+  const env = await hostEnv()
+  // Signed out: 401, and whether sign-in can work here.
+  let r = await call(env, '/me/api/me')
+  assert.equal(r.status, 401)
+  assert.deepEqual(await r.json(), { error: 'Sign in with GitHub first.', code: 'signin', signin: true })
+  const off = await hostEnv({ SIGNIN: '0' })
+  assert.equal((await (await call(off, '/me/api/me')).json()).signin, false)
+  // Signed in, no owners row yet: none; pending; owner; banned. Each with the host's name.
+  const ck = await meCookie(DANA.id)
+  const who = async () => { const res = await call(env, '/me/api/me', { headers: as(ck) }); assert.equal(res.status, 200); return res.json() }
+  assert.deepEqual(await who(), { login: 'x', name: null, avatar: null, state: 'none', base: 'prtype.dev', origin: 'https://prtype.dev' })
+  await addOwner(env, 'u1', { gh_id: DANA.id, login: 'dana-test', status: 'pending' })
+  assert.equal((await who()).state, 'pending')
+  env.DB.sql.prepare("UPDATE owners SET status = 'active' WHERE id = 'u1'").run()
+  const me = await who()
+  assert.equal(me.state, 'owner')
+  assert.equal(me.login, 'dana-test')
+  env.DB.sql.prepare("UPDATE owners SET status = 'banned' WHERE id = 'u1'").run()
+  assert.equal((await who()).state, 'banned')
+  // Read only.
+  assert.equal((await call(env, '/me/api/me', { method: 'POST', headers: { ...ORIGIN, cookie: ck } })).status, 405)
+})
+
+test('/me/api/shares answers each link shaped as the page shows it', async () => {
+  const env = await hostEnv()
+  const token = await addOwner(env, 'u1', { gh_id: DANA.id, login: 'dana-test' })
+  const id = await publish(env, token, 'Tiles')
+  comment(env, id, 'Option 3.', { at: Date.now() - 120_000 })
+  env.DB.sql.prepare("INSERT OR IGNORE INTO viewers (gh_id, login, name, avatar, seen_at) VALUES (8, 'eli', 'Eli', NULL, 1)").run()
+  env.DB.sql.prepare("INSERT INTO presence (share_id, gh_id, route, at) VALUES (?, 8, 'pricing/A', ?)").run(id, Date.now() - 10_000)
+  const [s] = await (await call(env, '/me/api/shares', { headers: as(await meCookie(DANA.id)) })).json()
+  assert.equal(s.off, false)
+  assert.equal(s.daysLeft, 30)
+  assert.equal(s.now.name, 'Eli', 'in it now: seen within two minutes')
+  assert.equal(s.last.name, 'Eli')
+  assert.equal(s.notes[0].ago, '2 min ago')
+  assert.equal(s.latest, s.notes[0].created_at)
+  assert.deepEqual({ ...s.words, exact: typeof s.words.exact }, { expiry: '30 days left', updated: 'just now', last: 'just now', exact: 'string' })
+})
+
 test('a change without the host\'s own Origin is a 403; on another account\'s link a 404', async () => {
   const env = await hostEnv()
   const mine = await addOwner(env, 'u1', { gh_id: DANA.id })
