@@ -72,8 +72,8 @@ export const redact = (text, secrets) => secrets.filter(Boolean).reduce((t, s) =
 
 /**
  * The online host's wrangler config. Free only: KV and D1, vars, one cron, workers.dev, logs. card:
- * the site is in front of the host (the domain stage), so its preview image (site/public/og-share.jpg)
- * is there for the short links' cards. subdomains: each share on its own origin (decision 23, the
+ * the site is in front of the host (the domain stage), so its preview image (web/public/og-share.jpg)
+ * is there for the short links' cards, and its pages for the sign-in's end (SITE_PAGES, pages.mjs). subdomains: each share on its own origin (decision 23, the
  * domain stage): path mode off and the host's one route <id>.<base>, a wildcard route on the zone
  * (Free; custom domains take no wildcard). The site Worker still reaches the host for the apex through
  * its service binding. On workers.dev there are no per-share names: path mode, no route.
@@ -89,7 +89,7 @@ export function onlineConfig({ accountId, kvId, dbId, base, signin = false, lega
     preview_urls: false,
     kv_namespaces: [{ binding: 'KV', id: kvId }],
     d1_databases: [{ binding: 'DB', database_name: WORKER, database_id: dbId, migrations_dir: join(skill, 'host', 'migrations') }],
-    vars: { BASE: base, PATH_MODE: routed ? '0' : '1', SIGNIN: signin ? '1' : '0', LEGACY: legacy, CARD: card ? '/og-share.jpg' : '', HOST_VERSION: hostVersion },
+    vars: { BASE: base, PATH_MODE: routed ? '0' : '1', SIGNIN: signin ? '1' : '0', LEGACY: legacy, CARD: card ? '/og-share.jpg' : '', SITE_PAGES: card ? '1' : '0', HOST_VERSION: hostVersion },
     ...(routed ? { routes: shareRoutes(base) } : {}),
     triggers: { crons: [CRON] },
     // Workers Logs carry each request's CPU time (Task 0 item 8); Free keeps 200,000 events a day.

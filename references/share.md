@@ -246,6 +246,16 @@ Mac's (`sent` means sent to Claude), so /me never changes it.
   3. the router: `cd site && XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home ~/.prototypes/share-tools/node_modules/.bin/wrangler deploy`.
   `proto share setup --domain prtype.dev` runs 2 and 3 when the router doesn't reach the host yet.
   No database migration is needed.
+- **The sign-in's last pages** are the Next.js app's on prtype.dev: `/done/<kind>` (`web/app/done`,
+  `web/lib/done.ts`) for signin, claimed, signedin, waiting, blocked, cancelled, claimfail, notfound and
+  error, in English or Hebrew (`?lang=he`, right to left), with the host's own status codes (the app's
+  middleware answers with them). The host draws the page as before and, on its own name with
+  `SITE_PAGES=1` (setup sets it with the domain), answers a 303 there instead, with only the GitHub
+  login and the language in the address and its cookies kept (`siteRedirect` in `host/lib/pages.mjs`).
+  The confirm page (Approve or Cancel) stays the host's: its form carries a signed token. A share's own
+  state (removed, turned off, expired) and anything on `<id>.prtype.dev` stay the host's pages too: that
+  origin never runs the app (decision 23). A host with `SITE_PAGES=1` needs the app's `/done` live:
+  deploy the app (and the router) before it.
 
 ## Viewer comments
 
