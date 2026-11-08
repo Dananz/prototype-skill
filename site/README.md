@@ -1,38 +1,20 @@
-# Prototype site
+# prtype.dev router
 
-The landing page for the Prototype skill, built with Astro. The page is static HTML; only the
-hero card, the three steps and the install tabs run as islands, on Preact with its React
-compatibility layer (the components are written as React; the browser gets Preact's 4 KB runtime).
+prtype.dev is two Workers behind this one. `worker.mjs` (the Worker `prtype-site`, which owns the
+custom domain) has no files of its own: it hands the share host's paths (`/s/…`, `/api`, `/auth/…`,
+`/_health`, `/me/api/…`, and a share's short link `/<id>`) to the share Worker (`proto-share`, bound as
+`HOST`), and everything else to the Next.js app in `../web` (`prtype-web`, bound as `WEB`): the landing
+page, its files (`og.png`, `og-share.jpg`, `favicon.svg`, `robots.txt`, `llms.txt`, `sitemap.xml`), `/me`
+and `/_next`. See `../web` for the pages and `references/share.md` for the share host.
 
-```
-pnpm install
-pnpm dev       # local dev server
-pnpm build     # type check, then static output in dist/
-pnpm preview   # serve dist/
-```
-
-The site URL is `https://prtype.dev`; set `SITE_URL` to build for another address (`SITE_URL=https://… pnpm build`).
-Canonical links, the sitemap, robots.txt and the share image's absolute URL all come from it.
-
-- `src/pages/index.astro`: the page. `src/layouts/Base.astro`: head, meta, fonts, JSON-LD.
-- `src/content.ts`: the description and the questions, shared by the page, the structured data and `llms.txt`.
-- `src/pages/robots.txt.ts`, `src/pages/llms.txt.ts`: generated at build. The sitemap comes from `@astrojs/sitemap`.
-- Static-page icons are Phosphor's SVGs from `@phosphor-icons/core` (`src/components/Icon.astro`); islands use `@phosphor-icons/react`.
-- `astro.config.mjs` bundles Phosphor and the React entries into the server render so they resolve to `preact/compat`.
-- Fonts are self-hosted through the Astro Fonts API (Fontsource), with Google Sans preloaded.
+`src/components/logo.tsx` stays here for prototypes that import the mark through
+`@project/site/src/components/logo`; the app has its own copy (`../web/components/landing/mark.tsx`).
 
 ## Deploy
 
-The site is a Cloudflare Worker (`prtype-site`, `wrangler.jsonc`) on the share host's free account: Cloudflare
-serves `dist/` as static files (free, not counted as Worker requests), and `worker.mjs` runs only for the share
-host's paths (`/s/…`, `/api`, `/auth/…`, `/_health`, `/me/api/…`, and a share's short link `/<id>`), which it
-hands to the share Worker once that is bound as `HOST`, and for `/me` and `/_next/…`, which it hands to the
-Next.js app in `../me` (its own Worker, `prtype-me`, bound as `ME`; see `references/share.md`). Deploy the share
-host first, then `../me` (`pnpm run deploy` there), then this site: a binding to a Worker that does not exist
-fails the deploy. Build, then deploy with the share tools' wrangler and its own login:
+`proto share setup --domain prtype.dev` deploys all three, in order. By hand, each with the share
+tools' wrangler login, in this order (a binding to a Worker that does not exist fails the deploy):
 
-```
-pnpm build
-XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home ~/.prototypes/share-tools/node_modules/.bin/wrangler deploy
-```
-
+1. the share host (`proto share setup`);
+2. the Next.js app: `cd ../web && pnpm install && XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home pnpm run deploy`;
+3. this router: `XDG_CONFIG_HOME=~/.prototypes/share-tools/wrangler-home ~/.prototypes/share-tools/node_modules/.bin/wrangler deploy`.

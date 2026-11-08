@@ -4,8 +4,9 @@
 // The online setup runs from any folder and is safe to run again: it looks everything up before it
 // makes it, so a re-run updates the code, applies new migrations, repairs a lost token, and on
 // another Mac adds that Mac's token. Without --domain the host answers on its workers.dev name;
-// with --domain prtype.dev it is reached through the site Worker that owns prtype.dev (site/), which
-// hands the share paths to it over a service binding (HOST). Each step prints one line.
+// with --domain prtype.dev it is reached through the router Worker that owns prtype.dev (site/), which
+// hands the share paths to it over a service binding (HOST) and everything else to the Next.js app
+// (web/, bound as WEB). Each step prints one line.
 //
 // Every account call goes through the pinned wrangler on its own login (wranglerEnv()); the few
 // REST calls wrangler has no command for use its OAuth token, held in memory only. Secrets go to
@@ -20,6 +21,8 @@ import { CRON } from '../host/lib/cron.mjs'
 import { SKILL, ensureTools, getToken, hostDir, hostHash, readHosts, saveHost, setToken, startLocal, stopLocal, wranglerEnv } from './share-host.mjs'
 
 const WORKER = 'proto-share'
+// The Next.js app in web/ (its own Worker): prtype.dev's pages, behind the router in site/.
+const WEB = 'prtype-web'
 const API = 'https://api.cloudflare.com/client/v4'
 const ID = 'k3x9p2m4q7' // an id-shaped share that doesn't exist, for checks that must not start anything
 const NONCE = 'AAAAAAAAAAAAAAAAAAAAAA'
@@ -157,14 +160,15 @@ const BOUND = new RegExp(`"services"\\s*:\\s*\\[\\s*\\{\\s*"binding"\\s*:\\s*"HO
 const PLACEHOLDER = /(\n[ \t]*"observability"\s*:\s*\{[^}]*\})\s*\n[ \t]*\/\/ Added once the share host is deployed[^\n]*\n[ \t]*\/\/ "services"[^\n]*\n/
 
 /**
- * site/wrangler.jsonc with the HOST binding to the share host in place of its placeholder comment.
- * Says whether it changed; a config with neither the binding nor the placeholder is a hand edit.
+ * site/wrangler.jsonc with the HOST binding to the share host (and WEB, the Next.js app) in place of
+ * its placeholder comment. Says whether it changed; a config with neither the binding nor the
+ * placeholder is a hand edit.
  */
 export function bindSite(file) {
   const text = readFileSync(file, 'utf8')
   if (BOUND.test(text)) return false
   if (!PLACEHOLDER.test(text)) throw new ShareError(`${file} has no HOST binding and not the line setup replaces. Add "services": [{ "binding": "HOST", "service": "${WORKER}" }] to it, then run setup again`)
-  writeFileSync(file, text.replace(PLACEHOLDER, `$1,\n  // The share host, reached for the share paths (proto share setup --domain added this).\n  "services": [{ "binding": "HOST", "service": "${WORKER}" }]\n`))
+  writeFileSync(file, text.replace(PLACEHOLDER, `$1,\n  // The share host, reached for the share paths (proto share setup --domain added this).\n  "services": [{ "binding": "HOST", "service": "${WORKER}" }, { "binding": "WEB", "service": "${WEB}" }]\n`))
   return true
 }
 
@@ -189,8 +193,14 @@ export function defaultIo(tools) {
       const r = spawnSync('gh', ['api', 'user', '--jq', '.login'], { encoding: 'utf8', timeout: 15_000 })
       return r.status === 0 ? r.stdout.trim() : ''
     },
-    build: dir => spawnSync('pnpm', ['build'], { cwd: dir, stdio: 'inherit' }).status === 0,
+    // The Next.js app: its dependencies, then OpenNext's build and deploy, with web/'s own wrangler on
+    // the share tools' login (wranglerEnv) and the account setup picked.
+    deployWeb: (dir, env) => {
+      const opts = { cwd: dir, stdio: 'inherit', env: wranglerEnv(env) }
+      return spawnSync('pnpm', ['install', '--frozen-lockfile'], opts).status === 0 && spawnSync('pnpm', ['run', 'deploy'], opts).status === 0
+    },
     siteDir: join(SKILL, 'site'),
+    webDir: join(SKILL, 'web'),
     prodVars: () => readProdVars(),
     hostVersion: hostHash(),
     // How long the checks wait: a new workers.dev name, and the first certificate on prtype.dev.
@@ -370,18 +380,19 @@ export async function setupOnline(flags, io) {
     }
   } else await upCheck(io, workersDev, null) // a legacy name: its /api answers 410, so the token is checked on the domain
 
-  // The domain: the site Worker on it hands the share paths to this one (HOST), so the site's
-  // config gains the binding and is deployed again, built fresh. The host's own route is the shares'
-  // wildcard, <id>.<domain> (onlineConfig).
+  // The domain: the router on it hands the share paths to this one (HOST) and the rest to the
+  // Next.js app (WEB), so the router's config gains the bindings, and the app then the router are
+  // deployed (a binding to a Worker that does not exist fails the deploy). The host's own route is
+  // the shares' wildcard, <id>.<domain> (onlineConfig).
   const siteConfig = join(io.siteDir, 'wrangler.jsonc')
   const edited = bindSite(siteConfig)
-  if (edited) log(`Site: ${siteConfig} binds HOST to ${WORKER} (commit that change)`)
+  if (edited) log(`Site: ${siteConfig} binds HOST to ${WORKER} and WEB to ${WEB} (commit that change)`)
   const before = await probe(io, `https://${domain}/_health`)
   if (edited || !(before?.status === 200 && before.headers.get('x-proto-host'))) {
-    log('Site: building')
-    if (!io.build(io.siteDir)) throw new ShareError(`Building the site in ${io.siteDir} failed (see above)`)
-    must(run(['deploy', '-c', siteConfig], { cwd: io.siteDir }), 'Deploying the site')
-    log('Site: deployed with the HOST binding')
+    log(`Site: building and deploying ${WEB} (${io.webDir})`)
+    if (!io.deployWeb(io.webDir, env)) throw new ShareError(`Deploying the Next.js app in ${io.webDir} failed (see above)`)
+    must(run(['deploy', '-c', siteConfig], { cwd: io.siteDir }), 'Deploying the router')
+    log('Site: deployed, the router with the HOST and WEB bindings')
   } else log('Site: already hands the share paths to the host')
   await reaches(io, domain)
   if (!onDomain) {

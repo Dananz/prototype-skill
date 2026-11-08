@@ -1,7 +1,7 @@
 // prtype.dev/me: the signed-in owner's links, from every project and every Mac, and what they can do
 // with each (copy, open, edit on the Mac, the message for viewers, comments, turn off, remove). One
 // server-rendered page with a small inline script (the fallback on hosts with no Next.js face, as on
-// this Mac; prtype.dev serves me/ instead), and /me/api, a thin face over the owner API's own
+// this Mac; prtype.dev serves web/ instead), and /me/api, a thin face over the owner API's own
 // logic, authenticated by a cookie instead of a token. The cookie names a GitHub account; the page
 // covers every owners row with that gh_id that is active, and every change checks the link is one of
 // theirs. Signed in only through GitHub (github.mjs, kind 'me'). English only.
@@ -78,7 +78,7 @@ async function meApi(req, env, url, parts) {
     return json({ ok: true }, 200, { 'set-cookie': signOutCookie(url) })
   }
   const me = await meOf(req, env, url)
-  // The Next.js face (me/, its own Worker) asks who this is before it picks a page: signin says
+  // The Next.js face (web/, its own Worker) asks who this is before it picks a page: signin says
   // whether "Sign in with GitHub" can work on this host at all.
   if (!me) return fail(401, 'Sign in with GitHub first.', { code: 'signin', signin: signinReady(env) })
   if (parts.length === 1 && parts[0] === 'me') {

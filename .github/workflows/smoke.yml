@@ -54,24 +54,24 @@ jobs:
       - name: CLI starts
         run: node scripts/proto.mjs stack --project .
 
-  me:
-    # prtype.dev/me, the Next.js app in me/: its own job, as its install and build take longer than the
+  web:
+    # prtype.dev (the landing and /me), the Next.js app in web/: its own job, as its install and build take longer than the
     # quick checks' two minutes.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
       run:
-        working-directory: me
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          package_json_file: me/package.json
+          package_json_file: web/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: me/pnpm-lock.yaml
+          cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
