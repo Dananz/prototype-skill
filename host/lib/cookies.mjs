@@ -70,3 +70,12 @@ export function stateCookie(url) {
   const secure = url.protocol === 'https:'
   return { name: secure ? '__Host-gh' : 'gh', path: secure ? '/' : '/auth/github', secure }
 }
+
+// prtype.dev/me's sign-in: who the GitHub account is, signed with its own purpose ('me'), so it is
+// never a viewer cookie, a ticket or a state. __Host- over https, so a share on <id>.<base> can
+// neither set nor overwrite it; plain `o` on http://localhost, where Safari refuses Secure.
+export const ME_DAYS = 14
+export function meCookie(url) {
+  const secure = url.protocol === 'https:'
+  return { name: secure ? '__Host-o' : 'o', path: '/', secure }
+}

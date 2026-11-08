@@ -6,7 +6,7 @@ import { isId } from './ids.mjs'
 import { namesOf } from './routes.mjs'
 import { confirmPage, page } from './pages.mjs'
 import { redirect } from './http.mjs'
-import { b64url, cookie, nonceCookie, readCookies, sign, stateCookie, verify, viewerCookie } from './cookies.mjs'
+import { ME_DAYS, b64url, cookie, meCookie, nonceCookie, readCookies, sign, stateCookie, verify, viewerCookie } from './cookies.mjs'
 
 const UA = 'proto-share'
 const STATE_MS = 10 * 60_000
@@ -112,14 +112,16 @@ async function signinStart(env, url, code) {
   return toGitHub(env, url, { signin: code })
 }
 
-/** GET <apex>/auth/github?share=<id>&back=<path>&nonce=<from /_in/start>[&via=<host>], ?claim=<signed> or ?signin=<code> */
+/** GET <apex>/auth/github?share=<id>&back=<path>&nonce=<from /_in/start>[&via=<host>], ?claim=<signed>, ?signin=<code> or ?me=1 */
 export async function authStart(env, url) {
   if (!signinReady(env)) return page('signin', {})
   const q = url.searchParams
-  for (const kind of ['claim', 'signin']) {
+  for (const kind of ['claim', 'signin', 'me']) {
     if (!q.has(kind)) continue
     // The claim and sign-in links are made on BASE; on the other loopback name they go there as they are.
     if (url.host.toLowerCase() !== env.BASE.toLowerCase()) return redirect(`${url.protocol}//${env.BASE}/auth/github?${kind}=${encodeURIComponent(q.get(kind))}`)
+    // prtype.dev/me: any GitHub account may sign in; /me then shows the links of the owners it is.
+    if (kind === 'me') return toGitHub(env, url, { me: 1 })
     return kind === 'claim' ? claimStart(env, url, q.get('claim')) : signinStart(env, url, q.get('signin'))
   }
   if (!NONCE.test(q.get('nonce') || '')) return page('signin', {})
@@ -175,7 +177,11 @@ export async function authCallback(req, env, url) {
   if (!st || typeof st.n !== 'string' || q.get('state') !== st.n) return bad()
   const claim = typeof st.claim === 'string' ? st.claim : null
   const signin = typeof st.signin === 'string' ? st.signin : null
+  const me = st.me === 1
   if (claim || signin) bad = () => failed('claimfail')
+  // prtype.dev/me: declined or failed, back to its signed-out page, which offers the sign-in again.
+  if (me) bad = () => redirect(`${url.origin}/me?failed=1`, [clear])
+  if (me && (q.get('error') || !q.get('code'))) return redirect(`${url.origin}/me`, [clear])
   // Declined on GitHub: back to the link, still signed out (the owner's claim and sign-in have no
   // link: their page).
   if (q.get('error') || !q.get('code')) return claim || signin ? bad() : redirect(st.origin + st.back, [clear])
@@ -200,6 +206,11 @@ export async function authCallback(req, env, url) {
   if (!user) return bad()
   const now = Date.now()
   if (claim) return claimed(env, st, user, now, clear)
+  if (me) {
+    const mc = meCookie(url)
+    const value = await sign(env.VIEWER_KEY, 'me', { gh: user.gh_id, l: user.login, exp: now + ME_DAYS * 86_400_000 })
+    return redirect(`${url.origin}/me`, [clear, cookie(mc.name, value, { path: mc.path, maxAge: ME_DAYS * 86_400, secure: mc.secure })])
+  }
   // The access token is used here for the org check at most, and dropped with this request.
   if (signin) return confirmSignin(env, url, signin, user, () => admits(env, raw, user, access), now, clear)
   await env.DB.prepare(

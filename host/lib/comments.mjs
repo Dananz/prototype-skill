@@ -19,9 +19,12 @@ const COMMENT_ROWS = 10
 const ORDER = ['new', 'sent', 'working', 'done']
 
 const VIEW = `SELECT c.*, v.login AS login, v.name AS vname, v.avatar AS avatar FROM comments c LEFT JOIN viewers v ON v.gh_id = c.gh_id`
-const OWNED = `SELECT c.*, s.title AS share_title, s.version AS share_version, v.login AS login, v.name AS vname, v.avatar AS avatar
+// The comments on the shares of these owners (one owners row for a token; every row of a GitHub
+// account for prtype.dev/me). Bind the ids first.
+const OWNED_OF = ids => `SELECT c.*, s.title AS share_title, s.version AS share_version, v.login AS login, v.name AS vname, v.avatar AS avatar
   FROM comments c JOIN shares s ON s.id = c.share_id LEFT JOIN viewers v ON v.gh_id = c.gh_id
-  WHERE s.owner_id = ? AND s.deleted_at IS NULL AND c.gh_id IS NOT NULL`
+  WHERE s.owner_id IN (${ids.map(() => '?').join(', ')}) AND s.deleted_at IS NULL AND c.gh_id IS NOT NULL`
+const OWNED = OWNED_OF(['one'])
 
 const parse = s => { try { return s ? JSON.parse(s) : null } catch { return null } }
 
@@ -44,7 +47,7 @@ const ownerShape = c => ({
 
 // The share's variants as `slug/LETTER`. The scope is parseScope's { protos: [{ id, variants }] };
 // the older list form [{ proto, variants }] is read too.
-function sharedVariants(scope) {
+export function sharedVariants(scope) {
   const out = new Set()
   const s = parse(scope)
   const protos = Array.isArray(s) ? s.map(p => ({ id: p?.proto, variants: p?.variants })) : s?.protos
@@ -280,10 +283,28 @@ export async function ownerComments(req, env, owner, url, id) {
     return json({ comments: results.map(ownerShape), now })
   }
   if (req.method !== 'PATCH') return fail(405, 'Method not allowed.', { code: 'method' })
-  return patchComment(req, env, owner, id.toLowerCase())
+  return patchComment(req, env, [owner.id], id.toLowerCase())
 }
 
-async function patchComment(req, env, owner, id) {
+/**
+ * The latest `per` comments on each of these owners' shares, newest first, for prtype.dev/me: what
+ * the owner tray shows, without the ones their authors deleted or took off the link. One query.
+ */
+export async function latestComments(env, ids, per = 10) {
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM (SELECT x.*, ROW_NUMBER() OVER (PARTITION BY x.share_id ORDER BY x.created_at DESC, x.id) AS k
+       FROM (${OWNED_OF(ids)} AND c.deleted = 0 AND c.withdrawn = 0) x) WHERE k <= ? ORDER BY share_id, k`,
+  ).bind(...ids, per).all()
+  const by = new Map()
+  for (const c of results) {
+    if (!by.has(c.share_id)) by.set(c.share_id, [])
+    by.get(c.share_id).push(ownerShape(c))
+  }
+  return by
+}
+
+/** PATCH one comment of these owners' shares: status, reply, hidden. */
+export async function patchComment(req, env, ids, id) {
   const b = await bodyOf(req)
   if (b instanceof Response) return b
   const has = k => Object.hasOwn(b, k)
@@ -295,7 +316,7 @@ async function patchComment(req, env, owner, id) {
   if (has('share') && !isId(b.share)) return invalid('share is a share id.')
   if (!UUID.test(id)) return fail(404, 'No such comment.', { code: 'no_comment' })
   // Comment ids are the viewers' UUIDs, unique per share; `share` settles the (unlikely) clash.
-  const found = (await env.DB.prepare(`${OWNED} AND c.id = ?${has('share') ? ' AND c.share_id = ?' : ''} LIMIT 2`).bind(owner.id, id, ...(has('share') ? [b.share] : [])).all()).results
+  const found = (await env.DB.prepare(`${OWNED_OF(ids)} AND c.id = ?${has('share') ? ' AND c.share_id = ?' : ''} LIMIT 2`).bind(...ids, id, ...(has('share') ? [b.share] : [])).all()).results
   if (!found.length) return fail(404, 'No such comment.', { code: 'no_comment' })
   if (found.length > 1) return fail(409, 'Two of your shares have a comment with this id. Pass share.', { code: 'ambiguous' })
   const c = found[0]
@@ -329,6 +350,6 @@ async function patchComment(req, env, owner, id) {
     await env.DB.prepare('UPDATE comments SET owner_reply = ?, owner_reply_at = ?, updated_at = ? WHERE share_id = ? AND id = ?').bind(text, text ? now : null, now, ...key).run()
   }
   if (has('hidden')) await env.DB.prepare('UPDATE comments SET hidden = ?, updated_at = ? WHERE share_id = ? AND id = ?').bind(b.hidden ? 1 : 0, now, ...key).run()
-  const row = await env.DB.prepare(`${OWNED} AND c.share_id = ? AND c.id = ?`).bind(owner.id, ...key).first()
+  const row = await env.DB.prepare(`${OWNED_OF(ids)} AND c.share_id = ? AND c.id = ?`).bind(...ids, ...key).first()
   return json(ownerShape(row))
 }
