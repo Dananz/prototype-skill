@@ -81,8 +81,6 @@ function RowSketch() {
 }
 
 // Each step fades in a little after the one before, and the line under its number draws down after it.
-const STEP_DELAY = ['[animation-delay:60ms]', '[animation-delay:170ms]', '[animation-delay:280ms]']
-const RAIL_DELAY = ['[animation-delay:120ms]', '[animation-delay:230ms]']
 
 export function FirstLink({ base }: { base: string }) {
   const { done, copy } = useCopied()
@@ -111,8 +109,8 @@ export function FirstLink({ base }: { base: string }) {
 
         <ol className="relative mt-8">
           {steps.map((s, i) => (
-            <li key={s.title} className={`fl-step relative flex gap-4 pb-8 last:pb-0 sm:gap-5 ${STEP_DELAY[i]}`}>
-              {i < steps.length - 1 && <span aria-hidden="true" className={`fl-rail absolute start-[15.5px] top-8 bottom-0 w-px bg-[#dcd9f7] ${RAIL_DELAY[i]}`} />}
+            <li key={s.title} className="fl-step relative flex gap-4 pb-8 last:pb-0 sm:gap-5">
+              {i < steps.length - 1 && <span aria-hidden="true" className="fl-rail absolute start-[15.5px] top-8 bottom-0 w-px bg-[#dcd9f7]" />}
               <span aria-hidden="true" className="relative z-10 grid size-8 shrink-0 place-items-center rounded-full border border-line bg-white text-[13.5px] font-semibold text-ink2">{i + 1}</span>
               <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
                 <div className="min-w-0 flex-1 pt-1">
