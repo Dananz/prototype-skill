@@ -3,8 +3,8 @@
 // UI popover below its button on a desktop, a drawer on a phone; one trigger, one open state.
 import { useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
-import { CheckIcon, CopyIcon, TerminalWindowIcon } from '@phosphor-icons/react'
-import { AnimatedIcon } from './animated-icon'
+import { TerminalWindowIcon } from '@phosphor-icons/react'
+import { CommandLine } from './command-line'
 import { Sheet } from './sheet'
 import { useCopied } from '@/lib/copy'
 import { useDesktop } from '@/lib/media'
@@ -15,13 +15,7 @@ function Command({ command, drawer = false }: { command: string; drawer?: boolea
   const { done, copy } = useCopied()
   return (
     <>
-      <div className="mt-3 flex items-center gap-1 rounded-xl bg-tint py-1 ps-3 pe-1">
-        <code className="min-w-0 flex-1 py-1.5 text-[12.5px] leading-snug break-all">{command}</code>
-        <button type="button" onClick={() => copy('cmd', command)} aria-label={done ? 'Copied' : 'Copy the command'} title="Copy the command"
-          className="grid size-8 shrink-0 place-items-center rounded-lg text-ink2 hover:bg-white hover:text-ink max-md:size-11">
-          <AnimatedIcon state={done ? 'done' : 'idle'} size={16}>{done ? <CheckIcon size={16} /> : <CopyIcon size={16} />}</AnimatedIcon>
-        </button>
-      </div>
+      <CommandLine command={command} copied={!!done} onCopy={() => copy('cmd', command)} className="mt-3" />
       {/* In the drawer its line is always there, so the words appearing never move the drawer. */}
       <p className={`mt-2 text-[12px] text-green ${drawer ? 'min-h-[18px]' : 'empty:hidden'}`} aria-live="polite">{done ? 'Copied. Paste it into Claude Code.' : ''}</p>
     </>
