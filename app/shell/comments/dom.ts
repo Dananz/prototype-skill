@@ -70,12 +70,17 @@ const cut = (a: Box, b: Box): Box | null => {
 }
 
 /**
- * Cut to the visible scroll viewports, not the mount's layout height. A desktop mount can
- * overflow into its parent's scroller; its own one-screen box then scrolls out of view while
- * the rest of the design is still visible. Phone mounts clip their own scrolling content.
+ * Keep the design's own clipping, and hide targets outside the visible scroll viewports.
+ * Shell viewport edges only decide visibility: a partially visible target keeps its outline
+ * dimensions instead of gaining a false edge at the sidebar. The mount's layout height is
+ * not a viewport: desktop content can overflow it into the parent's scroller.
  */
 export function seen(el: Element, mount: Element, host: Element): Box | null {
-  let b: Box | null = cut(rel(el, host), { x: 0, y: 0, w: host.clientWidth, h: host.clientHeight })
+  let b: Box | null = rel(el, host)
+  let outline: Box | null = null
+  // Shell edges decide visibility, but must not become an element's outline edge.
+  // Keep the box clipped by the design itself before crossing into shell ancestors.
+  if (el === mount) outline = b
   for (let p = el.parentElement; b && p; p = p.parentElement) {
     const cs = p.ownerDocument.defaultView!.getComputedStyle(p), r = rel(p, host)
     const clipX = cs.overflowX !== 'visible', clipY = cs.overflowY !== 'visible'
@@ -83,9 +88,12 @@ export function seen(el: Element, mount: Element, host: Element): Box | null {
       x: clipX ? r.x : b.x, y: clipY ? r.y : b.y,
       w: clipX ? r.w : b.w, h: clipY ? r.h : b.h,
     })
+    if (p === mount) outline = b
   }
+  b = b && cut(b, { x: 0, y: 0, w: host.clientWidth, h: host.clientHeight })
   const f = frameShown(mount, host)
-  return b && f ? cut(b, f) : b
+  if (b && f) b = cut(b, f)
+  return b ? outline ?? b : null
 }
 
 /** From the mount down, one `tag:nth-child(n)` per level. */
