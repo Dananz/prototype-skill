@@ -697,6 +697,34 @@ function localStub(text) {
 // What one line of a direction's plan holds (.proto/briefs/<slug>.json), shown on its placeholder.
 const PLAN_KEYS = ['name', 'concept', 'display', 'body', 'surface', 'ink', 'accent', 'signature']
 
+// The first hex color in a plan's color field ("#EFE6D8 warm sand" too) as hue (0-360), saturation
+// and lightness (0-1), or null.
+function hsl(value) {
+  const m = String(value ?? '').match(/#([0-9a-f]{6}|[0-9a-f]{3})(?![0-9a-f])/i)
+  if (!m) return null
+  const h6 = m[1].length === 3 ? [...m[1]].map(c => c + c).join('') : m[1]
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(h6.slice(i, i + 2), 16) / 255)
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min
+  if (!d) return { h: 0, s: 0, l }
+  const sat = d / (1 - Math.abs(2 * l - 1))
+  const hue = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+  return { h: hue * 60, s: sat, l }
+}
+// Which stock palette a surface and accent are, in words, or ''. Cream: a warm off-white with a
+// red-orange accent (terracotta, clay, tomato). Near-black: a dark surface with little color in it
+// and one bright, saturated accent (acid green, lime, signage yellow, vermilion). A dark surface
+// with a hue of its own (oxblood, navy) is not near-black.
+const hexOf = v => String(v).match(/#[0-9a-f]{3,6}/i)?.[0]
+export function stockPalette(surface, accent) {
+  const s = hsl(surface), a = hsl(accent)
+  if (!s || !a) return ''
+  if (s.l >= 0.86 && s.h >= 20 && s.h <= 60 && s.s >= 0.12 && (a.h <= 35 || a.h >= 345) && a.s >= 0.45 && a.l >= 0.3 && a.l <= 0.7)
+    return `cream ${hexOf(surface)} with a clay accent ${hexOf(accent)}`
+  if (s.l <= 0.12 && (s.s <= 0.35 || s.l <= 0.06) && a.s >= 0.6 && a.l >= 0.45 && a.l <= 0.8)
+    return `near-black ${hexOf(surface)} with one bright accent ${hexOf(accent)}`
+  return ''
+}
+
 // The one-line plans are written: each variant still on its placeholder shows its own (name, concept,
 // display face, colors) until its first real write. A variant already written is left alone.
 function plan() {
@@ -727,6 +755,12 @@ function plan() {
     return [id, d.family, !f ? 'no display face' : brand.has(f) ? '' : never.get(f) || (!ok.size || ok.has(f) ? '' : `not a ${d.script} title face in the catalog`)]
   }).filter(([, , why]) => why)
   if (banned.length) die(`not a title face: ${banned.map(([id, f, why]) => `${id} ${f || '?'} (${why})`).join(', ')}. Title faces come from \`proto fonts\` (references/fonts.json), or the brand's own faces in "brandFonts". Choose another for ${banned.map(([id]) => id).join(', ')}.`)
+  // The two palettes generated pages land on whatever the subject (craft.md, section 3): a warm
+  // cream surface with a clay or tomato accent, and a near-black surface with one bright accent.
+  // Words in craft.md didn't keep a smaller model off them; a refusal here does, as it does for
+  // fonts. A direction the brief asks for one of them says so in "defaultWhy".
+  const stock = directions.map(([id, d]) => [id, d.defaultWhy ? '' : stockPalette(d.surface, d.accent)]).filter(([, why]) => why)
+  if (stock.length) die(`a default palette: ${stock.map(([id, why]) => `${id} (${why})`).join(', ')}. These are the looks generated pages land on whatever the subject (references/craft.md, section 3). Take ${stock.map(([id]) => id).join(', ')}'s surface or accent from the subject's world instead, or, when the brief itself asks for this look, say so in that direction's "defaultWhy".`)
   const kit = STACKS[s.stack]
   const card = readFileSync(join(APP, 'stubs', kit.plan), 'utf8')
   const shown = []

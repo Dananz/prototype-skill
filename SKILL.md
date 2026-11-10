@@ -379,7 +379,10 @@ about half a minute, so the order is:
    `{ "facts": "…", "script": "hebrew", "brand": "…", "brandFonts": […], "directions": { "A": {
    "name", "concept", "display", "body", "surface", "ink", "accent", "signature" } } }` (display
    and body are `font()` specs; `script` is the product's writing system, `latin`, `hebrew` or
-   `arabic`; `brand` and `brandFonts` only when a brand exists, see above). Check the lines against
+   `arabic`; `brand` and `brandFonts` only when a brand exists, see above). `proto plan` refuses a
+title face outside the catalog and the two stock palettes, a cream surface with a clay accent and a
+near-black one with a single bright accent, unless that direction's `"defaultWhy"` says the brief
+asks for it. Check the lines against
    the defaults craft.md lists and against each other (no shared font family, surface, signature
    or main-action pattern). `proto plan` turns each placeholder into its line, in its own face and
    colors, so the page shows every direction's look within seconds. This is the only planning

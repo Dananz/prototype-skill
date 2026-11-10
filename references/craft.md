@@ -60,10 +60,15 @@ large and sparingly; the body face is plain and easy to read. Two faces is usual
 true about the content, not decorate it. Numbered markers (01 / 02 / 03) belong only on a real
 sequence, where order carries information the reader needs.
 
-**Motion, deliberately.** Think about where and if animation serves the subject: a page-load
-sequence, a scroll-triggered reveal, hover micro-interactions, ambient atmosphere. An
-orchestrated moment usually lands harder than scattered effects. Sometimes less is more: extra
-animation adds to the feeling that a design is AI-generated.
+**Motion answers people.** Motion that answers a person's action (opening, expanding,
+confirming) is welcome when it shows what changed. Motion nobody triggered is rare and only
+draws attention: one orchestrated moment, one page-load sequence or one reveal, lands better
+than scattered effects, and a fade-and-slide-up on each section with a hover transition on every
+card is the generic default that reads as AI-generated.
+
+**Type tells.** The commonest tells of a generated page are in its type: one word or phrase of a
+headline set apart in italic, bold or another color; labels in all caps; and labels above content
+that say nothing the content doesn't. Body text runs under 80 characters a line.
 
 **Match complexity to the vision.** Maximalist directions need elaborate execution; minimal
 directions need precision in spacing, type and detail. Elegance is executing the chosen vision
@@ -83,15 +88,29 @@ free, don't spend that freedom on a default:
   Grotesk, Fraunces and Instrument Serif as the "interesting" picks; one family at one weight for
   everything; the same few faces in every direction and every session.
 - **Color:** a warm cream background (near `#F4F1EA`) with a high-contrast serif and a terracotta
-  accent; a near-black background with a single bright acid-green or vermilion accent; a purple
+  or warm-clay accent (near `#D97757`, Anthropic's own Claude accent, a tell on anyone else's brief); a near-black background with a single bright acid-green or vermilion accent; a purple
   or blue-violet gradient on white; every color used evenly so nothing leads.
 - **Layout:** a broadsheet with hairline rules, zero radius and dense newspaper columns; the SaaS
-  card kit (three icon cards in a row, a big number with a small label); a centred hero with two
+  card kit (content chopped into identical rounded cards, three icon cards in a row, a big number
+  with a small label, one radius on everything whatever its rank, the same soft grey shadow
+  under each, gradient washes as decoration); a centred hero with two
   buttons over a gradient blob; cards with a colored left border; the same sticky bottom bar in
   every direction.
 - **Details:** a tracked all-caps eyebrow over every heading; `→` appended to every link and
-  button; emoji as icons; glass on every surface; a shadow and a hover lift on every card.
+  button; meta strings joined with middle dots (`A · B · C`); labels built as `WORD — fragment`
+  with a spaced em dash; a monospace face on every small label (a utility mono belongs on numbers
+  in tables, timers and code); emoji as icons; glass on every surface; a shadow and a hover lift
+  on every card.
 - **Motion:** a fade-and-slide-up on every section and a hover transition on every card.
+
+These are calibration, not a direction. A page that only steers around them is safe, and safe
+is a default of its own. The palettes are defaults whatever the type: a cream or near-black page
+with a single warm or bright accent is the same look with a sans as with a serif. Choose each
+direction's one real risk from the subject's world first (its artifact, its material, its odd
+detail), then check it against this list; a direction that avoids every item and has nothing
+bold of its own is not done. `proto plan` refuses the two stock palettes (a cream surface with a clay
+accent, a near-black one with a single bright accent) unless the direction's `defaultWhy` says the
+brief asks for it.
 
 Work in two passes. The direction's one-line plan (with the shared facts, in
 `.proto/briefs/<slug>.json`) is enough for its hero, so the hero goes on screen first. Then
@@ -103,7 +122,8 @@ Concept:   one line, what it is and why it fits this subject
 Palette:   4-6 named hex values by role: surface, ink, muted, accent (+ one support)
 Type:      display (characterful, used with restraint), body (complementary), utility for
            numbers if needed, as font('…') specs (section 5); the scale and weights
-Layout:    one sentence, plus an ASCII wireframe of the screen at rest
+Layout:    one sentence, its alignment (left, centred or justified), plus an ASCII wireframe
+           of the screen at rest
 Pattern:   how the main action works (a sticky bar, a form in the hero, a picker, a drawer)
 Signature: the single element this direction will be remembered by
 Imagery:   what fills the visual space (photo, generated image, drawn shapes, data, none)
@@ -121,7 +141,7 @@ deriving every color and type decision from it, and bring the hero in line if th
 Spend your boldness in one place. Let the signature be the one memorable thing, keep everything
 around it quiet and disciplined, and cut any decoration that does not serve the brief. **Not
 taking a risk can be a risk itself.** Build to a quality floor without announcing it: responsive
-down to mobile, visible keyboard focus, reduced motion respected. Critique your own work as you
+down to mobile, visible keyboard focus, reduced motion respected, a harmonious palette. Critique your own work as you
 build, from screenshots (section 9). Consider Chanel's advice: before leaving the house, look in
 the mirror and remove one accessory.
 
@@ -182,6 +202,8 @@ is what gets picked. And the house rules of the tooling:
   Libre). Novelty and handwriting faces only where the concept is about them.
 - The RTL rules in references/rtl.md (no letter-spacing, no italics, no uppercase) still hold.
 
+A tight title still leaves air between its lines: with a heavy or condensed face (Anton, Big
+Shoulders), ascenders and descenders of one line never touch the next; look for it in the shot.
 Then the mechanics: display at least 2.5 to 3 times the body size, or a clear weight jump; a
 scale of four or five steps, used consistently; `tabular-nums` for prices, tables and timers;
 each color with a role, the accent rare; text on any surface at WCAG AA.
@@ -237,7 +259,8 @@ and fix every no:
 1. Is the signature visible at first glance, on desktop and phone?
 2. Is the hero a thesis: the most characteristic thing in the subject's world, not a template?
    And is the main action obvious in a glance, done in a couple of taps with familiar controls?
-3. Is the type itself part of the look, display and body clearly apart?
+3. Is the type itself part of the look, display and body clearly apart? No word of a headline set
+   apart, no all-caps labels, body lines under 80 characters?
 4. Is the accent rare, and does each color have a role?
 5. Which default in section 3 is it closest to? If a similar brief would get the same screen, it
    isn't done. Where is its one real risk?

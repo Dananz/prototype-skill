@@ -373,6 +373,12 @@ try {
   const settle = sessionId => send('Runtime.evaluate', { awaitPromise: true, expression: `(async () => {
     const frame = () => new Promise(r => requestAnimationFrame(r)), end = performance.now() + 400
     await new Promise(r => setTimeout(r, 200))
+    // A design's font() adds a Google Fonts stylesheet when its module runs. document.fonts.ready
+    // resolves at once while that stylesheet is still on its way (no face is loading yet), so a
+    // busy network shot the page in the fallback serif: wait for the sheets, then the faces.
+    await Promise.all([...document.querySelectorAll('link[rel=stylesheet]')].map(l => l.sheet ? 0 : new Promise(r => { l.addEventListener('load', r, { once: true }); l.addEventListener('error', r, { once: true }); setTimeout(r, 4000) })))
+    await frame()
+    await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 4000))])
     while (performance.now() < end) {
       const moving = document.getAnimations().some(a => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity)
       if (!moving && [...document.images].every(i => i.complete)) break
