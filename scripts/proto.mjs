@@ -697,9 +697,10 @@ function localStub(text) {
 // What one line of a direction's plan holds (.proto/briefs/<slug>.json), shown on its placeholder.
 const PLAN_KEYS = ['name', 'concept', 'display', 'body', 'surface', 'ink', 'accent', 'signature']
 
-// A hex color as hue (0-360), saturation and lightness (0-1), or null.
-function hsl(hex) {
-  const m = String(hex ?? '').trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i)
+// The first hex color in a plan's color field ("#EFE6D8 warm sand" too) as hue (0-360), saturation
+// and lightness (0-1), or null.
+function hsl(value) {
+  const m = String(value ?? '').match(/#([0-9a-f]{6}|[0-9a-f]{3})(?![0-9a-f])/i)
   if (!m) return null
   const h6 = m[1].length === 3 ? [...m[1]].map(c => c + c).join('') : m[1]
   const [r, g, b] = [0, 2, 4].map(i => parseInt(h6.slice(i, i + 2), 16) / 255)
@@ -713,13 +714,14 @@ function hsl(hex) {
 // red-orange accent (terracotta, clay, tomato). Near-black: a dark surface with little color in it
 // and one bright, saturated accent (acid green, lime, signage yellow, vermilion). A dark surface
 // with a hue of its own (oxblood, navy) is not near-black.
+const hexOf = v => String(v).match(/#[0-9a-f]{3,6}/i)?.[0]
 export function stockPalette(surface, accent) {
   const s = hsl(surface), a = hsl(accent)
   if (!s || !a) return ''
   if (s.l >= 0.86 && s.h >= 20 && s.h <= 60 && s.s >= 0.12 && (a.h <= 35 || a.h >= 345) && a.s >= 0.45 && a.l >= 0.3 && a.l <= 0.7)
-    return `cream ${surface} with a clay accent ${accent}`
+    return `cream ${hexOf(surface)} with a clay accent ${hexOf(accent)}`
   if (s.l <= 0.12 && (s.s <= 0.35 || s.l <= 0.06) && a.s >= 0.6 && a.l >= 0.45 && a.l <= 0.8)
-    return `near-black ${surface} with one bright accent ${accent}`
+    return `near-black ${hexOf(surface)} with one bright accent ${hexOf(accent)}`
   return ''
 }
 
