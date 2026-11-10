@@ -202,6 +202,8 @@ is what gets picked. And the house rules of the tooling:
   Libre). Novelty and handwriting faces only where the concept is about them.
 - The RTL rules in references/rtl.md (no letter-spacing, no italics, no uppercase) still hold.
 
+A tight title still leaves air between its lines: with a heavy or condensed face (Anton, Big
+Shoulders), ascenders and descenders of one line never touch the next; look for it in the shot.
 Then the mechanics: display at least 2.5 to 3 times the body size, or a clear weight jump; a
 scale of four or five steps, used consistently; `tabular-nums` for prices, tables and timers;
 each color with a role, the accent rare; text on any surface at WCAG AA.
