@@ -154,7 +154,10 @@ is what gets picked. And the house rules of the tooling:
 - **Quiet utility chrome:** share, clear, settings and locale are 32-36 px icon buttons or text
   links, never pill buttons that compete with the primary action.
 - **Plain words on things you can touch** over raw numbers; exact values behind a toggle.
-- **Icons** from Phosphor (installed), one weight per design. Never an emoji or a text glyph.
+- **Icons** only from icon library packages: use Phosphor (installed), one weight per design.
+  Never use text characters, Unicode symbols, emoji, or dingbats as icons, including arrows,
+  chevrons, stars and checkmarks. Ordinary keyboard punctuation in text (such as exclamation
+  marks and question marks) is allowed.
 - **Drawers, dialogs, popovers** from Base UI (installed), with a `container` in the variant.
 - **Tailwind classes** for styling; inline styles only for computed values.
 
