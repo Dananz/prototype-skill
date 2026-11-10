@@ -108,7 +108,9 @@ is a default of its own. The palettes are defaults whatever the type: a cream or
 with a single warm or bright accent is the same look with a sans as with a serif. Choose each
 direction's one real risk from the subject's world first (its artifact, its material, its odd
 detail), then check it against this list; a direction that avoids every item and has nothing
-bold of its own is not done.
+bold of its own is not done. `proto plan` refuses the two stock palettes (a cream surface with a clay
+accent, a near-black one with a single bright accent) unless the direction's `defaultWhy` says the
+brief asks for it.
 
 Work in two passes. The direction's one-line plan (with the shared facts, in
 `.proto/briefs/<slug>.json`) is enough for its hero, so the hero goes on screen first. Then
