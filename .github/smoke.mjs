@@ -422,6 +422,13 @@ if (process.argv.includes('--comment-tweaks-only')) {
   console.log('OK: focused comment tweaks checks')
   process.exit(0)
 }
+if (process.argv.includes('--comment-scroll-only')) {
+  await commentScrollChecks({ proto, app, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused comment scrolling and edge checks')
+  process.exit(0)
+}
 if (process.argv.includes('--comment-whole-only')) {
   await commentWholeChecks({ proto, app, openPage, fail })
   proto(['rm', '--all'])

@@ -33,6 +33,21 @@ export async function commentScrollChecks({ proto, app, openPage, fail }) {
     await page.hover(...at)
     const outlined = await page.run(`(async () => { ${helpers}; return await until(() => ring()?.style.opacity === '1') })()`)
     if (!outlined) fail('scroll comments: a visible target several screens down has no hover outline')
+    if (process.env.PROTO_EDGE_SHOT) await page.run('window.__edgeEvidence = true')
+    const edge = await page.run(`(async () => {
+      ${helpers}
+      const layer = document.querySelector('[data-comments]')
+      layer.style.width = '80px'
+      try {
+        const matches = await until(() => Math.abs(parseFloat(ring()?.style.width) - (target().getBoundingClientRect().width * frame().getBoundingClientRect().width / frame().offsetWidth + 6)) < 1)
+        return matches
+      } finally { if (!window.__edgeEvidence) layer.style.removeProperty('width') }
+    })()`)
+    if (process.env.PROTO_EDGE_SHOT) {
+      await page.screenshot(process.env.PROTO_EDGE_SHOT)
+      await page.run("document.querySelector('[data-comments]').style.removeProperty('width')")
+    }
+    if (!edge && !process.env.PROTO_EDGE_BEFORE) fail('edge comments: the shell boundary shortened the element outline')
     const followed = await page.run(`(async () => {
       ${helpers}
       mount().parentElement.scrollTop = 0
