@@ -7,6 +7,14 @@ they use, their pictures as WebP, and nothing about the owner (no asks, notes, p
 this Mac). It opens in a read-only viewer, a desk of the shared designs with zoom and a phone
 view. Publish only when the user asks for a link.
 
+Viewers can switch designs with the left and right arrow keys or the named design list, on the
+desk, in full view and on a phone. Arrows follow the interface's reading direction and leave
+text fields and the design's own controls alone. The header's language button offers English,
+Hebrew and Browser language. A fresh viewer follows the browser's preferred supported language
+(English if none is supported), independently of the author's session language; an explicit
+choice is kept in that browser. The designs keep their own content and direction. Existing
+links are frozen pages: update the share to give them a newer viewer.
+
 The host is online at prtype.dev, one host for every user of the skill, run by its maintainer on a
 free Cloudflare account. Links are `https://prtype.dev/<id>`, which opens the share on its own
 origin, `https://<id>.prtype.dev/`. A host on this Mac (`--local`) is the offline option: its links

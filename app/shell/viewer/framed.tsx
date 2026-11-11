@@ -11,6 +11,7 @@
 import { createRoot } from 'react-dom/client'
 import { MountsCtx, Mounted, type Mounts, type Screen } from './ui'
 import { pageQuery } from '../page-query'
+import { rtl } from '../i18n'
 
 /** The design this page is the frame of, when it is one. */
 export const frameKey = new URLSearchParams(pageQuery).get('frame')
@@ -21,6 +22,7 @@ export type FrameMsg =
   | { protoViewer: 'esc' }
   | { protoViewer: 'press' }
   | { protoViewer: 'key'; key: '0' | '1' | '+' | '-' | 'c' }
+  | { protoViewer: 'step'; by: -1 | 1 }
   | { protoViewer: 'zoom'; by: number }
   | { protoViewer: 'theme'; dark: boolean }
   | { protoViewer: 'device'; size: string }
@@ -41,6 +43,14 @@ const textField = (t: EventTarget | null) => {
 }
 // Keys a field or a control keeps for itself.
 const typing = (t: EventTarget | null) => !!(t as Element | null)?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
+
+/** Unclaimed horizontal arrows walk the shared designs in the interface's reading direction. */
+export function navigationKey(e: KeyboardEvent): -1 | 1 | null {
+  if (e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || typing(e.target)) return null
+  if ((e.target as Element | null)?.closest?.('[role="slider"], [role="spinbutton"], [role="tablist"], [role="radiogroup"], [role="listbox"], [role="combobox"], [role="menu"], [role="tree"], [role="grid"]')) return null
+  if ([...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog[open]')].some(d => d.getClientRects().length && !d.closest('[hidden], [inert]'))) return null
+  return e.key === (rtl ? 'ArrowLeft' : 'ArrowRight') ? 1 : e.key === (rtl ? 'ArrowRight' : 'ArrowLeft') ? -1 : null
+}
 
 /**
  * Takes over the gestures that would zoom the page this listens on (a window or a frame's), and
@@ -129,6 +139,8 @@ export function createFramed(el: HTMLElement, screen: Screen | undefined, mounts
       if (!e.defaultPrevented && !e.isComposing && !textField(e.target) && !dialogOpen()) tell({ protoViewer: 'esc' })
       return
     }
+    const step = navigationKey(e)
+    if (step) { e.preventDefault(); tell({ protoViewer: 'step', by: step }); return }
     const k = !e.defaultPrevented && zoomKey(e)
     if (k) { e.preventDefault(); tell({ protoViewer: 'key', key: k }) }
     // C: the viewer's pin mode, on and off.
