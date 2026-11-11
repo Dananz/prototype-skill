@@ -62,6 +62,7 @@ export default {
   'Picked {v}': 'נבחר {v}',
   'Needs explanation: {v}': 'דרוש הסבר: {v}',
   'Fix before sharing {v}': 'לתקן לפני השיתוף {v}',
+  'Repair the published prototype for {v}': 'תיקון הפרוטוטייפ שפורסם עבור {v}',
   'What is hard to figure out? Optional.': 'מה קשה להבין? אופציונלי.',
   'Asked for an explanation of {v}': 'התבקש הסבר עבור {v}',
   'Generate copy options for {v}': 'צור אפשרויות נוסח עבור {v}',

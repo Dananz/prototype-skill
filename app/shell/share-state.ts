@@ -34,11 +34,10 @@ export type Owner = { host: string | null; signedIn: boolean; login: string | nu
 export type Answer = { status: number; body: Record<string, any> }
 
 /**
- * Fix before sharing: the shell's way to send the agent a request from a share review (a comment
- * with action share-fix, on the variant given or the one on screen), and the agent's name for the
- * button. Null until the shell sets it (a shared page has none).
+ * The shell's way to ask its agent to fix a share review or repair a published link. Requests are
+ * comments on the variant given, or the one on screen. A published page has no local agent.
  */
-export type ShareAsk = { agent: string; send: (on: { proto: string; variant: string } | null, text: string) => Promise<void> }
+export type ShareAsk = { agent: string; send: (on: { proto: string; variant: string } | null, text: string, action?: 'share-fix' | 'share-repair') => Promise<void> }
 let asker: ShareAsk | null = null
 export const setShareAsk = (a: ShareAsk | null) => { asker = a }
 export const shareAsk = () => asker

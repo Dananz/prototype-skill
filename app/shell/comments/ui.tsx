@@ -180,6 +180,7 @@ export const ACTION: Record<Action, { say: (v: string) => string; icon: string }
   'copy-options': { say: v => `Generate copy options for ${v}`, icon: 'text' },
   copy: { say: v => `Copy for ${v}`, icon: 'text' },
   'share-fix': { say: v => `Fix before sharing ${v}`, icon: 'warning' },
+  'share-repair': { say: v => `Repair the published prototype for ${v}`, icon: 'build' },
   'build-screen': { say: v => `Build the screen a link on ${v} goes to`, icon: 'code' },
   'map-note': { say: v => `A note from the map on ${v}`, icon: 'comment' },
   'add-link': { say: v => `A link to add on ${v}`, icon: 'link' },
@@ -198,6 +199,7 @@ export const aboutOf = (i: Item) => i.action === 'more-variants'
   : i.action === 'copy-options' ? t('Generate copy options for {v}', { v: variantRef(null, i.variant) })
   : i.action === 'copy' ? t('Copy for {v}', { v: variantRef(null, i.variant) })
   : i.action === 'share-fix' ? t('Fix before sharing {v}', { v: variantRef(null, i.variant) })
+  : i.action === 'share-repair' ? t('Repair the published prototype for {v}', { v: variantRef(null, i.variant) })
   : i.action === 'build-screen' ? t('Build the screen a link on {v} goes to', { v: variantRef(null, i.variant) })
   : i.action === 'map-note' ? t('A note from the map on {v}', { v: variantRef(null, i.variant) })
   : i.action === 'add-link' ? t('A link to add on {v}', { v: variantRef(null, i.variant) })

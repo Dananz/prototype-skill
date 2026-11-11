@@ -5,7 +5,7 @@
 //
 // Phase 1 has one open link per share, and commenting needs a GitHub sign-in on the link; passwords,
 // people and expiry come in a later phase, as rows under "Who can open it".
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
 import { Drawer } from '@base-ui/react/drawer'
 import { uiBox } from './portals'
@@ -351,31 +351,101 @@ export function useOwner() {
   return s.owner
 }
 
+// A send outlives a closed popover or a changed sheet tab. Keep its progress by link/version so
+// reopening cannot lose an in-flight request and send it again. The note also survives a retry.
+type RepairSend = { phase: 'sending' | 'sent' | 'error'; note: string; error?: string }
+const repairSends = new Map<string, RepairSend>()
+const repairSubs = new Set<() => void>()
+const subscribeRepairs = (f: () => void) => { repairSubs.add(f); return () => { repairSubs.delete(f) } }
+const putRepair = (key: string, state?: RepairSend) => {
+  if (state) repairSends.set(key, state)
+  else repairSends.delete(key)
+  repairSubs.forEach(f => f())
+}
+
 /**
- * A link's Disable or Enable and its two-press Remove, for the sheet's row and the popover's. onChanged
+ * A link's repair request, Disable or Enable and two-press Remove. onChanged
  * runs before busy ends, so the buttons don't flicker back to what they said. Keeps its own error.
  */
 export function useLinkActions(s: ShareRow, onChanged: () => void | Promise<void>, hold: (on: boolean) => void = () => {}) {
+  const key = `${s.host}:${s.id}:${s.version}`
+  const sent = useSyncExternalStore(subscribeRepairs, () => repairSends.get(key))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [ask, setAsk] = useState(false)
+  const [repair, setRepair] = useState<'closed' | 'open'>('closed')
+  const [note, setNote] = useState(() => sent?.note ?? '')
+  const pending = useRef(false)
   useEffect(() => { if (!ask) return; const id = window.setTimeout(() => setAsk(false), 4000); return () => clearTimeout(id) }, [ask])
   const run = async (name: string, body: Record<string, unknown>) => {
+    if (pending.current || repairSends.get(key)?.phase === 'sending') return
+    pending.current = true
     setBusy(true); setError(''); hold(true)
-    const r = await route(name, { id: s.id, ...(s.elsewhere ? { elsewhere: true } : {}), ...body })
-    if (r.status === 200) await onChanged()
-    else setError(r.status === 503 ? t('Can’t reach the share host. Ask Claude to share again (it starts the host), then retry.') : r.body.error || t('The session server answered {status}.', { status: r.status }))
-    hold(false); setBusy(false)
+    try {
+      const r = await route(name, { id: s.id, ...(s.elsewhere ? { elsewhere: true } : {}), ...body })
+      if (r.status === 200) await onChanged()
+      else setError(r.status === 503 ? t('Can’t reach the share host. Ask Claude to share again (it starts the host), then retry.') : r.body.error || t('The session server answered {status}.', { status: r.status }))
+    } finally { hold(false); setBusy(false); pending.current = false }
+  }
+  const sendRepair = async () => {
+    const agent = shareAsk()
+    if (pending.current || repairSends.get(key)?.phase === 'sending' || (repair !== 'open' && sent?.phase !== 'error') || !agent || s.elsewhere || !s.link || s.live === false) return
+    pending.current = true
+    setBusy(true); setError(''); hold(true)
+    putRepair(key, { phase: 'sending', note })
+    const [proto, variant] = s.scope.start.split('/')
+    try {
+      await agent.send({ proto, variant }, [
+        note.trim() || 'Investigate this broken shared prototype and identify what needs fixing.',
+        `Published link: ${s.link}\nShare ID: ${s.id}\nPublished version: ${s.version}\nOpens on: ${s.scope.start}`,
+        'Inspect the published link and its local source. Check loading, navigation between screens, assets and layout. Fix the cause, verify the affected flow, then update this same link with proto share update. Keep its scope, comments and enabled/disabled state. If you cannot reproduce a problem, report what you checked instead of making speculative changes.',
+      ].join('\n\n'), 'share-repair')
+      putRepair(key, { phase: 'sent', note: '' }); setNote('')
+    } catch (e) { putRepair(key, { phase: 'error', note, error: e instanceof Error ? e.message : t('Could not send') }) }
+    finally { hold(false); setBusy(false); pending.current = false }
   }
   return {
-    busy, error, ask,
+    busy: busy || sent?.phase === 'sending', error: sent?.error || error, ask,
+    repair: sent?.phase === 'sent' ? 'sent' as const : sent ? 'open' as const : repair, note, setNote, sendRepair,
+    openRepair: () => { if (repairSends.get(key)?.phase !== 'sending') { if (sent?.phase === 'sent') setNote(''); putRepair(key); setRepair('open'); setAsk(false); setError('') } },
+    cancelRepair: () => { if (!pending.current && sent?.phase !== 'sending') { putRepair(key); setRepair('closed'); setError('') } },
     toggle: () => run('disable', { disabled: !s.disabled }),
     remove: () => { if (!ask) return setAsk(true); setAsk(false); return run('remove', {}) },
   }
 }
 
-/** Disable or Enable, then Remove; a link the host no longer has can only be removed. hideEnable: the row offers Enable on its own, in plain sight. */
-export function LinkActions({ s, a, hideEnable = false }: { s: ShareRow; a: ReturnType<typeof useLinkActions>; hideEnable?: boolean }) {
+/** A published link's repair request, queued for the local agent with an optional description. */
+function RepairRequest({ a, cancel }: { a: ReturnType<typeof useLinkActions>; cancel: () => void }) {
+  const note = useRef<HTMLTextAreaElement>(null)
+  const id = useId()
+  const agent = shareAsk()
+  useEffect(() => { if (a.repair === 'open') note.current?.focus() }, [a.repair])
+  if (!agent || a.repair === 'closed') return null
+  if (a.repair === 'sent') return <p data-link-repair-sent role="status" className="w-full px-2 py-2 text-xs text-emerald-700 dark:text-emerald-300">{t('Sent to {agent}. The request is in Comments.', { agent: agent.agent })}</p>
+  return (
+    <div data-link-repair-box className="w-full space-y-2 rounded-lg bg-zinc-900/[.04] p-3 text-xs dark:bg-white/[.06]">
+      <label htmlFor={id} className="block font-medium">{t('What needs fixing? (optional)')}</label>
+      <p id={`${id}-help`} className="leading-5 text-zinc-500 dark:text-zinc-400">{t('Describe the problem, or leave blank for {agent} to investigate. After checking the fix, it updates this same link.', { agent: agent.agent })}</p>
+      <textarea ref={note} id={id} aria-describedby={`${id}-help`} data-link-repair-note dir="auto" rows={3} maxLength={1000} value={a.note} onChange={e => a.setNote(e.target.value.slice(0, 1000))} disabled={a.busy}
+        onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void a.sendRepair() } }}
+        placeholder={t('For example: screens do not switch, or the page loads slowly')}
+        className="block w-full resize-y rounded-lg bg-white px-2.5 py-2 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-proto-primary-ring dark:bg-black/25 dark:text-zinc-100 dark:placeholder:text-zinc-500" />
+      <div className="flex flex-wrap justify-end gap-1">
+        <button type="button" data-link-repair-cancel disabled={a.busy} onClick={cancel} className={TEXT_BTN}>{t('Cancel')}</button>
+        <button type="button" data-link-repair-send disabled={a.busy} onClick={() => void a.sendRepair()} className={PRIMARY_BTN}>{a.busy ? <Spinner /> : <Icon name="send-plane" className="size-4" />}{t('Send to {agent}', { agent: agent.agent })}</button>
+      </div>
+    </div>
+  )
+}
+
+/** Link actions shared by the popover and sheet. A link whose source is elsewhere cannot be repaired here. */
+export function LinkActions({ s, a, hideEnable = false, children }: { s: ShareRow; a: ReturnType<typeof useLinkActions>; hideEnable?: boolean; children?: ReactNode }) {
+  const repair = useRef<HTMLButtonElement>(null)
+  const previous = useRef(a.repair)
+  useLayoutEffect(() => {
+    if (a.repair === 'closed' && previous.current === 'open') repair.current?.focus()
+    previous.current = a.repair
+  }, [a.repair])
   return (
     <>
       {s.live !== false && !(hideEnable && s.disabled) && (
@@ -383,9 +453,14 @@ export function LinkActions({ s, a, hideEnable = false }: { s: ShareRow; a: Retu
           <Icon name={s.disabled ? 'eye' : 'eyeoff'} className="size-4" />{s.disabled ? t('Enable') : t('Disable')}
         </button>
       )}
+      {!s.elsewhere && s.link && s.live !== false && shareAsk() && a.repair !== 'open' && (
+        <button ref={repair} type="button" data-link-repair disabled={a.busy} onClick={a.openRepair} className={TEXT_BTN}><Icon name="build" className="size-4" />{t('Fix prototype')}</button>
+      )}
       <button type="button" data-link-remove disabled={a.busy} onClick={() => void a.remove()} title={a.ask ? undefined : t('Deletes the link and its comments for good')} className={`${TEXT_BTN} ${a.ask ? '!bg-rose-500/10 !text-rose-700 dark:!text-rose-300' : ''}`}>
         {!a.ask && <Icon name="trash-simple" className="size-4" />}{a.ask ? (s.comments.total ? tn(s.comments.total, 'Remove it and its {n} comment?', 'Remove it and its {n} comments?') : t('Remove it?')) : t('Remove')}
       </button>
+      {children}
+      {!s.elsewhere && s.link && s.live !== false && <RepairRequest a={a} cancel={a.cancelRepair} />}
     </>
   )
 }
@@ -425,9 +500,10 @@ function Row({ s, protos, hold, onChanged }: { s: ShareRow; protos: P[]; hold: (
         {!s.changed && <span className="me-auto" />}
         {uploading && <span className={`inline-flex items-center gap-1.5 ${SMALL}`}><Spinner />{t('Building and uploading…')}</span>}
         {a.busy && <Spinner />}
-        <LinkActions s={s} a={{ ...a, busy }} />
-        <button type="button" data-link-update disabled={busy} onClick={() => void update()} title={t('Publish what the variants look like now, at the same link')}
-          className={s.changed ? `${TEXT_BTN} !text-proto-primary-soft-fg !font-semibold` : TEXT_BTN}><Icon name="refresh" className="size-4" />{t('Update link')}</button>
+        <LinkActions s={s} a={{ ...a, busy }}>
+          <button type="button" data-link-update disabled={busy} onClick={() => void update()} title={t('Publish what the variants look like now, at the same link')}
+            className={s.changed ? `${TEXT_BTN} !text-proto-primary-soft-fg !font-semibold` : TEXT_BTN}><Icon name="refresh" className="size-4" />{t('Update link')}</button>
+        </LinkActions>
       </div>
       {(step?.phase === 'review' || step?.phase === 'blocked') && step.review && (
         <div className="mt-2"><ReviewBox review={step.review} blocked={step.phase === 'blocked'}>

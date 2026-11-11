@@ -178,6 +178,30 @@ Before it builds, `proto share` brings the session's copy of the app up to date 
 session not re-upped would publish an old viewer). It never stops the dev server; when the server's
 own files changed it says `proto up` restarts it on the new code.
 
+## Repairing a published prototype
+
+An existing link's options offer **Fix prototype**, in the Share popover and the phone's Share
+sheet. The description is optional: with no words, the agent investigates; with words, they guide
+the diagnosis. Send queues an `action: share-repair` in Comments and the session's inbox, with
+the published URL, ID, version and opening variant. It uses the session's normal listener, so a
+session that is not listening handles it on the agent's next turn. Links from other projects
+have no repair action here because their source belongs to that project.
+
+For a `share-repair` request:
+
+1. Inspect that published link and its local prototype source. Use the description when present;
+   otherwise check loading, navigation between screens, missing assets, layout and page errors.
+   Respect the link's recorded scope. If the source is missing, use `proto share where <id>` to
+   locate it; report a blocker if it cannot be recovered.
+2. Fix the cause in the prototype or its shared viewer, then verify the affected flow. If no
+   problem can be reproduced, report what was checked and its limitations. Make no speculative
+   changes, and leave product files alone.
+3. When there is a verified fix, run `proto share update <id>` for the original link. The repair
+   request authorizes this update. Keep its scope, comments and enabled/disabled state; create no
+   replacement link. Respect the normal share review, including its separate `--yes` approval.
+4. Reply `--done` with the result, verification and any remaining limitation. A queued request is
+   not a completed repair.
+
 ## Forking
 
 A share's page carries its source, as an inert JSON script (`app/share/source.mjs`): the files its

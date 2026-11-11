@@ -3588,11 +3588,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     let was = 'false:0'
     shareState.subscribe(() => { const b = shareBadge(), now = `${b.behind}:${b.now}`; if (now !== was) { was = now; render() } })
     setTimeout(watchShares)
-    // Fix before sharing, from a share review: a request to the agent on the variant the link opens
-    // on (else the one on screen), waiting in the comments like any decision.
+    // Share-review fixes and published-link repairs wait in Comments for the agent. A published
+    // repair names its opening variant; a review can fall back to the variant on screen.
     setShareAsk({
       agent: agentName(session.agent),
-      send: async (on, text) => { const to = on ?? shareHere(); if (!to?.variant) throw new Error(t('Open a variant first')); await comments.act.decide(to, 'share-fix', { body: [text], tags: [] }) },
+      send: async (on, text, action = 'share-fix') => { const to = on ?? shareHere(); if (!to?.variant) throw new Error(t('Open a variant first')); await comments.act.decide(to, action, { body: [text], tags: [] }) },
     })
   }
   type SettingsProps = Parameters<ReturnType<typeof import('./settings').createSettings>>[0]
