@@ -9,6 +9,7 @@
 // words is filled from `vars`, after the lookup, so the dictionary keeps the placeholder.
 import session from '../session.json'
 import { he } from './i18n/he'
+import { pageQuery } from './page-query'
 
 export const LANGS = ['en', 'he'] as const
 export type Lang = typeof LANGS[number]
@@ -24,7 +25,7 @@ const isLang = (v: unknown): v is Lang => typeof v === 'string' && (LANGS as rea
 export const sessionLang = (s: unknown = session): Lang => { const l = (s as { lang?: unknown } | null)?.lang; return isLang(l) ? l : 'en' }
 
 const stored = (): LangChoice => { try { const v = localStorage.getItem('proto-lang'); return isLang(v) ? v : 'auto' } catch { return 'auto' } }
-const asked = new URLSearchParams(location.search).get('lang')
+const asked = new URLSearchParams(pageQuery).get('lang')
 
 export const langChoice: LangChoice = stored()
 export const lang: Lang = isLang(asked) ? asked : langChoice === 'auto' ? sessionLang() : langChoice

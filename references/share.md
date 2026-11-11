@@ -329,6 +329,12 @@ that points at the card.
 
 - A share is at most 20 MiB gzipped (blocked above); over 5 MiB it warns, since a phone opens it
   slowly. Pictures are WebP at quality 82, at most 2560 px wide.
+- The viewer's Google Sans includes the Unicode subsets used by the finished bundle, with Latin
+  always kept. Other fonts are unchanged. Text entered later in a script absent from the build
+  uses the system's fallback font. Import a design's local font files as assets, rather than
+  pointing at `public/`, so they are embedded in the single-file share too.
+- Device views reuse the downloaded single-file page when opening and switching designs. A
+  published link built with older code needs `proto share update <id>` to pick this up.
 - Online links: `https://prtype.dev/<id>` (send this one) opens `https://<id>.prtype.dev/`. Links
   made before that, `https://prtype.dev/s/<id>/`, still open (301); viewers sign in again once.
 - Every share is on its own origin (decision 23), since anyone signed in can publish: one share's
