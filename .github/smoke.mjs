@@ -45,6 +45,7 @@ import { slotChecks } from './slot-checks.mjs'
 import { settingsChecks } from './settings-checks.mjs'
 import { shareChecks } from './share-checks.mjs'
 import { shareLinkChecks } from './share-link-checks.mjs'
+import { shareFrameChecks } from './share-frame-checks.mjs'
 import { ownerLinkChecks } from './owner-link-checks.mjs'
 import { shareTrayChecks } from './share-tray-checks.mjs'
 import { shareSheetChecks } from './share-sheet-checks.mjs'
@@ -479,6 +480,13 @@ if (process.argv.includes('--share-online-only')) {
   console.log('OK: focused share online checks')
   process.exit(0)
 }
+if (process.argv.includes('--share-frames-only')) {
+  await shareFrameChecks({ proto, app, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused share frame checks')
+  process.exit(0)
+}
 if (process.argv.includes('--share-link-only')) {
   await shareLinkChecks({ proto, app, local, openPage, fail })
   await shareTrayChecks({ proto, app, fail })
@@ -520,6 +528,7 @@ await virtualReactChecks({ proto, app, local, openPage, fail })
 await virtualVariantsChecks({ proto, app, local, openPage, fail })
 await shareChecks({ proto, app, local, openPage, fail })
 await shareLinkChecks({ proto, app, local, openPage, fail })
+await shareFrameChecks({ proto, app, openPage, fail })
 await shareTrayChecks({ proto, app, fail })
 await shareSheetChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_SHEET_SHOTS || join(keepShots, 'share-sheet') })
 await settingsChecks({ proto, app, local, openPage, fail })

@@ -2,6 +2,7 @@
 import './share-owner-checks.mjs'
 import './share-online-unit-checks.mjs'
 import './share-popover-unit-checks.mjs'
+import './share-fonts-unit-checks.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ShareError, parseScope, trimMeta, trimSession } from '../app/share/scope.mjs'

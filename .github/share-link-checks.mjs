@@ -76,7 +76,7 @@ export default function ${id}() { return <main className="mt-[137px]">MARK-${id}
   // A part of the owner's project, compiled in through @project: the review names it.
   const project = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8')).project
   mkdirSync(join(project, 'kit'), { recursive: true })
-  writeFileSync(join(project, 'kit', 'Badge2.tsx'), `export function Badge2() { return <strong>MARK-PROJECT</strong> }\n`)
+  writeFileSync(join(project, 'kit', 'Badge2.tsx'), `export function Badge2() { return <strong>MARK-PROJECT Ω</strong> }\n`)
   writeFileSync(join(protos, 'share-link/hero.png'), png(3000, 2000, (x, y) => [(x * 7 + y) & 255, (x ^ y) & 255, ((x * y) >> 6) & 255]))
   writeFileSync(join(protos, 'share-link/B.tsx'), `import hero from './hero.png'
 import { Badge } from '../lineage-src/parts'
@@ -133,6 +133,7 @@ export default function C() { return <main className="share-link-tile"><h1>MARK-
   assert(html.includes('/src/protos/share-link/C.tsx') && !html.includes('/src/protos/share-link/A.tsx'), 'stamps: C\'s elements carry no source stamp')
   assert(one.review.warn.some(w => w.code === 'real-screens' && w.message.includes('share-link/C')), `review: the Current variant is not reported (${JSON.stringify(one.review)})`)
   assert(html.includes('MARK-PROJECT') && one.review.warn.some(w => w.code === 'project-code' && w.message.includes('Badge2.tsx')), `review: the @project file is not reported (${JSON.stringify(one.review.warn)})`)
+  assert(/@font-face\{[^}]*Google Sans Variable[^}]*unicode-range:U\+370/i.test(html), 'fonts: the Greek text in the reached @project component lost its subset')
   assert(!html.includes('137px'), 'tailwind: a class only unshared variants use is in the share\'s stylesheet')
   assert(html.includes(lineagePic.toString('base64')), 'images: the picture the lineage helper names is missing')
   assert(!html.includes(dOnly.toString('base64')), 'images: a picture only an unshared variant names is in the share')
@@ -189,6 +190,7 @@ export async function host(html) {
     if (at === '/api/report' && req.method === 'POST') return json(res, { ok: true })
     if (at === '/api/signout' && req.method === 'POST') return json(res, { ok: true }, { 'set-cookie': `v=; Path=${path.replace(/api\/signout$/, '')}; Max-Age=0` })
     // The host's own lock, so the viewer is checked under the policy it gets online.
+    if (at === '/' && state.failFrames && new URL(req.url, 'http://localhost').searchParams.has('frame')) { res.writeHead(503); return res.end('Page download unavailable') }
     if (at === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': SHARE_CSP, 'referrer-policy': 'no-referrer' }); return res.end(html) }
     res.writeHead(404); res.end()
   })

@@ -17,7 +17,7 @@ import { dims, type Size } from '../view/sizes'
 import { shareInfo } from '../mode'
 import { lang } from '../i18n'
 import type { Device } from './device'
-import { frameMsg } from './framed'
+import { frameKey, frameMsg } from './framed'
 import { useTalk } from './comments'
 import { Pins } from './pins'
 import { Mounted, surface, type Screen } from './ui'
@@ -41,6 +41,24 @@ const frameSrc = (key: string, dark: boolean, size: Size) => {
   const q = new URLSearchParams({ frame: key, theme: dark ? 'dark' : 'light', device: size, lang })
   if (shareInfo) q.set('v', String(shareInfo.version))
   return `${location.pathname}?${q}`
+}
+
+// Capture the self-contained page before the viewer mounts. Device frames need
+// its bundled code and styles, never a copy of the interactive viewer DOM. A frame
+// does not capture another copy, and non-inlined pages keep the normal src path.
+const sharedDocument = (() => {
+  if (!shareInfo || frameKey || !document.querySelector('script[type="module"]:not([src])')) return null
+  const doc = document.documentElement.cloneNode(true) as HTMLElement
+  doc.querySelector('#app')?.replaceChildren()
+  doc.querySelector('#proto-source')?.remove()
+  doc.removeAttribute('data-ready')
+  return '<!doctype html>' + doc.outerHTML
+})()
+const frameDocument = (src: string) => {
+  if (!sharedDocument) return undefined
+  const query = new URL(src, location.href).search
+  const boot = `<script>window.__protoFrameQuery=${JSON.stringify(query).replaceAll('<', '\\u003c')}<\/script>`
+  return sharedDocument.replace(/<head(?:\s[^>]*)?>/i, head => head + boot)
 }
 
 /**
@@ -122,6 +140,7 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report, r
   const sizeNow = useRef(size)
   sizeNow.current = size
   const src = useMemo(() => frameSrc(screen.key, darkNow.current, sizeNow.current), [screen.key])
+  const srcDoc = useMemo(() => frameDocument(src), [src])
   // A switch keeps the design shown so far under the next one until the next is ready and has faded
   // in over it: one design crossfades into the other at any device, never through an empty screen.
   // The last design that settled stays under the frame (in the same render the switch happens in, so it
@@ -129,6 +148,7 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report, r
   const [last, setLast] = useState<{ key: string; src: string } | null>(null)
   useEffect(() => { if (settled === screen.key) setLast({ key: screen.key, src }) }, [settled, screen.key])
   const prev = last && last.key !== screen.key ? last : null
+  const prevDoc = useMemo(() => prev ? frameDocument(prev.src) : undefined, [prev?.src])
   useEffect(() => { frame.current?.contentWindow?.postMessage({ protoViewer: 'device', size }, '*') }, [size, ready])
   const was = useRef(dark)
   useEffect(() => {
@@ -198,11 +218,11 @@ export function Full({ screen, phone, device, dark, closing, onClosed, report, r
                 <div data-phone-screen={size === 'phone' ? '' : undefined} className={`relative bg-white dark:bg-zinc-950 ${screenCls}`}>
                   {/* The frame shown now comes first, and the one switched from after it, so React never moves a
                       frame (a moved frame reloads); the stacking puts the new one on top. */}
-                  <iframe key={screen.key} ref={frame} src={src} title={`#${screen.n} ${screen.name}`}
+                  <iframe key={screen.key} ref={frame} src={src} srcDoc={srcDoc} title={`#${screen.n} ${screen.name}`}
                     className={`relative z-[2] block border-0 bg-white transition-opacity duration-200 dark:bg-zinc-950 motion-reduce:transition-none ${ready ? 'opacity-100' : 'opacity-0'}`}
                     style={{ width: d.w, height: d.h }} />
                   {prev && (
-                    <iframe key={prev.key} src={prev.src} aria-hidden="true" tabIndex={-1} title=""
+                    <iframe key={prev.key} src={prev.src} srcDoc={prevDoc} aria-hidden="true" tabIndex={-1} title=""
                       className="pointer-events-none absolute start-0 top-0 z-[1] block border-0 bg-white dark:bg-zinc-950" style={{ width: d.w, height: d.h }} />
                   )}
                   {size === 'desktop' && !prev && settled !== screen.key && (

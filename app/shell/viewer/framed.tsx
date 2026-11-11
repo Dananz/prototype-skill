@@ -10,9 +10,10 @@
 // browser's page and hands on as the frame's zoom.
 import { createRoot } from 'react-dom/client'
 import { MountsCtx, Mounted, type Mounts, type Screen } from './ui'
+import { pageQuery } from '../page-query'
 
 /** The design this page is the frame of, when it is one. */
-export const frameKey = new URLSearchParams(location.search).get('frame')
+export const frameKey = new URLSearchParams(pageQuery).get('frame')
 
 /** What a frame tells the viewer outside, and the viewer the frame. */
 export type FrameMsg =
@@ -93,7 +94,7 @@ export function createFramed(el: HTMLElement, screen: Screen | undefined, mounts
     document.documentElement.classList.toggle('dark', dark)
     document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
   }
-  const asked = new URLSearchParams(location.search).get('theme')
+  const asked = new URLSearchParams(pageQuery).get('theme')
   theme(asked ? asked === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches)
   // On a phone or a tablet the design scrolls as it would there: no scrollbar standing in its page.
   const device = (size: string) => { document.documentElement.dataset.device = size }
@@ -101,7 +102,18 @@ export function createFramed(el: HTMLElement, screen: Screen | undefined, mounts
     textContent: 'html:is([data-device=phone],[data-device=tablet]), html:is([data-device=phone],[data-device=tablet]) * { scrollbar-width: none }'
       + ' html:is([data-device=phone],[data-device=tablet]) ::-webkit-scrollbar { display: none }',
   }))
-  device(new URLSearchParams(location.search).get('device') || 'desktop')
+  device(new URLSearchParams(pageQuery).get('device') || 'desktop')
+  // srcdoc inherits the outer page's base URL. A normal #anchor would therefore
+  // load that page's entire viewer in this frame. Assign the fragment against this
+  // document instead, after the design's own click handler has had its say.
+  if (location.href.startsWith('about:srcdoc')) addEventListener('click', e => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    const anchor = (e.target as Element | null)?.closest?.('a[href]')
+    const href = anchor?.getAttribute('href'), target = anchor?.getAttribute('target')
+    if (!href?.startsWith('#') || anchor?.hasAttribute('download') || (target && target !== '_self')) return
+    e.preventDefault()
+    location.hash = href
+  })
   addEventListener('message', e => {
     const m = frameMsg(e.data)
     if (e.source !== parent) return
