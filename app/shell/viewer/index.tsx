@@ -13,7 +13,7 @@ import { createRoot } from 'react-dom/client'
 import type { Design, Proto, Session, Variant } from '../shell'
 import { Ph } from '../tree/row'
 import { shareInfo, shareScope } from '../mode'
-import { t } from '../i18n'
+import { rtl, t } from '../i18n'
 import { numberOf } from '../variants'
 import { Bar } from './bar'
 import { Desk } from './desk'
@@ -21,7 +21,7 @@ import { Full } from './full'
 import { Header, type Account, type Appearance, type Me } from './header'
 import { Phone } from './phone'
 import { DeviceMenu, clampZoom, loadDevice, saveDevice, type Device } from './device'
-import { createFramed, frameKey, frameMsg, holdZoom, zoomKey } from './framed'
+import { createFramed, frameKey, frameMsg, holdZoom, navigationKey, zoomKey } from './framed'
 import { Face, TalkCtx, hosted, useNotes, type Note, type OwnerMessage, type Placing, type Talk } from './comments'
 import { Icon, MountsCtx, closePopups, face, makeStore, presence, surface, usePresence, type Api, type Mounts, type Screen } from './ui'
 
@@ -212,7 +212,7 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
     at.current = { ...at.current, z: k === '1' ? 1 : at.current.fit }
     patch({ zoom: k === '1' ? 100 : 0 })
   }
-  const now = useRef({ full, back, zoomBy, zoomKeyed, talkEsc: () => false, togglePins: () => {} })
+  const now = useRef({ full, back, zoomBy, zoomKeyed, talkEsc: () => false, togglePins: () => {}, step: (_d: number) => {} })
   now.current = { ...now.current, full, back, zoomBy, zoomKeyed }
   useEffect(() => { if (!full) setMenu(false) }, [full])
   // Esc always goes back to the desk, a popup of the viewer's own closing first (Base UI closes it).
@@ -239,13 +239,25 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
       // Esc from the design closes an open popup of the viewer first, as Esc out here does; a press in it closes them.
       if (m.protoViewer === 'esc') { if (!closePopups() && !popupOpen(root.current) && !n.talkEsc()) n.back() }
       else if (m.protoViewer === 'press') closePopups()
+      else if (m.protoViewer === 'step' && (m.by === -1 || m.by === 1) && !popupOpen(root.current)) {
+        // Keep repeated arrows on the viewer while the old frame fades away.
+        f.blur()
+        n.step(m.by)
+      }
       else if (m.protoViewer === 'key') { if (m.key === 'c') n.togglePins(); else n.zoomKeyed(m.key) }
       else if (m.protoViewer === 'zoom') n.zoomBy(m.by)
     }
+    // Bubble after the design and its controls, so their own arrow handling wins.
+    const navigate = (e: KeyboardEvent) => {
+      if (popupOpen(root.current)) return
+      const d = navigationKey(e)
+      if (d) { e.preventDefault(); now.current.step(d) }
+    }
+    window.addEventListener('keydown', navigate)
     window.addEventListener('keydown', key, true)
     window.addEventListener('message', message)
     const off = holdZoom(window, by => now.current.zoomBy(by), () => now.current.full)
-    return () => { window.removeEventListener('keydown', key, true); window.removeEventListener('message', message); off() }
+    return () => { window.removeEventListener('keydown', key, true); window.removeEventListener('keydown', navigate); window.removeEventListener('message', message); off() }
   }, [])
   // Another prototype chosen in the header goes back to its desk.
   useEffect(() => { setOpen(null); setClosing(false) }, [protoId])
@@ -310,7 +322,7 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
     return () => ro.disconnect()
   }, [])
 
-  const go = (key: string) => { setSel(key); api.current?.show(key) }
+  const go = (key: string) => { setSel(key); if (full) setOpen(key); else api.current?.show(key) }
   const step = (d: number) => {
     const n = i + d
     if (n < 0 || n >= screens.length) return
@@ -319,11 +331,12 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
 
   now.current.talkEsc = talkEsc
   now.current.togglePins = togglePins
+  now.current.step = step
   const here = { variant: cur.key, n: cur.n, name: cur.name, about: proto.about?.[cur.v.id] }
 
   return (
     <TalkCtx.Provider value={talk}>
-    <div ref={root} data-viewer dir="ltr" className={`${face} ${surface} relative flex h-full flex-col overflow-hidden text-zinc-900 antialiased dark:text-zinc-100`}>
+    <div ref={root} data-viewer dir={rtl ? 'rtl' : 'ltr'} className={`${face} ${surface} relative flex h-full flex-col overflow-hidden text-zinc-900 antialiased dark:text-zinc-100`}>
       <Header protos={protos} cur={proto} choose={setProtoId} wide={wide} facts={facts} appearance={appearance} setAppearance={setAppearance} account={account} root={root}
         center={devOn.mounted ? (
           <div className={presence(devOn.shown)} inert={!(full && !closing)}>

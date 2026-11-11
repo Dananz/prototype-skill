@@ -47,16 +47,12 @@ export function Bar({ screens, i, go, step, store, api, root, full, back, wide, 
         {row && <Panel here={here} wide={wide} list={list} />}
         {wide && <div className="flex h-9 shrink-0 items-center gap-1 ps-3 pe-1">
           <p className="min-w-0 flex-1 truncate text-[13px]">
-            <span className="text-zinc-400 tabular-nums">#{cur.n}</span> <span className="font-semibold">{cur.name}</span>
+            <bdi dir="ltr" className="text-zinc-400 tabular-nums">#{cur.n}</bdi> <bdi className="font-semibold">{cur.name}</bdi>
           </p>
           <div className="grid shrink-0 items-center justify-items-end [&>*]:[grid-area:1/1]">
           {fullOn.mounted && f && (
             <div className={`flex items-center ${presence(fullOn.shown)}`} inert={!full}>
-              <div className="flex shrink-0 items-center">
-                <button data-prev onClick={() => step(-1)} disabled={i === 0} className={`${iconBtn} size-7 disabled:opacity-30`} aria-label={t('Previous design')}><Icon name="caret-left" className="size-4" /></button>
-                <span className="px-1 text-[12px] text-zinc-500 tabular-nums dark:text-zinc-400">{t('{i} of {n}', { i: i + 1, n: screens.length })}</span>
-                <button data-next onClick={() => step(1)} disabled={i === screens.length - 1} className={`${iconBtn} size-7 disabled:opacity-30`} aria-label={t('Next design')}><Icon name="caret-right" className="size-4" /></button>
-              </div>
+              <Jump screens={screens} i={i} go={go} step={step} root={root} />
               <div className="ms-1.5 flex shrink-0 items-center border-s border-zinc-200 ps-1.5 dark:border-white/10">
                 <button data-back onClick={back} title={t('All designs (Esc)')}
                   className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100">
@@ -67,15 +63,7 @@ export function Bar({ screens, i, go, step, store, api, root, full, back, wide, 
           )}
           {deskOn.mounted && (
             <div className={`flex items-center ${presence(deskOn.shown)}`} inert={!!full}>
-            {screens.length > 7
-            ? <Jump screens={screens} i={i} go={go} step={step} root={root} />
-            : <div className="flex items-center" role="tablist" aria-label={t('Designs')}>
-              {screens.map((s, k) => (
-                <button key={s.key} role="tab" aria-selected={k === i} aria-label={`#${s.n} ${s.name}`} onClick={() => go(s.key)} className="grid h-7 w-5 place-items-center">
-                  <span className={`block h-1.5 rounded-full transition-all duration-300 motion-reduce:transition-none ${k === i ? 'w-4 bg-sky-500' : 'w-1.5 bg-zinc-300 dark:bg-zinc-600'}`} />
-                </button>
-              ))}
-            </div>}
+            <Jump screens={screens} i={i} go={go} step={step} root={root} />
             <ZoomControls store={store} api={api} />
             </div>
           )}
@@ -122,22 +110,22 @@ export function Jump({ screens, i, go, step, root, named }: {
     <div className="flex shrink-0 items-center">
       <button data-prev onClick={() => step(-1)} disabled={i === 0} className={`${iconBtn} size-7 disabled:opacity-30`} aria-label={t('Previous design')}><Icon name="caret-left" className="size-4" /></button>
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <Popover.Trigger data-switcher={named ? '' : undefined} aria-label={t('Design {i} of {n}. Jump to a design', { i: i + 1, n: screens.length })}
+        <Popover.Trigger data-switcher="" aria-label={t('Design {i} of {n}. Jump to a design', { i: i + 1, n: screens.length })}
           className={`inline-flex h-7 items-center gap-1 rounded-lg px-1.5 ${named ? 'text-[13px]' : 'text-[12px]'} text-zinc-500 tabular-nums hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100`}>
           {named
-            ? <><span className="text-zinc-400 tabular-nums">#{screens[i].n}</span><span className="max-w-[52vw] truncate font-semibold text-zinc-900 dark:text-zinc-100">{screens[i].name}</span><span className="text-zinc-400 tabular-nums">· {i + 1}/{screens.length}</span></>
+            ? <><bdi dir="ltr" className="text-zinc-400 tabular-nums">#{screens[i].n}</bdi><bdi className="max-w-[42vw] truncate font-semibold text-zinc-900 dark:text-zinc-100">{screens[i].name}</bdi><span dir="ltr" className="text-zinc-400 tabular-nums">· {i + 1}/{screens.length}</span></>
             : <>{t('{i} of {n}', { i: i + 1, n: screens.length })}</>}<Icon name="caret-down" className="size-3" />
         </Popover.Trigger>
         <Popover.Portal container={root}>
           <Popover.Positioner side="top" align="center" sideOffset={14} className="z-50">
             <Popover.Popup dir={dir} className={`${popup} w-[min(300px,calc(100vw-32px))]`}>
               <Popover.Title className="px-2.5 pt-2 pb-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{tn(screens.length, '{n} design on this link', '{n} designs on this link')}</Popover.Title>
-              <div ref={list} className="max-h-[min(420px,55vh)] overflow-y-auto overscroll-contain">
+              <div ref={list} data-design-list className="max-h-[min(420px,55vh)] overflow-y-auto overscroll-contain">
                 {screens.map((s, k) => (
                   <button key={s.key} aria-current={k === i || undefined} onClick={() => { setOpen(false); go(s.key) }}
                     className={`flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-start text-[13px] ${k === i ? 'bg-sky-500/10' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]'}`}>
-                    <span className={`w-7 shrink-0 tabular-nums ${k === i ? 'font-semibold text-sky-600 dark:text-sky-400' : 'text-zinc-400'}`}>#{s.n}</span>
-                    <span className={`min-w-0 flex-1 truncate ${k === i ? 'font-semibold' : ''}`}>{s.name}</span>
+                    <bdi dir="ltr" className={`w-7 shrink-0 tabular-nums ${k === i ? 'font-semibold text-sky-600 dark:text-sky-400' : 'text-zinc-400'}`}>#{s.n}</bdi>
+                    <bdi className={`min-w-0 flex-1 truncate ${k === i ? 'font-semibold' : ''}`}>{s.name}</bdi>
                     <Count n={talk.notes.filter(c => c.variant === s.key).length} />
                   </button>
                 ))}

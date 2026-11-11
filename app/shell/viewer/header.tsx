@@ -5,7 +5,7 @@
 import { useState, type ReactNode, type RefObject } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { Menu } from '@base-ui/react/menu'
-import { rtl, t, tn } from '../i18n'
+import { LANG_NAMES, LANGS, lang, langChoice, rtl, setLangChoice, t, tn } from '../i18n'
 import { ago } from '../ui'
 import type { Proto } from '../shell'
 import { Icon, card, iconBtn, popup, useClosable } from './ui'
@@ -37,8 +37,9 @@ export function Header({ protos, cur, choose, wide, facts, appearance, setAppear
       <Protos protos={protos} cur={cur} choose={choose} compact={!wide} owner={facts.owner} avatar={facts.avatar ?? null} signed={!!account.sharer} updated={facts.updatedAt} root={root} mine={account.me?.mine === true} version={facts.version} />
       <div className="flex-1" />
       {center && <div data-header-center className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">{center}</div>}
-      {wide && !center && <p className="hidden text-[12px] text-zinc-500 md:block dark:text-zinc-400">{t('Drag to move · pinch or {key} scroll to zoom', { key: isMac ? '⌘' : 'Ctrl' })}</p>}
+      {wide && !center && <p className="hidden text-[12px] text-zinc-500 xl:block dark:text-zinc-400">{t('Arrow keys switch designs · drag to move · {key} scroll to zoom', { key: isMac ? '⌘' : 'Ctrl' })}</p>}
       {account.me?.mine ? <Yours root={root} /> : <Fork root={root} />}
+      <Language root={root} />
       <About facts={facts} appearance={appearance} setAppearance={setAppearance} root={root} comments={account.comments} report={account.report ?? null} />
       <Who account={account} wide={wide} root={root} />
     </header>
@@ -46,6 +47,33 @@ export function Header({ protos, cur, choose, wide, facts, appearance, setAppear
 }
 
 const markOf = (protos: Proto[], p: Proto) => ({ letter: (p.title.trim()[0] ?? '?').toUpperCase(), tint: TINTS[Math.max(0, protos.indexOf(p)) % TINTS.length] })
+
+/** Available to signed-out viewers too, including on phones. */
+function Language({ root }: { root: RefObject<HTMLDivElement | null> }) {
+  const [open, setOpen] = useState(false)
+  useClosable(open, setOpen)
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger data-viewer-language className={`${iconBtn} shrink-0`} aria-label={t('Language')} title={`${t('Language')}: ${LANG_NAMES[lang]}`}><Icon name="translate" /></Popover.Trigger>
+      <Popover.Portal container={root}>
+        <Popover.Positioner side="bottom" align={rtl ? 'start' : 'end'} sideOffset={4} className="z-50">
+          <Popover.Popup dir={dir} className={`${popup} w-48`}>
+            <Popover.Title className="px-2.5 pt-2 pb-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{t('Language')}</Popover.Title>
+            <div role="radiogroup" aria-label={t('Language')}>
+              {(['auto', ...LANGS] as const).map(id => (
+                <button key={id} data-viewer-lang={id} role="radio" aria-checked={langChoice === id} onClick={() => setLangChoice(id)}
+                  className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-start text-[13px] hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]">
+                  <span className="flex-1" lang={id === 'auto' ? undefined : id}><bdi>{id === 'auto' ? t('Browser language') : LANG_NAMES[id]}</bdi></span>
+                  {langChoice === id && <Icon name="check" className="size-3.5 text-sky-500" />}
+                </button>
+              ))}
+            </div>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
 
 /** prtype.dev/me: every link of the owner's account, on the host's own name (<id>.<base> -> <base>/me; path mode is already on it). */
 const meUrl = () => `${location.protocol}//${location.host.replace(/^[0-9a-hjkmnp-tv-z]{10}\./, '')}/me`
@@ -70,7 +98,7 @@ function Protos({ protos, cur, choose, compact, owner, avatar, signed, updated, 
       <Mark protos={protos} p={cur} small={compact} />
       <span className="min-w-0 leading-tight">
         <span className="flex items-center gap-1 text-[14px] font-semibold">
-          <span className="truncate">{cur.title}</span>
+          <bdi className="truncate">{cur.title}</bdi>
           {many && <span data-caret className={`inline-grid text-zinc-400 transition-transform duration-200 motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}><Icon name="caret-down" className="size-3" /></span>}
         </span>
         {!compact && <span data-shared-by={signed ? owner : undefined} className="flex items-center gap-1 truncate text-[12px] text-zinc-500 dark:text-zinc-400">{signed ? <Face me={{ login: owner, name: null, avatar }} size="size-3.5 text-[8px]" /> : <Icon name="eye" className="size-3" />}{line}</span>}
@@ -95,7 +123,7 @@ function Protos({ protos, cur, choose, compact, owner, avatar, signed, updated, 
                   className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-start ${on ? 'bg-sky-500/10' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.06]'}`}>
                   <Mark protos={protos} p={p} small />
                   <span className="min-w-0 flex-1 leading-tight">
-                    <span className={`block truncate text-[13px] ${on ? 'font-semibold' : ''}`}>{p.title}</span>
+                    <bdi className={`block truncate text-[13px] ${on ? 'font-semibold' : ''}`}>{p.title}</bdi>
                     <span className="block truncate text-[11.5px] text-zinc-500 dark:text-zinc-400">{tn(p.variants.length, '{n} design', '{n} designs')} · {t('updated {when}', { when: ago(Date.parse(updated)) })}</span>
                   </span>
                   <Count n={talk.notes.filter(c => c.variant.startsWith(`${p.id}/`)).length} />

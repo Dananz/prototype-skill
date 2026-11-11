@@ -16,7 +16,7 @@
 // Comments (phase 1): a count badge on each label opens the bar on that design's comments, and the
 // pins sit on the previews, the same size on screen at any zoom; a pin opens the bar on its comment.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react'
-import { t, tn } from '../i18n'
+import { rtl, t, tn } from '../i18n'
 import { useTalk } from './comments'
 import { Pins } from './pins'
 import { Icon, Mounted, type Api, type Screen, type Store } from './ui'
@@ -316,10 +316,10 @@ export function Desk({ screens, size, phone, sel, store, api, onCentre, open, hi
 
 
   return (
-    <div ref={scroller} data-viewer-desk tabIndex={0} role="region" inert={hidden} aria-hidden={hidden || undefined} aria-label={t('Every shared design on one desk. Drag to move, pinch or Ctrl+scroll to zoom, 0 fits, 1 is actual size.')}
+    <div ref={scroller} data-viewer-desk dir="ltr" tabIndex={0} role="region" inert={hidden} aria-hidden={hidden || undefined} aria-label={t('Every shared design on one desk. Drag to move, pinch or Ctrl+scroll to zoom, 0 fits, 1 is actual size.')}
       className={`absolute inset-0 isolate cursor-grab touch-pan-x touch-pan-y overflow-auto overscroll-contain select-none [scrollbar-width:none] data-[drag]:cursor-grabbing [&::-webkit-scrollbar]:hidden`}>
       <div className="grid min-h-full w-max min-w-full place-items-center" style={{ padding: `${PAD.top}px ${PAD.x}px ${PAD.bottom}px` }}>
-        <div ref={world} data-world className="grid items-start [--edge:rgba(0,0,0,.12)] dark:[--edge:rgba(255,255,255,.12)]"
+        <div ref={world} data-world dir={rtl ? 'rtl' : 'ltr'} className="grid items-start [--edge:rgba(0,0,0,.12)] dark:[--edge:rgba(255,255,255,.12)]"
           style={{ gridTemplateColumns: `repeat(${cols}, ${W}px)`, columnGap: GAP, rowGap: GAP * 1.5 }}>
           {screens.map(s => {
             const on = s.key === sel, running = live.has(s.key)
@@ -328,9 +328,9 @@ export function Desk({ screens, size, phone, sel, store, api, onCentre, open, hi
               <section key={s.key} data-board={s.key} aria-label={`#${s.n} ${s.name}`} className="shrink-0" style={{ width: W }}>
                 {/* The label, as on a design canvas. It stays the same size on screen at any zoom. */}
                 <div data-label className="flex items-center gap-2 pb-2 text-[13px]" style={{ zoom: 'var(--inv, 1)', width: `calc(${W}px * var(--z, 1))`, height: LABEL }}>
-                  <button onClick={() => open(s.key)} className="flex min-w-0 items-center gap-1.5 rounded-md text-left">
-                    <span className={`font-semibold tabular-nums transition-colors motion-reduce:transition-none ${on ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400 dark:text-zinc-500'}`}>#{s.n}</span>
-                    <span className={`truncate transition-colors motion-reduce:transition-none ${on ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'}`}>{s.name}</span>
+                  <button onClick={() => open(s.key)} className="flex min-w-0 items-center gap-1.5 rounded-md text-start">
+                    <bdi dir="ltr" className={`font-semibold tabular-nums transition-colors motion-reduce:transition-none ${on ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-400 dark:text-zinc-500'}`}>#{s.n}</bdi>
+                    <bdi className={`truncate transition-colors motion-reduce:transition-none ${on ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'}`}>{s.name}</bdi>
                   </button>
                   {count > 0 && (
                     <button data-count-badge onClick={() => onBadge(s.key)} aria-label={tn(count, '{n} comment on #{v}', '{n} comments on #{v}', { v: s.n })}

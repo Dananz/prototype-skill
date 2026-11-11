@@ -1,7 +1,8 @@
 // The language of the page's own words (the chrome around the designs, never the designs). The
 // session has one (`proto up --lang he`: the agent passes the language its conversation with the
-// user is in); this browser can choose another in Settings, kept as `proto-lang`, and `?lang=`
-// wins over both, as `?theme=` does. Resolved once, when the page loads: every string is read
+// user is in); this browser can choose another in Settings, kept as `proto-lang`. Shared viewers
+// follow their browser instead, with their own `proto-viewer-lang` preference. `?lang=` wins over
+// both, as `?theme=` does. Resolved once, when the page loads: every string is read
 // through t() as it is drawn, and some are read when their module loads, so a change reloads.
 //
 // English is the source: t() takes the English words and returns them in the page's language,
@@ -10,10 +11,11 @@
 import session from '../session.json'
 import { he } from './i18n/he'
 import { pageQuery } from './page-query'
+import { SHARE } from './mode'
 
 export const LANGS = ['en', 'he'] as const
 export type Lang = typeof LANGS[number]
-/** What this browser chose: a language, or `auto`, the session's. */
+/** What this browser chose: a language, or `auto` (the browser's on a share, the session's locally). */
 export type LangChoice = Lang | 'auto'
 /** Each language by its own name, as a language picker shows it. */
 export const LANG_NAMES: Record<Lang, string> = { en: 'English', he: 'עברית' }
@@ -24,11 +26,21 @@ const isLang = (v: unknown): v is Lang => typeof v === 'string' && (LANGS as rea
 /** The session's language, as `proto up --lang` left it. */
 export const sessionLang = (s: unknown = session): Lang => { const l = (s as { lang?: unknown } | null)?.lang; return isLang(l) ? l : 'en' }
 
-const stored = (): LangChoice => { try { const v = localStorage.getItem('proto-lang'); return isLang(v) ? v : 'auto' } catch { return 'auto' } }
+const storageKey = SHARE ? 'proto-viewer-lang' : 'proto-lang'
+const browserLang = (): Lang => {
+  for (const locale of navigator.languages?.length ? navigator.languages : [navigator.language]) {
+    const base = locale?.toLowerCase().split('-')[0]
+    if (base === 'iw') return 'he'
+    if (isLang(base)) return base
+  }
+  return 'en'
+}
+const autoLang = () => SHARE ? browserLang() : sessionLang()
+const stored = (): LangChoice => { try { const v = localStorage.getItem(storageKey); return isLang(v) ? v : 'auto' } catch { return 'auto' } }
 const asked = new URLSearchParams(pageQuery).get('lang')
 
-export const langChoice: LangChoice = stored()
-export const lang: Lang = isLang(asked) ? asked : langChoice === 'auto' ? sessionLang() : langChoice
+export const langChoice: LangChoice = SHARE && isLang(asked) ? asked : stored()
+export const lang: Lang = isLang(asked) ? asked : langChoice === 'auto' ? autoLang() : langChoice
 export const rtl = RTL.has(lang)
 const dict = DICTS[lang]
 
@@ -41,13 +53,20 @@ if (import.meta.hot) import.meta.hot.accept('../session.json', () => {})
 
 /** Keeps this browser's choice and reloads into it (every string is read again). */
 export function setLangChoice(next: LangChoice) {
-  try { if (next === 'auto') localStorage.removeItem('proto-lang'); else localStorage.setItem('proto-lang', next) } catch { /* private mode: this load only */ }
+  try { if (next === 'auto') localStorage.removeItem(storageKey); else localStorage.setItem(storageKey, next) } catch { /* private mode */ }
+  if (SHARE) {
+    // Keep the explicit choice usable with blocked storage and override an existing ?lang=.
+    const url = new URL(location.href)
+    if (next === 'auto') url.searchParams.delete('lang'); else url.searchParams.set('lang', next)
+    location.assign(url.href)
+    return
+  }
   const was = lang
   const now = isLang(asked) ? asked : next === 'auto' ? sessionLang() : next
   if (now !== was) location.reload()
 }
 /** A session whose language changed (`proto up --lang`) reloads when this browser follows it. */
-export const followSession = (next: unknown) => { if (!isLang(asked) && langChoice === 'auto' && sessionLang(next) !== lang) location.reload() }
+export const followSession = (next: unknown) => { if (!SHARE && !isLang(asked) && langChoice === 'auto' && sessionLang(next) !== lang) location.reload() }
 
 const fill = (s: string, vars?: Record<string, unknown>) => vars ? s.replace(/\{(\w+)\}/g, (m, k: string) => k in vars ? String(vars[k]) : m) : s
 

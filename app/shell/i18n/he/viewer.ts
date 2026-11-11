@@ -2,6 +2,8 @@
 // Address the viewer in masculine singular (גרור, טען). Keep variant numbers, shortcuts and
 // placeholders ({n}) as they are.
 export default {
+  'Arrow keys switch designs · drag to move · {key} scroll to zoom': 'חצים למעבר בין עיצובים · גרור להזזה · {key} וגלילה לזום',
+  'Browser language': 'שפת הדפדפן',
   'Designs': 'עיצובים',
   'Zoom out': 'הקטן',
   'Zoom out (−)': 'הקטן (−)',
