@@ -357,12 +357,13 @@ const fromOf = f => ({ share: f.share, version: f.version, viewer: f.viewer, nam
 // the element of the line it changes. More variants is the one made on a prototype (route <slug>),
 // with how many.
 // Fix before sharing is asked from a share review: the owner's words and what the review found.
-const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'copy', 'try-it', 'copy-options', 'share-fix', 'build-screen', 'map-note', 'add-link', 'build-design'])
+const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'copy', 'try-it', 'copy-options', 'share-fix', 'share-repair', 'build-screen', 'map-note', 'add-link', 'build-design'])
 
 /**
  * Writes one send from the page as a new batch; images come as data URLs and are stored as files.
- * All of it is checked before anything is written: an action's variant must be there, and a pick's
- * prototype must have a meta.ts that reads, since the pick is written into it. Picks are made next,
+ * All of it is checked before anything is written: actions need a variant (except a published
+ * link's repair, whose source may be gone). A pick's prototype must have a readable meta.ts, since
+ * the pick is written into it. Picks are made next,
  * each on its own, so one that fails says why in its comment and never keeps the batch from
  * arriving. Returns the batch, and whether the working variant moved.
  */
@@ -404,12 +405,13 @@ export function receive(data, root = dir, { check = false } = {}) {
       if (c.point !== undefined || c.region !== undefined || c.target !== undefined || time) throw bad(i, ': more-variants has no element, spot, region or moment')
     } else if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
-      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it, copy-options, share-fix, build-screen, map-note, add-link or build-design, on a variant (<slug>/<letter>)')
+      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it, copy-options, share-fix, share-repair, build-screen, map-note, add-link or build-design, on a variant (<slug>/<letter>)')
+      // A published-link repair must reach the agent even when its source is gone.
       if (c.action === 'pick' || c.action === 'unpick') {
         let meta
         try { meta = metaOf(readFileSync(metaFile(slug), 'utf8')) } catch { throw bad(i, `: src/protos/${slug}/meta.ts is missing or isn't plain JSON, so a pick can't be marked in it`) }
         if (!meta?.variants?.[letter] && !hasVariant(slug, letter)) throw bad(i, `: ${slug} has no variant ${letter}`)
-      } else if (!hasVariant(slug, letter)) throw bad(i, `: ${slug} has no variant ${letter}`)
+      } else if (c.action !== 'share-repair' && !hasVariant(slug, letter)) throw bad(i, `: ${slug} has no variant ${letter}`)
     }
     const images = (Array.isArray(c.images) ? c.images : []).map(img => {
       const m = String(img?.dataUrl ?? img).match(/^data:image\/(png|jpeg|webp);base64,(.+)$/)

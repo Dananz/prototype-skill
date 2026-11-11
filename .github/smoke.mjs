@@ -49,6 +49,7 @@ import { shareFrameChecks } from './share-frame-checks.mjs'
 import { ownerLinkChecks } from './owner-link-checks.mjs'
 import { shareTrayChecks } from './share-tray-checks.mjs'
 import { shareSheetChecks } from './share-sheet-checks.mjs'
+import { shareRepairChecks } from './share-repair-checks.mjs'
 import { tweaksChecks } from './tweaks-checks.mjs'
 import { tweaksRegistryChecks } from './tweaks-registry-checks.mjs'
 import { middleDragChecks } from './middle-drag-checks.mjs'
@@ -462,6 +463,13 @@ if (process.argv.includes('--share-tray-only')) {
   process.exit(0)
 }
 // The owner's page alone: the Share sheet and the From links tray in a real browser (Task 5).
+if (process.argv.includes('--share-repair-only') || process.argv.includes('--share-repair-before')) {
+  await shareRepairChecks({ proto, app, local, openPage, fail, keepShots: process.env.PROTO_REPAIR_SHOTS || keepShots, before: process.argv.includes('--share-repair-before') })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused share repair checks')
+  process.exit(0)
+}
 if (process.argv.includes('--share-sheet-only')) {
   proto(['add', 'share-link', '--title', 'Share link', '--variants', 'A:One,B:Two,C:Three'])
   for (const id of ['A', 'B', 'C']) writeFileSync(join(app, 'src/protos/share-link', `${id}.tsx`), `export default function ${id}() { return <main><h1>MARK-${id}</h1></main> }\n`)
@@ -488,6 +496,7 @@ if (process.argv.includes('--share-frames-only')) {
   process.exit(0)
 }
 if (process.argv.includes('--share-link-only')) {
+  await shareRepairChecks({ proto, app, local, openPage, fail, keepShots })
   await shareLinkChecks({ proto, app, local, openPage, fail })
   await shareTrayChecks({ proto, app, fail })
   await shareSheetChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SHARE_SHEET_SHOTS || join(keepShots, 'share-sheet') })
@@ -526,6 +535,7 @@ await css()
 await virtualWindowChecks({ local, openPage, fail })
 await virtualReactChecks({ proto, app, local, openPage, fail })
 await virtualVariantsChecks({ proto, app, local, openPage, fail })
+await shareRepairChecks({ proto, app, local, openPage, fail, keepShots })
 await shareChecks({ proto, app, local, openPage, fail })
 await shareLinkChecks({ proto, app, local, openPage, fail })
 await shareFrameChecks({ proto, app, openPage, fail })
