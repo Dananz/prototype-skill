@@ -149,6 +149,20 @@ export async function shareSheetChecks({ proto, app, openPage, fail, shots }) {
   assert(await page.run('[...document.querySelectorAll("input[data-link-variant]:checked")].map(e=>e.dataset.linkVariant).join()==="share-link/A"'), 'This variant does not check only the variant on the page')
   await click(page, 'input[data-link-variant="share-link/C"]')
   assert(await page.run('[...document.querySelectorAll("input[data-link-variant]:checked")].map(e=>e.dataset.linkVariant).join()==="share-link/A,share-link/C"'), 'checking a second variant did not add it')
+  // In the link: the strip pictures what is picked, the variant it opens on first and marked.
+  const strip = '[...document.querySelectorAll("[data-link-strip-item]")].map(e=>e.dataset.linkStripItem).join()'
+  assert(await page.run(strip) === 'share-link/A,share-link/C', 'strip: does not show the two picked variants, the start first')
+  assert(await page.run('!!document.querySelector("[data-link-strip-item=\'share-link/A\'] [data-link-opens]")'), 'strip: the variant it opens on is not marked')
+  await click(page, '[data-link-make-start="share-link/C"]')
+  assert(await page.run(strip) === 'share-link/C,share-link/A', 'strip: making C the start does not move it first')
+  assert(await page.run('document.activeElement?.dataset.linkRemove==="share-link/C"'), 'strip: focus is lost after making C the start')
+  await click(page, '[data-link-remove="share-link/A"]')
+  assert(await page.run('[...document.querySelectorAll("input[data-link-variant]:checked")].map(e=>e.dataset.linkVariant).join()==="share-link/C"'), 'strip: removing A does not uncheck it')
+  assert(await page.run('document.activeElement?.dataset.linkRemove==="share-link/C"'), 'strip: focus is lost after removing A')
+  await click(page, 'input[data-link-variant="share-link/A"]')
+  await click(page, '[data-link-make-start="share-link/A"]')
+  assert(await page.run(strip) === 'share-link/A,share-link/C', 'strip: A put back and made the start is not first')
+  await waitFor(page, '[...document.querySelectorAll("[data-link-strip-item] [data-link-preview] canvas")].filter(c=>c.classList.contains("opacity-100")&&c.width).length===2', 'strip: not every picked variant is pictured', 60_000)
   await shot(page, 'sheet-new-desktop-light')
 
   // 3. Create link: the review (when there is something to say), then the link with Copy, Open and its QR.

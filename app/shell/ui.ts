@@ -41,6 +41,8 @@ import copySimple from '@phosphor-icons/core/assets/regular/copy-simple.svg?raw'
 import trashSimple from '@phosphor-icons/core/assets/regular/trash-simple.svg?raw'
 import checkSimple from '@phosphor-icons/core/assets/regular/check.svg?raw'
 import xSimple from '@phosphor-icons/core/assets/regular/x.svg?raw'
+import house from '@phosphor-icons/core/assets/regular/house-simple.svg?raw'
+import houseFill from '@phosphor-icons/core/assets/fill/house-simple-fill.svg?raw'
 import paperPlane from '@phosphor-icons/core/assets/regular/paper-plane-tilt.svg?raw'
 import bendBack from '@phosphor-icons/core/assets/regular/arrow-bend-up-left.svg?raw'
 import warning from '@phosphor-icons/core/assets/regular/warning.svg?raw'
@@ -56,7 +58,7 @@ import flowArrow from '@phosphor-icons/core/assets/regular/flow-arrow.svg?raw'
 import minusIcon from '@phosphor-icons/core/assets/regular/minus.svg?raw'
 import plusIcon from '@phosphor-icons/core/assets/regular/plus.svg?raw'
 /** Icons that are Phosphor's own files, never drawn here: the ⋯, the pick's check circle, the favorite's star. */
-const PHOSPHOR: Record<string, string> = { build: hammer, links: flowArrow, 'zoom-out': minusIcon, 'zoom-in': plusIcon, select: cursor, 'select-on': cursorFill, tap: handTap, 'tap-on': handTapFill, chats: chatsCircle, 'chat-text': chatText, 'grip-v': gripV, 'fold-right': foldRight, 'caret-up': caretUp, spinner: circleNotch, 'share-stage': shotStage, 'share-phone': shotPhone, 'share-tablet': shotTablet, 'share-desktop': shotDesktop, 'share-pencil': shotPencil, share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon, translate, globe, star, 'star-fill': starFill, sparkle: sparkleFill, center: shotStage, replay: arrowClockwise, 'link-simple': linkSimple, 'hash-id': hashIcon, qr: qrCode, 'open-out': squareOut, 'copy-simple': copySimple, 'trash-simple': trashSimple, 'check-simple': checkSimple, 'x-simple': xSimple, 'send-plane': paperPlane, 'reply-back': bendBack, warning, terminal, refresh: arrowClockwise, 'github-fill': githubFill, 'chat-circle': chatCircle, 'git-fork': gitFork, search: magnifyingGlass, signpost, map: squaresFour }
+const PHOSPHOR: Record<string, string> = { build: hammer, links: flowArrow, 'zoom-out': minusIcon, 'zoom-in': plusIcon, select: cursor, 'select-on': cursorFill, tap: handTap, 'tap-on': handTapFill, chats: chatsCircle, 'chat-text': chatText, 'grip-v': gripV, 'fold-right': foldRight, 'caret-up': caretUp, spinner: circleNotch, 'share-stage': shotStage, 'share-phone': shotPhone, 'share-tablet': shotTablet, 'share-desktop': shotDesktop, 'share-pencil': shotPencil, share, download, eyeoff, dots: dotsThree, pick: checkCircle, picked: checkCircleFill, settings, keyboard, eye, tweaks: tweaksIcon, translate, globe, star, 'star-fill': starFill, sparkle: sparkleFill, center: shotStage, replay: arrowClockwise, 'link-simple': linkSimple, 'hash-id': hashIcon, qr: qrCode, 'open-out': squareOut, 'copy-simple': copySimple, 'trash-simple': trashSimple, 'check-simple': checkSimple, 'x-simple': xSimple, house, 'house-fill': houseFill, 'send-plane': paperPlane, 'reply-back': bendBack, warning, terminal, refresh: arrowClockwise, 'github-fill': githubFill, 'chat-circle': chatCircle, 'git-fork': gitFork, search: magnifyingGlass, signpost, map: squaresFour }
 
 const PATHS: Record<string, string> = {
   ...SIZE_PATHS,
