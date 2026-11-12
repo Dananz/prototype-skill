@@ -389,7 +389,9 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
     const parent = n.kind === 'exploration' && n.on && !(upPick && numberOf(upPick.split('/')[1]) === n.on) ? n : null
     const title = <span dir="auto">{n.label}</span>
     const working = !!input.workSlug && (n.route!.split('/')[0] === input.workSlug || (!shut && JSON.stringify(n).includes(`"route":"${input.workSlug}/`)))
-    const comment = comments > 0 && <span title={t('Open comments')} className="flex shrink-0 items-center gap-0.5 text-[11px] tabular-nums text-zinc-500 dark:text-zinc-300"><Ph name="chatCircle" className="size-3.5" />{comments}</span>
+    // Its open comments, as a button. For now it opens the prototype; opening its comments there comes later.
+    const comment = comments > 0 && <button type="button" data-tree-comments onClick={() => { selection.clear(); api.go(n.route!.split('/')[0]) }} title={t('Open comments')} aria-label={`${t('Open comments')}: ${comments}`}
+      className="flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1 text-[11px] tabular-nums text-zinc-500 hover:bg-zinc-900/[.06] hover:text-zinc-800 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white"><Ph name="chatCircle" className="size-3.5" />{comments}</button>
     const options = n.children.filter(c => c.kind === 'option'), below = n.children.filter(c => c.kind !== 'option')
     const winner = options.find(c => c.picked), passed = options.filter(c => !c.picked)
     const fresh = winner ? 0 : passed.filter(c => isNew(c.route!)).length
@@ -434,7 +436,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
             end={<span className="flex shrink-0 items-center gap-1.5">
               {comment}
               {!shut && !lit && holdsPlace(n) && <Here />}
-              {(n.state === 'open' || n.standIn) && !winner && <span data-mark="open" title={n.standIn ? t('#1 stands in until one is picked') : tn(passed.length, '1 option', '{n} options')} data-tip-body={fresh ? tn(fresh, '{n} new', '{n} new') : t('Open it and pick the option you want to keep.')}
+              {(n.state === 'open' || n.standIn) && !winner && <span data-mark="open" title={fresh ? tn(fresh, '{n} new', '{n} new') : n.standIn ? t('#1 stands in until one is picked') : tn(passed.length, '1 option', '{n} options')} data-tip-body={t('Open it and pick the option you want to keep.')}
                 className={'shrink-0 text-[11px] font-medium tabular-nums ' + (fresh || n.standIn ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-400')}>{fresh || passed.length}</span>}
               {n.state === 'done' && <Mark state={n.state} picked={picked ? numberOf(picked.split('/')[1]) : undefined} />}
             </span>} />)}
