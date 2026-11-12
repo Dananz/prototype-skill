@@ -58,9 +58,9 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`(() => { const s = getComputedStyle(document.querySelector('[data-tree-side]')); return s.backgroundColor !== 'rgba(0, 0, 0, 0)' && s.backgroundImage === 'none' && parseFloat(s.borderTopLeftRadius) > 0 })()`), 'the tree should sit on the desk as a card')
     assert(await page.run(`localStorage.getItem('proto-tree') === '1'`), '?tree=1 should be kept in this browser')
     assert(await page.run(`!!document.querySelector('[data-tree-row="screen:thome"]')`), 'thome should be a screen row')
-    assert(await page.run(`/not picked/.test(document.querySelector('[data-tree-row="screen:tabout"]')?.textContent ?? '')`), 'tabout should say it is not picked')
+    assert(await page.run(`!!document.querySelector('[data-tree-row="screen:tabout"] [data-mark="open"]')`), 'tabout should mark that it is not picked')
     await until(page, `!!document.querySelector('[data-tree-row="exp:tcta-copy"] [data-mark="stale"]')`, 'the place on screen opens its ancestors, and tcta-copy is stale')
-    assert(await page.run(`/became Acme/.test(document.querySelector('[data-tree-row="screen:thome"]')?.textContent ?? '')`), 'thome, decided on #3, should say it became Acme')
+    assert(await page.run(`/became Acme/.test(document.querySelector('[data-tree-row="screen:thome"] [data-tree-picked]')?.title ?? '')`), 'thome, decided on #3, should say in its pick that it became Acme')
     // The page opens on this conversation: tlogo, made in another, is left out until the whole project.
     // The full smoke shares the app with other checks' prototypes, so the count is only checked to be there.
     assert(await page.run(`document.querySelector('[data-tree-filter="conv"]')?.getAttribute('aria-checked') === 'true'`), 'the scope should start on this conversation')
@@ -68,6 +68,19 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`/· \\d+$/.test(document.querySelector('[data-tree-filter="all"]').textContent.trim())`), 'Whole project should carry a count')
     await page.run(`document.querySelector('[data-tree-filter="all"]').click()`)
     await until(page, `!!document.querySelector('[data-tree-row="exp:tlogo"]') && localStorage.getItem([...Object.keys(localStorage)].find(k => k.startsWith('proto-scope:')) ?? '') === 'all'`, 'Whole project should bring tlogo in and be kept')
+
+    // What waits for you, above the tree: folded to one line, then the round built on a pick that
+    // changed before the screen with no pick. A row goes where its row in the tree goes.
+    assert(await page.run(`!!document.querySelector('[data-tree-waiting] > button[aria-expanded="false"]') && !document.querySelector('[data-tree-row^="wait:"]')`), 'the waiting group should start folded to one line')
+    await page.run(`document.querySelector('[data-tree-waiting] > button').click()`)
+    await until(page, `(() => { const ids = [...document.querySelectorAll('[data-tree-row^="wait:"]')].map(r => r.dataset.treeRow); return ids.includes('wait:tabout') && ids.indexOf('wait:tcta-copy') > -1 && ids.indexOf('wait:tcta-copy') < ids.indexOf('wait:tabout') })()`, 'the waiting group should list tcta-copy (changed) before tabout')
+    assert(await page.run(`localStorage.getItem('proto-tree-waiting') === 'open' && !document.querySelector('[data-tree-row="wait:thome"]')`), 'the waiting group should be kept open and leave out what is picked')
+    await page.run(`document.querySelector('[data-tree-row="wait:tabout"] button').click()`)
+    await until(page, `location.pathname === '/tabout/A'`, 'a waiting row of a screen should open its shown variant')
+    await page.run(`history.pushState(null, '', '/tcta-copy/A'); dispatchEvent(new PopStateEvent('popstate'))`)
+    await until(page, `document.querySelector('[data-tree-row="opt:tcta-copy/A"]')?.dataset.on === 'true'`, 'back on tcta-copy/A its row should be lit')
+    await page.run(`document.querySelector('[data-tree-waiting] > button').click()`)
+    await until(page, `!document.querySelector('[data-tree-row^="wait:"]')`, 'folded, the waiting group should leave its rows out')
 
     await page.run(`document.querySelector('[data-tree-row="screen:tabout"] button:not([aria-expanded])').click()`)
     await until(page, `location.pathname === '/tabout/A'`, 'a screen row should open its shown variant')

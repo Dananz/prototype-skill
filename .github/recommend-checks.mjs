@@ -51,9 +51,9 @@ export async function recommendChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`document.querySelectorAll('[data-tree-root] [data-tree-rec]').length === 0`), 'the pick agrees: the tree should have no sparkle left')
     // A pick against it: the decided row keeps a faint mark of the suggestion.
     proto(['pick', 'recfx', '2'])
-    await until(page, `[...document.querySelectorAll('[data-tree-root] [data-tree-rec]')].some(e => e.textContent.trim() === '3')`, 'a pick of #2 should leave a faint ✦3 on the decided row')
+    await until(page, `[...document.querySelectorAll('[data-tree-root] [data-tree-picked]')].some(e => /#3/.test(e.title) && /suggests/.test(e.title))`, 'a pick of #2 should keep the suggestion of #3 in the decided row\'s pick')
     proto(['recommend', 'recfx', '--off'])
-    await until(page, `document.querySelectorAll('[data-tree-root] [data-tree-rec]').length === 0`, 'proto recommend --off should take the mark away')
+    await until(page, `document.querySelectorAll('[data-tree-root] [data-tree-rec]').length === 0 && ![...document.querySelectorAll('[data-tree-root] [data-tree-picked]')].some(e => /suggests/.test(e.title))`, 'proto recommend --off should take the mark away')
     assert(!meta()?.recommend, 'proto recommend --off should take it out of meta.ts')
   } finally { page.close() }
   proto(['archive', 'recfx'])

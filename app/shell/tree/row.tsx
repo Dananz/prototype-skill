@@ -53,7 +53,7 @@ export function Ph({ name, className = 'size-4' }: { name: PhName; className?: s
 const MARK: Record<Exclude<ExpState, 'done'>, [label: () => string, body: () => string, icon: PhName, cls: string]> = {
   open: [() => t('Waiting for your pick'), () => t('Open it and pick the option you want to keep.'), 'circleFill', 'size-2 text-amber-500'],
   waits: [() => t('Waiting for the pick above it'), () => t('This round is built once you pick an option in the round it comes from.'), 'hourglass', 'size-3.5 text-zinc-400'],
-  stale: [() => t('Built on an option you no longer picked'), () => t('You picked something else above it since, so this round may be out of date.'), 'warning', 'size-3.5 text-rose-500'],
+  stale: [() => t('Built on an option you no longer picked'), () => t('You picked something else above it since, so this round may be out of date.'), 'warning', 'size-2 text-amber-500'],
   building: [() => t('The agent is building it'), () => t('Its options show up here as soon as they are ready.'), 'sparkle', 'size-3.5 animate-pulse text-sky-500'],
 }
 export function Mark({ state, picked }: { state: ExpState; picked?: number }) {
@@ -63,6 +63,13 @@ export function Mark({ state, picked }: { state: ExpState; picked?: number }) {
     </span>
   )
   const [say, explain, icon, cls] = MARK[state], label = say()
+  // A base that moved: the round's own icon, with a small amber sign on its corner. It needs a look, not alarm.
+  if (state === 'stale') return (
+    <span data-mark={state} title={label} data-tip-body={explain()} aria-label={label} className="relative grid size-4 shrink-0 place-items-center">
+      <Ph name="shuffle" className="size-3.5 text-zinc-400 dark:text-zinc-500" />
+      <span className="absolute -bottom-0.5 -end-0.5 grid size-2.5 place-items-center rounded-full bg-[var(--desk-card,white)]"><Ph name={icon} className={cls} /></span>
+    </span>
+  )
   return <span data-mark={state} title={label} data-tip-body={explain()} aria-label={label} className="grid size-4 shrink-0 place-items-center"><Ph name={icon} className={cls} /></span>
 }
 

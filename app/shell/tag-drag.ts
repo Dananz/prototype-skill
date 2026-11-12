@@ -35,7 +35,7 @@ type Ghost = { route: string; box: HTMLElement; card: HTMLElement; chip: HTMLEle
 /** A press on a row that may become a drag (mouse and pen; a finger scrolls the tree). */
 export function armTagDrag(e: ReactPointerEvent<HTMLElement>, routes: () => string[]) {
   if (e.button !== 0 || e.pointerType === 'touch' || e.metaKey || e.ctrlKey || e.shiftKey) return
-  if ((e.target as Element).closest('[aria-expanded], [data-act], [data-tree-picked]') && !(e.target as Element).closest('[data-tree-more]')) return
+  if ((e.target as Element).closest('[aria-expanded], [data-act], [data-tree-picked], [data-tree-comments]') && !(e.target as Element).closest('[data-tree-more]')) return
   const from = e.currentTarget, id = e.pointerId, x0 = e.clientX, y0 = e.clientY
   const early = (m: PointerEvent) => { if (m.pointerId === id && Math.hypot(m.clientX - x0, m.clientY - y0) >= START) { quit(); begin(from, routes(), x0, y0, m, id) } }
   const quit = () => { removeEventListener('pointermove', early, true); removeEventListener('pointerup', quit, true); removeEventListener('pointercancel', quit, true) }

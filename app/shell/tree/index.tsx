@@ -253,7 +253,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
   useEffect(() => { selection.clear() }, [filter, sid])
   useEffect(() => { selection.keep(r => { const [slug, letter] = r.split('/'); return !!input.protos.find(p => p.id === slug)?.variants.some(v => v.id === letter) }) }, [input.protos])
   const touched = (p: Proto) => Math.max(Date.parse(p.created) || 0, memory.visitedAt(p.id), ...p.variants.flatMap(v => [input.edits?.[`${p.id}/${v.id}`] ?? 0, ...(p.versions?.[v.id] ?? []).map(x => Date.parse(x.at) || 0)]))
-  const { nodes: tree, waiting, settled } = treeOf(input.protos, input.designs, { filter, me: input.conv ? sid : input.me, building: input.building, settle: {
+  const { nodes: tree, waiting, settled, waits } = treeOf(input.protos, input.designs, { filter, me: input.conv ? sid : input.me, building: input.building, settle: {
     now: Date.now(), touched, aside: memory.asideOf, seen: (route, p) => memory.isSeen(route, p.created),
     keep: id => id === input.workSlug || (input.counts[id] ?? 0) > 0,
   } })
@@ -290,7 +290,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
       }
       return [...next].length === o.size && [...next].every(k => o.has(k)) ? o : next
     })
-    requestAnimationFrame(() => list.current?.querySelector('[data-on="true"]')?.scrollIntoView({ block: 'nearest' }))
+    requestAnimationFrame(() => list.current?.querySelector('[data-on="true"]:not([data-tree-waiting] *)')?.scrollIntoView({ block: 'nearest' }))
     // nodes change with every edit; the place is what moves the tree.
   }, [input.place]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -316,14 +316,23 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
   const recOf = (slug: string) => input.protos.find(p => p.id === slug)?.recommend
   const REC = 'text-indigo-600 dark:text-indigo-300'
   const recSays = (v: string | number) => t('{agent} suggests {v}', { agent: input.agent || t('The agent'), v: `#${v}` })
+  /** A decided row says one thing, its pick; the rest of what it has is in the pick's tooltip. */
+  const said = (winner: TreeNode, num: number, below: number, passed: number) => {
+    const r = recOf(winner.route!.split('/')[0])
+    return [`${t('Picked #{n}', { n: num })}: ${winner.label}`,
+      winner.became && t('became {name}', { name: winner.became }),
+      below && tn(below, '{n} exploration built on this', '{n} explorations built on this'),
+      passed && tn(passed, '{n} more option', '{n} more options'),
+      r && r.pick !== winner.route!.split('/')[1] && recSays(numberOf(r.pick)),
+    ].filter(Boolean).join(' · ')
+  }
   const favOf = (route: string) => input.protos.find(p => p.id === route.split('/')[0])?.favorites.includes(route.split('/')[1])
   const statesOf = (route: string) => { const letter = route.split('/')[1]; return desk ? (input.protos.find(p => p.id === route.split('/')[0])?.states.filter(s => !s.only?.length || s.only.includes(letter)).length ?? 0) : 0 }
   const protoOf = (n: TreeNode) => input.protos.find(p => p.id === n.route!.split('/')[0])
   const isNew = (route: string) => { const p = input.protos.find(x => x.id === route.split('/')[0]); return !!p && !memory.isSeen(route, p.created) }
   const optionEnd = (n: TreeNode) => {
     const states = statesOf(n.route!)
-    return <>{n.became ? <span className="shrink-0 truncate text-[11px] text-indigo-500" dir="auto">{t('became {name}', { name: n.became })}</span> : null}
-      {states > 0 && <span data-tree-states={states} title={tn(states, '{n} state', '{n} states')} className="shrink-0 text-[11px] tabular-nums text-zinc-400">{states}</span>}</>
+    return states > 0 && <span data-tree-states={states} title={tn(states, '{n} state', '{n} states')} className="shrink-0 text-[11px] tabular-nums text-zinc-400">{states}</span>
   }
   /** tone: picked (the plain row, under Favorites), passed (grey, a step back), candidate (undecided: new or seen). */
   const option = (n: TreeNode, tone: 'picked' | 'passed' | 'candidate') => {
@@ -333,11 +342,10 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
     return (
       <Row key={n.key} id={n.key} depth={0} on={on} onClick={() => api.go(n.route!)} mv={n.route} drag={dragOf(n)}
         icon={<span className={'grid size-4 shrink-0 place-items-center rounded text-[10px] font-semibold tabular-nums ' + (n.picked ? 'bg-emerald-500 text-white' : 'bg-zinc-900/[.06] text-zinc-500 dark:bg-white/10 dark:text-zinc-400 ') + (faint ? 'opacity-60' : '')}>{num}</span>}
-        label={<span className="flex min-w-0 items-center gap-1"><span dir="auto" className={'truncate ' + (faint ? 'text-zinc-500' : fresh ? 'font-medium' : '')}>{n.label}</span>{favOf(n.route!) && <Ph name="starFill" className="size-3 shrink-0 text-amber-400" />}</span>}
+        label={<span className="flex min-w-0 items-center gap-1" title={n.became ? t('became {name}', { name: n.became }) : undefined}><span dir="auto" className={'truncate ' + (faint ? 'text-zinc-500' : fresh ? 'font-medium' : '')}>{n.label}</span>{favOf(n.route!) && <Ph name="starFill" className="size-3 shrink-0 text-amber-400" />}</span>}
         end={<>{optionEnd(n)}
           {tone === 'candidate' && recOf(n.route!.split('/')[0])?.pick === n.route!.split('/')[1] && <span data-tree-rec title={recSays(num)} className={'flex shrink-0 ' + REC}><Ph name="sparkle" className="size-3" /></span>}
-          {tone === 'picked' && n.picked && !n.became && <span className="shrink-0 text-[11px] text-emerald-600 dark:text-emerald-400">{t('Picked')}</span>}
-          {fresh && <span data-tree-new className="flex shrink-0 items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400"><span className="size-1.5 rounded-full bg-amber-500" />{t('New')}</span>}
+          {fresh && <span data-tree-new role="img" title={t('New')} aria-label={t('New')} className="flex h-4 shrink-0 items-center"><span className="size-1.5 rounded-full bg-amber-500" /></span>}
         </>} />
     )
   }
@@ -379,15 +387,32 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
     // "on #4" only when it isn't the pick of the row it hangs under, which already says #4.
     const upPick = up && pickedOf(up)
     const parent = n.kind === 'exploration' && n.on && !(upPick && numberOf(upPick.split('/')[1]) === n.on) ? n : null
-    const options = n.children.filter(c => c.kind === 'option'), below = n.children.filter(c => c.kind !== 'option')
-    const winner = options.find(c => c.picked), passed = options.filter(c => !c.picked)
     const title = <span dir="auto">{n.label}</span>
     const working = !!input.workSlug && (n.route!.split('/')[0] === input.workSlug || (!shut && JSON.stringify(n).includes(`"route":"${input.workSlug}/`)))
-    const pulse = working && <span title={t('The agent is working on this')} data-tree-working className="size-1.5 shrink-0 animate-pulse rounded-full bg-emerald-500" />
-    const comment = comments > 0 && <span title={t('Open comments')} className="flex shrink-0 items-center gap-0.5 text-[11px] tabular-nums text-zinc-500 dark:text-zinc-300"><Ph name="chatCircle" className="size-3.5" />{comments}</span>
-    const icon = n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" /> : <Ph name="shuffle" className={'size-3.5 ' + (n.state === 'waits' ? 'text-zinc-300' : n.state === 'open' ? 'text-amber-500' : 'text-violet-500')} />
+    // Its open comments, as a button. For now it opens the prototype; opening its comments there comes later.
+    const comment = comments > 0 && <button type="button" data-tree-comments onClick={() => { selection.clear(); api.go(n.route!.split('/')[0]) }} title={t('Open comments')} aria-label={`${t('Open comments')}: ${comments}`}
+      className="flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1 text-[11px] tabular-nums text-zinc-500 hover:bg-zinc-900/[.06] hover:text-zinc-800 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white"><Ph name="chatCircle" className="size-3.5" />{comments}</button>
+    const options = n.children.filter(c => c.kind === 'option'), below = n.children.filter(c => c.kind !== 'option')
+    const winner = options.find(c => c.picked), passed = options.filter(c => !c.picked)
+    // Decided, even when Favorites hides its pick.
+    const decided = !!winner || n.state === 'done'
     const page = () => api.go(n.kind === 'exploration' ? n.route!.split('/')[0] : n.route!)
+    // Built only for a row that is drawn: a long tree draws the ones near the view.
     const block = () => {
+      const fresh = decided ? 0 : passed.filter(c => isNew(c.route!)).length
+      // One status at the start, in the icon's place: what the row waits on. A screen keeps its own icon.
+      // Its own mark (building, waiting above, changed) stays while the agent works on it: then the
+      // work shows at the row's end.
+      const marked = n.state === 'waits' || n.state === 'stale' || n.state === 'building'
+      const icon = marked ? <Mark state={n.state!} />
+        : working ? <span data-tree-working role="img" title={t('The agent is working on this')} aria-label={t('The agent is working on this')} className="grid size-4 shrink-0 place-items-center"><Ph name="sparkle" className="size-3.5 animate-pulse text-sky-500" /></span>
+        : n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" />
+        : fresh ? <Mark state="open" />
+        : <Ph name="shuffle" className={'size-3.5 ' + (decided ? 'text-zinc-400 dark:text-zinc-500' : 'text-amber-500')} />
+      const pulse = working && marked && n.state !== 'building' && <span data-tree-working role="img" title={t('The agent is working on this')} aria-label={t('The agent is working on this')} className="size-1.5 shrink-0 animate-pulse rounded-full bg-emerald-500" />
+      // What the agent suggests, on a row with no pick: in the tooltips of its name and its count.
+      const rec = !decided && n.kind === 'exploration' ? recOf(n.route!.split('/')[0]) : null, suggests = rec ? recSays(numberOf(rec.pick)) : ''
+      const counts = fresh ? tn(fresh, '{n} new', '{n} new') : n.standIn ? t('#1 stands in until one is picked') : tn(passed.length, '1 option', '{n} options')
       // Decided: one row, its name with its pick's number at the end (the pick's own link). Its ⋯ and
       // Cmd + click act on the pick; open, what was built on it comes first and the options passed on
       // stay behind one more row.
@@ -400,11 +425,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
               <Row id={n.key} depth={0} on={onIt} onPick={winner.route === input.place} open={shut} onCaret={() => flip(n)} onClick={page} mv={winner.route} stands={winner.route} drag={dragOf(n)} strong={!n.on && !!below.length} medium={!n.on && !below.length} icon={icon}
                 label={<span className={n.on ? 'font-medium dark:text-zinc-200' : ''}>{title}{parent && <span className="text-[11px] font-normal text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
                 end={<span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-zinc-400">{pulse}{comment}{hidden && <Here />}
-                  {!shut && !!below.length && <span title={tn(below.length, '{n} exploration built on this', '{n} explorations built on this')} className="flex items-center gap-0.5"><Ph name="gitBranch" className="size-3.5" />{below.length}</span>}
-                  {!shut && !!passed.length && <span title={tn(passed.length, '{n} more option', '{n} more options')} className="flex items-center gap-0.5"><Ph name="rows" className="size-3.5" />{passed.length}</span>}
-                  {(r => r && r.pick !== winner.route!.split('/')[1] ? <span data-tree-rec title={recSays(numberOf(r.pick))} className={'flex items-center gap-0.5 opacity-70 ' + REC}><Ph name="sparkle" className="size-3" />{numberOf(r.pick)}</span> : null)(recOf(winner.route!.split('/')[0]))}
-                  {winner.became && <span className="min-w-0 truncate text-indigo-500" dir="auto">{t('became {name}', { name: winner.became })}</span>}
-                  <button type="button" data-tree-picked onClick={() => { selection.clear(); api.go(winner.route!) }} title={`${t('Picked #{n}', { n: num })}: ${winner.label}`} aria-label={`${t('Picked #{n}', { n: num })}: ${winner.label}`}
+                  <button type="button" data-tree-picked onClick={() => { selection.clear(); api.go(winner.route!) }} title={said(winner, num, below.length, passed.length)} aria-label={`${t('Picked #{n}', { n: num })}: ${winner.label}`}
                     className="-me-1 flex h-6 items-center gap-0.5 rounded-md px-1 font-medium text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400">
                     {favOf(winner.route!) && <Ph name="starFill" className="size-3 text-amber-400" />}<Ph name="checkFill" className="size-3.5" />{num}</button></span>} />,
               { 'data-tree-decided': '' })}
@@ -415,22 +436,19 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
           </>
         )
       }
-      const fresh = passed.filter(c => isNew(c.route!)).length
       return (
         <>
           {stuck(<Row id={n.key} depth={0} on={lit} open={shut} onCaret={() => flip(n)} mv={n.route} drag={dragOf(n)}
             /* An exploration's name goes to its own page (/slug), its card open in the gallery; a screen's opens it. */
             onClick={() => { if (!shut) flip(n); page() }}
             icon={icon}
-            label={<span className={n.state === 'waits' ? 'text-zinc-400' : n.state === 'open' ? 'font-medium' : ''}>{title}{parent && <span className="text-[11px] font-normal text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
+            label={<span title={suggests || undefined} className={n.state === 'waits' ? 'text-zinc-400' : n.state === 'open' ? 'font-medium' : ''}>{title}{parent && <span className="text-[11px] font-normal text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
             end={<span className="flex shrink-0 items-center gap-1.5">
-              {pulse}
-              {n.standIn && <span title={t('#1 stands in until one is picked')} className="rounded bg-zinc-900/[.05] px-1 text-[10px] text-zinc-500 dark:bg-white/10">{t('not picked')}</span>}
-              {comment}
+              {pulse}{comment}
               {!shut && !lit && holdsPlace(n) && <Here />}
-              {!shut && n.kind === 'exploration' && (r => r ? <span data-tree-rec title={recSays(numberOf(r.pick))} className={'flex shrink-0 items-center gap-0.5 text-[11px] font-medium tabular-nums ' + REC}><Ph name="sparkle" className="size-3" />{numberOf(r.pick)}</span> : null)(recOf(n.route!.split('/')[0]))}
-              {n.state === 'open' && n.kind === 'exploration' && !comments && <span data-mark="open" title={t('Waiting for your pick')} data-tip-body={t('Open it and pick the option you want to keep.')} className="shrink-0 text-[11px] text-amber-600 dark:text-amber-400">{fresh ? tn(fresh, '{n} new', '{n} new') : t('Waiting for you')}</span>}
-              {n.state && n.state !== 'open' && <Mark state={n.state} picked={picked ? numberOf(picked.split('/')[1]) : undefined} />}
+              {n.state === 'open' && !decided && (fresh || passed.length) > 0 && <span data-mark="open" role="img" aria-label={[counts, suggests].filter(Boolean).join(' · ')} title={[counts, suggests].filter(Boolean).join(' · ')} data-tip-body={t('Open it and pick the option you want to keep.')}
+                className={'shrink-0 text-[11px] font-medium tabular-nums ' + (fresh || n.standIn ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-400')}>{fresh || passed.length}</span>}
+              {n.state === 'done' && <Mark state={n.state} picked={picked ? numberOf(picked.split('/')[1]) : undefined} />}
             </span>} />)}
           <Collapse open={!!shut}><Inside>
             {n.state === 'stale' && <StaleNote n={n} protos={input.protos} />}
@@ -503,6 +521,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
       </div>}
       {!desk && chosen.length > 0 && <ChosenBar top api={api} routes={chosen} />}
       <div ref={list} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain pb-3 pt-1 text-[13px]">
+        {waits.length > 0 && <Waiting waits={waits} isNew={isNew} slug={slug} go={api.go} />}
         {nodes.length ? nodes.map(n => draw(n))
           : <p className="px-4 py-6 text-center text-[12px] text-zinc-400">{filter === 'open' ? t('Nothing waits for you') : filter === 'mine' ? t('Nothing from this conversation yet') : filter === 'favs' ? t('No favorites yet') : t('No prototypes yet')}</p>}
       </div>
@@ -515,6 +534,35 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
     </div>
   )
 }
+
+/** What waits on the user, above the tree, in a frame and folded to one line until opened (kept in
+ *  this browser): built on a pick that changed first, then new options, then the ones to pick. */
+function Waiting({ waits, isNew, slug, go }: { waits: { p: Proto; state: 'open' | 'stale'; route: string }[]; isNew(route: string): boolean; slug: string; go(route: string): void }) {
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem('proto-tree-waiting') === 'open' } catch { return false } })
+  const flip = () => { setOpen(!open); try { localStorage.setItem('proto-tree-waiting', open ? 'shut' : 'open') } catch { /* private window */ } }
+  const rows = waits.map(w => ({ ...w, fresh: w.p.variants.filter(v => isNew(`${w.p.id}/${v.id}`)).length }))
+    .sort((a, b) => rank(a) - rank(b) || b.p.created.localeCompare(a.p.created))
+  return (
+    <div data-tree-waiting className="mx-2 mb-2 rounded-xl border border-amber-500/40 dark:border-amber-400/25">
+      <button type="button" aria-expanded={open} onClick={flip} className="flex h-8 w-full items-center gap-1.5 rounded-xl px-2 text-start text-[12px] font-medium text-amber-700 hover:bg-amber-500/[.06] dark:text-amber-300 [@media(pointer:coarse)]:h-10">
+        <span className={'grid w-2.5 place-items-center transition-transform duration-200 ease-out motion-reduce:transition-none ' + (open ? '' : 'ltr:-rotate-90 rtl:rotate-90')}><Ph name="caretDown" className="size-2.5" /></span>
+        {tn(rows.length, 'Waiting for you', '{n} waiting for you')}
+      </button>
+      <Collapse open={open}><div className="pb-1">
+        {rows.map(({ p, state, route, fresh }) => (
+          <Row key={p.id} id={`wait:${p.id}`} depth={0} on={p.id === slug} onClick={() => go(route)}
+            icon={state === 'stale' ? <Mark state="stale" />
+              : fresh ? <span className="grid size-4 shrink-0 place-items-center"><span className="size-1.5 rounded-full bg-amber-500" /></span>
+              : <Ph name="shuffle" className="size-3.5 text-amber-500" />}
+            label={<bdi className={fresh ? 'font-medium' : ''}>{p.title}</bdi>}
+            end={state === 'open' && (fresh || p.variants.length) > 0 && <span data-tree-wait-count role="img" aria-label={fresh ? tn(fresh, '{n} new', '{n} new') : tn(p.variants.length, '1 option', '{n} options')} title={fresh ? tn(fresh, '{n} new', '{n} new') : tn(p.variants.length, '1 option', '{n} options')}
+              className={'shrink-0 text-[11px] font-medium tabular-nums ' + (fresh ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-400')}>{fresh || p.variants.length}</span>} />
+        ))}
+      </div></Collapse>
+    </div>
+  )
+}
+const rank = (w: { state: 'open' | 'stale'; fresh: number }) => w.state === 'stale' ? 0 : w.fresh ? 1 : 2
 
 /** The options passed on, behind one row, under what was built on a decided exploration. */
 function PassedRows({ n, more: count, hold, drag, children }: { n: TreeNode; more: number; hold: boolean; drag: string[]; children: React.ReactNode[] }) {
@@ -535,7 +583,7 @@ function StaleNote({ n, protos }: { n: TreeNode; protos: Proto[] }) {
   const p = protos.find(x => `exp:${x.id}` === n.key), parent = p?.from && protos.find(x => x.id === p.from!.proto)
   if (!p?.from || !parent?.picked) return null
   return (
-    <div className="mb-1 rounded-lg bg-rose-50 px-2 py-1.5 text-[12px] text-rose-800 dark:bg-rose-950/50 dark:text-rose-200" style={{ marginInlineStart: 8, marginInlineEnd: 8 }}>
+    <div className="mb-1 rounded-lg bg-amber-50 px-2 py-1.5 text-[12px] text-amber-800 dark:bg-amber-950/40 dark:text-amber-200" style={{ marginInlineStart: 8, marginInlineEnd: 8 }}>
       {t('Built on #{was}, and #{now} is picked now', { was: numberOf(p.from.variant), now: numberOf(parent.picked) })}
     </div>
   )
