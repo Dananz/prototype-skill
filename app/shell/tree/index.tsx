@@ -290,7 +290,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
       }
       return [...next].length === o.size && [...next].every(k => o.has(k)) ? o : next
     })
-    requestAnimationFrame(() => list.current?.querySelector('[data-on="true"]')?.scrollIntoView({ block: 'nearest' }))
+    requestAnimationFrame(() => list.current?.querySelector('[data-on="true"]:not([data-tree-waiting] *)')?.scrollIntoView({ block: 'nearest' }))
     // nodes change with every edit; the place is what moves the tree.
   }, [input.place]) // eslint-disable-line react-hooks/exhaustive-deps
 
