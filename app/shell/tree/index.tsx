@@ -541,7 +541,7 @@ function StaleNote({ n, protos }: { n: TreeNode; protos: Proto[] }) {
   const p = protos.find(x => `exp:${x.id}` === n.key), parent = p?.from && protos.find(x => x.id === p.from!.proto)
   if (!p?.from || !parent?.picked) return null
   return (
-    <div className="mb-1 rounded-lg bg-rose-50 px-2 py-1.5 text-[12px] text-rose-800 dark:bg-rose-950/50 dark:text-rose-200" style={{ marginInlineStart: 8, marginInlineEnd: 8 }}>
+    <div className="mb-1 rounded-lg bg-amber-50 px-2 py-1.5 text-[12px] text-amber-800 dark:bg-amber-950/40 dark:text-amber-200" style={{ marginInlineStart: 8, marginInlineEnd: 8 }}>
       {t('Built on #{was}, and #{now} is picked now', { was: numberOf(p.from.variant), now: numberOf(parent.picked) })}
     </div>
   )
