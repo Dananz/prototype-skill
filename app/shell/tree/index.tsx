@@ -253,7 +253,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
   useEffect(() => { selection.clear() }, [filter, sid])
   useEffect(() => { selection.keep(r => { const [slug, letter] = r.split('/'); return !!input.protos.find(p => p.id === slug)?.variants.some(v => v.id === letter) }) }, [input.protos])
   const touched = (p: Proto) => Math.max(Date.parse(p.created) || 0, memory.visitedAt(p.id), ...p.variants.flatMap(v => [input.edits?.[`${p.id}/${v.id}`] ?? 0, ...(p.versions?.[v.id] ?? []).map(x => Date.parse(x.at) || 0)]))
-  const { nodes: tree, waiting, settled } = treeOf(input.protos, input.designs, { filter, me: input.conv ? sid : input.me, building: input.building, settle: {
+  const { nodes: tree, waiting, settled, waits } = treeOf(input.protos, input.designs, { filter, me: input.conv ? sid : input.me, building: input.building, settle: {
     now: Date.now(), touched, aside: memory.asideOf, seen: (route, p) => memory.isSeen(route, p.created),
     keep: id => id === input.workSlug || (input.counts[id] ?? 0) > 0,
   } })
@@ -513,6 +513,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
       </div>}
       {!desk && chosen.length > 0 && <ChosenBar top api={api} routes={chosen} />}
       <div ref={list} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain pb-3 pt-1 text-[13px]">
+        {waits.length > 0 && <Waiting waits={waits} isNew={isNew} slug={slug} go={api.go} />}
         {nodes.length ? nodes.map(n => draw(n))
           : <p className="px-4 py-6 text-center text-[12px] text-zinc-400">{filter === 'open' ? t('Nothing waits for you') : filter === 'mine' ? t('Nothing from this conversation yet') : filter === 'favs' ? t('No favorites yet') : t('No prototypes yet')}</p>}
       </div>
@@ -525,6 +526,36 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
     </div>
   )
 }
+
+/** What waits on the user, above the tree, in a frame and folded to one line until opened (kept in
+ *  this browser): built on a pick that changed first, then new options, then the ones to pick. */
+function Waiting({ waits, isNew, slug, go }: { waits: { p: Proto; state: 'open' | 'stale' }[]; isNew(route: string): boolean; slug: string; go(route: string): void }) {
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem('proto-tree-waiting') === 'open' } catch { return false } })
+  const flip = () => { setOpen(!open); try { localStorage.setItem('proto-tree-waiting', open ? 'shut' : 'open') } catch { /* private window */ } }
+  const rows = waits.map(w => ({ ...w, fresh: w.p.variants.filter(v => isNew(`${w.p.id}/${v.id}`)).length }))
+    .sort((a, b) => rank(a) - rank(b) || b.p.created.localeCompare(a.p.created))
+  return (
+    <div data-tree-waiting className="mx-2 mb-2 rounded-xl border border-amber-500/40 dark:border-amber-400/25">
+      <button type="button" aria-expanded={open} onClick={flip} className="flex h-8 w-full items-center gap-1.5 rounded-xl px-2 text-start text-[12px] font-medium text-amber-700 hover:bg-amber-500/[.06] dark:text-amber-300 [@media(pointer:coarse)]:h-10">
+        <span className={'grid w-2.5 place-items-center transition-transform duration-200 ease-out motion-reduce:transition-none ' + (open ? '' : 'ltr:-rotate-90 rtl:rotate-90')}><Ph name="caretDown" className="size-2.5" /></span>
+        {tn(rows.length, 'Waiting for you', '{n} waiting for you')}
+      </button>
+      <Collapse open={open}><div className="pb-1">
+        {rows.map(({ p, state, fresh }) => (
+          <Row key={p.id} id={`wait:${p.id}`} depth={0} on={p.id === slug} onClick={() => go(p.id)}
+            icon={state === 'stale'
+              ? <span title={t('Built on an option you no longer picked')} className="relative grid size-4 shrink-0 place-items-center"><Ph name="shuffle" className="size-3.5 text-zinc-400 dark:text-zinc-500" /><span className="absolute -bottom-0.5 -end-0.5 grid size-2.5 place-items-center rounded-full bg-[var(--desk-card,white)]"><Ph name="warning" className="size-2 text-amber-500" /></span></span>
+              : fresh ? <span className="grid size-4 shrink-0 place-items-center"><span className="size-1.5 rounded-full bg-amber-500" /></span>
+              : <Ph name="shuffle" className="size-3.5 text-amber-500" />}
+            label={<bdi className={fresh ? 'font-medium' : ''}>{p.title}</bdi>}
+            end={state === 'open' && <span data-tree-wait-count title={fresh ? tn(fresh, '{n} new', '{n} new') : tn(p.variants.length, '1 option', '{n} options')}
+              className={'shrink-0 text-[11px] font-medium tabular-nums ' + (fresh ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-400')}>{fresh || p.variants.length}</span>} />
+        ))}
+      </div></Collapse>
+    </div>
+  )
+}
+const rank = (w: { state: 'open' | 'stale'; fresh: number }) => w.state === 'stale' ? 0 : w.fresh ? 1 : 2
 
 /** The options passed on, behind one row, under what was built on a decided exploration. */
 function PassedRows({ n, more: count, hold, drag, children }: { n: TreeNode; more: number; hold: boolean; drag: string[]; children: React.ReactNode[] }) {

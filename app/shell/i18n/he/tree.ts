@@ -32,6 +32,8 @@ export default {
   'Hide': 'להסתיר',
   'Not picked': 'לא נבחר',
   '{n} new': '{n} חדשות',
+  'Waiting for you': 'מחכה לך',
+  '{n} waiting for you': '{n} מחכים לך',
   '{n} more option': 'עוד אפשרות אחת',
   '{n} more options': 'עוד {n} אפשרויות',
   '{n} exploration built on this': 'סבב אחד בהמשך',

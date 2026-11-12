@@ -51,7 +51,7 @@ export function stateOf(p: Proto, byId: Map<string, Proto>, building: Set<string
 const NEEDS: ExpState[] = ['open', 'stale', 'building']
 const shown = (p: Proto) => p.picked ?? p.variants[0]?.id ?? 'A'
 
-export function treeOf(protos: Proto[], designs: Design[], o: { filter: Filter; me: string | null; building: Set<string>; settle?: Settle }): { nodes: TreeNode[]; waiting: number; settled: TreeNode[] } {
+export function treeOf(protos: Proto[], designs: Design[], o: { filter: Filter; me: string | null; building: Set<string>; settle?: Settle }): { nodes: TreeNode[]; waiting: number; settled: TreeNode[]; waits: { p: Proto; state: 'open' | 'stale' }[] } {
   const live = protos.filter(p => !p.archived)
   const byId = new Map(live.map(p => [p.id, p]))
   const state = (p: Proto) => stateOf(p, byId, o.building)
@@ -115,5 +115,8 @@ export function treeOf(protos: Proto[], designs: Design[], o: { filter: Filter; 
   if (loose.length) nodes.push({ kind: 'section', key: 'section:loose', label: 'Explorations on no screen', children: loose })
   const archived = protos.filter(p => p.archived)
   if (o.filter === 'all' && archived.length) nodes.push({ kind: 'section', key: 'section:archive', label: 'Archive', count: archived.length, children: archived.map(p => ({ kind: 'exploration', key: `exp:${p.id}`, label: p.title, route: `${p.id}/${shown(p)}`, children: [] })) })
-  return { nodes, settled: draw(roots.filter(p => resting.has(p.id))), waiting: live.filter(p => !resting.has(p.id) && ['open', 'stale'].includes(state(p))).length }
+  const needs = live.filter(p => !resting.has(p.id) && ['open', 'stale'].includes(state(p)))
+  // What waits on the user, for the group above the tree: under "this conversation", only its own.
+  const waits = o.filter === 'favs' || o.filter === 'open' ? [] : needs.filter(mine).map(p => ({ p, state: state(p) as 'open' | 'stale' }))
+  return { nodes, settled: draw(roots.filter(p => resting.has(p.id))), waiting: needs.length, waits }
 }
