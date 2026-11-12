@@ -345,7 +345,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
         label={<span className="flex min-w-0 items-center gap-1" title={n.became ? t('became {name}', { name: n.became }) : undefined}><span dir="auto" className={'truncate ' + (faint ? 'text-zinc-500' : fresh ? 'font-medium' : '')}>{n.label}</span>{favOf(n.route!) && <Ph name="starFill" className="size-3 shrink-0 text-amber-400" />}</span>}
         end={<>{optionEnd(n)}
           {tone === 'candidate' && recOf(n.route!.split('/')[0])?.pick === n.route!.split('/')[1] && <span data-tree-rec title={recSays(num)} className={'flex shrink-0 ' + REC}><Ph name="sparkle" className="size-3" /></span>}
-          {fresh && <span data-tree-new title={t('New')} aria-label={t('New')} className="grid size-4 shrink-0 place-items-center"><span className="size-1.5 rounded-full bg-amber-500" /></span>}
+          {fresh && <span data-tree-new title={t('New')} aria-label={t('New')} className="flex h-4 shrink-0 items-center"><span className="size-1.5 rounded-full bg-amber-500" /></span>}
         </>} />
     )
   }
