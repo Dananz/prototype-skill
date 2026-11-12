@@ -9,7 +9,9 @@ view. Publish only when the user asks for a link.
 
 Viewers can switch designs with the left and right arrow keys or the named design list, on the
 desk, in full view and on a phone. Arrows follow the interface's reading direction and leave
-text fields and the design's own controls alone. The header's language button offers English,
+text fields and the design's own controls alone. Each screen has its own address, `#/<prototype>/<variant>`
+after the link (`https://<id>.prtype.dev/#/checkout/B`): the address bar always names the screen in
+view, so it can be copied and sent, and opening it starts on that screen, full size on a wide screen. The header's language button offers English,
 Hebrew and Browser language. A fresh viewer follows the browser's preferred supported language
 (English if none is supported), independently of the author's session language; an explicit
 choice is kept in that browser. The designs keep their own content and direction. Existing

@@ -66,10 +66,10 @@ function useAppearance() {
 
 /** Where Sign in with GitHub starts: the share's own `_in/start` (at /s/<id>/ in path mode, else at
  *  the root), which sends the viewer on to the apex and brings them back to `back`. None from disk. */
-function signInUrl(): string | null {
+function signInUrl(hash = location.hash): string | null {
   if (!/^https?:$/.test(location.protocol)) return null
   const base = location.pathname.match(/^\/s\/[a-z0-9]+\//)?.[0] ?? '/'
-  return `${location.origin}${base}_in/start?back=${encodeURIComponent(location.pathname + location.hash)}`
+  return `${location.origin}${base}_in/start?back=${encodeURIComponent(location.pathname + hash)}`
 }
 
 const ask = (path: string, init?: RequestInit) => fetch(path, { ...init, headers: { 'X-Proto': '1' }, cache: 'no-store' })
@@ -275,7 +275,10 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
   // The address names the screen in view, so it can be copied and sent: on a phone the one shown, on
   // a wide screen the one open full size, else the prototype's desk (nothing, when it is the only one).
   // Replaced, not pushed: going through the screens doesn't fill Back.
-  const place = wide ? (open && !closing ? open : protos.length > 1 ? proto.id : '') : cur.key
+  // The full view draws `cur`, which a pin or a phone-width swipe can move without `open`.
+  const place = wide ? (open && !closing ? cur.key : protos.length > 1 ? proto.id : '') : cur.key
+  // Sign in comes back to the screen in view now, not the one the page was loaded on.
+  const signedIn = { ...account, signIn: account.signIn ? signInUrl(place ? hashOf(place) : '') : null }
   useEffect(() => {
     const want = place ? hashOf(place) : ''
     if (location.hash !== want) history.replaceState(history.state, '', location.pathname + location.search + want)
@@ -324,7 +327,7 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
   useEffect(() => { if (!wide) setReach(true) }, [wide])
   const barInset = () => bar.current?.offsetHeight ?? 0
   const talk: Talk = {
-    hosted, can, signIn: account.signIn, owner: account.owner || facts.owner, ownerAvatar: facts.avatar, message, me: account.me, notes, fresh, told, add, retry, remove,
+    hosted, can, signIn: signedIn.signIn, owner: account.owner || facts.owner, ownerAvatar: facts.avatar, message, me: account.me, notes, fresh, told, add, retry, remove,
     lost: new Set(Object.entries(lostBy).filter(([k]) => k.startsWith(`${full ? 'full' : wide ? 'desk' : 'phone'}:`)).flatMap(([, ids]) => ids)), setLost,
     open: barOpen, setOpen: setBarOpen, active, setActive, pinMode, setPinMode: on => { setPinMode(on); if (!on) setPlacing(null) }, placing, setPlacing,
     reach: wide ? reach : true,
@@ -370,7 +373,7 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
   return (
     <TalkCtx.Provider value={talk}>
     <div ref={root} data-viewer dir={rtl ? 'rtl' : 'ltr'} className={`${face} ${surface} relative flex h-full flex-col overflow-hidden text-zinc-900 antialiased dark:text-zinc-100`}>
-      <Header protos={protos} cur={proto} choose={setProtoId} wide={wide} facts={facts} appearance={appearance} setAppearance={setAppearance} account={account} root={root}
+      <Header protos={protos} cur={proto} choose={setProtoId} wide={wide} facts={facts} appearance={appearance} setAppearance={setAppearance} account={signedIn} root={root}
         center={devOn.mounted ? (
           <div className={presence(devOn.shown)} inert={!(full && !closing)}>
             <DeviceMenu device={device} set={patch} shown={shown.z} phone={proto.kind === 'phone'} open={full && !closing && menu} setOpen={setMenu} root={root} side="bottom" />
