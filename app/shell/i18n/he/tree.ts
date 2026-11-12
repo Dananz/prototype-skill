@@ -57,6 +57,7 @@ export default {
   'Waiting for the pick above it': 'מחכה לבחירה בסבב שמעליו',
   'Built on an option you no longer picked': 'נבנה על אפשרות שכבר לא בחרת',
   'The agent is building it': 'הסוכן בונה אותו',
+  'The agent is working on this': 'עובדים על זה עכשיו',
   'Picked #{n}': 'נבחר #{n}',
   'Open it and pick the option you want to keep.': 'פתח אותו ובחר את האפשרות שתרצה לשמור.',
   'This round is built once you pick an option in the round it comes from.': 'הסבב הזה ייבנה אחרי שתבחר אפשרות בסבב שממנו הוא יוצא.',

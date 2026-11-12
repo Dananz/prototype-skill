@@ -345,7 +345,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
         label={<span className="flex min-w-0 items-center gap-1" title={n.became ? t('became {name}', { name: n.became }) : undefined}><span dir="auto" className={'truncate ' + (faint ? 'text-zinc-500' : fresh ? 'font-medium' : '')}>{n.label}</span>{favOf(n.route!) && <Ph name="starFill" className="size-3 shrink-0 text-amber-400" />}</span>}
         end={<>{optionEnd(n)}
           {tone === 'candidate' && recOf(n.route!.split('/')[0])?.pick === n.route!.split('/')[1] && <span data-tree-rec title={recSays(num)} className={'flex shrink-0 ' + REC}><Ph name="sparkle" className="size-3" /></span>}
-          {fresh && <span data-tree-new title={t('New')} aria-label={t('New')} className="flex h-4 shrink-0 items-center"><span className="size-1.5 rounded-full bg-amber-500" /></span>}
+          {fresh && <span data-tree-new role="img" title={t('New')} aria-label={t('New')} className="flex h-4 shrink-0 items-center"><span className="size-1.5 rounded-full bg-amber-500" /></span>}
         </>} />
     )
   }
@@ -396,15 +396,23 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
     const winner = options.find(c => c.picked), passed = options.filter(c => !c.picked)
     // Decided, even when Favorites hides its pick.
     const decided = !!winner || n.state === 'done'
-    const fresh = decided ? 0 : passed.filter(c => isNew(c.route!)).length
-    // One status at the start, in the icon's place: what the row waits on. A screen keeps its own icon.
-    const icon = working ? <span data-tree-working><Mark state="building" /></span>
-      : n.state === 'waits' || n.state === 'stale' || n.state === 'building' ? <Mark state={n.state} />
-      : n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" />
-      : fresh ? <Mark state="open" />
-      : <Ph name="shuffle" className={'size-3.5 ' + (decided ? 'text-zinc-400 dark:text-zinc-500' : 'text-amber-500')} />
     const page = () => api.go(n.kind === 'exploration' ? n.route!.split('/')[0] : n.route!)
+    // Built only for a row that is drawn: a long tree draws the ones near the view.
     const block = () => {
+      const fresh = decided ? 0 : passed.filter(c => isNew(c.route!)).length
+      // One status at the start, in the icon's place: what the row waits on. A screen keeps its own icon.
+      // Its own mark (building, waiting above, changed) stays while the agent works on it: then the
+      // work shows at the row's end.
+      const marked = n.state === 'waits' || n.state === 'stale' || n.state === 'building'
+      const icon = marked ? <Mark state={n.state!} />
+        : working ? <span data-tree-working role="img" title={t('The agent is working on this')} aria-label={t('The agent is working on this')} className="grid size-4 shrink-0 place-items-center"><Ph name="sparkle" className="size-3.5 animate-pulse text-sky-500" /></span>
+        : n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" />
+        : fresh ? <Mark state="open" />
+        : <Ph name="shuffle" className={'size-3.5 ' + (decided ? 'text-zinc-400 dark:text-zinc-500' : 'text-amber-500')} />
+      const pulse = working && marked && n.state !== 'building' && <span data-tree-working role="img" title={t('The agent is working on this')} aria-label={t('The agent is working on this')} className="size-1.5 shrink-0 animate-pulse rounded-full bg-emerald-500" />
+      // What the agent suggests, on a row with no pick: in the tooltips of its name and its count.
+      const rec = !decided && n.kind === 'exploration' ? recOf(n.route!.split('/')[0]) : null, suggests = rec ? recSays(numberOf(rec.pick)) : ''
+      const counts = fresh ? tn(fresh, '{n} new', '{n} new') : n.standIn ? t('#1 stands in until one is picked') : tn(passed.length, '1 option', '{n} options')
       // Decided: one row, its name with its pick's number at the end (the pick's own link). Its ⋯ and
       // Cmd + click act on the pick; open, what was built on it comes first and the options passed on
       // stay behind one more row.
@@ -416,7 +424,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
             {stuck(
               <Row id={n.key} depth={0} on={onIt} onPick={winner.route === input.place} open={shut} onCaret={() => flip(n)} onClick={page} mv={winner.route} stands={winner.route} drag={dragOf(n)} strong={!n.on && !!below.length} medium={!n.on && !below.length} icon={icon}
                 label={<span className={n.on ? 'font-medium dark:text-zinc-200' : ''}>{title}{parent && <span className="text-[11px] font-normal text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
-                end={<span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-zinc-400">{comment}{hidden && <Here />}
+                end={<span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-zinc-400">{pulse}{comment}{hidden && <Here />}
                   <button type="button" data-tree-picked onClick={() => { selection.clear(); api.go(winner.route!) }} title={said(winner, num, below.length, passed.length)} aria-label={`${t('Picked #{n}', { n: num })}: ${winner.label}`}
                     className="-me-1 flex h-6 items-center gap-0.5 rounded-md px-1 font-medium text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400">
                     {favOf(winner.route!) && <Ph name="starFill" className="size-3 text-amber-400" />}<Ph name="checkFill" className="size-3.5" />{num}</button></span>} />,
@@ -434,11 +442,11 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
             /* An exploration's name goes to its own page (/slug), its card open in the gallery; a screen's opens it. */
             onClick={() => { if (!shut) flip(n); page() }}
             icon={icon}
-            label={<span className={n.state === 'waits' ? 'text-zinc-400' : n.state === 'open' ? 'font-medium' : ''}>{title}{parent && <span className="text-[11px] font-normal text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
+            label={<span title={suggests || undefined} className={n.state === 'waits' ? 'text-zinc-400' : n.state === 'open' ? 'font-medium' : ''}>{title}{parent && <span className="text-[11px] font-normal text-zinc-400"> · {t('on #{n}', { n: parent.on! })}</span>}</span>}
             end={<span className="flex shrink-0 items-center gap-1.5">
-              {comment}
+              {pulse}{comment}
               {!shut && !lit && holdsPlace(n) && <Here />}
-              {(n.state === 'open' || n.standIn) && !decided && (fresh || passed.length) > 0 && <span data-mark="open" title={fresh ? tn(fresh, '{n} new', '{n} new') : n.standIn ? t('#1 stands in until one is picked') : tn(passed.length, '1 option', '{n} options')} data-tip-body={t('Open it and pick the option you want to keep.')}
+              {n.state === 'open' && !decided && (fresh || passed.length) > 0 && <span data-mark="open" role="img" aria-label={[counts, suggests].filter(Boolean).join(' · ')} title={[counts, suggests].filter(Boolean).join(' · ')} data-tip-body={t('Open it and pick the option you want to keep.')}
                 className={'shrink-0 text-[11px] font-medium tabular-nums ' + (fresh || n.standIn ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-400')}>{fresh || passed.length}</span>}
               {n.state === 'done' && <Mark state={n.state} picked={picked ? numberOf(picked.split('/')[1]) : undefined} />}
             </span>} />)}
@@ -529,7 +537,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
 
 /** What waits on the user, above the tree, in a frame and folded to one line until opened (kept in
  *  this browser): built on a pick that changed first, then new options, then the ones to pick. */
-function Waiting({ waits, isNew, slug, go }: { waits: { p: Proto; state: 'open' | 'stale' }[]; isNew(route: string): boolean; slug: string; go(route: string): void }) {
+function Waiting({ waits, isNew, slug, go }: { waits: { p: Proto; state: 'open' | 'stale'; route: string }[]; isNew(route: string): boolean; slug: string; go(route: string): void }) {
   const [open, setOpen] = useState(() => { try { return localStorage.getItem('proto-tree-waiting') === 'open' } catch { return false } })
   const flip = () => { setOpen(!open); try { localStorage.setItem('proto-tree-waiting', open ? 'shut' : 'open') } catch { /* private window */ } }
   const rows = waits.map(w => ({ ...w, fresh: w.p.variants.filter(v => isNew(`${w.p.id}/${v.id}`)).length }))
@@ -541,14 +549,13 @@ function Waiting({ waits, isNew, slug, go }: { waits: { p: Proto; state: 'open' 
         {tn(rows.length, 'Waiting for you', '{n} waiting for you')}
       </button>
       <Collapse open={open}><div className="pb-1">
-        {rows.map(({ p, state, fresh }) => (
-          <Row key={p.id} id={`wait:${p.id}`} depth={0} on={p.id === slug} onClick={() => go(p.id)}
-            icon={state === 'stale'
-              ? <span title={t('Built on an option you no longer picked')} className="relative grid size-4 shrink-0 place-items-center"><Ph name="shuffle" className="size-3.5 text-zinc-400 dark:text-zinc-500" /><span className="absolute -bottom-0.5 -end-0.5 grid size-2.5 place-items-center rounded-full bg-[var(--desk-card,white)]"><Ph name="warning" className="size-2 text-amber-500" /></span></span>
+        {rows.map(({ p, state, route, fresh }) => (
+          <Row key={p.id} id={`wait:${p.id}`} depth={0} on={p.id === slug} onClick={() => go(route)}
+            icon={state === 'stale' ? <Mark state="stale" />
               : fresh ? <span className="grid size-4 shrink-0 place-items-center"><span className="size-1.5 rounded-full bg-amber-500" /></span>
               : <Ph name="shuffle" className="size-3.5 text-amber-500" />}
             label={<bdi className={fresh ? 'font-medium' : ''}>{p.title}</bdi>}
-            end={state === 'open' && <span data-tree-wait-count title={fresh ? tn(fresh, '{n} new', '{n} new') : tn(p.variants.length, '1 option', '{n} options')}
+            end={state === 'open' && (fresh || p.variants.length) > 0 && <span data-tree-wait-count role="img" aria-label={fresh ? tn(fresh, '{n} new', '{n} new') : tn(p.variants.length, '1 option', '{n} options')} title={fresh ? tn(fresh, '{n} new', '{n} new') : tn(p.variants.length, '1 option', '{n} options')}
               className={'shrink-0 text-[11px] font-medium tabular-nums ' + (fresh ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-400')}>{fresh || p.variants.length}</span>} />
         ))}
       </div></Collapse>
