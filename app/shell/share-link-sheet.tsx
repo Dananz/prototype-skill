@@ -68,29 +68,68 @@ export function CopyButton({ text, label, icon = true, ...rest }: { text: string
 
 export function Spinner() { return <span className="inline-flex animate-spin motion-reduce:animate-none"><Icon name="spinner" className="size-4" /></span> }
 
-/** The start variant as it looks, from the same capture the screenshots use; nothing when it can't be had. */
-export function Preview({ path, screen, dark, className = 'w-28' }: { path: string; screen?: [number, number]; dark: boolean; className?: string }) {
+// Previews already drawn, by route, theme and size, so a variant taken out and put back (or shown
+// again after a tab switch) is drawn at once. Each capture loads the design in a frame, so they run
+// one at a time: a strip of twenty never loads twenty frames together.
+const shots = new Map<string, HTMLCanvasElement>()
+let line: Promise<unknown> = Promise.resolve()
+function shotOf(path: string, w: number, h: number, dark: boolean, signal: AbortSignal, keep: boolean): Promise<HTMLCanvasElement> {
+  const id = `${path}|${dark ? 'd' : 'l'}|${w}x${h}`
+  const had = keep && shots.get(id)
+  if (had) return Promise.resolve(had)
+  const run = line.then(async () => {
+    signal.throwIfAborted()
+    const now = keep && shots.get(id)
+    if (now) return now
+    const raw = await captureRoute(path, { id: 'stage', label: '', w, h }, dark, signal)
+    const scale = Math.min(1, 480 / raw.width, 320 / raw.height)
+    const out = document.createElement('canvas')
+    out.width = Math.round(raw.width * scale); out.height = Math.round(raw.height * scale)
+    out.getContext('2d')!.drawImage(raw, 0, 0, out.width, out.height)
+    if (keep) shots.set(id, out)
+    return out
+  })
+  line = run.catch(() => {})
+  return run
+}
+
+/**
+ * A variant as it looks, from the same capture the screenshots use. Captured once it scrolls into
+ * view. When it can't be had: nothing, or with `keep` the empty frame (a strip keeps its place).
+ * With `cache`, a capture is kept for the next Preview of the same route (the sheet clears it on close).
+ */
+export function Preview({ path, screen, dark, className = 'w-28', keep = false, cache = false }: { path: string; screen?: [number, number]; dark: boolean; className?: string; keep?: boolean; cache?: boolean }) {
+  const box = useRef<HTMLSpanElement>(null)
   const ref = useRef<HTMLCanvasElement>(null)
   const [state, setState] = useState<'wait' | 'ok' | 'none'>('wait')
+  const [seen, setSeen] = useState(false)
   const [w, hgt] = screen && screen[0] > 0 && screen[1] > 0 ? screen : [1280, 800]
   useEffect(() => {
+    const el = box.current
+    if (!el || seen) return
+    if (typeof IntersectionObserver === 'undefined') { setSeen(true); return }
+    const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { setSeen(true); io.disconnect() } }, { rootMargin: '0px 200px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [seen])
+  useEffect(() => {
+    if (!seen) return
     const controller = new AbortController()
     setState('wait')
     const id = window.setTimeout(() => {
-      captureRoute(path, { id: 'stage', label: '', w, h: hgt }, dark, controller.signal).then(raw => {
+      shotOf(path, w, hgt, dark, controller.signal, cache).then(shot => {
         const out = ref.current
         if (controller.signal.aborted || !out) return
-        const scale = Math.min(1, 480 / raw.width, 320 / raw.height)
-        out.width = Math.round(raw.width * scale); out.height = Math.round(raw.height * scale)
-        out.getContext('2d')!.drawImage(raw, 0, 0, out.width, out.height)
+        out.width = shot.width; out.height = shot.height
+        out.getContext('2d')!.drawImage(shot, 0, 0)
         setState('ok')
       }).catch(() => { if (!controller.signal.aborted) setState('none') })
     }, 250)
     return () => { clearTimeout(id); controller.abort() }
-  }, [path, dark, w, hgt])
-  if (state === 'none') return null
+  }, [seen, path, dark, w, hgt, cache])
+  if (state === 'none' && !keep) return null
   return (
-    <span data-link-preview className={`relative block aspect-[16/10] ${className} shrink-0 overflow-hidden rounded-lg bg-zinc-100 ring-1 ring-black/[.08] dark:bg-zinc-800 dark:ring-white/10`}>
+    <span ref={box} data-link-preview className={`relative block aspect-[16/10] ${className} shrink-0 overflow-hidden rounded-lg ${state === 'wait' ? 'animate-pulse motion-reduce:animate-none' : ''} bg-zinc-100 ring-1 ring-black/[.08] dark:bg-zinc-800 dark:ring-white/10`}>
       <canvas ref={ref} aria-hidden className={`absolute inset-0 size-full object-cover object-top transition-opacity motion-reduce:transition-none ${state === 'ok' ? 'opacity-100' : 'opacity-0'}`} />
     </span>
   )
@@ -550,6 +589,8 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
     else setListErr(r.body.error || t('The session server answered {status}.', { status: r.status }))
   }
   useEffect(() => { void load() }, [])
+  // Previews are kept while the sheet is open; a variant edited since is drawn afresh next time.
+  useEffect(() => () => shots.clear(), [])
   // A review is of the picks it was made for: any change to them asks again (a publish under way keeps them, its fieldset is disabled).
   const changed = () => setStep(s => s?.phase === 'busy' ? s : null)
   const choose = (w: What) => { changed(); setWhat(w); const next = pick(w); setPicked(next); if (w === 'all') setOpen(o => o.includes(p.proto) ? o : [...o, p.proto]) }
@@ -562,7 +603,6 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
   const order = all.filter(k => picked.includes(k))
   const startKey = picked.includes(start) ? start : order[0] ?? ''
   const [startProto, startVariant] = startKey.split('/')
-  const startP = p.protos.find(x => x.id === startProto)
   const protosIn = new Set(order.map(k => k.split('/')[0])).size
   // The scope as the CLI takes it, the start first: a prototype picked whole by its slug, so a big session stays short.
   const words = () => {
@@ -634,25 +674,66 @@ function Sheet(p: LinkProps & { hold: (on: boolean) => void; phone: boolean; Tit
     </div>
   )
 
+  // What goes into the link, as pictures, held at the top while the list scrolls under it: the one
+  // the link opens on first. Each can be taken out, or made the one it opens on, from here.
+  const shown = startKey ? [startKey, ...order.filter(k => k !== startKey)] : []
+  const bleed = p.phone ? '-mx-4 px-4' : '-mx-5 px-5'
+  // A strip button takes its item away (remove) or moves it (make start): focus goes on to the
+  // item now in that place, or to the moved one, so a keyboard user keeps their place.
+  const stripRef = useRef<HTMLElement>(null)
+  const [refocus, setRefocus] = useState<{ key?: string; at?: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!refocus) return
+    const box = stripRef.current
+    const items = [...(box?.querySelectorAll<HTMLElement>('[data-link-remove]') ?? [])]
+    const to = refocus.key ? box?.querySelector<HTMLElement>(`[data-link-remove="${CSS.escape(refocus.key)}"]`) : items[Math.min(refocus.at ?? 0, items.length - 1)]
+    ;(to ?? box?.querySelector<HTMLElement>('h3') ?? null)?.focus()
+    setRefocus(null)
+  }, [refocus])
+  const strip = (
+    <section ref={stripRef} data-link-strip aria-label={t('In the link')} className={`sticky top-0 z-10 ${bleed} border-b border-black/[.07] bg-white pb-3 pt-1 dark:border-white/10 dark:bg-zinc-900`}>
+      <h3 tabIndex={-1} className={SECTION}>{t('In the link')}</h3>
+      {shown.length ? (
+        <ul className={`${bleed} flex snap-x gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] ${p.phone ? 'scroll-px-4' : 'scroll-px-5'}`}>
+          {shown.map((k, i) => {
+            const [a, b] = k.split('/'), x = p.protos.find(q => q.id === a)
+            const name = x?.variants.find(v => v.id === b)?.name ?? b
+            const label = `${variantLabel(x ?? null, b)} ${name}`
+            const first = i === 0
+            return (
+              <li key={k} data-link-strip-item={k} className="w-32 shrink-0 snap-start">
+                <div className="relative">
+                  <Preview path={p.pathOf(a, b)} screen={x?.screen} dark={p.dark} keep cache className={`w-full ${first ? '!ring-2 !ring-proto-primary' : ''}`} />
+                  {first
+                    ? <span data-link-opens className="absolute bottom-1.5 start-1.5 inline-flex h-6 items-center gap-1 rounded-full bg-proto-primary px-2 text-[11px] font-medium text-proto-primary-fg"><Icon name="house-fill" className="size-3.5" />{t('Opens here')}</span>
+                    : <button type="button" data-link-make-start={k} onClick={() => { changed(); setStart(k); setRefocus({ key: k }) }} aria-label={t('Open the link on {label}', { label })} title={t('Open the link on {label}', { label })}
+                        className="absolute bottom-1.5 start-1.5 grid size-7 place-items-center rounded-full bg-black/55 text-white hover:bg-black/75"><Icon name="house" className="size-3.5" /></button>}
+                  <button type="button" data-link-remove={k} onClick={() => { flip(k); setRefocus({ at: i }) }} aria-label={t('Remove {label}', { label })} title={t('Remove {label}', { label })}
+                    className="absolute end-1.5 top-1.5 grid size-7 place-items-center rounded-full bg-black/55 text-white hover:bg-black/75"><Icon name="x-simple" className="size-3.5" /></button>
+                </div>
+                <span className="mt-1 flex min-w-0 items-baseline gap-1.5 px-0.5">
+                  <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-500">{variantLabel(x ?? null, b)}</span>
+                  <bdi className="min-w-0 truncate text-xs">{name}</bdi>
+                </span>
+                {protosIn > 1 && <bdi className={`block truncate px-0.5 text-[11px] ${SMALL}`}>{x?.title ?? a}</bdi>}
+              </li>
+            )
+          })}
+        </ul>
+      ) : (
+        <p className={`grid h-24 place-items-center rounded-xl border border-dashed border-black/15 dark:border-white/15 ${SMALL}`}>{t('Pick variants below')}</p>
+      )}
+    </section>
+  )
+
   const newView = made ? <Made link={made.link} title={made.title} message={made.message} /> : gated ? <Gate signin={owner?.signin !== false} owner={owner} /> : (
     <fieldset disabled={busy} className="m-0 min-w-0 space-y-5 border-0 p-0">
+      {strip}
       <section>
         <h3 className={SECTION}>{t('What to share')}</h3>
         <Quick value={what} onChange={choose} options={[{ id: 'variant', label: t('This variant') }, { id: 'proto', label: t('This prototype') }, { id: 'all', label: t('Everything') }]} />
         <div className="mt-2">{tree}</div>
       </section>
-      {startKey && (
-        <section>
-          <h3 className={SECTION}>{t('Opens on')}</h3>
-          <div className="flex items-center gap-3">
-            <Preview path={p.pathOf(startProto, startVariant)} screen={startP?.screen} dark={p.dark} />
-            <select data-link-start value={startKey} onChange={e => { changed(); setStart(e.target.value) }} aria-label={t('Opens on')}
-              className="h-9 min-w-0 flex-1 rounded-lg bg-zinc-900/[.05] px-2 text-[13px] outline-none focus:ring-2 focus:ring-proto-primary-ring dark:bg-white/[.07]">
-              {order.map(k => { const [a, b] = k.split('/'), x = p.protos.find(q => q.id === a); return <option key={k} value={k}>{`${x?.title ?? a} · ${variantLabel(x ?? null, b)} ${x?.variants.find(v => v.id === b)?.name ?? ''}`}</option> })}
-            </select>
-          </div>
-        </section>
-      )}
       <section>
         <h3 className={SECTION}>{t('Who can open it')}</h3>
         <div className="flex items-start gap-3 rounded-xl bg-zinc-900/[.03] px-3 py-2.5 dark:bg-white/[.04]">
