@@ -394,13 +394,15 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
       className="flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1 text-[11px] tabular-nums text-zinc-500 hover:bg-zinc-900/[.06] hover:text-zinc-800 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white"><Ph name="chatCircle" className="size-3.5" />{comments}</button>
     const options = n.children.filter(c => c.kind === 'option'), below = n.children.filter(c => c.kind !== 'option')
     const winner = options.find(c => c.picked), passed = options.filter(c => !c.picked)
-    const fresh = winner ? 0 : passed.filter(c => isNew(c.route!)).length
+    // Decided, even when Favorites hides its pick.
+    const decided = !!winner || n.state === 'done'
+    const fresh = decided ? 0 : passed.filter(c => isNew(c.route!)).length
     // One status at the start, in the icon's place: what the row waits on. A screen keeps its own icon.
-    const icon = n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" />
-      : working && !winner ? <span data-tree-working><Mark state="building" /></span>
+    const icon = working ? <span data-tree-working><Mark state="building" /></span>
       : n.state === 'waits' || n.state === 'stale' || n.state === 'building' ? <Mark state={n.state} />
+      : n.kind === 'screen' ? <Ph name="browser" className="size-3.5 text-sky-500" />
       : fresh ? <Mark state="open" />
-      : <Ph name="shuffle" className={'size-3.5 ' + (winner ? 'text-zinc-400 dark:text-zinc-500' : 'text-amber-500')} />
+      : <Ph name="shuffle" className={'size-3.5 ' + (decided ? 'text-zinc-400 dark:text-zinc-500' : 'text-amber-500')} />
     const page = () => api.go(n.kind === 'exploration' ? n.route!.split('/')[0] : n.route!)
     const block = () => {
       // Decided: one row, its name with its pick's number at the end (the pick's own link). Its ⋯ and
@@ -436,7 +438,7 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
             end={<span className="flex shrink-0 items-center gap-1.5">
               {comment}
               {!shut && !lit && holdsPlace(n) && <Here />}
-              {(n.state === 'open' || n.standIn) && !winner && <span data-mark="open" title={fresh ? tn(fresh, '{n} new', '{n} new') : n.standIn ? t('#1 stands in until one is picked') : tn(passed.length, '1 option', '{n} options')} data-tip-body={t('Open it and pick the option you want to keep.')}
+              {(n.state === 'open' || n.standIn) && !decided && (fresh || passed.length) > 0 && <span data-mark="open" title={fresh ? tn(fresh, '{n} new', '{n} new') : n.standIn ? t('#1 stands in until one is picked') : tn(passed.length, '1 option', '{n} options')} data-tip-body={t('Open it and pick the option you want to keep.')}
                 className={'shrink-0 text-[11px] font-medium tabular-nums ' + (fresh || n.standIn ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-400')}>{fresh || passed.length}</span>}
               {n.state === 'done' && <Mark state={n.state} picked={picked ? numberOf(picked.split('/')[1]) : undefined} />}
             </span>} />)}

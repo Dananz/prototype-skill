@@ -58,9 +58,9 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`(() => { const s = getComputedStyle(document.querySelector('[data-tree-side]')); return s.backgroundColor !== 'rgba(0, 0, 0, 0)' && s.backgroundImage === 'none' && parseFloat(s.borderTopLeftRadius) > 0 })()`), 'the tree should sit on the desk as a card')
     assert(await page.run(`localStorage.getItem('proto-tree') === '1'`), '?tree=1 should be kept in this browser')
     assert(await page.run(`!!document.querySelector('[data-tree-row="screen:thome"]')`), 'thome should be a screen row')
-    assert(await page.run(`/not picked/.test(document.querySelector('[data-tree-row="screen:tabout"]')?.textContent ?? '')`), 'tabout should say it is not picked')
+    assert(await page.run(`!!document.querySelector('[data-tree-row="screen:tabout"] [data-mark="open"]')`), 'tabout should mark that it is not picked')
     await until(page, `!!document.querySelector('[data-tree-row="exp:tcta-copy"] [data-mark="stale"]')`, 'the place on screen opens its ancestors, and tcta-copy is stale')
-    assert(await page.run(`/became Acme/.test(document.querySelector('[data-tree-row="screen:thome"]')?.textContent ?? '')`), 'thome, decided on #3, should say it became Acme')
+    assert(await page.run(`/became Acme/.test(document.querySelector('[data-tree-row="screen:thome"] [data-tree-picked]')?.title ?? '')`), 'thome, decided on #3, should say in its pick that it became Acme')
     // The page opens on this conversation: tlogo, made in another, is left out until the whole project.
     // The full smoke shares the app with other checks' prototypes, so the count is only checked to be there.
     assert(await page.run(`document.querySelector('[data-tree-filter="conv"]')?.getAttribute('aria-checked') === 'true'`), 'the scope should start on this conversation')
