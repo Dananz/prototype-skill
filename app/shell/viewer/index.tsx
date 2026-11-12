@@ -66,10 +66,10 @@ function useAppearance() {
 
 /** Where Sign in with GitHub starts: the share's own `_in/start` (at /s/<id>/ in path mode, else at
  *  the root), which sends the viewer on to the apex and brings them back to `back`. None from disk. */
-function signInUrl(): string | null {
+function signInUrl(hash = location.hash): string | null {
   if (!/^https?:$/.test(location.protocol)) return null
   const base = location.pathname.match(/^\/s\/[a-z0-9]+\//)?.[0] ?? '/'
-  return `${location.origin}${base}_in/start?back=${encodeURIComponent(location.pathname + location.hash)}`
+  return `${location.origin}${base}_in/start?back=${encodeURIComponent(location.pathname + hash)}`
 }
 
 const ask = (path: string, init?: RequestInit) => fetch(path, { ...init, headers: { 'X-Proto': '1' }, cache: 'no-store' })
@@ -144,6 +144,15 @@ function makeFlag() {
 type Flag = ReturnType<typeof makeFlag>
 
 const screensOf = (p: Proto): Screen[] => p.variants.map((v, k) => ({ key: `${p.id}/${v.id}`, n: numberOf(v.id) || k + 1, name: v.name, v }))
+/** The screen this page's address names: `#/<prototype>/<variant>`, or `#/<prototype>` for its desk.
+ *  Empty parts when it names nothing in the share. */
+function linkedScreen(protos: Proto[]): [string, string] {
+  const parts = location.hash.startsWith('#/') ? location.hash.slice(2).split('/') : []
+  const [id, v] = parts.map(x => { try { return decodeURIComponent(x) } catch { return '' } })
+  const p = protos.find(x => x.id === id)
+  return p ? [p.id, p.variants.some(x => x.id === v) ? v : ''] : ['', '']
+}
+const hashOf = (route: string) => `#/${route.split('/').map(encodeURIComponent).join('/')}`
 
 function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; designs: Design[] }) {
   const wide = useWide()
@@ -152,7 +161,9 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
   const [store] = useState(makeStore)
   const { appearance, setAppearance, dark } = useAppearance()
   const account = useAccount()
-  const [start] = useState(() => (shareScope?.start ?? '').split('/'))
+  // A link to one screen (its address's #/route) starts there, open full size on a wide screen.
+  const [linked] = useState(() => linkedScreen(protos))
+  const [start] = useState(() => linked[0] ? linked : (shareScope?.start ?? '').split('/'))
   const [protoId, setProtoId] = useState(() => protos.some(p => p.id === start[0]) ? start[0] : protos[0].id)
   const proto = protos.find(p => p.id === protoId) ?? protos[0]
   const screens = screensOf(proto)
@@ -180,7 +191,7 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
   }, [designs, protos])
 
   // A design opened full size from the desk, and whether it is on its way back into its preview.
-  const [open, setOpen] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(() => wide && linked[1] ? linked.join('/') : null)
   const [closing, setClosing] = useState(false)
   const full = wide && open !== null
   const openDesign = (key: string) => { setSel(key); setOpen(key); setClosing(false) }
@@ -259,8 +270,33 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
     const off = holdZoom(window, by => now.current.zoomBy(by), () => now.current.full)
     return () => { window.removeEventListener('keydown', key, true); window.removeEventListener('keydown', navigate); window.removeEventListener('message', message); off() }
   }, [])
-  // Another prototype chosen in the header goes back to its desk.
-  useEffect(() => { setOpen(null); setClosing(false) }, [protoId])
+  // Another prototype chosen in the header goes back to its desk (a screen of it opened by a link stays).
+  useEffect(() => { if (open && open.split('/')[0] !== protoId) { setOpen(null); setClosing(false) } }, [protoId])
+  // The address names the screen in view, so it can be copied and sent: on a phone the one shown, on
+  // a wide screen the one open full size, else the prototype's desk (nothing, when it is the only one).
+  // Replaced, not pushed: going through the screens doesn't fill Back.
+  // The full view draws `cur`, which a pin or a phone-width swipe can move without `open`.
+  const place = wide ? (open && !closing ? cur.key : protos.length > 1 ? proto.id : '') : cur.key
+  // Sign in comes back to the screen in view now, not the one the page was loaded on.
+  const signedIn = { ...account, signIn: account.signIn ? signInUrl(place ? hashOf(place) : '') : null }
+  useEffect(() => {
+    const want = place ? hashOf(place) : ''
+    if (location.hash !== want) history.replaceState(history.state, '', location.pathname + location.search + want)
+  }, [place])
+  // A route typed into the address bar, or a link to another screen followed in this tab.
+  const wideNow = useRef(wide)
+  wideNow.current = wide
+  useEffect(() => {
+    const on = () => {
+      const [id, v] = linkedScreen(protos)
+      if (!id) return
+      setProtoId(id)
+      if (!v) { setOpen(null); setClosing(false); return }
+      if (wideNow.current) openDesign(`${id}/${v}`); else setSel(`${id}/${v}`)
+    }
+    addEventListener('hashchange', on)
+    return () => removeEventListener('hashchange', on)
+  }, [protos])
 
   // Comments: the link's, from its host; the bar grown into them; the one lit; pin mode and the pin being written.
   const { notes, add, retry, remove, fresh, told } = useNotes(hosted, account.me)
@@ -291,7 +327,7 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
   useEffect(() => { if (!wide) setReach(true) }, [wide])
   const barInset = () => bar.current?.offsetHeight ?? 0
   const talk: Talk = {
-    hosted, can, signIn: account.signIn, owner: account.owner || facts.owner, ownerAvatar: facts.avatar, message, me: account.me, notes, fresh, told, add, retry, remove,
+    hosted, can, signIn: signedIn.signIn, owner: account.owner || facts.owner, ownerAvatar: facts.avatar, message, me: account.me, notes, fresh, told, add, retry, remove,
     lost: new Set(Object.entries(lostBy).filter(([k]) => k.startsWith(`${full ? 'full' : wide ? 'desk' : 'phone'}:`)).flatMap(([, ids]) => ids)), setLost,
     open: barOpen, setOpen: setBarOpen, active, setActive, pinMode, setPinMode: on => { setPinMode(on); if (!on) setPlacing(null) }, placing, setPlacing,
     reach: wide ? reach : true,
@@ -337,7 +373,7 @@ function Viewer({ protos, newer, designs }: { protos: Proto[]; newer: Flag; desi
   return (
     <TalkCtx.Provider value={talk}>
     <div ref={root} data-viewer dir={rtl ? 'rtl' : 'ltr'} className={`${face} ${surface} relative flex h-full flex-col overflow-hidden text-zinc-900 antialiased dark:text-zinc-100`}>
-      <Header protos={protos} cur={proto} choose={setProtoId} wide={wide} facts={facts} appearance={appearance} setAppearance={setAppearance} account={account} root={root}
+      <Header protos={protos} cur={proto} choose={setProtoId} wide={wide} facts={facts} appearance={appearance} setAppearance={setAppearance} account={signedIn} root={root}
         center={devOn.mounted ? (
           <div className={presence(devOn.shown)} inert={!(full && !closing)}>
             <DeviceMenu device={device} set={patch} shown={shown.z} phone={proto.kind === 'phone'} open={full && !closing && menu} setOpen={setMenu} root={root} side="bottom" />
