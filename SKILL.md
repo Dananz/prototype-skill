@@ -493,8 +493,37 @@ in the parent. The page puts it in a column after that variant, the switcher's
 second line shows the chain it came from, and the parent's overview links to it. `--from home`
 (no letter) nests it under the prototype as a whole.
 
+**Small changes stay in place.** Before adding a prototype or variants for a request on one
+element, ask one question: is it the same element with only one value changing? A color, an icon,
+a size or weight, its corners, its words, a style from the same family (filled, soft, outline), an
+illustration, showing or hiding it. Several elements that change together (the three tab icons)
+count as one value. Then don't build five prototypes for it: leave 2 to 8 options on that element,
+in the variant being worked on (`proto ask` first, as for any change to it). Words go in `useCopy`
+(Offer other copy when asked); any other value is one `useTweaks` control (Quick changes with
+Tweaks): a `select` of the options' plain names (never pixel numbers), or a `color` with the options as
+presets, its first option the value today, its label naming the element ("Row icon", "Start
+button style"). The reply says where to try them, in one line ("Five icons in Tweaks › Row
+icon"). When the user says which one (in chat, or a comment whose `tweaks:` line shows it), write
+it in as that element's value and take the control out.
+
+When the options differ in structure, content, position or behavior (the button becomes a menu,
+the card becomes a list, a new step in the flow), they are variants, as below: a prototype nested
+`--from` the variant, or `--slot` when they replace one element.
+
+A comment that tags an element and asks for "a few", "other" or "more" of it takes the same test,
+read from its words: "other colors for this", "a different icon here" are options in place;
+"a few directions for this button", "another structure", "as a menu" are variants. When the words
+leave it open, start with options in place: they are cheaper, and they can still become variants.
+
+Turn options into variants (a slot prototype, one variant per option, Current first:
+`proto add <new slug> --from <slug>/<letter> --slot <id> --variants "A:Current,B:<option>,…"`,
+then take the control out) when the user asks to see them as real designs ("make these a
+prototype", "side by side", "I want to comment on each"), when there would be more than 8, or when
+the user keeps asking for more on the same element. Say in one line that you made the switch.
+
 **New variants from one variant nest under it.** Whenever new variants start from one existing
-variant, they are a new prototype built `--from` it, never new letters beside it. That holds
+variant, they are a new prototype built `--from` it, never new letters beside it (a small change
+to one element is the exception: Small changes stay in place, above). That holds
 however the ask arrives: More like this in the page, a comment on a variant ("give me more options
 for this", "now how it looks on mobile"), or chat ("B but with a map", "3 more takes on 2"). Use
 `proto add <new slug> --from <slug>/<letter> --next --title "…" --variants "A:…,B:…"`:
@@ -518,7 +547,7 @@ layout with B's style"), so a pick in it is built into that parent. Say in
 `--ask` what the new design takes from each.
 
 **Plug a variant into what it was made from.** When the user points at one element of a variant
-and wants variants of it ("five more of this button"), the pick should replace that element
+and wants variants of it that differ in more than one value ("five more of this button"), the pick should replace that element
 where it came from. Before `proto add`, lift that one use into a slot, its markup left inside as
 the default, and pass the props it needs (React only; Vue stops):
 
@@ -1137,7 +1166,9 @@ the original, so the two sit side by side. `proto fork dismiss <its id>` waves i
 | Something new ("now the pricing page") | `proto add <new slug> …` |
 | Variations of one variant ("B but with a map", "more options for 2", "2 on mobile"), in chat or a comment | `proto add <new slug> --from <slug>/B --next …`, nested under B (step 4) |
 | A part of one variant, explored as a separate study ("explore B's hero on its own") | `proto add <new slug> --from <slug>/B --reference-only …` |
-| Variants of one element that should replace it where it is ("more of this button") | lift it into a `<Slot>`, then `proto add <new slug> --from <slug>/<letter> --slot <id> …` |
+| A small change to one element ("another icon here", "try other colors for this"), in chat or a comment | 2 to 8 options in place: `useCopy` for words, one `useTweaks` control for any other value (Small changes stay in place) |
+| Those options as real designs ("make these a prototype", "side by side"), or more than 8 | a slot prototype with one variant per option, Current first, then take the control out (Small changes stay in place) |
+| Variants of one element that should replace it where it is ("more of this button", when they differ in structure or behavior) | lift it into a `<Slot>`, then `proto add <new slug> --from <slug>/<letter> --slot <id> …` |
 | Parts of several variants together ("E's layout with B's style") | `proto add <new slug> --from <slug>/E,<slug>/B --next …`, the one whose layout it keeps first |
 | One design from everything they picked ("a final design from all my picks") | `proto add <new slug> --from-picks …` |
 | A choice in chat ("go with 3", "build 29") | `proto pick <slug> <number>` first, then what they asked |
