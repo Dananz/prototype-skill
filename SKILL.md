@@ -535,9 +535,10 @@ A comment that tags an element and asks for "a few", "other" or "more" of it tak
 read from its words: "other colors for this", "a different icon here" are options in place;
 "a few directions for this button", "another structure", "as a menu" are variants. When the words
 leave it open, start with options in place: they are cheaper, and they can still become variants.
-The composer on an element asks the user which (`proto inbox` prints it as `answer as:`): options
-means options in place on that element, variants means a prototype nested under the variant,
-whatever the words; agent (the default) leaves it to this test.
+The composer on an element lets the user choose: options means options in place on that element,
+variants means a prototype nested under the variant, whatever the words (`proto inbox` prints the
+choice as `answer as:`). A comment with no `answer as:` line left it to you (the default): answer
+what it says, and when it asks for other values of the element, take this test.
 
 Turn options into variants (a slot prototype, one variant per option, Current first:
 `proto add <new slug> --from <slug>/<letter> --slot <id> --variants "A:Current,B:<option>,…"`,

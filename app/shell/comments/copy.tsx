@@ -15,6 +15,7 @@ import { copy, type Choice, type CopyLine } from '../copy'
 import { useAgentName, useCtx, type Host } from './ctx'
 import { describe, frameOf, scaleOf } from './dom'
 import { listen } from '../quiet'
+import { LAYER_MOVE } from './options'
 import { useStore, type Store } from './store'
 import { IB, Icon, Listening, PRIMARY, Reply } from './ui'
 
@@ -579,7 +580,7 @@ export function CopySheet({ container }: { container: HTMLElement }) {
     const f = requestAnimationFrame(() => {
       const top = container.getBoundingClientRect().bottom - (sheet.current?.offsetHeight ?? 0)
       const by = Math.max(0, el.getBoundingClientRect().bottom + 20 - top)
-      layer.style.transition = 'transform 450ms cubic-bezier(0.32, 0.72, 0, 1)'
+      layer.style.transition = LAYER_MOVE
       layer.style.transform = by ? `translateY(${-Math.round(by)}px)` : ''
     })
     return () => cancelAnimationFrame(f)

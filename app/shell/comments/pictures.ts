@@ -11,8 +11,9 @@ import { options, choiceOf, spotsOf, type Facet, type Spot } from '../options'
 
 /** A copy of the element, 'empty' when the option hides it, 'failed' when it could not be copied. */
 export type Picture = Still | 'empty' | 'failed'
-/** `text`: a line of words (no box of its own), drawn as wide as its words. */
-export type Still = { html: string; w: number; h: number; text?: boolean }
+/** `text`: a line of words (no box of its own), drawn as wide as its words. `rtl`: the element reads
+ *  right to left (a picture cut at its tile's edge keeps where its words start, whatever the shell's direction). */
+export type Still = { html: string; w: number; h: number; text?: boolean; rtl?: boolean }
 
 const pictures = new Map<string, Picture>()
 const subs = new Set<() => void>()
@@ -111,7 +112,8 @@ export function stillOf(el: HTMLElement): Still | null {
   root.setAttribute('inert', '')
   if (root.tagName === 'BUTTON' || root.tagName === 'A' || root.tagName === 'INPUT') root.setAttribute('tabindex', '-1')
   if (text) { root.style.whiteSpace = 'nowrap'; root.style.paddingInline = '0' }
-  return { html: root.outerHTML, w, h, ...(text ? { text: true } : {}) }
+  const rtl = win.getComputedStyle(el).direction === 'rtl'
+  return { html: root.outerHTML, w, h, ...(text ? { text: true } : {}), ...(rtl ? { rtl: true } : {}) }
 }
 
 // While pictures are drawn, the design's transitions and animations are off, so each option is

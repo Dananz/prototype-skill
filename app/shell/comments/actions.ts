@@ -57,8 +57,9 @@ export function createActions(store: Store, host: Host) {
         ...(i.tags.length ? { tags: i.tags } : {}),
         ...(shotsOf(i).length ? { images: picturesOf(i) } : {}),
         ...(i.tweaks?.length ? { tweaks: i.tweaks } : {}),
-        // On one element: how the user wants it answered (options in place, variants, or the agent's call).
-        ...(i.ask && i.target && !i.target.whole && !i.time ? { ask: i.ask } : {}),
+        // On one element: how the user wants it answered, when they chose (options in place or variants);
+        // the agent's call is the default and goes as no choice at all.
+        ...(i.ask && i.ask !== 'agent' && i.target && !i.target.whole && !i.time ? { ask: i.ask } : {}),
       })),
     }
     set({ sending: true, error: '' })

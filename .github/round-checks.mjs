@@ -33,6 +33,15 @@ export default function One() {
   return <main className="p-10" data-round><h1 data-tweak="a">{a}</h1></main>
 }`)
   const assert = (ok, why) => { if (!ok) fail(`round: ${why}`) }
+  // The dev server picks a new prototype up from the disk a moment after it is written (its registry is
+  // a glob, refreshed by the file watcher, slow on a busy machine): a page opened before then has no
+  // such place. Opened once the registry served has it.
+  const registered = async (route, ms = 30000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await wait(150)) {
+      try { if ((await (await fetch(`${local}src/registry.ts`)).text()).includes(`/src/protos/${route}.tsx`)) return } catch { /* the server is busy */ }
+    }
+    fail(`round: the dev server never listed ${route}`)
+  }
   const wait = ms => new Promise(r => setTimeout(r, ms))
   const until = async (page, expression, why, ms = 8000) => {
     for (const end = Date.now() + ms; Date.now() < end; await wait(60)) if (await page.run(expression)) return
@@ -49,6 +58,7 @@ export default function One() {
   const seen = new Set()
   const batches = () => [...proto(['inbox'], { stdout: true }).matchAll(/batch (\S+)/g)].map(m => m[1])
 
+  for (const v of ['A', 'B', 'C']) await registered(`round-check/${v}`)
   // The tree's tool strip (the project tree on, as the page opens by default).
   const page = await openPage(`${local}round-check/A`, { errors: true, classic: false })
   try {
@@ -56,6 +66,10 @@ export default function One() {
     assert(await page.run(`/left 7 small decisions/.test(document.querySelector('[data-round-title]')?.textContent ?? '')`), 'the round does not say how many decisions were left')
     assert(await page.run(`${dots} === 0`), 'the dots show beside the round at rest')
     await until(page, `document.querySelector('[data-strip] [data-round-btn] [data-round-count]')?.textContent === '8'`, 'the tool strip has no round button with the 8 open decisions')
+    // The stage's Building chip (the variant was just written) starts after the tool strip, never under it.
+    const overlap = (a, b) => !!a && !!b && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    const chip = await box(page, '[data-building-chip]'), strip = await box(page, '[data-strip] [data-strip-tools]')
+    assert(!overlap(chip, strip), `the Building chip is under the tool strip: ${JSON.stringify({ chip, strip })}`)
 
     // A step: the question, the spotlight, the tiles; 2 picks the second words and moves on.
     await click(page, '[data-round-rest] [data-round-start]')
@@ -101,6 +115,9 @@ export default function One() {
     const hero = await dbox(page, '[data-tweak="hero-tone"]')
     await page.hover(hero.x + 30, hero.y + 30); await page.press(hero.x + 30, hero.y + 30)
     await until(page, `!!document.querySelector('[data-round-browse]') && ${dots} === 7 && !!document.querySelector('[data-options-pop]')`, 'a click on an element at rest did not open see all with its panel')
+    // The hero's dot and its badge's (just inside the hero's corner) sit apart, each with its own hit area.
+    const heroDot = await box(page, '[data-option-dot="tweak:hero-tone"]'), badgeDot = await box(page, '[data-option-dot="tweak:new-badge"]')
+    assert(heroDot && badgeDot && (Math.abs(heroDot.cx - badgeDot.cx) >= 21.5 || Math.abs(heroDot.cy - badgeDot.cy) >= 21.5), `the hero's and the badge's dots are on one another: ${JSON.stringify({ heroDot, badgeDot })}`)
     const bar = await box(page, '[data-round-browse]'), stage = await dbox(page, '[data-round-demo]')
     assert(bar.y < stage.y && bar.y + bar.h <= stage.y + 2, `see all's bar covers the design: ${JSON.stringify({ bar, stage })}`)
     await page.key('Escape')
@@ -114,6 +131,11 @@ export default function One() {
     await click(page, '[data-round-rest] [data-round-to-summary]')
     await until(page, `document.querySelectorAll('[data-round-summary] [data-round-tile]').length === 8`, 'the summary does not list the 8 decisions')
     assert(await page.run(`[...document.querySelectorAll('[data-round-tile]')].map(x => x.dataset.verdict).join() === 'picked,kept,kept,picked,skipped,pending,pending,pending'`), 'the summary tiles do not say what each step came to')
+    // Each tile shows its element as it is now, as big as it reads (the heading size and the start
+    // button skipped before their pictures were drawn too), and its whole name.
+    const pics = await page.run(`['tweak:heading-size', 'tweak:new-badge', 'tweak:cta', 'tweak:row-icon', 'tweak:divider'].map(k => { const p = document.querySelector('[data-round-tile="' + k + '"] [data-round-tile-picture] > span[aria-hidden]'); const r = p?.getBoundingClientRect(); return r && p.innerHTML.length > 20 && (r.width >= 24 || r.height >= 24) ? '' : k }).filter(Boolean).join()`)
+    assert(pics === '', `summary tiles without a picture that reads: ${pics}`)
+    assert(await page.run(`[...document.querySelectorAll('[data-round-tile] [data-round-tile-picture] + span')].every(l => l.scrollHeight <= l.clientHeight + 1 && l.scrollWidth <= l.clientWidth + 1)`), 'a summary tile cuts its name short')
     await click(page, '[data-round-tile="tweak:row-icon"]')
     await until(page, `${q} === 'Which row icon?'`, 'a summary tile did not open its step')
     await page.key('5')
@@ -126,9 +148,69 @@ export default function One() {
     for (let i = 0; i < 40 && !/new-badge/.test(inbox); i++) { inbox = proto(['inbox'], { stdout: true }); if (!/new-badge/.test(inbox)) await wait(250) }
     assert(/New badge \(useTweaks new-badge\): “Tag”/.test(inbox) && /Row icon \(useTweaks row-icon\): “Bolt”/.test(inbox), 'the summary sent no option comments for the badge and the row icon')
     assert(/Heading \(heading\): “Three updates since last time”/.test(inbox) && (inbox.match(/action: option/g) || []).length === 2, 'the summary did not send exactly the changed values')
+    // Sent and not yet done: a step's digit keys and Keep as is change nothing.
+    const cta0 = await page.run(design('cta'))
+    await page.run(`document.__prototypeComments.options.round.go('tweak:cta')`)
+    await until(page, `${q} === 'Which start button style?'`, 'the step did not open while sent')
+    // (Its pictures drawn first: drawing shows each option on the element for a moment.)
+    const drawn = `document.querySelectorAll('[data-round-card] [data-option-picture]').length >= 6 && !document.querySelector('[data-option-cover]')`
+    await until(page, drawn, 'the start button step did not draw its pictures while sent')
+    await page.key('2'); await wait(700)
+    await until(page, drawn, 'the start button step is still drawing')
+    assert(await page.run(`${design('cta')} === ${JSON.stringify(cta0)}`), 'a digit key changed a value after Send')
+    await page.key('Escape')
+    await until(page, `!document.querySelector('[data-round-card]')`, 'Esc did not leave the step while sent')
     for (const id of [...inbox.matchAll(/batch (\S+)/g)].map(m => m[1])) proto(['reply', id, 'Set', '--done'])
     assert(page.errors().length === 0, `the page reported errors: ${page.errors().join(' | ')}`)
   } finally { page.close() }
+
+  // A step's keys yield to a focused control, Esc to what is over the round, and the round's row to
+  // focus mode; a hot reload mid-step keeps the spotlight on the element.
+  const keys = await openPage(`${local}round-check/A`, { classic: false })
+  try {
+    await until(keys, `!!document.querySelector('[data-round-rest] [data-round-start]')`, 'the second page has no round')
+    await click(keys, '[data-round-rest] [data-round-start]')
+    await until(keys, `${q} === 'Which words?' && document.querySelectorAll('[data-round-card] [data-option-tile]').length === 3`, 'the round did not start on the second page')
+    const words0 = await keys.run(`window.__protoDesign()?.querySelector('[data-copy=heading]')?.textContent`)
+    // A shell control with the focus keeps the digits.
+    await keys.run(`document.querySelector('[data-strip] [data-round-btn]').focus()`)
+    await keys.key('3'); await wait(500)
+    assert(await keys.run(`${q} === 'Which words?' && window.__protoDesign()?.querySelector('[data-copy=heading]')?.textContent === ${JSON.stringify(words0)}`), 'a digit picked an option while a shell control had the focus')
+    // Enter on the card's own Skip skips; on a tile, picks it.
+    await keys.run(`document.querySelector('[data-round-card] [data-round-skip]').focus()`)
+    await keys.enter()
+    await until(keys, `${q} === 'Which heading size?' && ${segs}.startsWith('skipped,now')`, 'Enter on a focused Skip did not skip')
+    await until(keys, `document.querySelectorAll('[data-round-card] [data-option-tile]').length === 3`, 'the heading size step has no tiles')
+    await keys.run(`document.querySelector('[data-round-card] [data-option-tile="2"]').focus()`)
+    await keys.enter()
+    await until(keys, `${design('size')} === 'Large' && ${q} === 'Which hero color?'`, 'Enter on a focused tile did not pick it and move on')
+    await keys.run(`document.activeElement?.blur()`)
+    // Esc with the shell's settings open closes them; the step stays.
+    await click(keys, '[data-bar] [data-act="open:more"]')
+    await until(keys, `!!document.querySelector('[data-pop] [data-act="settings"]')`, 'the More menu did not open')
+    await click(keys, '[data-pop] [data-act="settings"]')
+    await until(keys, `!!document.querySelector('[data-settings-dialog]')`, 'the settings did not open')
+    await keys.key('Escape')
+    await until(keys, `!document.querySelector('[data-settings-dialog]')`, 'Esc did not close the settings over the round')
+    assert(await keys.run(`document.querySelector('[data-round-card]')?.dataset.roundCard === 'step'`), 'Esc left the round step instead of closing the settings over it')
+    // In comment mode the round hides; Esc ends commenting, and the step comes back as it was.
+    await click(keys, '[data-island] [data-shoot="comment"]')
+    await until(keys, `!document.querySelector('[data-round-card]')`, 'the step did not hide in comment mode')
+    await keys.key('Escape')
+    await until(keys, `document.querySelector('[data-island] [data-shoot="comment"]')?.getAttribute('aria-pressed') !== 'true' && document.querySelector('[data-round-card]')?.dataset.roundCard === 'step'`, 'Esc in comment mode went to the hidden round, or the step did not come back')
+    // A hot reload that draws the design anew: the spotlight finds the element again.
+    writeFileSync(join(dir, 'A.tsx'), DEMO.replace('<main data-round-demo', '<main key="again" data-round-demo'))
+    await wait(2500)
+    await until(keys, `(() => { const sp = document.querySelector('[data-round-spotlight]')?.getBoundingClientRect(), el = window.__protoDesign()?.querySelector('[data-tweak="hero-tone"]'); if (!sp || !el?.isConnected) return false; const f = el.ownerDocument.defaultView.frameElement, o = f ? f.getBoundingClientRect() : { left: 0, top: 0 }, s = f ? o.width / (f.offsetWidth || 1) : 1, r = el.getBoundingClientRect(); return Math.abs(sp.left + 6 - (o.left + r.left * s)) < 3 && Math.abs(sp.top + 6 - (o.top + r.top * s)) < 3 })()`, 'the spotlight lost the element after a hot reload')
+    // Focus mode hides the island: with the round at rest, the dots come back; out of it, they wait again.
+    await keys.key('Escape')
+    await until(keys, `!!document.querySelector('[data-round-rest]') && ${dots} === 0`, 'Esc did not leave the step for the row')
+    await keys.key('f')
+    await until(keys, `${dots} === 7`, 'focus mode with the round at rest left no dots')
+    await keys.key('f')
+    await until(keys, `!!document.querySelector('[data-round-rest]') && ${dots} === 0`, 'out of focus mode the round did not come back')
+    assert(keys.errors().length === 0, `the page reported errors: ${keys.errors().join(' | ')}`)
+  } finally { keys.close() }
 
   // Two elements: dots, no round. One with data-round: a round.
   const two = await openPage(`${local}round-check/B`, { classic: false })
@@ -180,6 +262,18 @@ export default function One() {
     await com.hover(h.x + 10, h.cy); await com.press(h.x + 10, h.cy)
     await until(com, `!!document.querySelector('[data-composer] [data-composer-ask]')`, 'the composer on an element has no choice of how to answer')
     assert(await com.run(`document.querySelector('[data-composer-ask] [aria-checked=true]')?.dataset.ask === 'agent' && /decides from your words/.test(document.querySelector('[data-composer-ask-line]')?.textContent ?? '')`), 'the composer does not default to the agent deciding, saying how')
+    // Left to the agent (the default): plain feedback goes with no choice, and proto inbox prints none.
+    await com.run(`(() => { const e = document.querySelector('[data-composer] [contenteditable]'); e.focus(); document.execCommand('insertText', false, 'typo here'); })()`)
+    await com.key('Enter', ['Meta'])
+    let plain = ''
+    for (let i = 0; i < 40 && !/typo here/.test(plain); i++) { plain = proto(['inbox'], { stdout: true }); if (!/typo here/.test(plain)) await wait(250) }
+    assert(/typo here/.test(plain) && !/answer as:/.test(plain), `proto inbox prints a way to answer on a comment left to the agent: ${plain.slice(0, 600)}`)
+    for (const id of [...plain.matchAll(/batch (\S+)/g)].map(m => m[1])) proto(['reply', id, 'Fixed', '--done'])
+    await until(com, `document.querySelector('[data-island] [data-shoot="comment"]')?.getAttribute('aria-pressed') !== 'true' || !document.querySelector('[data-composer]')`, 'the composer did not close after sending')
+    if (await com.run(`document.querySelector('[data-island] [data-shoot="comment"]')?.getAttribute('aria-pressed') !== 'true'`)) await click(com, '[data-island] [data-shoot="comment"]')
+    await until(com, `document.querySelector('[data-island] [data-shoot="comment"]')?.getAttribute('aria-pressed') === 'true'`, 'the island select tool did not turn on again')
+    await com.hover(h.x + 10, h.cy); await com.press(h.x + 10, h.cy)
+    await until(com, `!!document.querySelector('[data-composer] [data-composer-ask]')`, 'the second composer on the element has no choice of how to answer')
     await click(com, '[data-composer-ask] [data-ask="variants"]')
     await com.run(`(() => { const e = document.querySelector('[data-composer] [contenteditable]'); e.focus(); document.execCommand('insertText', false, 'A few directions for this'); })()`)
     await com.key('Enter', ['Meta'])

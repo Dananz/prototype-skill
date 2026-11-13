@@ -43,6 +43,15 @@ export default function Variant() {
 }`)
   writeFileSync(join(app, 'src/protos/options-check', 'B.tsx'), `export default function Plain() { return <main className="p-10"><h1 data-tweak="row-icon">No options here</h1><p data-second className="mt-6">A second line</p></main> }`)
   const assert = (ok, why) => { if (!ok) fail(`options: ${why}`) }
+  // The dev server picks a new prototype up from the disk a moment after it is written (its registry is
+  // a glob, refreshed by the file watcher, slow on a busy machine): a page opened before then has no
+  // such place. Opened once the registry served has it.
+  const registered = async (route, ms = 30000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await wait(150)) {
+      try { if ((await (await fetch(`${local}src/registry.ts`)).text()).includes(`/src/protos/${route}.tsx`)) return } catch { /* the server is busy */ }
+    }
+    fail(`options: the dev server never listed ${route}`)
+  }
   const wait = ms => new Promise(r => setTimeout(r, ms))
   const until = async (page, expression, why, ms = 8000) => {
     for (const end = Date.now() + ms; Date.now() < end; await wait(60)) if (await page.run(expression)) return
@@ -55,13 +64,16 @@ export default function Variant() {
   const dots = `[...document.querySelectorAll('[data-option-dot]')].map(d => d.dataset.optionDot).sort().join('|')`
   const click = async (page, sel) => { const b = await box(page, sel); assert(b, `nothing to click at ${sel}`); await page.hover(b.cx, b.cy); await page.press(b.cx, b.cy) }
 
+  for (const v of ['A', 'B']) await registered(`options-check/${v}`)
   const page = await openPage(`${local}options-check/A`, { errors: true })
   try {
     // Dots on the marked elements only: the control with no element on the design has none.
     const want = ['copy:heading tweak:heading-size', 'tweak:cta', 'tweak:divider', 'tweak:row-icon', 'tweak:tone'].sort().join('|')
     for (const end = Date.now() + 12000; Date.now() < end && await page.run(dots) !== want;) await wait(80)
     const got = await page.run(dots)
-    assert(got === want, `the dots are not exactly on the marked elements: ${got}`)
+    // What the page had, when not: its address, the design, what the options layer knows of it.
+    const had = got === want ? '' : await page.run(`JSON.stringify((() => { const d = window.__protoDesign?.(), o = document.__prototypeComments?.options, st = o?.store.get(); return { at: location.pathname, design: d ? d.textContent.slice(0, 60) : null, marked: d?.querySelectorAll('[data-tweak], [data-copy]').length ?? 0, stage: st?.stage ? (st.stage === d ? 'design' : st.stage.isConnected ? 'other' : 'gone') : null, route: st?.route, spots: o?.spots().map(s => s.key), mode: document.__prototypeComments?.store.get().mode.kind, layer: !!document.querySelector('[data-options-layer]'), hosts: [...document.querySelectorAll('[data-layers] [data-route]')].map(h => h.dataset.route + ':' + (h.hasAttribute('data-building') ? 'building:' : '') + h.textContent.slice(0, 40)), tree: !!document.querySelector('[href="/options-check/A"], [data-act*="options-check"]'), reloaded: sessionStorage.getItem('proto-awaited-/options-check/A') } })())`)
+    assert(got === want, `the dots are not exactly on the marked elements: ${got} (${had})`)
 
     // A click on a marked element that is no control of its own opens its panel (again: closes it); a
     // control (the button) keeps its own click and opens from its dot.
@@ -70,6 +82,11 @@ export default function Variant() {
     await until(page, `document.querySelectorAll('[data-options-pop] [data-option-tab]').length === 2`, 'a click on the heading did not open its panel')
     await page.press(hd.x + 20, hd.y + hd.h / 2)
     await until(page, `!document.querySelector('[data-options-pop]')`, 'a second click on the heading did not close its panel')
+    // Selecting the heading's words ends with a click on it: no panel.
+    await page.drag([hd.x + 2, hd.y + hd.h / 2], [hd.x + Math.min(hd.w, 160) - 2, hd.y + hd.h / 2])
+    await wait(500)
+    assert(await page.run(`!document.querySelector('[data-options-pop]') && !!window.__protoDesign()?.ownerDocument.getSelection()?.toString()`), 'selecting the heading\'s words opened its panel (or selected nothing)')
+    await page.run(`(() => { window.__protoDesign()?.ownerDocument.getSelection()?.removeAllRanges(); getSelection()?.removeAllRanges() })()`)
     const bt = await dbox(page, '[data-tweak=cta]')
     await page.hover(bt.x + bt.w / 2, bt.y + bt.h / 2); await page.press(bt.x + bt.w / 2, bt.y + bt.h / 2)
     await wait(400)
@@ -283,6 +300,15 @@ export default function Variant() {
   try {
     await wait(1500)
     assert(await plain.run(`document.querySelectorAll('[data-option-dot]').length === 0`), 'a variant without options has dots')
+    // Nothing to measure: the dots' measuring asks for no frames (counted by where each request comes from).
+    const frames = await plain.run(`(async () => {
+      const raf = window.requestAnimationFrame, from = []
+      window.requestAnimationFrame = f => { from.push(new Error().stack ?? ''); return raf.call(window, f) }
+      await new Promise(r => setTimeout(r, 1000))
+      window.requestAnimationFrame = raf
+      return from.filter(s => /comments[/]options[.]tsx/.test(s)).length
+    })()`)
+    assert(frames < 3, `the dots are measured every frame on a variant with none: ${frames} frames in a second`)
     for (const sel of ['h1', '[data-second]']) {
       const asked = await plain.run(`(async () => {
         const until = async f => { for (const end = Date.now() + 6000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }

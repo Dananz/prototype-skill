@@ -658,10 +658,14 @@ export function prototypeServer(session) {
     for (const [sid, x] of Object.entries(json('sessions.json') ?? {})) if (x?.name) out[sid] = String(x.name)
     return out
   }
+  // Whether the file watcher has finished its first look at the files: what is written before then
+  // counts as already there, and a new prototype's files would never reach the page (proto up waits).
+  let watching = false
   const status = () => {
     let s = {}
     try { s = read() } catch { /* being rewritten by hand; the rest still answers */ }
-    return { lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, slots: slotPointers(), inbox: inboxStatus(), conversations: conversations() }
+    // pid: which server answers, so `proto up` never takes another session's (on a port both tried at once) for its own.
+    return { pid: process.pid, watching, lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, slots: slotPointers(), inbox: inboxStatus(), conversations: conversations() }
   }
   const stop = reason => {
     // The tailnet port as session.json has it now: on a session's first run, `proto up` gives it one
@@ -679,6 +683,7 @@ export function prototypeServer(session) {
     name: 'prototype-server',
     configureServer(server) {
       server.middlewares.use(compression())
+      server.watcher.once('ready', () => { watching = true })
       const src = slash(join(dir, 'src'))
       server.watcher.on('all', (_, path) => {
         if (!slash(path).startsWith(src)) return

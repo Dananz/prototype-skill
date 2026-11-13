@@ -17,9 +17,9 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, typ
 import { rtl, t, tn } from '../i18n'
 import { options, spotsOf, chosen, isChanged, nameOf, choiceOf, type Facet, type Spot } from '../options'
 import { useAgentName, useCtx } from './ctx'
-import { keyOf, pictureOf } from './pictures'
+import { keyOf, pictureOf, stillOf, type Picture, type Still } from './pictures'
 import {
-  CARD, HoldOriginal, Pic, SendButton, Strip, Tile, backdropOf, boxIn, fitOf, liftDesign, liftShown, still, useFacetPictures,
+  CARD, HoldOriginal, Pic, SendButton, Strip, Tile, backdropOf, boxIn, fitOf, liftDesign, liftShown, shellBusy, still, useFacetPictures,
   useNarrow, useOptState, usePhase, useValues, type Decided, type OptActions, type OptStore, type RoundMode, type RoundRec,
 } from './options'
 import { IB, Icon, PRIMARY } from './ui'
@@ -45,7 +45,11 @@ export function offerOf(st: HTMLElement, looked: string[]): 'forced' | 'auto' | 
   return spots.filter(sp => !looked.includes(sp.key)).length >= 3 ? 'auto' : null
 }
 
-export function createRoundActions(os: OptStore, act: OptActions) {
+/** Whether the round's card or row can show over the design now: the comment layer at rest (not
+ *  commenting, picking or on the motion), copy mode off. */
+export type RoundView = () => boolean
+
+export function createRoundActions(os: OptStore, act: OptActions, idle: RoundView = () => true) {
   const get = os.get
   const stage = () => get().stage
   const rec = (): RoundRec => get().rec.round ?? { decided: {} }
@@ -57,16 +61,22 @@ export function createRoundActions(os: OptStore, act: OptActions) {
   const ra = {
     steps,
     decided: () => rec().decided,
-    /** What the chrome shows of the round: whether it is offered here, put away, its card, and how many decisions are open. */
+    /** What the chrome shows of the round: whether it is offered here, put away, its card where it can
+     *  show now (`mode`; `kept` is the card whether or not it shows), and how many decisions are open.
+     *  The row at rest shows in the comments island, so not while the island is hidden (focus mode). */
     info() {
       const st = stage(), s = get()
       const list = st && s.roundOk ? steps() : []
       const offered = !!st && s.roundOk && !!rec().offered && list.length > 0 && offerOf(st, []) !== 'off'
       const open = offered ? list.filter(x => verdictOf(st!, rec().decided, x.f) === 'pending').length : 0
-      return { offered, hidden: !!rec().hidden, mode: offered ? s.round : null, open, steps: list.length, spots: offered ? spotsOf(st).length : 0 }
+      const kept = offered ? s.round : null
+      const shows = !!kept && !rec().hidden && idle() && !(kept === 'rest' && s.veiled)
+      return { offered, hidden: !!rec().hidden, mode: shows ? kept : null, kept, open, steps: list.length, spots: offered ? spotsOf(st).length : 0 }
     },
     /** The round's card on show over the design (at rest, a step or the summary): the dots wait. */
-    up() { const i = ra.info(); return i.offered && !i.hidden && !!i.mode && i.mode !== 'browse' },
+    up() { const i = ra.info(); return !!i.mode && i.mode !== 'browse' },
+    /** The comments island hidden (focus mode): the row at rest cannot show, the dots come back. */
+    veil(on: boolean) { if (get().veiled !== on) os.set({ veiled: on }) },
     /** The design's elements changed: offer the round when it should be. */
     offer() {
       const st = stage(), s = get()
@@ -109,7 +119,8 @@ export function createRoundActions(os: OptStore, act: OptActions) {
      *  where pointing at it already showed it). */
     pick(i: number, next = false) {
       const st = stage(), x = steps().find(y => y.f.key === get().cur)
-      if (!st || !x || !x.f.options[i]) return
+      // Sent: the values wait for the agent, as the tiles do.
+      if (!st || !x || !x.f.options[i] || act.phase() === 'sent') return
       options.preview(st, null)
       options.choose(st, x.f, i)
       decide(x.f.key, i === x.f.today ? 'kept' : 'picked')
@@ -118,7 +129,7 @@ export function createRoundActions(os: OptStore, act: OptActions) {
     },
     keepAsIs() {
       const st = stage(), x = steps().find(y => y.f.key === get().cur)
-      if (!st || !x) return
+      if (!st || !x || act.phase() === 'sent') return
       options.choose(st, x.f, x.f.today)
       decide(x.f.key, 'kept')
       ra.advance()
@@ -133,7 +144,7 @@ export function createRoundActions(os: OptStore, act: OptActions) {
     next() {
       const x = steps().find(y => y.f.key === get().cur)
       if (!x) return
-      if (!rec().decided[x.f.key] || rec().decided[x.f.key] === 'skipped') decide(x.f.key, isChanged(stage()!, x.f) ? 'picked' : 'kept')
+      if (act.phase() !== 'sent' && (!rec().decided[x.f.key] || rec().decided[x.f.key] === 'skipped')) decide(x.f.key, isChanged(stage()!, x.f) ? 'picked' : 'kept')
       ra.advance()
     },
     summary() { quiet(); act.close(); os.set({ round: 'summary', cur: null, back: false }) },
@@ -147,7 +158,7 @@ export function createRoundActions(os: OptStore, act: OptActions) {
       const i = ra.info()
       if (!i.offered) return
       if (i.hidden) ra.show()
-      else if (i.mode && i.mode !== 'rest') ra.leave()
+      else if (i.kept && i.kept !== 'rest') ra.leave()
       else ra.hide()
     },
     /** A click on an element with options (options.tsx): at rest it opens see-all with its panel; in a
@@ -160,9 +171,11 @@ export function createRoundActions(os: OptStore, act: OptActions) {
       if (x) ra.go(x.f.key, i.mode === 'summary')
       return true
     },
+    /** Esc: out of a step, the summary or see-all, when that card shows (not while commenting, in copy
+     *  mode or put away). */
     escape(): boolean {
       const i = ra.info()
-      if (!i.offered || i.hidden || !i.mode || i.mode === 'rest') return false
+      if (!i.mode || i.mode === 'rest') return false
       ra.leave()
       return true
     },
@@ -170,6 +183,9 @@ export function createRoundActions(os: OptStore, act: OptActions) {
   return ra
 }
 export type RoundActions = ReturnType<typeof createRoundActions>
+
+/** What has keys of its own when it has the focus. */
+const CONTROL = 'button, a[href], [role="button"], [role="tab"], [role="slider"], [role="menuitem"], [role="option"], [data-pop], [role="dialog"], dialog'
 
 // ---------- the pieces ----------
 const useRound = () => {
@@ -318,16 +334,35 @@ function StepCard({ x, phone }: { x: Step; phone: boolean }) {
   )
 }
 
-/** The small picture of what a step shows now: its chosen option's picture, a swatch, or its words. */
-function Now({ x }: { x: Step }) {
+// Pictures of elements as they show now, for the summary's steps whose tiles were never drawn (a step
+// decided before its pictures were): by the same key the panel's pictures are kept under.
+const nowStills = new Map<string, Still | null>()
+/** The picture of a step's chosen option: the panel's, else a still of the element as it shows now
+ *  (when it shows that choice, nothing shown for now, nothing moving on it). */
+function pictureNow(st: HTMLElement, x: Step, i: number): Picture | undefined {
+  const key = keyOf(st, x.sp, x.f), drawn = pictureOf(key, i)
+  if (drawn && drawn !== 'failed') return drawn
+  const k = `${key}#${i}`
+  if (nowStills.has(k)) return nowStills.get(k) ?? undefined
+  const el = x.sp.els[0]
+  if (!el?.isConnected || options.previewed() || options.comparing() === st || chosen(st, x.f) !== i) return undefined
+  const pic = stillOf(el)
+  if (!el.getAnimations?.({ subtree: true }).length) nowStills.set(k, pic)
+  return pic ?? undefined
+}
+
+/** The picture of what a step shows now: its chosen option's picture on the design's backdrop, a
+ *  swatch, or its words. */
+function Now({ x, w, h }: { x: Step; w: number; h: number }) {
   const { optStore } = useCtx()
   const st = optStore.get().stage!
   const f = x.f, i = chosen(st, f), el = x.sp.els[0]
   const v = choiceOf(st, f)
-  if (f.kind === 'color' && typeof v === 'string') return <span className="size-5 rounded-full ring-1 ring-black/10 dark:ring-white/15" style={{ background: v }} />
-  if (f.kind === 'words') return <span dir="auto" className="max-w-full truncate px-1 text-[10px] font-bold leading-none">{nameOf(st, f)}</span>
-  const pic = el && i >= 0 ? pictureOf(keyOf(st, x.sp, f), i) : undefined
-  return still(pic) ? <Pic pic={pic} w={56} k={fitOf([pic], 56, 30)} /> : f.kind === 'toggle' && v === false ? <Pic pic="empty" w={0} k={1} /> : <span className="size-1.5 rounded-full bg-proto-primary" />
+  if (f.kind === 'color' && typeof v === 'string') return <span className="size-6 rounded-full ring-1 ring-black/10 dark:ring-white/15" style={{ background: v }} />
+  if (f.kind === 'words') return <span dir="auto" className="line-clamp-2 max-w-full px-1.5 text-center text-[11px] font-semibold leading-[13px] text-zinc-900 dark:text-zinc-100">{nameOf(st, f)}</span>
+  if (f.kind === 'toggle' && v === false) return <Pic pic="empty" w={0} k={1} />
+  const pic = el && i >= 0 ? pictureNow(st, x, i) : undefined
+  return still(pic) ? <Pic pic={pic} w={w} k={fitOf([pic], w, h)} /> : <span dir="auto" className="line-clamp-2 px-1 text-center text-[11px] font-medium text-zinc-700 dark:text-zinc-200">{nameOf(st, f)}</span>
 }
 
 /** The end: every decision as a tile (numbered when it changed), each opening its step again, and Send. */
@@ -343,8 +378,10 @@ function SummaryCard({ phone }: { phone: boolean }) {
   const changed = list.filter(x => verdictOf(st, decided, x.f) === 'picked')
   const hx = hot ? list.find(x => x.f.key === hot) : undefined
   const sent = phase === 'sent'
-  // Two rows of six show whole; past twelve the grid scrolls inside, with a fade where it continues.
-  const scrolls = list.length > 12
+  // Three rows of four show whole (two on a phone); past that the grid scrolls inside, with a fade
+  // where it continues.
+  const scrolls = list.length > (phone ? 8 : 12)
+  const picW = phone ? 72 : 92, picH = 44
   const line = [count('picked') && tn(count('picked'), '{n} change', '{n} changes'), count('kept') && tn(count('kept'), '{n} as it was', '{n} as they were'), count('skipped') && tn(count('skipped'), '{n} skipped', '{n} skipped'), count('pending') && tn(count('pending'), '{n} not yet', '{n} not yet')].filter(Boolean).join(' · ')
   return (
     <div data-round-summary="" className="flex max-h-full min-h-0 flex-col">
@@ -362,7 +399,7 @@ function SummaryCard({ phone }: { phone: boolean }) {
         <button type="button" data-round-close="" onClick={roundAct.leave} aria-label={t('Close')} title={`${t('Close')} · Esc`} className={`${IB} ${phone ? '!size-10' : ''} rounded-full`}><Icon name="x" className="size-4" /></button>
       </div>
       <div className="relative min-h-0">
-        <div data-round-grid="" className={`grid min-h-0 gap-1.5 overflow-y-auto overscroll-contain px-3 pb-1 pt-2 ${phone ? 'grid-cols-4' : 'grid-cols-6'} ${scrolls ? (phone ? 'max-h-[160px] pb-4' : 'max-h-[178px] pb-4') : ''}`}>
+        <div data-round-grid="" className={`grid min-h-0 grid-cols-4 gap-1.5 overflow-y-auto overscroll-contain px-3 pb-1 pt-2 ${scrolls ? (phone ? 'max-h-[232px] pb-4' : 'max-h-[340px] pb-4') : ''}`}>
           {list.map((x, n) => {
             const v = verdictOf(st, decided, x.f), no = v === 'picked' ? changed.indexOf(x) + 1 : 0
             return (
@@ -370,11 +407,13 @@ function SummaryCard({ phone }: { phone: boolean }) {
                 style={{ animationDelay: `${60 + Math.min(n, 14) * 22}ms` }}
                 onPointerEnter={e => { if (e.pointerType === 'mouse') setHot(x.f.key) }} onPointerLeave={() => setHot(null)} onFocus={() => setHot(x.f.key)} onBlur={() => setHot(null)}
                 onClick={() => roundAct.go(x.f.key, true)} aria-label={`${facetName(x.sp, x.f)}: ${nameOf(st, x.f)}`}
-                className={`relative flex h-[66px] min-w-0 animate-[proto-isl-rise_.3s_ease-out_both] flex-col items-center justify-center gap-1 rounded-xl px-1 transition-colors ${v === 'picked' ? 'bg-proto-primary-soft ring-[1.5px] ring-inset ring-proto-primary/45' : v === 'pending' ? 'border border-dashed border-zinc-300 dark:border-zinc-600' : 'bg-zinc-900/[.04] dark:bg-white/[.06]'} ${sent ? '' : 'hover:brightness-95 dark:hover:brightness-125'}`}>
-                <span className="grid h-7 max-w-full place-items-center overflow-hidden"><Now x={x} /></span>
-                <span dir="auto" className={`max-w-full truncate text-[11px] leading-none ${v === 'picked' ? 'font-semibold text-proto-primary-soft-fg' : v === 'skipped' ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-600 dark:text-zinc-400'}`}>{x.sp.facets.length > 1 ? (x.f.kind === 'words' ? t('Words') : x.f.label) : x.sp.label}</span>
-                {no > 0 ? <span className="absolute start-1 top-1 grid size-4 place-items-center rounded-full bg-proto-primary text-[9px] font-bold tabular-nums text-white">{no}</span>
-                  : v === 'skipped' ? <span className="absolute start-1.5 top-1.5 size-1.5 rounded-full bg-amber-400" /> : null}
+                className={`relative flex min-w-0 animate-[proto-isl-rise_.3s_ease-out_both] flex-col items-center gap-1 rounded-xl p-1 pb-1.5 transition-colors ${v === 'picked' ? 'bg-proto-primary-soft ring-[1.5px] ring-inset ring-proto-primary/45' : v === 'pending' ? 'border border-dashed border-zinc-300 dark:border-zinc-600' : 'bg-zinc-900/[.04] dark:bg-white/[.06]'} ${sent ? '' : 'hover:brightness-95 dark:hover:brightness-125'}`}>
+                <span data-round-tile-picture="" className="grid h-12 w-full place-items-center overflow-hidden rounded-lg" style={{ background: x.sp.els[0] ? backdropOf(x.sp.els[0]) : undefined }}><Now x={x} w={picW} h={picH} /></span>
+                <span className={`line-clamp-2 min-h-[26px] max-w-full text-center text-[11px] leading-[13px] ${v === 'picked' ? 'font-semibold text-proto-primary-soft-fg' : v === 'skipped' ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-600 dark:text-zinc-400'}`}>
+                  {no > 0 ? <span className="me-1 inline-grid size-3.5 place-items-center rounded-full bg-proto-primary align-[-2px] text-[9px] font-bold tabular-nums text-white">{no}</span>
+                    : v === 'skipped' ? <span className="me-1 inline-block size-1.5 rounded-full bg-amber-400 align-[1px]" /> : null}
+                  <bdi>{x.sp.facets.length > 1 ? (x.f.kind === 'words' ? t('Words') : x.f.label) : x.sp.label}</bdi>
+                </span>
               </button>
             )
           })}
@@ -494,14 +533,27 @@ export function RoundLayer() {
   const card = useRef<HTMLDivElement>(null)
   const [geo, setGeo] = useState<{ foot: number; focus: Box | null; design: Box | null; W: number; H: number }>({ foot: 16, focus: null, design: null, W: 0, H: 0 })
 
+  // The element in hand, looked up again when it goes (a hot reload draws the design anew).
+  const held = useRef<HTMLElement | null>(null)
+  const [gen, setGen] = useState(0)
+  const spotKey = step?.sp.key
+  const elOf = () => {
+    if (!st || !spotKey) return null
+    if (!held.current?.isConnected || !st.contains(held.current)) {
+      const el = spotsOf(st).find(x => x.key === spotKey)?.els[0] ?? null
+      if (el !== held.current) { held.current = el; if (el) setGen(n => n + 1) }
+    }
+    return held.current
+  }
   // Measured every frame while a card shows: the island's place, the element in hand, the design.
   useEffect(() => {
     if (!mode || !st) return
     let raf = 0, last = ''
+    held.current = null
     const tick = () => {
       const layer = host.layer, top = islandTop(layer)
-      const el = step?.sp.els[0]
-      const focus = el?.isConnected ? boxIn(el, layer) : null
+      const el = elOf()
+      const focus = el ? boxIn(el, layer) : null
       const r = (n: number) => Math.round(n)
       const next = { foot: top === null ? 16 : Math.max(16, layer.clientHeight - top + 12), focus: focus && { x: r(focus.x), y: r(focus.y), w: r(focus.w), h: r(focus.h) }, design: (b => ({ x: r(b.x), y: r(b.y), w: r(b.w), h: r(b.h) }))(boxIn(st, layer)), W: layer.clientWidth, H: layer.clientHeight }
       const sig = JSON.stringify(next)
@@ -510,7 +562,7 @@ export function RoundLayer() {
     }
     tick()
     return () => cancelAnimationFrame(raf)
-  }, [mode, st, step?.sp.key, host]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode, st, spotKey, host]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // The design moves out of the way, from where it would be without the round: the element in hand
   // above the step card, the design under see-all's bar. Back when the card goes.
@@ -526,7 +578,7 @@ export function RoundLayer() {
         liftDesign(st, 'round', Math.max(0, c.bottom - lr.top + 12 - top))
         return
       }
-      const el = step?.sp.els[0]
+      const el = elOf()
       if (!el) return
       // Off the screen altogether: scrolled to first.
       const b0 = boxIn(el, layer)
@@ -538,19 +590,27 @@ export function RoundLayer() {
       liftDesign(st, 'round', Math.min(0, by))
     })
     return () => cancelAnimationFrame(f)
-  }, [mode, st, step?.f.key, phone, host, s.tab, geo.foot]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode, st, step?.f.key, phone, host, s.tab, geo.foot, gen]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { if (st) liftDesign(st, 'round', 0) }, [st])
   useEffect(() => { if (!on && st) liftDesign(st, 'round', 0) }, [on, st])
 
   // The step's keys, in the page and in a device view's frame: 1 to 9 pick, Enter decides and moves
-  // on, the arrows move (forward skips a step not decided), never the variants.
+  // on, the arrows move (forward skips a step not decided), never the variants. A control with the
+  // focus keeps its keys: one of the shell's or the design's altogether, and Enter on the card's own
+  // buttons (a tile picks it, Skip skips); the digits and arrows still work from the card. Nothing
+  // while a menu or a dialog of the shell's is open.
   useEffect(() => {
     if (mode !== 'step' || !st) return
     const docs = [...new Set([document, st.ownerDocument])]
     const down = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return
       const tg = e.target as HTMLElement | null
       if (tg?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"], [data-options-pop], [data-composer]')) return
+      const ctl = tg?.closest?.(CONTROL)
+      const mine = !!ctl && !!ctl.closest('[data-round-card]')
+      if (ctl && (!mine || e.key === 'Enter' || e.key === ' ')) return
+      if (e.key === 'Enter' && e.repeat) return
+      if (shellBusy()) return
       const x = roundAct.steps().find(y => y.f.key === optStore.get().cur)
       if (!x) return
       const FWD = rtl ? 'ArrowLeft' : 'ArrowRight', BACK = rtl ? 'ArrowRight' : 'ArrowLeft'

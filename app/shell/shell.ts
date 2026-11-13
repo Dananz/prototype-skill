@@ -389,6 +389,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
     return p
   }
+  /** A link opened before the place it points at was known (see boot): where to go once it is. */
+  let awaited: { route: string; until: number } | null = null
   /** Moving to another variant keeps the state and tool, where that variant has them. */
   const keepIn = (proto: Proto, variant: string): Place => {
     const here = st.place.view === 'variant' && st.place.proto === proto.id ? st.place : null
@@ -1535,6 +1537,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- navigation ----------
   function go(p: Place) {
+    awaited = null
     if (!valid(p)) p = defaultPlace()
     if (!atUrl(p)) visit(pathOf(p))
     else arrive(p, true)
@@ -1937,7 +1940,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const dockPop = (on: boolean, id: string, body: string, w = 'w-[min(20rem,calc(100vw-2rem))]') => on ? `<div data-pop data-pop-for="${id}" class="fixed bottom-[76px] left-1/2 z-20 ${w} -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white text-zinc-900 shadow-2xl dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">${body}</div>` : ''
     const DOCK_MENUS = ['fproto', 'fstates', 'decide', 'tweaks']
     overlay.innerHTML = framed || view !== 'variant' || !p ? '' : `
-      ${building(p.id, vid) ? `<div data-building-chip title="${t('{agent} is still building this one', { agent: esc(agentName(session.agent)) })}" class="pointer-events-none absolute start-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}${t('Building')}</div>` : ''}
+      ${building(p.id, vid) ? `<div data-building-chip title="${t('{agent} is still building this one', { agent: esc(agentName(session.agent)) })}" class="pointer-events-none absolute start-[calc(var(--strip-w,0px)+0.75rem)] top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}${t('Building')}</div>` : ''}
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
       ${st.focus ? `
       ${dockPop(st.open === 'fstates', 'fstates', `<div class="p-1.5">${variantHere(false)}</div>`, 'w-[min(18rem,calc(100vw-2rem))]')}
@@ -1959,7 +1962,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
     if (st.focus) requestAnimationFrame(runDock)
     { const cc = comments.counts(), host = zone.querySelector<HTMLElement>('[data-island-host]')!
-      host.style.visibility = st.focus && !focusComments && !cc.picking && !cc.drafts && !comments.busy() ? 'hidden' : ''
+      const veiled = st.focus && !focusComments && !cc.picking && !cc.drafts && !comments.busy()
+      host.style.visibility = veiled ? 'hidden' : ''
+      // The round's row at rest is in the island: hidden with it, the dots show instead.
+      comments.options.round.veil(veiled)
       // Above the open dock (52 high, 12 off the foot), so the two never overlap.
       host.style.bottom = st.focus ? '72px' : '' }
     // Over the focused design (fixed, z-[100]) the menus that live outside the stage come up with it.
@@ -2926,6 +2932,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (st.open === 'vmenu' && st.under) { const m = st.vmenu; st.open = st.under; st.under = null; render(); if (m) bar.querySelector<HTMLElement>(`[data-pop] [data-act="vm:${m.proto}:${m.variant}"]`)?.focus(); return }
       // A menu closed from inside gives the focus back to its button.
       if (st.open) { const was = st.open, inside = !!t.closest?.('[data-pop]'); st.open = null; render(); if (inside) bar.querySelector<HTMLElement>(`[data-act="open:${was}"]`)?.focus(); return }
+      // A round of decisions' step, summary or see-all goes back to its row, after anything over it.
+      if (comments.options.round.escape()) return
       if (selection.get().length) return selection.clear()
       if (st.drawer) { st.drawer = false; return render() }
       if (viewOn()) return patchView({ size: null, zoom: 0 })
@@ -3650,7 +3658,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // A list with the number of decisions still open, pressed while the round's row shows; it pulses
   // while the round is put away, and brings it back. In the strip or the bar on a wide page, in the
   // pill's bar on a phone (there only while the round is put away: else the round's row is in view).
-  const roundNow = () => { const i = comments.options.round.info(); return { offered: i.offered && !st.focus, hidden: i.hidden, rest: i.mode === 'rest', open: i.open } }
+  const roundNow = () => { const i = comments.options.round.info(); return { offered: i.offered && !st.focus, hidden: i.hidden, rest: i.kept === 'rest', open: i.open } }
   const roundSay = (r: ReturnType<typeof roundNow>) => r.hidden ? tn(r.open, 'Bring back the round, {n} decision open', 'Bring back the round, {n} decisions open') : r.rest ? t('Put the round of decisions away') : t('Back to the round of decisions')
   const roundCount = (r: ReturnType<typeof roundNow>, ring: string) => r.open ? `<span aria-hidden="true" data-round-count class="absolute -end-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-proto-primary px-1 text-[10px] font-semibold tabular-nums text-proto-primary-fg ring-2 ${ring} ${r.hidden ? 'animate-[proto-option-pulse_1.6s_ease-in-out_infinite]' : ''}">${r.open}</span>` : ''
   const roundBtn = () => {
@@ -4468,7 +4476,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const its = (p: Place | null) => p && (!named || p.view === 'session' || [byId(p.proto)?.owner, byId(p.proto)?.session].includes(me)) ? p : null
   const newestOfMe = () => { const p = named && active().filter(x => x.session === me || x.owner === me).at(-1); return p ? { view: 'proto', proto: p.id } as Place : null }
   const start = (linked ? parsePlace() : null) ?? its(parsePlace(localStorage.getItem(`proto-place-${session.id}`) ?? '')) ?? newestOfMe() ?? (named ? { view: 'session' } as Place : defaultPlace())
-  if (!atUrl(start)) history.replaceState(null, '', urlOf(start))
+  // A link to a place not known yet (a prototype or variant just added, before its module reaches
+  // this page) is opened once it arrives (setProtos), for a while; meanwhile the page shows where it
+  // can and the address stays the link, so a reload (the registry's own) still goes there.
+  if (linked && !parsePlace()) awaited = { route: address(), until: Date.now() + 30_000 }
+  else if (!atUrl(start)) history.replaceState(null, '', urlOf(start))
   arrive(start, false)
   if (q.has('focus')) act('focus', '', '')
   // ?copy=1 (proto shoot --copy): copy mode opens once the design on the stage declares its lines.
@@ -4501,6 +4513,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const p = parsePlace()
         if (p && pathOf(p) !== pathOf(st.place)) return arrive(p, false)
       } else {
+        const due = awaited && Date.now() < awaited.until ? parsePlace(awaited.route) : null
+        if (due) { awaited = null; return go(due) }
+        if (awaited && Date.now() >= awaited.until) { awaited = null; if (!atUrl(st.place)) history.replaceState(null, '', urlOf(st.place)) }
         // Only this tab's conversation's new work: another conversation's tab follows its own.
         const ours = (p: Proto) => (!me && !wanted) || (!p.session && !p.owner) || p.session === me || p.owner === me
         const fresh = protos.filter(p => !p.archived && !before.has(p.id) && ours(p))

@@ -59,6 +59,8 @@ export type OptState = {
   round: RoundMode | null
   cur: string | null
   back: boolean
+  /** The comments island is hidden (focus mode): the round's row at rest cannot show. */
+  veiled: boolean
 }
 export const ASK = '\u0000ask'
 type Box = { x: number; y: number; w: number; h: number }
@@ -68,7 +70,7 @@ export function createOptionsStore(session: string) {
   let all: Record<string, Rec> = {}
   try { const v = JSON.parse(sessionStorage.getItem(key) ?? '{}'); if (v && typeof v === 'object') all = v } catch { /* none kept */ }
   const recOf = (route: string): Rec => { const r = all[route]; return r && Array.isArray(r.asks) && Array.isArray(r.fresh) ? r : { asks: [], fresh: [] } }
-  let state: OptState = { stage: null, route: '', open: null, askEl: null, tab: 0, cover: null, sending: false, error: '', rec: { asks: [], fresh: [] }, roundOk: false, round: null, cur: null, back: false }
+  let state: OptState = { stage: null, route: '', open: null, askEl: null, tab: 0, cover: null, sending: false, error: '', rec: { asks: [], fresh: [] }, roundOk: false, round: null, cur: null, back: false, veiled: false }
   const subs = new Set<() => void>()
   const tell = () => { for (const f of [...subs]) f() }
   return {
@@ -254,6 +256,9 @@ export type OptActions = ReturnType<typeof createOptionsActions>
 // sheet lifts it above the sheet, a round lifts the element in hand above its card or moves the design
 // under its bar. They add up, written as the CSS translate (paging and the copy sheet use transform,
 // so neither overwrites the other), and all go when the stage changes.
+/** How the design's layer moves, written whole by everyone who moves it (the lifts here, the copy
+ *  sheet's transform), so one writing it never cuts the other's motion short. */
+export const LAYER_MOVE = 'translate 450ms cubic-bezier(0.32, 0.72, 0, 1), transform 450ms cubic-bezier(0.32, 0.72, 0, 1)'
 const lifts = new Map<string, number>()
 let lifted: HTMLElement | null = null
 /** The stage's layer: from the design, or (in a device view) from the frame it is drawn in. */
@@ -267,7 +272,7 @@ export function liftDesign(stage: HTMLElement | null, who: string, by: number) {
   if (!layer || !who) return
   if (Math.round(by)) lifts.set(who, Math.round(by)); else lifts.delete(who)
   const y = [...lifts.values()].reduce((a, b) => a + b, 0)
-  layer.style.transition = 'translate 450ms cubic-bezier(0.32, 0.72, 0, 1)'
+  layer.style.transition = LAYER_MOVE
   layer.style.translate = y ? `0 ${y}px` : ''
 }
 
@@ -318,6 +323,22 @@ export function dotAt(m: Pick<Mark, 'box' | 'rtl'>) {
   return { x: m.rtl ? end + 1 : end - 1, y: y + 1 }
 }
 
+/** Dots that would sit on one another (a badge just inside a picture's corner) are moved apart, each
+ *  later one stepped inward along its element's top edge (or down, where it has no room), until every
+ *  dot has its own hit area. */
+export function apart(list: { key: string; at: { x: number; y: number }; rtl: boolean }[], hit: number) {
+  const out: { key: string; at: { x: number; y: number } }[] = []
+  const near = (p: { x: number; y: number }) => out.some(o => Math.abs(o.at.x - p.x) < hit && Math.abs(o.at.y - p.y) < hit)
+  for (const d of list) {
+    let p = d.at
+    for (let i = 1; near(p) && i <= 6; i++) p = { x: d.at.x + (d.rtl ? hit : -hit) * i, y: d.at.y }
+    if (near(p)) p = { x: d.at.x, y: d.at.y + hit }
+    out.push({ key: d.key, at: p })
+  }
+  return out
+}
+const placed = (list: { key: string; at: { x: number; y: number } }[], key: string) => list.find(d => d.key === key)?.at
+
 // ---------- shared hooks ----------
 export const useNarrow = () => useSyncExternalStore(f => { const m = matchMedia('(max-width: 639px)'); m.addEventListener('change', f); return () => m.removeEventListener('change', f) }, () => matchMedia('(max-width: 639px)').matches)
 export const useOptState = (os: OptStore) => useSyncExternalStore(os.subscribe, os.get)
@@ -354,14 +375,15 @@ export function Pic({ pic, w, k }: { pic: Picture | undefined; w: number; k: num
   // A hairline: as long as the tile allows, a few px thick, so the line shows at all.
   if (pic.h <= 4 || pic.w <= 4) {
     const across = pic.h <= 4, kx = across ? (w - 16) / pic.w : Math.max(k, 3 / pic.w), ky = across ? Math.max(k, 3 / pic.h) : (w - 16) / pic.h
-    return <span aria-hidden className="pointer-events-none relative block shrink-0 overflow-hidden" style={{ width: pic.w * kx, height: pic.h * ky }}>
-      <span className="absolute start-0 top-0 block origin-top-left rtl:origin-top-right" style={{ width: pic.w, height: pic.h, transform: `scale(${kx}, ${ky})` }} dangerouslySetInnerHTML={{ __html: pic.html }} />
+    return <span aria-hidden dir={pic.rtl ? 'rtl' : 'ltr'} className="pointer-events-none relative block shrink-0 overflow-hidden" style={{ width: pic.w * kx, height: pic.h * ky }}>
+      <span className={`absolute top-0 block ${pic.rtl ? 'right-0 origin-top-right' : 'left-0 origin-top-left'}`} style={{ width: pic.w, height: pic.h, transform: `scale(${kx}, ${ky})` }} dangerouslySetInnerHTML={{ __html: pic.html }} />
     </span>
   }
   const cut = pic.w * k > w - 8
   return (
-    <span aria-hidden className={`pointer-events-none relative block shrink-0 overflow-hidden ${cut ? '[mask-image:linear-gradient(to_right,#000_80%,transparent)] rtl:[mask-image:linear-gradient(to_left,#000_80%,transparent)]' : ''}`} style={{ width: Math.min(pic.w * k, w - 8), height: pic.h * k }}>
-      <span className="absolute start-0 top-0 block origin-top-left rtl:origin-top-right" style={{ width: pic.w, height: pic.h, transform: `scale(${k})` }} dangerouslySetInnerHTML={{ __html: pic.html }} />
+    // Laid out in the element's own direction (not the shell's): a cut keeps where its words start.
+    <span aria-hidden dir={pic.rtl ? 'rtl' : 'ltr'} className={`pointer-events-none relative block shrink-0 overflow-hidden ${cut ? (pic.rtl ? '[mask-image:linear-gradient(to_left,#000_80%,transparent)]' : '[mask-image:linear-gradient(to_right,#000_80%,transparent)]') : ''}`} style={{ width: Math.min(pic.w * k, w - 8), height: pic.h * k }}>
+      <span className={`absolute top-0 block ${pic.rtl ? 'right-0 origin-top-right' : 'left-0 origin-top-left'}`} style={{ width: pic.w, height: pic.h, transform: `scale(${k})` }} dangerouslySetInnerHTML={{ __html: pic.html }} />
     </span>
   )
 }
@@ -640,6 +662,13 @@ export function backdropOf(el: Element | null) {
 }
 
 // ---------- over the stage: the dots, the outline of what is pointed at, the panel ----------
+/** Whether something of the shell's own is open over the page (settings, Share, a menu, the Tweaks
+ *  panel, a dialog): its keys, Esc first, are its own. The options panel and sheet, the round's card,
+ *  the island and the design itself are not. */
+export function shellBusy() {
+  return [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog[open], [data-pop], [role="menu"], [role="listbox"]')]
+    .some(d => !d.closest('[data-options-pop], [data-options-sheet], [data-round-layer], [data-island], [data-mount], [hidden], [inert]') && d.getClientRects().length > 0)
+}
 /** What is a control of its own on the design: a click on it (or in it) stays its own. */
 export const INTERACTIVE = 'a[href], button, input, select, textarea, label, summary, [role="button"], [role="link"], [contenteditable]:not([contenteditable="false"])'
 export const CARD = 'bg-white text-zinc-900 ring-1 ring-black/[.08] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10'
@@ -675,14 +704,23 @@ export function OptionsLayer() {
   // Measured every frame while the dots show, as the copy marks are, and drawn only when something
   // moved: a phone sheet lifting the design, a device view's zoom, paging, the design's own motion all
   // move elements without a resize or a scroll. Which elements and how each is shaped are read again
-  // only when the design changes; a frame reads boxes.
+  // only when the design changes; a frame reads boxes. Nothing to measure (no elements with options,
+  // or a round's card has the design and the dots wait): no frames until the design or its values change.
   const [origin, setOrigin] = useState<Origin>({ x: 0, y: 0, k: 1 })
+  const quiet = !!st && on && roundAct.up()
   useEffect(() => {
     if (!st || !on) { setMarks([]); return }
+    if (quiet) return
     const layer = host.layer
-    let raf = 0, last = '', dirty = true, list: Spot[] = [], words = new WeakMap<HTMLElement, boolean>(), W = -1, H = -1
+    let raf = 0, last = '', dirty = true, list: Spot[] = [], words = new WeakMap<HTMLElement, boolean>(), W = -1, H = -1, paused = false
     const tick = () => {
+      raf = 0
       if (dirty) { dirty = false; list = spotsOf(st); words = new WeakMap() }
+      if (!list.length) {
+        paused = true
+        if (last !== '[]') { last = '[]'; setMarks([]) }
+        return
+      }
       if (layer.clientWidth !== W || layer.clientHeight !== H) { W = layer.clientWidth; H = layer.clientHeight; moved.current = true }
       const next: Mark[] = []
       const r = (n2: number) => Math.round(n2 * 2) / 2
@@ -700,7 +738,7 @@ export function OptionsLayer() {
       if (sig !== last) { last = sig; setMarks(next); setOrigin(was => was.x === at.x && was.y === at.y && was.k === at.k ? was : at) }
       raf = requestAnimationFrame(tick)
     }
-    const changed = () => { dirty = true }
+    const changed = () => { dirty = true; if (paused) { paused = false; raf = requestAnimationFrame(tick) } }
     const scrolled = () => { moved.current = true }
     tick()
     const doc = st.ownerDocument, win = doc.defaultView ?? window
@@ -716,7 +754,7 @@ export function OptionsLayer() {
       doc.removeEventListener('scroll', scrolled, true); document.removeEventListener('scroll', scrolled, true)
       win.removeEventListener('resize', scrolled); removeEventListener('resize', scrolled)
     }
-  }, [st, on, host])
+  }, [st, on, host, quiet])
 
   // Pointing at an element with options outlines it and names it.
   useEffect(() => {
@@ -742,6 +780,8 @@ export function OptionsLayer() {
     const doc = st.ownerDocument
     const click = (e: MouseEvent) => {
       if (e.button !== 0 || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      // The end of selecting words (a drag, a double-click) is no click on the element.
+      if ([doc, document].some(d => { const sel = d.getSelection?.(); return !!sel && !sel.isCollapsed })) return
       const t = e.target as Element | null
       const m = t?.closest?.<HTMLElement>(MARKED)
       if (!m || !st.contains(m)) return
@@ -772,7 +812,14 @@ export function OptionsLayer() {
     const docs = [...new Set([document, st.ownerDocument])]
     const typing = (e: KeyboardEvent) => !!(e.target as HTMLElement | null)?.closest?.('input, textarea, [contenteditable="true"], [contenteditable=""]')
     const down = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !typing(e) && (optStore.get().open ? (optAct.close(), true) : roundAct.escape())) { e.preventDefault(); e.stopImmediatePropagation(); return }
+      if (e.key === 'Escape' && !typing(e) && !e.defaultPrevented && !shellBusy()) {
+        // The panel closes first. A round's card goes back to its row from the shell's own Esc (after
+        // the comments, menus and dialogs over it); only a device view's frame, whose keys never reach
+        // the shell, has it here.
+        const framed = e.currentTarget !== document
+        const c = store.get()
+        if (optStore.get().open ? (optAct.close(), true) : framed && !c.sheet && !c.island && !c.active && roundAct.escape()) { e.preventDefault(); e.stopImmediatePropagation(); return }
+      }
       if (back(e) && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(e) && spotsOf(st).some(sp => sp.facets.some(f => isChanged(st, f)))) { e.preventDefault(); options.compare(st, true) }
     }
     // By the key's place as well as its character: on a keyboard in another language \\ types something else.
@@ -782,7 +829,7 @@ export function OptionsLayer() {
     for (const d of docs) { listen(d, 'keydown', down, true); d.addEventListener('keyup', up, true) }
     addEventListener('blur', blur)
     return () => { for (const d of docs) { d.removeEventListener('keydown', down, true); d.removeEventListener('keyup', up, true) }; removeEventListener('blur', blur) }
-  }, [st, on, optStore, optAct, roundAct])
+  }, [st, on, optStore, optAct, roundAct, store])
 
   // A click outside the panel, its dot and its element closes it, in a device view's frame too.
   useEffect(() => {
@@ -807,7 +854,6 @@ export function OptionsLayer() {
 
   if (!st || !on) return null
   // A round's card on show (at rest, a step, the summary) has the design to itself: no dots, no outline.
-  const quiet = roundAct.up()
   const markOf = (key: string, n = 0) => marks.find(m => m.key === key && m.n === n) ?? marks.find(m => m.key === key)
   // Pinned while open.
   const openMark = openSpot ? markOf(openSpot.key) : undefined
@@ -846,14 +892,19 @@ export function OptionsLayer() {
           <div className="origin-top-left" style={{ width: s.cover.w, height: s.cover.h, transform: `scale(${k})` }} dangerouslySetInnerHTML={{ __html: s.cover.html }} />
         </div>
       })()}
-      {!quiet && spots.map(sp => {
-        const m = sp.key === s.open && pinned ? { ...markOf(sp.key)!, box: pinned } : markOf(sp.key)
-        if (!m) return null
-        const at = dotAt(m)
-        if (sentKeys.has(sp.key)) return <span key={sp.key} data-option-waiting={sp.key} className="absolute grid size-4 place-items-center rounded-full bg-amber-500 text-white shadow-[0_0_0_2px_white] dark:shadow-[0_0_0_2px_#18181b]" style={{ left: at.x - 8, top: at.y - 8 }}><Icon name="spinner" className="size-2.5 animate-spin" /></span>
-        return <Dot key={sp.key} spot={sp} at={at} open={s.open === sp.key} hover={hover?.key === sp.key} fresh={s.rec.fresh.includes(sp.key)} phone={narrow}
-          onHover={v => setHover(v ? { key: sp.key, n: 0 } : null)} />
-      })}
+      {!quiet && (() => {
+        const dots = apart(spots.flatMap(sp => {
+          const m = sp.key === s.open && pinned ? { ...markOf(sp.key)!, box: pinned } : markOf(sp.key)
+          return m ? [{ key: sp.key, at: dotAt(m), rtl: m.rtl }] : []
+        }), narrow ? 34 : 22)
+        return spots.map(sp => {
+          const at = placed(dots, sp.key)
+          if (!at) return null
+          if (sentKeys.has(sp.key)) return <span key={sp.key} data-option-waiting={sp.key} className="absolute grid size-4 place-items-center rounded-full bg-amber-500 text-white shadow-[0_0_0_2px_white] dark:shadow-[0_0_0_2px_#18181b]" style={{ left: at.x - 8, top: at.y - 8 }}><Icon name="spinner" className="size-2.5 animate-spin" /></span>
+          return <Dot key={sp.key} spot={sp} at={at} open={s.open === sp.key} hover={hover?.key === sp.key} fresh={s.rec.fresh.includes(sp.key)} phone={narrow}
+            onHover={v => setHover(v ? { key: sp.key, n: 0 } : null)} />
+        })
+      })()}
       {/* Sent items whose element no longer has options (the agent is writing them in): found by where they were. */}
       {sent?.items.filter(i => !spots.some(sp => sp.key === i.key) && i.target).map(i => {
         const el = find(st, i.target!)
