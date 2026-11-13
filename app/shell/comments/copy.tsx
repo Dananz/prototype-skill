@@ -254,7 +254,7 @@ function OptionList({ line, el, touch, onDone }: { line: CopyLine; el: HTMLEleme
   const [active, setActive] = useState(cur)
   const [hover, setHover] = useState<number | null>(null)
   const rows = useRef<(HTMLButtonElement | null)[]>([])
-  const input = useRef<HTMLInputElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
   // The rows read the way the line does.
   const dir = el ? getComputedStyle(el).direction : 'ltr'
   const lang = el?.closest('[lang]')?.getAttribute('lang') ?? undefined
@@ -269,6 +269,8 @@ function OptionList({ line, el, touch, onDone }: { line: CopyLine; el: HTMLEleme
     else rows.current[i]?.focus({ preventScroll: true })
   }
   useEffect(() => { if (!touch) go(cur) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // Their own words can run over several lines: the field grows with them, up to a few lines.
+  useLayoutEffect(() => { const a = input.current; if (a) { a.style.height = 'auto'; a.style.height = `${a.scrollHeight}px` } }, [draft])
 
   // A click, a tap or Enter puts the option on the design and closes the list: on a phone the
   // design is the preview, and the line flashes where it changed.
@@ -282,6 +284,14 @@ function OptionList({ line, el, touch, onDone }: { line: CopyLine; el: HTMLEleme
   }
   const onKey = (e: KeyboardEvent) => {
     const k = e.key
+    // In their own words, Shift+Enter (any Enter on a phone, where the check applies them) starts a
+    // new line, and the arrows move between its lines before they leave the field.
+    if (active === n && e.target === input.current) {
+      const a = input.current!
+      if (k === 'Enter' && (e.shiftKey || touch || e.nativeEvent.isComposing)) return
+      if (k === 'ArrowUp' && a.value.slice(0, a.selectionStart).includes('\n')) return
+      if (k === 'ArrowDown' && a.value.slice(a.selectionEnd).includes('\n')) return
+    }
     if (k === 'ArrowDown' || k === 'ArrowUp') { e.preventDefault(); go((active + (k === 'ArrowDown' ? 1 : n)) % (n + 1)) }
     else if ((k === 'Home' || k === 'End') && active < n) { e.preventDefault(); go(k === 'Home' ? 0 : n) }
     else if (k === 'Enter') { e.preventDefault(); if (active === n) takeOwn(true); else pick(active, true) }
@@ -310,10 +320,11 @@ function OptionList({ line, el, touch, onDone }: { line: CopyLine; el: HTMLEleme
         <span className="grid size-4 shrink-0 place-items-center">
           {mine && draft.trim() === mine ? <Icon name="check" className="size-4 text-proto-primary-soft-fg" /> : <Icon name="pen" className="size-3.5 text-zinc-400" />}
         </span>
-        <input ref={input} data-copy-own="" value={draft} dir={draft ? 'auto' : dir} lang={lang}
+        <textarea ref={input} data-copy-own="" rows={1} value={draft} dir={draft ? 'auto' : dir} lang={lang}
+          enterKeyHint={touch ? 'enter' : 'done'}
           placeholder={t('Write my own…')} aria-label={t('Write my own {label}', { label: line.label.toLowerCase() })}
           onChange={e => setDraft(e.target.value)} onFocus={() => setActive(n)} onClick={() => go(n)}
-          className={`h-9 min-w-0 flex-1 bg-transparent text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500 ${touch ? 'text-base' : 'text-[14px]'}`} />
+          className={`max-h-32 min-w-0 flex-1 resize-none bg-transparent py-2 leading-5 text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500 ${touch ? 'text-base' : 'text-[14px]'}`} />
         {draft.trim() && draft.trim() !== mine && (
           <button type="button" aria-label={t('Use this line')} title={`${t('Use this line')} · Enter`} onClick={() => takeOwn(false)}
             className={`${IB} text-proto-primary-soft-fg! hover:bg-proto-primary-soft!`}><Icon name="check" className="size-4" /></button>
@@ -456,7 +467,8 @@ function CopyLayer() {
   // A light line (white words on a dark button) gets a light underline.
   const light = marks.filter(m => m.light).map(m => `[data-copy-on] [data-copy="${CSS.escape(m.id)}"]`)
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+    // Clipped, never scrolled: a focused field near its edge would otherwise slide every mark off its line.
+    <div onScroll={e => { e.currentTarget.scrollTop = 0; e.currentTarget.scrollLeft = 0 }} className="pointer-events-none absolute inset-0 overflow-hidden">
       {light.length > 0 && <style>{`${[...new Set(light)].join(', ')} { text-decoration-color: rgb(255 255 255 / .45) }`}</style>}
       {marks.map(m => {
         // A component that declared lines can unmount (a tab inside the design, a line Claude took
@@ -495,12 +507,22 @@ function Popover({ line, mark, el }: { line: CopyLine; mark: Mark | null; el: HT
   // The tallest the line gets with any of its options, measured once on a hidden copy of it next
   // to it (added and removed in one go, so nothing paints and nothing on the page sees it).
   const tallest = useRef(0)
+  // Their own words grow the list without changing what it shows: placed again whenever its size changes.
+  const [, resized] = useState(0)
+  useEffect(() => {
+    const p = pop.current
+    if (!p) return
+    const ro = new ResizeObserver(() => resized(n => n + 1))
+    ro.observe(p)
+    return () => ro.disconnect()
+  }, [mark === null])
   useLayoutEffect(() => {
     if (!el || !el.parentElement) return
     const twin = el.cloneNode(true) as HTMLElement
     twin.removeAttribute('data-copy')
     twin.setAttribute('aria-hidden', 'true')
     twin.style.visibility = 'hidden'
+    twin.style.setProperty('white-space-collapse', styleOf(el).getPropertyValue('white-space-collapse')) // an option's line breaks count
     el.after(twin)
     tallest.current = Math.max(...line.options.map(o => { twin.textContent = o; return twin.getBoundingClientRect().height }))
     twin.remove()
@@ -514,7 +536,8 @@ function Popover({ line, mark, el }: { line: CopyLine; mark: Mark | null; el: HT
     const bottom = mark.box.y + reach.current
     const ph = p.offsetHeight, pw = p.offsetWidth, gap = 10
     const above = side.current ??= H - bottom - gap - 8 < ph && mark.box.y > H - bottom
-    const top = above ? mark.box.y - gap - ph : bottom + gap
+    // Their own words grow the list: it stays on the layer, moving up rather than off its edge.
+    const top = Math.max(8, Math.min(above ? mark.box.y - gap - ph : bottom + gap, H - ph - 8))
     const left = Math.min(Math.max(mark.box.x + mark.box.w / 2 - pw / 2, 8), W - pw - 8)
     setPos(was => was && was.top === top && was.left === left && was.above === above ? was : { top, left, above })
   })
