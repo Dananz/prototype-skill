@@ -4366,8 +4366,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const p = parsePlace()
         if (p && pathOf(p) !== pathOf(st.place)) return arrive(p, false)
       } else {
-        const fresh = protos.filter(p => !p.archived && !before.has(p.id))
-        const grown = protos.map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
+        // Only this tab's conversation's new work: another conversation's tab follows its own.
+        const ours = (p: Proto) => !me || (!p.session && !p.owner) || p.session === me || p.owner === me
+        const fresh = protos.filter(p => !p.archived && !before.has(p.id) && ours(p))
+        const grown = protos.filter(ours).map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
         if (fresh.length) return go({ view: 'proto', proto: fresh.at(-1)!.id })
         const here = st.place.view === 'proto' ? st.place.proto : null
         const g = grown.find(x => x.p.id !== here)
