@@ -149,8 +149,10 @@ Name the session in that language. The designs are separate: they follow the pro
 to left below). The user can override the page's language in Settings.
 
 It creates the app on the first call in a session, restarts it if it stopped, and prints
-`url …`. Send that URL to the user right away in one short message ("Live link: … it fills
-in as I build"). Then continue. On later requests in the same session run `proto up` again
+`url …` and `link …`. Send the `link` to the user right away in one short message ("Live link: … it
+fills in as I build"): it names this conversation (`?c=`), so its tab shows and follows this
+conversation's work while others share the app. Links to a prototype are the ones `proto add`
+prints, which name it too. Then continue. On later requests in the same session run `proto up` again
 (same app, same link) and don't resend the link unless the user lost it.
 
 **Connect comments now, including in Codex.** `proto up` prints the listener's status.

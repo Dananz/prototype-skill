@@ -679,7 +679,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     for (const [k, n] of comments.counts().by) { const slug = k.split('/')[0]; by[slug] = (by[slug] ?? 0) + n }
     const w = workOf()
     return {
-      protos: all, designs, place: placeRoute(), me: session.conversation ?? null, conv: convOn, scope: scopeNow(), scopeName: scopeName(),
+      protos: all, designs, place: placeRoute(), me: me || null, conv: convOn, scope: scopeNow(), scopeName: scopeName(),
       building: new Set(Object.keys(session.building ?? {}).filter(k => buildingUntil(k) > Date.now())), counts: by,
       workSlug: w?.p.id ?? '', edits: st.status?.edits, agent: agentName(session.agent),
       work: w ? t('Working on {name}', { name: `${w.p.title} ${variantLabel(w.p, w.v.id)}` }) : '',
@@ -759,20 +759,50 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // What the page shows (the tree and the gallery): this conversation by default ('conv:<id>'),
   // another one opened from the past, the whole project ('all') or favorites ('favs'). Kept per project
   // in this browser; a page with no conversation (a share's viewer) shows the whole project.
+  // This conversation, fixed for the tab when the page loads (several conversations share the project's app,
+  // and each `proto up` rewrites session.conversation): the one the link names (?c=, the start of its id, in
+  // the links `proto up` and `proto add` print), else the one working on the exploration the link opened,
+  // else the tab's own from before (a reload keeps it, though the address then is wherever the tab went).
+  // A tab with none of these has no conversation of its own and follows the one working now.
+  const meKey = `proto-me:${session.id}`
+  const reloaded = ['reload', 'back_forward'].includes((performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type ?? '')
+  // '*': the tab had no conversation of its own, and a reload keeps it that way.
+  const kept = (() => { try { return sessionStorage.getItem(meKey) || '' } catch { return '' } })()
+  const named = q.get('c') || ''
+  const landing = named || (reloaded && kept) ? undefined : (() => { const slug = address().split('/')[1]; return slug ? byId(slug) : undefined })()
+  const known = () => [session.conversation, ...all.flatMap(p => [p.owner, p.session])].filter((x): x is string => !!x)
+  // The link's id, or its end for a UUID (proto.mjs linkFor); two that would fit leave it unknown.
+  const resolve = (c: string) => { const ids = new Set(known()); if (ids.has(c)) return c; const fit = [...ids].filter(x => x.endsWith(c)); return fit.length === 1 ? fit[0] : '' }
+  /** This conversation's id as links carry it (proto.mjs linkFor). */
+  const shortOf = (id: string) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id) ? id.slice(-8) : id
+  let me = named ? resolve(named) : landing?.owner || landing?.session || (kept === '*' ? '' : kept)
+  // A conversation the link names that nothing here knows yet (it has made nothing): taken once it shows up.
+  let wanted = named && !me ? named : ''
+  const tied = !!(me || named)
+  if (!tied) me = session.conversation || ''
+  const keepMe = () => { if (!framed && (me || !tied)) try { sessionStorage.setItem(meKey, tied ? me : '*') } catch { /* private window */ } }
+  keepMe()
+  /** Takes in a new session.json or prototype list; true when this tab's conversation changed. */
+  function refreshMe() {
+    const was = me
+    if (wanted) { const r = resolve(wanted); if (r) { me = r; wanted = ''; keepMe() } } else if (!tied && session.conversation) me = session.conversation
+    return me !== was
+  }
+  // Kept as 'mine' rather than an id: the scope is remembered per project, for every tab.
   const scopeKey = `proto-scope:${session.id}`
-  let scope = (() => { try { return localStorage.getItem(scopeKey) || '' } catch { return '' } })()
+  let scope = landing || (named && !reloaded) ? 'mine' : (() => { try { return localStorage.getItem(scopeKey) || '' } catch { return '' } })()
   const scopeNow = () => {
     if (!convOn) return 'all'
     if (scope === 'all' || scope === 'favs') return scope
-    const sid = scope.startsWith('conv:') ? scope.slice('conv:'.length) : session.conversation
-    return sid && (sid === session.conversation || all.some(p => p.session === sid)) ? `conv:${sid}` : 'all'
+    const sid = scope.startsWith('conv:') ? scope.slice('conv:'.length) : me
+    return sid && (sid === me || all.some(p => p.session === sid)) ? `conv:${sid}` : 'all'
   }
   const convNames = () => st.status?.conversations ?? {}
   const scopeName = () => { const s = scopeNow(); return s.startsWith('conv:') ? convNames()[s.slice(5)] ?? '' : '' }
   function setScope(next: string) {
     if (!convOn || next === scopeNow()) return
-    scope = next
-    remember(scopeKey, next)
+    scope = next === `conv:${me}` ? 'mine' : next
+    remember(scopeKey, scope)
     // An exploration's own page has its card open: a new scope shows the whole of it instead.
     if (st.place.view === 'proto') { widenedAt = ''; return go({ view: 'session' }) }
     paintTree(); paintGallery()
@@ -789,12 +819,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let convsKey = '', convsJson = ''
   const convsOf = () => {
     const names = convNames(), live = all.filter(p => !p.archived)
-    const key = JSON.stringify([live.map(p => [p.id, p.session, p.picked, p.created]), names, session.conversation])
+    const key = JSON.stringify([live.map(p => [p.id, p.session, p.picked, p.created]), names, me])
     if (key === convsKey) return convsJson
     const by = new Map<string, Proto[]>()
     for (const p of live) { const k = p.session ?? ''; by.set(k, [...(by.get(k) ?? []), p]) }
-    const list = [...by].map(([sid, ps]) => ({ sid, name: names[sid] ?? (sid === session.conversation ? session.name : ''), at: ps.reduce((m, p) => p.created > m ? p.created : m, ''), n: ps.length, picked: ps.filter(p => p.picked).length }))
-      .sort((a, b) => a.sid === session.conversation ? -1 : b.sid === session.conversation ? 1 : b.at.localeCompare(a.at))
+    const list = [...by].map(([sid, ps]) => ({ sid, name: names[sid] ?? (sid === me && me === session.conversation ? session.name : ''), at: ps.reduce((m, p) => p.created > m ? p.created : m, ''), n: ps.length, picked: ps.filter(p => p.picked).length }))
+      .sort((a, b) => a.sid === me ? -1 : b.sid === me ? 1 : b.at.localeCompare(a.at))
     convsKey = key; convsJson = JSON.stringify(list)
     return convsJson
   }
@@ -852,7 +882,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // exploration's conversation, or to the whole project when it has none.
     // Only on arriving there: a scope chosen while on it stays.
     const target = show && st.place.view !== 'session' ? byId(st.place.proto) : undefined, arrived = target ? placeRoute() : ''
-    if (arrived !== widenedAt) { widenedAt = arrived; if (target && !inScope(target)) { scope = target.session && scopeNow() !== 'all' ? `conv:${target.session}` : 'all'; remember(scopeKey, scope); paintTree() } }
+    if (arrived !== widenedAt) { widenedAt = arrived; if (target && !inScope(target)) { scope = target.session && scopeNow() !== 'all' ? (target.session === me ? 'mine' : `conv:${target.session}`) : 'all'; remember(scopeKey, scope); paintTree() } }
     galleryHost.hidden = !show
     const full = show && deskMq.matches && !st.focus
     galleryHost.toggleAttribute('data-full', full)
@@ -864,7 +894,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     layers.style.opacity = show ? '0' : ''
     layers.style.pointerEvents = show ? 'none' : ''
     if (!show && !galleryMounted) return
-    const next: GalleryInput = { protos: scopedProtos(), scope: scopeNow(), me: session.conversation ?? '', convs: convsOf(), agent: agentName(session.agent), hidden: !show, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), open: proto, safe }
+    const next: GalleryInput = { protos: scopedProtos(), scope: scopeNow(), me, convs: convsOf(), agent: agentName(session.agent), hidden: !show, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), open: proto, safe }
     if (gallerySnap && (Object.keys(next) as (keyof GalleryInput)[]).every(k => next[k] === gallerySnap![k])) return
     gallerySnap = next
     if (!galleryMounted && show) { galleryMounted = true; void import('./gallery/index').then(m => m.mountGallery(galleryHost, galleryApi)) }
@@ -3861,7 +3891,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'session':
         return { title: session.name, rows: [
           { id: 'overview', label: t('Overview'), icon: 'grid', run: () => go({ view: 'session' }) },
-          { id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(session.url || location.href) },
+          { id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(session.url ? `${session.url}${me ? `?c=${encodeURIComponent(shortOf(me))}` : ''}` : location.href) },
           { id: 'keep', label: t('Keep this session'), icon: 'pin', on: !!st.status?.keep, run: () => act('keep', '', '') },
         ] }
       case 'comment': {
@@ -4343,7 +4373,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   applyTheme(st.dark)
   // The link opens where it points; a bare link reopens where this browser last was.
   const linked = location.pathname !== '/' || location.hash.startsWith('#/')
-  const start = (linked ? parsePlace() : null) ?? parsePlace(localStorage.getItem(`proto-place-${session.id}`) ?? '') ?? defaultPlace()
+  // A bare link naming a conversation (?c=) opens on its work: where this browser last was only when that is its own.
+  const its = (p: Place | null) => p && (!named || p.view === 'session' || [byId(p.proto)?.owner, byId(p.proto)?.session].includes(me)) ? p : null
+  const newestOfMe = () => { const p = named && active().filter(x => x.session === me || x.owner === me).at(-1); return p ? { view: 'proto', proto: p.id } as Place : null }
+  const start = (linked ? parsePlace() : null) ?? its(parsePlace(localStorage.getItem(`proto-place-${session.id}`) ?? '')) ?? newestOfMe() ?? (named ? { view: 'session' } as Place : defaultPlace())
   if (!atUrl(start)) history.replaceState(null, '', urlOf(start))
   arrive(start, false)
   if (q.has('focus')) act('focus', '', '')
@@ -4369,6 +4402,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const restar = starsOf(all) !== starsOf(next)
       all = next
       protos = shown(next)
+      refreshMe()
       intake.set(st.status?.inbox?.intake, protos.length > 0)
       if (framed) {
         // The page in a view follows nothing itself: the page outside does, and it goes along. A place
@@ -4376,8 +4410,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const p = parsePlace()
         if (p && pathOf(p) !== pathOf(st.place)) return arrive(p, false)
       } else {
-        const fresh = protos.filter(p => !p.archived && !before.has(p.id))
-        const grown = protos.map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
+        // Only this tab's conversation's new work: another conversation's tab follows its own.
+        const ours = (p: Proto) => (!me && !wanted) || (!p.session && !p.owner) || p.session === me || p.owner === me
+        const fresh = protos.filter(p => !p.archived && !before.has(p.id) && ours(p))
+        const grown = protos.filter(ours).map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
         if (fresh.length) return go({ view: 'proto', proto: fresh.at(-1)!.id })
         const here = st.place.view === 'proto' ? st.place.proto : null
         const g = grown.find(x => x.p.id !== here)
@@ -4408,6 +4444,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const was = session.work
       const hostChanged = session.agent !== next.agent
       session = next
+      if (refreshMe()) { paintTree(); paintGallery() }
       if (hostChanged) comments.hostChanged()
       builtFailed()
       watchExpiry()
