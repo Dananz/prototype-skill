@@ -45,6 +45,8 @@ export type ViewProps = {
   safe?: Insets
   /** Choose the device its layout stands for. */
   pick: (id: string) => void
+  /** A menu open beside the tool strip or the sidebar: how far it reaches into the area from each side, in px. */
+  aside?: { l: number; r: number }
 }
 type Insets = { l: number; t: number; r: number; b: number }
 const NO_INSETS: Insets = { l: 0, t: 0, r: 0, b: 0 }
@@ -194,7 +196,7 @@ function Pick({ area, scale, zoomed }: { area: RefObject<HTMLDivElement | null>;
 
 const coarse = matchMedia('(pointer: coarse)')
 
-function ViewStage({ view, path, dark, set, route, onKey, safe, pick }: ViewProps & { view: View }) {
+function ViewStage({ view, path, dark, set, route, onKey, safe, pick, aside }: ViewProps & { view: View }) {
   const { act } = useCtx()
   const { s, rows } = useRows()
   const [area, box] = useBox<HTMLDivElement>()
@@ -218,7 +220,25 @@ function ViewStage({ view, path, dark, set, route, onKey, safe, pick }: ViewProp
   const scale = view.zoom ? view.zoom / 100 : fit
   const zoomed = scale > fit + 0.001
   const setZoom = (z: number) => set({ zoom: z })
-  const { wrap, anchor } = usePlace(area, box, outer, scale, zoomed, pad, `${device?.id ?? view.size}-${view.land}`, view.home ?? 0, ins)
+  // A menu open beside the strip or the sidebar: the device moves clear of it, at the size it is, while it still
+  // shows whole in the room left beside it; else it stays where it is, under the menu.
+  const clear = aside && (aside.l || aside.r) ? { ...ins, l: Math.max(ins.l, aside.l), r: Math.max(ins.r, aside.r) } : ins
+  const slides = clear !== ins && !zoomed && outer.w * scale + pad * 2 <= box.w - clear.l - clear.r
+  const placeIns = slides ? clear : ins
+  const [sliding, setSliding] = useState(false)
+  const slideKey = `${placeIns.l},${placeIns.r}`, slideWas = useRef(slideKey)
+  // Eased from the first frame: the class is on before the place changes (usePlace, after this).
+  const slideOn = !zoomed && (sliding || slideWas.current !== slideKey)
+  useLayoutEffect(() => {
+    if (slideWas.current === slideKey) return
+    slideWas.current = slideKey
+    // A zoom or a pinch moves it at once: eased, its scroll would be clamped to the old padding.
+    if (zoomed) return
+    setSliding(true)
+    const off = setTimeout(() => setSliding(false), 320)
+    return () => clearTimeout(off)
+  }, [slideKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const { wrap, anchor } = usePlace(area, box, outer, scale, zoomed, pad, `${device?.id ?? view.size}-${view.land}`, view.home ?? 0, placeIns)
   const pinch = usePinch(area, scale, fit, setZoom, anchor)
   const gestures = useGestures(area, scale, fit, setZoom, anchor)
   const keys = useRef(onKey)
@@ -287,7 +307,7 @@ function ViewStage({ view, path, dark, set, route, onKey, safe, pick }: ViewProp
           brings it back (the zoom flickered between two values). It moves by drag, wheel and fingers. Left to right
           in every language: a canvas has no reading direction, and its place is laid out as a positive scrollLeft. */}
       <div ref={area} dir="ltr" data-view-area className={`${safe ? 'absolute inset-0' : 'min-h-0 flex-1'} overflow-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`} style={{ touchAction: 'pan-x pan-y' }}>
-        <div ref={wrap} className="flex h-max min-h-full w-max min-w-full items-start justify-start">
+        <div ref={wrap} className={`flex h-max min-h-full w-max min-w-full items-start justify-start ${slideOn ? 'transition-[padding] duration-300 ease-[cubic-bezier(.2,.9,.25,1)] motion-reduce:transition-none' : ''}`}>
           <LiveFrame path={path} dark={dark} w={d.w} h={d.h} scale={scale} route={route} bind={bind} screenR={glass ? device!.r : undefined} moving={moving}
             ring={!view.size ? `bg-white dark:bg-zinc-950 ${desk ? 'rounded-[10px] ring-1 ring-black/[.08] shadow-[0_18px_44px_-18px_rgb(0_0_0/.35)] dark:ring-white/[.12]' : ''}` : `bg-white ring-1 dark:bg-zinc-950 ${picking ? 'ring-2 ring-proto-primary' : 'ring-black/10 dark:ring-white/[.16]'} ${glass ? 'shadow-[0_18px_44px_-18px_rgb(0_0_0/.45)]' : pad ? 'rounded-[10px]' : ''}`}>
             {picking && <Pick area={area} scale={scale} zoomed={zoomed} />}
