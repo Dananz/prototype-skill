@@ -11,7 +11,7 @@ import { useStore } from './store'
 import type { Action, Note } from './types'
 import { PLACEHOLDER, useTagField } from './tag-field'
 import { ACTION, Icon, MOD, PRIMARY, Pulse } from './ui'
-import { BROWSER_HINT, MenuRows, type MenuRow } from './menu'
+import { BROWSER_HINT, MenuRows, usePointerPlace, type Beside, type MenuRow } from './menu'
 import { rtl, t } from '../i18n'
 import { post } from '../transport'
 import { BriefView } from './brief-view'
@@ -283,11 +283,15 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
 export type DecidePopProps = {
   /** Which of the shell's menus this is: it fades as it closes (leave-fade.ts). */
   popFor: string
-  open: boolean; anchor: () => HTMLElement | null; subject: Subject | null; onClose: () => void; at?: { x: number; y: number }; onComment?: () => void; rows?: MenuRow[]; lead?: MenuRow[]; commentLabel?: string
+  open: boolean; anchor: () => HTMLElement | null; subject: Subject | null; onClose: () => void; at?: { x: number; y: number }
+  /** The sidebar a row's menu was opened from: it opens beside it when there is room. */
+  beside?: Beside; onComment?: () => void; rows?: MenuRow[]; lead?: MenuRow[]; commentLabel?: string
   /** Opened by right-click: says how to reach the browser's own menu. */
   hint?: boolean }
-export function DecidePop({ popFor, open, anchor, subject, onClose, at: pointer, onComment, rows, lead, commentLabel, hint }: DecidePopProps) {
+export function DecidePop({ popFor, open, anchor, subject, onClose, at: pointer, beside: sidebar, onComment, rows, lead, commentLabel, hint }: DecidePopProps) {
   const [, redraw] = useState(0)
+  const box = useRef<HTMLDivElement>(null)
+  const atPointer = usePointerPlace(box, open && !!subject, pointer, sidebar)
   useEffect(() => {
     if (!open) return
     const f = () => redraw(n => n + 1)
@@ -302,14 +306,14 @@ export function DecidePop({ popFor, open, anchor, subject, onClose, at: pointer,
   const above = !!from?.closest('[data-dock]')
   // A row's menu opens where it was asked for (its ⋯, or the pointer), kept inside the window; the bar's under its button.
   const place = pointer
-    ? { top: Math.max(8, Math.min(pointer.y, innerHeight - 420)), left: Math.max(8, Math.min(pointer.x, innerWidth - 328)) }
+    ? atPointer
     : above ? { bottom: 76, left: Math.max(8, innerWidth / 2 - 160) }
     : beside ? (rtl ? { top: Math.min(at!.top, innerHeight - 420), right: innerWidth - at!.left + 12 } : { top: Math.min(at!.top, innerHeight - 420), left: at!.right + 12 })
     : rtl ? { top: at!.bottom + 6, left: Math.max(8, at!.left) } : { top: at!.bottom + 6, right: Math.max(8, innerWidth - at!.right) }
   // The shell closes it on Esc and on a click outside. A click inside goes no further: a choice
   // redraws the menu under it, and the shell would take a click on a removed button for one outside.
   return (
-    <div data-pop data-pop-for={popFor} data-context-menu={pointer ? '' : undefined} onClick={e => e.stopPropagation()} onContextMenu={e => { if (pointer && !e.shiftKey) e.preventDefault() }} className="fixed z-40 w-80 overflow-hidden rounded-2xl transition-opacity has-[[data-tag-picking]]:pointer-events-none has-[[data-tag-picking]]:opacity-40 border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={place}>
+    <div ref={box} data-pop data-pop-for={popFor} data-context-menu={pointer ? '' : undefined} onClick={e => e.stopPropagation()} onContextMenu={e => { if (pointer && !e.shiftKey) e.preventDefault() }} className={`fixed z-40 w-80 ${pointer ? 'overflow-y-auto overscroll-contain' : 'overflow-hidden'} rounded-2xl transition-opacity has-[[data-tag-picking]]:pointer-events-none has-[[data-tag-picking]]:opacity-40 border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100`} style={place}>
       <Decide key={`${subject.proto}/${subject.variant}`} subject={subject} onDone={onClose} onComment={onComment} rows={rows} lead={lead} commentLabel={commentLabel} />
       {hint && <p className="border-t border-black/[.06] px-3.5 py-2 text-xs text-zinc-400 dark:border-white/10">{BROWSER_HINT}</p>}
     </div>

@@ -27,6 +27,39 @@ export type MenuRow =
   | { sep: true }
   | { head: string }
 
+/** The rectangle of the sidebar a menu was opened from: the menu opens beside it when there is room. */
+export type Beside = { left: number; right: number }
+
+/** Where a menu at the pointer goes: beside the sidebar it came from when it fits there, at the
+ * pointer otherwise, always inside the window; taller than the window, it scrolls. Measured after
+ * every change of its size, since a menu grows as it is used (a note, an ask). */
+export function usePointerPlace(box: { current: HTMLElement | null }, open: boolean, at: { x: number; y: number } | null | undefined, beside?: Beside) {
+  const [pos, setPos] = useState<{ left: number; top: number; maxHeight: number }>({ left: 0, top: 0, maxHeight: 0 })
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!open || !at || !el) return
+    const place = () => {
+      const w = el.offsetWidth, h = Math.min(el.scrollHeight + el.offsetHeight - el.clientHeight, innerHeight - 16), gap = 6
+      let left = at.x
+      if (beside) {
+        // A sidebar on the left gets the menu on its right, one on the right gets it on its left.
+        const onLeft = beside.left + beside.right < innerWidth
+        if (onLeft && innerWidth - beside.right - gap - 8 >= w) left = beside.right + gap
+        else if (!onLeft && beside.left - gap - 8 >= w) left = beside.left - gap - w
+      }
+      const next = { left: Math.max(8, Math.min(left, innerWidth - w - 8)), top: Math.max(8, Math.min(at.y, innerHeight - h - 8)), maxHeight: innerHeight - 16 }
+      setPos(p => p.left === next.left && p.top === next.top && p.maxHeight === next.maxHeight ? p : next)
+    }
+    place()
+    const ro = new ResizeObserver(place)
+    ro.observe(el)
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
+    addEventListener('resize', place)
+    return () => { ro.disconnect(); removeEventListener('resize', place) }
+  }, [open, at?.x, at?.y, beside?.left, beside?.right]) // eslint-disable-line react-hooks/exhaustive-deps
+  return pos
+}
+
 export const ROW = 'flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-start text-[13px] outline-none hover:bg-zinc-900/[.04] focus-visible:bg-zinc-900/[.06] disabled:opacity-50 dark:hover:bg-white/[.06] dark:focus-visible:bg-white/10'
 export const BROWSER_HINT = t('Shift + right-click for the browser menu')
 
@@ -110,6 +143,8 @@ export type ContextPopProps = {
   open: boolean
   /** Where the pointer was, in this page's px. */
   at: { x: number; y: number } | null
+  /** The sidebar it was opened from, if any. */
+  beside?: Beside
   title?: string
   sub?: string
   rows: MenuRow[]
@@ -117,18 +152,13 @@ export type ContextPopProps = {
 }
 
 /** The menu at the pointer, kept inside the window, with the line that says how to reach the browser's own. */
-export function ContextPop({ open, at, title, sub, rows, onClose }: ContextPopProps) {
+export function ContextPop({ open, at, beside, title, sub, rows, onClose }: ContextPopProps) {
   const [ask, setAsk] = useState<MenuAsk | null>(null)
   const box = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ left: 0, top: 0 })
   // A menu opened somewhere else starts from its rows again.
   const key = `${at?.x},${at?.y}`
   useEffect(() => { setAsk(null) }, [key, open])
-  useLayoutEffect(() => {
-    if (!open || !at || !box.current) return
-    const r = box.current.getBoundingClientRect()
-    setPos({ left: Math.max(8, Math.min(at.x, innerWidth - r.width - 8)), top: Math.max(8, Math.min(at.y, innerHeight - r.height - 8)) })
-  }, [open, at?.x, at?.y, ask, rows.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  const pos = usePointerPlace(box, open, at, beside)
   // The first row takes the focus, so the arrows work at once; they wrap, Home and End jump.
   useLayoutEffect(() => { if (open && !ask) box.current?.querySelector<HTMLElement>('[role=menuitem]:not([disabled])')?.focus({ preventScroll: true }) }, [open, ask, key])
   if (!open || !at) return null
@@ -143,7 +173,7 @@ export function ContextPop({ open, at, title, sub, rows, onClose }: ContextPopPr
   // choice redraws the menu under it and a click on a removed button reads as one outside.
   return (
     <div ref={box} data-pop data-pop-for="ctx" data-context-menu onClick={e => e.stopPropagation()} onContextMenu={e => { if (!e.shiftKey) e.preventDefault() }}
-      className="fixed z-40 w-72 overflow-hidden rounded-2xl transition-opacity has-[[data-tag-picking]]:pointer-events-none has-[[data-tag-picking]]:opacity-40 border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={pos}>
+      className="fixed z-40 w-72 overflow-y-auto overscroll-contain rounded-2xl transition-opacity has-[[data-tag-picking]]:pointer-events-none has-[[data-tag-picking]]:opacity-40 border border-black/10 bg-white text-[13px] text-zinc-900 shadow-xl shadow-black/10 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100" style={pos}>
       {ask
         ? <AskForm ask={ask} onBack={() => setAsk(null)} onDone={onClose} />
         : <div role="menu" aria-label={title ?? t('Options')} onKeyDown={arrows} className="p-1.5">
