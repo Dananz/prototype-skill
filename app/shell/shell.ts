@@ -759,19 +759,34 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // What the page shows (the tree and the gallery): this conversation by default ('conv:<id>'),
   // another one opened from the past, the whole project ('all') or favorites ('favs'). Kept per project
   // in this browser; a page with no conversation (a share's viewer) shows the whole project.
-  // This conversation: the one working on the exploration the link opened (`proto add` prints it), else the one that last
-  // started the app. Several conversations share the project's app, and each `proto up` rewrites
-  // session.conversation, so it is fixed for this tab when the page loads.
+  // This conversation, fixed for the tab when the page loads (several conversations share the project's app,
+  // and each `proto up` rewrites session.conversation): the one the link names (?c=, the start of its id, in
+  // the links `proto up` and `proto add` print), else the one working on the exploration the link opened,
+  // else the tab's own from before (a reload keeps it, though the address then is wherever the tab went).
+  // A tab with none of these has no conversation of its own and follows the one working now.
   const meKey = `proto-me:${session.id}`
-  // A reload keeps it, though the address then is wherever the tab went since.
   const reloaded = ['reload', 'back_forward'].includes((performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type ?? '')
   const kept = (() => { try { return sessionStorage.getItem(meKey) || '' } catch { return '' } })()
-  const landing = reloaded && kept ? undefined : (() => { const slug = address().split('/')[1]; return slug ? byId(slug) : undefined })()
-  let me = landing?.owner || landing?.session || kept || session.conversation || ''
-  if (me && !framed) try { sessionStorage.setItem(meKey, me) } catch { /* private window */ }
+  const named = q.get('c') || ''
+  const landing = named || (reloaded && kept) ? undefined : (() => { const slug = address().split('/')[1]; return slug ? byId(slug) : undefined })()
+  const known = () => [session.conversation, ...all.flatMap(p => [p.owner, p.session])].filter((x): x is string => !!x)
+  const resolve = (c: string) => known().find(x => x === c) ?? known().find(x => x.startsWith(c)) ?? ''
+  let me = named ? resolve(named) : landing?.owner || landing?.session || kept
+  // A conversation the link names that nothing here knows yet (it has made nothing): taken once it shows up.
+  let wanted = named && !me ? named : ''
+  const tied = !!(me || named)
+  if (!tied) me = session.conversation || ''
+  const keepMe = () => { if (tied && me && !framed) try { sessionStorage.setItem(meKey, me) } catch { /* private window */ } }
+  keepMe()
+  /** Takes in a new session.json or prototype list; true when this tab's conversation changed. */
+  function refreshMe() {
+    const was = me
+    if (wanted) { const r = resolve(wanted); if (r) { me = r; wanted = ''; keepMe() } } else if (!tied && session.conversation) me = session.conversation
+    return me !== was
+  }
   // Kept as 'mine' rather than an id: the scope is remembered per project, for every tab.
   const scopeKey = `proto-scope:${session.id}`
-  let scope = landing ? 'mine' : (() => { try { return localStorage.getItem(scopeKey) || '' } catch { return '' } })()
+  let scope = landing || named ? 'mine' : (() => { try { return localStorage.getItem(scopeKey) || '' } catch { return '' } })()
   const scopeNow = () => {
     if (!convOn) return 'all'
     if (scope === 'all' || scope === 'favs') return scope
@@ -4333,7 +4348,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   applyTheme(st.dark)
   // The link opens where it points; a bare link reopens where this browser last was.
   const linked = location.pathname !== '/' || location.hash.startsWith('#/')
-  const start = (linked ? parsePlace() : null) ?? parsePlace(localStorage.getItem(`proto-place-${session.id}`) ?? '') ?? defaultPlace()
+  // A bare link naming a conversation (?c=) opens on its work: where this browser last was only when that is its own.
+  const its = (p: Place | null) => p && (!named || p.view === 'session' || [byId(p.proto)?.owner, byId(p.proto)?.session].includes(me)) ? p : null
+  const newestOfMe = () => { const p = named && active().filter(x => x.session === me || x.owner === me).at(-1); return p ? { view: 'proto', proto: p.id } as Place : null }
+  const start = (linked ? parsePlace() : null) ?? its(parsePlace(localStorage.getItem(`proto-place-${session.id}`) ?? '')) ?? newestOfMe() ?? (named ? { view: 'session' } as Place : defaultPlace())
   if (!atUrl(start)) history.replaceState(null, '', urlOf(start))
   arrive(start, false)
   if (q.has('focus')) act('focus', '', '')
@@ -4359,6 +4377,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const restar = starsOf(all) !== starsOf(next)
       all = next
       protos = shown(next)
+      refreshMe()
       intake.set(st.status?.inbox?.intake, protos.length > 0)
       if (framed) {
         // The page in a view follows nothing itself: the page outside does, and it goes along. A place
@@ -4367,7 +4386,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         if (p && pathOf(p) !== pathOf(st.place)) return arrive(p, false)
       } else {
         // Only this tab's conversation's new work: another conversation's tab follows its own.
-        const ours = (p: Proto) => !me || (!p.session && !p.owner) || p.session === me || p.owner === me
+        const ours = (p: Proto) => (!me && !wanted) || (!p.session && !p.owner) || p.session === me || p.owner === me
         const fresh = protos.filter(p => !p.archived && !before.has(p.id) && ours(p))
         const grown = protos.filter(ours).map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
         if (fresh.length) return go({ view: 'proto', proto: fresh.at(-1)!.id })
@@ -4400,7 +4419,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const was = session.work
       const hostChanged = session.agent !== next.agent
       session = next
-      if (!me && next.conversation) me = next.conversation
+      if (refreshMe()) { paintTree(); paintGallery() }
       if (hostChanged) comments.hostChanged()
       builtFailed()
       watchExpiry()

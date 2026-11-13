@@ -210,6 +210,9 @@ function projectRoot() {
   const git = run('git', ['rev-parse', '--show-toplevel'])
   return git.status === 0 ? git.stdout.trim() : process.cwd()
 }
+// A page link for the user, naming this conversation (?c=, the start of its id): the tab it opens shows this
+// conversation's work and follows it, though other conversations share the app (app/shell/shell.ts).
+const linkFor = (base, path = '') => base ? `${base}${path}?c=${encodeURIComponent(sessionId().slice(0, 8))}` : ''
 function sessionId() {
   const id = flags.session || process.env.PROTO_SESSION_ID || process.env.CODEX_THREAD_ID || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID
   if (!id || id === true) die('no session id. Pass --session <id> on every call, or set PROTO_SESSION_ID to one stable, unique name for this conversation.')
@@ -475,6 +478,7 @@ async function up() {
   }
   patchSession(dir, { url, localUrl })
   console.log(`url ${url}`)
+  console.log(`link ${linkFor(url)}`)
   if (url !== localUrl) console.log(`local ${localUrl}`)
   console.log(`dir ${dir}`)
   console.log(`stack ${s.stack}`)
@@ -670,7 +674,7 @@ function add() {
     patchSession(dir, now => ({ building: { ...now.building, ...Object.fromEntries(fresh.map(id => [`${slug}/${id}`, at])) } }))
   }
   console.log(`${pdir}: ${Object.keys(meta.variants).map(id => `${id}.${kit.ext}`).join(' ') || 'no variants'}`)
-  if (s.url) console.log(`${s.url}${slug}`)
+  if (s.url) console.log(linkFor(s.url, slug))
   if (kit.slot && typeof meta.from === 'string' && meta.from.includes('/') && !meta.slot && !meta.referenceOnly) console.log(`assignment needed: if these variants replace part of ${meta.from}, wrap that element in <Slot> and connect ${slug} with --from ${meta.from} --slot <id> before presenting them. Use --reference-only only for a separate design that uses the parent as a reference.`)
 }
 
@@ -2190,7 +2194,7 @@ function intake() {
     mkdirSync(dirname(file), { recursive: true })
     writeJson(file, { id, status: 'open', createdAt: new Date().toISOString(), ...shaped })
     const s = need(dir)
-    console.log(`asked ${shaped.questions.length} question${shaped.questions.length === 1 ? '' : 's'} in the page: ${s.url || s.localUrl || ''}`)
+    console.log(`asked ${shaped.questions.length} question${shaped.questions.length === 1 ? '' : 's'} in the page: ${linkFor(s.url || s.localUrl || '')}`)
     console.log('the user answers there; proto inbox --wait hears when they do. Do not build before the answers arrive.')
     return
   }
