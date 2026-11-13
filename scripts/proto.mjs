@@ -477,16 +477,7 @@ async function up() {
     child.unref()
     s = patchSession(dir, { pid: child.pid })
     for (let i = 0; i < 60 && alive(child.pid) && !await serves(port, child.pid, 1000); i++) await sleep(250)
-    if (await running(s)) {
-      // Its file watcher's first look done too: files written before then count as already there, so
-      // a prototype added at once would never reach the page.
-      for (let i = 0; i < 60; i++) {
-        const st = await fetch(`http://127.0.0.1:${port}/__proto/status`, { signal: AbortSignal.timeout(1000) }).then(r => r.json()).catch(() => ({}))
-        if (st.watching !== false) break
-        await sleep(250)
-      }
-      break
-    }
+    if (await running(s)) break
     if (alive(child.pid) || await portFree(port)) die(`the dev server did not start; see ${tilde(join(dir, '.proto', 'dev.log'))}`)
   }
   if (!await running(s)) die(`the dev server did not start; see ${tilde(join(dir, '.proto', 'dev.log'))}`)
