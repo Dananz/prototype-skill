@@ -374,6 +374,8 @@ function SummaryCard({ phone }: { phone: boolean }) {
   const list = roundAct.steps(), decided = roundAct.decided()
   const [hot, setHot] = useState<string | null>(null)
   const pending = optAct.pending()
+  // Taken again each time the summary opens: a hot reload may have restyled an element since.
+  useEffect(() => { nowStills.clear() }, [])
   const count = (v: Decided | 'pending') => list.filter(x => verdictOf(st, decided, x.f) === v).length
   const changed = list.filter(x => verdictOf(st, decided, x.f) === 'picked')
   const hx = hot ? list.find(x => x.f.key === hot) : undefined

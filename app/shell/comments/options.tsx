@@ -783,7 +783,7 @@ export function OptionsLayer() {
     const click = (e: MouseEvent) => {
       if (e.button !== 0 || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
       // The end of selecting words (a drag, a double-click) is no click on the element.
-      if ([doc, document].some(d => { const sel = d.getSelection?.(); return !!sel && !sel.isCollapsed })) return
+      if (doc.getSelection?.()?.isCollapsed === false) return
       const t = e.target as Element | null
       const m = t?.closest?.<HTMLElement>(MARKED)
       if (!m || !st.contains(m)) return

@@ -2930,7 +2930,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       // A menu closed from inside gives the focus back to its button.
       if (st.open) { const was = st.open, inside = !!t.closest?.('[data-pop]'); st.open = null; render(); if (inside) bar.querySelector<HTMLElement>(`[data-act="open:${was}"]`)?.focus(); return }
       // A round of decisions' step, summary or see-all goes back to its row, after anything over it.
-      if (comments.options.round.escape()) return
+      if (!e.defaultPrevented && comments.options.round.escape()) return
       if (selection.get().length) return selection.clear()
       if (st.drawer) { st.drawer = false; return render() }
       if (viewOn()) return patchView({ size: null, zoom: 0 })
