@@ -358,8 +358,8 @@ function Strip({ children, pick, big }: { children: ReactNode; pick: number; big
     const el = ref.current
     if (!el) return
     const tile = el.querySelectorAll<HTMLElement>('[data-option-tile]')[pick]
-    // Centred on the chosen one: in a right-to-left row, scrollLeft runs from 0 (its start) down.
-    if (tile) el.scrollLeft = tile.offsetLeft - (el.clientWidth - tile.offsetWidth) / 2 - (rtl ? el.scrollWidth - el.clientWidth : 0)
+    // Centred on the chosen one, measured on the screen so it holds in either direction.
+    if (tile) { const t = tile.getBoundingClientRect(), r = el.getBoundingClientRect(); el.scrollLeft += (t.left + t.width / 2) - (r.left + r.width / 2) }
     read()
     const wheel = (e: WheelEvent) => {
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return
@@ -747,7 +747,7 @@ function Dot({ spot, at, open, hover, fresh, phone, onHover }: { spot: Spot; at:
   return (
     <button type="button" data-option-dot={spot.key} aria-expanded={open} aria-haspopup="dialog"
       aria-label={changed ? tn(spot.facets.reduce((n, f) => n + f.options.length, 0), '{label}: {n} option, changed', '{label}: {n} options, changed', { label: spot.label }) : tn(spot.facets.reduce((n, f) => n + f.options.length, 0), '{label}: {n} option', '{label}: {n} options', { label: spot.label })}
-      title={`${spot.label} · ${t('Shift-click for the next option')}`}
+      aria-description={t('Shift-click for the next option')}
       onPointerEnter={e => { if (e.pointerType === 'mouse') onHover(true) }} onPointerLeave={e => { if (e.pointerType === 'mouse') onHover(false) }}
       onClick={e => { if (e.shiftKey) { step(1); return } if (open) optAct.close(); else optAct.open(spot.key) }}
       onKeyDown={e => {
