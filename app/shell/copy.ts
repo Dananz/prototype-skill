@@ -59,6 +59,9 @@ export const copy = shared('copy', () => {
   let went: Record<string, Sent> = {}
   // A preview while an option is pointed at: shown on that one design only, never kept.
   let peeked: { host: Element; id: string; text: string } | null = null
+  // Words shown for now by the options panel (comments/options.tsx: holding to see the original, a
+  // tile being drawn), any number of lines at once; never kept, never sent.
+  const held = new Map<Element, Map<string, string>>()
   let version = 0
 
   const bump = () => { version++; notify(subs) }
@@ -118,6 +121,7 @@ export const copy = shared('copy', () => {
       if (!mine?.delete(caller)) return
       if (!mine.size) callers.delete(host)
       if (peeked?.host === host && !callers.has(host)) peeked = null
+      if (!callers.has(host)) held.delete(host)
       if (merge(host)) bump()
     },
     of: (host: Element | null | undefined) => (host && lines.get(host)) || [],
@@ -129,7 +133,8 @@ export const copy = shared('copy', () => {
       const out: Record<string, string> = {}
       for (const line of clean(list)) {
         const c = mine?.[line.id]
-        out[line.id] = peeked && peeked.host === host && peeked.id === line.id ? peeked.text : stands(line, c) ? c.text : line.options[0]
+        const h = host ? held.get(host)?.get(line.id) : undefined
+        out[line.id] = h ?? (peeked && peeked.host === host && peeked.id === line.id ? peeked.text : stands(line, c) ? c.text : line.options[0])
       }
       return out
     },
@@ -184,6 +189,16 @@ export const copy = shared('copy', () => {
     peek(host: Element, id: string, text: string | null) {
       if (text === null ? !peeked : peeked?.host === host && peeked.id === id && peeked.text === text) return
       peeked = text === null ? null : { host, id, text }
+      bump()
+    },
+    /** Show words on a line for now, over a preview and a choice, or stop (null). Several lines may
+     *  be held at once; nothing is kept or sent. */
+    hold(host: Element, id: string, text: string | null) {
+      const mine = held.get(host)
+      if ((mine?.get(id) ?? null) === text) return
+      if (text === null) { mine!.delete(id); if (!mine!.size) held.delete(host) }
+      else if (mine) mine.set(id, text)
+      else held.set(host, new Map([[id, text]]))
       bump()
     },
     subscribe(f: () => void) { subs.add(f); return () => { subs.delete(f) } },

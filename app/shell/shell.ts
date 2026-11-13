@@ -2915,6 +2915,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (peek) { peek = false; paintHints(); return }
       if (trySheet === 'open') return setTrySheet('closed')
       if (comments.copy.escape()) return
+      if (comments.options.escape()) return
       if (comments.escape()) return
       if (card && card.phase !== 'exit') return closeCard()
       // A variant's options opened from the switcher step back to it, still open.
@@ -3072,6 +3073,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // The page inside a device view has none of its own: the page outside comments on it.
   const compareHost = () => st.place.view === 'variant' && !!chosenHere() ? layer?.el.querySelector<HTMLElement>('[data-comment-compare]') ?? null : null
   const commentHost = () => !framed && q.get('hints') !== '0' ? compareHost() ?? hintHost() : null
+  // Options in place (comments/options.tsx): dots on the elements of the design the tools work on, on
+  // its own page only: not in a share, a shot (unless it asks, ?options=1), a tool, or side by side.
+  const optionsHost = () => !framed && (q.get('hints') !== '0' || q.has('options')) && !compareHost() ? toolHost() : null
   /** A prototype's own page: no design on it to point at, but it takes comments as a whole. */
   const cardOn = () => !framed && !st.focus && q.get('hints') !== '0' && st.place.view === 'proto' && !!cur()
   // The comments island floats over the stage and opens into the list; a phone has it as the top
@@ -3533,6 +3537,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function syncComments() {
     const host = commentHost(), pl = st.place, p = cur()
     comments.copy.setStage(copyHost(), copy.routeOf(copyHost()))
+    comments.options.setStage(optionsHost(), copy.routeOf(optionsHost()))
     comments.act.setScope(pl.view === 'session' ? null : pl.proto)
     comments.act.setCard(cardOn() && p ? { proto: p.id, title: p.title } : null)
     const ch = host && p ? chosenHere() : null
@@ -3902,6 +3907,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (up) lead.push({ id: 'comment-up', label: t('Comment on the parent'), icon: 'up', run: () => commentElement(up) })
       const text = (el.innerText ?? el.textContent ?? '').trim()
       if (text) lead.push({ id: 'copy-text', label: t('Copy text'), icon: 'copy', run: () => copyText(text) })
+      if (optionsHost()?.contains(el)) lead.push({ id: 'options-el', label: t('Options for this element…'), icon: 'sparkle', run: () => { comments.copy.off(); comments.options.openOn(el) } })
     }
     return { lead, rows }
   }

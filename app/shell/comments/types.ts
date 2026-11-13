@@ -81,7 +81,7 @@ export type Held = Draft & { target?: Target; time?: Time; proto?: string }
  *  was written: its id and label, the value it had then, and its default (what the source draws). */
 export type TweakNote = { id: string; label: string; value: string | boolean; was: string | boolean }
 
-export type Action = 'pick' | 'unpick' | 'more' | 'more-variants' | 'build' | 'copy' | 'try-it' | 'copy-options' | 'share-fix' | 'share-repair' | 'build-screen' | 'map-note' | 'add-link' | 'build-design'
+export type Action = 'pick' | 'unpick' | 'more' | 'more-variants' | 'build' | 'copy' | 'try-it' | 'copy-options' | 'share-fix' | 'share-repair' | 'build-screen' | 'map-note' | 'add-link' | 'build-design' | 'option' | 'more-options' | 'to-prototype' | 'ask-options'
 
 export type Item = Draft & {
   id: string

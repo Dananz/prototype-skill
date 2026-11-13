@@ -118,6 +118,8 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
 @keyframes proto-fade { from { opacity: 0 } }
 @keyframes proto-zoom { from { opacity: 0; transform: scale(.94) } }
 /* The comments island's news (comments/island.tsx): its icon pops in, its words rise, both fade out. */
+/* A dot whose options just arrived (comments/options.tsx), until it is opened. */
+@keyframes proto-option-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgb(99 102 241 / .5) } 50% { box-shadow: 0 0 0 7px rgb(99 102 241 / 0) } }
 @keyframes proto-isl-pop { 0% { opacity: 0; transform: scale(.4) } 60% { opacity: 1; transform: scale(1.12) } 100% { transform: none } }
 @keyframes proto-isl-rise { from { opacity: 0; transform: translateY(10px); filter: blur(3px) } to { opacity: 1; transform: none; filter: none } }
 @keyframes proto-isl-out { to { opacity: 0; transform: translateY(-8px); filter: blur(2px) } }

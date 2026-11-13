@@ -15,7 +15,7 @@
 //             --flow "<name>" --screens a,b (move) | --rename "<flow>:<name>" | --drop <slug>
 //   proto done <slug>/<letter>[ …] | <slug>   that variant is built: the page drops its Building mark, and a comment
 //                                   answered with --until on it is done once nothing it waits on is building
-//   proto shoot [route…] [--theme dark] [--focus] [--copy] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
+//   proto shoot [route…] [--theme dark] [--focus] [--copy] [--options] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
 //             [--ref <png>]   instead, the variant's screen beside that screenshot of the real one
 //             [--as built]    with --ref: the png is the variant built in the codebase (<route>-vs-built.png)
 //             [--at <ms>]     instead, the variant's motion (useMotion) at that moment of its take
@@ -155,7 +155,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'code', 'again', 'no-serve', 'join', 'install', 'no-fork', 'fork'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'options', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'code', 'again', 'no-serve', 'join', 'install', 'no-fork', 'fork'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -1276,7 +1276,7 @@ async function shoot() {
   const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
   let routes = args.filter(a => !clicked.has(a)).length ? args.filter(a => !clicked.has(a)) : ['']
   if (flags.parallax !== undefined && !/^-?(0|1|0?\.\d+)(,-?(0|1|0?\.\d+))$/.test(String(flags.parallax))) die('--parallax is <x>,<y>, each from -1 to 1: 1,1 and -1,-1 are the two ends of the travel')
-  const extra = ['theme', 'focus', 'copy', 'parallax'].filter(k => flags[k]).map(k => `--${k}=${flags[k] === true ? '1' : flags[k]}`)
+  const extra = ['theme', 'focus', 'copy', 'options', 'parallax'].filter(k => flags[k]).map(k => `--${k}=${flags[k] === true ? '1' : flags[k]}`)
   if (flags.ref === true) die('--ref takes a screenshot of the real screen: --ref <png>')
   if (flags.ref && flags.sheet) die('--ref and --sheet are separate shots: run one, then the other')
   if (flags.state && !flags.sheet) die(`--state goes with --sheet; one variant in a state is proto shoot <slug>/<letter>/${flags.state === true ? '<state>' : flags.state}`)
@@ -1954,6 +1954,10 @@ const ACTIONS = {
   'try-it': 'add useHints for this variant only: useful demo values, steps and scenarios; preserve the working design; reply --done after checking it',
   'copy-options': 'add useCopy for this variant only: headline and primary text by default, or the requested lines; keep current words first, add 2 to 4 alternatives; reply --done after checking fit. On an element with quoted words (highlighted in the page): options for those words only, as one useCopy line on that element (data-copy)',
   copy: 'make this the line\'s text in the variant: put it first in that line\'s useCopy options',
+  option: 'chosen on the design from a useTweaks control marked on this element (data-tweak): make the chosen value this element\'s value in the variant, as written, then take that control out (its useTweaks entry, its state and the element\'s data-tweak); an undo asks to put back the value it had before. One proto reply <batch> "…" --done for the batch',
+  'more-options': 'add 3 more options to the control named in the text (its useTweaks options or presets, or its useCopy line), different from the ones there and from each other; keep today\'s first; reply --done naming them',
+  'to-prototype': 'turn this element\'s options into a prototype nested under this variant: proto add <new slug> --from <slug>/<letter> --slot <id> (lift the element into a <Slot> first) with one variant per option, Current first, then take the control out of this variant; reply --done naming the prototype',
+  'ask-options': 'this element has no options yet: add 2 to 4 options in place for the kinds the text names (color, size, weight: one useTweaks select or color with presets, its label naming the element, data-tweak on the element; words: one useCopy line, data-copy on it), today\'s value first; reply --done saying what to try',
   'share-fix': 'asked from a share review, before the link goes out: change the prototype so the findings quoted in the text are gone, the way the user\'s words say (inline or swap an asset, use a hosted font, take out a secret); never by quieting the review. Check it with proto share file (it prints the same review without publishing), then reply --done saying what changed: the user makes the link again from the page. Do not publish it yourself unless they ask',
   'share-repair': 'the owner asked to repair an existing published prototype; the text names its link, share ID and version. Follow their description, or investigate loading, navigation, assets and layout yourself when it is blank. Inspect the published link and its source, fix the cause and verify the affected flow. Then run proto share update <id> for that same link, preserving scope, comments and enabled/disabled state; this request authorizes that update. Do not create a replacement link, bypass a share review, or change product files. If the source is missing or the issue cannot be reproduced, reply with the blocker and checks performed instead of speculative changes. Reply --done with the result and verification',
   'build-screen': 'a <Go to="<slug>"> link on this variant leads to a screen not built yet (the text names the slug): add it to the same design and flow with proto add <slug> --design <id> --variants "…" (its first option stands in until a pick), written on the design\'s shared parts, then reply --done naming it',
