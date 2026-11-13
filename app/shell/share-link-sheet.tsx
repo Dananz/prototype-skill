@@ -17,6 +17,7 @@ import { drawQr } from './share-link-qr'
 import { VIRTUAL_THRESHOLD } from './virtual'
 import { Icon } from './comments/ui'
 import { loadOwner, mustSignIn, mustWait, notLetIn, putListed, route, shareAsk, shareState, signedOut, type Listed, type Owner, type ShareRow } from './share-state'
+import { isSendKey } from './comments/enter-sends'
 
 export type P = { id: string; title: string; archived: boolean; screen?: [number, number]; variants: { id: string; name: string }[] }
 export type LinkProps = {
@@ -188,7 +189,7 @@ function AskFix({ review, on, open, setOpen }: { review: Review; on?: { proto: s
   return (
     <div data-link-ask-box className="space-y-2">
       <textarea ref={box} dir="auto" rows={2} value={note} onChange={e => setNote(e.target.value)} disabled={state === 'sending'}
-        onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void send() } }}
+        onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); void send() } }}
         placeholder={t('What should {agent} change? For example: use a hosted font instead of uploading these files', { agent: ask.agent })}
         aria-label={t('Ask {agent} to fix this', { agent: ask.agent })}
         className="block w-full resize-none rounded-lg bg-white/70 px-2.5 py-2 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-500 focus:ring-2 focus:ring-proto-primary-ring dark:bg-black/25 dark:text-zinc-100 dark:placeholder:text-zinc-400" />
@@ -466,7 +467,7 @@ function RepairRequest({ a, cancel }: { a: ReturnType<typeof useLinkActions>; ca
       <label htmlFor={id} className="block font-medium">{t('What needs fixing? (optional)')}</label>
       <p id={`${id}-help`} className="leading-5 text-zinc-500 dark:text-zinc-400">{t('Describe the problem, or leave blank for {agent} to investigate. After checking the fix, it updates this same link.', { agent: agent.agent })}</p>
       <textarea ref={note} id={id} aria-describedby={`${id}-help`} data-link-repair-note dir="auto" rows={3} maxLength={1000} value={a.note} onChange={e => a.setNote(e.target.value.slice(0, 1000))} disabled={a.busy}
-        onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void a.sendRepair() } }}
+        onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); void a.sendRepair() } }}
         placeholder={t('For example: screens do not switch, or the page loads slowly')}
         className="block w-full resize-y rounded-lg bg-white px-2.5 py-2 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-proto-primary-ring dark:bg-black/25 dark:text-zinc-100 dark:placeholder:text-zinc-500" />
       <div className="flex flex-wrap justify-end gap-1">

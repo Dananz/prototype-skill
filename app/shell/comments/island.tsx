@@ -16,11 +16,12 @@ import { islandPrefs, useIslandPrefs, type IslandPrefs } from './island-prefs'
 import { useEdgeDrag, type Side } from './island-drag'
 import { CommentList, Notices, useRows } from './list'
 import { linksNew } from './links'
-import { Icon, Listening, MOD, plain } from './ui'
+import { Icon, Listening, plain } from './ui'
 import { useKeyboard } from './keyboard'
 import { usePhoneDrawer } from './phone-drawer'
 import type { Chosen, CState } from './types'
 import { useTagField } from './tag-field'
+import { isSendKey, sendKeyLabel } from './enter-sends'
 
 type Kind = 'working' | 'done' | 'reply'
 type News = { key: number; kind: Kind; title: string; text: string }
@@ -141,7 +142,7 @@ export function Island({ dock }: { dock: HTMLElement }) {
     reopen: () => { if (docked) return 0; if (!phone && side) act.openIsland(true); return side ? 160 : 0 },
     onKey: e => {
       // Mod Enter adds and sends, as in the element composer; with nothing typed it sends the drafts.
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); if (act1 === 'add') { add(); if (!s.live) void act.send() } else if (act1 === 'send' && !s.sending) void act.send() }
+      if (isSendKey(e)) { e.preventDefault(); e.stopPropagation(); if (act1 === 'add') { add(); if (!s.live) void act.send() } else if (act1 === 'send' && !s.sending) void act.send() }
       else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); field.el()?.blur() }
     },
   })
@@ -342,7 +343,7 @@ export function Island({ dock }: { dock: HTMLElement }) {
         <span ref={pillRef} aria-hidden className={`invisible absolute flex items-center gap-1.5 whitespace-nowrap px-3 font-semibold ${phone ? 'text-sm' : 'text-xs'}`}><Icon name="send" className="size-3.5" />{pillText}</span>
         <button type="button" data-shoot={shownAct === 'send' ? 'send' : 'whole-add'} onClick={shownAct === 'send' ? act.send : fan ? addSend : add} disabled={shownAct === 'send' && s.sending}
           aria-label={shownAct === 'send' || fan ? undefined : t('Add the comment')}
-          title={fan ? `${tn(chosenOn!.length, 'Send one comment to each of the {n} to {agent}', 'Send one comment to each of the {n} to {agent}', { agent })} · ${MOD} Enter` : shownAct === 'send' ? `${tn(drafts, 'Send {n} to {agent}', 'Send {n} to {agent}', { agent })} · ${MOD} Enter` : s.live ? `${t('Add the comment')} · ${MOD} Enter` : t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })}
+          title={fan ? `${tn(chosenOn!.length, 'Send one comment to each of the {n} to {agent}', 'Send one comment to each of the {n} to {agent}', { agent })} · ${sendKeyLabel()}` : shownAct === 'send' ? `${tn(drafts, 'Send {n} to {agent}', 'Send {n} to {agent}', { agent })} · ${sendKeyLabel()}` : s.live ? `${t('Add the comment')} · ${sendKeyLabel()}` : t('Add, to send with the rest · {key} adds and sends to {agent}', { key: sendKeyLabel(), agent })}
           className={`flex w-full items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full bg-proto-primary font-semibold text-proto-primary-fg hover:bg-proto-primary-hover disabled:opacity-60 ${phone ? 'h-10 text-sm' : 'h-8 text-xs'}`}
           style={act1
             // In, it pops a little past its size as its room opens; out, it shrinks and fades a beat ahead of the room closing.

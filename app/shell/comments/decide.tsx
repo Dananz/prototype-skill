@@ -10,11 +10,12 @@ import { useAgentName, useCtx } from './ctx'
 import { useStore } from './store'
 import type { Action, Note } from './types'
 import { PLACEHOLDER, useTagField } from './tag-field'
-import { ACTION, Icon, MOD, PRIMARY, Pulse } from './ui'
+import { ACTION, Icon, PRIMARY, Pulse } from './ui'
 import { BROWSER_HINT, MenuRows, usePointerPlace, type Beside, type MenuRow } from './menu'
 import { rtl, t } from '../i18n'
 import { post } from '../transport'
 import { BriefView } from './brief-view'
+import { isSendKey, sendKeyLabel } from './enter-sends'
 
 /** The variant on screen, and whether it is the prototype's pick. */
 export type Subject = { proto: string; variant: string; label: string; name: string; picked: boolean; hints?: boolean; copy?: boolean }
@@ -98,7 +99,7 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
   // Asked for a note, the cursor goes in its box.
   useLayoutEffect(() => { if (ask) field.focus() }, [ask]) // eslint-disable-line react-hooks/exhaustive-deps
   const arrows = (e: KeyboardEvent) => {
-    if ((e.key === 'Enter' && (e.metaKey || e.ctrlKey)) && choice && !(e.target as HTMLElement).closest('[data-shoot=vm-comment]')) { e.preventDefault(); void send(choice, field.read()); return }
+    if (isSendKey(e) && choice && !(e.target as HTMLElement).closest('[data-shoot=vm-comment]')) { e.preventDefault(); void send(choice, field.read()); return }
     if ((e.target as HTMLElement).isContentEditable) return
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
     e.preventDefault()
@@ -108,7 +109,7 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
   // In the note, Esc goes back to the choices instead of closing everything, and ⌘↩ sends.
   const keys = (e: KeyboardEvent) => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!sending.current) { setAsk(null); field.clear(); setError('') } }
-    else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && ask) { e.preventDefault(); void send(ask, field.read()) }
+    else if (isSendKey(e) && ask) { e.preventDefault(); void send(ask, field.read()) }
   }
   const status = <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-zinc-500"><Pulse on={listening} className="size-1.5" /><span className="truncate">{listening ? t('{agent} is listening', { agent }) : t('{agent} sees this on its next turn', { agent })}</span></span>
   const oops = error && <p role="alert" className="mt-2 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-xs text-rose-700 dark:text-rose-300">{error}</p>
@@ -152,7 +153,7 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
       {oops}
       <div className="mt-2 flex items-center justify-end gap-1.5">
         <button onClick={() => { if (!sending.current) { setAsk(null); field.clear(); setError('') } }} className="h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>
-        <button onClick={() => send(ask, field.read())} disabled={busy || field.adding} title={`${MOD} Enter`} className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-50 ${PRIMARY}`}><Icon name={ask === 'pick' ? 'check' : 'send'} className="size-3.5" />{busy ? t('Sending…') : ask === 'pick' ? t('Pick {v}', { v }) : t('Send')}</button>
+        <button onClick={() => send(ask, field.read())} disabled={busy || field.adding} title={sendKeyLabel()} className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-50 ${PRIMARY}`}><Icon name={ask === 'pick' ? 'check' : 'send'} className="size-3.5" />{busy ? t('Sending…') : ask === 'pick' ? t('Pick {v}', { v }) : t('Send')}</button>
       </div>
       <div className={sheet ? 'mt-1 px-1' : 'mx-1 mt-2 border-t border-black/[.06] pt-2 dark:border-white/10'}>{status}</div>
     </div>
@@ -266,7 +267,7 @@ export function Decide({ subject, sheet = false, onDone, onComment, rows, lead, 
             className={`block max-h-32 min-h-[56px] w-full overflow-y-auto whitespace-pre-wrap break-words rounded-t-lg bg-transparent px-2.5 pb-1 pt-2.5 text-[13px] leading-5 outline-none aria-disabled:opacity-50 [@media(pointer:coarse)]:text-base ${PLACEHOLDER}`} />
           {field.pictures}{field.menu}
           <div className="flex items-center justify-between gap-2 py-1.5 pe-1.5 ps-2.5">
-            <span className="flex items-center gap-1 text-[11px] text-zinc-500">{[MOD, 'Enter'].map(k => <kbd key={k} className="rounded border border-black/15 bg-zinc-900/[.04] px-1.5 py-px font-sans text-[10px] font-medium leading-4 text-zinc-600 dark:border-white/15 dark:bg-white/[.07] dark:text-zinc-300">{k}</kbd>)}{t('sends')}</span>
+            <span className="flex items-center gap-1 text-[11px] text-zinc-500">{sendKeyLabel().split(' ').map(k => <kbd key={k} className="rounded border border-black/15 bg-zinc-900/[.04] px-1.5 py-px font-sans text-[10px] font-medium leading-4 text-zinc-600 dark:border-white/15 dark:bg-white/[.07] dark:text-zinc-300">{k}</kbd>)}{t('sends')}</span>
             <button data-send onClick={() => choice && send(choice, field.read())} disabled={!choice || busy || field.adding} className={`inline-flex h-8 shrink-0 items-center rounded-md px-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}>{sendLabel}</button>
           </div>
         </div>

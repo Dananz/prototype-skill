@@ -22,6 +22,7 @@ import { routeOfTag, TAG_EVENT, type TagDrop } from '../tag-drag'
 import { IB, Icon, MOD, PinDot, PRIMARY, SrcTag, srcOf, PictureStrip, ViewChip, elementName, variantChip, protoChip, protoTitle } from './ui'
 import { t } from '../i18n'
 import { variantLabel } from '../variants'
+import { isSendKey, sendKeyLabel } from './enter-sends'
 
 const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `${(t.at / 1000).toFixed(2)} s` : `${(t.at / 1000).toFixed(2)}–${(t.to / 1000).toFixed(2)} s`
 
@@ -292,7 +293,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMention(null); return }
       if (shelf.onKey(e)) { e.preventDefault(); return }
     }
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); if (!sentItem) void act.send() }
+    if (isSendKey(e)) { e.preventDefault(); submit(); if (!sentItem) void act.send() }
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); act.close() }
   }
   const refocus = () => requestAnimationFrame(() => ed.current?.focus())
@@ -381,7 +382,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           <span className="ms-auto" />
           {docked && <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>}
           {/* Sent as it is added (Settings), it says so: Send, with the plane. */}
-          <button data-shoot="composer-add" onClick={submit} disabled={busy || (empty && !tags.length && !shots.length && !inlineN)} title={late || (live && !editing) ? t('Send to {agent}', { agent }) : sentItem ? t('Save') : t('Add, to send with the rest · {mod} Enter adds and sends to {agent}', { mod: MOD, agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={late ? 'send' : editing ? 'check' : live ? 'send' : 'plus'} className="size-3.5" />{late ? t('Send as new comment') : editing ? t('Save') : live ? t('Send') : t('Add')}</button>
+          <button data-shoot="composer-add" onClick={submit} disabled={busy || (empty && !tags.length && !shots.length && !inlineN)} title={late || (live && !editing) ? t('Send to {agent}', { agent }) : sentItem ? t('Save') : t('Add, to send with the rest · {key} adds and sends to {agent}', { key: sendKeyLabel(), agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={late ? 'send' : editing ? 'check' : live ? 'send' : 'plus'} className="size-3.5" />{late ? t('Send as new comment') : editing ? t('Save') : live ? t('Send') : t('Add')}</button>
         </div>
       </div>
   )
