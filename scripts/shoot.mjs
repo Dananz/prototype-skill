@@ -81,7 +81,7 @@ if (flags.copy) base.searchParams.set('copy', '1')
 // --options=1 keeps the dots of the elements with options in place (shell's comments/options.tsx), which a shot leaves out.
 if (flags.options) base.searchParams.set('options', '1')
 if (flags.parallax) base.searchParams.set('parallax', flags.parallax) // parallax() layers held at that end of their travel
-const suffix = [flags.focus && 'focus', flags.copy && 'copy', flags.parallax && `parallax${flags.parallax.replace(/,/, '_')}`, flags.theme === 'dark' && 'dark', clicks.length && 'clicked'].filter(Boolean).map(s => `-${s}`).join('')
+const suffix = [flags.focus && 'focus', flags.copy && 'copy', flags.options && 'options', flags.parallax && `parallax${flags.parallax.replace(/,/, '_')}`, flags.theme === 'dark' && 'dark', clicks.length && 'clicked'].filter(Boolean).map(s => `-${s}`).join('')
 const fileOf = route => route.replace(/^\/+|\/+$/g, '').replace(/\//g, '-') || 'session'
 const phones = new Set(String(flags.phone || '').split(',').filter(Boolean))
 const phoneOnly = route => { const [slug, variant] = route.replace(/^\/+/, '').split('/'); return !!variant && phones.has(slug) }

@@ -128,9 +128,18 @@ function wanted(host: Element, f: Facet): Value | null {
   if (previewed && previewed.host === host && previewed.key === f.key) return f.options[previewed.index]?.value ?? null
   return null
 }
+// The last value this module set per facet: pointing at an option and away before the design has
+// rendered leaves the control still reporting the old value, so a put that only compared with it would
+// skip putting the choice back.
+const lastPut = new WeakMap<Element, Map<string, Value>>()
 const put = (host: Element, id: string, v: Value) => {
   const x = tweaks.of(host).find(y => y.id === id)
-  if (x && !same(x.value, v)) (x.set as (v: Value) => void)(v)
+  if (!x) return
+  let m = lastPut.get(host)
+  if (!m) lastPut.set(host, m = new Map())
+  const was = m.get(id)
+  m.set(id, v)
+  if (!same(x.value, v) || (was !== undefined && !same(was, v))) (x.set as (v: Value) => void)(v)
 }
 
 /** Shows on the design what should show now for every facet of host. */

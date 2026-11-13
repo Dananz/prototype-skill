@@ -260,6 +260,9 @@ const intakeNow = () => readJson(intakeFile, null)
 /** What a page may be told about the intake: the questions, and whether they wait for answers. */
 const intakeView = () => { const d = intakeNow(); return d && Array.isArray(d.questions) ? d : null }
 
+// Requests the page waits on until the agent answers: listed beyond the last 20 batches while not
+// done, so a long wait never reads as done (Try it, copy options, and options in place's).
+const LASTING = new Set(['try-it', 'copy-options', 'option', 'copy', 'more-options', 'to-prototype', 'ask-options'])
 /** Where the inbox stands, for the page: what waits, whether an agent is listening, the batches' states. */
 export function inboxStatus() {
   // A background waiter of any conversation (one file each), or a session app's one from before.
@@ -274,7 +277,7 @@ export function inboxStatus() {
       comments: b.comments.map(c => ({ n: c.n, route: c.route, action: c.action, done: !!c.done, ...(c.withdrawn ? { withdrawn: true } : {}), ...(c.action && c.target ? { scoped: true } : {}), reply: c.reply ?? null })),
     }
   }).filter(Boolean).sort((a, b) => a.at < b.at ? 1 : -1)
-  return { intake: intakeView(), new: list('new').length, listening: listenerSids(dir).some(sid => listenerStatus(dir, sid).listening) || !!waiter && alive(waiter.pid), agent: agent?.pid ? (alive(agent.pid) ? 'alive' : 'gone') : null, batches: batches.filter((b, i) => i < 20 || b.comments.some(c => ['try-it', 'copy-options'].includes(c.action) && !c.done && !c.withdrawn)) }
+  return { intake: intakeView(), new: list('new').length, listening: listenerSids(dir).some(sid => listenerStatus(dir, sid).listening) || !!waiter && alive(waiter.pid), agent: agent?.pid ? (alive(agent.pid) ? 'alive' : 'gone') : null, batches: batches.filter((b, i) => i < 20 || b.comments.some(c => LASTING.has(c.action) && !c.done && !c.withdrawn)) }
 }
 
 const box = r => r && typeof r === 'object' ? { x: Math.round(+r.x || 0), y: Math.round(+r.y || 0), w: Math.round(+r.w || 0), h: Math.round(+r.h || 0) } : undefined

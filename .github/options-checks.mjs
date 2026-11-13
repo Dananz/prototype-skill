@@ -34,14 +34,14 @@ export default function Variant() {
     <h1 data-copy="heading" data-tweak="heading-size" style={{ fontSize: SIZES[size], fontWeight: 700 }}>{copy.heading}</h1>
     <p className="mt-2">A line under the heading</p>
     <div className="mt-6 flex items-center gap-3">
-      <span data-tweak="row-icon" className="inline-flex"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d={ICONS[icon]} /></svg></span>
+      <span data-tweak="row-icon" className="inline-flex"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="url(#row-grad)" strokeWidth="2"><defs><linearGradient id="row-grad"><stop offset="0" stopColor="#7c3aed" /><stop offset="1" stopColor="#7c3aed" /></linearGradient></defs><path d={ICONS[icon]} /></svg></span>
       <span data-tweak="tone" style={{ color: tone }}>Changed</span>
     </div>
     {[1, 2].map(n => <div key={n} data-tweak="divider" className="my-3" style={{ height: 1, background: line ? '#d4d4d8' : 'transparent' }} />)}
     <button data-tweak="cta" className="mt-6 rounded-lg px-4 py-2" style={style === 'Filled' ? { background: '#7c3aed', color: 'white' } : style === 'Soft' ? { background: '#ede9fe', color: '#5b21b6' } : { border: '1px solid #7c3aed', color: '#5b21b6' }}>Start</button>
   </main>
 }`)
-  writeFileSync(join(app, 'src/protos/options-check', 'B.tsx'), `export default function Plain() { return <main className="p-10"><h1 data-tweak="row-icon">No options here</h1></main> }`)
+  writeFileSync(join(app, 'src/protos/options-check', 'B.tsx'), `export default function Plain() { return <main className="p-10"><h1 data-tweak="row-icon">No options here</h1><p data-second className="mt-6">A second line</p></main> }`)
   const assert = (ok, why) => { if (!ok) fail(`options: ${why}`) }
   const wait = ms => new Promise(r => setTimeout(r, ms))
   const until = async (page, expression, why, ms = 8000) => {
@@ -69,6 +69,19 @@ export default function Variant() {
     const pics = await page.run(`[...document.querySelectorAll('[data-options-pop] [data-option-picture]')].map(p => p.innerHTML)`)
     assert(pics.every(h => /<svg/.test(h) && /<path/.test(h)) && new Set(pics).size === 5, 'the pictures are not five different copies of the element')
     assert(await page.run(`${design('icon')} === 'Drop'`), 'drawing the pictures left another option on the design')
+    // The copies are stills: inert, with no field names or ids of the design's, and an SVG's ids renamed
+    // per copy with what points at them.
+    const leaks = await page.run(`(() => {
+      const pics = [...document.querySelectorAll('[data-options-pop] [data-option-picture] > span > span')]
+      const roots = pics.map(p => p.firstElementChild)
+      if (roots.length !== 5 || !roots.every(r => r?.hasAttribute('inert'))) return 'the copies are not inert'
+      const ids = [...document.querySelectorAll('[data-options-pop] [data-option-picture] [id]')].map(e => e.id)
+      if (ids.length !== 5 || new Set(ids).size !== 5 || ids.some(id => id === 'row-grad' || !id.endsWith('row-grad'))) return 'the SVG ids are not renamed per copy: ' + ids.join(',')
+      const html = pics.map(p => p.innerHTML).join('')
+      if (/#row-grad/.test(html)) return 'a copy still points at the gradient of the design'
+      return 'ok'
+    })()`)
+    assert(leaks === 'ok', leaks)
 
     // Pointing at a tile shows it; leaving puts the choice back; a click keeps it, the panel open.
     const t1 = await box(page, '[data-options-pop] [data-option-tile="1"]')
@@ -129,6 +142,24 @@ export default function Variant() {
     await page.key('Escape')
     await until(page, `!document.querySelector('[data-options-pop]') && ${design('size')} === 'Medium'`, 'Esc after a preview did not put the size back')
 
+    // A choice that changes the element's own width (an outlined button is wider) keeps its pictures:
+    // opening the panel again draws nothing.
+    await click(page, '[data-option-dot="tweak:cta"]')
+    await until(page, `document.querySelectorAll('[data-options-pop] [data-option-picture]').length === 3 && !document.querySelector('[data-option-cover]')`, 'the button style panel has no pictures')
+    const w0 = (await dbox(page, '[data-tweak=cta]')).w
+    await click(page, '[data-options-pop] [data-option-tile="2"]')
+    await until(page, `${design('style')} === 'Outline'`, 'Outline was not kept')
+    assert((await dbox(page, '[data-tweak=cta]')).w !== w0, 'the outlined button is as wide as the filled one, so the check proves nothing')
+    await page.key('Escape')
+    await until(page, `!document.querySelector('[data-options-pop]')`, 'Esc did not close the button style panel')
+    await click(page, '[data-option-dot="tweak:cta"]')
+    await until(page, `document.querySelectorAll('[data-options-pop] [data-option-tile]').length === 3`, 'the button style panel did not open again')
+    for (let i = 0; i < 12; i++) { assert(await page.run(`!document.querySelector('[data-option-cover]')`), 'the pictures were drawn again after the element\'s own option changed its width'); await wait(60) }
+    await click(page, '[data-options-pop] [data-option-tile="0"]')
+    await until(page, `${design('style')} === 'Filled'`, 'Filled was not put back')
+    await page.key('Escape')
+    await until(page, `!document.querySelector('[data-options-pop]')`, 'Esc did not close the button style panel')
+
     // Shift-click on a dot steps to the next option without opening anything.
     const cd = await box(page, '[data-option-dot="tweak:cta"]')
     await page.mouse('mouseMoved', cd.cx, cd.cy, { button: 'none' })
@@ -147,6 +178,23 @@ export default function Variant() {
     await until(page, `${design('style')} === 'Filled' && ${design('icon')} === 'Drop'`, 'holding Original did not show the original')
     await page.mouse('mouseReleased', orig.cx, orig.cy, { clickCount: 1 })
     await until(page, `${design('style')} === 'Soft' && ${design('icon')} === 'Bolt'`, 'letting go of Original did not bring the choices back')
+    // \\ is read by the key's place: a keyboard in another language types another character there.
+    const slash = type => `document.dispatchEvent(new KeyboardEvent('${type}', { key: '§', code: 'Backslash', bubbles: true, cancelable: true }))`
+    await page.run(slash('keydown'))
+    await until(page, `${design('style')} === 'Filled'`, 'holding the \\\\ key (another layout) did not show the original')
+    await page.run(slash('keyup'))
+    await until(page, `${design('style')} === 'Soft'`, 'letting go of the \\\\ key (another layout) did not bring the choices back')
+    // Held in the panel while the panel closes: the original does not stick.
+    await click(page, '[data-option-dot="tweak:row-icon"]')
+    await until(page, `!!document.querySelector('[data-options-pop] [data-option-original]') && !document.querySelector('[data-option-cover]')`, 'the row icon panel did not open')
+    const po = await box(page, '[data-options-pop] [data-option-original]')
+    await page.mouse('mouseMoved', po.cx, po.cy, { button: 'none' })
+    await page.mouse('mousePressed', po.cx, po.cy, { clickCount: 1, buttons: 1 })
+    await until(page, `${design('icon')} === 'Drop'`, 'holding Original in the panel did not show the original')
+    await page.key('Escape')
+    await until(page, `!document.querySelector('[data-options-pop]')`, 'Esc did not close the panel while Original was held')
+    await page.mouse('mouseReleased', 20, 880, { clickCount: 1 })
+    await until(page, `${design('icon')} === 'Bolt' && ${design('style')} === 'Soft'`, 'the original stuck after its panel closed while it was held')
 
     // Send: one batch, one comment per changed value on its element, read back with proto inbox.
     await click(page, '[data-options-tray] [data-options-send]')
@@ -182,14 +230,69 @@ export default function Variant() {
     await until(page, `!!document.querySelector('[data-options-pop] [data-option-promoted]')`, 'To prototype did not say it is in the tree after the reply', 15000)
     await page.key('Escape')
     await until(page, `!!document.querySelector('[data-option-dot="tweak:cta"] [class*="proto-option-pulse"]') || !!document.querySelector('[data-option-dot="tweak:cta"] span[class*=pulse]')`, 'the dot whose options arrived does not pulse')
+
+    // A sent choice waits however many batches come after it: the page lists it beyond the last 20
+    // until the agent is done, so it never reads as applied before then.
+    await click(page, '[data-option-dot="tweak:row-icon"]')
+    await until(page, `document.querySelectorAll('[data-options-pop] [data-option-picture]').length === 5 && !document.querySelector('[data-option-cover]')`, 'the row icon panel did not open for a second send')
+    await click(page, '[data-options-pop] [data-option-tile="2"]')
+    await until(page, `${design('icon')} === 'Ring'`, 'Ring was not kept')
+    await page.key('Escape')
+    await until(page, `!!document.querySelector('[data-options-tray] [data-options-send]')`, 'the second change is not in the tray')
+    await click(page, '[data-options-tray] [data-options-send]')
+    await until(page, `!!document.querySelector('[data-options-sending]')`, 'the second send does not wait for the agent')
+    let second
+    for (let i = 0; i < 40 && !second; i++) { second = latest(); if (!second) await wait(250) }
+    assert(second, 'the second send made no batch')
+    for (let i = 0; i < 21; i++) {
+      const r = await fetch(`${local}__proto/comments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ theme: 'light', viewport: { w: 1440, h: 900 }, comments: [{ route: 'options-check/A', text: `filler ${i}` }] }) })
+      assert(r.ok, `a filler batch was refused: ${r.status}`)
+    }
+    const listed = await (await fetch(`${local}__proto/status`)).json()
+    assert(listed.inbox.batches.length > 20 && listed.inbox.batches.some(b => b.id === second), 'a choice still waiting is no longer listed once 20 batches came after it')
+    await wait(800)
+    assert(await page.run(`!!document.querySelector('[data-options-sending]') && !document.querySelector('[data-options-undo]')`), 'the waiting choice reads as applied once 20 batches came after it')
+    for (const id of [...proto(['inbox'], { stdout: true }).matchAll(/batch (\S+)/g)].map(m => m[1])) seen.add(id)
+    // The page has heard it listed (so once done and past the last 20, it reads as applied).
+    await until(page, `Object.keys(sessionStorage).filter(k => k.startsWith('proto-options-')).some(k => Object.values(JSON.parse(sessionStorage.getItem(k))).some(r => r?.sent?.batch === ${JSON.stringify(second)} && r.sent.listed))`, 'the page never heard the waiting choice listed', 15000)
+    proto(['reply', second, 'Set', '--done'])
+    // (Its tray still lists the first send's values, which the agent never wrote in here: no Undo row.)
+    await until(page, `!document.querySelector('[data-options-sending]')`, 'the second send still waits after the reply', 15000)
   } finally { page.close() }
 
-  // A variant whose elements carry data-tweak but declare no controls has no dots.
+  // A variant whose elements carry data-tweak but declare no controls has no dots. Options asked for on
+  // two of its elements both wait (one does not replace the other).
   const plain = await openPage(`${local}options-check/B`)
   try {
     await wait(1500)
     assert(await plain.run(`document.querySelectorAll('[data-option-dot]').length === 0`), 'a variant without options has dots')
+    for (const sel of ['h1', '[data-second]']) {
+      const asked = await plain.run(`(async () => {
+        const until = async f => { for (const end = Date.now() + 6000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
+        const el = window.__protoDesign()?.querySelector(${JSON.stringify(sel)})
+        if (!el) return 'no element'
+        const r = el.getBoundingClientRect()
+        el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, composed: true, button: 2, clientX: r.left + 4, clientY: r.top + r.height / 2 }))
+        if (!await until(() => [...document.querySelectorAll('[data-context-menu] [role=menuitem]')].some(x => /Options for this element/.test(x.textContent)))) return 'its menu has no Options for this element'
+        ;[...document.querySelectorAll('[data-context-menu] [role=menuitem]')].find(x => /Options for this element/.test(x.textContent)).click()
+        if (!await until(() => document.querySelector('[data-options-pop] [data-option-ask]'))) return 'the ask panel did not open'
+        document.querySelector('[data-options-pop] [data-option-ask]').click()
+        return await until(() => !document.querySelector('[data-options-pop]')) ? 'ok' : 'the ask panel stayed open'
+      })()`)
+      assert(asked === 'ok', `asking for options on ${sel}: ${asked}`)
+    }
+    await until(plain, `document.querySelectorAll('[data-option-asking="ask"]').length === 2`, 'asking on a second element dropped the first one\'s wait')
+    for (const id of [...proto(['inbox'], { stdout: true }).matchAll(/batch (\S+)/g)].map(m => m[1])) proto(['reply', id, 'Added', '--done'])
   } finally { plain.close() }
+  // ?options=0 has no dots, even on the design's own page.
+  const off = await openPage(`${local}options-check/A?options=0`)
+  try {
+    await wait(1500)
+    assert(await off.run(`document.querySelectorAll('[data-option-dot]').length === 0`), '?options=0 shows the dots')
+  } finally { off.close() }
+  // A shot with the dots is named apart from the plain one, so neither overwrites the other.
+  const shotOut = proto(['shoot', 'options-check/A', '--options'], { stdout: true })
+  assert(/options-check-A-desktop-options\.png/.test(shotOut), `proto shoot --options did not name its file apart: ${shotOut.slice(0, 400)}`)
 
   // A shot has no dots, unless it asks.
   const shot = await openPage(`${local}options-check/A?hints=0`)

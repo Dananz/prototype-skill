@@ -3076,8 +3076,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const compareHost = () => st.place.view === 'variant' && !!chosenHere() ? layer?.el.querySelector<HTMLElement>('[data-comment-compare]') ?? null : null
   const commentHost = () => !framed && q.get('hints') !== '0' ? compareHost() ?? hintHost() : null
   // Options in place (comments/options.tsx): dots on the elements of the design the tools work on, on
-  // its own page only: not in a share, a shot (unless it asks, ?options=1), a tool, or side by side.
-  const optionsHost = () => !framed && (q.get('hints') !== '0' || q.has('options')) && !compareHost() ? toolHost() : null
+  // its own page only: not in a share, a shot (unless it asks, ?options=1), a tool, or side by side;
+  // ?options=0 turns them off anywhere.
+  const optionsHost = () => !framed && q.get('options') !== '0' && (q.get('hints') !== '0' || q.get('options') === '1') && !compareHost() ? toolHost() : null
   /** A prototype's own page: no design on it to point at, but it takes comments as a whole. */
   const cardOn = () => !framed && !st.focus && q.get('hints') !== '0' && st.place.view === 'proto' && !!cur()
   // The comments island floats over the stage and opens into the list; a phone has it as the top

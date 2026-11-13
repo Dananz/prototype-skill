@@ -28,7 +28,7 @@ import { IB, Icon, PRIMARY } from './ui'
 export type AskKind = 'more' | 'promote' | 'ask'
 /** A request the agent has not finished: more options for a facet, a prototype of them, options for an element that has none. */
 export type Ask = { kind: AskKind; key: string; label: string; batch: string; target?: Target; seen?: boolean; listed?: boolean }
-export type SentItem = { key: string; facet: string; label: string; choice: string; from: string; target?: Target }
+export type SentItem = { key: string; facet: string; label: string; choice: string; from: string; target?: Target; action?: 'copy' | 'option' }
 /** `listed`: the server has listed the batch (it lists the last 20), so one no longer listed is long done. */
 type Rec = { sent?: { batch: string; items: SentItem[]; undo?: boolean; listed?: boolean }; dismissed?: string; asks: Ask[]; fresh: string[] }
 export type OptState = {
@@ -130,6 +130,8 @@ export function createOptionsActions(os: OptStore, host: Host, comments: Store) 
     phase(): Phase {
       const sent = get().rec.sent
       if (!sent || get().rec.dismissed === sent.batch) return 'idle'
+      // Until the inbox has loaded nothing says the agent is done: it reads as sent.
+      if (!comments.get().inbox) return 'sent'
       const b = batchState(comments, sent.batch)
       return b === 'done' || (b === undefined && sent.listed) ? 'applied' : 'sent'
     },
@@ -141,7 +143,7 @@ export function createOptionsActions(os: OptStore, host: Host, comments: Store) 
       const words: Record<string, string> = {}
       const comments = list.map(({ spot, facet: f }) => {
         const i = chosen(st, f), n = f.options.length, name = nameOf(st, f), target = targetOf(spot)
-        items.push({ key: spot.key, facet: f.key, label: spot.facets.length < 2 || f.label.toLowerCase().startsWith(spot.label.toLowerCase()) ? (spot.facets.length < 2 ? spot.label : f.label) : `${spot.label}, ${f.kind === 'words' ? 'words' : f.label}`, choice: name, from: f.options[f.today]?.name ?? '', target })
+        items.push({ key: spot.key, facet: f.key, label: spot.facets.length < 2 || f.label.toLowerCase().startsWith(spot.label.toLowerCase()) ? (spot.facets.length < 2 ? spot.label : f.label) : `${spot.label}, ${f.kind === 'words' ? 'words' : f.label}`, choice: name, from: f.options[f.today]?.name ?? '', target, action: f.from === 'copy' ? 'copy' : 'option' })
         if (f.from === 'copy') {
           words[f.id] = name
           const which = i === 0 ? `back to today's words (option 1 of ${n})` : `option ${i + 1} of ${n}`
@@ -171,8 +173,9 @@ export function createOptionsActions(os: OptStore, host: Host, comments: Store) 
       if (!sent || get().sending) return
       os.set({ sending: true, error: '' })
       try {
+        // Each goes back as what it went as: words as a copy comment, a value as an option.
         const { id } = await send(sent.items.map(i => ({
-          text: `${i.label}: undo the choice “${i.choice}”, put back “${i.from}” as it was before`, action: 'option' as const, ...(i.target ? { target: i.target } : {}),
+          text: `${i.label}: undo the choice “${i.choice}”, put back “${i.from}” as it was before`, action: i.action ?? (i.facet.startsWith('copy:') ? 'copy' as const : 'option' as const), ...(i.target ? { target: i.target } : {}),
         })))
         os.keep(r => ({ ...r, sent: { batch: id, items: sent.items.map(i => ({ ...i, choice: i.from, from: i.choice })), undo: true }, dismissed: undefined }))
         os.set({ sending: false })
@@ -195,7 +198,10 @@ export function createOptionsActions(os: OptStore, host: Host, comments: Store) 
       os.set({ sending: true, error: '' })
       try {
         const { id } = await send([{ text, action: kind === 'more' ? 'more-options' : kind === 'promote' ? 'to-prototype' : 'ask-options', ...(target ? { target } : {}) }])
-        os.keep(r => ({ ...r, asks: [...r.asks.filter(a => !(a.kind === kind && a.key === (spot?.key ?? ''))), { kind, key: spot?.key ?? '', label, batch: id, target }] }))
+        // Keyed by its spot, or (an element with none) by where the element is, so asking on a second
+        // element keeps the first one waiting.
+        const key = spot?.key ?? `ask:${target?.selector ?? id}`
+        os.keep(r => ({ ...r, asks: [...r.asks.filter(a => !(a.kind === kind && a.key === key)), { kind, key, label, batch: id, target }] }))
         os.set({ sending: false })
       } catch (e) { os.set({ sending: false, error: e instanceof Error ? e.message : t('Could not send') }) }
     },
@@ -211,7 +217,7 @@ export function createOptionsActions(os: OptStore, host: Host, comments: Store) 
       if (!done.length) return
       const fresh = done.flatMap(a => {
         if (a.kind === 'promote') return []
-        if (a.key) return [a.key]
+        if (a.kind !== 'ask' && a.key) return [a.key]
         const el = a.target ? find(st, a.target) : null
         const sp = el ? spotsOf(st).find(s => s.els.some(x => x === el || x.contains(el) || el.contains(x))) : null
         return sp ? [sp.key] : []
@@ -239,24 +245,36 @@ export function boxIn(el: Element, layer: HTMLElement): Box {
   return { x: r.left - o.left, y: r.top - o.top, w: r.width, h: r.height }
 }
 const filled = (c: string) => c !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(c)
+/** Whether an element is a line of words (no background or border of its own, no picture in it). */
+function wordy(el: HTMLElement) {
+  const cs = styleOf(el)
+  return !(filled(cs.backgroundColor) || parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderBottomWidth) > 0 || !el.textContent?.trim() || el.querySelector('svg, img, video, canvas'))
+}
 /** Where an element shows: a line of text (no background or border of its own) by its words, so its dot
  *  sits at the end of the words rather than at the far end of a wide block; anything else by its box. */
-function shapeIn(el: HTMLElement, layer: HTMLElement): Box {
-  const box = boxIn(el, layer), cs = styleOf(el)
-  if (filled(cs.backgroundColor) || parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderBottomWidth) > 0 || !el.textContent?.trim() || el.querySelector('svg, img, video, canvas')) return box
+function shapeIn(el: HTMLElement, layer: HTMLElement, words = wordy(el)): Box {
+  const box = boxIn(el, layer)
+  if (!words) return box
   const range = el.ownerDocument.createRange()
   range.selectNodeContents(el)
   const r = drawn(el, range.getBoundingClientRect()), o = layer.getBoundingClientRect()
   return r.width ? { x: r.left - o.left, y: box.y, w: r.width, h: box.h } : box
 }
 type Mark = { key: string; n: number; box: Box; rtl: boolean }
+/** Where the design's own box starts over the layer, and its scale (a device view's zoom). */
+type Origin = { x: number; y: number; k: number }
+/** A box measured when the design was at `from`, where it is now that the design is at `to`. */
+const carried = (b: Box, from: Origin, to: Origin): Box => {
+  const q = to.k / (from.k || 1)
+  return { x: to.x + (b.x - from.x) * q, y: to.y + (b.y - from.y) * q, w: b.w * q, h: b.h * q }
+}
 const shownOn = (b: Box, W: number, H: number) => b.x + b.w > -4 && b.y + b.h > -4 && b.x < W + 4 && b.y < H + 4
-/** Where a spot's dot sits: its top end corner; a hairline's on the line's end; a small element's just past its end. */
-function dotAt(m: Mark) {
+/** Where a spot's dot sits: its top end corner; a small element's (a hairline, a badge) just past its
+ *  end on its middle line, beside it rather than on it. */
+export function dotAt(m: Pick<Mark, 'box' | 'rtl'>) {
   const { x, y, w, h } = m.box
   const end = m.rtl ? x : x + w
-  if (h <= 4 || w <= 4) return { x: m.rtl ? x + 1 : x + w - 1, y: y + h / 2 }
-  if (h < 16 || w < 16) return { x: m.rtl ? end - 9 : end + 9, y: y + h / 2 }
+  if (h < 16 || w < 16) return { x: m.rtl ? end - 10 : end + 10, y: y + h / 2 }
   return { x: m.rtl ? end + 1 : end - 1, y: y + 1 }
 }
 
@@ -392,7 +410,12 @@ export function HoldOriginal({ compact = false, big = false }: { compact?: boole
   const st = useOptState(optStore).stage
   useValues()
   const on = !!st && options.comparing() === st
-  const hold = (v: boolean) => { if (st) options.compare(st, v) }
+  // Held by this button: let go when it goes (the panel closes, the tray empties) while still held,
+  // so the original never sticks.
+  const mine = useRef<Element | null>(null)
+  const hold = (v: boolean) => { if (!st) return; if (v) mine.current = st; else if (mine.current !== st) return; else mine.current = null; options.compare(st, v) }
+  useEffect(() => () => { const was = mine.current; mine.current = null; if (was && options.comparing() === was) options.compare(was, false) }, [])
+  useEffect(() => { if (!on) mine.current = null }, [on])
   return (
     <button type="button" data-option-original="" data-base-ui-swipe-ignore="" aria-pressed={on} title={`${t('Hold to see the original')} · \\`}
       onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); hold(true) }}
@@ -419,25 +442,9 @@ export function OptionsBody({ spot, big }: { spot: Spot; big?: boolean }) {
   const words = f.kind === 'words'
   const pv = options.previewed()
   const now = chosen(st, f)
-  const key = el ? keyOf(st, spot, f, el) : ''
   const bg = el ? backdropOf(el) : 'transparent'
   const narrow = useNarrow()
-  // Draw the tiles of the facet on show: once per option, kept until the design changes around them.
-  const drawing = !!s.cover
-  useEffect(() => {
-    if (words || !el) return
-    let alive = true
-    const tm = setTimeout(() => {
-      if (!alive) return
-      const find = () => spotsOf(st).find(x => x.key === spot.key)?.els[0] ?? null
-      void drawFacet(st, spot, f, find, on => {
-        const e = find()
-        if (on && e) { const still = stillOf(e); optStore.set({ cover: still ? { ...still, box: boxIn(e, host.layer) } : null }) }
-        else optStore.set({ cover: null })
-      })
-    }, 30)
-    return () => { alive = false; clearTimeout(tm) }
-  }, [key, f.key]) // eslint-disable-line react-hooks/exhaustive-deps
+  const { key, pics, drawing } = useFacetPictures(spot, f)
   const preview = (i: number) => (on: boolean) => {
     if (phase === 'sent' || narrow || drawing) return
     if (on) options.preview(st, f, i)
@@ -450,7 +457,6 @@ export function OptionsBody({ spot, big }: { spot: Spot; big?: boolean }) {
     if (over) options.preview(st, f, Number(over.dataset.optionTile))
   }, [drawing]) // eslint-disable-line react-hooks/exhaustive-deps
   const pick = (i: number) => () => { options.choose(st, f, i); options.preview(st, null) }
-  const pics = f.options.map((_, i) => pictureOf(key, i))
   const k = fitOf(pics, big ? 84 : 70, big ? 68 : 58)
   const tiles = f.options.map((_, i) => (
     <Tile key={`${f.key}-${i}`} f={f} i={i} pic={pics[i]} k={k} bg={bg} big={big} drawing={drawing}
@@ -504,6 +510,37 @@ export function OptionsBody({ spot, big }: { spot: Spot; big?: boolean }) {
     </div>
   )
 }
+/**
+ * The pictures of a facet's options, drawn once per option (pictures.ts) and kept until the design
+ * changes around them. The key they are kept under is frozen while they are drawn (the element shows
+ * each option meanwhile), and drawing waits `delay` ms (a round's spotlight moving into place first).
+ */
+export function useFacetPictures(spot: Spot, f: Facet, { on = true, delay = 30 }: { on?: boolean; delay?: number } = {}) {
+  const { host, optStore } = useCtx()
+  const s = useOptState(optStore)
+  const st = s.stage!
+  const drawing = !!s.cover
+  const live = keyOf(st, spot, f)
+  const frozen = useRef(live)
+  if (!drawing) frozen.current = live
+  const key = frozen.current
+  useEffect(() => {
+    if (!on || f.kind === 'words' || !spot.els[0]) return
+    let alive = true
+    const tm = setTimeout(() => {
+      if (!alive) return
+      const find = () => spotsOf(st).find(x => x.key === spot.key)?.els[0] ?? null
+      void drawFacet(st, f, key, find, cover => {
+        const e = find()
+        if (cover && e) { const still = stillOf(e); optStore.set({ cover: still ? { ...still, box: boxIn(e, host.layer) } : null }) }
+        else optStore.set({ cover: null })
+      })
+    }, delay)
+    return () => { alive = false; clearTimeout(tm) }
+  }, [key, f.key, on]) // eslint-disable-line react-hooks/exhaustive-deps
+  return { key, pics: f.options.map((_, i) => pictureOf(key, i)), drawing }
+}
+
 function AgentSays({ say }: { say: (agent: string) => string }) {
   const agent = useAgentName()
   return <>{say(agent)}</>
@@ -565,48 +602,60 @@ export function OptionsLayer() {
   const [hover, setHover] = useState<{ key: string; n: number } | null>(null)
   // The box the open panel and its dot stay on: where the element was when it opened, moved only by a
   // scroll or a resize, never by an option that changes the element's size.
-  const pin = useRef<{ key: string; box: Box } | null>(null)
+  // Kept relative to the design's own box and scale, so the design moving (a sheet lifting it, a zoom)
+  // carries it along.
+  const pin = useRef<{ key: string; box: Box; at: Origin } | null>(null)
   const moved = useRef(true)
 
   useEffect(() => { optAct.settle() }, [inbox, optAct])
-  useEffect(() => { if (!on && s.open) optAct.close() }, [on]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (on) return
+    if (s.open) optAct.close()
+    // Options turned off (comment mode, copy mode) while the original was held: let it go.
+    if (st && options.comparing() === st) options.compare(st, false)
+  }, [on]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Measured on what can move an element (its design changing, a scroll, a resize), not every frame:
-  // the dots are always there.
+  // Measured every frame while the dots show, as the copy marks are, and drawn only when something
+  // moved: a phone sheet lifting the design, a device view's zoom, paging, the design's own motion all
+  // move elements without a resize or a scroll. Which elements and how each is shaped are read again
+  // only when the design changes; a frame reads boxes.
+  const [origin, setOrigin] = useState<Origin>({ x: 0, y: 0, k: 1 })
   useEffect(() => {
     if (!st || !on) { setMarks([]); return }
     const layer = host.layer
-    let raf = 0, last = ''
-    const measure = () => {
-      raf = 0
-      const W = layer.clientWidth, H = layer.clientHeight
+    let raf = 0, last = '', dirty = true, list: Spot[] = [], words = new WeakMap<HTMLElement, boolean>(), W = -1, H = -1
+    const tick = () => {
+      if (dirty) { dirty = false; list = spotsOf(st); words = new WeakMap() }
+      if (layer.clientWidth !== W || layer.clientHeight !== H) { W = layer.clientWidth; H = layer.clientHeight; moved.current = true }
       const next: Mark[] = []
-      for (const sp of spotsOf(st)) sp.els.forEach((el, n) => {
-        const box = shapeIn(el, layer)
-        if (!el.isConnected || (!box.w && !box.h && !el.dataset.tweak) || !shownOn(box, W, H)) return
-        const r = (n2: number) => Math.round(n2 * 2) / 2
+      const r = (n2: number) => Math.round(n2 * 2) / 2
+      for (const sp of list) sp.els.forEach((el, n) => {
+        if (!el.isConnected) { dirty = true; return }
+        let wd = words.get(el)
+        if (wd === undefined) { wd = wordy(el); words.set(el, wd) }
+        const box = shapeIn(el, layer, wd)
+        if ((!box.w && !box.h && !el.dataset.tweak) || !shownOn(box, W, H)) return
         next.push({ key: sp.key, n, box: { x: r(box.x), y: r(box.y), w: r(box.w), h: r(box.h) }, rtl: styleOf(el).direction === 'rtl' })
       })
-      const sig = JSON.stringify(next)
-      if (sig !== last) { last = sig; setMarks(next) }
+      const o = boxIn(st, layer), k = scaleOf(st)
+      const at = { x: r(o.x), y: r(o.y), k: Math.round(k * 1000) / 1000 }
+      const sig = JSON.stringify([next, at])
+      if (sig !== last) { last = sig; setMarks(next); setOrigin(was => was.x === at.x && was.y === at.y && was.k === at.k ? was : at) }
+      raf = requestAnimationFrame(tick)
     }
-    const soon = () => { if (!raf) raf = requestAnimationFrame(measure) }
-    const scrolled = () => { moved.current = true; soon() }
-    measure()
+    const changed = () => { dirty = true }
+    const scrolled = () => { moved.current = true }
+    tick()
     const doc = st.ownerDocument, win = doc.defaultView ?? window
-    const mo = new MutationObserver(soon)
-    mo.observe(st, { subtree: true, childList: true, attributes: true, characterData: true })
-    const ro = new ResizeObserver(scrolled)
-    ro.observe(st); ro.observe(layer)
-    const f = frameOf(st)
-    if (f) ro.observe(f)
+    const mo = new MutationObserver(changed)
+    mo.observe(st, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-tweak', 'data-copy', 'aria-hidden', 'style', 'class', 'dir'], characterData: true })
     doc.addEventListener('scroll', scrolled, true)
     if (doc !== document) document.addEventListener('scroll', scrolled, true)
     win.addEventListener('resize', scrolled)
     if (win !== window) addEventListener('resize', scrolled)
-    const offs = [tweaks.subscribe(soon), copy.subscribe(soon)]
+    const offs = [tweaks.subscribe(changed), copy.subscribe(changed)]
     return () => {
-      cancelAnimationFrame(raf); mo.disconnect(); ro.disconnect(); offs.forEach(o => o())
+      cancelAnimationFrame(raf); mo.disconnect(); offs.forEach(o => o())
       doc.removeEventListener('scroll', scrolled, true); document.removeEventListener('scroll', scrolled, true)
       win.removeEventListener('resize', scrolled); removeEventListener('resize', scrolled)
     }
@@ -635,9 +684,11 @@ export function OptionsLayer() {
     const typing = (e: KeyboardEvent) => !!(e.target as HTMLElement | null)?.closest?.('input, textarea, [contenteditable="true"], [contenteditable=""]')
     const down = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && optStore.get().open) { e.preventDefault(); e.stopImmediatePropagation(); optAct.close(); return }
-      if (e.key === '\\' && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(e) && spotsOf(st).some(sp => sp.facets.some(f => isChanged(st, f)))) { e.preventDefault(); options.compare(st, true) }
+      if (back(e) && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(e) && spotsOf(st).some(sp => sp.facets.some(f => isChanged(st, f)))) { e.preventDefault(); options.compare(st, true) }
     }
-    const up = (e: KeyboardEvent) => { if (e.key === '\\' && options.comparing() === st) options.compare(st, false) }
+    // By the key's place as well as its character: on a keyboard in another language \\ types something else.
+    const back = (e: KeyboardEvent) => e.code === 'Backslash' || e.key === '\\'
+    const up = (e: KeyboardEvent) => { if (back(e) && options.comparing() === st) options.compare(st, false) }
     const blur = () => { if (options.comparing() === st) options.compare(st, false) }
     for (const d of docs) { listen(d, 'keydown', down, true); d.addEventListener('keyup', up, true) }
     addEventListener('blur', blur)
@@ -670,8 +721,8 @@ export function OptionsLayer() {
   // Pinned while open.
   const openMark = openSpot ? markOf(openSpot.key) : undefined
   if (!s.open) pin.current = null
-  else if (openMark && (!pin.current || pin.current.key !== s.open || moved.current)) { pin.current = { key: s.open, box: openMark.box }; moved.current = false }
-  const pinned = s.open && pin.current?.key === s.open ? pin.current.box : undefined
+  else if (openMark && (!pin.current || pin.current.key !== s.open || moved.current)) { pin.current = { key: s.open, box: openMark.box, at: origin }; moved.current = false }
+  const pinned = s.open && pin.current?.key === s.open ? carried(pin.current.box, pin.current.at, origin) : undefined
   const askBox = s.open === ASK && s.askEl ? boxIn(s.askEl, host.layer) : undefined
   const sent = phase === 'sent' ? s.rec.sent : undefined
   const sentKeys = new Set(sent?.items.map(i => i.key) ?? [])
@@ -712,13 +763,13 @@ export function OptionsLayer() {
       {sent?.items.filter(i => !spots.some(sp => sp.key === i.key) && i.target).map(i => {
         const el = find(st, i.target!)
         if (!el) return null
-        const b = shapeIn(el, host.layer), at = dotAt({ key: i.key, n: 0, box: b, rtl: styleOf(el).direction === 'rtl' })
+        const b = shapeIn(el, host.layer), at = dotAt({ box: b, rtl: styleOf(el).direction === 'rtl' })
         return <span key={`w-${i.facet}`} className="absolute grid size-4 place-items-center rounded-full bg-amber-500 text-white shadow-[0_0_0_2px_white] dark:shadow-[0_0_0_2px_#18181b]" style={{ left: at.x - 8, top: at.y - 8 }}><Icon name="spinner" className="size-2.5 animate-spin" /></span>
       })}
       {applied && applied.items.map(i => {
         const el = i.target ? find(st, i.target) : null
         if (!el) return null
-        const b = shapeIn(el, host.layer), at = dotAt({ key: i.key, n: 0, box: b, rtl: styleOf(el).direction === 'rtl' })
+        const b = shapeIn(el, host.layer), at = dotAt({ box: b, rtl: styleOf(el).direction === 'rtl' })
         return <span key={`a-${i.facet}`} data-option-applied="" className="absolute z-20 grid size-4 place-items-center rounded-full bg-emerald-500 text-white shadow-[0_0_0_2px_white] dark:shadow-[0_0_0_2px_#18181b]" style={{ left: at.x - 8, top: at.y - 8 }}><Icon name="check" className="size-2.5" /></span>
       })}
       {asking.map(a => {
@@ -891,7 +942,7 @@ function ChipPic({ spot, big }: { spot: Spot; big?: boolean }) {
   const st = optStore.get().stage!
   const f = spot.facets.find(x => isChanged(st, x) && x.kind !== 'words')
   const el = spot.els[0]
-  const pic = f && el ? pictureOf(keyOf(st, spot, f, el), chosen(st, f)) : undefined
+  const pic = f && el ? pictureOf(keyOf(st, spot, f), chosen(st, f)) : undefined
   const sz = big ? 28 : 20
   return (
     <span className={`grid shrink-0 place-items-center overflow-hidden rounded-full ring-1 ring-black/[.08] dark:ring-white/10 ${big ? 'size-7' : 'size-5'}`} style={{ background: el ? backdropOf(el) : undefined }}>

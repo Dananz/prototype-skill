@@ -5,7 +5,8 @@
 // (from the element's own window, so a device view's frame works too), and the copy is kept as HTML.
 // While that runs the element is covered by a still copy of itself (the panel draws it), so the user
 // does not see it cycle. Pictures are kept per option until the design changes around them: the
-// other facets' choices, the theme and the element's width are part of their key.
+// other facets' choices, the theme and the design's width are part of their key (never the element's
+// own width, which its own options change).
 import { options, choiceOf, spotsOf, type Facet, type Spot } from '../options'
 
 /** A copy of the element, 'empty' when the option hides it, 'failed' when it could not be copied. */
@@ -22,11 +23,12 @@ export const pictureStore = {
   version: () => version,
 }
 
-/** What a facet's pictures depend on besides its own option: the other choices, the theme, the width. */
-export function keyOf(host: Element, spot: Spot, f: Facet, el: HTMLElement | null) {
+/** What a facet's pictures depend on besides its own option: the other choices, the theme, and the
+ *  design's width (the element's own width changes with its options, so it is no part of it). */
+export function keyOf(host: Element, spot: Spot, f: Facet) {
   const others = spotsOf(host).flatMap(s => s.facets).filter(x => x.key !== f.key).map(x => [x.key, choiceOf(host, x)])
   const dark = host.ownerDocument.documentElement.classList.contains('dark') || document.documentElement.classList.contains('dark')
-  return JSON.stringify([spot.key, f.key, others, dark, el ? Math.round(sizeOf(el).w) : 0])
+  return JSON.stringify([spot.key, f.key, others, dark, Math.round(sizeOf(host).w)])
 }
 // The last picture of each option whatever the rest of the design was, shown until one is drawn again.
 const latest = new Map<string, Picture>()
@@ -43,6 +45,10 @@ export function sizeOf(el: Element) {
 // Left out of a copy: what moves (a copy is a still), what only matters on the page.
 const SKIP = /^(transition|animation|will-change|cursor|pointer-events|user-select|-webkit-user-select|view-transition|anchor|offset|scroll-|overscroll|touch-action|caret|outline|content-visibility|contain)/
 const MAX_NODES = 600
+let copies = 0
+// Attributes that would make a copy act as a part of the page: a field's name or form, a label's for,
+// autofocus. Ids go too (a copy's own SVG ids are renamed instead).
+const LOOSE = ['name', 'form', 'for', 'autofocus', 'id', 'popover', 'popovertarget', 'commandfor', 'accesskey']
 
 /** The element as HTML that looks the same anywhere: every element's computed style inline. */
 export function stillOf(el: HTMLElement): Still | null {
@@ -53,6 +59,13 @@ export function stillOf(el: HTMLElement): Still | null {
   const copy = el.cloneNode(true) as Element
   const dst = [copy, ...copy.querySelectorAll('*')]
   if (dst.length !== src.length) return null
+  // An SVG's ids (its gradients, masks and clips) are renamed for this copy, and what points at them
+  // with it, so several copies on the page never point at each other's (or the design's).
+  const tag = `pc${++copies}-`
+  const ids = new Set(src.filter(s => s instanceof win.SVGElement && s.id).map(s => s.id))
+  const esc = (id: string) => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const point = ids.size ? new RegExp(`url\\((['"]?)#(${[...ids].map(esc).join('|')})\\1\\)`, 'g') : null
+  const repoint = (v: string) => point ? v.replace(point, (_m, q, id) => `url(${q}#${tag}${id}${q})`) : v
   src.forEach((s, i) => {
     const d = dst[i], cs = win.getComputedStyle(s)
     let css = ''
@@ -61,9 +74,14 @@ export function stillOf(el: HTMLElement): Still | null {
     d.removeAttribute('data-tweak')
     d.removeAttribute('data-copy')
     for (const a of [...d.attributes]) if (a.name.startsWith('on')) d.removeAttribute(a.name)
-    // Ids stay inside an SVG (its gradients and masks point at them); elsewhere they go.
-    if (!(s instanceof win.SVGElement)) d.removeAttribute('id')
-    d.setAttribute('style', css)
+    const svgId = s instanceof win.SVGElement && ids.has(s.id) ? s.id : ''
+    for (const a of LOOSE) d.removeAttribute(a)
+    if (svgId) d.setAttribute('id', tag + svgId)
+    if (ids.size) for (const a of [...d.attributes]) {
+      if ((a.name === 'href' || a.name === 'xlink:href') && a.value.startsWith('#') && ids.has(a.value.slice(1))) d.setAttribute(a.name, `#${tag}${a.value.slice(1)}`)
+      else if (a.value.includes('url(')) d.setAttribute(a.name, repoint(a.value))
+    }
+    d.setAttribute('style', repoint(css))
   })
   let { w, h } = sizeOf(el)
   // A line of words in a wider block: as wide as its words.
@@ -89,6 +107,8 @@ export function stillOf(el: HTMLElement): Still | null {
   root.style.boxSizing = 'border-box'
   root.style.flex = 'none'
   root.setAttribute('aria-hidden', 'true')
+  // A still: nothing in it takes focus, a click or a form's submit.
+  root.setAttribute('inert', '')
   if (root.tagName === 'BUTTON' || root.tagName === 'A' || root.tagName === 'INPUT') root.setAttribute('tabindex', '-1')
   if (text) { root.style.whiteSpace = 'nowrap'; root.style.paddingInline = '0' }
   return { html: root.outerHTML, w, h, ...(text ? { text: true } : {}) }
@@ -111,8 +131,10 @@ function still(host: HTMLElement, on: boolean) {
 const frame = (win: Window) => new Promise<void>(r => win.requestAnimationFrame(() => r()))
 
 let running: { cancel: () => void; done: Promise<void> } | null = null
+// Each call's number: a call that is no longer the newest once the run before it ended gives way.
+let calls = 0
 /** Stops drawing now (the panel closed, another facet is on show). */
-export function stopDrawing() { running?.cancel() }
+export function stopDrawing() { calls++; running?.cancel() }
 // The element as it was when a facet's pictures were drawn, with the same choices: if it reads
 // otherwise now, its source changed (a hot reload), so the pictures are drawn again.
 const drawnFrom = new Map<string, string>()
@@ -121,14 +143,14 @@ const drawnFrom = new Map<string, string>()
  * Draws the picture of every option of a facet not drawn yet. `el` finds the element again (a
  * render may replace it). Resolves once done or stopped; the facet shows its choice again either way.
  */
-export async function drawFacet(host: HTMLElement, spot: Spot, f: Facet, el: () => HTMLElement | null, onCover: (on: boolean) => void) {
-  // One run at a time: the one stopped finishes (and puts the design back) before this one starts.
-  const before = running
-  before?.cancel()
-  if (before) await before.done
+export async function drawFacet(host: HTMLElement, f: Facet, key: string, el: () => HTMLElement | null, onCover: (on: boolean) => void) {
+  // One run at a time: the one stopped finishes (and puts the design back) before this one starts,
+  // and of the calls waiting meanwhile only the newest goes on.
+  const me = ++calls
+  while (running) { running.cancel(); await running.done }
+  if (me !== calls) return
   const first = el()
   if (!first || f.kind === 'words') return
-  const key = keyOf(host, spot, f, first)
   const from = `${key}@${JSON.stringify(choiceOf(host, f))}`
   if (drawnFrom.has(from) && drawnFrom.get(from) !== first.outerHTML) for (let i = 0; i < f.options.length; i++) pictures.delete(`${key}#${i}`)
   drawnFrom.set(from, first.outerHTML)
@@ -137,6 +159,7 @@ export async function drawFacet(host: HTMLElement, spot: Spot, f: Facet, el: () 
   const win = host.ownerDocument.defaultView ?? window
   let stopped = false, finish = () => {}
   const mine = { cancel: () => { stopped = true }, done: new Promise<void>(r => { finish = r }) }
+  // Claimed before anything is awaited, so no other run starts beside it.
   running = mine
   onCover(true)
   still(host, true)
