@@ -8,5 +8,6 @@ import misc from './misc'
 import viewer from './viewer'
 import shareLink from './share-link'
 import tree from './tree'
+import options from './options'
 
-export const he: Record<string, string> = { ...core, ...shell, ...comments, ...comments2, ...panels, ...misc, ...viewer, ...shareLink, ...tree }
+export const he: Record<string, string> = { ...core, ...shell, ...comments, ...comments2, ...panels, ...misc, ...viewer, ...shareLink, ...tree, ...options }

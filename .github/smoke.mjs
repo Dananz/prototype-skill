@@ -51,6 +51,7 @@ import { shareTrayChecks } from './share-tray-checks.mjs'
 import { shareSheetChecks } from './share-sheet-checks.mjs'
 import { shareRepairChecks } from './share-repair-checks.mjs'
 import { tweaksChecks } from './tweaks-checks.mjs'
+import { optionsChecks } from './options-checks.mjs'
 import { tweaksRegistryChecks } from './tweaks-registry-checks.mjs'
 import { middleDragChecks } from './middle-drag-checks.mjs'
 import { commentRegionOffChecks } from './comment-region-off-checks.mjs'
@@ -237,6 +238,13 @@ if (process.argv.includes('--tweaks-only')) {
   await tweaksRegistryChecks({ local, openPage, fail })
   await tweaksChecks({ proto, app, local, openPage, fail })
   console.log('OK: focused Tweaks checks')
+  process.exit(0)
+}
+if (process.argv.includes('--options-only')) {
+  await optionsChecks({ proto, app, local, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused options checks')
   process.exit(0)
 }
 if (process.argv.includes('--comment-images-only')) {
@@ -544,6 +552,7 @@ await shareSheetChecks({ proto, app, openPage, fail, shots: process.env.PROTO_SH
 await settingsChecks({ proto, app, local, openPage, fail })
 await tweaksRegistryChecks({ local, openPage, fail })
 await tweaksChecks({ proto, app, local, openPage, fail })
+await optionsChecks({ proto, app, local, openPage, fail })
 
 await commentParentChecks({ proto, app, openPage, fail })
 await commentWholeChecks({ proto, app, openPage, fail })

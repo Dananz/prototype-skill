@@ -954,17 +954,30 @@ export function OptionsTray({ phone = false }: { phone?: boolean }) {
               <span dir="auto" className="font-medium">{sp.facets.filter(f => isChanged(st, f)).map(f => nameOf(st, f)).join(' · ')}</span>
             </button>
           ))}
-          <span className="ms-auto flex shrink-0 items-center gap-1">
-            <HoldOriginal compact={!phone} big={phone} />
-            <button type="button" data-options-send="" disabled={s.sending} onClick={() => void optAct.send()}
-              className={`flex items-center gap-1.5 rounded-full px-3 font-semibold disabled:opacity-60 ${PRIMARY} ${phone ? 'h-10 text-[14px]' : 'h-8 text-[12px]'}`}>
-              <Icon name="send" className="size-3.5" />{s.sending ? t('Sending…') : tn(pending.length, 'Send {n} choice', 'Send {n} choices')}
-            </button>
-          </span>
+          {!phone && <span className="ms-auto flex shrink-0 items-center gap-1">
+            <HoldOriginal compact />
+            <SendButton n={pending.length} sending={s.sending} onSend={() => void optAct.send()} />
+          </span>}
+        </div>
+      )}
+      {/* A phone: the chips scroll on their own row, and these sit under them. */}
+      {pending.length > 0 && phone && (
+        <div className="flex items-center justify-end gap-1 px-2 pb-2">
+          <HoldOriginal big />
+          <SendButton n={pending.length} sending={s.sending} phone onSend={() => void optAct.send()} />
         </div>
       )}
       {s.error && !s.open && <p role="alert" className="mx-2 mb-1.5 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-xs text-rose-700 dark:text-rose-300">{s.error}</p>}
     </div>
+  )
+}
+
+function SendButton({ n, sending, phone = false, onSend }: { n: number; sending: boolean; phone?: boolean; onSend(): void }) {
+  return (
+    <button type="button" data-options-send="" disabled={sending} onClick={onSend}
+      className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 font-semibold disabled:opacity-60 ${PRIMARY} ${phone ? 'h-10 text-[14px]' : 'h-8 text-[12px]'}`}>
+      <Icon name="send" className="size-3.5" />{sending ? t('Sending…') : tn(n, 'Send {n} choice', 'Send {n} choices')}
+    </button>
   )
 }
 
