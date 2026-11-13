@@ -395,7 +395,7 @@ export function Tile({ f, i, pic, k, bg, big, drawing, chosenNow, previewed, num
           : pic && pic !== 'failed' ? <Pic pic={pic} w={big ? 84 : 70} k={k} />
           : <span dir="auto" className="line-clamp-2 px-1 text-center text-[11px] font-medium text-zinc-700 dark:text-zinc-200">{o.name}</span>}
         {chosenNow && <span className="absolute end-1 top-1 grid size-4 place-items-center rounded-full bg-proto-primary text-white shadow-[0_0_0_2px_white] dark:shadow-[0_0_0_2px_#18181b]"><Icon name="check" className="size-2.5" /></span>}
-        {num !== undefined && <span className="absolute start-1.5 top-1 text-[10px] font-medium tabular-nums text-zinc-400">{num}</span>}
+        {num !== undefined && <span className="absolute start-1 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-white/90 px-1 text-[10px] font-medium tabular-nums text-zinc-500 shadow-[0_0_0_1px_rgb(0_0_0/.06)] dark:bg-zinc-900/85 dark:text-zinc-400">{num}</span>}
       </span>
       <span dir="auto" className={`max-w-full truncate text-[12px] leading-4 ${chosenNow ? 'font-semibold text-zinc-900 dark:text-white' : 'text-zinc-600 dark:text-zinc-300'}`}>{o.name}</span>
       <span className="h-3 text-[10px] leading-3 text-zinc-400">{today ? t('Now') : previewed && !chosenNow ? t('Showing') : ''}</span>
