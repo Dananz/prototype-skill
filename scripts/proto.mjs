@@ -40,7 +40,7 @@
 //   proto snap <slug>[/<letter>]… [--width 672]   static HTML snapshots for a shared document
 //   proto pick <slug> <number> [--off]   the user chose this variant: marked in the page
 //   proto fav [<slug>] | <slug>/<number>[ …] [--off]   the user's favorites (the page's stars): list them, or star some
-//   proto recommend <slug> <number> --why "…" [--borrow "…"] [<number> "<take>" …] [--off]   your recommendation,
+//   proto recommend <slug> <number> --why "…" [<number> "<take>" …] [--off]   your recommendation,
 //             shown in the page (the tree's sparkle, first on the overview with its reason and a Pick button)
 //   proto work <slug>/<letter> [--ask "…"] [--off]   the variant being worked on: pinned in the page
 //   proto ask "…" [--to <slug>/<letter>]   a change the user asked for, kept with that variant
@@ -965,7 +965,7 @@ function fav() {
 // Which variant the agent would pick and why (SKILL.md step 6), kept in meta.ts as `recommend`,
 // so the page says it too: the tree marks it, and the prototype's overview puts it first with its
 // reason, a Pick button and every variant's one-line take. It marks nothing as picked.
-//   proto recommend <slug> <number> --why "…" [--borrow "…"] [<number> "<take>" …]
+//   proto recommend <slug> <number> --why "…" [<number> "<take>" …]
 //   proto recommend <slug> [--off]   print it, or take it away
 function recommend() {
   const dir = sessionDir()
@@ -981,11 +981,17 @@ function recommend() {
   // The number the user sees (3, #3) or the letter (C).
   const letter = n => { const x = String(n).replace(/^#/, ''), id = /^\d+$/.test(x) ? letterOf(x) : x; if (!id || !m.variants?.[id]) die(`which variant of ${slug}? "${n}" is not one (${choices(m)})`); return id }
   const pick = letter(rest[0])
-  if (typeof flags.why !== 'string' || !flags.why.trim()) die('--why "…": two to four sentences on why it wins for this product and its users')
+  if (flags.borrow !== undefined) die('--borrow is gone: the page shows only why it wins; say what to take from the others in the chat reply, in a few words')
+  if (typeof flags.why !== 'string' || !flags.why.trim()) die('--why "…": one short sentence on why it wins, in plain words')
+  if (flags.why.trim().length > 140) die(`--why is ${flags.why.trim().length} characters; keep it to one sentence under 140, plain words, no variant numbers`)
   if ((rest.length - 1) % 2) die('takes come in pairs: <number> "<its direction and main weakness>"')
   const takes = {}
-  for (let i = 1; i < rest.length; i += 2) takes[letter(rest[i])] = String(rest[i + 1]).trim()
-  m.recommend = { pick, why: flags.why.trim(), ...(typeof flags.borrow === 'string' && flags.borrow.trim() ? { borrow: flags.borrow.trim() } : {}), ...(Object.keys(takes).length ? { takes } : {}) }
+  for (let i = 1; i < rest.length; i += 2) {
+    const take = String(rest[i + 1]).trim()
+    if (take.length > 70) die(`the take for ${rest[i]} is ${take.length} characters; keep it under 70 (direction and main weakness, a few words)`)
+    takes[letter(rest[i])] = take
+  }
+  m.recommend = { pick, why: flags.why.trim(), ...(Object.keys(takes).length ? { takes } : {}) }
   writeWhole(f, withMeta(text, stampOwner(m)), scratchOf(dir))
   console.log(say(m.recommend))
   if (m.picked && m.picked !== pick) console.log(`note: the user already picked ${shown(m.picked)}; the page shows yours beside it`)
