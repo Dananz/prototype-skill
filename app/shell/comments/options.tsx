@@ -434,6 +434,12 @@ export function OptionsBody({ spot, big }: { spot: Spot; big?: boolean }) {
     if (on) options.preview(st, f, i)
     else { const now = options.previewed(); if (now?.key === f.key && now.index === i) options.preview(st, null) }
   }
+  // Pictures done while the pointer rests on a tile: that tile shows now, without another move.
+  useEffect(() => {
+    if (drawing || narrow || phase === 'sent') return
+    const over = document.querySelector<HTMLElement>('[data-options-pop] [data-option-tile]:hover')
+    if (over) options.preview(st, f, Number(over.dataset.optionTile))
+  }, [drawing]) // eslint-disable-line react-hooks/exhaustive-deps
   const pick = (i: number) => () => { options.choose(st, f, i); options.preview(st, null) }
   const pics = f.options.map((_, i) => pictureOf(key, i))
   const k = fitOf(pics, big ? 84 : 70, big ? 68 : 58)
@@ -697,13 +703,13 @@ export function OptionsLayer() {
       {sent?.items.filter(i => !spots.some(sp => sp.key === i.key) && i.target).map(i => {
         const el = find(st, i.target!)
         if (!el) return null
-        const b = boxIn(el, host.layer), at = dotAt({ key: i.key, n: 0, box: b, rtl: styleOf(el).direction === 'rtl' })
+        const b = shapeIn(el, host.layer), at = dotAt({ key: i.key, n: 0, box: b, rtl: styleOf(el).direction === 'rtl' })
         return <span key={`w-${i.facet}`} className="absolute grid size-4 place-items-center rounded-full bg-amber-500 text-white shadow-[0_0_0_2px_white] dark:shadow-[0_0_0_2px_#18181b]" style={{ left: at.x - 8, top: at.y - 8 }}><Icon name="spinner" className="size-2.5 animate-spin" /></span>
       })}
       {applied && applied.items.map(i => {
         const el = i.target ? find(st, i.target) : null
         if (!el) return null
-        const b = boxIn(el, host.layer), at = dotAt({ key: i.key, n: 0, box: b, rtl: styleOf(el).direction === 'rtl' })
+        const b = shapeIn(el, host.layer), at = dotAt({ key: i.key, n: 0, box: b, rtl: styleOf(el).direction === 'rtl' })
         return <span key={`a-${i.facet}`} data-option-applied="" className="absolute grid size-4 place-items-center rounded-full bg-emerald-500 text-white shadow-[0_0_0_2px_white] dark:shadow-[0_0_0_2px_#18181b]" style={{ left: at.x - 8, top: at.y - 8 }}><Icon name="check" className="size-2.5" /></span>
       })}
       {asking.map(a => {
@@ -712,7 +718,7 @@ export function OptionsLayer() {
         const b = boxIn(el, host.layer)
         return <div key={a.batch} data-option-asking="ask" className="absolute" style={{ left: b.x - 4, top: b.y - 4, width: b.w + 8, height: b.h + 8 }}>
           <div className="absolute inset-0 animate-pulse rounded-[8px] border-[1.5px] border-dashed border-proto-primary/70" />
-          <span className="absolute -top-6 start-0 flex items-center gap-1 whitespace-nowrap rounded-full bg-proto-primary px-2 py-0.5 text-[11px] font-medium text-white shadow"><Icon name="spinner" className="size-2.5 animate-spin" /><AgentSays say={a => t('{agent} is preparing options', { agent: a })} /></span>
+          <span className="absolute start-0 top-full mt-1 flex items-center gap-1 whitespace-nowrap rounded-full bg-proto-primary px-2 py-0.5 text-[11px] font-medium text-white shadow"><Icon name="spinner" className="size-2.5 animate-spin" /><AgentSays say={a => t('{agent} is preparing options', { agent: a })} /></span>
         </div>
       })}
       {!narrow && openSpot && pinned && <Popover spot={openSpot} box={pinned} />}
