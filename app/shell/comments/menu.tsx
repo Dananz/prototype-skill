@@ -39,7 +39,7 @@ export function usePointerPlace(box: { current: HTMLElement | null }, open: bool
     const el = box.current
     if (!open || !at || !el) return
     const place = () => {
-      const w = el.offsetWidth, h = Math.min(el.scrollHeight, innerHeight - 16), gap = 6
+      const w = el.offsetWidth, h = Math.min(el.scrollHeight + el.offsetHeight - el.clientHeight, innerHeight - 16), gap = 6
       let left = at.x
       if (beside) {
         // A sidebar on the left gets the menu on its right, one on the right gets it on its left.
