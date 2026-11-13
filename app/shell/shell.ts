@@ -3402,6 +3402,66 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const viewSize = (): ViewSize => { const s = st.view.size!, d = dims(s, st.view.land); return { size: s, w: d.w, h: d.h } }
   const viewHost = zone.querySelector<HTMLElement>('[data-view]')!
   const deviceView = createView(viewHost, comments.wrap)
+  // A menu open beside the tool strip (its own menus, Tweaks, Decide) or the project's sidebar covers that side of the stage:
+  // the design slides clear of it, at the size it is, when it still shows whole beside it (a phone
+  // here, a device in the view: view/index.tsx). Measured after the chrome changes, as the menus draw
+  // in their own time. In the window's px: the menus on the stage's left reach to l, those on its
+  // right start at r (0: none).
+  let aside = { l: 0, r: 0 }, asideFrame = 0
+  function asideNow() {
+    // What a menu opens beside: the tool strip, and the project's sidebar (a row's ⋯ or right-click menu).
+    const sides = [strip, ...root.querySelectorAll<HTMLElement>('[data-side], [data-tree-side], [data-drawer]')]
+      .filter(e => !e.hidden && e.offsetWidth).map(e => ({ el: e, b: e.getBoundingClientRect() }))
+    let l = 0, r = 0
+    for (const el of root.querySelectorAll<HTMLElement>('[data-pop]')) {
+      const b = el.getBoundingClientRect()
+      if (!b.width || !b.height) continue
+      for (const { el: side, b: s } of sides) {
+        // A right-click menu counts beside the sidebar only: on the design it is where the pointer was.
+        if (side === strip && el.hasAttribute('data-context-menu')) continue
+        if (b.left >= s.right - 2 && b.left - s.right < 32) l = Math.max(l, Math.round(b.right))
+        else if (b.right <= s.left + 2 && s.left - b.right < 32) r = r ? Math.min(r, Math.round(b.left)) : Math.round(b.left)
+      }
+    }
+    return { l, r }
+  }
+  /** How far the menus reach into a box from each of its sides. */
+  function asideIn(c: DOMRect) { return { l: aside.l ? Math.max(0, Math.round(aside.l - c.left)) : 0, r: aside.r ? Math.max(0, Math.round(c.right - aside.r)) : 0 } }
+  // A phone on the stage: centred in the room its data-phones (p-6) leaves beside the menus.
+  const easing = new WeakMap<HTMLElement, number>()
+  /** ease: the menus changed (a phone's own fit or zoom moves it at once). */
+  function phonesAside(ease: boolean) {
+    ease &&= !matchMedia('(prefers-reduced-motion: reduce)').matches
+    for (const box of layers.querySelectorAll<HTMLElement>('[data-phones]')) {
+      const phone = box.querySelector<HTMLElement>('[data-phone]')
+      if (!phone) continue
+      const c = box.getBoundingClientRect(), { l, r } = asideIn(c)
+      const fits = (l || r) && phone.getBoundingClientRect().width + 48 <= c.width - l - r
+      const pl = fits ? `${24 + l}px` : '', pr = fits ? `${24 + r}px` : ''
+      if (box.style.paddingLeft === pl && box.style.paddingRight === pr) continue
+      if (ease) {
+        box.style.transition = 'padding .3s cubic-bezier(.2,.9,.25,1)'
+        clearTimeout(easing.get(box))
+        easing.set(box, window.setTimeout(() => { box.style.transition = '' }, 320))
+      }
+      box.style.paddingLeft = pl; box.style.paddingRight = pr
+    }
+  }
+  new MutationObserver(recs => {
+    // The view's own moves (its padding, a pinch) and the design's own changes never open or close a menu.
+    const el = (n: Node) => (n instanceof Element ? n : n.parentElement)
+    if (recs.every(m => viewHost.contains(m.target) || !!el(m.target)?.closest('[data-mount]'))) return
+    cancelAnimationFrame(asideFrame)
+    asideFrame = requestAnimationFrame(() => {
+      // No menu open and no phone moved aside: nothing to measure (a pinch writes the phone's zoom every frame).
+      if (!aside.l && !aside.r && !root.querySelector('[data-pop]')) return
+      const next = asideNow(), changed = next.l !== aside.l || next.r !== aside.r
+      aside = next
+      // A phone drawn again (another variant, a fit) takes its place beside the menu again.
+      phonesAside(changed)
+      if (changed && frameOn()) paintView()
+    })
+  }).observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'style', 'class'] })
   // The size selected at rest is this window's own layout, which a resize of it or the stage can change.
   let nativeWas = native()
   new ResizeObserver(() => { if (native() !== nativeWas) { nativeWas = native(); render() } else { paintGallery(); if (viewHost.hasAttribute('data-full')) paintView() } }).observe(layers)
@@ -3434,6 +3494,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       // At once: a move out here before the next turn would find the place unchanged and leave the view behind.
       route: path => { if (path && path !== location.pathname) visit(path, true) },
       onKey: viewKey,
+      aside: asideIn(viewHost.getBoundingClientRect()),
     })
   }
   /** Keys pressed in the page inside the view: C comments on it, F is focus mode, P the design's
