@@ -20,9 +20,12 @@ export async function recommendChecks({ proto, app, local, openPage, fail }) {
   // By the number the page shows, with a take per variant; a number that isn't one stops.
   proto(['recommend', 'recfx', '9', '--why', 'x'], { ok: false })
   proto(['recommend', 'recfx', '3', '--why'], { ok: false })
-  const said = proto(['recommend', 'recfx', '3', '--why', 'It answers the question first.', '--borrow', 'Take the photo from #2.', '1', 'The baseline.', '3', 'Clearest.'], { stdout: true })
+  proto(['recommend', 'recfx', '3', '--why', 'x'.repeat(141)], { ok: false })
+  proto(['recommend', 'recfx', '3', '--why', 'It answers the question first.', '--borrow', 'Take the photo from #2.'], { ok: false })
+  proto(['recommend', 'recfx', '3', '--why', 'It answers the question first.', '1', 'x'.repeat(71)], { ok: false })
+  const said = proto(['recommend', 'recfx', '3', '--why', 'It answers the question first.', '1', 'The baseline.', '3', 'Clearest.'], { stdout: true })
   const r = meta()?.recommend
-  assert(r?.pick === 'C' && r.why === 'It answers the question first.' && r.borrow === 'Take the photo from #2.' && r.takes?.A === 'The baseline.' && r.takes?.C === 'Clearest.', `meta.ts recommend: ${JSON.stringify(r)}`)
+  assert(r?.pick === 'C' && r.why === 'It answers the question first.' && !r.borrow && r.takes?.A === 'The baseline.' && r.takes?.C === 'Clearest.', `meta.ts recommend: ${JSON.stringify(r)}`)
   assert(/recommends #3 \(C\)/.test(said), `proto recommend should say #3: ${said}`)
   assert(!meta()?.picked, 'a recommendation must not pick')
 

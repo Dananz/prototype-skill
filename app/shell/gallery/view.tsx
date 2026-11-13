@@ -90,7 +90,7 @@ function Drawer({ p, pic, open, pick, agent }: { p: Proto | null; pic: Pic; open
         <div className="pb-5 sm:pb-7">
           <div data-gallery-options={shown.id} className="-mx-1 rounded-2xl bg-zinc-900/[.03] p-3 sm:-mx-2 sm:p-4 ring-1 ring-black/[.06] dark:bg-white/[.03] dark:ring-white/[.06]">
             <div className="mb-3 flex items-center gap-3 text-sm"><b dir="auto" className="font-semibold">{shown.title}</b><Status p={shown} agent={agent} /></div>
-            {recOf(shown) && shown.recommend!.why && <p data-rec-why dir="auto" className="-mt-1 mb-3 max-w-[72ch] text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-300"><span className={'font-semibold ' + REC}>{t('Why {v}:', { v: `#${numberOf(recOf(shown))}` })}</span> {shown.recommend!.why}{shown.recommend!.borrow && <span className="text-zinc-500 dark:text-zinc-400"> {shown.recommend!.borrow}</span>}</p>}
+            {recOf(shown) && shown.recommend!.why && <p data-rec-why dir="auto" title={shown.recommend!.why} className="-mt-1 mb-3 line-clamp-2 max-w-[72ch] text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-300"><span className={'font-semibold ' + REC}>{t('Why {v}:', { v: `#${numberOf(recOf(shown))}` })}</span> {shown.recommend!.why}</p>}
             <div className="-mx-3 -mt-3 -mb-1.5 flex gap-4 overflow-x-auto p-3 [scrollbar-width:thin]">
               {(rec => rec ? [...shown.variants.filter(v => v.id === rec), ...shown.variants.filter(v => v.id !== rec)] : shown.variants)(recOf(shown)).map((v, i) => {
                 const route = `${shown.id}/${v.id}`, rec = recOf(shown) === v.id, take = shown.recommend?.takes[v.id]

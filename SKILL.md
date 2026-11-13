@@ -800,16 +800,20 @@ includes:
    (`![Hero sections](/abs/path/hero-sheet.png)`), and `-sheet-dark.png` too when the variants
    have a dark mode. Add a single shot only where the sheet can't carry the point: your pick at
    full size (`![C · Big price](/abs/path/hero-C-desktop.png)`), or a detail you name in the text.
-3. One line per variant: its direction and its main weakness.
-4. The pick and why it wins for this product and its users, in two to four sentences, and
-   what you would take from the runners-up.
+3. One line per variant: its direction and its main weakness, in under ten words.
+4. The pick and why it wins, in one short sentence a non-designer understands (under 20 words,
+   no variant numbers, no design jargon). If something from a runner-up is worth taking, say it
+   in a few words on its own line.
 
-That is your recommendation. Before the reply, put it in the page too, in the same words:
+Keep it short: the user reads the variants, not your essay. Before the reply, put the same
+words in the page:
 
 ```
-proto recommend <slug> <number> --why "<point 4: why it wins>" --borrow "<what to take from the others>" \
+proto recommend <slug> <number> --why "<point 4, one sentence>" \
   1 "<point 3, variant 1>" 2 "<point 3, variant 2>" …
 ```
+
+`--why` over 140 characters or a take over 70 is refused; shorten it, don't split it.
 
 The tree marks it with a sparkle, and the prototype's overview puts it first, with its reason above
 the grid, every variant's line under its card and a Pick button on it. It marks nothing as picked:
