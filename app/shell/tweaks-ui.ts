@@ -111,10 +111,10 @@ function Field({ field, onChange, onReset, onActive }: { field: Tweak } & Pick<T
     listed(field.options)
       ? h('div', { role: 'group', 'aria-labelledby': labelId, className: `flex rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800 ${segmented(field.options) ? '' : 'flex-col gap-0.5'}` },
         ...field.options.map(option => h('button', {
-          key: option, type: 'button', 'data-tweak-option': option, 'aria-pressed': field.value === option, dir: 'auto',
+          key: option, type: 'button', 'data-tweak-option': option, 'aria-pressed': field.value === option,
           onClick: () => onChange(field.id, option),
           className: `min-h-9 min-w-0 break-words rounded-md py-1.5 leading-4 [overflow-wrap:anywhere] ${segmented(field.options) ? 'flex-1 px-1 text-[11px]' : 'px-2.5 text-start text-xs'} ${field.value === option ? 'bg-white font-medium text-zinc-900 shadow-sm dark:bg-zinc-600 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'}`,
-        }, option)))
+        }, h('bdi', null, option))))
       : h(Stepper, { field, labelId, onChange })
   ) : h('span', { className: 'relative flex shrink-0' },
     h('input', {
