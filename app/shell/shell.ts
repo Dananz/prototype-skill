@@ -1458,16 +1458,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const bar = pill.querySelector('[data-pill-bar]')?.parentElement
     return bar && fitsAlone() ? Math.max(0, room.getBoundingClientRect().bottom - bar.getBoundingClientRect().top) : 0
   }
-  // On a wide screen the comment island floats at the stage's foot: Fit keeps the phones clear of it,
-  // measured while it rests shut (an open list or a side panel leaves the last measure as it was).
-  let islandGap = 0
+  // On a wide screen the comment island rests on the stage's foot, 16px up (island-drag.ts), unless
+  // it was dragged to the top or the side, or docked. Fit keeps the phones clear of where it rests,
+  // not of where it is this moment: it may still be gliding there, or open.
+  let islandH = 56
   function islandOver(room: HTMLElement) {
-    const isl = zone.querySelector<HTMLElement>('[data-island-host] [data-island]')
-    if (isl && !isl.hasAttribute('data-open')) {
-      const r = isl.getBoundingClientRect(), rr = room.getBoundingClientRect()
-      islandGap = r.height && r.top > rr.top + rr.height / 2 ? Math.max(0, rr.bottom - r.top) : 0
-    }
-    return islandGap
+    const host = zone.querySelector<HTMLElement>('[data-island-host]'), isl = host?.querySelector<HTMLElement>('[data-island]')
+    const prefs = islandPrefs.get()
+    if (!host || host.hidden || !isl || prefs.docked || prefs.place !== 'bottom' || matchMedia('(max-width: 639px)').matches) return 0
+    if (!isl.hasAttribute('data-open') && isl.offsetHeight) islandH = isl.offsetHeight
+    return Math.max(0, room.getBoundingClientRect().bottom - (host.getBoundingClientRect().bottom - 16 - islandH))
   }
   function phoneZoom(w: number, h: number, room: HTMLElement) {
     // One variant alone on a phone fits exactly, inside the p-6 of data-phones and clear of the bar.
@@ -1493,9 +1493,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   resized.observe(layers)
   // The comment bar at the pill grows once it has drawn, and a fit on a phone must clear it.
   resized.observe(pill)
-  // The comment island draws after the first fit, which must clear it too.
-  const islandDrawn = new MutationObserver(() => { if (zone.querySelector('[data-island-host] [data-island]')) { islandDrawn.disconnect(); fit() } })
-  islandDrawn.observe(zone.querySelector('[data-island-host]')!, { childList: true, subtree: true })
+  // Fit clears the comment island: again when it comes or goes, or moves to another edge.
+  let islandWas = ''
+  const islandMoved = () => {
+    const host = zone.querySelector<HTMLElement>('[data-island-host]'), p = islandPrefs.get()
+    const now = [!!host?.querySelector('[data-island]'), !!host?.hidden, p.place, !!p.docked].join()
+    if (now !== islandWas) { islandWas = now; fit() }
+  }
+  new MutationObserver(islandMoved).observe(zone.querySelector('[data-island-host]')!, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] })
+  islandPrefs.subscribe(islandMoved)
 
   // ---------- navigation ----------
   function go(p: Place) {
