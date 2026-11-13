@@ -81,7 +81,8 @@ tried on that element: put `data-tweak="<id>"` on it. The page marks it with a s
 corner; hovering the element outlines and names it, and a click on the dot opens a panel beside it
 with a picture of the element for each option (drawn from the design itself), the current one marked
 Now. Pointing at a picture shows it on the design, a click keeps it, and the panel stays open to
-compare; Shift-click on the dot steps to the next option without opening anything. Hold Original
+compare; a click on the element itself does the same when it is no link, button or field of its
+own. Shift-click on the dot steps to the next option without opening anything. Hold Original
 (or `\`) to see the design as it was. What changed waits in the comments island and goes to the
 agent in one Send, one `option` comment per value (`copy` for words), for it to make that the
 element's value and take the control out.
@@ -92,6 +93,12 @@ becomes a Words tab beside the control: list both ids, space-separated, for two 
 element. Several elements carrying the same id are one spot and change together (a label in every
 row; each row on its own needs a control per row). Dots never show in a share, a shot (unless
 `proto shoot --options`), a tool, or side by side.
+
+Three or more such elements the user has not opened yet make a round of decisions: a row on the
+comments island offers to walk them one by one (a step per control, its label as the question:
+"Which row icon?"), ending in a summary with Send. `data-round` on any element of the variant
+offers it whatever the count, `data-round="off"` never; it never shows in a shot, even with
+`--options`.
 
 ```tsx
 <span data-tweak="row-icon">{icons[icon]}</span>

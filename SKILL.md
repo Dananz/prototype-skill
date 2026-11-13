@@ -506,8 +506,9 @@ Tweaks): a `select` of the options' plain names (never pixel numbers), or a `col
 presets, its first option the value today, its label naming the element ("Row icon", "Start
 button style"); showing or hiding it is a `toggle`. Mark the element with the control's id,
 `data-tweak="<id>"` (a line of words already carries `data-copy`): the page then puts a small dot on
-it, and a click on the dot opens a panel beside it with a picture of the element per option, which
-shows on the design while pointed at and stays when clicked. Two values of one element (its words
+it, and a click on the dot (or on the element, when it is not a link, button or field of its own)
+opens a panel beside it with a picture of the element per option, which shows on the design while
+pointed at and stays when clicked. Two values of one element (its words
 and its size) go on the same element, `data-tweak` with both ids space-separated, or both
 attributes; elements alike (a label in every row) carry the same id and change together. A
 toggle's element stays in the page while hidden (mark a wrapper that stays). The reply says where
@@ -515,6 +516,16 @@ to try them, in one line ("Five icons on the row icon: click its dot"). The user
 back as one batch from the page (`option` per tweak, `copy` per line, below), or in chat, or a
 comment whose `tweaks:` line shows it: write each in as that element's value and take the control
 and its `data-tweak` out.
+
+A variant that leaves several small decisions (3 or more elements with options the user has not
+opened yet) gets a round of decisions: a row on the comments island says how many, and walks them
+one by one (the element in a spotlight, its question, big tiles, Keep as is, Skip), ending in a
+summary with Send, the same batch as above. With 1 or 2 the dots are enough. To ask for a round
+anyway (one decision you want answered before going on), put `data-round` on any element of the
+variant (its root will do); `data-round="off"` never offers one. Each control's label is the step's
+question ("Which row icon?"), so name it after the element. The round and the dots never show in
+a share, a framed view, a shot (`?hints=0`) or comment mode. The reply
+says it in one line ("Seven small decisions on the home screen: the round walks them").
 
 When the options differ in structure, content, position or behavior (the button becomes a menu,
 the card becomes a list, a new step in the flow), they are variants, as below: a prototype nested
@@ -524,6 +535,9 @@ A comment that tags an element and asks for "a few", "other" or "more" of it tak
 read from its words: "other colors for this", "a different icon here" are options in place;
 "a few directions for this button", "another structure", "as a menu" are variants. When the words
 leave it open, start with options in place: they are cheaper, and they can still become variants.
+The composer on an element asks the user which (`proto inbox` prints it as `answer as:`): options
+means options in place on that element, variants means a prototype nested under the variant,
+whatever the words; agent (the default) leaves it to this test.
 
 Turn options into variants (a slot prototype, one variant per option, Current first:
 `proto add <new slug> --from <slug>/<letter> --slot <id> --variants "A:Current,B:<option>,…"`,
