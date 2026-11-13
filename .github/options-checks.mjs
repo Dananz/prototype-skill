@@ -51,7 +51,8 @@ export default function Variant() {
     for (const end = Date.now() + ms; Date.now() < end; await wait(150)) {
       try { last = await (await fetch(`${local}src/registry.ts`)).text(); if (last.includes(`/src/protos/${route}.tsx`)) return } catch (e) { last = String(e) }
     }
-    fail(`options: the dev server never listed ${route}: ${[...last.matchAll(/protos\/[^"]+\.tsx/g)].map(m => m[0]).join(', ') || last.slice(0, 300)}`)
+    const edits = await fetch(`${local}__proto/status`).then(r => r.json()).then(j => JSON.stringify(j.edits)).catch(e => String(e))
+    fail(`options: the dev server never listed ${route}: ${[...last.matchAll(/protos\/[^"]+\.tsx/g)].map(m => m[0]).join(', ') || last.slice(0, 120)} (edits it saw: ${edits})`)
   }
   const wait = ms => new Promise(r => setTimeout(r, ms))
   const until = async (page, expression, why, ms = 8000) => {

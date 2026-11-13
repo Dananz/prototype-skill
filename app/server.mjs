@@ -789,10 +789,15 @@ export function prototypeServer(session) {
               return
             }
             if (route === '/ping') { activity = Date.now(); shares?.ping() }
-            // proto add, once a prototype's files are written: the registry's globs read the files again,
-            // in case the watcher missed them (a folder made and filled at once can go unreported), and
-            // the page gets the new list.
-            if (route === '/rescan') for (const m of server.moduleGraph.getModulesByFile(slash(join(dir, 'src', 'registry.ts'))) ?? []) void server.reloadModule(m)
+            // proto add, once a prototype's files are written: they are reported again, in case the
+            // watcher missed them (a folder made and filled at once can go unreported, on a busy machine),
+            // so the registry's globs list them and the page gets the new list. Reported twice is harmless.
+            if (route === '/rescan' && typeof data.slug === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(data.slug)) {
+              const folder = join(dir, 'src', 'protos', data.slug)
+              let names = []
+              try { names = readdirSync(folder) } catch { /* not there */ }
+              for (const name of names) server.watcher.emit('add', join(folder, name))
+            }
             if (route === '/keep') write({ keep: !!data.keep })
             if (route === '/work' && typeof data.proto === 'string' && typeof data.variant === 'string') work({ proto: data.proto, variant: data.variant, undo: data.undo })
             let got

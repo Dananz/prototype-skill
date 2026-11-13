@@ -466,7 +466,7 @@ async function up() {
   if (!existsSync(join(dir, 'node_modules', 'vite')) || depsMoved) install(dir)
 
   // A port another session took meanwhile (its server bound it first): again on the next free one.
-  for (let tries = 0; tries < 3 && !await running(s); tries++) {
+  for (let tries = 0; tries < 8 && !await running(s); tries++) {
     const port = await localPort(s)
     s = patchSession(dir, { port, stoppedAt: null, stopReason: null })
     mkdirSync(join(dir, '.proto'), { recursive: true })
@@ -546,9 +546,9 @@ async function importLegacy(dir, project) {
 // After `proto add` writes a prototype: the running server lists it now, whether or not its file
 // watcher reported the new folder (app/server.mjs, /rescan).
 async function add() {
-  addFiles()
+  const slug = addFiles()
   const s = readSession(sessionDir())
-  if (s?.port) await fetch(`http://127.0.0.1:${s.port}/__proto/rescan`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(3000) }).catch(() => {})
+  if (s?.port && slug) await fetch(`http://127.0.0.1:${s.port}/__proto/rescan`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug }), signal: AbortSignal.timeout(3000) }).catch(() => {})
 }
 function addFiles() {
   const dir = sessionDir()
@@ -708,6 +708,7 @@ function addFiles() {
   console.log(`${pdir}: ${Object.keys(meta.variants).map(id => `${id}.${kit.ext}`).join(' ') || 'no variants'}`)
   if (s.url) console.log(linkFor(s.url, slug))
   if (kit.slot && typeof meta.from === 'string' && meta.from.includes('/') && !meta.slot && !meta.referenceOnly) console.log(`assignment needed: if these variants replace part of ${meta.from}, wrap that element in <Slot> and connect ${slug} with --from ${meta.from} --slot <id> before presenting them. Use --reference-only only for a separate design that uses the parent as a reference.`)
+  return slug
 }
 
 // A placeholder for a variant, from one of app/stubs/: its name kept on one line, which the
