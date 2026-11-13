@@ -679,7 +679,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     for (const [k, n] of comments.counts().by) { const slug = k.split('/')[0]; by[slug] = (by[slug] ?? 0) + n }
     const w = workOf()
     return {
-      protos: all, designs, place: placeRoute(), me: session.conversation ?? null, conv: convOn, scope: scopeNow(), scopeName: scopeName(),
+      protos: all, designs, place: placeRoute(), me: me || null, conv: convOn, scope: scopeNow(), scopeName: scopeName(),
       building: new Set(Object.keys(session.building ?? {}).filter(k => buildingUntil(k) > Date.now())), counts: by,
       workSlug: w?.p.id ?? '', edits: st.status?.edits, agent: agentName(session.agent),
       work: w ? t('Working on {name}', { name: `${w.p.title} ${variantLabel(w.p, w.v.id)}` }) : '',
@@ -759,20 +759,28 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // What the page shows (the tree and the gallery): this conversation by default ('conv:<id>'),
   // another one opened from the past, the whole project ('all') or favorites ('favs'). Kept per project
   // in this browser; a page with no conversation (a share's viewer) shows the whole project.
+  // This conversation: the one that made the exploration the link opened, else the one that last
+  // started the app. Several conversations share the project's app, and each `proto up` rewrites
+  // session.conversation, so it is fixed for this tab when the page loads.
+  const meKey = `proto-me:${session.id}`
+  const landing = (() => { const slug = address().split('/')[1]; return slug ? byId(slug) : undefined })()
+  let me = landing?.session || (() => { try { return sessionStorage.getItem(meKey) || '' } catch { return '' } })() || session.conversation || ''
+  if (me && !framed) try { sessionStorage.setItem(meKey, me) } catch { /* private window */ }
+  // Kept as 'mine' rather than an id: the scope is remembered per project, for every tab.
   const scopeKey = `proto-scope:${session.id}`
-  let scope = (() => { try { return localStorage.getItem(scopeKey) || '' } catch { return '' } })()
+  let scope = landing ? 'mine' : (() => { try { return localStorage.getItem(scopeKey) || '' } catch { return '' } })()
   const scopeNow = () => {
     if (!convOn) return 'all'
     if (scope === 'all' || scope === 'favs') return scope
-    const sid = scope.startsWith('conv:') ? scope.slice('conv:'.length) : session.conversation
-    return sid && (sid === session.conversation || all.some(p => p.session === sid)) ? `conv:${sid}` : 'all'
+    const sid = scope.startsWith('conv:') ? scope.slice('conv:'.length) : me
+    return sid && (sid === me || all.some(p => p.session === sid)) ? `conv:${sid}` : 'all'
   }
   const convNames = () => st.status?.conversations ?? {}
   const scopeName = () => { const s = scopeNow(); return s.startsWith('conv:') ? convNames()[s.slice(5)] ?? '' : '' }
   function setScope(next: string) {
     if (!convOn || next === scopeNow()) return
-    scope = next
-    remember(scopeKey, next)
+    scope = next === `conv:${me}` ? 'mine' : next
+    remember(scopeKey, scope)
     // An exploration's own page has its card open: a new scope shows the whole of it instead.
     if (st.place.view === 'proto') { widenedAt = ''; return go({ view: 'session' }) }
     paintTree(); paintGallery()
@@ -789,12 +797,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let convsKey = '', convsJson = ''
   const convsOf = () => {
     const names = convNames(), live = all.filter(p => !p.archived)
-    const key = JSON.stringify([live.map(p => [p.id, p.session, p.picked, p.created]), names, session.conversation])
+    const key = JSON.stringify([live.map(p => [p.id, p.session, p.picked, p.created]), names, me])
     if (key === convsKey) return convsJson
     const by = new Map<string, Proto[]>()
     for (const p of live) { const k = p.session ?? ''; by.set(k, [...(by.get(k) ?? []), p]) }
-    const list = [...by].map(([sid, ps]) => ({ sid, name: names[sid] ?? (sid === session.conversation ? session.name : ''), at: ps.reduce((m, p) => p.created > m ? p.created : m, ''), n: ps.length, picked: ps.filter(p => p.picked).length }))
-      .sort((a, b) => a.sid === session.conversation ? -1 : b.sid === session.conversation ? 1 : b.at.localeCompare(a.at))
+    const list = [...by].map(([sid, ps]) => ({ sid, name: names[sid] ?? (sid === me && me === session.conversation ? session.name : ''), at: ps.reduce((m, p) => p.created > m ? p.created : m, ''), n: ps.length, picked: ps.filter(p => p.picked).length }))
+      .sort((a, b) => a.sid === me ? -1 : b.sid === me ? 1 : b.at.localeCompare(a.at))
     convsKey = key; convsJson = JSON.stringify(list)
     return convsJson
   }
@@ -864,7 +872,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     layers.style.opacity = show ? '0' : ''
     layers.style.pointerEvents = show ? 'none' : ''
     if (!show && !galleryMounted) return
-    const next: GalleryInput = { protos: scopedProtos(), scope: scopeNow(), me: session.conversation ?? '', convs: convsOf(), agent: agentName(session.agent), hidden: !show, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), open: proto, safe }
+    const next: GalleryInput = { protos: scopedProtos(), scope: scopeNow(), me, convs: convsOf(), agent: agentName(session.agent), hidden: !show, stamps: [...editsOf].map(([k, n]) => `${k}:${n}`).join(' '), open: proto, safe }
     if (gallerySnap && (Object.keys(next) as (keyof GalleryInput)[]).every(k => next[k] === gallerySnap![k])) return
     gallerySnap = next
     if (!galleryMounted && show) { galleryMounted = true; void import('./gallery/index').then(m => m.mountGallery(galleryHost, galleryApi)) }
@@ -4387,6 +4395,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const was = session.work
       const hostChanged = session.agent !== next.agent
       session = next
+      if (!me && next.conversation) me = next.conversation
       if (hostChanged) comments.hostChanged()
       builtFailed()
       watchExpiry()
