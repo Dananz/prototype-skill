@@ -763,8 +763,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // started the app. Several conversations share the project's app, and each `proto up` rewrites
   // session.conversation, so it is fixed for this tab when the page loads.
   const meKey = `proto-me:${session.id}`
-  const landing = (() => { const slug = address().split('/')[1]; return slug ? byId(slug) : undefined })()
-  let me = landing?.session || (() => { try { return sessionStorage.getItem(meKey) || '' } catch { return '' } })() || session.conversation || ''
+  // A reload keeps it, though the address then is wherever the tab went since.
+  const reloaded = ['reload', 'back_forward'].includes((performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type ?? '')
+  const kept = (() => { try { return sessionStorage.getItem(meKey) || '' } catch { return '' } })()
+  const landing = reloaded && kept ? undefined : (() => { const slug = address().split('/')[1]; return slug ? byId(slug) : undefined })()
+  let me = landing?.session || kept || session.conversation || ''
   if (me && !framed) try { sessionStorage.setItem(meKey, me) } catch { /* private window */ }
   // Kept as 'mine' rather than an id: the scope is remembered per project, for every tab.
   const scopeKey = `proto-scope:${session.id}`
@@ -860,7 +863,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // exploration's conversation, or to the whole project when it has none.
     // Only on arriving there: a scope chosen while on it stays.
     const target = show && st.place.view !== 'session' ? byId(st.place.proto) : undefined, arrived = target ? placeRoute() : ''
-    if (arrived !== widenedAt) { widenedAt = arrived; if (target && !inScope(target)) { scope = target.session && scopeNow() !== 'all' ? `conv:${target.session}` : 'all'; remember(scopeKey, scope); paintTree() } }
+    if (arrived !== widenedAt) { widenedAt = arrived; if (target && !inScope(target)) { scope = target.session && scopeNow() !== 'all' ? (target.session === me ? 'mine' : `conv:${target.session}`) : 'all'; remember(scopeKey, scope); paintTree() } }
     galleryHost.hidden = !show
     const full = show && deskMq.matches && !st.focus
     galleryHost.toggleAttribute('data-full', full)
