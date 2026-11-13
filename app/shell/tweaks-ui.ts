@@ -45,10 +45,15 @@ function foreground(color: string) {
   return rgb && rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722 > .179 ? '#000000' : '#ffffff'
 }
 
-// A select too long for a segmented row: previous and next around a list of its own, a track
+// Up to four options show all at once: side by side while each fits one line of its third or
+// quarter of the panel, else stacked one per row so a long label reads whole instead of wrapping.
+const segmented = (options: string[]) => options.length * Math.max(...options.map(o => o.length)) <= 36
+const listed = (options: string[]) => options.length <= 4 && options.every(o => o.length <= 60)
+
+// More options than that: previous and next around a list of its own, a track
 // of dots for where it is, and the arrow keys step it while the panel is open (shell.ts).
 export const stepped = (field: Tweak): field is Extract<Tweak, { kind: 'select' }> =>
-  field.kind === 'select' && !(field.options.length <= 4 && field.options.join('').length <= 56)
+  field.kind === 'select' && !listed(field.options)
 
 /** The option `by` steps from the current one, wrapping at the ends. */
 export const stepOption = (field: Extract<Tweak, { kind: 'select' }>, by: number) => {
@@ -103,13 +108,13 @@ function Field({ field, onChange, onReset, onActive }: { field: Tweak } & Pick<T
         })),
       h('p', { className: `mt-2 ${note}` }, `${presets.find(preset => preset.value.toLowerCase() === field.value.toLowerCase())?.name ?? t('Custom')} · ${field.value.toUpperCase()}`))
   })() : field.kind === 'select' ? (
-    field.options.length <= 4 && field.options.join('').length <= 56
-      ? h('div', { role: 'group', 'aria-labelledby': labelId, className: 'flex rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800' },
+    listed(field.options)
+      ? h('div', { role: 'group', 'aria-labelledby': labelId, className: `flex rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800 ${segmented(field.options) ? '' : 'flex-col gap-0.5'}` },
         ...field.options.map(option => h('button', {
           key: option, type: 'button', 'data-tweak-option': option, 'aria-pressed': field.value === option,
           onClick: () => onChange(field.id, option),
-          className: `min-h-9 min-w-0 flex-1 break-words rounded-md px-1 py-1.5 text-[11px] leading-4 [overflow-wrap:anywhere] ${field.value === option ? 'bg-white font-medium text-zinc-900 shadow-sm dark:bg-zinc-600 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'}`,
-        }, option)))
+          className: `min-h-9 min-w-0 break-words rounded-md py-1.5 leading-4 [overflow-wrap:anywhere] ${segmented(field.options) ? 'flex-1 px-1 text-[11px]' : 'px-2.5 text-start text-xs'} ${field.value === option ? 'bg-white font-medium text-zinc-900 shadow-sm dark:bg-zinc-600 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'}`,
+        }, h('bdi', null, option))))
       : h(Stepper, { field, labelId, onChange })
   ) : h('span', { className: 'relative flex shrink-0' },
     h('input', {
