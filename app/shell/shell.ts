@@ -242,11 +242,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     focus: false,
     open: null as string | null,
     /** The variant whose options are open (from its row in the sidebar), and where. */
-    vmenu: null as { proto: string; variant: string; x: number; y: number; hint?: boolean; el?: HTMLElement; art?: boolean } | null,
+    vmenu: null as { proto: string; variant: string; x: number; y: number; beside?: { left: number; right: number }; hint?: boolean; el?: HTMLElement; art?: boolean } | null,
     /** The popover a variant's options opened from (the switcher), kept open under them. */
     under: null as string | null,
     /** The right-click menu of what is not a variant: where, and on what. */
-    ctx: null as { x: number; y: number; on: CtxOn } | null,
+    ctx: null as { x: number; y: number; beside?: { left: number; right: number }; on: CtxOn } | null,
     archived: false,
     side: q.has('side') ? q.get('side') !== '0' : localStorage.getItem('proto-side') !== '0',
     sideW: Math.min(SIDE_MAX, Math.max(SIDE_MIN, Number(localStorage.getItem('proto-side-w')) || SIDE_W)),
@@ -2682,7 +2682,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // A row's own options (its ⋯): the same menu as right-click, beside the button.
     if (name === 'vm') {
       const r = el.getBoundingClientRect()
-      return openVmenu(arg, arg2, rtl ? r.left - 326 : r.right + 6, r.top)
+      return openVmenu(arg, arg2, rtl ? r.left - 326 : r.right + 6, r.top, { beside: besideOf(el) })
     }
     act(name, arg, arg2, arg3)
     // Opened from the keyboard, the switcher's columns take the focus, on the row lit last.
@@ -2775,7 +2775,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // The columns' variant rows open before the touch check: a long press there always did.
     if (on.kind !== 'variant' && (e as PointerEvent).pointerType === 'touch') return
     e.preventDefault()
-    openCtx(on, e.clientX, e.clientY)
+    openCtx(on, e.clientX, e.clientY, besideOf(e.target as Element))
   })
   // Right-click inside the artboard's frame: its document keeps its events, so the view hands them out here.
   frameMenus.add((e, x, y) => {
@@ -3636,7 +3636,12 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // Right-click on a row (or its ⋯): Comment on this, Pick, More like this, Build, Try it and copy
   // options, for that variant whether or not it is the one on screen. Only the one on screen has
   // its Try it list and copy lines read, so another's extras always offer to add them.
-  function openVmenu(proto: string, variant: string, x: number, y: number, more: { hint?: boolean; el?: HTMLElement; art?: boolean } = {}) {
+  // The sidebar a menu was opened from (docked, the tree, or the drawer): the menu opens beside it when there is room.
+  function besideOf(el: Element | null | undefined) {
+    const r = el?.closest('[data-side], [data-tree-side], [data-drawer]')?.getBoundingClientRect()
+    return r && r.width ? { left: r.left, right: r.right } : undefined
+  }
+  function openVmenu(proto: string, variant: string, x: number, y: number, more: { hint?: boolean; el?: HTMLElement; art?: boolean; beside?: { left: number; right: number } } = {}) {
     st.vmenu = { proto, variant, x, y, ...more }
     st.under = st.open === 'switch' ? 'switch' : null
     st.open = 'vmenu'
@@ -3671,7 +3676,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     drawVmenu({
     popFor: 'vmenu',
     open: st.open === 'vmenu', subject: vmenuSubject(), anchor: () => null,
-    at: st.vmenu ? { x: st.vmenu.x, y: st.vmenu.y } : undefined,
+    at: st.vmenu ? { x: st.vmenu.x, y: st.vmenu.y } : undefined, beside: st.vmenu?.beside,
     // Closing the options goes back to the switcher they opened from, still open.
     onClose: () => { if (st.open === 'vmenu') { st.open = st.under; st.under = null; render() } },
     onComment: () => { const m = st.vmenu; st.under = null; if (m) commentWhole(m.proto, m.variant) },
@@ -3732,16 +3737,16 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
     return null
   }
-  function openCtx(on: CtxOn, x: number, y: number) {
+  function openCtx(on: CtxOn, x: number, y: number, beside?: { left: number; right: number }) {
     st.ctx = null
-    if (on.kind === 'variant') return openVmenu(on.proto, on.variant, x, y, { hint: true })
+    if (on.kind === 'variant') return openVmenu(on.proto, on.variant, x, y, { hint: true, beside })
     if (on.kind === 'art') {
       const pl = st.place
       if (pl.view !== 'variant') return
       return openVmenu(pl.proto, pl.variant, x, y, { hint: true, art: true, el: on.el })
     }
     st.vmenu = null
-    st.ctx = { x, y, on }
+    st.ctx = { x, y, beside, on }
     st.open = 'ctx'
     refreshStatus()
     render()
@@ -3852,7 +3857,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function paintCtx() {
     const m = st.open === 'ctx' ? st.ctx : null, model = m && ctxRows(m.on)
     drawCtx({
-      open: !!m && !!model, at: m ? { x: m.x, y: m.y } : null,
+      open: !!m && !!model, at: m ? { x: m.x, y: m.y } : null, beside: m?.beside,
       title: model?.title, sub: model?.sub, rows: model?.rows ?? [],
       onClose: () => { if (st.open === 'ctx') { st.open = null; render() } },
     })
