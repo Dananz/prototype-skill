@@ -766,17 +766,21 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // A tab with none of these has no conversation of its own and follows the one working now.
   const meKey = `proto-me:${session.id}`
   const reloaded = ['reload', 'back_forward'].includes((performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type ?? '')
+  // '*': the tab had no conversation of its own, and a reload keeps it that way.
   const kept = (() => { try { return sessionStorage.getItem(meKey) || '' } catch { return '' } })()
   const named = q.get('c') || ''
   const landing = named || (reloaded && kept) ? undefined : (() => { const slug = address().split('/')[1]; return slug ? byId(slug) : undefined })()
   const known = () => [session.conversation, ...all.flatMap(p => [p.owner, p.session])].filter((x): x is string => !!x)
-  const resolve = (c: string) => known().find(x => x === c) ?? known().find(x => x.startsWith(c)) ?? ''
-  let me = named ? resolve(named) : landing?.owner || landing?.session || kept
+  // The link's id, or its end for a UUID (proto.mjs linkFor); two that would fit leave it unknown.
+  const resolve = (c: string) => { const ids = new Set(known()); if (ids.has(c)) return c; const fit = [...ids].filter(x => x.endsWith(c)); return fit.length === 1 ? fit[0] : '' }
+  /** This conversation's id as links carry it (proto.mjs linkFor). */
+  const shortOf = (id: string) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id) ? id.slice(-8) : id
+  let me = named ? resolve(named) : landing?.owner || landing?.session || (kept === '*' ? '' : kept)
   // A conversation the link names that nothing here knows yet (it has made nothing): taken once it shows up.
   let wanted = named && !me ? named : ''
   const tied = !!(me || named)
   if (!tied) me = session.conversation || ''
-  const keepMe = () => { if (tied && me && !framed) try { sessionStorage.setItem(meKey, me) } catch { /* private window */ } }
+  const keepMe = () => { if (!framed && (me || !tied)) try { sessionStorage.setItem(meKey, tied ? me : '*') } catch { /* private window */ } }
   keepMe()
   /** Takes in a new session.json or prototype list; true when this tab's conversation changed. */
   function refreshMe() {
@@ -786,7 +790,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   // Kept as 'mine' rather than an id: the scope is remembered per project, for every tab.
   const scopeKey = `proto-scope:${session.id}`
-  let scope = landing || named ? 'mine' : (() => { try { return localStorage.getItem(scopeKey) || '' } catch { return '' } })()
+  let scope = landing || (named && !reloaded) ? 'mine' : (() => { try { return localStorage.getItem(scopeKey) || '' } catch { return '' } })()
   const scopeNow = () => {
     if (!convOn) return 'all'
     if (scope === 'all' || scope === 'favs') return scope
@@ -3866,7 +3870,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       case 'session':
         return { title: session.name, rows: [
           { id: 'overview', label: t('Overview'), icon: 'grid', run: () => go({ view: 'session' }) },
-          { id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(session.url || location.href) },
+          { id: 'link', label: t('Copy link'), icon: 'link', run: () => copyText(session.url ? `${session.url}${me ? `?c=${encodeURIComponent(shortOf(me))}` : ''}` : location.href) },
           { id: 'keep', label: t('Keep this session'), icon: 'pin', on: !!st.status?.keep, run: () => act('keep', '', '') },
         ] }
       case 'comment': {

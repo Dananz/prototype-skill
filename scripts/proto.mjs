@@ -210,9 +210,11 @@ function projectRoot() {
   const git = run('git', ['rev-parse', '--show-toplevel'])
   return git.status === 0 ? git.stdout.trim() : process.cwd()
 }
-// A page link for the user, naming this conversation (?c=, the start of its id): the tab it opens shows this
-// conversation's work and follows it, though other conversations share the app (app/shell/shell.ts).
-const linkFor = (base, path = '') => base ? `${base}${path}?c=${encodeURIComponent(sessionId().slice(0, 8))}` : ''
+// A page link for the user, naming this conversation (?c=): the tab it opens shows this conversation's work
+// and follows it, though other conversations share the app (app/shell/shell.ts). A UUID goes as its last 8
+// characters, which are random in every version (a v7's first ones are its time).
+const shortId = id => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id) ? id.slice(-8) : id
+const linkFor = (base, path = '') => base ? `${base}${path}?c=${encodeURIComponent(shortId(sessionId()))}` : ''
 function sessionId() {
   const id = flags.session || process.env.PROTO_SESSION_ID || process.env.CODEX_THREAD_ID || process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID
   if (!id || id === true) die('no session id. Pass --session <id> on every call, or set PROTO_SESSION_ID to one stable, unique name for this conversation.')
