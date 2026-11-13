@@ -16,6 +16,7 @@ import { variantRef } from '../variants'
 import { LinksTray } from './links'
 import { aboutOf, ACTION, Body, Icon, Listening, MOD, PinDot, PRIMARY, Reply, since, spanOf, SrcTag, ViewChip, Working, PictureStrip } from './ui'
 import { besideWords, InlineImage } from './inline-image'
+import { isSendKey, sendKeyLabel } from './enter-sends'
 
 export function useRows() {
   const { store, act } = useCtx()
@@ -174,7 +175,7 @@ function AnswerBox({ r, empty, update }: { r: Row; empty: { open: boolean; note:
     initial: note, autoFocus: true, about: { proto: r.item.proto, variant: r.item.variant },
     onChange: n => update({ note: n }),
     onKey: e => {
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() }
+      if (isSendKey(e)) { e.preventDefault(); void send() }
       else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel() }
     },
   })
@@ -186,7 +187,7 @@ function AnswerBox({ r, empty, update }: { r: Row; empty: { open: boolean; note:
       {error && <span role="alert" className="block px-1.5 pb-1 text-[11px] text-rose-600 dark:text-rose-400">{error}</span>}
       <span className="flex items-center justify-end gap-1">
         <button onClick={cancel} className="h-7 rounded-lg px-2 text-[11px] font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>
-        <button data-shoot="comment-answer-send" onClick={() => void send()} disabled={field.empty || busy} title={`${t('Send to {agent}', { agent })} · ${MOD} Enter`} className={`inline-flex h-7 items-center gap-1 rounded-lg ps-2 pe-2.5 text-[11px] font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name="send" className="size-3" />{busy ? t('Sending…') : t('Send')}</button>
+        <button data-shoot="comment-answer-send" onClick={() => void send()} disabled={field.empty || busy} title={`${t('Send to {agent}', { agent })} · ${sendKeyLabel()}`} className={`inline-flex h-7 items-center gap-1 rounded-lg ps-2 pe-2.5 text-[11px] font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name="send" className="size-3" />{busy ? t('Sending…') : t('Send')}</button>
       </span>
     </span>
   )

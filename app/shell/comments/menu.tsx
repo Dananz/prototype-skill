@@ -11,6 +11,7 @@ import { useStore } from './store'
 import { Icon, MOD, PRIMARY, Pulse } from './ui'
 import { PLACEHOLDER, useTagField } from './tag-field'
 import type { Note } from './types'
+import { isSendKey } from './enter-sends'
 
 /** A row that asks first: a note (and a count, where there is one) before it sends. */
 export type MenuAsk = {
@@ -115,7 +116,7 @@ export function AskForm({ ask, onBack, onDone }: { ask: MenuAsk; onBack: () => v
   return (
     <div className="p-2" onKeyDown={(e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!sending.current) onBack() }
-      else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() }
+      else if (isSendKey(e)) { e.preventDefault(); void send() }
     }}>
       <div className="flex items-center gap-1 pb-1.5">
         <button onClick={() => { if (!sending.current) onBack() }} aria-label={t('Back')} className="grid size-8 shrink-0 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-white"><Icon name="left" /></button>

@@ -15,6 +15,7 @@ import { chipNode, readEditor } from './composer'
 import { MentionShelf, useMentionShelf } from './mention-shelf'
 import { routeOfTag, TAG_EVENT, type TagDrop } from '../tag-drag'
 import type { Note, Seg, Target } from './types'
+import { isSendKey } from './enter-sends'
 
 type Opts = {
   /** Who a picked element goes back to; by default this box alone. */
@@ -24,7 +25,7 @@ type Opts = {
   /** What it starts with (a reply kept while its row was closed). */
   initial?: Note
   onChange?: (n: Note) => void
-  /** Keys the box does not take itself: ⌘↩, Esc. */
+  /** Keys the box does not take itself: the send key (isSendKey), Esc. */
   onKey?: (e: KeyboardEvent<HTMLDivElement>) => void
   /** Before a picked element comes back, open what the box is in; returns how long that takes, in ms. */
   reopen?: () => number
@@ -244,11 +245,11 @@ export function useTagField(opts: Opts) {
     if (e.nativeEvent.isComposing) return
     if (mention && shelf.onKey(e)) { e.preventDefault(); e.stopPropagation(); return }
     if (mention && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMention(null); return }
-    if (importing.current && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); return }
+    if (importing.current && isSendKey(e)) { e.preventDefault(); return }
     optsRef.current.onKey?.(e)
     if (e.defaultPrevented) return
-    // Enter alone starts a new line, as it does in a text field.
-    if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); document.execCommand('insertLineBreak') }
+    // Enter alone starts a new line, as it does in a text field, unless Enter sends (then Shift Enter does).
+    if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); if (!isSendKey(e)) document.execCommand('insertLineBreak') }
   }
   const picking = s.wholeTag && s.tagOwner === owner
   const props = {

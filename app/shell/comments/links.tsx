@@ -17,6 +17,7 @@ import { useAgentName, useCtx, type Host } from './ctx'
 import { useStore, type Store } from './store'
 import { Icon } from './ui'
 import type { LinkComment, LinkTray } from './types'
+import { isSendKey } from './enter-sends'
 
 type Result = { id: string; result: 'sent' | 'already_sent' | 'deleted' | 'unknown' | 'ambiguous' | 'error'; error?: string }
 type Answer = { tray?: LinkTray; error?: string; results?: Result[]; batch?: string | null; pending?: boolean }
@@ -159,7 +160,7 @@ function Card({ c, parent, picked, onPick, busy, run }: { c: LinkComment; parent
         <div className="mt-2 space-y-1.5">
           <textarea ref={box} data-link-reply-box rows={2} value={text} onChange={e => setText(e.target.value)} dir="auto" maxLength={4000}
             aria-label={t('Reply to {login}', { login })} placeholder={t('Everyone on the link sees this')}
-            onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setReplying(false) } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void reply() } }}
+            onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setReplying(false) } else if (isSendKey(e)) { e.preventDefault(); void reply() } }}
             className="block w-full resize-none rounded-xl bg-zinc-900/[.05] px-3 py-2 text-[12.5px] leading-[18px] outline-none placeholder:text-zinc-400 focus:ring-2 focus:ring-proto-primary-ring dark:bg-white/[.08]" />
           <div className="flex justify-end gap-1">
             <button type="button" onClick={() => setReplying(false)} className={TEXT_BTN}>{t('Cancel')}</button>
