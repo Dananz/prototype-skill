@@ -719,7 +719,7 @@ export function OptionsLayer() {
         const el = i.target ? find(st, i.target) : null
         if (!el) return null
         const b = shapeIn(el, host.layer), at = dotAt({ key: i.key, n: 0, box: b, rtl: styleOf(el).direction === 'rtl' })
-        return <span key={`a-${i.facet}`} data-option-applied="" className="absolute grid size-4 place-items-center rounded-full bg-emerald-500 text-white shadow-[0_0_0_2px_white] dark:shadow-[0_0_0_2px_#18181b]" style={{ left: at.x - 8, top: at.y - 8 }}><Icon name="check" className="size-2.5" /></span>
+        return <span key={`a-${i.facet}`} data-option-applied="" className="absolute z-20 grid size-4 place-items-center rounded-full bg-emerald-500 text-white shadow-[0_0_0_2px_white] dark:shadow-[0_0_0_2px_#18181b]" style={{ left: at.x - 8, top: at.y - 8 }}><Icon name="check" className="size-2.5" /></span>
       })}
       {asking.map(a => {
         const el = a.target ? find(st, a.target) : null
