@@ -759,7 +759,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // What the page shows (the tree and the gallery): this conversation by default ('conv:<id>'),
   // another one opened from the past, the whole project ('all') or favorites ('favs'). Kept per project
   // in this browser; a page with no conversation (a share's viewer) shows the whole project.
-  // This conversation: the one that made the exploration the link opened, else the one that last
+  // This conversation: the one working on the exploration the link opened (`proto add` prints it), else the one that last
   // started the app. Several conversations share the project's app, and each `proto up` rewrites
   // session.conversation, so it is fixed for this tab when the page loads.
   const meKey = `proto-me:${session.id}`
@@ -767,7 +767,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const reloaded = ['reload', 'back_forward'].includes((performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type ?? '')
   const kept = (() => { try { return sessionStorage.getItem(meKey) || '' } catch { return '' } })()
   const landing = reloaded && kept ? undefined : (() => { const slug = address().split('/')[1]; return slug ? byId(slug) : undefined })()
-  let me = landing?.session || kept || session.conversation || ''
+  let me = landing?.owner || landing?.session || kept || session.conversation || ''
   if (me && !framed) try { sessionStorage.setItem(meKey, me) } catch { /* private window */ }
   // Kept as 'mine' rather than an id: the scope is remembered per project, for every tab.
   const scopeKey = `proto-scope:${session.id}`
