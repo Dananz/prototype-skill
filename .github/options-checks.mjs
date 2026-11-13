@@ -20,11 +20,13 @@ export default function Variant() {
   const [tone, setTone] = useState('#8b5cf6')
   const [style, setStyle] = useState('Filled')
   const [loose, setLoose] = useState('One')
+  const [line, setLine] = useState(true)
   useTweaks([
     { id: 'row-icon', kind: 'select', label: 'Row icon', value: icon, defaultValue: 'Drop', options: Object.keys(ICONS), set: setIcon },
     { id: 'heading-size', kind: 'select', label: 'Heading size', value: size, defaultValue: 'Medium', options: Object.keys(SIZES), set: setSize },
     { id: 'tone', kind: 'color', label: 'Status color', value: tone, defaultValue: '#8b5cf6', presets: [{ name: 'Violet', value: '#8b5cf6' }, { name: 'Green', value: '#22c55e' }, { name: 'Amber', value: '#f59e0b' }], set: setTone },
     { id: 'cta', kind: 'select', label: 'Start button style', value: style, defaultValue: 'Filled', options: ['Filled', 'Soft', 'Outline'], set: setStyle },
+    { id: 'divider', kind: 'toggle', label: 'Row divider', value: line, defaultValue: true, set: setLine },
     { id: 'loose', kind: 'select', label: 'Not on the design', value: loose, defaultValue: 'One', options: ['One', 'Two'], set: setLoose },
   ])
   const copy = useCopy([{ id: 'heading', label: 'Heading', options: ['Three things waiting', 'You have three updates'] }])
@@ -35,6 +37,7 @@ export default function Variant() {
       <span data-tweak="row-icon" className="inline-flex"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d={ICONS[icon]} /></svg></span>
       <span data-tweak="tone" style={{ color: tone }}>Changed</span>
     </div>
+    {[1, 2].map(n => <div key={n} data-tweak="divider" className="my-3" style={{ height: 1, background: line ? '#d4d4d8' : 'transparent' }} />)}
     <button data-tweak="cta" className="mt-6 rounded-lg px-4 py-2" style={style === 'Filled' ? { background: '#7c3aed', color: 'white' } : style === 'Soft' ? { background: '#ede9fe', color: '#5b21b6' } : { border: '1px solid #7c3aed', color: '#5b21b6' }}>Start</button>
   </main>
 }`)
@@ -55,7 +58,7 @@ export default function Variant() {
   const page = await openPage(`${local}options-check/A`, { errors: true })
   try {
     // Dots on the marked elements only: the control with no element on the design has none.
-    await until(page, `${dots} === ${JSON.stringify(['copy:heading tweak:heading-size', 'tweak:cta', 'tweak:row-icon', 'tweak:tone'].sort().join('|'))}`, 'the dots are not exactly on the marked elements')
+    await until(page, `${dots} === ${JSON.stringify(['copy:heading tweak:heading-size', 'tweak:cta', 'tweak:divider', 'tweak:row-icon', 'tweak:tone'].sort().join('|'))}`, 'the dots are not exactly on the marked elements')
 
     // The panel opens beside the element, never over it, with a picture per option.
     await click(page, '[data-option-dot="tweak:row-icon"]')
@@ -78,6 +81,36 @@ export default function Variant() {
     assert(await page.run(`!!document.querySelector('[data-options-pop]')`), 'the panel closed on a click')
     await page.key('Escape')
     await until(page, `!document.querySelector('[data-options-pop]') && ${design('icon')} === 'Bolt'`, 'Esc did not close the panel, or lost the choice')
+
+    // The keyboard: arrows move between tiles and show each (never the variants), Enter keeps.
+    await click(page, '[data-option-dot="tweak:row-icon"]')
+    await until(page, `document.querySelectorAll('[data-options-pop] [data-option-picture]').length === 5 && !document.querySelector('[data-option-cover]')`, 'the panel did not open again')
+    const path = await page.run('location.pathname')
+    await page.key('ArrowRight')
+    await until(page, `${design('icon')} === 'Plus' && document.activeElement?.dataset.optionTile === '4'`, 'ArrowRight did not move to the next tile and show it')
+    await page.key('ArrowLeft'); await page.key('ArrowLeft')
+    await until(page, `${design('icon')} === 'Ring' && document.activeElement?.dataset.optionTile === '2'`, 'ArrowLeft did not move back')
+    await page.enter()
+    await until(page, `${design('icon')} === 'Ring' && document.querySelector('[data-options-pop] [data-option-tile="2"]')?.getAttribute('aria-pressed') === 'true'`, 'Enter did not keep the tile')
+    await page.key('ArrowRight'); await page.enter()
+    await until(page, `${design('icon')} === 'Bolt'`, 'Enter on the next tile did not keep it')
+    assert(await page.run('location.pathname') === path, 'the arrows moved to another variant')
+    await page.key('Escape')
+    await until(page, `!document.querySelector('[data-options-pop]') && ${design('icon')} === 'Bolt'`, 'Esc after the keys lost the choice')
+
+    // A toggle on a repeated hairline: Shown pictured, Hidden as an empty mark, both rows together.
+    await click(page, '[data-option-dot="tweak:divider"]')
+    await until(page, `document.querySelectorAll('[data-options-pop] [data-option-tile]').length === 2 && !document.querySelector('[data-option-cover]') && !!document.querySelector('[data-options-pop] [data-option-tile="0"] [data-option-picture]')`, 'the divider panel has no picture of the line')
+    assert(await page.run(`/2/.test(document.querySelector('[data-options-pop]')?.textContent ?? '') && !document.querySelector('[data-options-pop] [data-option-tile="1"] [data-option-picture]')`), 'the divider panel does not say both rows change, or pictures Hidden')
+    await page.key('Escape')
+    await until(page, `!document.querySelector('[data-options-pop]')`, 'Esc did not close the divider panel')
+
+    // Words: the heading's other tab.
+    await click(page, '[data-option-dot="copy:heading tweak:heading-size"]')
+    await until(page, `document.querySelectorAll('[data-options-pop] [data-option-tile]').length === 2`, 'the heading words are not listed')
+    await click(page, '[data-options-pop] [data-option-tile="1"]')
+    await until(page, `window.__protoDesign()?.querySelector('[data-copy=heading]')?.textContent === 'You have three updates'`, 'choosing words did not change the heading')
+    await page.key('Escape')
 
     // Two facets are tabs; an option that resizes the element moves neither the panel nor its dot.
     await click(page, '[data-option-dot="copy:heading tweak:heading-size"]')
@@ -105,7 +138,7 @@ export default function Variant() {
 
     // The changes wait in the island; holding Original shows the design as it was.
     await until(page, `!!document.querySelector('[data-options-tray] [data-options-send]')`, 'the island has no changes to send')
-    assert(await page.run(`document.querySelectorAll('[data-options-chip]').length === 2`), 'the island does not list the two changed elements')
+    assert(await page.run(`document.querySelectorAll('[data-options-chip]').length === 3`), 'the island does not list the three changed elements')
     // The island grows to fit the tray (a 500 ms transition): pressed once it has.
     await wait(700)
     const orig = await box(page, '[data-options-tray] [data-option-original]')
@@ -117,16 +150,38 @@ export default function Variant() {
 
     // Send: one batch, one comment per changed value on its element, read back with proto inbox.
     await click(page, '[data-options-tray] [data-options-send]')
-    await until(page, `!!document.querySelector('[data-options-sending]') && document.querySelectorAll('[data-option-waiting]').length === 2`, 'after Send the elements do not wait for the agent')
+    await until(page, `!!document.querySelector('[data-options-sending]') && document.querySelectorAll('[data-option-waiting]').length === 3`, 'after Send the elements do not wait for the agent')
     let inbox = ''
     for (let i = 0; i < 40 && !/action: option/.test(inbox); i++) { inbox = proto(['inbox'], { stdout: true }); if (!/action: option/.test(inbox)) await wait(250) }
     assert(/Row icon \(useTweaks row-icon\): “Bolt”, option 4 of 5/.test(inbox), 'the inbox has no option comment for the row icon')
     assert(/Start button style \(useTweaks cta\): “Soft”, option 2 of 3/.test(inbox), 'the inbox has no option comment for the button style')
     assert((inbox.match(/action: option/g) || []).length === 2, 'the batch does not have exactly the two changed values')
+    assert(/Heading \(heading\): “You have three updates”, option 2 of 2/.test(inbox) && /action: copy/.test(inbox), 'the batch has no copy comment for the heading words')
     const batch = inbox.match(/batch (\S+)/)?.[1]
     assert(batch, 'no batch id in the inbox')
     proto(['reply', batch, 'Set both as the defaults', '--done'])
     await until(page, `!!document.querySelector('[data-options-tray] [data-options-undo]')`, 'the agent\'s reply did not show as applied', 15000)
+
+    // More options and To prototype: asked at once, waited for, and settled by the agent's reply.
+    const seen = new Set([batch])
+    const latest = () => { const id = [...proto(['inbox'], { stdout: true }).matchAll(/batch (\S+)/g)].map(m => m[1]).find(x => !seen.has(x)); if (id) seen.add(id); return id }
+    await click(page, '[data-option-dot="tweak:cta"]')
+    await until(page, `!!document.querySelector('[data-options-pop] [data-option-promote]')`, 'the button style panel did not open')
+    await click(page, '[data-options-pop] [data-option-more]')
+    await until(page, `!!document.querySelector('[data-options-pop] [data-option-asking="more"]')`, 'More options does not wait for the agent')
+    let more
+    for (let i = 0; i < 40 && !more; i++) { more = latest(); if (!more) await wait(250) }
+    assert(more, 'More options sent nothing')
+    proto(['reply', more, 'Added three', '--done'])
+    await until(page, `!document.querySelector('[data-options-pop] [data-option-asking="more"]')`, 'the More options wait did not end with the reply', 15000)
+    await click(page, '[data-options-pop] [data-option-promote]')
+    let promote
+    for (let i = 0; i < 40 && !promote; i++) { promote = latest(); if (!promote) await wait(250) }
+    assert(promote, 'To prototype sent nothing')
+    proto(['reply', promote, 'Built options-check-cta', '--done'])
+    await until(page, `!!document.querySelector('[data-options-pop] [data-option-promoted]')`, 'To prototype did not say it is in the tree after the reply', 15000)
+    await page.key('Escape')
+    await until(page, `!!document.querySelector('[data-option-dot="tweak:cta"] [class*="proto-option-pulse"]') || !!document.querySelector('[data-option-dot="tweak:cta"] span[class*=pulse]')`, 'the dot whose options arrived does not pulse')
   } finally { page.close() }
 
   // A variant whose elements carry data-tweak but declare no controls has no dots.

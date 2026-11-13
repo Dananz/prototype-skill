@@ -2942,6 +2942,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       return
     }
     // On a tour the arrows walk the flow's screens, not the screen's options.
+    // In the options panel (comments/options.tsx) and on its dots, the arrows move between options.
+    if ((e.key === FWD || e.key === BACK || e.key === 'ArrowUp' || e.key === 'ArrowDown') && t.closest?.('[data-options-pop], [data-option-dot], [data-options-sheet]')) return
     if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant' && tour) { e.preventDefault(); act('tour', e.key === FWD ? 'next' : 'prev', '') }
     else if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant') { e.preventDefault(); step(e.key === FWD ? 1 : -1) }
     else if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') stateKey(e, t)

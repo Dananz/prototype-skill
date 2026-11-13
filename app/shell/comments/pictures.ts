@@ -110,24 +110,33 @@ function still(host: HTMLElement, on: boolean) {
 
 const frame = (win: Window) => new Promise<void>(r => win.requestAnimationFrame(() => r()))
 
-let running: { cancel: () => void } | null = null
-/** Stops drawing now (the pointer moved onto a tile, the panel closed). */
+let running: { cancel: () => void; done: Promise<void> } | null = null
+/** Stops drawing now (the panel closed, another facet is on show). */
 export function stopDrawing() { running?.cancel() }
+// The element as it was when a facet's pictures were drawn, with the same choices: if it reads
+// otherwise now, its source changed (a hot reload), so the pictures are drawn again.
+const drawnFrom = new Map<string, string>()
 
 /**
  * Draws the picture of every option of a facet not drawn yet. `el` finds the element again (a
  * render may replace it). Resolves once done or stopped; the facet shows its choice again either way.
  */
 export async function drawFacet(host: HTMLElement, spot: Spot, f: Facet, el: () => HTMLElement | null, onCover: (on: boolean) => void) {
-  stopDrawing()
+  // One run at a time: the one stopped finishes (and puts the design back) before this one starts.
+  const before = running
+  before?.cancel()
+  if (before) await before.done
   const first = el()
   if (!first || f.kind === 'words') return
   const key = keyOf(host, spot, f, first)
+  const from = `${key}@${JSON.stringify(choiceOf(host, f))}`
+  if (drawnFrom.has(from) && drawnFrom.get(from) !== first.outerHTML) for (let i = 0; i < f.options.length; i++) pictures.delete(`${key}#${i}`)
+  drawnFrom.set(from, first.outerHTML)
   const todo = f.options.map((_, i) => i).filter(i => !pictures.has(`${key}#${i}`))
   if (!todo.length) return
   const win = host.ownerDocument.defaultView ?? window
-  let stopped = false
-  const mine = { cancel: () => { stopped = true } }
+  let stopped = false, finish = () => {}
+  const mine = { cancel: () => { stopped = true }, done: new Promise<void>(r => { finish = r }) }
   running = mine
   onCover(true)
   still(host, true)
@@ -153,5 +162,6 @@ export async function drawFacet(host: HTMLElement, spot: Spot, f: Facet, el: () 
     still(host, false)
     onCover(false)
     if (running === mine) running = null
+    finish()
   }
 }

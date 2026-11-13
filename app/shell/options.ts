@@ -86,9 +86,18 @@ export function spotAt(host: Element | null | undefined, el: Element | null): Sp
 }
 
 // ---------- what each facet shows ----------
-const live = (host: Element, f: Facet): Value | undefined => f.from === 'copy'
-  ? copy.choiceOf(host, f.id)?.text ?? String(f.options[0].value)
-  : tweaks.of(host).find(x => x.id === f.id)?.value
+// A choice put back after something showed for now reaches the control's value only once the
+// design renders again: until then the control still reports what showed, so it is read from here.
+// (For a second at most: a value set elsewhere after that is the design's own.)
+const settling = new WeakMap<Element, Map<string, { v: Value; at: number }>>()
+function live(host: Element, f: Facet): Value | undefined {
+  if (f.from === 'copy') return copy.choiceOf(host, f.id)?.text ?? String(f.options[0].value)
+  const v = tweaks.of(host).find(x => x.id === f.id)?.value, s = settling.get(host)
+  const w = s?.get(f.key)
+  if (w) { if (same(v, w.v) || performance.now() - w.at > 1000) s!.delete(f.key); else return w.v }
+  return v
+}
+const settle = (host: Element, key: string, v: Value) => { let s = settling.get(host); if (!s) settling.set(host, s = new Map()); s.set(key, { v, at: performance.now() }) }
 
 type Over = { host: Element; key: string; index: number }
 const state = shared('options', () => ({
@@ -130,12 +139,12 @@ function sync(host: Element) {
   for (const s of spotsOf(host)) for (const f of s.facets) all.set(f.key, f)
   const kept = state.kept.get(host)
   // A facet shown for now whose element went (a hot reload): its choice goes back all the same.
-  for (const [key, v] of kept ?? []) if (!all.has(key)) { kept!.delete(key); put(host, key.slice(6), v) }
+  for (const [key, v] of kept ?? []) if (!all.has(key)) { kept!.delete(key); settle(host, key, v); put(host, key.slice(6), v) }
   for (const f of all.values()) {
     const w = wanted(host, f)
     if (f.from === 'copy') { copy.hold(host, f.id, w === null ? null : String(w)); continue }
     if (w === null) {
-      if (kept?.has(f.key)) { const v = kept.get(f.key)!; kept.delete(f.key); put(host, f.id, v) }
+      if (kept?.has(f.key)) { const v = kept.get(f.key)!; kept.delete(f.key); settle(host, f.key, v); put(host, f.id, v) }
       continue
     }
     let k = state.kept.get(host)
@@ -184,7 +193,7 @@ export const options = {
     else {
       const k = state.kept.get(host)
       if (k?.has(f.key)) k.set(f.key, o.value)
-      else put(host, f.id, o.value)
+      else { settle(host, f.key, o.value); put(host, f.id, o.value) }
     }
     sync(host)
   },

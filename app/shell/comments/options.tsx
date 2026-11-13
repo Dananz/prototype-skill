@@ -286,12 +286,20 @@ export function fitOf(pics: (Picture | undefined)[], w: number, h: number) {
   const ps = pics.filter(still)
   if (!ps.length) return 1
   if (ps.every(p => p.text)) return Math.min(1.1, ...ps.map(p => (h - 14) / p.h))
-  return Math.min(2.2, ...ps.map(p => Math.min((w - 12) / p.w, (h - 10) / p.h)))
+  const solid = ps.filter(p => p.h > 4 && p.w > 4)
+  return solid.length ? Math.min(2.2, ...solid.map(p => Math.min((w - 12) / p.w, (h - 10) / p.h))) : 1
 }
 /** The picture of an option, at the facet's scale. */
 function Pic({ pic, w, k }: { pic: Picture | undefined; w: number; k: number }) {
   if (!pic || pic === 'failed') return null
   if (pic === 'empty') return <span className="size-6 rounded-md border border-dashed border-zinc-400/70" />
+  // A hairline: as long as the tile allows, a few px thick, so the line shows at all.
+  if (pic.h <= 4 || pic.w <= 4) {
+    const across = pic.h <= 4, kx = across ? (w - 16) / pic.w : Math.max(k, 3 / pic.w), ky = across ? Math.max(k, 3 / pic.h) : (w - 16) / pic.h
+    return <span aria-hidden className="pointer-events-none relative block shrink-0 overflow-hidden" style={{ width: pic.w * kx, height: pic.h * ky }}>
+      <span className="absolute start-0 top-0 block origin-top-left rtl:origin-top-right" style={{ width: pic.w, height: pic.h, transform: `scale(${kx}, ${ky})` }} dangerouslySetInnerHTML={{ __html: pic.html }} />
+    </span>
+  }
   const cut = pic.w * k > w - 8
   return (
     <span aria-hidden className={`pointer-events-none relative block shrink-0 overflow-hidden ${cut ? '[mask-image:linear-gradient(to_right,#000_80%,transparent)] rtl:[mask-image:linear-gradient(to_left,#000_80%,transparent)]' : ''}`} style={{ width: Math.min(pic.w * k, w - 8), height: pic.h * k }}>
@@ -322,9 +330,10 @@ function Tile({ f, i, pic, k, bg, big, drawing, chosenNow, previewed, onPick, on
     <button type="button" data-option-tile={i} aria-pressed={chosenNow} aria-label={o.name}
       onPointerMove={enter} onFocus={() => onPreview(true)} onBlur={() => onPreview(false)} onClick={onPick}
       className={`group flex shrink-0 flex-col items-center gap-1 rounded-2xl p-1 pb-1.5 ${big ? 'w-full' : 'w-[78px]'} ${previewed ? 'bg-zinc-900/[.05] dark:bg-white/[.07]' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.05]'}`}>
-      <span data-option-picture={pic && typeof pic === 'object' ? '' : undefined} className={`relative grid w-full place-items-center overflow-hidden rounded-xl ${ring} ${big ? 'h-[68px]' : 'h-[58px]'}`} style={{ background: bg }}>
+      <span data-option-picture={pic && typeof pic === 'object' && !(f.kind === 'toggle' && o.value === false) ? '' : undefined} className={`relative grid w-full place-items-center overflow-hidden rounded-xl ${ring} ${big ? 'h-[68px]' : 'h-[58px]'}`} style={{ background: bg }}>
         {drawing && !pic ? <span className="size-full animate-pulse bg-zinc-900/[.04] dark:bg-white/[.05]" />
           : swatch ? <span className="size-7 rounded-full ring-1 ring-black/10" style={{ background: o.value as string }} />
+          : f.kind === 'toggle' && o.value === false ? <Pic pic="empty" w={0} k={1} />
           : pic && pic !== 'failed' ? <Pic pic={pic} w={big ? 84 : 70} k={k} />
           : <span dir="auto" className="line-clamp-2 px-1 text-center text-[11px] font-medium text-zinc-700 dark:text-zinc-200">{o.name}</span>}
         {chosenNow && <span className="absolute end-1 top-1 grid size-4 place-items-center rounded-full bg-proto-primary text-white shadow-[0_0_0_2px_white] dark:shadow-[0_0_0_2px_#18181b]"><Icon name="check" className="size-2.5" /></span>}
@@ -437,7 +446,7 @@ export function OptionsBody({ spot, big }: { spot: Spot; big?: boolean }) {
   // Pictures done while the pointer rests on a tile: that tile shows now, without another move.
   useEffect(() => {
     if (drawing || narrow || phase === 'sent') return
-    const over = document.querySelector<HTMLElement>('[data-options-pop] [data-option-tile]:hover')
+    const over = document.querySelector<HTMLElement>('[data-options-pop] [data-option-tile]:hover') ?? document.activeElement?.closest<HTMLElement>('[data-options-pop] [data-option-tile]')
     if (over) options.preview(st, f, Number(over.dataset.optionTile))
   }, [drawing]) // eslint-disable-line react-hooks/exhaustive-deps
   const pick = (i: number) => () => { options.choose(st, f, i); options.preview(st, null) }
