@@ -52,6 +52,7 @@ import { shareSheetChecks } from './share-sheet-checks.mjs'
 import { shareRepairChecks } from './share-repair-checks.mjs'
 import { tweaksChecks } from './tweaks-checks.mjs'
 import { optionsChecks } from './options-checks.mjs'
+import { roundChecks } from './round-checks.mjs'
 import { tweaksRegistryChecks } from './tweaks-registry-checks.mjs'
 import { middleDragChecks } from './middle-drag-checks.mjs'
 import { commentRegionOffChecks } from './comment-region-off-checks.mjs'
@@ -245,6 +246,13 @@ if (process.argv.includes('--options-only')) {
   proto(['rm', '--all'])
   rmSync(scratch, { recursive: true, force: true })
   console.log('OK: focused options checks')
+  process.exit(0)
+}
+if (process.argv.includes('--round-only')) {
+  await roundChecks({ proto, app, local, openPage, fail })
+  proto(['rm', '--all'])
+  rmSync(scratch, { recursive: true, force: true })
+  console.log('OK: focused round checks')
   process.exit(0)
 }
 if (process.argv.includes('--comment-images-only')) {
@@ -553,6 +561,7 @@ await settingsChecks({ proto, app, local, openPage, fail })
 await tweaksRegistryChecks({ local, openPage, fail })
 await tweaksChecks({ proto, app, local, openPage, fail })
 await optionsChecks({ proto, app, local, openPage, fail })
+await roundChecks({ proto, app, local, openPage, fail })
 
 await commentParentChecks({ proto, app, openPage, fail })
 await commentWholeChecks({ proto, app, openPage, fail })

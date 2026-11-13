@@ -60,6 +60,19 @@ export default function Variant() {
     // Dots on the marked elements only: the control with no element on the design has none.
     await until(page, `${dots} === ${JSON.stringify(['copy:heading tweak:heading-size', 'tweak:cta', 'tweak:divider', 'tweak:row-icon', 'tweak:tone'].sort().join('|'))}`, 'the dots are not exactly on the marked elements')
 
+    // A click on a marked element that is no control of its own opens its panel (again: closes it); a
+    // control (the button) keeps its own click and opens from its dot.
+    const hd = await dbox(page, '[data-copy=heading]')
+    await page.hover(hd.x + 20, hd.y + hd.h / 2); await page.press(hd.x + 20, hd.y + hd.h / 2)
+    await until(page, `document.querySelectorAll('[data-options-pop] [data-option-tab]').length === 2`, 'a click on the heading did not open its panel')
+    await page.press(hd.x + 20, hd.y + hd.h / 2)
+    await until(page, `!document.querySelector('[data-options-pop]')`, 'a second click on the heading did not close its panel')
+    const bt = await dbox(page, '[data-tweak=cta]')
+    await page.hover(bt.x + bt.w / 2, bt.y + bt.h / 2); await page.press(bt.x + bt.w / 2, bt.y + bt.h / 2)
+    await wait(400)
+    assert(await page.run(`!document.querySelector('[data-options-pop]')`), 'a click on a button with options opened its panel instead of being its own')
+    await page.press(20, 880)
+
     // The panel opens beside the element, never over it, with a picture per option.
     await click(page, '[data-option-dot="tweak:row-icon"]')
     await until(page, `document.querySelectorAll('[data-options-pop] [data-option-tile]').length === 5`, 'the row icon panel did not open with its five tiles')
