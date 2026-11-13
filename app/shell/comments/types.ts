@@ -59,7 +59,13 @@ export type Shot = { src: string; pasted?: boolean; region?: boolean; inline?: b
  * `shots` are its pictures, at most MAX_SHOTS. `shot` and `pasted` are the one picture a draft saved
  * before a comment could have several; `shotsOf` reads either.
  */
-export type Draft = { body: Seg[]; tags: Target[]; shots?: Shot[]; shot?: string; pasted?: boolean }
+export type Draft = { body: Seg[]; tags: Target[]; shots?: Shot[]; shot?: string; pasted?: boolean; ask?: AskMode }
+/**
+ * How the agent answers a comment on one element (the composer's choice): it decides (SKILL.md's
+ * test: one value as options in place, structure or behavior as variants), options in place on the
+ * element, or variants in a prototype nested under the variant.
+ */
+export type AskMode = 'agent' | 'options' | 'variants'
 export const MAX_SHOTS = 6
 export const shotsOf = (d: Pick<Draft, 'shots' | 'shot' | 'pasted'>): Shot[] =>
   d.shots ?? (d.shot ? [{ src: d.shot, ...(d.pasted ? { pasted: true } : {}) }] : [])

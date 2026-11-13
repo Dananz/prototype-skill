@@ -39,4 +39,11 @@ export default {
   'Back to the round of decisions': 'חזרה לסבב ההחלטות',
   'Bring back the round, {n} decision open': 'להחזיר את הסבב, {n} החלטה פתוחה',
   'Bring back the round, {n} decisions open': 'להחזיר את הסבב, {n} החלטות פתוחות',
+  'How {agent} answers': 'איך {agent} עונה',
+  '{agent} decides': '{agent} יחליט',
+  'Options in place': 'אפשרויות במקום',
+  '{agent} decides from your words.': '{agent} יחליט לפי מה שכתבת.',
+  'One value (a color, an icon, a size) as options in place; structure or behavior as variants.': 'ערך אחד (צבע, אייקון, גודל) כאפשרויות במקום; מבנה או התנהגות כווריאנטים.',
+  '2 to 8 options on the element itself, switched in place.': '2 עד 8 אפשרויות על האלמנט עצמו, מתחלפות במקום.',
+  'A prototype nested in this variant, a full variant per direction.': 'פרוטוטייפ מקונן בתוך הווריאנט, וריאנט מלא לכל כיוון.',
 }

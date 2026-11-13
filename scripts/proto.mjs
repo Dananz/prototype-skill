@@ -2093,6 +2093,12 @@ function actionText(dir, c) {
   return (ACTIONS[c.action] || '') + suffix
 }
 
+// The composer's choice on a comment on one element: how to answer it (SKILL.md, Small changes stay in place).
+const ASK_AS = {
+  agent: 'your call (the user left it to you): one value of this element (a color, an icon, a size, its words) as 2 to 8 options in place, a change of structure, content, position or behavior as variants (SKILL.md, Small changes stay in place)',
+  options: 'options in place on this element, as the user chose: 2 to 8 of them, one useTweaks control (or a useCopy line for words) with the element marked data-tweak (data-copy), today\'s value first (SKILL.md, Small changes stay in place); even if it would otherwise be variants, say so in the reply if it can\'t be done in place',
+  variants: 'variants, as the user chose: a prototype nested under this variant, one full variant per direction (proto add <new slug> --from <route> --next, or lift the element into a <Slot> and --slot <id>); not options in place',
+}
 // One tweak a comment was written with: its label, the value then and its default.
 const tweakValue = v => typeof v === 'boolean' ? (v ? 'on' : 'off') : JSON.stringify(v)
 const tweakShown = t => `${t.label} = ${tweakValue(t.value)} (default ${tweakValue(t.was)})`
@@ -2129,6 +2135,8 @@ function printBatch(dir, b) {
     if (c.target) console.log(`   ${c.point || c.region ? 'in' : 'on'}: ${where(c.target)}`)
     if (c.target?.src) printSource(dir, c.target.src)
     if (c.target?.uses) printUses(dir, c.target, c.route)
+    // How the user wants it answered, chosen in the composer.
+    if (c.ask) console.log(`   answer as: ${ASK_AS[c.ask] ?? c.ask}`)
     // The design as the user had it in Tweaks: values the source does not draw (proto shoot --pin sets them).
     if (c.tweaks?.length) console.log(`   tweaks: ${c.tweaks.map(tweakShown).join(', ')} (changed in the page's Tweaks when written; the source draws the defaults)`)
     // Written in the page's device view: about that layout, which a shot at that size shows.

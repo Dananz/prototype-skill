@@ -260,6 +260,7 @@ const intakeNow = () => readJson(intakeFile, null)
 /** What a page may be told about the intake: the questions, and whether they wait for answers. */
 const intakeView = () => { const d = intakeNow(); return d && Array.isArray(d.questions) ? d : null }
 
+const ASKS = new Set(['agent', 'options', 'variants'])
 // Requests the page waits on until the agent answers: listed beyond the last 20 batches while not
 // done, so a long wait never reads as done (Try it, copy options, and options in place's).
 const LASTING = new Set(['try-it', 'copy-options', 'option', 'copy', 'more-options', 'to-prototype', 'ask-options'])
@@ -397,6 +398,10 @@ export function receive(data, root = dir, { check = false } = {}) {
       if (!fromOk(c.from)) throw bad(i, ': from is { share, version, viewer, verified, link, comment }, a comment from a share link')
       if (c.action !== undefined || c.re !== undefined || c.point !== undefined || c.region !== undefined || time || (Array.isArray(c.tags) && c.tags.length) || (Array.isArray(c.images) && c.images.length)) throw bad(i, ': a comment from a link has no action, follow-up, spot, region, moment, tags or pictures')
     }
+    // How the user wants a comment on one element answered (the composer's choice): options in place,
+    // variants, or the agent's own call. Only on the owner's comment on an element, never on an action,
+    // a follow-up, a viewer's comment, the whole variant or the motion.
+    if (c.ask !== undefined && (!ASKS.has(c.ask) || c.action !== undefined || c.from !== undefined || c.re !== undefined || time || !c.target || typeof c.target !== 'object' || c.target.whole === true)) throw bad(i, ': ask is agent, options or variants, on a comment on one element (no action, follow-up, link, whole variant or moment)')
     const view = viewOf(c)
     if (view === false) throw bad(i, ': view is { size: phone, tablet or desktop, w, h }, the layout\'s size in whole CSS px from 200 to 4000')
     if (view && (c.action !== undefined || time)) throw bad(i, ': a comment in a device view is on the design, with no action and no moment of the motion')
@@ -434,6 +439,7 @@ export function receive(data, root = dir, { check = false } = {}) {
       ...time,
       ...(view ? { view } : {}),
       ...(c.re ? { re: { batch: c.re.batch, n: c.re.n } } : {}),
+      ...(c.ask ? { ask: c.ask } : {}),
       ...(c.from ? { from: fromOf(c.from), ...(typeof c.note === 'string' && c.note ? { note: clip(c.note, 400) } : {}) } : {}),
       target: element(c.target),
       // From the owner's page only: a viewer on a link has no Tweaks of the owner's.

@@ -15,7 +15,7 @@ import { find } from './dom'
 import { useKeyboard } from './keyboard'
 import { progress, useStore } from './store'
 import { capture, ShotEditor } from './shot'
-import type { Box, Draft, Seg, Shot, Target, Time } from './types'
+import type { AskMode, Box, Draft, Seg, Shot, Target, Time } from './types'
 import { MAX_SHOTS, shotsOf } from './types'
 import { MentionShelf, useMentionShelf } from './mention-shelf'
 import { routeOfTag, TAG_EVENT, type TagDrop } from '../tag-drag'
@@ -128,10 +128,16 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const note = () => settle(readEditor(ed.current!), shotsRef.current)
   const box = useRef<HTMLDivElement>(null)
   const [empty, setEmpty] = useState(!initial || !initial.body.some(s => typeof s !== 'string' || s.trim()))
-  const emit = () => { if (!editing && ed.current) { const n = note(); act.hold({ body: n.body, tags: tagsRef.current, ...(n.shots.length ? { shots: n.shots } : {}) }, target, time) } }
+  // On one element of the design: how the agent should answer it (options in place, variants, or its own call).
+  // Not on a comment already sent (its edit carries only words, tags and pictures).
+  const askable = !!target && !target.whole && !time && !target.commentRef && !target.variantRef && !target.protoRef && !sentItem
+  const [ask, setAsk] = useState<AskMode>(initial?.ask ?? 'agent')
+  const askRef = useRef(ask)
+  askRef.current = ask
+  const emit = () => { if (!editing && ed.current) { const n = note(); act.hold({ body: n.body, tags: tagsRef.current, ...(n.shots.length ? { shots: n.shots } : {}), ...(askable ? { ask: askRef.current } : {}) }, target, time) } }
   const regionKey = target?.region ? JSON.stringify(target.region) : ''
   // Moving the comment to the parent (or back), or its region, keeps what is held on what it is on now.
-  useEffect(emit, [tags, shots, target?.selector, regionKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(emit, [tags, shots, target?.selector, regionKey, ask]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (nudge) box.current?.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(-3px)' }, { transform: 'translateX(0)' }], { duration: 320, easing: 'ease-out' })
   }, [nudge])
@@ -214,7 +220,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
   const submit = () => {
     const { body, shots } = note()
     if (!body.some(s => typeof s !== 'string' || s.trim()) && !tags.length && !shots.length) return
-    const d = { body, tags, shots, shot: undefined, pasted: undefined }
+    const d = { body, tags, shots, shot: undefined, pasted: undefined, ...(askable ? { ask } : {}) }
     if (late) { act.save(d, target, undefined, time); void act.send(); return }
     if (!sentItem) return act.save(d, target, id, time)
     if (busy) return
@@ -372,6 +378,21 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
                 </span>)}
             {capturing && <span className="grid h-12 w-20 place-items-center rounded-lg bg-zinc-900/[.04] text-[11px] text-zinc-400 dark:bg-white/[.06]">{capturing}</span>}
           </PictureStrip>
+        )}
+        {askable && (
+          <div className="px-2 pt-1.5">
+            <div role="radiogroup" aria-label={t('How {agent} answers', { agent })} data-composer-ask="" className="flex rounded-xl bg-zinc-900/[.05] p-0.5 dark:bg-white/[.07]">
+              {([['agent', t('{agent} decides', { agent })], ['options', t('Options in place')], ['variants', t('Variants')]] as [AskMode, string][]).map(([k, label]) => (
+                <button key={k} type="button" role="radio" aria-checked={ask === k} data-ask={k} onClick={() => setAsk(k)}
+                  className={`h-7 min-w-0 flex-auto truncate whitespace-nowrap rounded-[10px] px-1 text-[11.5px] font-medium ${ask === k ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'}`}>{label}</button>
+              ))}
+            </div>
+            <p data-composer-ask-line="" className="px-1 pt-1.5 text-[11px] leading-4 text-zinc-500 dark:text-zinc-400">
+              {ask === 'agent'
+                ? <><span className="font-medium text-zinc-700 dark:text-zinc-200">{t('{agent} decides from your words.', { agent })}</span> {t('One value (a color, an icon, a size) as options in place; structure or behavior as variants.')}</>
+                : ask === 'options' ? t('2 to 8 options on the element itself, switched in place.') : t('A prototype nested in this variant, a full variant per direction.')}
+            </p>
+          </div>
         )}
         {late && <p data-shoot="composer-late" role="alert" className="mx-3 mt-1.5 text-[11px] leading-4 text-amber-700 dark:text-amber-300">{t('{agent} has started on this, so it can\'t change now. Your words can go as a new comment.', { agent })}</p>}
         {error && <p role="alert" className="mx-3 mt-1.5 text-[11px] leading-4 text-rose-600 dark:text-rose-400">{error}</p>}

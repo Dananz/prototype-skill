@@ -57,6 +57,8 @@ export function createActions(store: Store, host: Host) {
         ...(i.tags.length ? { tags: i.tags } : {}),
         ...(shotsOf(i).length ? { images: picturesOf(i) } : {}),
         ...(i.tweaks?.length ? { tweaks: i.tweaks } : {}),
+        // On one element: how the user wants it answered (options in place, variants, or the agent's call).
+        ...(i.ask && i.target && !i.target.whole && !i.time ? { ask: i.ask } : {}),
       })),
     }
     set({ sending: true, error: '' })
