@@ -37,10 +37,12 @@ export default function One() {
   // a glob, refreshed by the file watcher, slow on a busy machine): a page opened before then has no
   // such place. Opened once the registry served has it.
   const registered = async (route, ms = 30000) => {
+    let last = ''
     for (const end = Date.now() + ms; Date.now() < end; await wait(150)) {
-      try { if ((await (await fetch(`${local}src/registry.ts`)).text()).includes(`/src/protos/${route}.tsx`)) return } catch { /* the server is busy */ }
+      try { last = await (await fetch(`${local}src/registry.ts`)).text(); if (last.includes(`/src/protos/${route}.tsx`)) return } catch (e) { last = String(e) }
     }
-    fail(`round: the dev server never listed ${route}`)
+    const edits = await fetch(`${local}__proto/status`).then(r => r.json()).then(j => JSON.stringify(j.edits)).catch(e => String(e))
+    fail(`round: the dev server never listed ${route}: ${[...last.matchAll(/protos\/[^"]+\.tsx/g)].map(m => m[0]).join(', ') || last.slice(0, 120)} (edits it saw: ${edits})`)
   }
   const wait = ms => new Promise(r => setTimeout(r, ms))
   const until = async (page, expression, why, ms = 8000) => {
@@ -49,6 +51,11 @@ export default function One() {
   }
   const box = (page, sel) => page.run(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, cx: r.x + r.width / 2, cy: r.y + r.height / 2 } })()`)
   const dbox = (page, sel) => page.run(`(() => { const el = window.__protoDesign()?.querySelector(${JSON.stringify(sel)}); if (!el) return null; const r = el.getBoundingClientRect(), f = el.ownerDocument.defaultView.frameElement; const o = f ? f.getBoundingClientRect() : { left: 0, top: 0 }, s = f ? o.width / (f.offsetWidth || 1) : 1; return { x: o.left + r.x * s, y: o.top + r.y * s, w: r.width * s, h: r.height * s, cx: o.left + (r.x + r.width / 2) * s, cy: o.top + (r.y + r.height / 2) * s } })()`)
+  // Until an element stops moving (a card sliding into place).
+  const steady = async (page, sel) => {
+    let was = ''
+    for (const end = Date.now() + 4000; Date.now() < end; await wait(120)) { const now = JSON.stringify(await box(page, sel)); if (now === was) return; was = now }
+  }
   const click = async (page, sel) => { const b = await box(page, sel); assert(b, `nothing to click at ${sel}`); await page.hover(b.cx, b.cy); await page.press(b.cx, b.cy) }
   const tap = async (page, sel) => { const b = await box(page, sel); assert(b, `nothing to tap at ${sel}`); await page.touch('touchStart', [[b.cx, b.cy]]); await page.touch('touchEnd', []) }
   const design = k => `window.__protoDesign()?.querySelector('[data-round-demo]')?.getAttribute('data-${k}')`
@@ -69,7 +76,7 @@ export default function One() {
     // The stage's Building chip (the variant was just written) starts after the tool strip, never under it.
     const overlap = (a, b) => !!a && !!b && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
     const chip = await box(page, '[data-building-chip]'), strip = await box(page, '[data-strip] [data-strip-tools]')
-    assert(!overlap(chip, strip), `the Building chip is under the tool strip: ${JSON.stringify({ chip, strip })}`)
+    assert(chip && strip && !overlap(chip, strip), `the Building chip (or the strip missing) is under the tool strip: ${JSON.stringify({ chip, strip })}`)
 
     // A step: the question, the spotlight, the tiles; 2 picks the second words and moves on.
     await click(page, '[data-round-rest] [data-round-start]')
@@ -136,8 +143,11 @@ export default function One() {
     const pics = await page.run(`['tweak:heading-size', 'tweak:new-badge', 'tweak:cta', 'tweak:row-icon', 'tweak:divider'].map(k => { const p = document.querySelector('[data-round-tile="' + k + '"] [data-round-tile-picture] > span[aria-hidden]'); const r = p?.getBoundingClientRect(); return r && p.innerHTML.length > 20 && (r.width >= 24 || r.height >= 24) ? '' : k }).filter(Boolean).join()`)
     assert(pics === '', `summary tiles without a picture that reads: ${pics}`)
     assert(await page.run(`[...document.querySelectorAll('[data-round-tile] [data-round-tile-picture] + span')].every(l => l.scrollHeight <= l.clientHeight + 1 && l.scrollWidth <= l.clientWidth + 1)`), 'a summary tile cuts its name short')
+    // (Pressed once the card has settled: it slides down while the island lets go of the row.)
+    await steady(page, '[data-round-tile="tweak:row-icon"]')
     await click(page, '[data-round-tile="tweak:row-icon"]')
-    await until(page, `${q} === 'Which row icon?'`, 'a summary tile did not open its step')
+    for (const end = Date.now() + 8000; Date.now() < end && await page.run(`${q} !== 'Which row icon?'`);) await wait(60)
+    if (await page.run(`${q} !== 'Which row icon?'`)) fail(`round: a summary tile did not open its step (${await page.run(`JSON.stringify({ card: document.querySelector('[data-round-card]')?.dataset.roundCard, q: ${q}, tiles: document.querySelectorAll('[data-round-tile]').length })`)})`)
     await page.key('5')
     await until(page, `!!document.querySelector('[data-round-summary]')`, 'a step opened from the summary did not return to it')
     await until(page, `${design('icon')} === 'Bolt'`, 'the 5 key did not pick the fifth icon')
@@ -209,6 +219,16 @@ export default function One() {
     await until(keys, `${dots} === 7`, 'focus mode with the round at rest left no dots')
     await keys.key('f')
     await until(keys, `!!document.querySelector('[data-round-rest]') && ${dots} === 0`, 'out of focus mode the round did not come back')
+    // With the row at rest (the dots waiting), the right-click menu still opens an element's panel beside it.
+    const menu = await keys.run(`(async () => {
+      const until = async f => { for (const end = Date.now() + 6000; Date.now() < end; await new Promise(r => setTimeout(r, 50))) if (f()) return true; return false }
+      const el = window.__protoDesign()?.querySelector('[data-tweak="cta"]'), r = el.getBoundingClientRect()
+      el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, composed: true, button: 2, clientX: r.left + 4, clientY: r.top + r.height / 2 }))
+      if (!await until(() => [...document.querySelectorAll('[data-context-menu] [role=menuitem]')].some(x => /Options for this element/.test(x.textContent)))) return 'its menu has no Options for this element'
+      ;[...document.querySelectorAll('[data-context-menu] [role=menuitem]')].find(x => /Options for this element/.test(x.textContent)).click()
+      return await until(() => { const p = document.querySelector('[data-options-pop]'); return p && getComputedStyle(p).opacity !== '0' && p.getBoundingClientRect().width > 100 }) ? 'ok' : 'no panel showed'
+    })()`)
+    assert(menu === 'ok', `the right-click menu with the round at rest: ${menu}`)
     assert(keys.errors().length === 0, `the page reported errors: ${keys.errors().join(' | ')}`)
   } finally { keys.close() }
 

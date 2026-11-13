@@ -47,10 +47,11 @@ export default function Variant() {
   // a glob, refreshed by the file watcher, slow on a busy machine): a page opened before then has no
   // such place. Opened once the registry served has it.
   const registered = async (route, ms = 30000) => {
+    let last = ''
     for (const end = Date.now() + ms; Date.now() < end; await wait(150)) {
-      try { if ((await (await fetch(`${local}src/registry.ts`)).text()).includes(`/src/protos/${route}.tsx`)) return } catch { /* the server is busy */ }
+      try { last = await (await fetch(`${local}src/registry.ts`)).text(); if (last.includes(`/src/protos/${route}.tsx`)) return } catch (e) { last = String(e) }
     }
-    fail(`options: the dev server never listed ${route}`)
+    fail(`options: the dev server never listed ${route}: ${[...last.matchAll(/protos\/[^"]+\.tsx/g)].map(m => m[0]).join(', ') || last.slice(0, 300)}`)
   }
   const wait = ms => new Promise(r => setTimeout(r, ms))
   const until = async (page, expression, why, ms = 8000) => {

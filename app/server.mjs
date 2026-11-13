@@ -789,6 +789,10 @@ export function prototypeServer(session) {
               return
             }
             if (route === '/ping') { activity = Date.now(); shares?.ping() }
+            // proto add, once a prototype's files are written: the registry's globs read the files again,
+            // in case the watcher missed them (a folder made and filled at once can go unreported), and
+            // the page gets the new list.
+            if (route === '/rescan') for (const m of server.moduleGraph.getModulesByFile(slash(join(dir, 'src', 'registry.ts'))) ?? []) void server.reloadModule(m)
             if (route === '/keep') write({ keep: !!data.keep })
             if (route === '/work' && typeof data.proto === 'string' && typeof data.variant === 'string') work({ proto: data.proto, variant: data.variant, undo: data.undo })
             let got

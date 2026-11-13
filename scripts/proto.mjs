@@ -543,7 +543,14 @@ async function importLegacy(dir, project) {
   return deps
 }
 
-function add() {
+// After `proto add` writes a prototype: the running server lists it now, whether or not its file
+// watcher reported the new folder (app/server.mjs, /rescan).
+async function add() {
+  addFiles()
+  const s = readSession(sessionDir())
+  if (s?.port) await fetch(`http://127.0.0.1:${s.port}/__proto/rescan`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(3000) }).catch(() => {})
+}
+function addFiles() {
   const dir = sessionDir()
   const s = need(dir)
   let slug = args[0]

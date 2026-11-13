@@ -389,8 +389,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     }
     return p
   }
-  /** A link opened before the place it points at was known (see boot): where to go once it is. */
-  let awaited: { route: string; until: number } | null = null
   /** Moving to another variant keeps the state and tool, where that variant has them. */
   const keepIn = (proto: Proto, variant: string): Place => {
     const here = st.place.view === 'variant' && st.place.proto === proto.id ? st.place : null
@@ -1537,7 +1535,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
   // ---------- navigation ----------
   function go(p: Place) {
-    awaited = null
     if (!valid(p)) p = defaultPlace()
     if (!atUrl(p)) visit(pathOf(p))
     else arrive(p, true)
@@ -4476,11 +4473,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const its = (p: Place | null) => p && (!named || p.view === 'session' || [byId(p.proto)?.owner, byId(p.proto)?.session].includes(me)) ? p : null
   const newestOfMe = () => { const p = named && active().filter(x => x.session === me || x.owner === me).at(-1); return p ? { view: 'proto', proto: p.id } as Place : null }
   const start = (linked ? parsePlace() : null) ?? its(parsePlace(localStorage.getItem(`proto-place-${session.id}`) ?? '')) ?? newestOfMe() ?? (named ? { view: 'session' } as Place : defaultPlace())
-  // A link to a place not known yet (a prototype or variant just added, before its module reaches
-  // this page) is opened once it arrives (setProtos), for a while; meanwhile the page shows where it
-  // can and the address stays the link, so a reload (the registry's own) still goes there.
-  if (linked && !parsePlace()) awaited = { route: address(), until: Date.now() + 30_000 }
-  else if (!atUrl(start)) history.replaceState(null, '', urlOf(start))
+  if (!atUrl(start)) history.replaceState(null, '', urlOf(start))
   arrive(start, false)
   if (q.has('focus')) act('focus', '', '')
   // ?copy=1 (proto shoot --copy): copy mode opens once the design on the stage declares its lines.
@@ -4513,9 +4506,6 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const p = parsePlace()
         if (p && pathOf(p) !== pathOf(st.place)) return arrive(p, false)
       } else {
-        const due = awaited && Date.now() < awaited.until ? parsePlace(awaited.route) : null
-        if (due) { awaited = null; return go(due) }
-        if (awaited && Date.now() >= awaited.until) { awaited = null; if (!atUrl(st.place)) history.replaceState(null, '', urlOf(st.place)) }
         // Only this tab's conversation's new work: another conversation's tab follows its own.
         const ours = (p: Proto) => (!me && !wanted) || (!p.session && !p.owner) || p.session === me || p.owner === me
         const fresh = protos.filter(p => !p.archived && !before.has(p.id) && ours(p))

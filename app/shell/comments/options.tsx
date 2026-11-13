@@ -708,9 +708,11 @@ export function OptionsLayer() {
   // or a round's card has the design and the dots wait): no frames until the design or its values change.
   const [origin, setOrigin] = useState<Origin>({ x: 0, y: 0, k: 1 })
   const quiet = !!st && on && roundAct.up()
+  // A panel opened while the dots wait (from the right-click menu) is placed by its element's mark.
+  const resting = quiet && !s.open
   useEffect(() => {
     if (!st || !on) { setMarks([]); return }
-    if (quiet) return
+    if (resting) return
     const layer = host.layer
     let raf = 0, last = '', dirty = true, list: Spot[] = [], words = new WeakMap<HTMLElement, boolean>(), W = -1, H = -1, paused = false
     const tick = () => {
@@ -754,7 +756,7 @@ export function OptionsLayer() {
       doc.removeEventListener('scroll', scrolled, true); document.removeEventListener('scroll', scrolled, true)
       win.removeEventListener('resize', scrolled); removeEventListener('resize', scrolled)
     }
-  }, [st, on, host, quiet])
+  }, [st, on, host, resting])
 
   // Pointing at an element with options outlines it and names it.
   useEffect(() => {
