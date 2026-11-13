@@ -219,6 +219,11 @@ html[data-tag-drag], html[data-tag-drag] * { user-select: none !important; -webk
   text-decoration-color: color-mix(in oklab, var(--proto-primary) 50%, transparent);
 }
 
+/* A line's own words may hold line breaks (Shift+Enter in the picker): they show as breaks. Only
+   the collapse rule, at no specificity, so a design's own nowrap or white-space still wins; inside
+   the design only, since the stage itself carries data-copy while the bar shows. */
+:where([data-mount] [data-copy]) { white-space-collapse: preserve-breaks; }
+
 /* While commenting, the design is only looked at: a crosshair over all of it. */
 [data-picking] [data-mount] * { cursor: crosshair !important; }
 /* The mode is carried by the button (filled, no words) and by a frame around the design. */
