@@ -9,5 +9,6 @@ import viewer from './viewer'
 import shareLink from './share-link'
 import tree from './tree'
 import options from './options'
+import round from './round'
 
-export const he: Record<string, string> = { ...core, ...shell, ...comments, ...comments2, ...panels, ...misc, ...viewer, ...shareLink, ...tree, ...options }
+export const he: Record<string, string> = { ...core, ...shell, ...comments, ...comments2, ...panels, ...misc, ...viewer, ...shareLink, ...tree, ...options, ...round }

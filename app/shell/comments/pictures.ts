@@ -86,7 +86,7 @@ export function stillOf(el: HTMLElement): Still | null {
   let { w, h } = sizeOf(el)
   // A line of words in a wider block: as wide as its words.
   const cs = win.getComputedStyle(el)
-  const text = !el.querySelector('svg, img, video, canvas, picture') && !!el.textContent?.trim() && (cs.backgroundColor === 'transparent' || /,\s*0\)$/.test(cs.backgroundColor)) && !parseFloat(cs.borderTopWidth) && !parseFloat(cs.borderBottomWidth)
+  const text = !el.querySelector('svg, img, video, canvas, picture') && !!el.textContent?.trim() && (cs.backgroundColor === 'transparent' || /,\s*0\)$/.test(cs.backgroundColor)) && cs.backgroundImage === 'none' && !parseFloat(cs.borderTopWidth) && !parseFloat(cs.borderBottomWidth)
   if (text) {
     const range = el.ownerDocument.createRange()
     range.selectNodeContents(el)

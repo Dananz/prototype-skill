@@ -8,6 +8,7 @@ import { createActions } from './actions'
 import { CommentsCtx, type Ctx, type Host } from './ctx'
 import { CopyBar, CopyMarks, CopySheet, createCopyActions, createCopyStore } from './copy'
 import { OptionsLayer, OptionsSheet, createOptionsActions, createOptionsStore } from './options'
+import { RoundLayer, createRoundActions } from './round'
 import { Decide, DecidePop, type DecidePopProps, type Subject, type Tiles } from './decide'
 import { Layer } from './layer'
 import { ContextPop, type ContextPopProps } from './menu'
@@ -32,9 +33,11 @@ export function createComments(host: Host, sessionId: string) {
   // Options in place (options.tsx): the dots on the design, their panel, and the changes in the island.
   const optStore = createOptionsStore(sessionId)
   const optAct = createOptionsActions(optStore, host, store)
-  const ctx: Ctx = { store, host, act, copyStore, copyAct, optStore, optAct }
+  // A round of decisions (round.tsx) walks the same options one by one.
+  const roundAct = createRoundActions(optStore, optAct)
+  const ctx: Ctx = { store, host, act, copyStore, copyAct, optStore, optAct, roundAct }
   const wrap = (el: JSX.Element) => <CommentsCtx.Provider value={ctx}>{el}</CommentsCtx.Provider>
-  createRoot(host.layer).render(wrap(<><Layer /><Selection /><CopyMarks /><OptionsLayer /><ImagePeek /></>))
+  createRoot(host.layer).render(wrap(<><Layer /><Selection /><CopyMarks /><OptionsLayer /><RoundLayer /><ImagePeek /></>))
   const api = {
     store,
     /** Reuse this instance from a live prototype rather than creating another comment store. */
@@ -60,7 +63,7 @@ export function createComments(host: Host, sessionId: string) {
     /** The copy picker (copy.tsx): its state and actions, for the T buttons, Esc and the stage. */
     copy: { store: copyStore, ...copyAct },
     /** Options in place (options.tsx): their state and actions, for the stage, Esc and the right-click menu. */
-    options: { store: optStore, ...optAct },
+    options: { store: optStore, ...optAct, escape: () => optAct.escape() || roundAct.escape(), round: roundAct },
     /** Its bar under the stage, and the sheet a phone lists a line's options in (over the stage and the bar). */
     mountCopy(bar: HTMLElement, sheet: HTMLElement) { createRoot(bar).render(wrap(<><CopyBar /><CopySheet container={sheet} /><OptionsSheet container={sheet} /></>)) },
     /** Something drawn in a root of its own (the motion dock) with the comment layer's context. */

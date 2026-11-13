@@ -30,7 +30,7 @@ export default function Variant() {
     { id: 'loose', kind: 'select', label: 'Not on the design', value: loose, defaultValue: 'One', options: ['One', 'Two'], set: setLoose },
   ])
   const copy = useCopy([{ id: 'heading', label: 'Heading', options: ['Three things waiting', 'You have three updates'] }])
-  return <main className="p-10" data-opt-demo data-icon={icon} data-size={size} data-tone={tone} data-style={style}>
+  return <main className="p-10" data-round="off" data-opt-demo data-icon={icon} data-size={size} data-tone={tone} data-style={style}>
     <h1 data-copy="heading" data-tweak="heading-size" style={{ fontSize: SIZES[size], fontWeight: 700 }}>{copy.heading}</h1>
     <p className="mt-2">A line under the heading</p>
     <div className="mt-6 flex items-center gap-3">

@@ -941,7 +941,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const sts = inScreen && p ? statesOf(p, pl.variant).length + TOOL_LIST.filter(x => toolOk(p, pl.variant, x)).length : 0
     const statesBtn = sts ? `<div class="relative">${tool('open:states-pop', 'strip-states', 'grid', t('States and Autoplay'), '', st.open === 'states-pop')}${pop(st.open === 'states-pop', `<div data-strip-states class="w-72 p-1.5">${variantHere(false)}</div>`, 'start-0 top-0', 'states-pop')}</div>` : ''
     const own = !inScreen ? [off('strip-tweaks', 'tweaks', t('Tweaks')), off('strip-try', 'key', t('Try it')), off('strip-copy', 'text', t('Copy options')), off('strip-motion', 'curves', t('Motion')), dockHome() ? '' : off('strip-states', 'grid', t('States and Autoplay'))]
-      : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), motionBtn(), dockHome() ? '' : statesBtn, replayBtn()]
+      : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), roundBtn(), motionBtn(), dockHome() ? '' : statesBtn, replayBtn()]
     const fit = inScreen && frameOn() ? tool('center', 'strip-fit', 'center', t('Center the design'), '⌘0') : ''
     // Focus mode hides the strip with the rest of the chrome; the dock, Esc or F bring it back.
     const focusBtn = inScreen ? tool('focus', 'strip-focus', 'grow', t('Focus mode'), 'F') : off('strip-focus', 'grow', t('Focus mode'))
@@ -1844,7 +1844,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ${switcher}
       <div class="ms-auto flex shrink-0 items-center gap-1">
         ${stepper}${stepper && (view === 'variant' || viewOk() || railOn() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${replayBtn()}${deviceBtn()}${commentBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${shareBtn()}${moreBtn()}
+        ${replayBtn()}${deviceBtn()}${commentBtn()}${tweaksBtn()}${copyBtn()}${roundBtn()}${motionBtn()}${decideBtn()}${shareBtn()}${moreBtn()}
       </div></div>`)
     menus = { protos: drill(), session: '' }
     paintStrip(deviceBtn, replayBtn, centerBtn)
@@ -2033,7 +2033,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const pv = st.place.view === 'variant' ? st.place : null
     const sts = p && pv ? statesOf(p, pv.variant) : []
     const stateOn = pv && sts.length ? pv.tool === 'play' ? st.playing : pv.tool === 'all' ? null : pv.state ?? '' : null
-    const key = pillOn() ? JSON.stringify([p!.id, vid, vs.map(v => [v.id, v.name]), editing(p!.id, vid), st.sheet, st.states, sts.map(x => [x.id, x.name]), pv?.state, pv?.tool, st.playing, pillComments(), copyCounts().on, trySheet, tweakList().length, tweaksOpen, tweakList().filter(isChanged).length, joined, viewOk() && shownSize(), !!p && favOf(p, vid)]) : ''
+    const key = pillOn() ? JSON.stringify([p!.id, vid, vs.map(v => [v.id, v.name]), editing(p!.id, vid), st.sheet, st.states, sts.map(x => [x.id, x.name]), pv?.state, pv?.tool, st.playing, pillComments(), copyCounts().on, roundNow(), trySheet, tweakList().length, tweaksOpen, tweakList().filter(isChanged).length, joined, viewOk() && shownSize(), !!p && favOf(p, vid)]) : ''
     if (key !== pillKey) {
       pillKey = key
       if (!key) { pill.innerHTML = ''; closeCard(true) }
@@ -2060,6 +2060,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const end = tweakList().length ? `<button data-act="tweaks" data-shoot="tweaks" aria-label="${t('Tweaks')}" aria-haspopup="dialog" aria-expanded="${tweaksOpen}" class="${btn} relative ${tweaksOpen ? '!bg-sky-700 !text-white' : ''}">${ic('tweaks', 'size-5')}${tweakList().some(isChanged) ? `<span class="absolute end-0 top-0 grid min-w-3.5 rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : tweaksDot}</button>`
           : viewOk() ? `<button data-pill-layout data-shoot="pill-layout" aria-label="${t('Layout')}" aria-haspopup="dialog" aria-expanded="false" class="${btn} transition-colors">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth), st.view.land), 'size-5')}</button>`
           : v ? `<button data-act="fav:${esc(p!.id)}:${esc(v.id)}" data-shoot="pill-fav" aria-pressed="${fav}" aria-label="${fav ? t('Unfavorite') : t('Favorite')}" class="${btn} ${fav ? '!text-amber-400' : ''}">${ic(fav ? 'star-fill' : 'star', 'size-5')}</button>` : ''
+        // The round of decisions, put away: its way back.
+        const rn = roundNow()
+        const roundPill = rn.offered && rn.hidden ? `<button data-act="round" data-shoot="pill-round" data-round-btn aria-label="${roundSay(rn)}" class="${btn} relative">${ic('list-checks', 'size-5')}${roundCount(rn, 'ring-white dark:ring-zinc-900')}</button>` : ''
         const sOn = stateOn === null ? undefined : sts.find(x => x.id === stateOn)
         const stateText = pv?.tool === 'all' ? t('All states') : pv?.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, pv.variant)?.n ?? '' }) : sOn?.name ?? t('At rest')
         const stateN = pv?.tool || !sts.length ? '' : `${sts.indexOf(sOn!) + 2}/${sts.length + 1}`
@@ -2073,7 +2076,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
               </div>${stateLine}
             </div>
             <button data-act="variant:${next.id}" aria-label="${t('Next variant: {label} {name}', { label: variantRef(p!, next.id), name: next.name })}" class="${btn}">${ic('right')}</button>
-            ${end ? `${sep}${end}` : ''}`
+            ${roundPill ? `${sep}${roundPill}` : ''}${end ? `${sep}${end}` : ''}`
         pill.innerHTML = joined
           ? `<div class="pointer-events-none absolute inset-x-0 bottom-0 z-[17] flex h-[var(--pill-h,0px)] items-end sm:hidden">
           <div data-pill-bar class="pointer-events-auto relative flex h-[calc(var(--pill-h,0px)-var(--isl-h,0px))] w-full flex-col px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-1 text-zinc-900 transition-[translate,opacity] duration-300 ease-out dark:text-white [[data-fold]_&]:pointer-events-none [[data-fold]_&]:translate-y-4 [[data-fold]_&]:opacity-0 [[data-typing]_&]:invisible">
@@ -2615,6 +2618,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       // The phone's Try it key: the sheet up, or down. Brought back from away, the spot goes out.
       case 'try': { const to = trySheet === 'open' ? 'closed' : 'open'; trySheet = to; setTry(null); return setTrySheet(to) }
       case 'copymode': return comments.copy.toggle()
+      case 'round': return comments.options.round.toggle()
       case 'motion': st.motion = !st.motion; return render()
       case 'states': st.states = true; return render()
       // The phone's two-line bar (with the project tree on): the tree, the variant's decide sheet, the menu.
@@ -3540,7 +3544,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function syncComments() {
     const host = commentHost(), pl = st.place, p = cur()
     comments.copy.setStage(copyHost(), copy.routeOf(copyHost()))
-    comments.options.setStage(optionsHost(), copy.routeOf(optionsHost()))
+    // A round of decisions shows on the design's own page only, never in a still (?hints=0) even with the dots.
+    comments.options.setStage(optionsHost(), copy.routeOf(optionsHost()), q.get('hints') !== '0' && q.get('round') !== '0')
     comments.act.setScope(pl.view === 'session' ? null : pl.proto)
     comments.act.setCard(cardOn() && p ? { proto: p.id, title: p.title } : null)
     const ch = host && p ? chosenHere() : null
@@ -3640,6 +3645,22 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const repaintCopy = () => { const k = copyKeyOf(); if (k !== copyKey) { copyKey = k; render() } }
   copy.subscribe(repaintCopy)
   comments.copy.store.subscribe(repaintCopy)
+
+  // ---------- a round of decisions (comments/round.tsx): its button, wherever the round is offered ----------
+  // A list with the number of decisions still open, pressed while the round's row shows; it pulses
+  // while the round is put away, and brings it back. In the strip or the bar on a wide page, in the
+  // pill's bar on a phone (there only while the round is put away: else the round's row is in view).
+  const roundNow = () => { const i = comments.options.round.info(); return { offered: i.offered && !st.focus, hidden: i.hidden, rest: i.mode === 'rest', open: i.open } }
+  const roundSay = (r: ReturnType<typeof roundNow>) => r.hidden ? tn(r.open, 'Bring back the round, {n} decision open', 'Bring back the round, {n} decisions open') : r.rest ? t('Put the round of decisions away') : t('Back to the round of decisions')
+  const roundCount = (r: ReturnType<typeof roundNow>, ring: string) => r.open ? `<span aria-hidden="true" data-round-count class="absolute -end-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-proto-primary px-1 text-[10px] font-semibold tabular-nums text-proto-primary-fg ring-2 ${ring} ${r.hidden ? 'animate-[proto-option-pulse_1.6s_ease-in-out_infinite]' : ''}">${r.open}</span>` : ''
+  const roundBtn = () => {
+    const r = roundNow()
+    if (!r.offered) return ''
+    return `<button data-act="round" data-shoot="round-toggle" data-round-btn aria-pressed="${!r.hidden && r.rest}" aria-label="${roundSay(r)}" title="${roundSay(r)}" class="relative hidden h-9 min-w-9 items-center justify-center rounded-lg sm:inline-flex ${!r.hidden && r.rest ? '!bg-proto-primary-soft !text-proto-primary' : 'text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'}">${ic('list-checks')}${roundCount(r, 'ring-white dark:ring-zinc-900')}</button>`
+  }
+  let roundKey = ''
+  const repaintRound = () => { const k = JSON.stringify(roundNow()); if (k !== roundKey) { roundKey = k; render() } }
+  comments.options.store.subscribe(repaintRound)
   // The bar under the stage takes its height from it, so the design is never under the bar.
   const copyBar = zone.querySelector<HTMLElement>('[data-copy-bar]')!
   comments.mountCopy(copyBar, zone.querySelector<HTMLElement>('[data-copy-sheet]')!)

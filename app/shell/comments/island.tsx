@@ -23,6 +23,7 @@ import type { Chosen, CState } from './types'
 import { useTagField } from './tag-field'
 import { isSendKey, sendKeyLabel } from './enter-sends'
 import { OptionsTray, useOptionsTray } from './options'
+import { RoundTray, useRoundTray } from './round'
 
 type Kind = 'working' | 'done' | 'reply'
 type News = { key: number; kind: Kind; title: string; text: string }
@@ -101,7 +102,8 @@ export function Island({ dock }: { dock: HTMLElement }) {
   const prefs = useIslandPrefs()
   const phone = usePhone()
   // Options chosen on the design (options.tsx) wait here, above the bar, to be sent.
-  const tray = useOptionsTray()
+  const optionsTray = useOptionsTray(), roundTray = useRoundTray()
+  const tray = optionsTray || roundTray
   const docked = !!prefs.docked && !phone
   // On an exploration's own page there is no design to point at: the box is on all of it.
   const onCard = !s.place && !!s.card
@@ -374,7 +376,7 @@ export function Island({ dock }: { dock: HTMLElement }) {
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 pt-3"><CommentList /></div>
       <div className="shrink-0 space-y-2 px-2 pb-2 empty:hidden"><Notices /></div>
       <div className="shrink-0 border-t border-black/[.07] dark:border-white/10">
-        <OptionsTray />
+        <RoundTray /><OptionsTray />
         {s.place || onCard ? bar : <p className="px-3 py-3 text-center text-xs text-zinc-400">{t('Open a variant to comment on it.')}</p>}
         {field.pictures}
         <div className="flex justify-center pb-2"><Listening on={!!s.inbox?.listening} stalled={stalled > 0} /></div>
@@ -392,7 +394,7 @@ export function Island({ dock }: { dock: HTMLElement }) {
       style={{ ...(kb || focus ? { bottom: kb, paddingBottom: 4 } : {}), ...(edge ? { boxShadow: `inset 0 2px ${edge}, inset 2px 0 ${edge}, inset -2px 0 ${edge}` } : {}) }}>
       {list}
       {newsRow}
-      <OptionsTray phone />
+      <RoundTray phone /><OptionsTray phone />
       {bar}
       {field.pictures}
     </div>
@@ -457,7 +459,7 @@ export function Island({ dock }: { dock: HTMLElement }) {
               {listBody(<button type="button" data-shoot="island-fold" onClick={() => act.openIsland(false)} aria-label={t('Fold the comments')} title={t('Fold the comments')}
                 className="-me-1.5 grid size-7 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"><Icon name="fold-right" className="size-3.5" /></button>)}
               {newsRow}
-              <div className="border-t border-black/[.06] dark:border-white/[.06]"><OptionsTray />{bar}</div>
+              <div className="border-t border-black/[.06] dark:border-white/[.06]"><RoundTray /><OptionsTray />{bar}</div>
               {field.pictures}{field.menu}
               {open && !folding && edgeHandle('sideW', 'start')}
             </div>
@@ -543,7 +545,7 @@ export function Island({ dock }: { dock: HTMLElement }) {
       {chips}
       {list}
       {newsRow}
-      <OptionsTray />
+      <RoundTray /><OptionsTray />
       {bar}
       {field.pictures}{field.menu}
     </div>

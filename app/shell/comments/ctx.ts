@@ -3,6 +3,7 @@ import type { CommentBatch, Sent } from '../shell'
 import type { Actions } from './actions'
 import type { CopyActions, CopyStore } from './copy'
 import type { OptActions, OptStore } from './options'
+import type { RoundActions } from './round'
 import type { Store } from './store'
 import type { Item, Target, TweakNote } from './types'
 import type { ViewSize } from '../view/sizes'
@@ -46,7 +47,7 @@ export type Host = {
   dark: () => boolean
 }
 /** The comment layer's store and actions, and the copy picker's and the options panel's, which send through it. */
-export type Ctx = { store: Store; host: Host; act: Actions; copyStore: CopyStore; copyAct: CopyActions; optStore: OptStore; optAct: OptActions }
+export type Ctx = { store: Store; host: Host; act: Actions; copyStore: CopyStore; copyAct: CopyActions; optStore: OptStore; optAct: OptActions; roundAct: RoundActions }
 export const CommentsCtx = createContext<Ctx>(null as unknown as Ctx)
 export const useCtx = () => useContext(CommentsCtx)
 

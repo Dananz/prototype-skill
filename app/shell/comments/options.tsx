@@ -29,8 +29,17 @@ export type AskKind = 'more' | 'promote' | 'ask'
 /** A request the agent has not finished: more options for a facet, a prototype of them, options for an element that has none. */
 export type Ask = { kind: AskKind; key: string; label: string; batch: string; target?: Target; seen?: boolean; listed?: boolean }
 export type SentItem = { key: string; facet: string; label: string; choice: string; from: string; target?: Target; action?: 'copy' | 'option' }
-/** `listed`: the server has listed the batch (it lists the last 20), so one no longer listed is long done. */
-type Rec = { sent?: { batch: string; items: SentItem[]; undo?: boolean; listed?: boolean }; dismissed?: string; asks: Ask[]; fresh: string[] }
+/** A decision of the round (round.tsx): kept as it is, skipped, or an option picked (a pick put back to
+ *  today's reads as kept). */
+export type Decided = 'picked' | 'kept' | 'skipped'
+/** The round on a variant: each step's decision by facet key, whether its card was put away, and
+ *  whether it was ever offered there (it stays offered once it was). */
+export type RoundRec = { decided: Record<string, Decided>; hidden?: boolean; offered?: boolean }
+/** `listed`: the server has listed the batch (it lists the last 20), so one no longer listed is long done.
+ *  `looked`: the spots whose panel was opened (or whose step was shown): looked at by the user. */
+export type Rec = { sent?: { batch: string; items: SentItem[]; undo?: boolean; listed?: boolean }; dismissed?: string; asks: Ask[]; fresh: string[]; looked?: string[]; round?: RoundRec }
+/** The round's card: at rest (the island's row), a step, the summary, or see-all (a bar, with the dots). */
+export type RoundMode = 'rest' | 'step' | 'summary' | 'browse'
 export type OptState = {
   /** The design the dots are on; null where options are off (a share, a shot, a tool, side by side). */
   stage: HTMLElement | null
@@ -44,6 +53,12 @@ export type OptState = {
   sending: boolean
   error: string
   rec: Rec
+  /** Whether a round may show here (not in a still, even one with the dots). */
+  roundOk: boolean
+  /** The round's card, null when none shows; the step on show (a facet key) and whether it returns to the summary. */
+  round: RoundMode | null
+  cur: string | null
+  back: boolean
 }
 export const ASK = '\u0000ask'
 type Box = { x: number; y: number; w: number; h: number }
@@ -53,7 +68,7 @@ export function createOptionsStore(session: string) {
   let all: Record<string, Rec> = {}
   try { const v = JSON.parse(sessionStorage.getItem(key) ?? '{}'); if (v && typeof v === 'object') all = v } catch { /* none kept */ }
   const recOf = (route: string): Rec => { const r = all[route]; return r && Array.isArray(r.asks) && Array.isArray(r.fresh) ? r : { asks: [], fresh: [] } }
-  let state: OptState = { stage: null, route: '', open: null, askEl: null, tab: 0, cover: null, sending: false, error: '', rec: { asks: [], fresh: [] } }
+  let state: OptState = { stage: null, route: '', open: null, askEl: null, tab: 0, cover: null, sending: false, error: '', rec: { asks: [], fresh: [] }, roundOk: false, round: null, cur: null, back: false }
   const subs = new Set<() => void>()
   const tell = () => { for (const f of [...subs]) f() }
   return {
@@ -85,19 +100,20 @@ export function createOptionsActions(os: OptStore, host: Host, comments: Store) 
   const targetOf = (sp: Spot) => { const st = stage(), el = sp.els[0]; return st && el ? describe(st, el) : undefined }
   const act = {
     spots: () => spotsOf(stage()),
-    /** The page moved or redrew: the design the dots are on now. */
-    setStage(st: HTMLElement | null, route: string) {
+    /** The page moved or redrew: the design the dots are on now, and whether a round may show on it. */
+    setStage(st: HTMLElement | null, route: string, roundOk = true) {
       const s = get()
-      if (st === s.stage && route === s.route) return
-      if (s.stage && s.stage !== st) { stopDrawing(); options.release(s.stage) }
+      if (st === s.stage && route === s.route && roundOk === s.roundOk) return
+      if (s.stage && s.stage !== st) { stopDrawing(); options.release(s.stage); liftDesign(null, '', 0) }
       const same = route === s.route
-      os.set({ stage: st, route, ...(same ? {} : { open: null, askEl: null, tab: 0, error: '', rec: os.recOf(route) }), cover: null })
+      os.set({ stage: st, route, roundOk, ...(same ? {} : { open: null, askEl: null, tab: 0, error: '', rec: os.recOf(route), round: null, cur: null, back: false }), cover: null })
     },
     open(key: string, tab = 0) {
       const st = stage()
       if (!st) return
       if (get().open && get().open !== key) act.close()
       os.set({ open: key, askEl: null, tab })
+      act.look(key)
       if (get().rec.fresh.includes(key)) os.keep(r => ({ ...r, fresh: r.fresh.filter(k => k !== key) }))
     },
     /** Options for any element of the design: its spot's panel, or asking for some when it has none. */
@@ -116,6 +132,8 @@ export function createOptionsActions(os: OptStore, host: Host, comments: Store) 
       os.set({ open: null, askEl: null, cover: null })
     },
     escape(): boolean { if (!get().open) return false; act.close(); return true },
+    /** A spot the user has looked at (its panel opened, its step shown): it no longer counts toward offering a round. */
+    look(key: string) { if (!get().rec.looked?.includes(key)) os.keep(r => ({ ...r, looked: [...(r.looked ?? []), key] })) },
     setTab(tab: number) { const st = stage(); if (st) options.preview(st, null); os.set({ tab }) },
     /** What Send posts: each changed facet whose choice differs from what was last sent for it. */
     pending() {
@@ -231,6 +249,26 @@ export function createOptionsActions(os: OptStore, host: Host, comments: Store) 
 }
 export type OptActions = ReturnType<typeof createOptionsActions>
 
+// ---------- moving the design out of the way ----------
+// One owner for every offset given to the design's layer (the stage's `[data-layers] > *`): a phone's
+// sheet lifts it above the sheet, a round lifts the element in hand above its card or moves the design
+// under its bar. They add up, written as the CSS translate (paging and the copy sheet use transform,
+// so neither overwrites the other), and all go when the stage changes.
+const lifts = new Map<string, number>()
+let lifted: HTMLElement | null = null
+export function liftDesign(stage: HTMLElement | null, who: string, by: number) {
+  const layer = stage?.closest<HTMLElement>('[data-layers] > *') ?? null
+  if (lifted && lifted !== layer) { lifted.style.translate = ''; lifts.clear() }
+  lifted = layer
+  if (!layer || !who) return
+  if (Math.round(by)) lifts.set(who, Math.round(by)); else lifts.delete(who)
+  const y = [...lifts.values()].reduce((a, b) => a + b, 0)
+  layer.style.transition = 'translate 450ms cubic-bezier(0.32, 0.72, 0, 1)'
+  layer.style.translate = y ? `0 ${y}px` : ''
+}
+/** How far one owner has the design moved now. */
+export const liftOf = (who: string) => lifts.get(who) ?? 0
+
 // ---------- measuring ----------
 const styleOf = (el: Element) => (el.ownerDocument.defaultView ?? window).getComputedStyle(el)
 function drawn(el: Element, r: DOMRect) {
@@ -248,7 +286,7 @@ const filled = (c: string) => c !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test
 /** Whether an element is a line of words (no background or border of its own, no picture in it). */
 function wordy(el: HTMLElement) {
   const cs = styleOf(el)
-  return !(filled(cs.backgroundColor) || parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderBottomWidth) > 0 || !el.textContent?.trim() || el.querySelector('svg, img, video, canvas'))
+  return !(filled(cs.backgroundColor) || cs.backgroundImage !== 'none' || parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderBottomWidth) > 0 || !el.textContent?.trim() || el.querySelector('svg, img, video, canvas'))
 }
 /** Where an element shows: a line of text (no background or border of its own) by its words, so its dot
  *  sits at the end of the words rather than at the far end of a wide block; anything else by its box. */
@@ -279,10 +317,10 @@ export function dotAt(m: Pick<Mark, 'box' | 'rtl'>) {
 }
 
 // ---------- shared hooks ----------
-const useNarrow = () => useSyncExternalStore(f => { const m = matchMedia('(max-width: 639px)'); m.addEventListener('change', f); return () => m.removeEventListener('change', f) }, () => matchMedia('(max-width: 639px)').matches)
+export const useNarrow = () => useSyncExternalStore(f => { const m = matchMedia('(max-width: 639px)'); m.addEventListener('change', f); return () => m.removeEventListener('change', f) }, () => matchMedia('(max-width: 639px)').matches)
 export const useOptState = (os: OptStore) => useSyncExternalStore(os.subscribe, os.get)
 /** Re-renders on any change to the design's values (tweaks, copy, what shows for now) or its pictures. */
-function useValues() {
+export function useValues() {
   const [, set] = useState(0)
   useEffect(() => {
     const bump = () => set(n => n + 1)
@@ -290,13 +328,13 @@ function useValues() {
     return () => offs.forEach(f => f())
   }, [])
 }
-function usePhase() {
+export function usePhase() {
   const { store, optAct } = useCtx()
   return useSyncExternalStore(store.subscribe, () => optAct.phase())
 }
 
 // ---------- a tile ----------
-const still = (p: Picture | undefined): p is Still => !!p && typeof p === 'object'
+export const still = (p: Picture | undefined): p is Still => !!p && typeof p === 'object'
 /** One scale for all of a facet's pictures, so a size reads as bigger or smaller: as big as the biggest
  *  fits its tile (a small element up to 2.2 times). Words are fitted by their height and cut at the
  *  tile's edge, so their size still shows. */
@@ -308,7 +346,7 @@ export function fitOf(pics: (Picture | undefined)[], w: number, h: number) {
   return solid.length ? Math.min(2.2, ...solid.map(p => Math.min((w - 12) / p.w, (h - 10) / p.h))) : 1
 }
 /** The picture of an option, at the facet's scale. */
-function Pic({ pic, w, k }: { pic: Picture | undefined; w: number; k: number }) {
+export function Pic({ pic, w, k }: { pic: Picture | undefined; w: number; k: number }) {
   if (!pic || pic === 'failed') return null
   if (pic === 'empty') return <span className="size-6 rounded-md border border-dashed border-zinc-400/70" />
   // A hairline: as long as the tile allows, a few px thick, so the line shows at all.
@@ -326,17 +364,19 @@ function Pic({ pic, w, k }: { pic: Picture | undefined; w: number; k: number }) 
   )
 }
 
-function Tile({ f, i, pic, k, bg, big, drawing, chosenNow, previewed, onPick, onPreview }: {
-  f: Facet; i: number; pic: Picture | undefined; k: number; bg: string; big?: boolean; drawing: boolean; chosenNow: boolean; previewed: boolean; onPick(): void; onPreview(on: boolean): void
+/** One option's tile. `num`: its number for the digit keys (a round's step), shown at its corner. */
+export function Tile({ f, i, pic, k, bg, big, drawing, chosenNow, previewed, num, disabled, onPick, onPreview }: {
+  f: Facet; i: number; pic: Picture | undefined; k: number; bg: string; big?: boolean; drawing: boolean; chosenNow: boolean; previewed: boolean; num?: number; disabled?: boolean; onPick(): void; onPreview(on: boolean): void
 }) {
   const o = f.options[i], today = f.today === i
   const ring = chosenNow ? 'ring-2 ring-proto-primary' : previewed ? 'ring-[1.5px] ring-zinc-400/80' : 'ring-1 ring-black/[.08] dark:ring-white/10'
   // On every move, not only on entering: a tile entered while the pictures were still being drawn shows once they are.
   const enter = (e: React.PointerEvent) => { if (e.pointerType === 'mouse' && !previewed && !chosenNow) onPreview(true) }
   if (f.kind === 'words') return (
-    <button type="button" data-option-tile={i} aria-pressed={chosenNow}
+    <button type="button" data-option-tile={i} aria-pressed={chosenNow} disabled={disabled}
       onPointerMove={enter} onFocus={() => onPreview(true)} onBlur={() => onPreview(false)} onClick={onPick}
-      className={`flex w-full items-center gap-2.5 rounded-xl px-1.5 py-1 text-start ${previewed ? 'bg-zinc-900/[.05] dark:bg-white/[.07]' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.05]'}`}>
+      className={`flex w-full items-center gap-2.5 rounded-xl px-1.5 py-1 text-start disabled:opacity-50 ${previewed ? 'bg-zinc-900/[.05] dark:bg-white/[.07]' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.05]'}`}>
+      {num !== undefined && <span className="w-3 shrink-0 text-center text-[11px] font-medium tabular-nums text-zinc-400">{num}</span>}
       <span className={`flex min-w-0 flex-1 items-center rounded-lg px-3 ${ring} ${big ? 'min-h-12 py-2 text-[16px]' : 'min-h-11 py-1.5 text-[15px]'}`} style={{ background: bg }}>
         <span dir="auto" className="line-clamp-2 font-semibold leading-snug text-zinc-900 dark:text-zinc-100">{o.name}</span>
       </span>
@@ -345,9 +385,9 @@ function Tile({ f, i, pic, k, bg, big, drawing, chosenNow, previewed, onPick, on
   )
   const swatch = f.kind === 'color' && (!pic || pic === 'failed') && typeof o.value === 'string'
   return (
-    <button type="button" data-option-tile={i} aria-pressed={chosenNow} aria-label={o.name}
+    <button type="button" data-option-tile={i} aria-pressed={chosenNow} aria-label={o.name} disabled={disabled}
       onPointerMove={enter} onFocus={() => onPreview(true)} onBlur={() => onPreview(false)} onClick={onPick}
-      className={`group flex shrink-0 flex-col items-center gap-1 rounded-2xl p-1 pb-1.5 ${big ? 'w-full' : 'w-[78px]'} ${previewed ? 'bg-zinc-900/[.05] dark:bg-white/[.07]' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.05]'}`}>
+      className={`group relative flex shrink-0 flex-col items-center gap-1 rounded-2xl p-1 pb-1.5 disabled:opacity-50 ${big ? 'w-full' : 'w-[78px]'} ${previewed ? 'bg-zinc-900/[.05] dark:bg-white/[.07]' : 'hover:bg-zinc-900/[.04] dark:hover:bg-white/[.05]'}`}>
       <span data-option-picture={pic && typeof pic === 'object' && !(f.kind === 'toggle' && o.value === false) ? '' : undefined} className={`relative grid w-full place-items-center overflow-hidden rounded-xl ${ring} ${big ? 'h-[68px]' : 'h-[58px]'}`} style={{ background: bg }}>
         {drawing && !pic ? <span className="size-full animate-pulse bg-zinc-900/[.04] dark:bg-white/[.05]" />
           : swatch ? <span className="size-7 rounded-full ring-1 ring-black/10" style={{ background: o.value as string }} />
@@ -355,6 +395,7 @@ function Tile({ f, i, pic, k, bg, big, drawing, chosenNow, previewed, onPick, on
           : pic && pic !== 'failed' ? <Pic pic={pic} w={big ? 84 : 70} k={k} />
           : <span dir="auto" className="line-clamp-2 px-1 text-center text-[11px] font-medium text-zinc-700 dark:text-zinc-200">{o.name}</span>}
         {chosenNow && <span className="absolute end-1 top-1 grid size-4 place-items-center rounded-full bg-proto-primary text-white shadow-[0_0_0_2px_white] dark:shadow-[0_0_0_2px_#18181b]"><Icon name="check" className="size-2.5" /></span>}
+        {num !== undefined && <span className="absolute start-1.5 top-1 text-[10px] font-medium tabular-nums text-zinc-400">{num}</span>}
       </span>
       <span dir="auto" className={`max-w-full truncate text-[12px] leading-4 ${chosenNow ? 'font-semibold text-zinc-900 dark:text-white' : 'text-zinc-600 dark:text-zinc-300'}`}>{o.name}</span>
       <span className="h-3 text-[10px] leading-3 text-zinc-400">{today ? t('Now') : previewed && !chosenNow ? t('Showing') : ''}</span>
@@ -363,7 +404,7 @@ function Tile({ f, i, pic, k, bg, big, drawing, chosenNow, previewed, onPick, on
 }
 
 /** Tiles in one row that scrolls sideways once they no longer fit, with a fade and an arrow on the side that has more. */
-function Strip({ children, pick, big }: { children: ReactNode; pick: number; big?: boolean }) {
+export function Strip({ children, pick, big }: { children: ReactNode; pick: number; big?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   const [edge, setEdge] = useState({ start: true, end: true })
   const read = useCallback(() => {
@@ -541,7 +582,7 @@ export function useFacetPictures(spot: Spot, f: Facet, { on = true, delay = 30 }
   return { key, pics: f.options.map((_, i) => pictureOf(key, i)), drawing }
 }
 
-function AgentSays({ say }: { say: (agent: string) => string }) {
+export function AgentSays({ say }: { say: (agent: string) => string }) {
   const agent = useAgentName()
   return <>{say(agent)}</>
 }
@@ -580,15 +621,22 @@ const alphaOf = (color: string) => {
 }
 /** What is behind an element on the design: the nearest background that isn't see-through. */
 export function backdropOf(el: Element | null) {
-  for (let e = el?.parentElement ?? null; e; e = e.parentElement) { const bg = styleOf(e).backgroundColor; if (bg !== 'transparent' && alphaOf(bg) > 0.05) return bg }
+  for (let e = el?.parentElement ?? null; e; e = e.parentElement) {
+    const cs = styleOf(e), bg = cs.backgroundColor
+    // A gradient behind it (a hero's banner) is its backdrop as it is.
+    if (/gradient\(/.test(cs.backgroundImage)) return `${cs.backgroundImage}${bg !== 'transparent' ? `, ${bg}` : ''}`
+    if (bg !== 'transparent' && alphaOf(bg) > 0.05) return bg
+  }
   return el && (el.ownerDocument.documentElement.classList.contains('dark')) ? '#09090b' : '#ffffff'
 }
 
 // ---------- over the stage: the dots, the outline of what is pointed at, the panel ----------
-const CARD = 'bg-white text-zinc-900 ring-1 ring-black/[.08] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10'
+/** What is a control of its own on the design: a click on it (or in it) stays its own. */
+export const INTERACTIVE = 'a[href], button, input, select, textarea, label, summary, [role="button"], [role="link"], [contenteditable]:not([contenteditable="false"])'
+export const CARD = 'bg-white text-zinc-900 ring-1 ring-black/[.08] shadow-[0_18px_44px_-14px_rgb(0_0_0/.35)] dark:bg-zinc-900 dark:text-zinc-100 dark:ring-white/10'
 
 export function OptionsLayer() {
-  const { host, store, copyStore, optStore, optAct } = useCtx()
+  const { host, store, copyStore, optStore, optAct, roundAct } = useCtx()
   const s = useOptState(optStore)
   const mode = useSyncExternalStore(store.subscribe, () => store.get().mode.kind)
   const copying = useSyncExternalStore(copyStore.subscribe, () => copyStore.get().on)
@@ -676,6 +724,38 @@ export function OptionsLayer() {
     return () => { st.removeEventListener('pointerover', over); st.removeEventListener('pointerleave', out) }
   }, [st, on, narrow])
 
+  // A click on an element with options opens its panel (again: closes it), as its dot does, when the
+  // element is not a control of its own (a link, a button, a field) nor inside one: those keep their
+  // click and open from the dot. Only at rest: never while commenting, in copy mode or anywhere
+  // options are off.
+  useEffect(() => {
+    if (!st || !on || mode !== 'idle') return
+    const doc = st.ownerDocument
+    const click = (e: MouseEvent) => {
+      if (e.button !== 0 || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const t = e.target as Element | null
+      const m = t?.closest?.<HTMLElement>(MARKED)
+      if (!m || !st.contains(m)) return
+      const own = t!.closest(INTERACTIVE)
+      if (own && (st.contains(own) || own === st)) return
+      const sp = spotsOf(st).find(x => x.els.includes(m))
+      if (!sp) return
+      if (roundAct.clickSpot(sp.key)) return
+      if (optStore.get().open === sp.key) optAct.close()
+      else optAct.open(sp.key)
+    }
+    st.addEventListener('click', click)
+    // It says so: a pointer over the elements a click opens.
+    if (!doc.getElementById('proto-options-click')) {
+      const css = doc.createElement('style')
+      css.id = 'proto-options-click'
+      css.textContent = `[data-options-on] :is(${MARKED}):not(${INTERACTIVE}) { cursor: pointer }`
+      doc.head.append(css)
+    }
+    st.setAttribute('data-options-on', '')
+    return () => { st.removeEventListener('click', click); st.removeAttribute('data-options-on') }
+  }, [st, on, mode, optAct, optStore, roundAct])
+
   // Keys while a panel is open or something changed, in the page and in a device view's frame: Esc
   // closes the panel, and \ held shows the original.
   useEffect(() => {
@@ -683,7 +763,7 @@ export function OptionsLayer() {
     const docs = [...new Set([document, st.ownerDocument])]
     const typing = (e: KeyboardEvent) => !!(e.target as HTMLElement | null)?.closest?.('input, textarea, [contenteditable="true"], [contenteditable=""]')
     const down = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && optStore.get().open) { e.preventDefault(); e.stopImmediatePropagation(); optAct.close(); return }
+      if (e.key === 'Escape' && !typing(e) && (optStore.get().open ? (optAct.close(), true) : roundAct.escape())) { e.preventDefault(); e.stopImmediatePropagation(); return }
       if (back(e) && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(e) && spotsOf(st).some(sp => sp.facets.some(f => isChanged(st, f)))) { e.preventDefault(); options.compare(st, true) }
     }
     // By the key's place as well as its character: on a keyboard in another language \\ types something else.
@@ -693,7 +773,7 @@ export function OptionsLayer() {
     for (const d of docs) { listen(d, 'keydown', down, true); d.addEventListener('keyup', up, true) }
     addEventListener('blur', blur)
     return () => { for (const d of docs) { d.removeEventListener('keydown', down, true); d.removeEventListener('keyup', up, true) }; removeEventListener('blur', blur) }
-  }, [st, on, optStore, optAct])
+  }, [st, on, optStore, optAct, roundAct])
 
   // A click outside the panel, its dot and its element closes it, in a device view's frame too.
   useEffect(() => {
@@ -717,6 +797,8 @@ export function OptionsLayer() {
   useEffect(() => { if (s.open && s.open !== ASK && !openSpot && marks.length) optAct.close() }, [s.open, !!openSpot, marks.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!st || !on) return null
+  // A round's card on show (at rest, a step, the summary) has the design to itself: no dots, no outline.
+  const quiet = roundAct.up()
   const markOf = (key: string, n = 0) => marks.find(m => m.key === key && m.n === n) ?? marks.find(m => m.key === key)
   // Pinned while open.
   const openMark = openSpot ? markOf(openSpot.key) : undefined
@@ -727,7 +809,7 @@ export function OptionsLayer() {
   const sent = phase === 'sent' ? s.rec.sent : undefined
   const sentKeys = new Set(sent?.items.map(i => i.key) ?? [])
   const applied = phase === 'applied' ? s.rec.sent : undefined
-  const hoverSpot = hover && hover.key !== s.open ? spots.find(x => x.key === hover.key) : undefined
+  const hoverSpot = hover && hover.key !== s.open && !quiet ? spots.find(x => x.key === hover.key) : undefined
   const hoverMark = hover && hoverSpot ? markOf(hover.key, hover.n) : undefined
   const optionCount = (sp: Spot) => sp.facets.reduce((n, f) => n + f.options.length, 0)
   const asking = s.rec.asks.filter(a => a.kind === 'ask' && !a.seen)
@@ -741,9 +823,13 @@ export function OptionsLayer() {
           </span>
         </div>
       )}
-      {openSpot && pinned && (
-        <div aria-hidden className="absolute rounded-[8px] ring-[1.5px] ring-proto-primary" style={{ left: pinned.x - 4, top: pinned.y - 4, width: pinned.w + 8, height: pinned.h + 8 }} />
-      )}
+      {openSpot && pinned && (() => {
+        // A big element (a card) is outlined inside its edge, where nothing around it (the card it is
+        // in, the stage's edge) can cut the line off.
+        const inside = pinned.w * pinned.h > 160 * 120 || pinned.x < 6 || pinned.y < 6 || pinned.x + pinned.w > host.layer.clientWidth - 6
+        const g = inside ? -2 : 4
+        return <div aria-hidden data-option-outline={inside ? 'inside' : 'outside'} className="absolute rounded-[8px] ring-[1.5px] ring-proto-primary" style={{ left: pinned.x - g, top: pinned.y - g, width: pinned.w + g * 2, height: pinned.h + g * 2 }} />
+      })()}
       {askBox && <div aria-hidden className="absolute rounded-[8px] border-[1.5px] border-dashed border-proto-primary" style={{ left: askBox.x - 4, top: askBox.y - 4, width: askBox.w + 8, height: askBox.h + 8 }} />}
       {s.cover && (() => {
         const k = s.cover.box.w / (s.cover.w || 1)
@@ -751,7 +837,7 @@ export function OptionsLayer() {
           <div className="origin-top-left" style={{ width: s.cover.w, height: s.cover.h, transform: `scale(${k})` }} dangerouslySetInnerHTML={{ __html: s.cover.html }} />
         </div>
       })()}
-      {spots.map(sp => {
+      {!quiet && spots.map(sp => {
         const m = sp.key === s.open && pinned ? { ...markOf(sp.key)!, box: pinned } : markOf(sp.key)
         if (!m) return null
         const at = dotAt(m)
@@ -781,7 +867,7 @@ export function OptionsLayer() {
           <span className="absolute start-0 top-full mt-1 flex items-center gap-1 whitespace-nowrap rounded-full bg-proto-primary px-2 py-0.5 text-[11px] font-medium text-white shadow"><Icon name="spinner" className="size-2.5 animate-spin" /><AgentSays say={a => t('{agent} is preparing options', { agent: a })} /></span>
         </div>
       })}
-      {!narrow && openSpot && pinned && <Popover spot={openSpot} box={pinned} />}
+      {!narrow && openSpot && pinned && <Popover spot={openSpot} box={pinned} design={boxIn(st, host.layer)} />}
       {!narrow && s.open === ASK && s.askEl && askBox && <Popover el={s.askEl} box={askBox} />}
     </div>
   )
@@ -809,9 +895,10 @@ function Dot({ spot, at, open, hover, fresh, phone, onHover }: { spot: Spot; at:
       style={{ left: at.x - hit / 2, top: at.y - hit / 2, width: hit, height: hit }}>
       <span className={`block rounded-full transition-[width,height,background-color,box-shadow,opacity] duration-150 ${fresh ? 'animate-[proto-option-pulse_1.6s_ease-in-out_infinite]' : ''} ${comparing
         ? 'size-1.5 bg-transparent opacity-70 shadow-[inset_0_0_0_1.5px_var(--color-proto-primary,#4f46e5)]'
+        // A white ring and a soft dark edge: it shows on a light design and on a dark one alike.
         : changed
-          ? `bg-proto-primary shadow-[0_0_0_2px_white,0_0_0_4px_var(--color-proto-primary,#4f46e5)] dark:shadow-[0_0_0_2px_#18181b,0_0_0_4px_var(--color-proto-primary,#6366f1)] ${big ? 'size-3' : 'size-2.5'}`
-          : `bg-proto-primary shadow-[0_0_0_2px_white,0_0_0_4px_rgb(99_102_241/.25)] dark:shadow-[0_0_0_2px_#18181b,0_0_0_4px_rgb(129_140_248/.35)] ${big ? 'size-3' : 'size-2'}`}`} />
+          ? `bg-proto-primary shadow-[0_0_0_2px_white,0_0_0_4px_var(--color-proto-primary,#4f46e5),0_1px_6px_1px_rgb(0_0_0/.45)] ${big ? 'size-3.5' : 'size-3'}`
+          : `bg-proto-primary shadow-[0_0_0_2px_white,0_0_0_3.5px_rgb(0_0_0/.28),0_1px_5px_rgb(0_0_0/.35)] ${big ? 'size-3.5' : 'size-2.5'}`}`} />
     </button>
   )
 }
@@ -819,31 +906,41 @@ function Dot({ spot, at, open, hover, fresh, phone, onHover }: { spot: Spot; at:
 /** The panel on a wide page: beside the element, never over it. Below it when there is room above the
  *  island, else above it, else beside it; inside the stage, never hanging past its edge. Where it goes
  *  is decided when it opens, so trying an option that resizes the element never moves it. */
-function Popover({ spot, el, box }: { spot?: Spot; el?: HTMLElement; box: Box }) {
+function Popover({ spot, el, box, design }: { spot?: Spot; el?: HTMLElement; box: Box; design?: Box }) {
   const { host, optAct, optStore } = useCtx()
   const s = useOptState(optStore)
   const ref = useRef<HTMLDivElement>(null)
-  const side = useRef<{ key: string; where: 'below' | 'above' | 'end' | 'start' } | null>(null)
+  const side = useRef<{ key: string; where: 'below' | 'above' | 'end' | 'start' | 'd-end' | 'd-start' } | null>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
   const id = spot?.key ?? ASK
   useLayoutEffect(() => {
     const p = ref.current
     if (!p) return
     const W = host.layer.clientWidth, H = host.layer.clientHeight
-    const pw = p.offsetWidth, ph = p.offsetHeight, gap = 12, foot = 76
+    // The island's top, when it sits along the bottom: nothing goes under it.
+    const isl = document.querySelector<HTMLElement>('[data-island]')?.getBoundingClientRect(), lr = host.layer.getBoundingClientRect()
+    const foot = isl && isl.height && isl.top - lr.top > H / 2 ? Math.max(16, lr.bottom - isl.top + 8) : 16
+    const pw = p.offsetWidth, ph = p.offsetHeight, gap = 12
+    // A big element (a card, a picture): beside the whole design when there is room there, so the panel
+    // covers neither the element nor what is around it.
+    const big = box.h > 80 && box.w * box.h > 200 * 100
+    const d = design ?? box
     if (!side.current || side.current.key !== id) {
       const below = box.y + box.h + gap + ph <= H - foot, above = box.y - gap - ph >= 8
       const endRoom = rtl ? box.x - gap - pw >= 8 : box.x + box.w + gap + pw <= W - 8
       const startRoom = rtl ? box.x + box.w + gap + pw <= W - 8 : box.x - gap - pw >= 8
+      const dEnd = rtl ? d.x - gap - pw >= 8 : d.x + d.w + gap + pw <= W - 8
+      const dStart = rtl ? d.x + d.w + gap + pw <= W - 8 : d.x - gap - pw >= 8
       const tall = box.h > 160
-      side.current = { key: id, where: tall && endRoom ? 'end' : tall && startRoom ? 'start' : below ? 'below' : above ? 'above' : endRoom ? 'end' : startRoom ? 'start' : box.y + box.h / 2 < H / 2 ? 'below' : 'above' }
+      side.current = { key: id, where: big && dEnd ? 'd-end' : big && dStart ? 'd-start' : tall && endRoom ? 'end' : tall && startRoom ? 'start' : below ? 'below' : above ? 'above' : endRoom ? 'end' : startRoom ? 'start' : box.y + box.h / 2 < H / 2 ? 'below' : 'above' }
     }
     const w = side.current.where
     const clampX = (x: number) => Math.max(8, Math.min(W - pw - 8, x))
-    const clampY = (y: number) => Math.max(8, Math.min(H - ph - 8, y))
-    const right = (w === 'end') !== rtl
-    const next = w === 'below' ? { left: clampX(box.x + box.w / 2 - pw / 2), top: clampY(box.y + box.h + gap) }
+    const clampY = (y: number) => Math.max(8, Math.min(H - ph - foot, y))
+    const right = (w === 'end' || w === 'd-end') !== rtl
+    const next = w === 'below' ? { left: clampX(box.x + box.w / 2 - pw / 2), top: Math.max(8, Math.min(H - ph - 8, box.y + box.h + gap)) }
       : w === 'above' ? { left: clampX(box.x + box.w / 2 - pw / 2), top: clampY(box.y - gap - ph) }
+      : w === 'd-end' || w === 'd-start' ? { left: clampX(right ? d.x + d.w + gap : d.x - gap - pw), top: clampY(box.y) }
       : { left: clampX(right ? box.x + box.w + gap : box.x - gap - pw), top: clampY(box.y) }
     setPos(was => was && Math.abs(was.left - next.left) < 0.5 && Math.abs(was.top - next.top) < 0.5 ? was : next)
   })
@@ -897,19 +994,19 @@ export function OptionsSheet({ container }: { container: HTMLElement }) {
   const el = spot?.els[0] ?? (s.open === ASK ? s.askEl : null)
   // The design moves up with the sheet until the element sits above it, and back down when it closes.
   useEffect(() => {
-    const layer = s.stage?.closest<HTMLElement>('[data-layers] > *')
-    if (!layer) return
-    if (!open || !el) { layer.style.transform = ''; return }
+    const st = s.stage
+    if (!st) return
+    if (!open || !el) { liftDesign(st, 'sheet', 0); return }
     const f = requestAnimationFrame(() => {
       const top = container.getBoundingClientRect().bottom - (sheet.current?.offsetHeight ?? 0)
+      // Where it would be without this lift.
       const r = drawn(el, el.getBoundingClientRect())
-      const by = Math.max(0, r.bottom + 24 - top)
-      layer.style.transition = 'transform 450ms cubic-bezier(0.32, 0.72, 0, 1)'
-      layer.style.transform = by ? `translateY(${-Math.round(by)}px)` : ''
+      const by = Math.max(0, r.bottom - liftOf('sheet') + 24 - top)
+      liftDesign(st, 'sheet', -by)
     })
     return () => cancelAnimationFrame(f)
   }, [open, el, s.stage, container, s.tab])
-  useEffect(() => () => { const layer = s.stage?.closest<HTMLElement>('[data-layers] > *'); if (layer) layer.style.transform = '' }, [s.stage])
+  useEffect(() => () => { if (s.stage) liftDesign(s.stage, 'sheet', 0) }, [s.stage])
   const keep = spot ?? (shown && s.stage ? spotsOf(s.stage).find(x => x.key === shown.key) ?? null : null)
   const askEl = s.open === ASK ? s.askEl : shown?.key === ASK ? shown.el : null
   if (!keep && !askEl) return null
@@ -956,22 +1053,24 @@ function ChipPic({ spot, big }: { spot: Spot; big?: boolean }) {
 
 /** Whether the tray has anything to show, for the island's width. */
 export function useOptionsTray() {
-  const { optStore, optAct } = useCtx()
+  const { optStore, optAct, roundAct } = useCtx()
   useOptState(optStore)
   useValues()
   const phase = usePhase()
-  return !!optStore.get().stage && (optAct.pending().length > 0 || phase !== 'idle' || optStore.get().rec.asks.some(a => !a.seen))
+  return !!optStore.get().stage && ((optAct.pending().length > 0 && !roundCard(roundAct)) || phase !== 'idle' || optStore.get().rec.asks.some(a => !a.seen))
 }
+/** A round's card with its own Send on show (a step, the summary, see-all): the tray's changes wait under it. */
+const roundCard = (ra: { info(): { offered: boolean; hidden: boolean; mode: RoundMode | null } }) => { const i = ra.info(); return i.offered && !i.hidden && (i.mode === 'step' || i.mode === 'summary' || i.mode === 'browse') }
 
 export function OptionsTray({ phone = false }: { phone?: boolean }) {
-  const { optStore, optAct } = useCtx()
+  const { optStore, optAct, roundAct } = useCtx()
   const s = useOptState(optStore)
   useValues()
   const agent = useAgentName()
   const phase = usePhase()
   const st = s.stage
   if (!st) return null
-  const pending = optAct.pending()
+  const pending = roundCard(roundAct) ? [] : optAct.pending()
   const asks = s.rec.asks.filter(a => !a.seen)
   if (!pending.length && phase === 'idle' && !asks.length) return null
   const spots = spotsOf(st)
@@ -1038,7 +1137,7 @@ export function OptionsTray({ phone = false }: { phone?: boolean }) {
   )
 }
 
-function SendButton({ n, sending, phone = false, onSend }: { n: number; sending: boolean; phone?: boolean; onSend(): void }) {
+export function SendButton({ n, sending, phone = false, onSend }: { n: number; sending: boolean; phone?: boolean; onSend(): void }) {
   return (
     <button type="button" data-options-send="" disabled={sending} onClick={onSend}
       className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 font-semibold disabled:opacity-60 ${PRIMARY} ${phone ? 'h-10 text-[14px]' : 'h-8 text-[12px]'}`}>
