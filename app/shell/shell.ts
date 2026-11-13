@@ -139,8 +139,8 @@ const SCALE_MAX = 200
 const segCls = (on: boolean) => `h-9 flex-1 rounded-md text-xs font-medium tabular-nums ${on ? TAB_ON : TAB_OFF}`
 // A range input drawn the same in every browser (iOS Safari restyles its own): the track fills
 // to --p, the thumb is a white disc.
-const RANGE = 'h-11 min-w-0 flex-1 cursor-pointer appearance-none bg-transparent px-1 outline-none [--fill:#18181b] [--rest:rgb(24_24_27/.1)] dark:[--fill:#fff] dark:[--rest:rgb(255_255_255/.15)] '
-  + '[&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-[linear-gradient(to_right,var(--fill)_var(--p),var(--rest)_var(--p))] '
+const RANGE = 'h-11 min-w-0 flex-1 cursor-pointer appearance-none bg-transparent px-1 outline-none [--to:to_right] rtl:[--to:to_left] [--fill:#18181b] [--rest:rgb(24_24_27/.1)] dark:[--fill:#fff] dark:[--rest:rgb(255_255_255/.15)] '
+  + '[&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-[linear-gradient(var(--to),var(--fill)_var(--p),var(--rest)_var(--p))] '
   + '[&::-webkit-slider-thumb]:-mt-[9px] [&::-webkit-slider-thumb]:size-6 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_1px_4px_rgba(0,0,0,.25),0_0_0_1px_rgba(0,0,0,.08)] focus-visible:[&::-webkit-slider-thumb]:shadow-[0_0_0_2px_#0ea5e9] '
   + '[&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-(--rest) [&::-moz-range-progress]:h-1.5 [&::-moz-range-progress]:rounded-full [&::-moz-range-progress]:bg-(--fill) '
   + '[&::-moz-range-thumb]:size-6 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:shadow-[0_1px_4px_rgba(0,0,0,.25),0_0_0_1px_rgba(0,0,0,.08)]'
@@ -1458,11 +1458,23 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const bar = pill.querySelector('[data-pill-bar]')?.parentElement
     return bar && fitsAlone() ? Math.max(0, room.getBoundingClientRect().bottom - bar.getBoundingClientRect().top) : 0
   }
+  // On a wide screen the comment island rests on the stage's foot, 16px up (island-drag.ts), unless
+  // it was dragged to the top or the side, or docked. Fit keeps the phones clear of where it rests,
+  // not of where it is this moment: it may still be gliding there, or open.
+  let islandH = 56
+  function islandOver(room: HTMLElement) {
+    const host = zone.querySelector<HTMLElement>('[data-island-host]'), isl = host?.querySelector<HTMLElement>('[data-island]')
+    const prefs = islandPrefs.get()
+    if (!host || host.hidden || !isl || prefs.docked || prefs.place !== 'bottom' || matchMedia('(max-width: 639px)').matches) return 0
+    if (!isl.hasAttribute('data-open') && isl.offsetHeight) islandH = isl.offsetHeight
+    return Math.max(0, room.getBoundingClientRect().bottom - (host.getBoundingClientRect().bottom - 16 - islandH))
+  }
   function phoneZoom(w: number, h: number, room: HTMLElement) {
     // One variant alone on a phone fits exactly, inside the p-6 of data-phones and clear of the bar.
     if (fitsAlone()) return Math.floor(Math.max(0.4, Math.min(1, (room.clientHeight - barOver(room) - 48) / h, (room.clientWidth - 48) / w)) * 100) / 100 * frameZoom
-    const auto = [100, 75, 50].find(s => h * s / 100 <= room.clientHeight - 88 && w * s / 100 <= room.clientWidth - 24) ?? 40
-    return (st.scale || auto) / 100 * frameZoom
+    // At Fit the phones take the largest size the stage holds clear of the comment island, up to their own size.
+    const auto = Math.floor(Math.max(0.4, Math.min(1, (room.clientHeight - islandOver(room) - 88) / h, (room.clientWidth - 24) / w)) * 100) / 100
+    return (st.scale ? st.scale / 100 : auto) * frameZoom
   }
   function fitBox(box: HTMLElement) {
     box.style.setProperty('--stage-h', `${box.clientHeight}px`)
@@ -1481,6 +1493,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   resized.observe(layers)
   // The comment bar at the pill grows once it has drawn, and a fit on a phone must clear it.
   resized.observe(pill)
+  // Fit clears the comment island: again when it comes or goes, or moves to another edge.
+  let islandWas = ''
+  const islandMoved = () => {
+    const host = zone.querySelector<HTMLElement>('[data-island-host]'), p = islandPrefs.get()
+    const now = [!!host?.querySelector('[data-island]'), !!host?.hidden, p.place, !!p.docked].join()
+    if (now !== islandWas) { islandWas = now; fit() }
+  }
+  new MutationObserver(islandMoved).observe(zone.querySelector('[data-island-host]')!, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] })
+  islandPrefs.subscribe(islandMoved)
 
   // ---------- navigation ----------
   function go(p: Place) {
