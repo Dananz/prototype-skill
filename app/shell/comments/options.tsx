@@ -256,8 +256,12 @@ export type OptActions = ReturnType<typeof createOptionsActions>
 // so neither overwrites the other), and all go when the stage changes.
 const lifts = new Map<string, number>()
 let lifted: HTMLElement | null = null
+/** The stage's layer: from the design, or (in a device view) from the frame it is drawn in. */
+const layerOf = (stage: HTMLElement | null) => stage ? ((frameOf(stage) ?? stage).closest<HTMLElement>('[data-layers] > *') ?? null) : null
+/** How far the design shows moved now, mid-transition too (its layer's computed translate, in px). */
+export const liftShown = (stage: HTMLElement | null) => { const l = layerOf(stage); if (!l) return 0; const v = getComputedStyle(l).translate; const y = v && v !== 'none' ? parseFloat(v.split(/\s+/)[1] ?? '0') : 0; return Number.isFinite(y) ? y : 0 }
 export function liftDesign(stage: HTMLElement | null, who: string, by: number) {
-  const layer = stage?.closest<HTMLElement>('[data-layers] > *') ?? null
+  const layer = layerOf(stage)
   if (lifted && lifted !== layer) { lifted.style.translate = ''; lifts.clear() }
   lifted = layer
   if (!layer || !who) return
@@ -266,8 +270,6 @@ export function liftDesign(stage: HTMLElement | null, who: string, by: number) {
   layer.style.transition = 'translate 450ms cubic-bezier(0.32, 0.72, 0, 1)'
   layer.style.translate = y ? `0 ${y}px` : ''
 }
-/** How far one owner has the design moved now. */
-export const liftOf = (who: string) => lifts.get(who) ?? 0
 
 // ---------- measuring ----------
 const styleOf = (el: Element) => (el.ownerDocument.defaultView ?? window).getComputedStyle(el)
@@ -430,8 +432,15 @@ export function Strip({ children, pick, big }: { children: ReactNode; pick: numb
     el.addEventListener('wheel', wheel, { passive: false })
     return () => el.removeEventListener('wheel', wheel)
   }, [read]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A tile chosen from afar (a digit key, a step opened again) is brought into view.
+  useEffect(() => {
+    const el = ref.current, tile = el?.querySelectorAll<HTMLElement>('[data-option-tile]')[pick]
+    if (!el || !tile) return
+    const t = tile.getBoundingClientRect(), r = el.getBoundingClientRect()
+    if (t.left < r.left || t.right > r.right) el.scrollBy({ left: t.left < r.left ? t.left - r.left - 8 : t.right - r.right + 8, behavior: 'smooth' })
+  }, [pick])
   const step = (dir: 1 | -1) => { const el = ref.current; if (el) el.scrollBy({ left: (rtl ? -dir : dir) * el.clientWidth * 0.8, behavior: 'smooth' }) }
-  const ARROW = 'absolute top-[20px] grid size-7 place-items-center rounded-full bg-white text-zinc-700 shadow-md ring-1 ring-black/10 hover:bg-zinc-100 hover:text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100 dark:ring-white/15 dark:hover:bg-zinc-600'
+  const ARROW = `absolute ${big ? 'top-[34px]' : 'top-[20px]'} grid size-7 place-items-center rounded-full bg-white text-zinc-700 shadow-md ring-1 ring-black/10 hover:bg-zinc-100 hover:text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100 dark:ring-white/15 dark:hover:bg-zinc-600`
   return (
     <div className="relative" data-base-ui-swipe-ignore="">
       <div ref={ref} data-option-strip="" onScroll={read} className={`relative flex snap-x snap-mandatory gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${big ? 'gap-1.5' : ''}`}>
@@ -439,8 +448,8 @@ export function Strip({ children, pick, big }: { children: ReactNode; pick: numb
       </div>
       <span aria-hidden className={`pointer-events-none absolute inset-y-0 end-0 w-10 bg-gradient-to-l from-white to-transparent transition-opacity rtl:bg-gradient-to-r dark:from-zinc-900 ${edge.end ? 'opacity-0' : 'opacity-100'}`} />
       <span aria-hidden className={`pointer-events-none absolute inset-y-0 start-0 w-10 bg-gradient-to-r from-white to-transparent transition-opacity rtl:bg-gradient-to-l dark:from-zinc-900 ${edge.start ? 'opacity-0' : 'opacity-100'}`} />
-      {!big && !edge.end && <button type="button" data-option-next="" aria-label={t('More options')} onClick={() => step(1)} className={`${ARROW} end-0`}><Icon name="right" className="size-3.5" /></button>}
-      {!big && !edge.start && <button type="button" data-option-prev="" aria-label={t('Earlier options')} onClick={() => step(-1)} className={`${ARROW} start-0`}><Icon name="left" className="size-3.5" /></button>}
+      {!edge.end && <button type="button" data-option-next="" aria-label={t('More options')} onClick={() => step(1)} className={`${ARROW} end-0`}><Icon name="right" className="size-3.5" /></button>}
+      {!edge.start && <button type="button" data-option-prev="" aria-label={t('Earlier options')} onClick={() => step(-1)} className={`${ARROW} start-0`}><Icon name="left" className="size-3.5" /></button>}
     </div>
   )
 }
@@ -903,6 +912,19 @@ function Dot({ spot, at, open, hover, fresh, phone, onHover }: { spot: Spot; at:
   )
 }
 
+/** The card an element sits in on the design (the nearest box around it with a fill, a border or a
+ *  shadow of its own, bigger than it), over the layer. */
+function cardOf(el: Element | null, stage: HTMLElement | null, layer: HTMLElement): Box | null {
+  if (!el || !stage) return null
+  const own = el.getBoundingClientRect()
+  for (let e = el.parentElement; e && e !== stage && stage.contains(e); e = e.parentElement) {
+    const cs = styleOf(e), r = e.getBoundingClientRect()
+    if (r.height <= own.height + 4) continue
+    if (filled(cs.backgroundColor) || cs.backgroundImage !== 'none' || parseFloat(cs.borderTopWidth) > 0 || cs.boxShadow !== 'none') return boxIn(e, layer)
+  }
+  return null
+}
+
 /** The panel on a wide page: beside the element, never over it. Below it when there is room above the
  *  island, else above it, else beside it; inside the stage, never hanging past its edge. Where it goes
  *  is decided when it opens, so trying an option that resizes the element never moves it. */
@@ -910,7 +932,7 @@ function Popover({ spot, el, box, design }: { spot?: Spot; el?: HTMLElement; box
   const { host, optAct, optStore } = useCtx()
   const s = useOptState(optStore)
   const ref = useRef<HTMLDivElement>(null)
-  const side = useRef<{ key: string; where: 'below' | 'above' | 'end' | 'start' | 'd-end' | 'd-start' } | null>(null)
+  const side = useRef<{ key: string; where: 'below' | 'above' | 'end' | 'start' | 'd-end' | 'd-start' | 'under'; at?: number } | null>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
   const id = spot?.key ?? ASK
   useLayoutEffect(() => {
@@ -932,7 +954,12 @@ function Popover({ spot, el, box, design }: { spot?: Spot; el?: HTMLElement; box
       const dEnd = rtl ? d.x - gap - pw >= 8 : d.x + d.w + gap + pw <= W - 8
       const dStart = rtl ? d.x + d.w + gap + pw <= W - 8 : d.x - gap - pw >= 8
       const tall = box.h > 160
-      side.current = { key: id, where: big && dEnd ? 'd-end' : big && dStart ? 'd-start' : tall && endRoom ? 'end' : tall && startRoom ? 'start' : below ? 'below' : above ? 'above' : endRoom ? 'end' : startRoom ? 'start' : box.y + box.h / 2 < H / 2 ? 'below' : 'above' }
+      // With no room beside the design, a big element's panel goes above it when that fits, else under
+      // the whole card the element is in, so the card's own title and buttons stay in view.
+      const card = big ? cardOf(spot?.els[0] ?? el ?? null, s.stage, host.layer) : null
+      const under = card && card.y + card.h + gap + ph <= H - 8 ? card.y + card.h + gap : null
+      if (big && !dEnd && !dStart && !above && under !== null) { side.current = { key: id, where: 'under', at: under }; }
+      else side.current = { key: id, where: big && dEnd ? 'd-end' : big && dStart ? 'd-start' : big && above ? 'above' : tall && endRoom ? 'end' : tall && startRoom ? 'start' : below ? 'below' : above ? 'above' : endRoom ? 'end' : startRoom ? 'start' : box.y + box.h / 2 < H / 2 ? 'below' : 'above' }
     }
     const w = side.current.where
     const clampX = (x: number) => Math.max(8, Math.min(W - pw - 8, x))
@@ -941,6 +968,7 @@ function Popover({ spot, el, box, design }: { spot?: Spot; el?: HTMLElement; box
     const next = w === 'below' ? { left: clampX(box.x + box.w / 2 - pw / 2), top: Math.max(8, Math.min(H - ph - 8, box.y + box.h + gap)) }
       : w === 'above' ? { left: clampX(box.x + box.w / 2 - pw / 2), top: clampY(box.y - gap - ph) }
       : w === 'd-end' || w === 'd-start' ? { left: clampX(right ? d.x + d.w + gap : d.x - gap - pw), top: clampY(box.y) }
+      : w === 'under' ? { left: clampX(box.x + box.w / 2 - pw / 2), top: side.current.at ?? box.y + box.h + gap }
       : { left: clampX(right ? box.x + box.w + gap : box.x - gap - pw), top: clampY(box.y) }
     setPos(was => was && Math.abs(was.left - next.left) < 0.5 && Math.abs(was.top - next.top) < 0.5 ? was : next)
   })
@@ -1001,7 +1029,7 @@ export function OptionsSheet({ container }: { container: HTMLElement }) {
       const top = container.getBoundingClientRect().bottom - (sheet.current?.offsetHeight ?? 0)
       // Where it would be without this lift.
       const r = drawn(el, el.getBoundingClientRect())
-      const by = Math.max(0, r.bottom - liftOf('sheet') + 24 - top)
+      const by = Math.max(0, r.bottom - liftShown(st) + 24 - top)
       liftDesign(st, 'sheet', -by)
     })
     return () => cancelAnimationFrame(f)

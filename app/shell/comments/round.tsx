@@ -19,7 +19,7 @@ import { options, spotsOf, chosen, isChanged, nameOf, choiceOf, type Facet, type
 import { useAgentName, useCtx } from './ctx'
 import { keyOf, pictureOf } from './pictures'
 import {
-  CARD, HoldOriginal, Pic, SendButton, Strip, Tile, backdropOf, boxIn, fitOf, liftDesign, liftOf, still, useFacetPictures,
+  CARD, HoldOriginal, Pic, SendButton, Strip, Tile, backdropOf, boxIn, fitOf, liftDesign, liftShown, still, useFacetPictures,
   useNarrow, useOptState, usePhase, useValues, type Decided, type OptActions, type OptStore, type RoundMode, type RoundRec,
 } from './options'
 import { IB, Icon, PRIMARY } from './ui'
@@ -305,13 +305,13 @@ function StepCard({ x, phone }: { x: Step; phone: boolean }) {
             : <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${n}, minmax(0,1fr))` }}>{tiles}</div>}
       </div>
       <div className={`flex items-center gap-0.5 px-2 pt-1.5 ${phone ? 'pb-1' : 'pb-2'}`}>
-        <button type="button" data-round-prev="" onClick={roundAct.prev} disabled={i <= 0} aria-label={t('The step before')} title={t('The step before')} className={`${IB} rounded-full disabled:opacity-30 ${phone ? '!size-10' : ''}`}><Icon name={rtl ? 'right' : 'left'} className="size-3.5 rtl:-scale-x-100" /></button>
+        <button type="button" data-round-prev="" onClick={roundAct.prev} disabled={i <= 0} aria-label={t('The step before')} title={t('The step before')} className={`${IB} rounded-full disabled:opacity-30 ${phone ? '!size-10' : ''}`}><Icon name="left" className="size-3.5" /></button>
         <button type="button" data-round-keep="" onClick={roundAct.keepAsIs} disabled={sent}
           className={`rounded-full px-3 font-medium text-zinc-700 hover:bg-zinc-900/5 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10 ${h}`}>{t('Keep as is')}</button>
         {phone && settled
           ? <button type="button" data-round-next="" onClick={roundAct.next} className={`flex h-11 items-center gap-1 rounded-full px-4 text-[14px] font-semibold ${PRIMARY}`}>{i === list.length - 1 || s.back ? t('To the summary') : t('Next')}<Icon name="right" className="size-3.5" /></button>
           : <button type="button" data-round-skip="" onClick={roundAct.skip} className={`rounded-full px-3 font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10 ${h}`}>{t('Skip')}</button>}
-        {!phone && <span className="ms-auto whitespace-nowrap pe-1 text-[11px] text-zinc-400">{t('{range} to pick · Enter next', { range: `1–${Math.min(9, n)}` })}</span>}
+        {!phone && <span className="ms-auto whitespace-nowrap pe-1 text-[11px] text-zinc-400">{t('{range} to pick · Enter next', { range: `\u20661–${Math.min(9, n)}\u2069` })}</span>}
         <span className={phone ? 'ms-auto' : ''}><HoldOriginal compact={phone} big={phone} /></span>
       </div>
     </div>
@@ -518,7 +518,7 @@ export function RoundLayer() {
     if (!st) return
     if (!mode || mode === 'summary') { liftDesign(st, 'round', 0); return }
     const f = requestAnimationFrame(() => {
-      const layer = host.layer, was = liftOf('round'), c = card.current?.getBoundingClientRect(), lr = layer.getBoundingClientRect()
+      const layer = host.layer, was = liftShown(st), c = card.current?.getBoundingClientRect(), lr = layer.getBoundingClientRect()
       if (!c) return
       if (mode === 'browse') {
         if (phone) { liftDesign(st, 'round', 0); return }

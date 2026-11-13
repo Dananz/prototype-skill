@@ -58,7 +58,10 @@ export default function Variant() {
   const page = await openPage(`${local}options-check/A`, { errors: true })
   try {
     // Dots on the marked elements only: the control with no element on the design has none.
-    await until(page, `${dots} === ${JSON.stringify(['copy:heading tweak:heading-size', 'tweak:cta', 'tweak:divider', 'tweak:row-icon', 'tweak:tone'].sort().join('|'))}`, 'the dots are not exactly on the marked elements')
+    const want = ['copy:heading tweak:heading-size', 'tweak:cta', 'tweak:divider', 'tweak:row-icon', 'tweak:tone'].sort().join('|')
+    for (const end = Date.now() + 12000; Date.now() < end && await page.run(dots) !== want;) await wait(80)
+    const got = await page.run(dots)
+    assert(got === want, `the dots are not exactly on the marked elements: ${got}`)
 
     // A click on a marked element that is no control of its own opens its panel (again: closes it); a
     // control (the button) keeps its own click and opens from its dot.
@@ -265,7 +268,8 @@ export default function Variant() {
     assert(listed.inbox.batches.length > 20 && listed.inbox.batches.some(b => b.id === second), 'a choice still waiting is no longer listed once 20 batches came after it')
     await wait(800)
     assert(await page.run(`!!document.querySelector('[data-options-sending]') && !document.querySelector('[data-options-undo]')`), 'the waiting choice reads as applied once 20 batches came after it')
-    for (const id of [...proto(['inbox'], { stdout: true }).matchAll(/batch (\S+)/g)].map(m => m[1])) seen.add(id)
+    // The fillers are answered, so no later check finds them waiting.
+    for (const id of [...proto(['inbox'], { stdout: true }).matchAll(/batch (\S+)/g)].map(m => m[1])) { seen.add(id); if (id !== second) proto(['reply', id, 'Noted', '--done']) }
     // The page has heard it listed (so once done and past the last 20, it reads as applied).
     await until(page, `Object.keys(sessionStorage).filter(k => k.startsWith('proto-options-')).some(k => Object.values(JSON.parse(sessionStorage.getItem(k))).some(r => r?.sent?.batch === ${JSON.stringify(second)} && r.sent.listed))`, 'the page never heard the waiting choice listed', 15000)
     proto(['reply', second, 'Set', '--done'])

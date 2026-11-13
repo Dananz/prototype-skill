@@ -80,7 +80,7 @@ export default function One() {
     assert(await page.run(`window.__protoDesign()?.querySelector('[data-tweak=new-badge]')?.textContent === 'New' && /amber/.test(window.__protoDesign()?.querySelector('[data-tweak=new-badge]')?.className)`), 'the clicked badge is not on the design')
     assert(await page.run(`!!document.querySelector('[data-round-card] [data-option-tile] .absolute') && document.querySelector('[data-round-card] [data-option-tile="0"]')?.textContent.includes('1')`), 'the tiles carry no numbers for the keys')
     // Six button styles: one row that scrolls, with its arrow.
-    assert(await page.run(`!!document.querySelector('[data-round-card] [data-option-strip]')`), 'six options are not one row that scrolls')
+    assert(await page.run(`!!document.querySelector('[data-round-card] [data-option-strip]') && !!document.querySelector('[data-round-card] [data-option-next]')`), 'six options are not one row that scrolls with its arrow')
     await click(page, '[data-round-card] [data-round-skip]')
     await until(page, `${q} === 'Which row icon?'`, 'Skip did not move on')
 
@@ -126,7 +126,7 @@ export default function One() {
     for (let i = 0; i < 40 && !/new-badge/.test(inbox); i++) { inbox = proto(['inbox'], { stdout: true }); if (!/new-badge/.test(inbox)) await wait(250) }
     assert(/New badge \(useTweaks new-badge\): “Tag”/.test(inbox) && /Row icon \(useTweaks row-icon\): “Bolt”/.test(inbox), 'the summary sent no option comments for the badge and the row icon')
     assert(/Heading \(heading\): “Three updates since last time”/.test(inbox) && (inbox.match(/action: option/g) || []).length === 2, 'the summary did not send exactly the changed values')
-    for (const id of batches()) seen.add(id)
+    for (const id of [...inbox.matchAll(/batch (\S+)/g)].map(m => m[1])) proto(['reply', id, 'Set', '--done'])
     assert(page.errors().length === 0, `the page reported errors: ${page.errors().join(' | ')}`)
   } finally { page.close() }
 
@@ -173,8 +173,9 @@ export default function One() {
   const com = await openPage(`${local}round-check/B`)
   try {
     await until(com, `${dots} === 2`, 'the composer page did not draw')
-    await com.key('c')
-    await wait(400)
+    // The island's select tool, then the element.
+    await click(com, '[data-island] [data-shoot="comment"]')
+    await until(com, `document.querySelector('[data-island] [data-shoot="comment"]')?.getAttribute('aria-pressed') === 'true'`, 'the island select tool did not turn on')
     const h = await dbox(com, 'h1')
     await com.hover(h.x + 10, h.cy); await com.press(h.x + 10, h.cy)
     await until(com, `!!document.querySelector('[data-composer] [data-composer-ask]')`, 'the composer on an element has no choice of how to answer')
@@ -185,6 +186,7 @@ export default function One() {
     let inbox = ''
     for (let i = 0; i < 40 && !/answer as:/.test(inbox); i++) { inbox = proto(['inbox'], { stdout: true }); if (!/answer as:/.test(inbox)) await wait(250) }
     assert(/A few directions for this[\s\S]*answer as: variants, as the user chose/.test(inbox), `proto inbox does not print the composer's choice: ${inbox.slice(0, 600)}`)
+    for (const id of [...inbox.matchAll(/batch (\S+)/g)].map(m => m[1])) proto(['reply', id, 'Noted', '--done'])
   } finally { com.close() }
   const refused = await fetch(`${local}__proto/comments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comments: [{ route: 'round-check/A', text: 'x', action: 'more', ask: 'options' }] }) })
   assert(refused.status >= 400, 'the server kept a choice of how to answer on an action')
