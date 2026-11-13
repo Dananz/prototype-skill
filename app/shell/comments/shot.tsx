@@ -17,8 +17,9 @@ export async function capture(mount: HTMLElement | null, target: Target, dark: b
   const ow = o.width / z, oh = o.height / z
   // Sized explicitly: left to measure the root, it takes its zoomed screen size and draws only that much of the design.
   // Safari and Firefox redraw once per image to fill in images left blank; without a wait between redraws, not 100ms each.
+  // Scrolled boxes are drawn scrolled as they are: the crop below uses where things are now, so a box drawn back at its top would put other content under it.
   const { domToCanvas } = await import('modern-screenshot')
-  const full = await domToCanvas(root, { scale, width: ow, height: oh, backgroundColor: dark ? '#09090b' : '#ffffff', drawImageInterval: 0 })
+  const full = await domToCanvas(root, { scale, width: ow, height: oh, backgroundColor: dark ? '#09090b' : '#ffffff', drawImageInterval: 0, features: { restoreScrollPosition: true } })
   // A region is kept where it is in its element, which may have moved since it was dragged out.
   const g = target.region
   const ex = (r.left - o.left) / z, ey = (r.top - o.top) / z
