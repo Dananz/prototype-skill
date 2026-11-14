@@ -340,7 +340,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // archived or removed counts as none.
   const same = (a?: Ref | null, b?: Ref | null) => !!a && !!b && a.proto === b.proto && a.variant === b.variant
   const refOk = (r?: Ref | null) => { const p = r && byId(r.proto); const v = p && !p.archived && p.variants.find(x => x.id === r!.variant); return v ? { p: p!, v } : null }
-  const workOf = () => refOk(session.work)
+  // The project has one, from whichever conversation set it last: a tab shows it only when it is its own conversation's.
+  const workOf = () => { const w = refOk(session.work); return w && worksHere(w.p) ? w : null }
   const atWork = () => st.place.view === 'variant' && same(st.place, session.work) && !!workOf()
   const visible = (p: Proto) => p.variants
   const asksOf = (r: Ref) => session.asks?.[`${r.proto}/${r.variant}`] ?? []
@@ -780,6 +781,11 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let wanted = named && !me ? named : ''
   const tied = !!(me || named)
   if (!tied) me = session.conversation || ''
+  /** Whether this tab's conversation made or works on p (a tab with no conversation of its own takes everything). */
+  function ownedHere(p: Proto) { return (!me && !wanted) || (!p.session && !p.owner) || p.session === me || p.owner === me }
+  /** Whether this tab's conversation works on p now (its owner, as `proto work` stamps it, else its maker): the working
+   *  variant shows only there. A tab with no conversation of its own shows it wherever it is. */
+  function worksHere(p: Proto) { return !tied || (!me && !wanted) || (p.owner ?? p.session ?? me) === me }
   const keepMe = () => { if (!framed && (me || !tied)) try { sessionStorage.setItem(meKey, tied ? me : '*') } catch { /* private window */ } }
   keepMe()
   /** Takes in a new session.json or prototype list; true when this tab's conversation changed. */
@@ -1861,7 +1867,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const about = !p ? `<div dir="auto" class="font-semibold">${esc(session.name)}</div><p class="mt-1 text-xs text-zinc-500">${tn(active().length, '{n} prototype', '{n} prototypes')} · ${t('started {time}', { time: clock(session.createdAt) })}</p>`
         : `<div class="shrink-0 text-[11px] text-zinc-500"><span dir="auto">${esc(p.title)}</span></div><div class="mt-0.5 flex shrink-0 items-center gap-1.5 font-semibold">${q ? `<b>${variantRef(p, q.id)}</b><span dir="auto" class="truncate">${esc(q.name)}</span>` : t('All variants')}</div>
           ${q && p.about[q.id] ? `<p data-switch-description data-k="about:${esc(p.id)}:${q.id}" tabindex="0" aria-label="${t('Description')}" dir="auto" class="mt-2 min-h-0 overflow-y-auto overscroll-contain text-xs leading-[18px] text-zinc-600 dark:text-zinc-400">${esc(p.about[q.id])}</p>` : !q && p.ask ? `<p data-switch-description data-k="about:${esc(p.id)}:" tabindex="0" aria-label="${t('Description')}" dir="auto" class="mt-2 min-h-0 overflow-y-auto overscroll-contain text-xs leading-[18px] text-zinc-600 dark:text-zinc-400">“${esc(p.ask)}”</p>` : ''}
-          <p class="mt-2 shrink-0 text-[11px] text-zinc-400">${[q && q.id === pickOf(p) ? t('Picked') : '', q && same(session.work, { proto: p.id, variant: q.id }) ? t('Your requests change it') : '', kids.length ? tn(kids.length, '1 built from it', '{n} built from it') : '', line.length ? (line.length + 1 === 1 ? t('1 level deep') : tn(line.length + 1, '1 level deep', '{n} levels deep')) : '', p.slot && parentOf(p) && p.from ? t('Plugs into {target}', { target: `${esc(parentOf(p)!.title)}${p.from.variant ? ` ${esc(variantRef(parentOf(p)!, p.from.variant))}` : ''}` }) : ''].filter(Boolean).join(' · ')}</p>
+          <p class="mt-2 shrink-0 text-[11px] text-zinc-400">${[q && q.id === pickOf(p) ? t('Picked') : '', q && workOf() && same(session.work, { proto: p.id, variant: q.id }) ? t('Your requests change it') : '', kids.length ? tn(kids.length, '1 built from it', '{n} built from it') : '', line.length ? (line.length + 1 === 1 ? t('1 level deep') : tn(line.length + 1, '1 level deep', '{n} levels deep')) : '', p.slot && parentOf(p) && p.from ? t('Plugs into {target}', { target: `${esc(parentOf(p)!.title)}${p.from.variant ? ` ${esc(variantRef(parentOf(p)!, p.from.variant))}` : ''}` }) : ''].filter(Boolean).join(' · ')}</p>
           ${q ? `<button data-act="lobby:proto:${esc(p.id)}" class="mt-auto flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg text-xs font-medium ring-1 ring-inset ring-black/10 hover:bg-zinc-900/[.04] dark:ring-white/15 dark:hover:bg-white/[.06]">${ic('grid', 'size-3.5')}${t('All {n} variants', { n: p.variants.length })}</button>` : ''}`
       return `<div data-fitw="${cols.length * 200 + 224}" class="flex h-[26rem] max-h-[calc(100dvh-5rem)]">
         <div data-mcols data-colnav data-k="mcols" class="flex min-w-0 flex-1 overflow-x-auto overscroll-contain">${cols.map(c => `<div class="flex w-[12.5rem] shrink-0 flex-col border-e border-black/[.06] pt-1 dark:border-white/10">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1.5 pb-2">${colRows(c)}</div></div>`).join('')}</div>
@@ -4509,9 +4515,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         if (p && pathOf(p) !== pathOf(st.place)) return arrive(p, false)
       } else {
         // Only this tab's conversation's new work: another conversation's tab follows its own.
-        const ours = (p: Proto) => (!me && !wanted) || (!p.session && !p.owner) || p.session === me || p.owner === me
-        const fresh = protos.filter(p => !p.archived && !before.has(p.id) && ours(p))
-        const grown = protos.filter(ours).map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
+        const fresh = protos.filter(p => !p.archived && !before.has(p.id) && ownedHere(p))
+        const grown = protos.filter(ownedHere).map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
         if (fresh.length) return go({ view: 'proto', proto: fresh.at(-1)!.id })
         const here = st.place.view === 'proto' ? st.place.proto : null
         const g = grown.find(x => x.p.id !== here)
@@ -4552,7 +4557,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         expected = null
         // A move Claude made just before no longer says where this one came from.
         if (own && st.moved) { st.moved = null; clearTimeout(movedTimer) }
-        if (was && next.work && !own && refOk(was)) {
+        if (was && next.work && !own && refOk(was) && worksHere(refOk(was)!.p)) {
           st.moved = { proto: was.proto, variant: was.variant }
           clearTimeout(movedTimer)
           movedTimer = window.setTimeout(() => { st.moved = null; render() }, 8000)
