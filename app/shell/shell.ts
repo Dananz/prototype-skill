@@ -75,7 +75,8 @@ export type Proto = { id: string; title: string; session?: string; owner?: strin
 export type Recommend = { pick: string; why: string; borrow?: string; takes: Record<string, string> }
 /** A variant of one prototype ("pricing" and "C"). */
 export type Ref = { proto: string; variant: string }
-/** work: the variant being changed now; before: the ones worked on before it (newest first);
+/** works: each conversation's working variant (scripts/proto.mjs); work: the one set last, for a tab of no
+ *  conversation; before: the ones worked on before it (newest first);
  *  asks: what the user asked for on each variant ("pricing/C"), oldest first. */
 // Along the line: +1 is forward. In a right-to-left page forward is leftward, so pointer moves,
 // arrow keys and slides that go along the line are mirrored by X.
@@ -83,7 +84,7 @@ const X = rtl ? -1 : 1
 const FWD = rtl ? 'ArrowLeft' : 'ArrowRight', BACK = rtl ? 'ArrowRight' : 'ArrowLeft'
 // The Tweaks button says the design has tweaks before any changed: a dot where the count goes.
 const tweaksDot = '<span data-tweaks-dot aria-hidden="true" class="pointer-events-none absolute end-1.5 top-1.5 size-1.5 rounded-full bg-sky-500 dark:bg-sky-400"></span>'
-export type Session = { agent?: Agent; id: string; conversation?: string; name: string; lang?: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
+export type Session = { agent?: Agent; id: string; conversation?: string; name: string; lang?: string; path: string; createdAt: string; url?: string; localUrl?: string; work?: (Ref & { at?: string }) | null; works?: Record<string, (Ref & { at?: string; before?: Ref[] }) | null>; before?: Ref[]; asks?: Record<string, { at: string; text: string }[]>; building?: Record<string, string> }
 type Mount = (el: HTMLElement, component: any) => () => void
 // A variant can be shown in one of its states, or through a tool: all its states at once
 // (all), playing through them (play), or next to one of its own earlier versions (history).
@@ -126,7 +127,7 @@ export type CommentBatch = {
  *  (marked: the pick is in meta.ts and only the working variant didn't move; nothing: an unpick of a
  *  variant that wasn't the pick). */
 export type Sent = { id: string; results: { n: number; action: Action; done: boolean; failed?: string; marked?: boolean; nothing?: boolean }[] }
-type Status = { lastEdit: number; edits?: Record<string, number>; keep: boolean; idleHours: number; deleteDays: number; work?: Ref | null; inbox?: Inbox
+type Status = { lastEdit: number; edits?: Record<string, number>; keep: boolean; idleHours: number; deleteDays: number; work?: Ref | null; works?: Record<string, Ref | null>; inbox?: Inbox
   /** The project's conversations by name (server.mjs). */
   conversations?: Record<string, string> }
 
@@ -340,8 +341,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // archived or removed counts as none.
   const same = (a?: Ref | null, b?: Ref | null) => !!a && !!b && a.proto === b.proto && a.variant === b.variant
   const refOk = (r?: Ref | null) => { const p = r && byId(r.proto); const v = p && !p.archived && p.variants.find(x => x.id === r!.variant); return v ? { p: p!, v } : null }
-  const workOf = () => refOk(session.work)
-  const atWork = () => st.place.view === 'variant' && same(st.place, session.work) && !!workOf()
+  // Each conversation has its own: a tab shows its conversation's (myWork).
+  const workOf = () => refOk(myWork())
+  const atWork = () => st.place.view === 'variant' && same(st.place, myWork()) && !!workOf()
   const visible = (p: Proto) => p.variants
   const asksOf = (r: Ref) => session.asks?.[`${r.proto}/${r.variant}`] ?? []
   // States: those a variant has, the one a place points at, and whether a variant's note says
@@ -780,6 +782,18 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   let wanted = named && !me ? named : ''
   const tied = !!(me || named)
   if (!tied) me = session.conversation || ''
+  /** Whether this tab's conversation works on p now: its owner (who joined it last), else its maker. Its new work
+   *  is what the tab follows. A tab with no conversation of its own takes everything. */
+  function ownedHere(p: Proto) { return (!me && !wanted) || (!p.session && !p.owner) || (p.owner ?? p.session) === me }
+  /** This tab's conversation's working variant (in s, session.json or the server's status). A tab with no
+   *  conversation of its own has the one set last; a session.json from before works existed has only that,
+   *  this conversation's when it works on that prototype. */
+  function myWork(s: { work?: Ref | null; works?: Record<string, Ref | null> } = session): Ref | null {
+    if (!tied) return s.work ?? null
+    if (s.works) return s.works[me] ?? null
+    const p = s.work ? byId(s.work.proto) : undefined
+    return p && (p.owner ?? p.session ?? me) === me ? s.work! : null
+  }
   const keepMe = () => { if (!framed && (me || !tied)) try { sessionStorage.setItem(meKey, tied ? me : '*') } catch { /* private window */ } }
   keepMe()
   /** Takes in a new session.json or prototype list; true when this tab's conversation changed. */
@@ -790,7 +804,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   }
   // Kept as 'mine' rather than an id: the scope is remembered per project, for every tab.
   const scopeKey = `proto-scope:${session.id}`
-  let scope = landing || (named && !reloaded) ? 'mine' : (() => { try { return localStorage.getItem(scopeKey) || '' } catch { return '' } })()
+  // Kept per tab (sessionStorage): another tab's choice never changes this one's, also on a reload.
+  const keepScope = (value: string) => { if (!framed) try { sessionStorage.setItem(scopeKey, value) } catch { /* private window */ } }
+  let scope = landing || (named && !reloaded) ? 'mine' : (() => { try { return sessionStorage.getItem(scopeKey) || '' } catch { return '' } })()
   const scopeNow = () => {
     if (!convOn) return 'all'
     if (scope === 'all' || scope === 'favs') return scope
@@ -798,18 +814,20 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     return sid && (sid === me || all.some(p => p.session === sid)) ? `conv:${sid}` : 'all'
   }
   const convNames = () => st.status?.conversations ?? {}
+  const askedNames = new Set<string>()
   const scopeName = () => { const s = scopeNow(); return s.startsWith('conv:') ? convNames()[s.slice(5)] ?? '' : '' }
   function setScope(next: string) {
     if (!convOn || next === scopeNow()) return
     scope = next === `conv:${me}` ? 'mine' : next
-    remember(scopeKey, scope)
+    keepScope(scope)
     // An exploration's own page has its card open: a new scope shows the whole of it instead.
     if (st.place.view === 'proto') { widenedAt = ''; return go({ view: 'session' }) }
     paintTree(); paintGallery()
   }
   /** The explorations in scope, the same array while neither the list nor the scope changes. */
   let scoped: { of: Proto[]; scope: string; list: Proto[] } | null = null
-  const inScope = (p: Proto, s = scopeNow()) => s === 'all' ? true : s === 'favs' ? p.favorites.length > 0 : p.session === s.slice('conv:'.length)
+  // A conversation's explorations: those it made and those it joined (works on now).
+  const inScope = (p: Proto, s = scopeNow()) => s === 'all' ? true : s === 'favs' ? p.favorites.length > 0 : p.session === s.slice('conv:'.length) || p.owner === s.slice('conv:'.length)
   const scopedProtos = () => {
     const s = scopeNow()
     if (!scoped || scoped.of !== all || scoped.scope !== s) scoped = { of: all, scope: s, list: s === 'all' ? all : all.filter(p => inScope(p, s)) }
@@ -882,7 +900,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // exploration's conversation, or to the whole project when it has none.
     // Only on arriving there: a scope chosen while on it stays.
     const target = show && st.place.view !== 'session' ? byId(st.place.proto) : undefined, arrived = target ? placeRoute() : ''
-    if (arrived !== widenedAt) { widenedAt = arrived; if (target && !inScope(target)) { scope = target.session && scopeNow() !== 'all' ? (target.session === me ? 'mine' : `conv:${target.session}`) : 'all'; remember(scopeKey, scope); paintTree() } }
+    if (arrived !== widenedAt) { widenedAt = arrived; if (target && !inScope(target)) { scope = target.session && scopeNow() !== 'all' ? (target.session === me ? 'mine' : `conv:${target.session}`) : 'all'; keepScope(scope); paintTree() } }
     galleryHost.hidden = !show
     const full = show && deskMq.matches && !st.focus
     galleryHost.toggleAttribute('data-full', full)
@@ -1545,7 +1563,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   /** Moves the address as a link would, without loading the page: it changes now, the page follows
    *  on the next turn (where a hash link's hashchange used to arrive), or at once with `now`. */
   function visit(path: string, now = false) {
-    history.pushState(null, '', path + location.search)
+    // The page in a device view adds no history of its own: the page outside keeps it, one entry a move,
+    // so Back and Forward out there go through its moves (a frame's entries would sit between them).
+    if (framed) history.replaceState(null, '', path + location.search)
+    else history.pushState(null, '', path + location.search)
     if (now) follow()
     else setTimeout(follow)
   }
@@ -1864,7 +1885,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       const about = !p ? `<div dir="auto" class="font-semibold">${esc(session.name)}</div><p class="mt-1 text-xs text-zinc-500">${tn(active().length, '{n} prototype', '{n} prototypes')} · ${t('started {time}', { time: clock(session.createdAt) })}</p>`
         : `<div class="shrink-0 text-[11px] text-zinc-500"><span dir="auto">${esc(p.title)}</span></div><div class="mt-0.5 flex shrink-0 items-center gap-1.5 font-semibold">${q ? `<b>${variantRef(p, q.id)}</b><span dir="auto" class="truncate">${esc(q.name)}</span>` : t('All variants')}</div>
           ${q && p.about[q.id] ? `<p data-switch-description data-k="about:${esc(p.id)}:${q.id}" tabindex="0" aria-label="${t('Description')}" dir="auto" class="mt-2 min-h-0 overflow-y-auto overscroll-contain text-xs leading-[18px] text-zinc-600 dark:text-zinc-400">${esc(p.about[q.id])}</p>` : !q && p.ask ? `<p data-switch-description data-k="about:${esc(p.id)}:" tabindex="0" aria-label="${t('Description')}" dir="auto" class="mt-2 min-h-0 overflow-y-auto overscroll-contain text-xs leading-[18px] text-zinc-600 dark:text-zinc-400">“${esc(p.ask)}”</p>` : ''}
-          <p class="mt-2 shrink-0 text-[11px] text-zinc-400">${[q && q.id === pickOf(p) ? t('Picked') : '', q && same(session.work, { proto: p.id, variant: q.id }) ? t('Your requests change it') : '', kids.length ? tn(kids.length, '1 built from it', '{n} built from it') : '', line.length ? (line.length + 1 === 1 ? t('1 level deep') : tn(line.length + 1, '1 level deep', '{n} levels deep')) : '', p.slot && parentOf(p) && p.from ? t('Plugs into {target}', { target: `${esc(parentOf(p)!.title)}${p.from.variant ? ` ${esc(variantRef(parentOf(p)!, p.from.variant))}` : ''}` }) : ''].filter(Boolean).join(' · ')}</p>
+          <p class="mt-2 shrink-0 text-[11px] text-zinc-400">${[q && q.id === pickOf(p) ? t('Picked') : '', q && same(myWork(), { proto: p.id, variant: q.id }) ? t('Your requests change it') : '', kids.length ? tn(kids.length, '1 built from it', '{n} built from it') : '', line.length ? (line.length + 1 === 1 ? t('1 level deep') : tn(line.length + 1, '1 level deep', '{n} levels deep')) : '', p.slot && parentOf(p) && p.from ? t('Plugs into {target}', { target: `${esc(parentOf(p)!.title)}${p.from.variant ? ` ${esc(variantRef(parentOf(p)!, p.from.variant))}` : ''}` }) : ''].filter(Boolean).join(' · ')}</p>
           ${q ? `<button data-act="lobby:proto:${esc(p.id)}" class="mt-auto flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg text-xs font-medium ring-1 ring-inset ring-black/10 hover:bg-zinc-900/[.04] dark:ring-white/15 dark:hover:bg-white/[.06]">${ic('grid', 'size-3.5')}${t('All {n} variants', { n: p.variants.length })}</button>` : ''}`
       return `<div data-fitw="${cols.length * 200 + 224}" class="flex h-[26rem] max-h-[calc(100dvh-5rem)]">
         <div data-mcols data-colnav data-k="mcols" class="flex min-w-0 flex-1 overflow-x-auto overscroll-contain">${cols.map(c => `<div class="flex w-[12.5rem] shrink-0 flex-col border-e border-black/[.06] pt-1 dark:border-white/10">${colHead(c)}<div data-vlist data-k="${esc(colKey(c))}" class="relative min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-1.5 pb-2">${colRows(c)}</div></div>`).join('')}</div>
@@ -2547,7 +2568,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const w = workOf()
     if (!w) return ''
     const here = atWork()
-    const asks = asksOf(session.work!).slice().reverse()
+    const asks = asksOf(myWork()!).slice().reverse()
     const mv = st.moved && refOk(st.moved)
     const picked = (t: string) => /^Picked [A-Z]{1,2}$/.test(t.trim())
     // What a plug-in leaves on both variants (app/server.mjs plugLines): status lines like a pick, not requests.
@@ -2686,7 +2707,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         if (arg === 'undo') {
           const m = st.moved
           st.moved = null; clearTimeout(movedTimer); render()
-          if (m) { expected = m; post('work', { ...m, undo: true }, 'work').then(got => { expected = got && same(got.work, m) && !same(session.work, m) ? m : null }) }
+          if (m) { expected = m; post('work', { ...m, undo: true, ...(tied ? { conv: me } : {}) }, 'work').then(got => { expected = got && same(myWork(got), m) && !same(myWork(), m) ? m : null }) }
           return
         }
         return
@@ -4435,7 +4456,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (!res.ok) throw new Error(body.error || `the server answered ${res.status}`)
       // The answer says where the working variant is now. A move session.json hasn't brought yet is
       // still expected; one it already brought (or none) is not.
-      if (pick) expected = body.moved && body.work && !same(session.work, body.work) ? body.work : null
+      const moved = myWork(body)
+      if (pick) expected = body.moved && moved && !same(myWork(), moved) ? moved : null
       st.status = body
       render()
       return { id: body.sent, results: body.results ?? [] }
@@ -4509,6 +4531,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       all = next
       protos = shown(next)
       refreshMe()
+      // A conversation the page has no name for yet (it started after the page loaded): asked once.
+      const unnamed = next.map(p => p.session).filter((x): x is string => !!x && !(x in convNames()) && !askedNames.has(x))
+      if (unnamed.length) { unnamed.forEach(x => askedNames.add(x)); refreshStatus() }
       intake.set(st.status?.inbox?.intake, protos.length > 0)
       if (framed) {
         // The page in a view follows nothing itself: the page outside does, and it goes along. A place
@@ -4517,9 +4542,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         if (p && pathOf(p) !== pathOf(st.place)) return arrive(p, false)
       } else {
         // Only this tab's conversation's new work: another conversation's tab follows its own.
-        const ours = (p: Proto) => (!me && !wanted) || (!p.session && !p.owner) || p.session === me || p.owner === me
-        const fresh = protos.filter(p => !p.archived && !before.has(p.id) && ours(p))
-        const grown = protos.filter(ours).map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
+        const fresh = protos.filter(p => !p.archived && !before.has(p.id) && ownedHere(p))
+        const grown = protos.filter(ownedHere).map(p => ({ p, added: before.has(p.id) ? p.variants.filter(v => !before.get(p.id)!.has(v.id)) : [] })).filter(x => x.added.length)
         if (fresh.length) return go({ view: 'proto', proto: fresh.at(-1)!.id })
         const here = st.place.view === 'proto' ? st.place.proto : null
         const g = grown.find(x => x.p.id !== here)
@@ -4547,20 +4571,22 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     // A working variant Claude moved shows where it came from, with Undo, for a few seconds.
     setSession(next: Session) {
       followSession(next)
-      const was = session.work
+      // This tab's conversation's working variant, before and after (the tab's conversation may come with it).
+      const was = myWork()
       const hostChanged = session.agent !== next.agent
       session = next
       if (refreshMe()) { paintTree(); paintGallery() }
+      const now = myWork()
       if (hostChanged) comments.hostChanged()
       builtFailed()
       watchExpiry()
-      if (!same(was, next.work)) {
+      if ((was || now) && !same(was, now)) {
         // Any move ends the wait: one that isn't the expected one is Claude's.
-        const own = same(next.work, expected)
+        const own = same(now, expected)
         expected = null
         // A move Claude made just before no longer says where this one came from.
         if (own && st.moved) { st.moved = null; clearTimeout(movedTimer) }
-        if (was && next.work && !own && refOk(was)) {
+        if (was && now && !own && refOk(was)) {
           st.moved = { proto: was.proto, variant: was.variant }
           clearTimeout(movedTimer)
           movedTimer = window.setTimeout(() => { st.moved = null; render() }, 8000)

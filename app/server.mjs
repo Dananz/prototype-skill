@@ -67,23 +67,42 @@ export function decided() {
 // The page moves the working variant three ways: back to one under Before (the one it leaves goes
 // to Before, as with `proto work`), Undo of a move it was just told about (nothing is kept), or a
 // pick made in the page, which also adds what was asked to that variant's history. True when it moved.
+// Each conversation has its own (works[<conversation>], scripts/proto.mjs): a tab's own moves (conv) are
+// its conversation's; a pick is the one of the conversation working on that prototype, whose batch it is.
+// work is the one set last, for a tab of no conversation; an Undo from a conversation's tab leaves it.
+// A session.json from before works existed has its work kept under its prototype's conversation.
 const same = (a, b) => !!a && !!b && a.proto === b.proto && a.variant === b.variant
-function work({ proto, variant, undo, ask }) {
-  const s = read(), t = { proto: String(proto), variant: String(variant) }
-  const at = new Date().toISOString(), patch = {}
-  if (!same(s.work, t)) {
-    const before = undo ? (s.before || []).filter(x => !same(x, t)) : [s.work, ...(s.before || [])].filter(x => x && !same(x, t))
-    patch.work = { ...t, at }
-    patch.before = before.filter((x, i, all) => all.findIndex(y => same(x, y)) === i).slice(0, 3).map(x => ({ proto: x.proto, variant: x.variant }))
-  }
+const refs = list => list.filter((x, i, all) => all.findIndex(y => same(x, y)) === i).slice(0, 3).map(x => ({ proto: x.proto, variant: x.variant }))
+const workerOf = slug => { try { const m = metaOf(readFileSync(metaFile(slug), 'utf8')); return m.owner ?? m.session ?? '' } catch { return '' } }
+const worksOf = s => {
+  if (s.works) return s.works
+  const sid = s.work ? workerOf(s.work.proto) : ''
+  return sid ? { [sid]: { proto: s.work.proto, variant: s.work.variant, at: s.work.at, before: s.before || [] } } : {}
+}
+function work({ proto, variant, undo, ask, conv }) {
+  const t = { proto: String(proto), variant: String(variant) }, sid = typeof conv === 'string' && conv ? conv : workerOf(t.proto)
+  const at = new Date().toISOString()
   if (ask) {
-    const key = `${t.proto}/${t.variant}`
-    patch.asks = { ...s.asks, [key]: [...(s.asks?.[key] || []), { at, text: ask }] }
     // The design as it was picked, kept for History (history.mjs): the note may change it next.
     try { snapshot(dir, t.proto, t.variant, ask, { at }) } catch { /* the pick still counts */ }
   }
-  if (Object.keys(patch).length) write(patch)
-  return !!patch.work
+  let moved = false
+  write(s => {
+    const patch = {}
+    if (!same(s.work, t) && !(undo && sid && conv)) {
+      patch.work = { ...t, at }
+      patch.before = refs(undo ? (s.before || []).filter(x => !same(x, t)) : [s.work, ...(s.before || [])].filter(x => x && !same(x, t)))
+    }
+    const works = worksOf(s), was = sid ? works[sid] ?? null : null
+    if (sid && !same(was, t)) patch.works = { ...works, [sid]: { ...t, at, before: refs(undo ? (was?.before || []).filter(x => !same(x, t)) : [was, ...(was?.before || [])].filter(x => x && !same(x, t))) } }
+    moved = sid ? !!patch.works : !!patch.work
+    if (ask) {
+      const key = `${t.proto}/${t.variant}`
+      patch.asks = { ...s.asks, [key]: [...(s.asks?.[key] || []), { at, text: ask }] }
+    }
+    return Object.keys(patch).length ? patch : null
+  })
+  return moved
 }
 // One line of history on a variant, without moving the working variant: what a plug-in leaves.
 function note(key, text) {
@@ -662,7 +681,7 @@ export function prototypeServer(session) {
     let s = {}
     try { s = read() } catch { /* being rewritten by hand; the rest still answers */ }
     // pid: which server answers, so `proto up` never takes another session's (on a port both tried at once) for its own.
-    return { pid: process.pid, lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, slots: slotPointers(), inbox: inboxStatus(), conversations: conversations() }
+    return { pid: process.pid, lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, ...(s.works ? { works: Object.fromEntries(Object.entries(s.works).filter(([, w]) => w).map(([k, w]) => [k, { proto: w.proto, variant: w.variant }])) } : {}), slots: slotPointers(), inbox: inboxStatus(), conversations: conversations() }
   }
   const stop = reason => {
     // The tailnet port as session.json has it now: on a session's first run, `proto up` gives it one
@@ -795,7 +814,7 @@ export function prototypeServer(session) {
               for (const name of names) server.watcher.emit('add', join(folder, name))
             }
             if (route === '/keep') write({ keep: !!data.keep })
-            if (route === '/work' && typeof data.proto === 'string' && typeof data.variant === 'string') work({ proto: data.proto, variant: data.variant, undo: data.undo })
+            if (route === '/work' && typeof data.proto === 'string' && typeof data.variant === 'string') work({ proto: data.proto, variant: data.variant, undo: data.undo, conv: data.conv })
             let got
             if (route === '/comments') {
               activity = Date.now()

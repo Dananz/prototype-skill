@@ -1026,9 +1026,32 @@ function recommend() {
 }
 
 // ---------- the working variant ----------
-// What the user is changing now: one variant per session, pinned at the top of the page's
-// sidebar with what they asked for on it. It moves only when told to (a pick, `proto work`),
-// never because some file changed. Kept in session.json, which the page reloads live.
+// What the user is changing now: one variant per conversation, pinned at the top of the page's
+// sidebar (in that conversation's tab) with what they asked for on it. It moves only when told to
+// (a pick, `proto work`), never because some file changed. Kept in session.json, which the page
+// reloads live: works[<conversation>] each, and work, the one set last, for a tab of no conversation.
+// A session.json from before works existed has only work.
+const myWork = (s, sid = sessionId()) => s.works ? s.works[sid] ?? null : s.work ?? null
+/** works as it is, or, from a session.json that has only work, that one under the conversation working
+ *  on its prototype (its owner, else its maker), so the first per-conversation write keeps it. */
+function worksOf(dir, now) {
+  if (now.works) return now.works
+  const m = now.work ? readMeta(dir, now.work.proto) : null, sid = m?.owner ?? m?.session
+  return sid ? { [sid]: { proto: now.work.proto, variant: now.work.variant, at: now.work.at, before: now.before || [] } } : {}
+}
+/** A conversation's move to t: its works entry, the one it leaves first in its before (three kept). */
+function movedWork(dir, now, sid, t, at) {
+  const works = worksOf(dir, now), was = works[sid] ?? null
+  if (sameVariant(was, t)) return now.works ? {} : { works }
+  const before = [was, ...(was?.before || [])].filter(x => x && !sameVariant(x, t))
+    .filter((x, i, all) => all.findIndex(y => sameVariant(x, y)) === i).slice(0, 3).map(x => ({ proto: x.proto, variant: x.variant }))
+  return { works: { ...works, [sid]: { proto: t.proto, variant: t.variant, at, before } } }
+}
+/** Works entries, and the last one set, that point at no prototype that is left. */
+function worksWithout(now, gone) {
+  const works = Object.fromEntries(Object.entries(now.works || {}).filter(([, w]) => w && !gone(w.proto)))
+  return { ...(now.works ? { works } : {}), ...(now.work && gone(now.work.proto) ? { work: null } : {}) }
+}
 const readMeta = (dir, slug) => {
   const f = join(dir, 'src', 'protos', slug || '', 'meta.ts')
   if (!slug || !existsSync(f)) return null
@@ -1077,20 +1100,21 @@ function own(dir, slug) {
 /** Points the session at a variant; the one it leaves goes first in `before` (three kept). */
 function setWork(dir, t, ask) {
   own(dir, t.proto)
-  const s = readSession(dir)
-  const at = new Date().toISOString()
-  const patch = {}
-  if (!sameVariant(s.work, t)) {
-    patch.work = { proto: t.proto, variant: t.variant, at }
-    patch.before = [s.work, ...(s.before || [])].filter(x => x && !sameVariant(x, t))
-      .filter((x, i, all) => all.findIndex(y => sameVariant(x, y)) === i).slice(0, 3).map(x => ({ proto: x.proto, variant: x.variant }))
-  }
-  if (ask) {
-    const key = `${t.proto}/${t.variant}`
-    patch.asks = { ...s.asks, [key]: [...(s.asks?.[key] || []), { at, text: ask }] }
-    keepVersion(dir, t, [ask], at)
-  }
-  patchSession(dir, patch)
+  const at = new Date().toISOString(), sid = sessionId()
+  if (ask) keepVersion(dir, t, [ask], at)
+  patchSession(dir, now => {
+    const patch = movedWork(dir, now, sid, t, at)
+    if (!sameVariant(now.work, t)) {
+      patch.work = { proto: t.proto, variant: t.variant, at }
+      patch.before = [now.work, ...(now.before || [])].filter(x => x && !sameVariant(x, t))
+        .filter((x, i, all) => all.findIndex(y => sameVariant(x, y)) === i).slice(0, 3).map(x => ({ proto: x.proto, variant: x.variant }))
+    }
+    if (ask) {
+      const key = `${t.proto}/${t.variant}`
+      patch.asks = { ...now.asks, [key]: [...(now.asks?.[key] || []), { at, text: ask }] }
+    }
+    return patch
+  })
 }
 // Each ask is about to change the variant: keep it as it is now first (app/history.mjs), so the
 // page can show it beside what the change made. Never in the way of the ask itself.
@@ -1102,8 +1126,13 @@ function keepVersion(dir, t, texts, at) {
 function work() {
   const dir = sessionDir()
   const s = need(dir)
-  if (flags.off) { patchSession(dir, { work: null }); return console.log('no working variant') }
-  if (!args[0]) return console.log(s.work ? `working on ${routeShown(`${s.work.proto}/${s.work.variant}`)}` : 'no working variant')
+  if (flags.off) {
+    const sid = sessionId(), mine = myWork(s, sid)
+    patchSession(dir, now => ({ works: Object.fromEntries(Object.entries(worksOf(dir, now)).filter(([k]) => k !== sid)), ...(sameVariant(now.work, mine) ? { work: null } : {}) }))
+    return console.log('no working variant')
+  }
+  const w = myWork(s)
+  if (!args[0]) return console.log(w ? `working on ${routeShown(`${w.proto}/${w.variant}`)}` : 'no working variant')
   const t = target(dir, args[0])
   setWork(dir, t, typeof flags.ask === 'string' ? flags.ask.trim() : '')
   console.log(`working on ${routeShown(`${t.proto}/${t.variant}`)} · ${t.name}`)
@@ -1115,7 +1144,7 @@ function ask() {
   // --each: every quoted argument is one ask (a batch of comments in one call); else the words are one.
   const texts = (flags.each ? args.map(a => a.trim()) : [args.join(' ').trim()]).filter(Boolean)
   if (!texts.length) die('what did the user ask for? proto ask "…"   (several: proto ask --each "…" "…")')
-  const t = flags.to ? target(dir, flags.to) : s.work
+  const t = flags.to ? target(dir, flags.to) : myWork(s)
   if (!t) die('no working variant yet: proto work <slug>/<letter> --ask "…"')
   const key = `${t.proto}/${t.variant}`, at = new Date().toISOString()
   own(dir, t.proto)
@@ -1169,7 +1198,7 @@ function archive() {
   const meta = JSON.parse(text.replace(/^[\s\S]*?export default\s*/, '').replace(/;?\s*$/, ''))
   meta.archived = !flags.off
   writeWhole(metaFile, withMeta(text, meta), scratchOf(dir))
-  if (meta.archived && readSession(dir).work?.proto === args[0]) patchSession(dir, { work: null })
+  if (meta.archived) patchSession(dir, now => worksWithout(now, slug => slug === args[0]))
   if (meta.archived) endBuilding(dir, [args[0]])
   console.log(`${args[0]} ${meta.archived ? 'archived' : 'restored'}`)
 }
@@ -1209,7 +1238,8 @@ async function rmMine() {
   patchSession(dir, now => ({
     asks: Object.fromEntries(Object.entries(now.asks || {}).filter(([k]) => !ours(k))),
     building: Object.fromEntries(Object.entries(now.building || {}).filter(([k]) => !ours(k))),
-    ...(now.work && ours(now.work.proto) ? { work: null } : {}),
+    // This conversation's working variant goes with it.
+    ...(() => { const w = worksWithout(now, ours); if (w.works) delete w.works[sid]; return w })(),
   }))
   locked(dir, () => { const all = sessionsOf(dir); delete all[sid]; writeJson(join(dir, '.proto', 'sessions.json'), all) })
   console.log(`removed ${gone.length} prototype${gone.length === 1 ? '' : 's'} made in this conversation${gone.length ? `: ${gone.join(', ')}` : ''}`)

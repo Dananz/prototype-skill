@@ -61,7 +61,7 @@ export function treeOf(protos: Proto[], designs: Design[], o: { filter: Filter; 
     if (parent) kids.set(parent.id, [...kids.get(parent.id) ?? [], p])
   }
   const became = new Map(designs.filter(d => d.from).map(d => [`${d.from!.proto}/${d.from!.variant}`, d.title]))
-  const mine = (p: Proto) => o.filter !== 'mine' || p.session === o.me
+  const mine = (p: Proto) => o.filter !== 'mine' || p.session === o.me || p.owner === o.me
 
   // An exploration and what hangs under it; null when the filter leaves nothing of it.
   const explore = (p: Proto, kind: 'screen' | 'exploration', pinned = ''): TreeNode | null => {
