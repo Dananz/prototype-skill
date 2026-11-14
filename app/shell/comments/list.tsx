@@ -63,7 +63,7 @@ const ITEM = 'flex h-9 items-center gap-2.5 rounded-lg px-2 outline-none data-[h
  * be changed, and Delete, whatever became of it (a sent one is taken back from Claude). One small
  * button at the corner leaves the comment's words the card's whole width.
  */
-const More = ({ item, edit, size = 'size-8', className = '' }: { item: Item; edit?: () => void; size?: string; className?: string }) => {
+const More = ({ item, edit, show, size = 'size-8', className = '' }: { item: Item; edit?: () => void; show?: { label: string; run: () => void }; size?: string; className?: string }) => {
   const agent = useAgentName()
   const { act } = useCtx()
   return (
@@ -72,6 +72,7 @@ const More = ({ item, edit, size = 'size-8', className = '' }: { item: Item; edi
       <Menu.Portal container={uiBox()}>
         <Menu.Positioner side="bottom" align="end" sideOffset={4} collisionPadding={8} className="z-[260] outline-none">
           <Menu.Popup data-comment-ui="" className="min-w-40 rounded-xl border border-black/10 bg-white p-1 text-[13px] text-zinc-800 shadow-lg outline-none transition-opacity duration-150 ease-[ease-out] data-ending-style:opacity-0 data-starting-style:opacity-0 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">
+            {show && <Menu.Item data-shoot="show-on-design" onClick={show.run} className={ITEM}><Icon name="target" className="size-4 text-zinc-400" /><span className="min-w-0 flex-1">{show.label}</span></Menu.Item>}
             {edit && <Menu.Item data-shoot="edit-sent" onClick={edit} className={ITEM}><Icon name="share-pencil" className="size-4 text-zinc-400" /><span className="min-w-0 flex-1">{t('Edit')}</span></Menu.Item>}
             <Menu.Item data-shoot="remove" onClick={() => act.remove(item.id)} title={item.sent ? t('Delete this comment ({agent} is told to leave it)', { agent }) : undefined} className={`${ITEM} text-rose-600 dark:text-rose-400`}><Icon name="trash" className="size-4" /><span className="min-w-0 flex-1">{t('Delete')}</span></Menu.Item>
           </Menu.Popup>
@@ -234,11 +235,11 @@ function DoneRow({ r, active, roomy, onShow }: { r: Row; active: boolean; roomy:
           <Where item={item} here={r.here} />
           <Icon name="right" className={`size-4 text-zinc-400 transition-[transform,color] group-hover:text-zinc-600 dark:group-hover:text-zinc-300 ${open ? 'rotate-90 rtl:-rotate-90' : ''}`} />
         </button>
-        <More item={item} />
+        <More item={item} show={{ label: item.time ? t('Show {span}', { span: spanOf(item.time) }) : item.target ? t('Show on design') : t('Go to {target}', { target: item.variant || t('the prototype') }), run: onShow }} />
       </div>
       {open && (
         <div className="space-y-2 pb-2 pe-1 ps-8">
-          <p className="flex items-center gap-2 text-xs text-zinc-400"><span className="min-w-0 truncate"><About item={item} /></span>{when && <span className="shrink-0">· {when}</span>}<button onClick={onShow} className="ms-auto shrink-0 font-medium text-proto-primary-soft-fg hover:underline">{item.time ? t('Show {span}', { span: spanOf(item.time) }) : item.target ? t('Show on design') : t('Go to {target}', { target: item.variant || t('the prototype') })}</button></p>
+          <p className="flex items-center gap-2 text-xs text-zinc-400"><span className="min-w-0 truncate"><About item={item} /></span>{when && <span className="shrink-0">· {when}</span>}</p>
           <ViewChip v={item.target?.view} />
           {reply ? <Reply text={reply.text} by={reply.by} small /> : <p className="text-xs text-zinc-400">{t('Marked done, no note.')}</p>}
           <Thread r={r} />
