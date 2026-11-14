@@ -4,6 +4,7 @@
 // off, four filters do (everything, still open, from this conversation, starred). The shell hands it what it needs through
 // an api and tells it when that changed; picking inline and the island's modes come later.
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Menu } from '@base-ui/react/menu'
 import { createRoot } from 'react-dom/client'
 import type { Design, Proto } from '../shell'
 import { rtl, t, tn } from '../i18n'
@@ -14,6 +15,7 @@ import { memory } from './memory'
 import { selection } from './selection'
 import { Near } from '../near'
 import { armTagDrag, setTagLabels } from '../tag-drag'
+import { uiBox } from '../portals'
 
 /** What a row tags when dragged onto a comment box: an option its variant, a screen pinned to one
  *  option that option, a prototype all of it, a design or a flow every screen in it. */
@@ -54,6 +56,8 @@ export type TreeInput = {
 export type TreeApi = { get(): TreeInput; subscribe(fn: () => void): () => void; go(route: string): void; goWork(): void; hide(): void; name: string
   /** Scopes the page: this conversation, another ('conv:<id>'), the whole project ('all') or favorites ('favs'). */
   setScope?(scope: string): void
+  /** Opens Settings on the session: the scope menu on the name keeps the way there the name used to be. */
+  settings?(): void
   /** Goes to the page of a design's or a flow's first screen (its tree key), that card open in the gallery. */
   frame(key: string): void
   /** Copies the chosen variants, one a line: their links, or their ids (slug/number). */
@@ -478,47 +482,26 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
     )
   }
 
+  // What the tree shows, chosen from the menu on the project's name. Without Conversation first the
+  // tree keeps its own filter; with it, the page's scope (the gallery follows it too).
+  const scopes: ScopeItem[] = !input.conv
+    ? FILTERS.map(([k, label]) => ({ k, label: k === 'open' ? `${label()} · ${waiting}` : label(), on: filter === k, pick: () => choose(k), star: k === 'favs' }))
+    : [
+        ...(input.me || sid ? [{ k: 'conv', label: sid && sid !== input.me ? (input.scopeName || t('A past conversation')) : t('This conversation'), on: !!sid, pick: () => api.setScope?.(`conv:${input.me || sid}`) }] : []),
+        { k: 'all', label: `${t('Whole project')} · ${total}`, on: !sid && scope === 'all', pick: () => api.setScope?.('all') },
+        { k: 'favs', label: t('Favorites'), on: !sid && scope === 'favs', pick: () => api.setScope?.('favs'), star: true },
+      ]
   return (
     <div ref={rootEl} data-tree-root className="flex h-full min-h-0 flex-col">
       <div className="flex h-12 shrink-0 items-center gap-2.5 px-3">
-        <button type="button" data-act="settings:session" data-tree-session aria-haspopup="dialog" title={t('Session settings')} className="-ms-1 flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1 py-1 text-start hover:bg-zinc-900/5 dark:hover:bg-white/10">
-          <span className="relative grid size-7 shrink-0 place-items-center rounded-lg bg-zinc-900 text-[13px] font-bold text-white dark:bg-white dark:text-zinc-900">{(api.name[0] || 'P').toUpperCase()}
-            <span data-tree-live={input.up ? 'on' : 'off'} className={'absolute -end-1 -top-1 size-2.5 rounded-full ring-2 ring-white dark:ring-zinc-950 ' + (input.up ? 'bg-emerald-500' : 'bg-zinc-400')} /></span>
-          <span className="min-w-0 truncate text-[15px] font-semibold" dir="auto">{api.name}</span>
-        </button>
-        <button type="button" onClick={api.hide} aria-label={t('Hide sidebar')} title={t('Hide sidebar · ⌘\\')} className="grid size-8 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10"><Ph name="sidebar" className="size-[17px]" /></button>
+        <ScopeMenu name={api.name} up={input.up} items={scopes} onSettings={api.settings} />
+        <button type="button" onClick={api.hide} aria-label={t('Hide sidebar')} title={t('Hide sidebar · ⌘\\')} className="grid size-8 shrink-0 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10"><Ph name="sidebar" className="size-[17px]" /></button>
       </div>
       {input.work && (
         <button type="button" data-tree-work onClick={api.goWork} className="mx-2 mb-1 flex min-w-0 items-center gap-2 rounded-lg bg-emerald-500/10 px-2 py-1.5 text-start text-[12px] text-emerald-800 dark:text-emerald-200">
           <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-emerald-500" /><span className="truncate" dir="auto">{input.work}</span>
         </button>
       )}
-      {!input.conv && (
-        <div data-tree-filters className="mx-2 mb-1 mt-1 flex rounded-lg bg-zinc-900/[.05] p-0.5 text-[12px] dark:bg-white/[.06]">
-          {FILTERS.map(([k, label]) => (
-            <button key={k} type="button" data-tree-filter={k} aria-pressed={filter === k} onClick={() => choose(k)} {...k === 'favs' ? { 'aria-label': label(), title: label() } : {}}
-              className={'h-7 min-w-0 truncate rounded-md px-1 ' + (k === 'favs' ? 'grid w-8 shrink-0 place-items-center ' : 'flex-1 ') + (filter === k ? 'bg-white font-medium shadow-sm dark:bg-zinc-700' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200')}>
-              {k === 'favs' ? <Ph name="starFill" className={'size-3.5 ' + (filter === k ? 'text-amber-500' : '')} /> : k === 'open' ? `${label()} · ${waiting}` : label()}
-            </button>
-          ))}
-        </div>
-      )}
-      {/* The page's scope: this conversation (or the one opened from the past), the whole project, favorites. */}
-      {input.conv && <div data-tree-scope role="radiogroup" aria-label={t('Show')} className="mx-2 mb-1 mt-1 flex rounded-lg bg-zinc-900/[.05] p-0.5 text-[12px] dark:bg-white/[.06]">
-        {([
-          ...(input.me || sid ? [['conv', sid && sid !== input.me ? (input.scopeName || t('A past conversation')) : t('This conversation')] as const] : []),
-          ['all', `${t('Whole project')} · ${total}`] as const,
-          ['favs', t('Favorites')] as const,
-        ]).map(([k, label]) => {
-          const on = k === 'conv' ? !!sid : scope === k
-          return (
-            <button key={k} type="button" role="radio" data-tree-filter={k} aria-checked={on} onClick={() => api.setScope?.(k === 'conv' ? `conv:${input.me || sid}` : k)} {...k === 'favs' ? { 'aria-label': label, title: label } : { title: label }}
-              className={'h-7 min-w-0 truncate rounded-md px-1.5 ' + (k === 'favs' ? 'grid w-8 shrink-0 place-items-center ' : 'flex-1 ') + (on ? 'bg-white font-medium shadow-sm dark:bg-zinc-700' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200')}>
-              {k === 'favs' ? <Ph name="starFill" className={'size-3.5 ' + (on ? 'text-amber-500' : '')} /> : <span dir="auto">{label}</span>}
-            </button>
-          )
-        })}
-      </div>}
       {!desk && chosen.length > 0 && <ChosenBar top api={api} routes={chosen} />}
       <div ref={list} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain pb-3 pt-1 text-[13px]">
         {waits.length > 0 && <Waiting waits={waits} isNew={isNew} slug={slug} go={api.go} />}
@@ -595,4 +578,51 @@ export function TreeView({ api }: { api: TreeApi }) { return <Tree api={api} /> 
 /** Draws the tree into host; the shell calls the api's listeners when anything it reads changed. */
 export function mountTree(host: HTMLElement, api: TreeApi) {
   createRoot(host).render(<Tree api={api} desk />)
+}
+
+type ScopeItem = { k: string; label: string; on: boolean; pick(): void; star?: boolean }
+const SCOPE_ITEM = 'flex h-9 cursor-default items-center gap-2.5 rounded-lg px-2 outline-none data-[highlighted]:bg-zinc-900/[.05] dark:data-[highlighted]:bg-white/[.07]'
+
+/** The project's mark and name: what the tree shows (the scope, written under the name) and the way
+ *  to the session's settings, in one menu. It took the place of the row of tabs under the name. */
+function ScopeMenu({ name, up, items, onSettings }: { name: string; up?: boolean; items: ScopeItem[]; onSettings?: () => void }) {
+  const now = items.find(i => i.on) ?? items[0]
+  return (
+    <Menu.Root modal={false}>
+      <Menu.Trigger data-tree-session data-tree-scope-menu="" aria-label={`${name}: ${now?.label ?? ''}`} title={t('Show')}
+        className="-ms-1 flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1 py-1 text-start hover:bg-zinc-900/5 data-[popup-open]:bg-zinc-900/5 dark:hover:bg-white/10 dark:data-[popup-open]:bg-white/10">
+        <span className="relative grid size-7 shrink-0 place-items-center rounded-lg bg-zinc-900 text-[13px] font-bold text-white dark:bg-white dark:text-zinc-900">{(name[0] || 'P').toUpperCase()}
+          <span data-tree-live={up ? 'on' : 'off'} className={'absolute -end-1 -top-1 size-2.5 rounded-full ring-2 ring-white dark:ring-zinc-950 ' + (up ? 'bg-emerald-500' : 'bg-zinc-400')} /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] font-semibold leading-tight" dir="auto">{name}</span>
+          {now && <span data-tree-scope-now className="block truncate text-[11.5px] leading-tight text-zinc-500 dark:text-zinc-400" dir="auto">{now.label}</span>}
+        </span>
+        <Ph name="caretDown" className="size-2.5 shrink-0 text-zinc-400" />
+      </Menu.Trigger>
+      <Menu.Portal container={uiBox()}>
+        <Menu.Positioner side="bottom" align="start" sideOffset={4} collisionPadding={8} className="z-[260] outline-none">
+          <Menu.Popup data-tree-scope="" className="w-[max(14rem,var(--anchor-width))] max-w-[calc(100vw-1rem)] rounded-xl border border-black/10 bg-white p-1 text-[13px] text-zinc-800 shadow-lg outline-none transition-[opacity,transform] duration-150 ease-out data-ending-style:opacity-0 data-starting-style:-translate-y-1 data-starting-style:opacity-0 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">
+            <Menu.Group>
+              <Menu.GroupLabel className="px-2 pb-1 pt-1.5 text-[11px] font-medium text-zinc-400">{t('Show')}</Menu.GroupLabel>
+              <Menu.RadioGroup value={now?.k}>
+                {items.map(i => (
+                  <Menu.RadioItem key={i.k} value={i.k} data-tree-filter={i.k} aria-label={i.label} closeOnClick onClick={() => { if (!i.on) i.pick() }} className={SCOPE_ITEM}>
+                    {i.star ? <Ph name="starFill" className={'size-3.5 ' + (i.on ? 'text-amber-500' : 'text-zinc-400')} /> : <span className="size-3.5 shrink-0" />}
+                    <span className="min-w-0 flex-1 truncate" dir="auto">{i.label}</span>
+                    <Menu.RadioItemIndicator className="shrink-0 text-zinc-500"><Ph name="checkSimple" className="size-4" /></Menu.RadioItemIndicator>
+                  </Menu.RadioItem>
+                ))}
+              </Menu.RadioGroup>
+            </Menu.Group>
+            {onSettings && <>
+              <Menu.Separator className="mx-2 my-1 h-px bg-black/[.07] dark:bg-white/10" />
+              <Menu.Item data-tree-settings onClick={onSettings} className={SCOPE_ITEM}>
+                <Ph name="gear" className="size-3.5 text-zinc-500" /><span className="min-w-0 flex-1 truncate">{t('Session settings')}</span>
+              </Menu.Item>
+            </>}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  )
 }

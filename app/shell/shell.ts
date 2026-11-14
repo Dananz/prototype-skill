@@ -1012,7 +1012,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       get: () => treeSnap!, subscribe: f => { treeWatchers.add(f); return () => { treeWatchers.delete(f) } },
       go: route => { const [proto, variant] = route.split('/'); go(variant ? { view: 'variant', proto, variant } : { view: 'proto', proto }) },
       goWork: () => act('work', 'go', ''), hide: () => act('side', '0', ''), name: session.name,
-      frame: openFirstScreen,
+      frame: openFirstScreen, settings: () => act('settings', 'session', ''),
       setScope, ...chosenApi,
     })
   }
@@ -2166,6 +2166,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     hide: () => { st.tree = false; render() },
     // A design or a flow opens its first screen's card in the gallery, as on a wide page.
     frame: key => { st.tree = false; openFirstScreen(key) },
+    settings: () => { st.tree = false; act('settings', 'session', '') },
     setScope, ...chosenApi,
   }
   // Rows a finger can hit (40 px, 14 px type), each row's ⋯ always there (no hover to find it), and no
@@ -2173,7 +2174,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // page (the project's name, a row's ⋯) are outside the shell's root here, so they are handled here:
   // a row's ⋯ opens that variant's decide sheet over the tree.
   const treeSheetBody = () => createElement('div', {
-    'data-tree-touch': '', className: 'flex min-h-0 flex-1 flex-col [&_[data-tree-row]]:h-10 [&_[data-tree-row]]:text-[14px] [&_[data-act^="vm:"]]:opacity-100 [&_[data-tree-filters]_button]:h-8 [&_[data-tree-scope]_button]:h-8 [&_[data-tree-scope]_button]:text-[13px]',
+    'data-tree-touch': '', className: 'flex min-h-0 flex-1 flex-col [&_[data-tree-row]]:h-10 [&_[data-tree-row]]:text-[14px] [&_[data-act^="vm:"]]:opacity-100 [&_[data-tree-scope]_button]:h-8 [&_[data-tree-scope]_button]:text-[13px]',
     onClickCapture: (e: { target: EventTarget; preventDefault(): void; stopPropagation(): void }) => {
       const el = (e.target as Element).closest<HTMLElement>('[data-act]')
       if (!el) return

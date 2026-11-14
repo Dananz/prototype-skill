@@ -3,6 +3,28 @@
 // scope behind Conversation first (?conv=1: this conversation, the whole project, favorites), the
 // place on screen lit, and a design changed on disk drawn without a reload.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+
+/** Picks a scope from the menu on the project's name with the mouse (Base UI's menu takes real clicks). */
+/** A real click in the middle of what sel finds. */
+async function pressOn(page, sel) {
+  const p = await page.run(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].map(e => e.getBoundingClientRect()).find(r => r.width && r.height); return b ? [b.x + b.width / 2, b.y + b.height / 2] : null })()`)
+  if (!p) return false
+  await page.mouse('mousePressed', p[0], p[1], { clickCount: 1 }); await page.mouse('mouseReleased', p[0], p[1], { clickCount: 1 })
+  return true
+}
+
+async function pickScope(page, k) {
+  const at = sel => page.run(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].map(e => e.getBoundingClientRect()).find(r => r.width && r.height); return b ? [b.x + b.width / 2, b.y + b.height / 2] : null })()`)
+  const press = async p => { await page.mouse('mousePressed', p[0], p[1], { clickCount: 1 }); await page.mouse('mouseReleased', p[0], p[1], { clickCount: 1 }) }
+  const sleep = ms => new Promise(r => setTimeout(r, ms))
+  const item = `[data-tree-filter="${k}"]`
+  // A sidebar that is hidden (folded away in this tab) still holds the menu: opened by script then.
+  if (!(await at(item))) { const p = await at('[data-tree-scope-menu]'); if (p) await press(p); else await page.run(`document.querySelector('[data-tree-scope-menu]').click()`) }
+  for (let i = 0; i < 80 && !(await at(item)); i++) await sleep(25)
+  await sleep(150)
+  await press(await at(item))
+  for (let i = 0; i < 80 && await page.run(`!!document.querySelector('[data-tree-scope]')`); i++) await sleep(25)
+}
 import { join } from 'node:path'
 
 export async function treeChecks({ proto, app, local, openPage, fail }) {
@@ -40,13 +62,16 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await until(page, `!!document.querySelector('[data-tree-row="screen:thome"]')`, 'with nothing chosen in this browser the tree should be the default')
     assert(await page.run(`document.querySelector('[data-tree-side]').hidden === false && !document.querySelector('[data-side] *')`), 'with nothing chosen the old sidebar should not be drawn')
     // Conversation first is the default: the scope row, not the tree's own filters.
-    assert(await page.run(`!!document.querySelector('[data-tree-scope]') && !document.querySelector('[data-tree-filters]')`), 'with nothing chosen Conversation first should be on')
+    assert(await page.run(`/This conversation/.test(document.querySelector('[data-tree-scope-now]')?.textContent ?? '') && !document.querySelector('[data-tree-filters]')`), 'with nothing chosen Conversation first should be on, its scope under the name')
   } finally { page.close() }
 
   // Off (?conv=0, kept in this browser), the tree keeps its own filters and no scope row.
   page = await openPage(`${local}thome/C?tree=1&conv=0`, { classic: false })
   try {
-    await until(page, `!!document.querySelector('[data-tree-filters] [data-tree-filter="open"]') && !document.querySelector('[data-tree-scope]')`, 'with Conversation first off the tree should keep its filters')
+    await until(page, `/^All$/.test(document.querySelector('[data-tree-scope-now]')?.textContent?.trim() ?? '')`, 'with Conversation first off the tree should keep its own filters')
+    await page.run(`document.querySelector('[data-tree-scope-menu]').click()`)
+    await until(page, `!!document.querySelector('[data-tree-scope] [data-tree-filter="open"]') && !document.querySelector('[data-tree-filters]')`, 'its filters should be in the menu on the name, not a row of tabs')
+    await page.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
     assert(await page.run(`localStorage.getItem('proto-conv') === '0'`), '?conv=0 should be kept in this browser')
   } finally { page.close() }
 
@@ -63,11 +88,13 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     assert(await page.run(`/became Acme/.test(document.querySelector('[data-tree-row="screen:thome"] [data-tree-picked]')?.title ?? '')`), 'thome, decided on #3, should say in its pick that it became Acme')
     // The page opens on this conversation: tlogo, made in another, is left out until the whole project.
     // The full smoke shares the app with other checks' prototypes, so the count is only checked to be there.
-    assert(await page.run(`document.querySelector('[data-tree-filter="conv"]')?.getAttribute('aria-checked') === 'true'`), 'the scope should start on this conversation')
+    assert(await page.run(`document.querySelector('[data-tree-scope-now]')?.textContent === 'This conversation'`), 'the scope should start on this conversation')
     assert(await page.run(`!document.querySelector('[data-tree-row="exp:tlogo"]')`), 'this conversation should leave out tlogo')
-    assert(await page.run(`/· \\d+$/.test(document.querySelector('[data-tree-filter="all"]').textContent.trim())`), 'Whole project should carry a count')
-    await page.run(`document.querySelector('[data-tree-filter="all"]').click()`)
-    await until(page, `!!document.querySelector('[data-tree-row="exp:tlogo"]') && localStorage.getItem([...Object.keys(localStorage)].find(k => k.startsWith('proto-scope:')) ?? '') === 'all'`, 'Whole project should bring tlogo in and be kept')
+    await page.run(`document.querySelector('[data-tree-scope-menu]').click()`)
+    await until(page, `!!document.querySelector('[data-tree-filter="all"]')`, 'the name should open the scope menu')
+    assert(await page.run(`/· \\d+$/.test(document.querySelector('[data-tree-filter="all"]').textContent.trim()) && !!document.querySelector('[data-tree-settings]')`), 'Whole project should carry a count, and Session settings sit in the menu')
+    await pickScope(page, 'all')
+    await until(page, `!!document.querySelector('[data-tree-row="exp:tlogo"]') && sessionStorage.getItem([...Object.keys(sessionStorage)].find(k => k.startsWith('proto-scope:')) ?? '') === 'all'`, 'Whole project should bring tlogo in and be kept')
 
     // What waits for you, above the tree: folded to one line, then the round built on a pick that
     // changed before the screen with no pick. A row goes where its row in the tree goes.
@@ -87,20 +114,23 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await page.run(`history.pushState(null, '', '/thero-cta/B'); dispatchEvent(new PopStateEvent('popstate'))`)
     await until(page, `document.querySelector('[data-tree-row="opt:thero-cta/B"]')?.dataset.on === 'true'`, 'arriving at thero-cta/B should light its row')
 
-    await page.run(`document.querySelector('[data-tree-filter="conv"]').click()`)
+    await pickScope(page, 'conv')
     await until(page, `!document.querySelector('[data-tree-row="exp:tlogo"]') && !!document.querySelector('[data-tree-row="screen:thome"]')`, 'This conversation should leave out tlogo')
-    await page.run(`document.querySelector('[data-tree-filter="all"]').click()`)
+    await pickScope(page, 'all')
     // Favorites: the star filter keeps what has a starred option; a star given now redraws the tree.
-    await page.run(`document.querySelector('[data-tree-filter="favs"]').click()`)
+    await pickScope(page, 'favs')
     await until(page, `!document.querySelector('[data-tree-row="screen:thome"]')`, 'Favorites with no star should leave thome out')
     proto(['fav', 'tlogo/2'])
     await until(page, `!!document.querySelector('[data-tree-row="opt:tlogo/B"]') && !document.querySelector('[data-tree-row="opt:tlogo/A"]')`, 'a star given on disk should bring its option into Favorites, alone')
-    await page.run(`document.querySelector('[data-tree-filter="all"]').click()`)
+    await pickScope(page, 'all')
     proto(['fav', 'tlogo/2', '--off'])
-    // The project's name opens Settings on Session, its mark carries the live dot.
+    // The project's name opens its menu, whose last row opens Settings on Session; its mark carries the live dot.
     assert(await page.run(`document.querySelector('[data-tree-live]')?.dataset.treeLive === 'on'`), 'the mark should carry a live dot')
     await page.run(`document.querySelector('[data-tree-session]').click()`)
-    await until(page, `document.querySelector('[data-settings-category=session]')?.getAttribute('aria-current') === 'page'`, 'the project name should open Settings on Session')
+    await until(page, `!!document.querySelector('[data-tree-settings]')`, 'the project name should open its menu')
+    await new Promise(r => setTimeout(r, 150))
+    await pressOn(page, '[data-tree-settings]')
+    await until(page, `document.querySelector('[data-settings-category=session]')?.getAttribute('aria-current') === 'page'`, 'Session settings in the menu should open Settings on Session')
     await page.run(`document.querySelector('[data-settings-category=shortcuts]').click()`)
     await until(page, `/Gallery\\s*M/.test(document.querySelector('[data-settings-dialog]')?.textContent ?? '') && /Jump to a screen/.test(document.querySelector('[data-settings-dialog]').textContent)`, 'Shortcuts should list M and Jump with the tree on')
     await page.run(`document.querySelector('[data-settings-close]').click()`)
@@ -263,9 +293,9 @@ export async function treeChecks({ proto, app, local, openPage, fail }) {
     await hit('design:acme', '{ metaKey: true }')
     assert(await page.run(`location.pathname === '/tcta-copy/B' && ${chosen} === 'exp:thero-cta,opt:tcta-copy/B'`), 'Cmd + click on a design should do nothing')
     // Another scope hides rows: none of them stays chosen.
-    await page.run(`document.querySelector('[data-tree-filter="favs"]').click()`)
+    await pickScope(page, 'favs')
     await until(page, `!document.querySelector('[data-tree-chosen-bar]')`, 'changing the scope should let go of the rows')
-    await page.run(`document.querySelector('[data-tree-filter="conv"]').click()`)
+    await pickScope(page, 'conv')
     // The row's own menu starts a selection too.
     await until(page, `!!document.querySelector('[data-tree-row="opt:tcta-copy/A"] [data-act^="vm:"]')`, 'back on this conversation the row should be there')
     await page.run(`document.querySelector('[data-tree-row="opt:tcta-copy/A"] [data-act^="vm:"]').click()`)
