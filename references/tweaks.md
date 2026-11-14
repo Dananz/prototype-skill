@@ -73,3 +73,34 @@ edits to source files or persist arbitrary values across reloads. A comment writ
 variant carries the tweaks changed from their defaults at that moment: `proto inbox` prints them
 as its `tweaks:` line and `proto shoot --pin` sets them before the shot. They describe what the
 user saw; a value becomes the variant's default only when a comment asks for that.
+
+## Options on the design
+
+A control that offers options for one element (Small changes stay in place, in SKILL.md) is also
+tried on that element: put `data-tweak="<id>"` on it. The page marks it with a small dot at its top
+corner; hovering the element outlines and names it, and a click on the dot opens a panel beside it
+with a picture of the element for each option (drawn from the design itself), the current one marked
+Now. Pointing at a picture shows it on the design, a click keeps it, and the panel stays open to
+compare; a click on the element itself does the same when it is no link, button or field of its
+own. Shift-click on the dot steps to the next option without opening anything. Hold Original
+(or `\`) to see the design as it was. What changed waits in the comments island and goes to the
+agent in one Send, one `option` comment per value (`copy` for words), for it to make that the
+element's value and take the control out.
+
+A `select` and a `color` with two or more `presets` (today's value counts as one) qualify, and a
+`toggle` reads as Shown and Hidden. A line of copy (`useCopy`, `data-copy`) on the same element
+becomes a Words tab beside the control: list both ids, space-separated, for two controls on one
+element. Several elements carrying the same id are one spot and change together (a label in every
+row; each row on its own needs a control per row). Dots never show in a share, a shot (unless
+`proto shoot --options`), a tool, or side by side.
+
+Three or more such elements the user has not opened yet make a round of decisions: a row on the
+comments island offers to walk them one by one (a step per control, its label as the question:
+"Which row icon?"), ending in a summary with Send. `data-round` on any element of the variant
+offers it whatever the count, `data-round="off"` never; it never shows in a shot, even with
+`--options`.
+
+```tsx
+<span data-tweak="row-icon">{icons[icon]}</span>
+<h1 data-copy="headline" data-tweak="headline-size" className={SIZES[size]}>{copy.headline}</h1>
+```

@@ -15,7 +15,7 @@
 //             --flow "<name>" --screens a,b (move) | --rename "<flow>:<name>" | --drop <slug>
 //   proto done <slug>/<letter>[ …] | <slug>   that variant is built: the page drops its Building mark, and a comment
 //                                   answered with --until on it is done once nothing it waits on is building
-//   proto shoot [route…] [--theme dark] [--focus] [--copy] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
+//   proto shoot [route…] [--theme dark] [--focus] [--copy] [--options] [--click <css>]  screenshots, e.g. hero hero/A hero/A/open
 //             [--ref <png>]   instead, the variant's screen beside that screenshot of the real one
 //             [--as built]    with --ref: the png is the variant built in the codebase (<route>-vs-built.png)
 //             [--at <ms>]     instead, the variant's motion (useMotion) at that moment of its take
@@ -155,7 +155,7 @@ const flags = {}
 const args = []
 // Flags that are only on or off never take the next word, so `add --from-picks mix` or
 // `pick --off hero` still reads the slug as the slug.
-const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'code', 'again', 'no-serve', 'join', 'install', 'no-fork', 'fork'])
+const SWITCHES = new Set(['from-picks', 'reference-only', 'next', 'off', 'done', 'wait', 'unlisten', 'status', 'reconcile', 'json', 'reopen', 'focus', 'copy', 'options', 'kit', 'each', 'hebrew', 'hover', 'yes', 'all', 'local', 'new', 'sync-only', 'plan-checked', 'github', 'restart', 'no-open', 'code', 'again', 'no-serve', 'join', 'install', 'no-fork', 'fork'])
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (!a.startsWith('--')) { args.push(a); continue }
@@ -312,7 +312,18 @@ async function kill(pid) {
 async function answers(url, ms = 2500) {
   try { const r = await fetch(url, { signal: AbortSignal.timeout(ms) }); return r.ok } catch { return false }
 }
-const running = async s => !!s?.port && alive(s.pid) && answers(`http://127.0.0.1:${s.port}/__proto/status`)
+// Whether the server on a port is this session's own: two sessions starting at once can both find a
+// port free, and the one whose server could not bind it would otherwise take the other's for its own.
+// (A server from before status said its pid counts as its own.)
+async function serves(port, pid, ms = 2500) {
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/__proto/status`, { signal: AbortSignal.timeout(ms) })
+    if (!r.ok) return false
+    const { pid: at } = await r.json().catch(() => ({}))
+    return at === undefined || at === pid
+  } catch { return false }
+}
+const running = async s => !!s?.port && alive(s.pid) && serves(s.port, s.pid)
 const portFree = port => new Promise(ok => {
   const srv = createServer().once('error', () => ok(false)).once('listening', () => srv.close(() => ok(true)))
   srv.listen(port, '127.0.0.1')
@@ -454,7 +465,8 @@ async function up() {
   if (flags['no-serve']) return console.log(`dir ${dir}`)
   if (!existsSync(join(dir, 'node_modules', 'vite')) || depsMoved) install(dir)
 
-  if (!await running(s)) {
+  // A port another session took meanwhile (its server bound it first): again on the next free one.
+  for (let tries = 0; tries < 8 && !await running(s); tries++) {
     const port = await localPort(s)
     s = patchSession(dir, { port, stoppedAt: null, stopReason: null })
     mkdirSync(join(dir, '.proto'), { recursive: true })
@@ -464,9 +476,11 @@ async function up() {
     const child = spawn(process.execPath, [`--max-old-space-size=${MAX_HEAP_MB}`, join(dir, 'node_modules', 'vite', 'bin', 'vite.js')], { cwd: dir, detached: true, windowsHide: true, stdio: ['ignore', log, log], env: { ...process.env, PROTO_SKILL: SKILL } })
     child.unref()
     s = patchSession(dir, { pid: child.pid })
-    for (let i = 0; i < 60 && !await answers(`http://127.0.0.1:${port}/__proto/status`, 1000); i++) await sleep(250)
-    if (!await running(s)) die(`the dev server did not start; see ${tilde(join(dir, '.proto', 'dev.log'))}`)
+    for (let i = 0; i < 60 && alive(child.pid) && !await serves(port, child.pid, 1000); i++) await sleep(250)
+    if (await running(s)) break
+    if (alive(child.pid) || await portFree(port)) die(`the dev server did not start; see ${tilde(join(dir, '.proto', 'dev.log'))}`)
   }
+  if (!await running(s)) die(`the dev server did not start; see ${tilde(join(dir, '.proto', 'dev.log'))}`)
 
   const localUrl = `http://127.0.0.1:${s.port}/`
   let url = localUrl
@@ -520,7 +534,14 @@ async function importLegacy(dir, project) {
   return deps
 }
 
-function add() {
+// After `proto add` writes a prototype: the running server lists it now, whether or not its file
+// watcher reported the new folder (app/server.mjs, /rescan).
+async function add() {
+  const slug = addFiles()
+  const s = readSession(sessionDir())
+  if (s?.port && slug) await fetch(`http://127.0.0.1:${s.port}/__proto/rescan`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug }), signal: AbortSignal.timeout(3000) }).catch(() => {})
+}
+function addFiles() {
   const dir = sessionDir()
   const s = need(dir)
   let slug = args[0]
@@ -678,6 +699,7 @@ function add() {
   console.log(`${pdir}: ${Object.keys(meta.variants).map(id => `${id}.${kit.ext}`).join(' ') || 'no variants'}`)
   if (s.url) console.log(linkFor(s.url, slug))
   if (kit.slot && typeof meta.from === 'string' && meta.from.includes('/') && !meta.slot && !meta.referenceOnly) console.log(`assignment needed: if these variants replace part of ${meta.from}, wrap that element in <Slot> and connect ${slug} with --from ${meta.from} --slot <id> before presenting them. Use --reference-only only for a separate design that uses the parent as a reference.`)
+  return slug
 }
 
 // A placeholder for a variant, from one of app/stubs/: its name kept on one line, which the
@@ -1276,7 +1298,7 @@ async function shoot() {
   const clicked = new Set(argv.filter((a, i) => argv[i - 1] === '--click'))
   let routes = args.filter(a => !clicked.has(a)).length ? args.filter(a => !clicked.has(a)) : ['']
   if (flags.parallax !== undefined && !/^-?(0|1|0?\.\d+)(,-?(0|1|0?\.\d+))$/.test(String(flags.parallax))) die('--parallax is <x>,<y>, each from -1 to 1: 1,1 and -1,-1 are the two ends of the travel')
-  const extra = ['theme', 'focus', 'copy', 'parallax'].filter(k => flags[k]).map(k => `--${k}=${flags[k] === true ? '1' : flags[k]}`)
+  const extra = ['theme', 'focus', 'copy', 'options', 'parallax'].filter(k => flags[k]).map(k => `--${k}=${flags[k] === true ? '1' : flags[k]}`)
   if (flags.ref === true) die('--ref takes a screenshot of the real screen: --ref <png>')
   if (flags.ref && flags.sheet) die('--ref and --sheet are separate shots: run one, then the other')
   if (flags.state && !flags.sheet) die(`--state goes with --sheet; one variant in a state is proto shoot <slug>/<letter>/${flags.state === true ? '<state>' : flags.state}`)
@@ -1954,6 +1976,10 @@ const ACTIONS = {
   'try-it': 'add useHints for this variant only: useful demo values, steps and scenarios; preserve the working design; reply --done after checking it',
   'copy-options': 'add useCopy for this variant only: headline and primary text by default, or the requested lines; keep current words first, add 2 to 4 alternatives; reply --done after checking fit. On an element with quoted words (highlighted in the page): options for those words only, as one useCopy line on that element (data-copy)',
   copy: 'make this the line\'s text in the variant: put it first in that line\'s useCopy options',
+  option: 'chosen on the design from a useTweaks control marked on this element (data-tweak): make the chosen value this element\'s value in the variant, as written, then take that control out (its useTweaks entry, its state and the element\'s data-tweak); an undo asks to put back the value it had before. One proto reply <batch> "…" --done for the batch',
+  'more-options': 'add 3 more options to the control named in the text (its useTweaks options or presets, or its useCopy line), different from the ones there and from each other; keep today\'s first; reply --done naming them',
+  'to-prototype': 'turn this element\'s options into a prototype nested under this variant: proto add <new slug> --from <slug>/<letter> --slot <id> (lift the element into a <Slot> first) with one variant per option, Current first, then take the control out of this variant; reply --done naming the prototype',
+  'ask-options': 'this element has no options yet: add 2 to 4 options in place for the kinds the text names (color, size, weight: one useTweaks select or color with presets, its label naming the element, data-tweak on the element; words: one useCopy line, data-copy on it), today\'s value first; reply --done saying what to try',
   'share-fix': 'asked from a share review, before the link goes out: change the prototype so the findings quoted in the text are gone, the way the user\'s words say (inline or swap an asset, use a hosted font, take out a secret); never by quieting the review. Check it with proto share file (it prints the same review without publishing), then reply --done saying what changed: the user makes the link again from the page. Do not publish it yourself unless they ask',
   'share-repair': 'the owner asked to repair an existing published prototype; the text names its link, share ID and version. Follow their description, or investigate loading, navigation, assets and layout yourself when it is blank. Inspect the published link and its source, fix the cause and verify the affected flow. Then run proto share update <id> for that same link, preserving scope, comments and enabled/disabled state; this request authorizes that update. Do not create a replacement link, bypass a share review, or change product files. If the source is missing or the issue cannot be reproduced, reply with the blocker and checks performed instead of speculative changes. Reply --done with the result and verification',
   'build-screen': 'a <Go to="<slug>"> link on this variant leads to a screen not built yet (the text names the slug): add it to the same design and flow with proto add <slug> --design <id> --variants "…" (its first option stands in until a pick), written on the design\'s shared parts, then reply --done naming it',
@@ -2089,6 +2115,11 @@ function actionText(dir, c) {
   return (ACTIONS[c.action] || '') + suffix
 }
 
+// The composer's choice on a comment on one element: how to answer it (SKILL.md, Small changes stay in place).
+const ASK_AS = {
+  options: 'options in place on this element, as the user chose: 2 to 8 of them, one useTweaks control (or a useCopy line for words) with the element marked data-tweak (data-copy), today\'s value first (SKILL.md, Small changes stay in place); even if it would otherwise be variants, say so in the reply if it can\'t be done in place',
+  variants: 'variants, as the user chose: a prototype nested under this variant, one full variant per direction (proto add <new slug> --from <route> --next, or lift the element into a <Slot> and --slot <id>); not options in place',
+}
 // One tweak a comment was written with: its label, the value then and its default.
 const tweakValue = v => typeof v === 'boolean' ? (v ? 'on' : 'off') : JSON.stringify(v)
 const tweakShown = t => `${t.label} = ${tweakValue(t.value)} (default ${tweakValue(t.was)})`
@@ -2125,6 +2156,8 @@ function printBatch(dir, b) {
     if (c.target) console.log(`   ${c.point || c.region ? 'in' : 'on'}: ${where(c.target)}`)
     if (c.target?.src) printSource(dir, c.target.src)
     if (c.target?.uses) printUses(dir, c.target, c.route)
+    // How the user wants it answered, when chosen in the composer (the agent's call is the default and prints nothing).
+    if (c.ask && c.ask !== 'agent') console.log(`   answer as: ${ASK_AS[c.ask] ?? c.ask}`)
     // The design as the user had it in Tweaks: values the source does not draw (proto shoot --pin sets them).
     if (c.tweaks?.length) console.log(`   tweaks: ${c.tweaks.map(tweakShown).join(', ')} (changed in the page's Tweaks when written; the source draws the defaults)`)
     // Written in the page's device view: about that layout, which a shot at that size shows.

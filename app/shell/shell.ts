@@ -941,7 +941,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const sts = inScreen && p ? statesOf(p, pl.variant).length + TOOL_LIST.filter(x => toolOk(p, pl.variant, x)).length : 0
     const statesBtn = sts ? `<div class="relative">${tool('open:states-pop', 'strip-states', 'grid', t('States and Autoplay'), '', st.open === 'states-pop')}${pop(st.open === 'states-pop', `<div data-strip-states class="w-72 p-1.5">${variantHere(false)}</div>`, 'start-0 top-0', 'states-pop')}</div>` : ''
     const own = !inScreen ? [off('strip-tweaks', 'tweaks', t('Tweaks')), off('strip-try', 'key', t('Try it')), off('strip-copy', 'text', t('Copy options')), off('strip-motion', 'curves', t('Motion')), dockHome() ? '' : off('strip-states', 'grid', t('States and Autoplay'))]
-      : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), motionBtn(), dockHome() ? '' : statesBtn, replayBtn()]
+      : [tweaksBtn(), hintList().length ? tool('try', 'strip-try', 'key', t('Try it'), '', trySheet === 'open') : '', copyBtn(), roundBtn(), motionBtn(), dockHome() ? '' : statesBtn, replayBtn()]
     const fit = inScreen && frameOn() ? tool('center', 'strip-fit', 'center', t('Center the design'), '⌘0') : ''
     // Focus mode hides the strip with the rest of the chrome; the dock, Esc or F bring it back.
     const focusBtn = inScreen ? tool('focus', 'strip-focus', 'grow', t('Focus mode'), 'F') : off('strip-focus', 'grow', t('Focus mode'))
@@ -1844,7 +1844,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       ${switcher}
       <div class="ms-auto flex shrink-0 items-center gap-1">
         ${stepper}${stepper && (view === 'variant' || viewOk() || railOn() || copyCounts().lines || hasMotion() || decideOf()) ? '<span class="mx-1 h-5 w-px bg-black/10 dark:bg-white/10"></span>' : ''}
-        ${replayBtn()}${deviceBtn()}${commentBtn()}${tweaksBtn()}${copyBtn()}${motionBtn()}${decideBtn()}${shareBtn()}${moreBtn()}
+        ${replayBtn()}${deviceBtn()}${commentBtn()}${tweaksBtn()}${copyBtn()}${roundBtn()}${motionBtn()}${decideBtn()}${shareBtn()}${moreBtn()}
       </div></div>`)
     menus = { protos: drill(), session: '' }
     paintStrip(deviceBtn, replayBtn, centerBtn)
@@ -1937,7 +1937,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const dockPop = (on: boolean, id: string, body: string, w = 'w-[min(20rem,calc(100vw-2rem))]') => on ? `<div data-pop data-pop-for="${id}" class="fixed bottom-[76px] left-1/2 z-20 ${w} -translate-x-1/2 overflow-hidden rounded-2xl border border-black/10 bg-white text-zinc-900 shadow-2xl dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">${body}</div>` : ''
     const DOCK_MENUS = ['fproto', 'fstates', 'decide', 'tweaks']
     overlay.innerHTML = framed || view !== 'variant' || !p ? '' : `
-      ${building(p.id, vid) ? `<div data-building-chip title="${t('{agent} is still building this one', { agent: esc(agentName(session.agent)) })}" class="pointer-events-none absolute start-3 top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}${t('Building')}</div>` : ''}
+      ${building(p.id, vid) ? `<div data-building-chip title="${t('{agent} is still building this one', { agent: esc(agentName(session.agent)) })}" class="pointer-events-none absolute start-[calc(var(--strip-w,0px)+0.75rem)] top-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full bg-zinc-900/80 px-2.5 text-xs font-medium text-white shadow-lg backdrop-blur">${pulse('size-1.5')}${t('Building')}</div>` : ''}
       ${vs.length > 1 ? edgeBtn('prev') + edgeBtn('next') : ''}
       ${st.focus ? `
       ${dockPop(st.open === 'fstates', 'fstates', `<div class="p-1.5">${variantHere(false)}</div>`, 'w-[min(18rem,calc(100vw-2rem))]')}
@@ -1959,7 +1959,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
 
     if (st.focus) requestAnimationFrame(runDock)
     { const cc = comments.counts(), host = zone.querySelector<HTMLElement>('[data-island-host]')!
-      host.style.visibility = st.focus && !focusComments && !cc.picking && !cc.drafts && !comments.busy() ? 'hidden' : ''
+      const veiled = st.focus && !focusComments && !cc.picking && !cc.drafts && !comments.busy()
+      host.style.visibility = veiled ? 'hidden' : ''
+      // The round's row at rest is in the island: hidden with it, the dots show instead.
+      comments.options.round.veil(veiled)
       // Above the open dock (52 high, 12 off the foot), so the two never overlap.
       host.style.bottom = st.focus ? '72px' : '' }
     // Over the focused design (fixed, z-[100]) the menus that live outside the stage come up with it.
@@ -2033,7 +2036,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const pv = st.place.view === 'variant' ? st.place : null
     const sts = p && pv ? statesOf(p, pv.variant) : []
     const stateOn = pv && sts.length ? pv.tool === 'play' ? st.playing : pv.tool === 'all' ? null : pv.state ?? '' : null
-    const key = pillOn() ? JSON.stringify([p!.id, vid, vs.map(v => [v.id, v.name]), editing(p!.id, vid), st.sheet, st.states, sts.map(x => [x.id, x.name]), pv?.state, pv?.tool, st.playing, pillComments(), copyCounts().on, trySheet, tweakList().length, tweaksOpen, tweakList().filter(isChanged).length, joined, viewOk() && shownSize(), !!p && favOf(p, vid)]) : ''
+    const key = pillOn() ? JSON.stringify([p!.id, vid, vs.map(v => [v.id, v.name]), editing(p!.id, vid), st.sheet, st.states, sts.map(x => [x.id, x.name]), pv?.state, pv?.tool, st.playing, pillComments(), copyCounts().on, roundNow(), trySheet, tweakList().length, tweaksOpen, tweakList().filter(isChanged).length, joined, viewOk() && shownSize(), !!p && favOf(p, vid)]) : ''
     if (key !== pillKey) {
       pillKey = key
       if (!key) { pill.innerHTML = ''; closeCard(true) }
@@ -2060,6 +2063,9 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
         const end = tweakList().length ? `<button data-act="tweaks" data-shoot="tweaks" aria-label="${t('Tweaks')}" aria-haspopup="dialog" aria-expanded="${tweaksOpen}" class="${btn} relative ${tweaksOpen ? '!bg-sky-700 !text-white' : ''}">${ic('tweaks', 'size-5')}${tweakList().some(isChanged) ? `<span class="absolute end-0 top-0 grid min-w-3.5 rounded-full bg-sky-500 px-1 text-[9px] font-semibold text-white">${tweakList().filter(isChanged).length}</span>` : tweaksDot}</button>`
           : viewOk() ? `<button data-pill-layout data-shoot="pill-layout" aria-label="${t('Layout')}" aria-haspopup="dialog" aria-expanded="false" class="${btn} transition-colors">${ic(sizeIcon(shownSize() ?? nativeOf(innerWidth), st.view.land), 'size-5')}</button>`
           : v ? `<button data-act="fav:${esc(p!.id)}:${esc(v.id)}" data-shoot="pill-fav" aria-pressed="${fav}" aria-label="${fav ? t('Unfavorite') : t('Favorite')}" class="${btn} ${fav ? '!text-amber-400' : ''}">${ic(fav ? 'star-fill' : 'star', 'size-5')}</button>` : ''
+        // The round of decisions, put away: its way back.
+        const rn = roundNow()
+        const roundPill = rn.offered && rn.hidden ? `<button data-act="round" data-shoot="pill-round" data-round-btn aria-label="${roundSay(rn)}" class="${btn} relative">${ic('list-checks', 'size-5')}${roundCount(rn, 'ring-white dark:ring-zinc-900')}</button>` : ''
         const sOn = stateOn === null ? undefined : sts.find(x => x.id === stateOn)
         const stateText = pv?.tool === 'all' ? t('All states') : pv?.tool === 'history' ? t('History · v{n}', { n: versionOf(p!, pv.variant)?.n ?? '' }) : sOn?.name ?? t('At rest')
         const stateN = pv?.tool || !sts.length ? '' : `${sts.indexOf(sOn!) + 2}/${sts.length + 1}`
@@ -2073,7 +2079,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
               </div>${stateLine}
             </div>
             <button data-act="variant:${next.id}" aria-label="${t('Next variant: {label} {name}', { label: variantRef(p!, next.id), name: next.name })}" class="${btn}">${ic('right')}</button>
-            ${end ? `${sep}${end}` : ''}`
+            ${roundPill ? `${sep}${roundPill}` : ''}${end ? `${sep}${end}` : ''}`
         pill.innerHTML = joined
           ? `<div class="pointer-events-none absolute inset-x-0 bottom-0 z-[17] flex h-[var(--pill-h,0px)] items-end sm:hidden">
           <div data-pill-bar class="pointer-events-auto relative flex h-[calc(var(--pill-h,0px)-var(--isl-h,0px))] w-full flex-col px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-1 text-zinc-900 transition-[translate,opacity] duration-300 ease-out dark:text-white [[data-fold]_&]:pointer-events-none [[data-fold]_&]:translate-y-4 [[data-fold]_&]:opacity-0 [[data-typing]_&]:invisible">
@@ -2615,6 +2621,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       // The phone's Try it key: the sheet up, or down. Brought back from away, the spot goes out.
       case 'try': { const to = trySheet === 'open' ? 'closed' : 'open'; trySheet = to; setTry(null); return setTrySheet(to) }
       case 'copymode': return comments.copy.toggle()
+      case 'round': return comments.options.round.toggle()
       case 'motion': st.motion = !st.motion; return render()
       case 'states': st.states = true; return render()
       // The phone's two-line bar (with the project tree on): the tree, the variant's decide sheet, the menu.
@@ -2915,12 +2922,15 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (peek) { peek = false; paintHints(); return }
       if (trySheet === 'open') return setTrySheet('closed')
       if (comments.copy.escape()) return
+      if (comments.options.escape()) return
       if (comments.escape()) return
       if (card && card.phase !== 'exit') return closeCard()
       // A variant's options opened from the switcher step back to it, still open.
       if (st.open === 'vmenu' && st.under) { const m = st.vmenu; st.open = st.under; st.under = null; render(); if (m) bar.querySelector<HTMLElement>(`[data-pop] [data-act="vm:${m.proto}:${m.variant}"]`)?.focus(); return }
       // A menu closed from inside gives the focus back to its button.
       if (st.open) { const was = st.open, inside = !!t.closest?.('[data-pop]'); st.open = null; render(); if (inside) bar.querySelector<HTMLElement>(`[data-act="open:${was}"]`)?.focus(); return }
+      // A round of decisions' step, summary or see-all goes back to its row, after anything over it.
+      if (!e.defaultPrevented && comments.options.round.escape()) return
       if (selection.get().length) return selection.clear()
       if (st.drawer) { st.drawer = false; return render() }
       if (viewOn()) return patchView({ size: null, zoom: 0 })
@@ -2941,6 +2951,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       return
     }
     // On a tour the arrows walk the flow's screens, not the screen's options.
+    // In the options panel (comments/options.tsx) and on its dots, the arrows move between options.
+    if ((e.key === FWD || e.key === BACK || e.key === 'ArrowUp' || e.key === 'ArrowDown') && t.closest?.('[data-options-pop], [data-option-dot], [data-options-sheet]')) return
     if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant' && tour) { e.preventDefault(); act('tour', e.key === FWD ? 'next' : 'prev', '') }
     else if ((e.key === FWD || e.key === BACK) && st.place.view === 'variant') { e.preventDefault(); step(e.key === FWD ? 1 : -1) }
     else if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') stateKey(e, t)
@@ -3072,6 +3084,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   // The page inside a device view has none of its own: the page outside comments on it.
   const compareHost = () => st.place.view === 'variant' && !!chosenHere() ? layer?.el.querySelector<HTMLElement>('[data-comment-compare]') ?? null : null
   const commentHost = () => !framed && q.get('hints') !== '0' ? compareHost() ?? hintHost() : null
+  // Options in place (comments/options.tsx): dots on the elements of the design the tools work on, on
+  // its own page only: not in a share, a shot (unless it asks, ?options=1), a tool, or side by side;
+  // ?options=0 turns them off anywhere.
+  const optionsHost = () => !framed && q.get('options') !== '0' && (q.get('hints') !== '0' || q.get('options') === '1') && !compareHost() ? toolHost() : null
   /** A prototype's own page: no design on it to point at, but it takes comments as a whole. */
   const cardOn = () => !framed && !st.focus && q.get('hints') !== '0' && st.place.view === 'proto' && !!cur()
   // The comments island floats over the stage and opens into the list; a phone has it as the top
@@ -3533,6 +3549,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   function syncComments() {
     const host = commentHost(), pl = st.place, p = cur()
     comments.copy.setStage(copyHost(), copy.routeOf(copyHost()))
+    // A round of decisions shows on the design's own page only, never in a still (?hints=0) even with the dots.
+    comments.options.setStage(optionsHost(), copy.routeOf(optionsHost()), q.get('hints') !== '0' && q.get('round') !== '0')
     comments.act.setScope(pl.view === 'session' ? null : pl.proto)
     comments.act.setCard(cardOn() && p ? { proto: p.id, title: p.title } : null)
     const ch = host && p ? chosenHere() : null
@@ -3632,6 +3650,22 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const repaintCopy = () => { const k = copyKeyOf(); if (k !== copyKey) { copyKey = k; render() } }
   copy.subscribe(repaintCopy)
   comments.copy.store.subscribe(repaintCopy)
+
+  // ---------- a round of decisions (comments/round.tsx): its button, wherever the round is offered ----------
+  // A list with the number of decisions still open, pressed while the round's row shows; it pulses
+  // while the round is put away, and brings it back. In the strip or the bar on a wide page, in the
+  // pill's bar on a phone (there only while the round is put away: else the round's row is in view).
+  const roundNow = () => { const i = comments.options.round.info(); return { offered: i.offered && !st.focus, hidden: i.hidden, rest: i.kept === 'rest', open: i.open } }
+  const roundSay = (r: ReturnType<typeof roundNow>) => r.hidden ? tn(r.open, 'Bring back the round, {n} decision open', 'Bring back the round, {n} decisions open') : r.rest ? t('Put the round of decisions away') : t('Back to the round of decisions')
+  const roundCount = (r: ReturnType<typeof roundNow>, ring: string) => r.open ? `<span aria-hidden="true" data-round-count class="absolute -end-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-proto-primary px-1 text-[10px] font-semibold tabular-nums text-proto-primary-fg ring-2 ${ring} ${r.hidden ? 'animate-[proto-option-pulse_1.6s_ease-in-out_infinite]' : ''}">${r.open}</span>` : ''
+  const roundBtn = () => {
+    const r = roundNow()
+    if (!r.offered) return ''
+    return `<button data-act="round" data-shoot="round-toggle" data-round-btn aria-pressed="${!r.hidden && r.rest}" aria-label="${roundSay(r)}" title="${roundSay(r)}" class="relative hidden h-9 min-w-9 items-center justify-center rounded-lg sm:inline-flex ${!r.hidden && r.rest ? '!bg-proto-primary-soft !text-proto-primary' : 'text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'}">${ic('list-checks')}${roundCount(r, 'ring-white dark:ring-zinc-900')}</button>`
+  }
+  let roundKey = ''
+  const repaintRound = () => { const k = JSON.stringify(roundNow()); if (k !== roundKey) { roundKey = k; render() } }
+  comments.options.store.subscribe(repaintRound)
   // The bar under the stage takes its height from it, so the design is never under the bar.
   const copyBar = zone.querySelector<HTMLElement>('[data-copy-bar]')!
   comments.mountCopy(copyBar, zone.querySelector<HTMLElement>('[data-copy-sheet]')!)
@@ -3902,6 +3936,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
       if (up) lead.push({ id: 'comment-up', label: t('Comment on the parent'), icon: 'up', run: () => commentElement(up) })
       const text = (el.innerText ?? el.textContent ?? '').trim()
       if (text) lead.push({ id: 'copy-text', label: t('Copy text'), icon: 'copy', run: () => copyText(text) })
+      if (optionsHost()?.contains(el)) lead.push({ id: 'options-el', label: t('Options for this element…'), icon: 'sparkle', run: () => { comments.copy.off(); comments.options.openOn(el) } })
     }
     return { lead, rows }
   }

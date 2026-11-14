@@ -504,9 +504,28 @@ in the variant being worked on (`proto ask` first, as for any change to it). Wor
 (Offer other copy when asked); any other value is one `useTweaks` control (Quick changes with
 Tweaks): a `select` of the options' plain names (never pixel numbers), or a `color` with the options as
 presets, its first option the value today, its label naming the element ("Row icon", "Start
-button style"). The reply says where to try them, in one line ("Five icons in Tweaks › Row
-icon"). When the user says which one (in chat, or a comment whose `tweaks:` line shows it), write
-it in as that element's value and take the control out.
+button style"); showing or hiding it is a `toggle`. Mark the element with the control's id,
+`data-tweak="<id>"` (a line of words already carries `data-copy`): the page then puts a small dot on
+it, and a click on the dot (or on the element, when it is not a link, button or field of its own)
+opens a panel beside it with a picture of the element per option, which shows on the design while
+pointed at and stays when clicked. Two values of one element (its words
+and its size) go on the same element, `data-tweak` with both ids space-separated, or both
+attributes; elements alike (a label in every row) carry the same id and change together. A
+toggle's element stays in the page while hidden (mark a wrapper that stays). The reply says where
+to try them, in one line ("Five icons on the row icon: click its dot"). The user's choices come
+back as one batch from the page (`option` per tweak, `copy` per line, below), or in chat, or a
+comment whose `tweaks:` line shows it: write each in as that element's value and take the control
+and its `data-tweak` out.
+
+A variant that leaves several small decisions (3 or more elements with options the user has not
+opened yet) gets a round of decisions: a row on the comments island says how many, and walks them
+one by one (the element in a spotlight, its question, big tiles, Keep as is, Skip), ending in a
+summary with Send, the same batch as above. With 1 or 2 the dots are enough. To ask for a round
+anyway (one decision you want answered before going on), put `data-round` on any element of the
+variant (its root will do); `data-round="off"` never offers one. Each control's label is the step's
+question ("Which row icon?"), so name it after the element. The round and the dots never show in
+a share, a framed view, a shot (`?hints=0`) or comment mode. The reply
+says it in one line ("Seven small decisions on the home screen: the round walks them").
 
 When the options differ in structure, content, position or behavior (the button becomes a menu,
 the card becomes a list, a new step in the flow), they are variants, as below: a prototype nested
@@ -516,6 +535,10 @@ A comment that tags an element and asks for "a few", "other" or "more" of it tak
 read from its words: "other colors for this", "a different icon here" are options in place;
 "a few directions for this button", "another structure", "as a menu" are variants. When the words
 leave it open, start with options in place: they are cheaper, and they can still become variants.
+The composer on an element lets the user choose: options means options in place on that element,
+variants means a prototype nested under the variant, whatever the words (`proto inbox` prints the
+choice as `answer as:`). A comment with no `answer as:` line left it to you (the default): answer
+what it says, and when it asks for other values of the element, take this test.
 
 Turn options into variants (a slot prototype, one variant per option, Current first:
 `proto add <new slug> --from <slug>/<letter> --slot <id> --variants "A:Current,B:<option>,…"`,
@@ -1106,6 +1129,10 @@ the text.
 | `share-fix` | nothing; sent from a share review (Ask Claude to fix this), the user's words first, then the findings | change the prototype so those findings are gone, the way the words say (a hosted font instead of uploaded files, an asset inlined, a secret taken out), never by quieting the review; check with `proto share file <route>` (same review, nothing published), then reply `--done` with what changed. The user makes the link again from the page; don't publish it yourself unless they ask |
 | `share-repair` | queued from a published link's Fix prototype option; the text has its link, ID, version and optional problem description | read [Repairing a published prototype](references/share.md#repairing-a-published-prototype), diagnose the shared link and its source, verify a focused fix, then update that same link. This request authorizes the update; keep its scope, comments and enabled/disabled state. Reply `--done` with the result or the reproduction/source blocker |
 | `build-screen` | nothing; sent from a link's chip in the page (the project tree on): a `<Go to>` on this variant leads to a screen not built yet, its slug in the text | add it to the same design and flow with `proto add <slug> --design <id> --variants "…"` on the design's shared parts (its #1 stands in until a pick), then reply `--done` naming it |
+| `option` | nothing (one comment per value chosen on the design from its dot's panel, on that element; the text names the control, the chosen option, today's and all of them; an undo asks to put back what it had) | write the chosen value in as that element's value, then take the control out (its `useTweaks` entry, its state, the element's `data-tweak`); one `proto reply <batch> "…" --done` for the batch |
+| `more-options` | nothing; asked from the element's panel | add 3 more options to the control the text names (its `useTweaks` options or presets, or its `useCopy` line), different from those there; keep today's first; reply `--done` naming them |
+| `to-prototype` | nothing; asked from the element's panel | the options as variants (Small changes stay in place): lift the element into a `<Slot>`, `proto add <new slug> --from <slug>/<letter> --slot <id>` with one variant per option, Current first, then take the control out; reply `--done` naming it |
+| `ask-options` | nothing; asked on an element with no options (its right-click menu), the kinds to try in the text | add 2 to 4 options in place for those kinds (color, size, weight: one `useTweaks` control with `data-tweak` on the element; words: one `useCopy` line with `data-copy`), today's value first; reply `--done` saying where to try them |
 | `copy` | nothing (one comment per line changed since the last send, on that line's element; the text says option k of n, their own words, or back to today's words) | put the chosen words first in that line's `useCopy` options and keep the rest (a line break in their words stays a `\n` in the string, which the page shows as a break); then one `proto reply <batch> "…" --done` for the batch, in one line. The page drops its own choice once the words are first |
 
 ## 7. Only if asked: build it
@@ -1172,7 +1199,7 @@ the original, so the two sit side by side. `proto fork dismiss <its id>` waves i
 | Something new ("now the pricing page") | `proto add <new slug> …` |
 | Variations of one variant ("B but with a map", "more options for 2", "2 on mobile"), in chat or a comment | `proto add <new slug> --from <slug>/B --next …`, nested under B (step 4) |
 | A part of one variant, explored as a separate study ("explore B's hero on its own") | `proto add <new slug> --from <slug>/B --reference-only …` |
-| A small change to one element ("another icon here", "try other colors for this"), in chat or a comment | 2 to 8 options in place: `useCopy` for words, one `useTweaks` control for any other value (Small changes stay in place) |
+| A small change to one element ("another icon here", "try other colors for this"), in chat or a comment | 2 to 8 options in place: `useCopy` for words, one `useTweaks` control for any other value, the element marked `data-tweak` (Small changes stay in place) |
 | Those options as real designs ("make these a prototype", "side by side"), or more than 8 | a slot prototype with one variant per option, Current first, then take the control out (Small changes stay in place) |
 | Variants of one element that should replace it where it is ("more of this button", when they differ in structure or behavior) | lift it into a `<Slot>`, then `proto add <new slug> --from <slug>/<letter> --slot <id> …` |
 | Parts of several variants together ("E's layout with B's style") | `proto add <new slug> --from <slug>/E,<slug>/B --next …`, the one whose layout it keeps first |

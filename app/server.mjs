@@ -260,6 +260,10 @@ const intakeNow = () => readJson(intakeFile, null)
 /** What a page may be told about the intake: the questions, and whether they wait for answers. */
 const intakeView = () => { const d = intakeNow(); return d && Array.isArray(d.questions) ? d : null }
 
+const ASKS = new Set(['agent', 'options', 'variants'])
+// Requests the page waits on until the agent answers: listed beyond the last 20 batches while not
+// done, so a long wait never reads as done (Try it, copy options, and options in place's).
+const LASTING = new Set(['try-it', 'copy-options', 'option', 'copy', 'more-options', 'to-prototype', 'ask-options'])
 /** Where the inbox stands, for the page: what waits, whether an agent is listening, the batches' states. */
 export function inboxStatus() {
   // A background waiter of any conversation (one file each), or a session app's one from before.
@@ -274,7 +278,7 @@ export function inboxStatus() {
       comments: b.comments.map(c => ({ n: c.n, route: c.route, action: c.action, done: !!c.done, ...(c.withdrawn ? { withdrawn: true } : {}), ...(c.action && c.target ? { scoped: true } : {}), reply: c.reply ?? null })),
     }
   }).filter(Boolean).sort((a, b) => a.at < b.at ? 1 : -1)
-  return { intake: intakeView(), new: list('new').length, listening: listenerSids(dir).some(sid => listenerStatus(dir, sid).listening) || !!waiter && alive(waiter.pid), agent: agent?.pid ? (alive(agent.pid) ? 'alive' : 'gone') : null, batches: batches.filter((b, i) => i < 20 || b.comments.some(c => ['try-it', 'copy-options'].includes(c.action) && !c.done && !c.withdrawn)) }
+  return { intake: intakeView(), new: list('new').length, listening: listenerSids(dir).some(sid => listenerStatus(dir, sid).listening) || !!waiter && alive(waiter.pid), agent: agent?.pid ? (alive(agent.pid) ? 'alive' : 'gone') : null, batches: batches.filter((b, i) => i < 20 || b.comments.some(c => LASTING.has(c.action) && !c.done && !c.withdrawn)) }
 }
 
 const box = r => r && typeof r === 'object' ? { x: Math.round(+r.x || 0), y: Math.round(+r.y || 0), w: Math.round(+r.w || 0), h: Math.round(+r.h || 0) } : undefined
@@ -357,7 +361,7 @@ const fromOf = f => ({ share: f.share, version: f.version, viewer: f.viewer, nam
 // the element of the line it changes. More variants is the one made on a prototype (route <slug>),
 // with how many.
 // Fix before sharing is asked from a share review: the owner's words and what the review found.
-const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'copy', 'try-it', 'copy-options', 'share-fix', 'share-repair', 'build-screen', 'map-note', 'add-link', 'build-design'])
+const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'copy', 'try-it', 'copy-options', 'share-fix', 'share-repair', 'build-screen', 'map-note', 'add-link', 'build-design', 'option', 'more-options', 'to-prototype', 'ask-options'])
 
 /**
  * Writes one send from the page as a new batch; images come as data URLs and are stored as files.
@@ -394,6 +398,10 @@ export function receive(data, root = dir, { check = false } = {}) {
       if (!fromOk(c.from)) throw bad(i, ': from is { share, version, viewer, verified, link, comment }, a comment from a share link')
       if (c.action !== undefined || c.re !== undefined || c.point !== undefined || c.region !== undefined || time || (Array.isArray(c.tags) && c.tags.length) || (Array.isArray(c.images) && c.images.length)) throw bad(i, ': a comment from a link has no action, follow-up, spot, region, moment, tags or pictures')
     }
+    // How the user wants a comment on one element answered (the composer's choice): options in place,
+    // variants, or the agent's own call. Only on the owner's comment on an element, never on an action,
+    // a follow-up, a viewer's comment, the whole variant or the motion.
+    if (c.ask !== undefined && (!ASKS.has(c.ask) || c.action !== undefined || c.from !== undefined || c.re !== undefined || time || !c.target || typeof c.target !== 'object' || c.target.whole === true)) throw bad(i, ': ask is agent, options or variants, on a comment on one element (no action, follow-up, link, whole variant or moment)')
     const view = viewOf(c)
     if (view === false) throw bad(i, ': view is { size: phone, tablet or desktop, w, h }, the layout\'s size in whole CSS px from 200 to 4000')
     if (view && (c.action !== undefined || time)) throw bad(i, ': a comment in a device view is on the design, with no action and no moment of the motion')
@@ -405,7 +413,7 @@ export function receive(data, root = dir, { check = false } = {}) {
       if (c.point !== undefined || c.region !== undefined || c.target !== undefined || time) throw bad(i, ': more-variants has no element, spot, region or moment')
     } else if (c.action !== undefined) {
       const [slug, letter, more] = c.route.split('/')
-      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it, copy-options, share-fix, share-repair, build-screen, map-note, add-link or build-design, on a variant (<slug>/<letter>)')
+      if (!ACTIONS.has(c.action) || !letter || more !== undefined) throw bad(i, ': an action is pick, unpick, more, build, copy, try-it, copy-options, share-fix, share-repair, build-screen, map-note, add-link, build-design, option, more-options, to-prototype or ask-options, on a variant (<slug>/<letter>)')
       // A published-link repair must reach the agent even when its source is gone.
       if (c.action === 'pick' || c.action === 'unpick') {
         let meta
@@ -431,6 +439,7 @@ export function receive(data, root = dir, { check = false } = {}) {
       ...time,
       ...(view ? { view } : {}),
       ...(c.re ? { re: { batch: c.re.batch, n: c.re.n } } : {}),
+      ...(c.ask ? { ask: c.ask } : {}),
       ...(c.from ? { from: fromOf(c.from), ...(typeof c.note === 'string' && c.note ? { note: clip(c.note, 400) } : {}) } : {}),
       target: element(c.target),
       // From the owner's page only: a viewer on a link has no Tweaks of the owner's.
@@ -652,7 +661,8 @@ export function prototypeServer(session) {
   const status = () => {
     let s = {}
     try { s = read() } catch { /* being rewritten by hand; the rest still answers */ }
-    return { lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, slots: slotPointers(), inbox: inboxStatus(), conversations: conversations() }
+    // pid: which server answers, so `proto up` never takes another session's (on a port both tried at once) for its own.
+    return { pid: process.pid, lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, slots: slotPointers(), inbox: inboxStatus(), conversations: conversations() }
   }
   const stop = reason => {
     // The tailnet port as session.json has it now: on a session's first run, `proto up` gives it one
@@ -775,6 +785,15 @@ export function prototypeServer(session) {
               return
             }
             if (route === '/ping') { activity = Date.now(); shares?.ping() }
+            // proto add, once a prototype's files are written: they are reported again, in case the
+            // watcher missed them (a folder made and filled at once can go unreported, on a busy machine),
+            // so the registry's globs list them and the page gets the new list. Reported twice is harmless.
+            if (route === '/rescan' && typeof data.slug === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(data.slug)) {
+              const folder = join(dir, 'src', 'protos', data.slug)
+              let names = []
+              try { names = readdirSync(folder) } catch { /* not there */ }
+              for (const name of names) server.watcher.emit('add', join(folder, name))
+            }
             if (route === '/keep') write({ keep: !!data.keep })
             if (route === '/work' && typeof data.proto === 'string' && typeof data.variant === 'string') work({ proto: data.proto, variant: data.variant, undo: data.undo })
             let got

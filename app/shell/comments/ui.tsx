@@ -185,6 +185,10 @@ export const ACTION: Record<Action, { say: (v: string) => string; icon: string }
   'map-note': { say: v => `A note from the map on ${v}`, icon: 'comment' },
   'add-link': { say: v => `A link to add on ${v}`, icon: 'link' },
   'build-design': { say: () => 'Build the design', icon: 'code' },
+  option: { say: v => `An option chosen on ${v}`, icon: 'check' },
+  'more-options': { say: v => `More options on ${v}`, icon: 'more' },
+  'to-prototype': { say: v => `Options as a prototype for ${v}`, icon: 'layers' },
+  'ask-options': { say: v => `Options asked for on ${v}`, icon: 'more' },
 }
 /** A moment or a range of the motion, as the dock and the inbox write it: `0.35 s`, `0.30–0.62 s`. */
 export const spanOf = (t: { at: number; to?: number }) => t.to === undefined ? `${(t.at / 1000).toFixed(2)} s` : `${(t.at / 1000).toFixed(2)}–${(t.to / 1000).toFixed(2)} s`

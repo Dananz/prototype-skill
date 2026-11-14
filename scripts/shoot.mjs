@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Screenshot places in a prototype session at desktop and phone size: the stage only (the
 // design, or a lobby's grid), without the page's sidebar, bars and floating controls.
-// Usage: shoot.mjs <app-url> <out-dir> <route...> [--theme=dark] [--focus=1] [--copy=1] [--click=<css>]... [--ref=<png> [--as=built]] [--phone=<slug,…>] [--sheet=<json>] [--size=<w>x<h>] [--pin=<json>]
+// Usage: shoot.mjs <app-url> <out-dir> <route...> [--theme=dark] [--focus=1] [--copy=1] [--options=1] [--click=<css>]... [--ref=<png> [--as=built]] [--phone=<slug,…>] [--sheet=<json>] [--size=<w>x<h>] [--pin=<json>]
 // Routes are the page's hash routes: "/" (session lobby), "hero" (a prototype's lobby),
 // "hero/A" (one variant), "hero/A/open" (a state from its meta). Files are named
 // hero-A-desktop.png, hero-A-mobile-dark.png …
@@ -78,8 +78,10 @@ base.searchParams.set('theme', flags.theme === 'dark' ? 'dark' : 'light') // hea
 base.searchParams.set('hints', '0') // the Try it panel would narrow the design
 if (flags.focus) base.searchParams.set('focus', '1')
 if (flags.copy) base.searchParams.set('copy', '1')
+// --options=1 keeps the dots of the elements with options in place (shell's comments/options.tsx), which a shot leaves out.
+if (flags.options) base.searchParams.set('options', '1')
 if (flags.parallax) base.searchParams.set('parallax', flags.parallax) // parallax() layers held at that end of their travel
-const suffix = [flags.focus && 'focus', flags.copy && 'copy', flags.parallax && `parallax${flags.parallax.replace(/,/, '_')}`, flags.theme === 'dark' && 'dark', clicks.length && 'clicked'].filter(Boolean).map(s => `-${s}`).join('')
+const suffix = [flags.focus && 'focus', flags.copy && 'copy', flags.options && 'options', flags.parallax && `parallax${flags.parallax.replace(/,/, '_')}`, flags.theme === 'dark' && 'dark', clicks.length && 'clicked'].filter(Boolean).map(s => `-${s}`).join('')
 const fileOf = route => route.replace(/^\/+|\/+$/g, '').replace(/\//g, '-') || 'session'
 const phones = new Set(String(flags.phone || '').split(',').filter(Boolean))
 const phoneOnly = route => { const [slug, variant] = route.replace(/^\/+/, '').split('/'); return !!variant && phones.has(slug) }
