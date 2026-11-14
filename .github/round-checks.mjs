@@ -281,7 +281,7 @@ export default function One() {
     const h = await dbox(com, 'h1')
     await com.hover(h.x + 10, h.cy); await com.press(h.x + 10, h.cy)
     await until(com, `!!document.querySelector('[data-composer] [data-composer-ask]')`, 'the composer on an element has no choice of how to answer')
-    assert(await com.run(`document.querySelector('[data-composer-ask] [aria-checked=true]')?.dataset.ask === 'agent' && /decides from your words/.test(document.querySelector('[data-composer-ask-line]')?.textContent ?? '')`), 'the composer does not default to the agent deciding, saying how')
+    assert(await com.run(`document.querySelector('[data-composer-ask]')?.dataset.ask === 'agent' && /decides/.test(document.querySelector('[data-composer-ask]')?.getAttribute('aria-label') ?? '')`), 'the composer does not default to the agent deciding, saying so')
     // Left to the agent (the default): plain feedback goes with no choice, and proto inbox prints none.
     await com.run(`(() => { const e = document.querySelector('[data-composer] [contenteditable]'); e.focus(); document.execCommand('insertText', false, 'typo here'); })()`)
     await com.key('Enter', ['Meta'])
@@ -294,7 +294,10 @@ export default function One() {
     await until(com, `document.querySelector('[data-island] [data-shoot="comment"]')?.getAttribute('aria-pressed') === 'true'`, 'the island select tool did not turn on again')
     await com.hover(h.x + 10, h.cy); await com.press(h.x + 10, h.cy)
     await until(com, `!!document.querySelector('[data-composer] [data-composer-ask]')`, 'the second composer on the element has no choice of how to answer')
-    await click(com, '[data-composer-ask] [data-ask="variants"]')
+    await click(com, '[data-composer-ask]')
+    await until(com, `!!document.querySelector('[data-composer-ask-menu] [data-ask="variants"]')`, 'the choice of how to answer did not open its menu')
+    await click(com, '[data-composer-ask-menu] [data-ask="variants"]')
+    await until(com, `document.querySelector('[data-composer-ask]')?.dataset.ask === 'variants'`, 'picking Variants in the menu did not change the choice')
     await com.run(`(() => { const e = document.querySelector('[data-composer] [contenteditable]'); e.focus(); document.execCommand('insertText', false, 'A few directions for this'); })()`)
     await com.key('Enter', ['Meta'])
     let inbox = ''

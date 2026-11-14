@@ -8,6 +8,7 @@ import { besideWords, fill, imageShot, insertImage, InlineImage, relabel, settle
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Drawer } from '@base-ui/react/drawer'
+import { Menu } from '@base-ui/react/menu'
 import { uiBox } from '../portals'
 import { listen } from '../quiet'
 import { useAgentName, useCtx } from './ctx'
@@ -299,7 +300,8 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMention(null); return }
       if (shelf.onKey(e)) { e.preventDefault(); return }
     }
-    if (isSendKey(e)) { e.preventDefault(); submit(); if (!sentItem) void act.send() }
+    // Enter on the answer picker or its rows (portaled, but bubbling here through React) picks; it never sends.
+    if (isSendKey(e)) { if ((e.target as Element).closest?.('[data-composer-ask], [data-composer-ask-menu]')) return; e.preventDefault(); submit(); if (!sentItem) void act.send() }
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); act.close() }
   }
   const refocus = () => requestAnimationFrame(() => ed.current?.focus())
@@ -379,21 +381,6 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
             {capturing && <span className="grid h-12 w-20 place-items-center rounded-lg bg-zinc-900/[.04] text-[11px] text-zinc-400 dark:bg-white/[.06]">{capturing}</span>}
           </PictureStrip>
         )}
-        {askable && (
-          <div className="px-2 pt-1.5">
-            <div role="radiogroup" aria-label={t('How {agent} answers', { agent })} data-composer-ask="" className="flex rounded-xl bg-zinc-900/[.05] p-0.5 dark:bg-white/[.07]">
-              {([['agent', t('{agent} decides', { agent })], ['options', t('Options in place')], ['variants', t('Variants')]] as [AskMode, string][]).map(([k, label]) => (
-                <button key={k} type="button" role="radio" aria-checked={ask === k} data-ask={k} onClick={() => setAsk(k)}
-                  className={`h-7 min-w-0 flex-auto truncate whitespace-nowrap rounded-[10px] px-1 text-[11.5px] font-medium ${ask === k ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-white' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'}`}>{label}</button>
-              ))}
-            </div>
-            <p data-composer-ask-line="" className="px-1 pt-1.5 text-[11px] leading-4 text-zinc-500 dark:text-zinc-400">
-              {ask === 'agent'
-                ? <><span className="font-medium text-zinc-700 dark:text-zinc-200">{t('{agent} decides from your words.', { agent })}</span> {t('One value (a color, an icon, a size) as options in place; structure or behavior as variants.')}</>
-                : ask === 'options' ? t('2 to 8 options on the element itself, switched in place.') : t('A prototype nested in this variant, a full variant per direction.')}
-            </p>
-          </div>
-        )}
         {late && <p data-shoot="composer-late" role="alert" className="mx-3 mt-1.5 text-[11px] leading-4 text-amber-700 dark:text-amber-300">{t('{agent} has started on this, so it can\'t change now. Your words can go as a new comment.', { agent })}</p>}
         {error && <p role="alert" className="mx-3 mt-1.5 text-[11px] leading-4 text-rose-600 dark:text-rose-400">{error}</p>}
         <div className="flex items-center gap-1 px-2 pb-2 pt-1">
@@ -401,6 +388,7 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
           <button onClick={shoot} disabled={full} title={full ? t('{n} pictures is the most one comment takes; remove one to add another', { n: MAX_SHOTS }) : t('Add a screenshot of this part of the design, then draw on it (or paste an image: {mod} V, or drop one here; each adds a picture)', { mod: MOD })} aria-label={t('Attach a screenshot')} className={`${IB} h-8 min-w-8 px-1.5 disabled:opacity-40`}><Icon name="camera" /></button>
           {editing && <button onClick={() => id && act.remove(id)} title={t('Delete')} aria-label={t('Delete comment')} className={`${IB} h-8 min-w-8 px-1.5 hover:text-rose-600`}><Icon name="trash" /></button>}
           <span className="ms-auto" />
+          {askable && <AskPicker ask={ask} onAsk={setAsk} agent={agent} />}
           {docked && <button onClick={() => act.cancel()} className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 dark:hover:bg-white/10">{t('Cancel')}</button>}
           {/* Sent as it is added (Settings), it says so: Send, with the plane. */}
           <button data-shoot="composer-add" onClick={submit} disabled={busy || (empty && !tags.length && !shots.length && !inlineN)} title={late || (live && !editing) ? t('Send to {agent}', { agent }) : sentItem ? t('Save') : t('Add, to send with the rest · {key} adds and sends to {agent}', { key: sendKeyLabel(), agent })} className={`inline-flex h-8 items-center gap-1 rounded-lg ps-2 pe-3 text-xs font-semibold disabled:opacity-40 ${PRIMARY}`}><Icon name={late ? 'send' : editing ? 'check' : live ? 'send' : 'plus'} className="size-3.5" />{late ? t('Send as new comment') : editing ? t('Save') : live ? t('Send') : t('Add')}</button>
@@ -416,6 +404,49 @@ export function Composer({ target, time, docked, n, initial, place, sheet, taggi
         setMarking(null); refocus()
       }} />}
     </>
+  )
+}
+
+// How the agent answers a comment on an element, picked from a menu by Send (like a chat's model
+// picker): the trigger names the choice, each row says what it makes.
+const ASK_ROWS: { k: AskMode; icon: string; label: (agent: string) => string; line: (agent: string) => string }[] = [
+  { k: 'agent', icon: 'sparkle', label: agent => t('{agent} decides', { agent }), line: agent => `${t('{agent} decides from your words.', { agent })} ${t('One value (a color, an icon, a size) as options in place; structure or behavior as variants.')}` },
+  { k: 'options', icon: 'tweaks', label: () => t('Options in place'), line: () => t('2 to 8 options on the element itself, switched in place.') },
+  { k: 'variants', icon: 'stack', label: () => t('Variants'), line: () => t('A prototype nested in this variant, a full variant per direction.') },
+]
+const ASK_ITEM = 'flex cursor-default items-start gap-2.5 rounded-lg px-2 py-2 outline-none data-[highlighted]:bg-zinc-900/[.05] dark:data-[highlighted]:bg-white/[.07]'
+function AskPicker({ ask, onAsk, agent }: { ask: AskMode; onAsk: (k: AskMode) => void; agent: string }) {
+  const now = ASK_ROWS.find(r => r.k === ask) ?? ASK_ROWS[0]
+  return (
+    <Menu.Root modal={false}>
+      <Menu.Trigger data-composer-ask="" data-ask={ask} aria-label={`${t('How {agent} answers', { agent })}: ${now.label(agent)}`}
+        className="inline-flex h-8 min-w-0 max-w-[11rem] items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-zinc-600 hover:bg-zinc-900/5 hover:text-zinc-900 data-[popup-open]:bg-zinc-900/5 data-[popup-open]:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white dark:data-[popup-open]:bg-white/10 dark:data-[popup-open]:text-white">
+        <Icon name={now.icon} className="size-3.5 shrink-0 text-proto-primary-soft-fg" />
+        <span className="min-w-0 truncate">{now.label(agent)}</span>
+        <Icon name="caret-down" className="size-3 shrink-0 text-zinc-400" />
+      </Menu.Trigger>
+      <Menu.Portal container={uiBox()}>
+        <Menu.Positioner side="top" align="end" sideOffset={6} collisionPadding={8} className="z-[260] outline-none">
+          <Menu.Popup data-comment-ui="" data-composer-ask-menu="" className="w-[min(18rem,calc(100vw-1rem))] rounded-xl border border-black/10 bg-white p-1 text-[13px] text-zinc-800 shadow-lg outline-none transition-[opacity,transform] duration-150 ease-out data-ending-style:opacity-0 data-starting-style:translate-y-1 data-starting-style:opacity-0 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">
+            <Menu.Group>
+              <Menu.GroupLabel className="px-2 pb-1 pt-1.5 text-[11px] font-medium text-zinc-400">{t('How {agent} answers', { agent })}</Menu.GroupLabel>
+              <Menu.RadioGroup value={ask} onValueChange={(k: AskMode) => onAsk(k)}>
+                {ASK_ROWS.map(r => (
+                  <Menu.RadioItem key={r.k} value={r.k} data-ask={r.k} closeOnClick className={ASK_ITEM}>
+                    <span className="mt-px grid size-6 shrink-0 place-items-center rounded-md bg-zinc-900/[.05] text-zinc-500 dark:bg-white/[.07] dark:text-zinc-300"><Icon name={r.icon} className="size-3.5" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium leading-5">{r.label(agent)}</span>
+                      <span className="block text-[11px] leading-4 text-zinc-500 dark:text-zinc-400">{r.line(agent)}</span>
+                    </span>
+                    <span className="mt-1 size-4 shrink-0 text-proto-primary-soft-fg"><Menu.RadioItemIndicator><Icon name="check-simple" className="size-4" /></Menu.RadioItemIndicator></span>
+                  </Menu.RadioItem>
+                ))}
+              </Menu.RadioGroup>
+            </Menu.Group>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   )
 }
 
