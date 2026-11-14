@@ -1032,13 +1032,20 @@ function recommend() {
 // reloads live: works[<conversation>] each, and work, the one set last, for a tab of no conversation.
 // A session.json from before works existed has only work.
 const myWork = (s, sid = sessionId()) => s.works ? s.works[sid] ?? null : s.work ?? null
+/** works as it is, or, from a session.json that has only work, that one under the conversation working
+ *  on its prototype (its owner, else its maker), so the first per-conversation write keeps it. */
+function worksOf(dir, now) {
+  if (now.works) return now.works
+  const m = now.work ? readMeta(dir, now.work.proto) : null, sid = m?.owner ?? m?.session
+  return sid ? { [sid]: { proto: now.work.proto, variant: now.work.variant, at: now.work.at, before: now.before || [] } } : {}
+}
 /** A conversation's move to t: its works entry, the one it leaves first in its before (three kept). */
-function movedWork(now, sid, t, at) {
-  const was = now.works?.[sid] ?? null
-  if (sameVariant(was, t)) return {}
+function movedWork(dir, now, sid, t, at) {
+  const works = worksOf(dir, now), was = works[sid] ?? null
+  if (sameVariant(was, t)) return now.works ? {} : { works }
   const before = [was, ...(was?.before || [])].filter(x => x && !sameVariant(x, t))
     .filter((x, i, all) => all.findIndex(y => sameVariant(x, y)) === i).slice(0, 3).map(x => ({ proto: x.proto, variant: x.variant }))
-  return { works: { ...now.works, [sid]: { proto: t.proto, variant: t.variant, at, before } } }
+  return { works: { ...works, [sid]: { proto: t.proto, variant: t.variant, at, before } } }
 }
 /** Works entries, and the last one set, that point at no prototype that is left. */
 function worksWithout(now, gone) {
@@ -1096,7 +1103,7 @@ function setWork(dir, t, ask) {
   const at = new Date().toISOString(), sid = sessionId()
   if (ask) keepVersion(dir, t, [ask], at)
   patchSession(dir, now => {
-    const patch = movedWork(now, sid, t, at)
+    const patch = movedWork(dir, now, sid, t, at)
     if (!sameVariant(now.work, t)) {
       patch.work = { proto: t.proto, variant: t.variant, at }
       patch.before = [now.work, ...(now.before || [])].filter(x => x && !sameVariant(x, t))
@@ -1121,7 +1128,7 @@ function work() {
   const s = need(dir)
   if (flags.off) {
     const sid = sessionId(), mine = myWork(s, sid)
-    patchSession(dir, now => ({ works: Object.fromEntries(Object.entries(now.works || {}).filter(([k]) => k !== sid)), ...(sameVariant(now.work, mine) ? { work: null } : {}) }))
+    patchSession(dir, now => ({ works: Object.fromEntries(Object.entries(worksOf(dir, now)).filter(([k]) => k !== sid)), ...(sameVariant(now.work, mine) ? { work: null } : {}) }))
     return console.log('no working variant')
   }
   const w = myWork(s)

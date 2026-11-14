@@ -5,7 +5,7 @@
 // Run with node .github/conversation-tabs-checks.mjs (a few minutes); SHOTS=<dir> keeps screenshots.
 // It exits 1 when a check fails.
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -92,6 +92,13 @@ try {
   check('tab A stays on alpha after C builds and B grows', /alpha/.test(await tA.path()), await tA.path())
   check('tab B stays off gamma', !/gamma/.test(await tB.path()), await tB.path())
 
+  // A session.json from before each conversation had its own (work only): A's stays A's when B sets one.
+  const sessionJson = join(project, '.prototypes', '_project', 'session.json')
+  const old = JSON.parse(readFileSync(sessionJson, 'utf8'))
+  delete old.works
+  writeFileSync(sessionJson, JSON.stringify({ ...old, work: { proto: 'alpha', variant: 'B', at: new Date().toISOString() } }, null, 2) + '\n')
+  proto(B, ['work', 'beta/A'])
+  check('an old session.json keeps A\'s working variant when B sets its own', /alpha\/(B|2)/.test(proto(A, ['work'])), proto(A, ['work']).trim())
   // Each conversation's working variant: A sets its own and its tab shows it.
   proto(A, ['work', 'alpha/A'])
   const wa = await until(() => workIn(tA), w => /Alpha/.test(w))
@@ -128,7 +135,8 @@ try {
   const tree = await until(() => tA.run(`[...document.querySelectorAll('aside')].map(e => e.innerText).join('\\n')`), t => /Alpha/.test(t))
   check('tab A after a reload lists Alpha, not Beta or Gamma', /Alpha/.test(tree) && !/Beta|Gamma/.test(tree), JSON.stringify(tree.slice(0, 200)))
 
-  // A successful page pick is live in A but must not steal B's route.
+  // A pick in A's tab, on a prototype A works on: A's working variant moves there, and B's tab stays put.
+  proto(A, ['work', 'alpha/A'])
   await nav(tA, '/alpha/B')
   await click(tA, '[data-decide-btn]')
   await until(() => tA.run(`!!document.querySelector('[data-decide] [data-send]')`), Boolean)

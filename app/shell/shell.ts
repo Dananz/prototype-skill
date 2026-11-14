@@ -4443,8 +4443,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     const pick = batch.comments.filter(c => c.action === 'pick').at(-1)
     if (pick) { const [proto, variant] = pick.route.split('/'); expected = { proto, variant } }
     try {
-      // conv: a pick moves this tab's conversation's working variant.
-      const res = await transport.sendBatch({ theme: st.dark ? 'dark' : 'light', ...(tied ? { conv: me } : {}), ...batch })
+      const res = await transport.sendBatch({ theme: st.dark ? 'dark' : 'light', ...batch })
       const body: { error?: string; sent: string; moved?: boolean; results?: Sent['results'] } & Status = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body.error || `the server answered ${res.status}`)
       // The answer says where the working variant is now. A move session.json hasn't brought yet is

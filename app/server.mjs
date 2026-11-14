@@ -67,12 +67,18 @@ export function decided() {
 // The page moves the working variant three ways: back to one under Before (the one it leaves goes
 // to Before, as with `proto work`), Undo of a move it was just told about (nothing is kept), or a
 // pick made in the page, which also adds what was asked to that variant's history. True when it moved.
-// Each conversation has its own (works[<conversation>], scripts/proto.mjs): the move is the one of the
-// conversation the page's tab is (conv), else of the conversation working on that prototype; work is
-// the one set last, for a tab of no conversation.
+// Each conversation has its own (works[<conversation>], scripts/proto.mjs): a tab's own moves (conv) are
+// its conversation's; a pick is the one of the conversation working on that prototype, whose batch it is.
+// work is the one set last, for a tab of no conversation; an Undo from a conversation's tab leaves it.
+// A session.json from before works existed has its work kept under its prototype's conversation.
 const same = (a, b) => !!a && !!b && a.proto === b.proto && a.variant === b.variant
 const refs = list => list.filter((x, i, all) => all.findIndex(y => same(x, y)) === i).slice(0, 3).map(x => ({ proto: x.proto, variant: x.variant }))
 const workerOf = slug => { try { const m = metaOf(readFileSync(metaFile(slug), 'utf8')); return m.owner ?? m.session ?? '' } catch { return '' } }
+const worksOf = s => {
+  if (s.works) return s.works
+  const sid = s.work ? workerOf(s.work.proto) : ''
+  return sid ? { [sid]: { proto: s.work.proto, variant: s.work.variant, at: s.work.at, before: s.before || [] } } : {}
+}
 function work({ proto, variant, undo, ask, conv }) {
   const t = { proto: String(proto), variant: String(variant) }, sid = typeof conv === 'string' && conv ? conv : workerOf(t.proto)
   const at = new Date().toISOString()
@@ -83,12 +89,12 @@ function work({ proto, variant, undo, ask, conv }) {
   let moved = false
   write(s => {
     const patch = {}
-    if (!same(s.work, t)) {
+    if (!same(s.work, t) && !(undo && sid && conv)) {
       patch.work = { ...t, at }
       patch.before = refs(undo ? (s.before || []).filter(x => !same(x, t)) : [s.work, ...(s.before || [])].filter(x => x && !same(x, t)))
     }
-    const was = sid ? s.works?.[sid] ?? null : null
-    if (sid && !same(was, t)) patch.works = { ...s.works, [sid]: { ...t, at, before: refs(undo ? (was?.before || []).filter(x => !same(x, t)) : [was, ...(was?.before || [])].filter(x => x && !same(x, t))) } }
+    const works = worksOf(s), was = sid ? works[sid] ?? null : null
+    if (sid && !same(was, t)) patch.works = { ...works, [sid]: { ...t, at, before: refs(undo ? (was?.before || []).filter(x => !same(x, t)) : [was, ...(was?.before || [])].filter(x => x && !same(x, t))) } }
     moved = sid ? !!patch.works : !!patch.work
     if (ask) {
       const key = `${t.proto}/${t.variant}`
@@ -190,8 +196,7 @@ export function pickParents(slug) {
   }
   return picked
 }
-// conv: the conversation of the page's tab that picked; its working variant moves (see work).
-function pick(route, off, conv) {
+function pick(route, off) {
   const [slug, id] = route.split('/')
   const text = readFileSync(metaFile(slug), 'utf8'), meta = metaOf(text)
   if (off && meta.picked !== id) return 'nothing'
@@ -204,7 +209,7 @@ function pick(route, off, conv) {
   if (!off) try { pickParents(slug) } catch { /* the pick itself is made; the parents can be picked by hand */ }
   let moved = false
   if (!off) {
-    try { moved = work({ proto: slug, variant: id, ask: `Picked ${id}`, conv }) }
+    try { moved = work({ proto: slug, variant: id, ask: `Picked ${id}` }) }
     catch (e) { throw Object.assign(e instanceof Error ? e : new Error(String(e)), { marked: true }) }
   }
   // History is a trace, never a reason to fail a pick that is already made.
@@ -388,7 +393,6 @@ const ACTIONS = new Set(['pick', 'unpick', 'more', 'more-variants', 'build', 'co
 export function receive(data, root = dir, { check = false } = {}) {
   const inbox = join(root, '.proto', 'inbox')
   const comments = Array.isArray(data.comments) ? data.comments : []
-  const conv = typeof data.conv === 'string' ? data.conv : ''
   if (!comments.length) throw Object.assign(new Error('no comments'), { status: 400 })
   const bad = (i, why) => Object.assign(new Error(`comment ${i + 1}${why}`), { status: 400 })
   const at = new Date().toISOString()
@@ -489,14 +493,14 @@ export function receive(data, root = dir, { check = false } = {}) {
     if (c.action === 'build') {
       const [slug, letter] = c.route.split('/')
       try {
-        if (metaOf(readFileSync(metaFile(slug), 'utf8'))?.picked !== letter) { moved = pick(c.route, false, conv) === 'moved' || moved; c.picked = true }
+        if (metaOf(readFileSync(metaFile(slug), 'utf8'))?.picked !== letter) { moved = pick(c.route, false) === 'moved' || moved; c.picked = true }
       } catch { /* the build is asked for either way */ }
       continue
     }
     if (c.action !== 'pick' && c.action !== 'unpick') continue
     const [slug, letter] = c.route.split('/')
     try {
-      const did = pick(c.route, c.action === 'unpick', conv)
+      const did = pick(c.route, c.action === 'unpick')
       if (did === 'nothing') Object.assign(c, { nothing: true, failed: `${letter} isn't the pick of ${slug}, so there was nothing to take back` })
       else {
         if (c.action === 'pick') c.assignment = assignmentNeeded(dir, slug, letter)
@@ -677,7 +681,7 @@ export function prototypeServer(session) {
     let s = {}
     try { s = read() } catch { /* being rewritten by hand; the rest still answers */ }
     // pid: which server answers, so `proto up` never takes another session's (on a port both tried at once) for its own.
-    return { pid: process.pid, lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, works: Object.fromEntries(Object.entries(s.works || {}).filter(([, w]) => w).map(([k, w]) => [k, { proto: w.proto, variant: w.variant }])), slots: slotPointers(), inbox: inboxStatus(), conversations: conversations() }
+    return { pid: process.pid, lastEdit: lastEdit(), edits, keep: !!s.keep, idleHours: s.idleHours ?? 6, deleteDays: s.deleteDays ?? 14, work: s.work ? { proto: s.work.proto, variant: s.work.variant } : null, ...(s.works ? { works: Object.fromEntries(Object.entries(s.works).filter(([, w]) => w).map(([k, w]) => [k, { proto: w.proto, variant: w.variant }])) } : {}), slots: slotPointers(), inbox: inboxStatus(), conversations: conversations() }
   }
   const stop = reason => {
     // The tailnet port as session.json has it now: on a session's first run, `proto up` gives it one
