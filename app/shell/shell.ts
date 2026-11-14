@@ -1504,7 +1504,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     if (fitsAlone()) return Math.floor(Math.max(0.4, Math.min(1, (room.clientHeight - barOver(room) - 48) / h, (room.clientWidth - 48) / w)) * 100) / 100 * frameZoom
     // At Fit the phones take the largest size the stage holds clear of the comment island, up to their own size.
     const auto = Math.floor(Math.max(0.4, Math.min(1, (room.clientHeight - islandOver(room) - 88) / h, (room.clientWidth - 24) / w)) * 100) / 100
-    return (st.scale ? st.scale / 100 : auto) * frameZoom
+    // In a phone-width window a scale never makes the phone wider than the room (100% on a narrow
+    // iPad window): it takes the whole width and the stage doesn't scroll sideways. A pinch still can.
+    const whole = matchMedia('(max-width: 639px)').matches ? Math.max(0.1, (room.clientWidth - 48) / w) : Infinity
+    return Math.min(st.scale ? st.scale / 100 : auto, whole) * frameZoom
   }
   function fitBox(box: HTMLElement) {
     box.style.setProperty('--stage-h', `${box.clientHeight}px`)
@@ -3626,8 +3629,13 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     render()
   })
   phoneMq.addEventListener('change', () => {
+    // A scale chosen at one width (a pinch on a wide iPad) is wrong at the other: a phone-width window
+    // fits its phone to the room again, a wide one fits at Fit, or the phone overruns the bar at the foot.
+    unzoom()
+    scaleChosen = false
+    st.scale = phoneMq.matches ? 50 : 0
     if (st.place.view === 'proto' && st.view.size && cur()?.kind !== 'phone') { show(false); render() }
-    else paintHints()
+    else { paintHints(); render(); fit() }
   })
 
   // ---------- copy options: a T button wherever the design on the stage declares them ----------
