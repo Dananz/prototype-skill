@@ -60,6 +60,10 @@ html[dir="rtl"] :is(input, textarea)[dir="auto"]:placeholder-shown:not([data-mou
 [data-mount] { text-align: start; }
 
 .proto-phone {
+  /* Shrunk with zoom, its words look small to Safari on an iPad, which enlarges them past the frame
+     (text autosizing); there only none turns that off, not Tailwind's 100%. */
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
   position: relative;
   isolation: isolate;
   contain: layout;
