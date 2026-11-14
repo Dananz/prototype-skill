@@ -220,10 +220,13 @@ function ViewStage({ view, path, dark, set, route, onKey, safe, pick, aside }: V
   const scale = view.zoom ? view.zoom / 100 : fit
   const zoomed = scale > fit + 0.001
   const setZoom = (z: number) => set({ zoom: z })
-  // A menu open beside the strip or the sidebar: the device moves clear of it, at the size it is, while it still
-  // shows whole in the room left beside it; else it stays where it is, under the menu.
+  // A menu open beside the strip or the sidebar: the device moves clear of it, at the size it is, when the menu
+  // covers it where it stands and it still shows whole in the room left beside it; else it stays where it is.
   const clear = aside && (aside.l || aside.r) ? { ...ins, l: Math.max(ins.l, aside.l), r: Math.max(ins.r, aside.r) } : ins
-  const slides = clear !== ins && !zoomed && outer.w * scale + pad * 2 <= box.w - clear.l - clear.r
+  const W = outer.w * scale, room = box.w - ins.l - ins.r
+  const homeX = ins.l + (W + pad * 2 <= room ? (room - W) / 2 : pad)
+  const covered = clear !== ins && (clear.l > homeX + 1 || clear.r > box.w - homeX - W + 1)
+  const slides = covered && !zoomed && W + pad * 2 <= box.w - clear.l - clear.r
   const placeIns = slides ? clear : ins
   const [sliding, setSliding] = useState(false)
   const slideKey = `${placeIns.l},${placeIns.r}`, slideWas = useRef(slideKey)

@@ -3419,7 +3419,7 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
   const viewHost = zone.querySelector<HTMLElement>('[data-view]')!
   const deviceView = createView(viewHost, comments.wrap)
   // A menu open beside the tool strip (its own menus, Tweaks, Decide) or the project's sidebar covers that side of the stage:
-  // the design slides clear of it, at the size it is, when it still shows whole beside it (a phone
+  // the design slides clear of it, at the size it is, when the menu covers it and it still shows whole beside it (a phone
   // here, a device in the view: view/index.tsx). Measured after the chrome changes, as the menus draw
   // in their own time. In the window's px: the menus on the stage's left reach to l, those on its
   // right start at r (0: none).
@@ -3451,8 +3451,10 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     for (const box of layers.querySelectorAll<HTMLElement>('[data-phones]')) {
       const phone = box.querySelector<HTMLElement>('[data-phone]')
       if (!phone) continue
-      const c = box.getBoundingClientRect(), { l, r } = asideIn(c)
-      const fits = (l || r) && phone.getBoundingClientRect().width + 48 <= c.width - l - r
+      const c = box.getBoundingClientRect(), { l, r } = asideIn(c), w = phone.getBoundingClientRect().width
+      // Only a menu over the phone where it stands (centred in the whole stage) moves it.
+      const x = (c.width - w) / 2, covered = l > x + 1 || r > c.width - x - w + 1
+      const fits = covered && w + 48 <= c.width - l - r
       const pl = fits ? `${24 + l}px` : '', pr = fits ? `${24 + r}px` : ''
       if (box.style.paddingLeft === pl && box.style.paddingRight === pr) continue
       if (ease) {
