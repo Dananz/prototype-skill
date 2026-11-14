@@ -85,7 +85,8 @@ try {
   const nav = async (t, path) => { await t.run(`history.pushState(null, '', ${JSON.stringify(path)} + location.search); dispatchEvent(new PopStateEvent('popstate'))`); await sleep(350) }
   const click = async (t, selector) => t.run(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) throw new Error('missing ' + ${JSON.stringify(selector)}); e.click(); return true })()`)
   const aside = t => t.run(`[...document.querySelectorAll('aside')].map(e => e.innerText).join(String.fromCharCode(10))`)
-  const scopeText = t => t.run(`document.querySelector('[data-tree-scope-now]')?.textContent`)
+  // The scope under the project's name, once the sidebar has drawn it (a tab just reloaded in the back is slow to).
+  const scopeText = t => until(() => t.run(`document.querySelector('[data-tree-scope-now]')?.textContent ?? ''`), Boolean)
   const scopeTo = async (t, k) => { await t.front(); await sleep(100); await pickScope(t, k) }
   const undoVisible = t => t.run(`[...document.querySelectorAll('[data-act="work:undo"]')].some(e => e.getBoundingClientRect().width > 0)`)
 

@@ -487,7 +487,9 @@ function Tree({ api, desk }: { api: TreeApi; desk?: boolean }) {
   const scopes: ScopeItem[] = !input.conv
     ? FILTERS.map(([k, label]) => ({ k, label: k === 'open' ? `${label()} · ${waiting}` : label(), on: filter === k, pick: () => choose(k), star: k === 'favs' }))
     : [
-        ...(input.me || sid ? [{ k: 'conv', label: sid && sid !== input.me ? (input.scopeName || t('A past conversation')) : t('This conversation'), on: !!sid, pick: () => api.setScope?.(`conv:${input.me || sid}`) }] : []),
+        // A past conversation in scope is a row of its own, so This conversation stays one tap away.
+        ...(sid && sid !== input.me ? [{ k: 'past', label: input.scopeName || t('A past conversation'), on: true, pick: () => {} }] : []),
+        ...(input.me ? [{ k: 'conv', label: t('This conversation'), on: !!sid && sid === input.me, pick: () => api.setScope?.(`conv:${input.me}`) }] : []),
         { k: 'all', label: `${t('Whole project')} · ${total}`, on: !sid && scope === 'all', pick: () => api.setScope?.('all') },
         { k: 'favs', label: t('Favorites'), on: !sid && scope === 'favs', pick: () => api.setScope?.('favs'), star: true },
       ]
