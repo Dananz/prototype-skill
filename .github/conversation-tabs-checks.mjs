@@ -5,7 +5,7 @@
 // Run with node .github/conversation-tabs-checks.mjs (a few minutes); SHOTS=<dir> keeps screenshots.
 // It exits 1 when a check fails.
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -92,13 +92,6 @@ try {
   check('tab A stays on alpha after C builds and B grows', /alpha/.test(await tA.path()), await tA.path())
   check('tab B stays off gamma', !/gamma/.test(await tB.path()), await tB.path())
 
-  // A session.json from before each conversation had its own (work only): A's stays A's when B sets one.
-  const sessionJson = join(project, '.prototypes', '_project', 'session.json')
-  const old = JSON.parse(readFileSync(sessionJson, 'utf8'))
-  delete old.works
-  writeFileSync(sessionJson, JSON.stringify({ ...old, work: { proto: 'alpha', variant: 'B', at: new Date().toISOString() } }, null, 2) + '\n')
-  proto(B, ['work', 'beta/A'])
-  check('an old session.json keeps A\'s working variant when B sets its own', /alpha\/(B|2)/.test(proto(A, ['work'])), proto(A, ['work']).trim())
   // Each conversation's working variant: A sets its own and its tab shows it.
   proto(A, ['work', 'alpha/A'])
   const wa = await until(() => workIn(tA), w => /Alpha/.test(w))
@@ -248,6 +241,18 @@ try {
   await sleep(500)
   await dv.run('history.forward()'); const fwd = await until(dv.path, p => p === '/alpha/B')
   check('device view: Forward comes back', fwd === '/alpha/B', fwd)
+
+  // A session.json from before each conversation had its own (work only): A's stays A's when B sets one.
+  // Last: the tabs no longer matter (a file put in place by hand can leave a page on what it read before).
+  const sessionJson = join(project, '.prototypes', '_project', 'session.json')
+  const old = JSON.parse(readFileSync(sessionJson, 'utf8'))
+  delete old.works
+  // Whole, as proto writes it (a scratch file renamed over it): the page takes it in through Vite, which
+  // could read a file written in place half-done.
+  writeFileSync(`${sessionJson}.tmp`, JSON.stringify({ ...old, work: { proto: 'a-second', variant: 'A', at: new Date().toISOString() } }, null, 2) + '\n')
+  renameSync(`${sessionJson}.tmp`, sessionJson)
+  proto(B, ['work', 'beta/B'])
+  check('an old session.json keeps A\'s working variant when B sets its own', /a-second\/A/.test(proto(A, ['work'])), proto(A, ['work']).trim())
 
 } catch (e) { console.log('ERROR', e?.stack || e); results.push(['FAIL', 'ran to the end', String(e)]) } finally {
   ws?.close(); stopChrome(chrome)
