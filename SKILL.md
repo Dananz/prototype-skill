@@ -41,7 +41,7 @@ select individual shots, and choose No name, With name or Canvas, at As shown, P
 and downloads them one by one with progress and Stop. On supported phones, Share files opens
 the system share sheet. Captions affect exports only.
 
-Settings (the bar's ⋯ menu, or the session name at the top of the sidebar) opens browser
+Settings (the bar's ⋯ menu, or Session settings in the menu on the project's name at the top of the sidebar) opens browser
 preferences: System, Light or Dark appearance, instant comment sending (off by default, so
 drafts can be sent together), where the comments island rests and which news grows it (or,
 under Legacy, a docked comments panel: the list as a side panel tab with a Comment button in the
@@ -200,8 +200,8 @@ conversation; a comment on a prototype whose owner isn't listening wakes the con
 listens and was seen last. `proto ls --mine` lists what this conversation made or joined.
 
 With **Conversation first** on (the default; Settings › Browsing or `?conv=0` turns it off, kept in the browser),
-the page opens on **this conversation**: with the project tree on, the sidebar's top row (This
-conversation | Whole project · N | ★) scopes the tree and the gallery together. The gallery
+the page opens on **this conversation**: with the project tree on, the menu on the project's name at the top of the sidebar (This
+conversation, Whole project · N, Favorites; the scope is written under the name) scopes the tree and the gallery together. The gallery
 lists the earlier conversations as one line each, and opening one scopes the page to it, with a way
 back; a link to an exploration of another conversation widens the scope to that one. The choice is
 kept in the browser. Send the user links to what this conversation made; nothing else needs saying.

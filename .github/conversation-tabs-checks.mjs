@@ -9,6 +9,20 @@ import { mkdtempSync, mkdirSync, readFileSync, renameSync, writeFileSync, rmSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+/** Picks a scope from the menu on the project's name with the mouse (Base UI's menu takes real clicks). */
+async function pickScope(page, k) {
+  const at = sel => page.run(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].map(e => e.getBoundingClientRect()).find(r => r.width && r.height); return b ? [b.x + b.width / 2, b.y + b.height / 2] : null })()`)
+  const press = async p => { await page.mouse('mousePressed', p[0], p[1], { clickCount: 1 }); await page.mouse('mouseReleased', p[0], p[1], { clickCount: 1 }) }
+  const sleep = ms => new Promise(r => setTimeout(r, ms))
+  const item = `[data-tree-filter="${k}"]`
+  // A sidebar that is hidden (folded away in this tab) still holds the menu: opened by script then.
+  if (!(await at(item))) { const p = await at('[data-tree-scope-menu]'); if (p) await press(p); else await page.run(`document.querySelector('[data-tree-scope-menu]').click()`) }
+  for (let i = 0; i < 80 && !(await at(item)); i++) await sleep(25)
+  await sleep(150)
+  await press(await at(item))
+  for (let i = 0; i < 80 && await page.run(`!!document.querySelector('[data-tree-scope]')`); i++) await sleep(25)
+}
 import { startChrome, stopChrome } from '../scripts/chrome.mjs'
 
 const skill = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -59,7 +73,10 @@ try {
     for (const end = Date.now() + 30000; Date.now() < end && !(await run('document.documentElement.dataset.ready === "1"').catch(() => false));) await sleep(150)
     const key = async k => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: k, code: `Key${k.toUpperCase()}`, windowsVirtualKeyCode: k.toUpperCase().charCodeAt(0), ...(type === 'keyDown' ? { text: k } : {}) }, sessionId) }
     const shot = async file => { const { data } = await send('Page.captureScreenshot', { format: 'png' }, sessionId); writeFileSync(file, Buffer.from(data, 'base64')) }
-    return { run, key, shot, sessionId, path: () => run('location.pathname + location.hash') }
+    const mouse = (type, x, y, extra = {}) => send('Input.dispatchMouseEvent', { type, x, y, button: 'left', ...extra }, sessionId)
+    // A tab in the back gets no animation frames, so a menu opened there never lays out: bring it forward.
+    const front = () => send('Page.bringToFront', {}, sessionId)
+    return { run, key, shot, mouse, front, sessionId, path: () => run('location.pathname + location.hash') }
   }
   // Polls until test(value) holds, for 15 s at most; the last value either way.
   const until = async (get, test) => { let v; for (const end = Date.now() + 15000; Date.now() < end; await sleep(250)) if (test(v = await get())) return v; return v }
@@ -68,7 +85,9 @@ try {
   const nav = async (t, path) => { await t.run(`history.pushState(null, '', ${JSON.stringify(path)} + location.search); dispatchEvent(new PopStateEvent('popstate'))`); await sleep(350) }
   const click = async (t, selector) => t.run(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) throw new Error('missing ' + ${JSON.stringify(selector)}); e.click(); return true })()`)
   const aside = t => t.run(`[...document.querySelectorAll('aside')].map(e => e.innerText).join(String.fromCharCode(10))`)
-  const scopeText = t => t.run(`document.querySelector('[data-tree-scope] [aria-checked="true"]')?.textContent`)
+  // The scope under the project's name, once the sidebar has drawn it (a tab just reloaded in the back is slow to).
+  const scopeText = t => until(() => t.run(`document.querySelector('[data-tree-scope-now]')?.textContent ?? ''`), Boolean)
+  const scopeTo = async (t, k) => { await t.front(); await sleep(100); await pickScope(t, k) }
   const undoVisible = t => t.run(`[...document.querySelectorAll('[data-act="work:undo"]')].some(e => e.getBoundingClientRect().width > 0)`)
 
   const tA = await tab(linkA)
@@ -161,7 +180,7 @@ try {
   proto(B, ['work', 'alpha/B'])
   await until(() => workIn(tB), w => /Alpha/.test(w))
   await nav(tB, '/alpha/B')
-  await click(tB, '[data-tree-filter="conv"]')
+  await scopeTo(tB, 'conv')
   const bJoinedTree = await aside(tB)
   check('B This conversation lists the prototype B works on', /Alpha/.test(bJoinedTree.replace(/Working on[^\n]*/, '')), JSON.stringify(bJoinedTree))
   proto(B, ['add', 'alpha', '--join', '--variants', 'C:Joined option'])
@@ -170,11 +189,11 @@ try {
   check('A stays on its second prototype when B grows joined alpha', /a-second/.test(await tA.path()), await tA.path())
 
   // The scope is the tab's own: another tab's choice doesn't reach it, also on a reload.
-  await click(tB, '[data-tree-filter="all"]')
+  await scopeTo(tB, 'all')
   await tA.run('location.reload()'); await sleep(500); await ready(tA)
   check('reloading A preserves its This conversation scope', await scopeText(tA) === 'This conversation', await scopeText(tA))
-  await click(tA, '[data-tree-filter="conv"]')
-  await click(tB, '[data-tree-filter="conv"]')
+  await scopeTo(tA, 'conv')
+  await scopeTo(tB, 'conv')
   await nav(tB, '/')
   const pastSelector = `[data-gallery-conv="${C}"]`
   await until(() => tB.run(`!!document.querySelector(${JSON.stringify(pastSelector)})`), Boolean)

@@ -37,13 +37,15 @@ import linkSimple from '@phosphor-icons/core/assets/regular/link-simple.svg?raw'
 import hash from '@phosphor-icons/core/assets/regular/hash.svg?raw'
 import star from '@phosphor-icons/core/assets/regular/star.svg?raw'
 import check from '@phosphor-icons/core/assets/bold/check-bold.svg?raw'
+import gear from '@phosphor-icons/core/assets/regular/gear-six.svg?raw'
+import checkSimple from '@phosphor-icons/core/assets/regular/check.svg?raw'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { t } from '../i18n'
 import type { ExpState } from './model'
 import { selection } from './selection'
 import { armTagDrag } from '../tag-drag'
 
-const ICONS = { browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle, x, dots, starFill, plus, minus, foldIn, spreadOut, chatCircle, eye, eyeSlash, mapPin, gitBranch, rows, tray, foldAll, openAll, linkSimple, hash, star, check }
+const ICONS = { gear, checkSimple, browser, shuffle, caretDown, caretRight, checkFill, circleFill, hourglass, warning, sparkle, sidebar, archive, magnifyingGlass, squaresFour, path, circle, x, dots, starFill, plus, minus, foldIn, spreadOut, chatCircle, eye, eyeSlash, mapPin, gitBranch, rows, tray, foldAll, openAll, linkSimple, hash, star, check }
 export type PhName = keyof typeof ICONS
 /** A Phosphor icon, drawn from @phosphor-icons/core like the rest of the shell's (ui.ts ic()). */
 export function Ph({ name, className = 'size-4' }: { name: PhName; className?: string }) {
