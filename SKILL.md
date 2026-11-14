@@ -620,8 +620,16 @@ so the user sees them land:
   stage, so a drawer's backdrop covers the whole page, the motion dock too. Give each `Portal` a
   `container` in the variant (`<Drawer.Portal container={rootRef}>`, a ref to the variant's
   root; Vue: a `<Teleport>` to it) so it stays on the stage.
+- **A design of a fixed size always shows whole, never behind a scroll.** A plugin window, a
+  hardware panel, a kiosk or a TV is one screen of known pixels: wrap it in `<Fit>` from
+  `src/fit.ts` (`<Fit width={556} height={1025}>…</Fit>`, as the variant's root), which shrinks it
+  to the stage so its bottom edge is on screen at any window size, and never grows it past its
+  designed size. Give it no outer padding or `min-h-full` page of its own: a fixed design that
+  overflows the stage and makes the artboard scroll is a defect the user will report. Measure
+  pointer drags in screen px as usual; `zoom` keeps `getBoundingClientRect` in the shown size, so
+  map a click to design px with `(clientX - rect.left) / rect.width * width`.
 - A screen of a fixed size shown smaller (a 1920×1080 TV, a kiosk, a desktop on a phone) is
-  shrunk with CSS `zoom`, never `transform: scale()`. Safari on a phone paints every layer under
+  shrunk with CSS `zoom` (which `<Fit>` does), never `transform: scale()`. Safari on a phone paints every layer under
   a scale at its full size times the screen's 3x, so a scaled TV of photos and blurs runs out of
   memory and the page reloads; `zoom` lays it out at the size it is shown. Keep only what can be
   seen on the page (the photo showing, not every one it can fade to), and release WebGL on unmount
@@ -1268,7 +1276,7 @@ session builds and saves a new one.
 - **A variant shows a red error box:** that variant threw. Fix the file; it re-renders.
 - **`proto shoot` prints `slow …`:** a shot took over 3 s, and the line says which step took
   the time. Pass the line on to the user.
-- **Don't edit** the app's `shell/`, `src/main.ts`, `src/registry.ts`, `src/mount.*`, `src/hints.ts`, `src/copy.ts`, `src/motion.ts`, `src/parallax.ts` or `src/fonts.ts`. If the
+- **Don't edit** the app's `shell/`, `src/main.ts`, `src/registry.ts`, `src/mount.*`, `src/hints.ts`, `src/copy.ts`, `src/motion.ts`, `src/parallax.ts`, `src/fit.ts` or `src/fonts.ts`. If the
   shell itself misbehaves, say so; the template is `app/` in the resolved skill directory (replaced on
   every plugin update, so a fix belongs upstream). `proto up` copies the template over an
   existing session's app files (everything except `src/protos/` and `src/theme.css`) and adds
