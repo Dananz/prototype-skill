@@ -277,8 +277,9 @@ the app), do the steps below and save one at the end.
    against, into the app's `.proto/ref/<slug>/`, and read every one:
    - Web: run the project's app and screenshot the page in a browser, at 1440 wide (desktop)
      or 390 wide at 3x (phone).
-   - iOS simulator: `xcrun simctl io <udid> screenshot <file>` on a booted simulator that
-     already shows the screen. Don't drive someone else's simulator to get there; ask.
+   - iOS simulator: lease one from Simlock (T3 `device_open` on the "Simlock" host, never a
+     simulator from `xcrun simctl list`), get the screen up, then `device_screenshot` or the
+     agent-device command's `screenshot <file>`. Don't drive someone else's simulator; ask.
    - Mac app: `screencapture -l <window id> <file>`.
    - Nothing running: ask the user for screenshots. Existing ones in the repo (design folders,
      store assets, docs) count.
