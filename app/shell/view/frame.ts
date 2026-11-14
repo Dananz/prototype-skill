@@ -79,12 +79,13 @@ export function openFrame(host: HTMLElement, url: string, on: { route: (path: st
   return {
     el,
     doc: () => (page() === d ? d : null),
-    // As Back would move it: its own address changes, and its page follows (popstate), no reload.
+    // As Back would move it: its own address changes, and its page follows (popstate), no reload. In place:
+    // the page outside has the history entry, and one here would stand between its Back and Forward.
     go(path) {
       try {
         const w = el.contentWindow!
         if (w.location.pathname === path) return
-        w.history.pushState(null, '', path + w.location.search)
+        w.history.replaceState(null, '', path + w.location.search)
         told = path
         try { w.dispatchEvent(new PopStateEvent('popstate')) } finally { told = '' }
       } catch { /* gone */ }

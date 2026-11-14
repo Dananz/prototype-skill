@@ -929,6 +929,9 @@ shows there as "You picked X".
   working one only when the user starts asking for changes to it.
 - `proto work` alone prints the current one; `proto work --off` clears it. Archiving its
   prototype clears it too.
+- **Each conversation has its own.** Other conversations working in the same project never move
+  yours, and the strip in your link's tab (`?c=`) shows only yours. `proto ask` without `--to`
+  lands on yours.
 
 ## Comments from the page
 
