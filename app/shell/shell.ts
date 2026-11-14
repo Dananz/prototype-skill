@@ -3647,13 +3647,8 @@ export function createShell(root: HTMLElement, opts: { mount: Mount; protos: Pro
     render()
   })
   phoneMq.addEventListener('change', () => {
-    // A scale chosen at one width (a pinch on a wide iPad) is wrong at the other: a phone-width window
-    // fits its phone to the room again, a wide one fits at Fit, or the phone overruns the bar at the foot.
-    unzoom()
-    scaleChosen = false
-    st.scale = phoneMq.matches ? 50 : 0
     if (st.place.view === 'proto' && st.view.size && cur()?.kind !== 'phone') { show(false); render() }
-    else { paintHints(); render(); fit() }
+    else paintHints()
   })
 
   // ---------- copy options: a T button wherever the design on the stage declares them ----------
